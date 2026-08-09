@@ -7,6 +7,8 @@ Released on TBD (UTC).
 - Added canonical Rust backtest results with normalized projections, content digests, and stable ordering
 - Added full Rust config parity for the Python testkit `ExecTesterConfig`
 - Added Python v2 Redis message bus backing for `LiveNode` (#4630), thanks for reporting @davidgreyme
+- Added Python v2 cache database backing for `LiveNode` (#4634), thanks for reporting @AlphaTraderK
+- Added direct message bus backing installation through `RedisMessageBusConfig`
 - Added `LiveNode.start()` warning when external message bus ingress requires `run()`
 - Added trader start warning when `load_state` or `save_state` is enabled without a cache database backing
 - Added runtime external‑order claim registration and removal to Rust `LiveNode` (#4620), thanks @folknor
@@ -164,8 +166,7 @@ and execution, portfolio/accounting, data catalogs, reports, tearsheets, and the
 adapter set. The following limits remain deferred:
 
 - Python request callbacks omit v1 joined‑response, pending cleanup, and late or duplicate delivery conveniences.
-- Direct Python `LiveNode` injection for Redis cache databases and external message-bus backing.
-- SQL cache position and synthetic loads, state persistence, and heartbeat.
+- PostgreSQL cache position and synthetic loads, actor and strategy state persistence, and heartbeat.
 - External message-bus publication of serialized order and position snapshots.
 - V1 `StreamingConfig` and `DataCatalogConfig` iterator wiring on the v2 `BacktestNode`.
 - V1 adapter instrument-provider filters; Hyperliquid v2 loads the configured universe.

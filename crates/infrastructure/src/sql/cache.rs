@@ -60,6 +60,13 @@ const CACHE_PROCESS: &str = "cache-process";
 /// Configuration for a Postgres-backed cache database.
 ///
 /// Missing fields are resolved from Postgres environment variables and then built-in defaults.
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
+    )
+)]
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(

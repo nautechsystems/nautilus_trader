@@ -1733,6 +1733,7 @@ def test_live_stub_exposes_builder_engine_config_methods():
     ("module_name", "class_name"),
     [
         ("nautilus_trader.adapters.dydx", "DydxClientOrderIdEncoder"),
+        ("nautilus_trader.infrastructure", "RedisCacheConfig"),
         ("nautilus_trader.infrastructure", "RedisMessageBusConfig"),
         ("nautilus_trader.infrastructure", "RedisMessageBusFactory"),
         ("nautilus_trader.persistence", "DataBackendSession"),

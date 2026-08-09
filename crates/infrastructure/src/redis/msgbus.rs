@@ -200,6 +200,22 @@ impl RedisConnectionConfig for RedisMessageBusConfig {
     }
 }
 
+impl MessageBusBackingFactory for RedisMessageBusConfig {
+    fn create(
+        &self,
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config: MessageBusConfig,
+    ) -> anyhow::Result<Box<dyn MessageBusBacking>> {
+        Ok(Box::new(RedisMessageBusBacking::new(
+            trader_id,
+            instance_id,
+            config,
+            self.clone(),
+        )?))
+    }
+}
+
 /// Factory for constructing Redis message bus backings.
 #[derive(Debug, Clone)]
 pub struct RedisMessageBusFactory {
@@ -221,12 +237,7 @@ impl MessageBusBackingFactory for RedisMessageBusFactory {
         instance_id: UUID4,
         config: MessageBusConfig,
     ) -> anyhow::Result<Box<dyn MessageBusBacking>> {
-        Ok(Box::new(RedisMessageBusBacking::new(
-            trader_id,
-            instance_id,
-            config,
-            self.config.clone(),
-        )?))
+        self.config.create(trader_id, instance_id, config)
     }
 }
 
@@ -1329,10 +1340,7 @@ mod serial_tests {
     };
     use nautilus_model::data::{QuoteTick, TradeTick};
     #[cfg(feature = "python")]
-    use pyo3::{
-        Py, Python,
-        types::{PyAnyMethods, PyModule},
-    };
+    use pyo3::{Py, Python, types::PyModule};
     use redis::aio::ConnectionManager;
     use rstest::*;
 
@@ -1357,13 +1365,7 @@ mod serial_tests {
             Python::attach(|py| {
                 let module = PyModule::new(py, "infrastructure").unwrap();
                 crate::python::infrastructure(py, &module).unwrap();
-                let config = Py::new(py, config).unwrap();
-                let factory = module
-                    .getattr("RedisMessageBusFactory")
-                    .unwrap()
-                    .call1((config,))
-                    .unwrap()
-                    .unbind();
+                let factory = Py::new(py, config).unwrap().into_any();
 
                 get_global_msgbus_factory_registry()
                     .extract(py, factory)
@@ -1372,7 +1374,7 @@ mod serial_tests {
         }
 
         #[cfg(not(feature = "python"))]
-        Box::new(RedisMessageBusFactory::new(config))
+        Box::new(config)
     }
 
     #[rstest]
@@ -1940,9 +1942,7 @@ mod serial_tests {
                     ..Default::default()
                 };
                 let _node = LiveNodeBuilder::from_config(config)?
-                    .with_external_msgbus_factory(Box::new(RedisMessageBusFactory::new(
-                        redis_config,
-                    )))
+                    .with_external_msgbus_factory(Box::new(redis_config))
                     .build()?;
 
                 msgbus::publish_trade("data.trades.TEST".into(), &trade);

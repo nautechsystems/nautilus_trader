@@ -131,20 +131,58 @@ node.run().await?;
 ```
 
 Set `CacheConfig.flush_on_start = true` to clear the attached backing instead of restoring it.
-The Python `LiveNode` does not yet expose direct cache‑backing injection.
+
+Python injects the same database config through `LiveNodeBuilder`. The node constructs and owns the
+adapter when it starts:
+
+```python
+from nautilus_trader.common import Environment
+from nautilus_trader.infrastructure import RedisCacheConfig
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import TraderId
+
+node = (
+    LiveNode.builder("LiveNode", TraderId("TRADER-001"), Environment.LIVE)
+    .with_cache_database_factory(RedisCacheConfig(host="localhost", port=6379))
+    .with_load_state(True)
+    .with_save_state(True)
+    .build()
+)
+
+try:
+    node.run()
+finally:
+    node.dispose()
+```
+
+Pass `PostgresCacheConfig` instead to back the cache with Postgres. Any other object raises
+`NotImplementedError` from `with_cache_database_factory`, and a failed database connection fails
+`run()`.
+
+`with_load_state` and `with_save_state` control actor and strategy state persistence, which requires
+a Redis backing. The Postgres adapter backs cache state only: with registered actors or strategies,
+`with_load_state(True)` fails when the trader starts, while `with_save_state(True)` fails when the
+node stops or is disposed. On startup the kernel passes non‑empty persisted state to `on_load`; when
+stopping or disposing the node it persists whatever `on_save` returns.
+
+:::warning
+State persistence is not continuous checkpointing. The kernel saves state at most once per run, so a
+`SIGKILL` or a crash loses every change since the last save. Dispose the node so `dispose()` closes
+the backing and flushes buffered writes; returning straight from `run()` can drop the final save.
+:::
 
 ### MessageBus configuration
 
 Message bus behavior stays in `MessageBusConfig`. Redis connection settings live in
-`RedisMessageBusConfig`. `RedisMessageBusFactory` uses those settings to construct the backing
-through `MessageBusBackingFactory`.
+`RedisMessageBusConfig`, which implements `MessageBusBackingFactory` and constructs the backing
+from those settings.
 
 ```rust
 use nautilus_common::{
     enums::SerializationEncoding,
     msgbus::{MessageBusBackingFactory, MessageBusConfig},
 };
-use nautilus_infrastructure::redis::msgbus::{RedisMessageBusConfig, RedisMessageBusFactory};
+use nautilus_infrastructure::redis::msgbus::RedisMessageBusConfig;
 
 let config = MessageBusConfig {
     encoding: SerializationEncoding::Json,
@@ -163,20 +201,15 @@ let redis_config = RedisMessageBusConfig {
     ..Default::default()
 };
 
-let backing = RedisMessageBusFactory::new(redis_config).create(
-    trader_id,
-    instance_id,
-    config.clone(),
-)?;
+let backing = redis_config.create(trader_id, instance_id, config.clone())?;
 ```
 
-Python injects the same Redis factory through `LiveNodeBuilder`:
+Python injects the Redis config through `LiveNodeBuilder`:
 
 ```python
 from nautilus_trader.common import Environment
 from nautilus_trader.common import MessageBusConfig
 from nautilus_trader.infrastructure import RedisMessageBusConfig
-from nautilus_trader.infrastructure import RedisMessageBusFactory
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import TraderId
 
@@ -192,11 +225,14 @@ redis_config = RedisMessageBusConfig(
 node = (
     LiveNode.builder("LiveNode", trader_id, Environment.LIVE)
     .with_msgbus_config(message_bus)
-    .with_external_msgbus_factory(RedisMessageBusFactory(redis_config))
+    .with_external_msgbus_factory(redis_config)
     .build()
 )
 node.run()
 ```
+
+Existing code can continue passing `RedisMessageBusFactory(redis_config)` to
+`with_external_msgbus_factory`.
 
 `MessageBusConfig` alone does not install a backing. Pair it with a factory as shown above. The
 factory always installs external egress, and calling `run()` also consumes the configured external

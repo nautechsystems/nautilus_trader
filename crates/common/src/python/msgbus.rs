@@ -17,18 +17,10 @@
 //! [`PyMessageBus`] wrapper that routes Python events through the Rust
 //! thread-local [`MessageBus`] via the Any-based dispatch path.
 
-use std::{
-    any::Any,
-    fmt::Debug,
-    rc::Rc,
-    sync::{LazyLock, Mutex},
-};
+use std::{any::Any, fmt::Debug, rc::Rc, sync::LazyLock};
 
 use ahash::AHashMap;
-use nautilus_core::{
-    MUTEX_POISONED, UUID4,
-    python::{to_pynotimplemented_err, to_pyruntime_err},
-};
+use nautilus_core::{UUID4, python::to_pyruntime_err};
 use nautilus_model::identifiers::TraderId;
 use pyo3::{Py, Python, prelude::*, types::PyBytes};
 use ustr::Ustr;
@@ -43,17 +35,19 @@ use crate::{
         mstr::{Endpoint, MStr, Pattern, Topic},
         typed_handler::{Handler, ShareableMessageHandler, TypedHandler},
     },
-    python::config_error_to_pyvalue_err,
+    python::{
+        config_error_to_pyvalue_err,
+        factory::{FactoryExtractor, FactoryRegistry},
+    },
 };
 
-/// Function type for extracting a Python object to a boxed message bus backing factory.
-pub type MessageBusFactoryExtractor =
-    fn(Python<'_>, Py<PyAny>) -> PyResult<Box<dyn MessageBusBackingFactory>>;
+/// Function type for extracting a Python object into a boxed message bus backing factory.
+pub type MessageBusFactoryExtractor = FactoryExtractor<dyn MessageBusBackingFactory>;
 
 /// Registry for Python message bus backing factory extractors.
 #[derive(Debug)]
 pub struct MessageBusFactoryRegistry {
-    extractors_by_type: Mutex<AHashMap<String, MessageBusFactoryExtractor>>,
+    inner: FactoryRegistry<dyn MessageBusBackingFactory>,
 }
 
 impl MessageBusFactoryRegistry {
@@ -61,10 +55,11 @@ impl MessageBusFactoryRegistry {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            extractors_by_type: Mutex::new(AHashMap::new()),
+            inner: FactoryRegistry::new("message bus factory"),
         }
     }
 
+    // panics-doc-ok (transitive via FactoryRegistry mutex locking)
     /// Registers an extractor for a Python factory type name.
     ///
     /// # Errors
@@ -79,21 +74,11 @@ impl MessageBusFactoryRegistry {
         type_name: String,
         extractor: MessageBusFactoryExtractor,
     ) -> anyhow::Result<()> {
-        let mut extractors = self.extractors_by_type.lock().expect(MUTEX_POISONED);
-
-        if let Some(registered) = extractors.get(&type_name) {
-            if std::ptr::fn_addr_eq(*registered, extractor) {
-                return Ok(());
-            }
-
-            anyhow::bail!("Message bus factory extractor '{type_name}' is already registered");
-        }
-
-        extractors.insert(type_name, extractor);
-        Ok(())
+        self.inner.register(type_name, extractor)
     }
 
-    /// Extracts a Python object to a boxed message bus backing factory.
+    // panics-doc-ok (transitive via FactoryRegistry mutex locking)
+    /// Extracts a Python object into a boxed message bus backing factory.
     ///
     /// # Errors
     ///
@@ -107,18 +92,7 @@ impl MessageBusFactoryRegistry {
         py: Python<'_>,
         factory: Py<PyAny>,
     ) -> PyResult<Box<dyn MessageBusBackingFactory>> {
-        let type_name = factory
-            .getattr(py, "__class__")?
-            .getattr(py, "__name__")?
-            .extract::<String>(py)?;
-        let extractors = self.extractors_by_type.lock().expect(MUTEX_POISONED);
-
-        match extractors.get(&type_name) {
-            Some(extractor) => extractor(py, factory),
-            None => Err(to_pynotimplemented_err(format!(
-                "No message bus factory extractor registered for '{type_name}'"
-            ))),
-        }
+        self.inner.extract(py, factory)
     }
 }
 
@@ -829,6 +803,15 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_message_bus_factory_registry_compatibility_constructors() {
+        let registry = MessageBusFactoryRegistry::new();
+        let default_registry = MessageBusFactoryRegistry::default();
+
+        assert_eq!(format!("{registry:?}"), format!("{default_registry:?}"));
+        assert!(format!("{registry:?}").contains("message bus factory"));
+    }
 
     #[rstest]
     fn message_bus_config_py_new_maps_validate_error_to_value_error() {

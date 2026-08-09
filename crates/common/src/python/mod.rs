@@ -29,6 +29,7 @@ pub mod cache;
 pub mod clock;
 pub mod custom;
 pub mod enums;
+pub mod factory;
 pub mod fifo;
 pub mod greeks;
 pub mod indicators;

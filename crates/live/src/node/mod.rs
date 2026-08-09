@@ -83,7 +83,7 @@ use anyhow::Context;
 use indexmap::IndexSet;
 use nautilus_common::{
     actor::{Actor, DataActor, DataActorNative},
-    cache::database::CacheDatabaseAdapter,
+    cache::database::{CacheDatabaseAdapter, CacheDatabaseFactory},
     clients::ExecutionClient,
     component::Component,
     enums::{Environment, LogColor},
@@ -165,6 +165,7 @@ pub struct LiveNode {
     handle: LiveNodeHandle,
     exec_manager: ExecutionManager,
     exec_clients: Vec<LiveExecutionClient>,
+    cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
     external_msgbus: Option<ExternalMessageBusIngress>,
     shutdown_deadline: Option<dst::time::Instant>,
     #[cfg(feature = "plugin")]
@@ -182,6 +183,7 @@ impl LiveNode {
         config: LiveNodeConfig,
         exec_manager: ExecutionManager,
         exec_clients: Vec<LiveExecutionClient>,
+        cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
         external_msgbus: Option<ExternalMessageBusIngress>,
     ) -> Self {
         Self {
@@ -191,6 +193,7 @@ impl LiveNode {
             handle: LiveNodeHandle::new(),
             exec_manager,
             exec_clients,
+            cache_database_factory,
             external_msgbus,
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
@@ -263,6 +266,7 @@ impl LiveNode {
             handle: LiveNodeHandle::new(),
             exec_manager,
             exec_clients: Vec::new(),
+            cache_database_factory: None,
             external_msgbus: None,
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
@@ -1601,7 +1605,9 @@ impl LiveNode {
         clippy::await_holding_refcell_ref,
         reason = "cache loading is serialized before the single-threaded live node starts"
     )]
-    async fn prepare_cache(&self) -> anyhow::Result<()> {
+    async fn prepare_cache(&mut self) -> anyhow::Result<()> {
+        self.install_cache_database().await?;
+
         let cache = self.kernel.cache();
         if !cache.borrow().has_backing() {
             return Ok(());
@@ -1625,6 +1631,29 @@ impl LiveNode {
                 .await
                 .context("Failed to load persistent cache")?;
         }
+
+        Ok(())
+    }
+
+    /// Constructs the configured cache database backing and installs it on the kernel cache.
+    ///
+    /// Construction is deferred to startup so the adapter is built inside the async runtime rather
+    /// than by blocking the synchronous builder, and so the connection opens only when the node runs.
+    async fn install_cache_database(&mut self) -> anyhow::Result<()> {
+        let Some(factory) = self.cache_database_factory.as_ref() else {
+            return Ok(());
+        };
+
+        let config = self.config.cache.clone().unwrap_or_default();
+
+        // Cleared only after a successful install, so a failed startup can be retried rather than
+        // silently starting without the backing the caller asked for.
+        let database = factory
+            .create(self.config.trader_id, self.kernel.instance_id, config)
+            .await
+            .context("failed to create cache database backing")?;
+        self.kernel.cache().borrow_mut().set_database(database);
+        self.cache_database_factory = None;
 
         Ok(())
     }

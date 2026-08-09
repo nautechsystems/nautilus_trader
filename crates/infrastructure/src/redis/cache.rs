@@ -121,6 +121,13 @@ const INDEX_POSITIONS_CLOSED: &str = "index:positions_closed";
 /// Configuration for a Redis-backed cache database.
 ///
 /// Redis 6.2 or higher is required for correct operation.
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
+    )
+)]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(

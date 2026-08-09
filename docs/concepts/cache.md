@@ -188,8 +188,37 @@ node.run().await?;
 
 With the default `LiveExecEngineConfig.load_cache = true`, the node restores persisted cache state
 and rebuilds derived indexes before connecting clients or reconciling execution state. Setting
-`CacheConfig.flush_on_start = true` clears the backing instead. Direct backing injection is not yet
-available from the Python `LiveNode` surface.
+`CacheConfig.flush_on_start = true` clears the backing instead.
+
+Python passes the same database config to `LiveNodeBuilder.with_cache_database_factory`. The node
+constructs and owns the adapter when it starts, so the connection opens only when the node runs:
+
+```python
+from nautilus_trader.common import Environment
+from nautilus_trader.infrastructure import RedisCacheConfig
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import TraderId
+
+node = (
+    LiveNode.builder("LiveNode", TraderId("TRADER-001"), Environment.LIVE)
+    .with_cache_database_factory(RedisCacheConfig(host="localhost", port=6379))
+    .build()
+)
+
+try:
+    node.run()
+finally:
+    node.dispose()
+```
+
+Pass `PostgresCacheConfig` instead to back cache data with Postgres. Postgres does not support actor
+or strategy state persistence, so do not combine it with `load_state` or `save_state`. Both configs
+come from `nautilus_trader.infrastructure`.
+
+:::warning
+Always dispose the node. `dispose()` closes the backing, which flushes writes still held in the
+buffer when `CacheConfig.buffer_interval_ms` is set. Returning straight from `run()` can drop them.
+:::
 
 ## Using the cache
 

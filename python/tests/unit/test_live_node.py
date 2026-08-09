@@ -461,6 +461,16 @@ def test_builder_accepts_supported_runtime_configs():
     assert node.environment == Environment.SANDBOX
 
 
+def test_builder_rejects_unregistered_cache_database_factory():
+    builder = LiveNode.builder("TEST", TraderId("TESTER-003"), Environment.SANDBOX)
+
+    with pytest.raises(
+        NotImplementedError,
+        match="No cache database factory extractor registered for 'dict'",
+    ):
+        builder.with_cache_database_factory({})
+
+
 def test_add_actor_from_config_registers(live_node):
     config = ImportableActorConfig(
         actor_path="tests.unit.common.actor:TestActor",

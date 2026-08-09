@@ -152,6 +152,14 @@ impl PyRedisMessageBusFactory {
 }
 
 #[expect(clippy::needless_pass_by_value)]
+fn extract_redis_msgbus_config(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn MessageBusBackingFactory>> {
+    Ok(Box::new(factory.extract::<RedisMessageBusConfig>(py)?))
+}
+
+#[expect(clippy::needless_pass_by_value)]
 fn extract_redis_msgbus_factory(
     py: Python<'_>,
     factory: Py<PyAny>,
@@ -161,7 +169,14 @@ fn extract_redis_msgbus_factory(
 }
 
 pub(in crate::python) fn register_redis_msgbus_factory() -> PyResult<()> {
-    get_global_msgbus_factory_registry()
+    let registry = get_global_msgbus_factory_registry();
+    registry
+        .register(
+            stringify!(RedisMessageBusConfig).to_string(),
+            extract_redis_msgbus_config,
+        )
+        .map_err(to_pyruntime_err)?;
+    registry
         .register(
             stringify!(RedisMessageBusFactory).to_string(),
             extract_redis_msgbus_factory,

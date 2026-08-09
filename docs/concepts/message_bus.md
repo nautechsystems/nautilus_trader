@@ -370,14 +370,14 @@ def register_serializable_type(
 
 The message bus external backing technology uses a behavior config plus a technology-owned backing
 config. `MessageBusConfig` controls message bus behavior. `RedisMessageBusConfig` owns Redis
-connection settings, and `RedisMessageBusFactory` implements `MessageBusBackingFactory`.
+connection settings and implements `MessageBusBackingFactory`.
 
 ```rust
 use nautilus_common::{
     enums::SerializationEncoding,
     msgbus::{MessageBusBackingFactory, MessageBusConfig},
 };
-use nautilus_infrastructure::redis::msgbus::{RedisMessageBusConfig, RedisMessageBusFactory};
+use nautilus_infrastructure::redis::msgbus::RedisMessageBusConfig;
 
 let config = MessageBusConfig {
     encoding: SerializationEncoding::Json,
@@ -394,9 +394,11 @@ let config = MessageBusConfig {
 };
 
 let redis_config = RedisMessageBusConfig::default();
-let factory = RedisMessageBusFactory::new(redis_config);
-let backing = factory.create(trader_id, instance_id, config.clone())?;
+let backing = redis_config.create(trader_id, instance_id, config.clone())?;
 ```
+
+Existing Rust callers can continue using `RedisMessageBusFactory::new(redis_config)`, which
+delegates to the config implementation.
 
 ### Backing config
 
@@ -413,13 +415,14 @@ for injected egress.
 The Rust live runtime accepts `external_streams` in `MessageBusConfig`, and consumes inbound
 `BusMessage`s when callers inject a `MessageBusExternalIngress` with
 `LiveNodeBuilder::with_external_ingress`. The config names the external stream keys; the injected
-ingress is the concrete runtime source. Rust callers can install `RedisMessageBusFactory` with
+ingress is the concrete runtime source. Rust callers can install `RedisMessageBusConfig` with
 `LiveNodeBuilder::with_external_msgbus_factory`. Building fails when a factory is combined with
 separately injected egress or ingress. A factory always installs egress and creates ingress only when
 `external_streams` is non‑empty.
 
-Python exposes the same builder method for built‑in factory classes, including
-`RedisMessageBusFactory`. It does not accept arbitrary Python factory classes.
+Python exposes the same builder method for built‑in backing configs, currently
+`RedisMessageBusConfig`. The existing `RedisMessageBusFactory` wrapper remains supported. Python
+does not accept arbitrary factory classes.
 
 The built-in Redis ingress starts each configured stream at the current timestamp, so entries that
 already exist when the node starts are not replayed. After startup it advances the last-seen ID for
@@ -597,7 +600,7 @@ let redis_config = RedisMessageBusConfig {
 
 let mut node = LiveNode::builder(trader_id, Environment::Live)?
     .with_msgbus_config(message_bus)
-    .with_external_msgbus_factory(Box::new(RedisMessageBusFactory::new(redis_config)))
+    .with_external_msgbus_factory(Box::new(redis_config))
     .build()?;
 node.run().await?;
 ```
@@ -605,7 +608,7 @@ node.run().await?;
 #### Consumer node
 
 We configure the `MessageBus` of the consumer node to receive messages from the same `"binance"`
-stream. A `RedisMessageBusFactory` creates ingress from `external_streams`, and `LiveNode::run`
+stream. A `RedisMessageBusConfig` creates ingress from `external_streams`, and `LiveNode::run`
 publishes the received messages onto the node's internal message bus. We declare the client ID
 `"BINANCE_EXT"` as an external client so the `DataEngine` does not attempt to send data commands to
 this client ID.
@@ -630,7 +633,7 @@ let redis_config = RedisMessageBusConfig {
 let mut node = LiveNode::builder(trader_id, Environment::Live)?
     .with_data_engine_config(data_engine)
     .with_msgbus_config(message_bus)
-    .with_external_msgbus_factory(Box::new(RedisMessageBusFactory::new(redis_config)))
+    .with_external_msgbus_factory(Box::new(redis_config))
     .build()?;
 node.run().await?;
 ```

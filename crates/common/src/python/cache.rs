@@ -15,7 +15,7 @@
 
 //! Python bindings for the [`Cache`] component.
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::LazyLock};
 
 use bytes::Bytes;
 use nautilus_core::python::to_pyvalue_err;
@@ -46,10 +46,22 @@ use pyo3::prelude::*;
 use rust_decimal::prelude::ToPrimitive;
 
 use crate::{
-    cache::{Cache, CacheConfig},
+    cache::{Cache, CacheConfig, database::CacheDatabaseFactory},
     enums::SerializationEncoding,
-    python::config_error_to_pyvalue_err,
+    python::{config_error_to_pyvalue_err, factory::FactoryRegistry},
 };
+
+/// Registry for Python cache database factory extractors.
+pub type CacheDatabaseFactoryRegistry = FactoryRegistry<dyn CacheDatabaseFactory>;
+
+static GLOBAL_CACHE_DATABASE_FACTORY_REGISTRY: LazyLock<CacheDatabaseFactoryRegistry> =
+    LazyLock::new(|| CacheDatabaseFactoryRegistry::new("cache database factory"));
+
+/// Returns the global Python cache database factory registry.
+#[must_use]
+pub fn get_global_cache_database_factory_registry() -> &'static CacheDatabaseFactoryRegistry {
+    &GLOBAL_CACHE_DATABASE_FACTORY_REGISTRY
+}
 
 /// Wrapper providing shared access to [`Cache`] from Python.
 ///

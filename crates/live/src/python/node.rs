@@ -26,7 +26,7 @@ use nautilus_common::{
     msgbus::MessageBusConfig,
     python::{
         actor::{PyDataActor, PyDataActorInner, register_python_exec_algorithm_endpoint},
-        cache::PyCache,
+        cache::{PyCache, get_global_cache_database_factory_registry},
         msgbus::get_global_msgbus_factory_registry,
     },
 };
@@ -1330,6 +1330,22 @@ impl LiveNodeBuilderPy {
         }
     }
 
+    #[pyo3(name = "with_cache_database_factory")]
+    fn py_with_cache_database_factory(&self, factory: Py<PyAny>) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if inner_ref.is_none() {
+            return Err(to_pyruntime_err("Builder already consumed"));
+        }
+
+        let factory =
+            Python::attach(|py| get_global_cache_database_factory_registry().extract(py, factory))?;
+        let builder = inner_ref.take().expect("Builder checked above");
+        *inner_ref = Some(builder.with_cache_database_factory(factory));
+        Ok(Self {
+            inner: self.inner.clone(),
+        })
+    }
+
     #[pyo3(name = "with_msgbus_config")]
     fn py_with_msgbus_config(&self, config: MessageBusConfig) -> PyResult<Self> {
         let mut inner_ref = self.inner.borrow_mut();
@@ -1752,9 +1768,13 @@ mod tests {
     };
 
     use async_trait::async_trait;
+    use indexmap::IndexMap;
     use nautilus_common::{
         actor::DataActor,
-        cache::CacheView,
+        cache::{
+            CacheConfig, CacheView,
+            database::{CacheDatabaseAdapter, CacheDatabaseFactory},
+        },
         clients::DataClient,
         clock::Clock,
         enums::Environment,
@@ -1769,7 +1789,10 @@ mod tests {
             BusMessage, MessageBusBacking, MessageBusBackingFactory, MessageBusConfig,
             MessagingSwitchboard, get_message_bus,
         },
-        python::msgbus::get_global_msgbus_factory_registry,
+        python::{
+            cache::get_global_cache_database_factory_registry,
+            msgbus::get_global_msgbus_factory_registry,
+        },
         runner::{TradingCommandMessage, get_trading_cmd_sender},
     };
     use nautilus_core::{UUID4, UnixNanos};
@@ -1777,11 +1800,14 @@ mod tests {
     use nautilus_model::{
         data::{Bar, BarType},
         enums::{OmsType, OrderSide, OrderStatus, OrderType},
-        identifiers::{AccountId, ClientId, InstrumentId, PositionId, StrategyId, TraderId, Venue},
+        identifiers::{
+            AccountId, ActorId, ClientId, InstrumentId, PositionId, StrategyId, TraderId, Venue,
+        },
         instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
         orders::{Order, OrderTestBuilder},
         types::{Price, Quantity},
     };
+    use nautilus_testkit::cache::{TestCacheDatabase, TestCacheDatabaseControl};
     use nautilus_trading::{
         ImportableStrategyConfig, nautilus_strategy,
         python::strategy::PyStrategy,
@@ -1793,7 +1819,7 @@ mod tests {
     };
     use rstest::rstest;
 
-    use super::LiveNode;
+    use super::{LiveNode, LiveNodeBuilderPy};
     use crate::node::config::RoutingConfig;
 
     #[derive(Clone, Copy, Debug)]
@@ -1899,6 +1925,198 @@ mod tests {
             assert!(!node.is_running());
             assert_eq!(TEST_MSGBUS_FACTORY_CALLS.load(Ordering::SeqCst), 1);
             get_message_bus().borrow_mut().dispose();
+        });
+    }
+
+    static TEST_CACHE_DATABASE_FACTORY_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    #[derive(Debug, Clone)]
+    #[pyo3::pyclass(name = "TestCacheDatabaseFactory", from_py_object)]
+    struct TestCacheDatabaseFactory {
+        database: Arc<std::sync::Mutex<Option<TestCacheDatabase>>>,
+        instance_id: Arc<std::sync::Mutex<Option<UUID4>>>,
+    }
+
+    impl TestCacheDatabaseFactory {
+        fn new(database: Option<TestCacheDatabase>) -> Self {
+            Self {
+                database: Arc::new(std::sync::Mutex::new(database)),
+                instance_id: Arc::new(std::sync::Mutex::new(None)),
+            }
+        }
+
+        fn received_instance_id(&self) -> Option<UUID4> {
+            *self.instance_id.lock().unwrap()
+        }
+    }
+
+    #[async_trait]
+    impl CacheDatabaseFactory for TestCacheDatabaseFactory {
+        async fn create(
+            &self,
+            trader_id: TraderId,
+            instance_id: UUID4,
+            config: CacheConfig,
+        ) -> anyhow::Result<Box<dyn CacheDatabaseAdapter>> {
+            TEST_CACHE_DATABASE_FACTORY_CALLS.fetch_add(1, Ordering::SeqCst);
+            *self.instance_id.lock().unwrap() = Some(instance_id);
+
+            anyhow::ensure!(
+                trader_id == TraderId::from("TESTER-001"),
+                "unexpected trader ID: {trader_id}"
+            );
+            anyhow::ensure!(
+                config.buffer_interval_ms == Some(25),
+                "unexpected buffer interval: {:?}",
+                config.buffer_interval_ms
+            );
+
+            let database = self
+                .database
+                .lock()
+                .unwrap()
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("Test cache database unavailable"))?;
+            Ok(Box::new(database))
+        }
+    }
+
+    #[expect(clippy::needless_pass_by_value)]
+    fn extract_test_cache_database_factory(
+        py: Python<'_>,
+        factory: Py<pyo3::PyAny>,
+    ) -> pyo3::PyResult<Box<dyn CacheDatabaseFactory>> {
+        Ok(Box::new(factory.extract::<TestCacheDatabaseFactory>(py)?))
+    }
+
+    fn state_factory_builder(factory: &TestCacheDatabaseFactory) -> LiveNodeBuilderPy {
+        Python::attach(|py| {
+            LiveNode::py_builder(
+                "TEST".to_string(),
+                TraderId::from("TESTER-001"),
+                Environment::Sandbox,
+            )
+            .unwrap()
+            .py_with_cache_config(CacheConfig {
+                buffer_interval_ms: Some(25),
+                ..Default::default()
+            })
+            .unwrap()
+            .py_with_cache_database_factory(Py::new(py, factory.clone()).unwrap().into_any())
+            .unwrap()
+            .py_with_reconciliation(false)
+            .unwrap()
+            .py_with_timeout_connection(0)
+            .unwrap()
+            .py_with_timeout_reconciliation(0)
+            .unwrap()
+            .py_with_timeout_portfolio(0)
+            .unwrap()
+            .py_with_timeout_disconnection_secs(0)
+            .unwrap()
+            .py_with_delay_post_stop_secs(0)
+            .unwrap()
+            .py_with_delay_shutdown_secs(0)
+            .unwrap()
+        })
+    }
+
+    #[tokio::test]
+    async fn test_python_builder_installs_cache_database_factory_on_start() {
+        TEST_CACHE_DATABASE_FACTORY_CALLS.store(0, Ordering::SeqCst);
+        get_global_cache_database_factory_registry()
+            .register(
+                "TestCacheDatabaseFactory".to_string(),
+                extract_test_cache_database_factory,
+            )
+            .unwrap();
+        Python::initialize();
+
+        let (database, control) = TestCacheDatabaseControl::create();
+        let actor_id = ActorId::from("PY-CACHE-FACTORY-ACTOR");
+        let actor_state = IndexMap::from([("loaded".to_string(), b"value".to_vec())]);
+        control.set_actor_state(actor_id, &actor_state);
+        let factory = TestCacheDatabaseFactory::new(Some(database));
+
+        let mut node = state_factory_builder(&factory).py_build().unwrap();
+
+        assert_eq!(TEST_CACHE_DATABASE_FACTORY_CALLS.load(Ordering::SeqCst), 0);
+        assert!(!node.kernel().cache().borrow().has_backing());
+
+        node.start().await.unwrap();
+
+        assert_eq!(TEST_CACHE_DATABASE_FACTORY_CALLS.load(Ordering::SeqCst), 1);
+        assert_eq!(factory.received_instance_id(), Some(node.instance_id()));
+        assert!(node.kernel().cache().borrow().has_backing());
+        assert_eq!(
+            node.kernel()
+                .cache()
+                .borrow()
+                .load_actor_state(&actor_id)
+                .unwrap(),
+            Some(actor_state)
+        );
+
+        node.stop().await.unwrap();
+        node.dispose();
+        get_message_bus().borrow_mut().dispose();
+    }
+
+    #[tokio::test]
+    async fn test_python_builder_propagates_cache_database_factory_error_on_start() {
+        get_global_cache_database_factory_registry()
+            .register(
+                "TestCacheDatabaseFactory".to_string(),
+                extract_test_cache_database_factory,
+            )
+            .unwrap();
+        Python::initialize();
+
+        let factory = TestCacheDatabaseFactory::new(None);
+        let mut node = state_factory_builder(&factory).py_build().unwrap();
+
+        let error = node.start().await.unwrap_err();
+
+        assert_eq!(
+            format!("{error:#}"),
+            "failed to create cache database backing: Test cache database unavailable"
+        );
+        assert!(!node.kernel().cache().borrow().has_backing());
+
+        let retry_error = node.start().await.unwrap_err();
+
+        assert_eq!(
+            format!("{retry_error:#}"),
+            "failed to create cache database backing: Test cache database unavailable"
+        );
+        assert!(!node.kernel().cache().borrow().has_backing());
+
+        node.dispose();
+        get_message_bus().borrow_mut().dispose();
+    }
+
+    #[rstest]
+    fn test_python_builder_rejects_unregistered_cache_database_factory() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let factory = PyDict::new(py).unbind().into_any();
+            let builder = LiveNode::py_builder(
+                "TEST".to_string(),
+                TraderId::from("TESTER-001"),
+                Environment::Sandbox,
+            )
+            .unwrap();
+
+            let error = builder.py_with_cache_database_factory(factory).unwrap_err();
+
+            assert_eq!(
+                error.to_string(),
+                "NotImplementedError: No cache database factory extractor registered for 'dict'"
+            );
+            builder
+                .py_with_cache_config(CacheConfig::default())
+                .unwrap();
         });
     }
 

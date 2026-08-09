@@ -546,16 +546,15 @@ These gaps can affect migration but do not block supported cutover workflows:
 
 - Python request callbacks do not provide v1 joined-response, pending-request cleanup, or late and
   duplicate delivery convenience behavior.
-- Python v2 accepts built‑in external message‑bus factory classes such as
-  `RedisMessageBusFactory`, but arbitrary Python factory classes remain unsupported. V1
+- Python v2 accepts built‑in backing configs such as `RedisMessageBusConfig`, but arbitrary Python
+  factory classes remain unsupported. V1
   `MessageBusConfig(database=DatabaseConfig(...), external_streams=[...])` maps to the builder calls
   `LiveNodeBuilder.with_msgbus_config(...)` and
-  `LiveNodeBuilder.with_external_msgbus_factory(RedisMessageBusFactory(...))`. See
-  [live message‑bus configuration][live-message-bus-config].
-- Python cannot inject Redis cache databases into `LiveNode`; Rust APIs still expose those
-  backings.
-- SQL cache position and synthetic loads, actor and strategy state persistence, and cache heartbeat
-  remain incomplete.
+  `LiveNodeBuilder.with_external_msgbus_factory(RedisMessageBusConfig(...))`. See
+  [live message‑bus configuration][live-message-bus-config]. The existing
+  `RedisMessageBusFactory(RedisMessageBusConfig(...))` wrapper remains supported.
+- PostgreSQL cache position and synthetic loads, actor and strategy state persistence, and cache
+  heartbeat remain incomplete.
 - External message-bus publishing of serialized order and position snapshots remains deferred.
 - V2 `BacktestNode` does not yet support the v1 `StreamingConfig` and `DataCatalogConfig` iterator
   workflow.
