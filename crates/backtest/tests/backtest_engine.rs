@@ -206,6 +206,46 @@ impl DataActor for CustomDataRecorder {
     }
 }
 
+struct RecurringTimerShutdownActor {
+    core: DataActorCore,
+    fired: Rc<Cell<u32>>,
+}
+
+impl RecurringTimerShutdownActor {
+    fn new(fired: Rc<Cell<u32>>) -> Self {
+        let config = DataActorConfig {
+            actor_id: Some(ActorId::from("RECURRING-TIMER-SHUTDOWN")),
+            ..Default::default()
+        };
+        Self {
+            core: DataActorCore::new(config),
+            fired,
+        }
+    }
+}
+
+nautilus_actor!(RecurringTimerShutdownActor);
+
+impl Debug for RecurringTimerShutdownActor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(RecurringTimerShutdownActor))
+            .finish()
+    }
+}
+
+impl DataActor for RecurringTimerShutdownActor {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.clock()
+            .set_timer_ns("recurring", 1_000_000_000, None, None, None, None, None)
+    }
+
+    fn on_time_event(&mut self, _event: &TimeEvent) -> anyhow::Result<()> {
+        self.fired.set(self.fired.get() + 1);
+        self.shutdown_system(Some("stop recurring timer test".to_string()));
+        Ok(())
+    }
+}
+
 struct EmptyExecAlgorithm {
     core: ExecutionAlgorithmCore,
 }
@@ -1253,6 +1293,21 @@ fn test_run_with_empty_data(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let bt_result = engine.get_result();
     assert_eq!(bt_result.iterations, 0);
     assert_eq!(bt_result.total_orders, 0);
+}
+
+#[rstest]
+fn test_run_with_empty_data_does_not_advance_recurring_timer() {
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    let fired = Rc::new(Cell::new(0));
+    engine
+        .add_actor(RecurringTimerShutdownActor::new(Rc::clone(&fired)))
+        .unwrap();
+
+    let start = UnixNanos::from(10_000_000_000u64);
+    engine.run(Some(start), None, None, false).unwrap();
+
+    assert_eq!(fired.get(), 0);
+    assert_eq!(engine.kernel().clock.borrow().timestamp_ns(), start);
 }
 
 #[rstest]
@@ -3093,6 +3148,39 @@ fn test_streaming_mode_processes_data_in_batches(crypto_perpetual_ethusdt: Crypt
 
     let result2 = engine.get_result();
     assert_eq!(result2.iterations, 5); // Total across both batches
+}
+
+#[rstest]
+fn test_streaming_windows_retain_first_item_past_end() {
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    let first = stub_custom_data(1, 1, None, None);
+    let data_type = first.data_type.clone();
+    let received = Rc::new(RefCell::new(Vec::new()));
+    engine
+        .add_actor(CustomDataRecorder::new(data_type, Rc::clone(&received)))
+        .unwrap();
+    engine
+        .add_data(
+            vec![
+                Data::Custom(first),
+                Data::Custom(stub_custom_data(2, 2, None, None)),
+                Data::Custom(stub_custom_data(3, 3, None, None)),
+            ],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+
+    engine
+        .run(None, Some(UnixNanos::from(2)), None, true)
+        .unwrap();
+    assert_eq!(*received.borrow(), vec![1, 2]);
+
+    engine
+        .run(None, Some(UnixNanos::from(3)), None, true)
+        .unwrap();
+    assert_eq!(*received.borrow(), vec![1, 2, 3]);
 }
 
 #[rstest]

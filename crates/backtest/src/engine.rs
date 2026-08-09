@@ -729,10 +729,7 @@ impl BacktestEngine {
 
         // Determine time boundaries
         let start_ns = start.unwrap_or_else(|| self.ts_first.unwrap_or_default());
-        let end_ns = end.unwrap_or_else(|| {
-            self.ts_last_data
-                .unwrap_or(UnixNanos::from(4_102_444_800_000_000_000u64))
-        });
+        let end_ns = end.unwrap_or_else(|| self.ts_last_data.unwrap_or(start_ns));
         anyhow::ensure!(start_ns <= end_ns, "start was > end");
         self.end_ns = end_ns;
         self.last_ns = start_ns;
@@ -795,16 +792,15 @@ impl BacktestEngine {
         self.log_run();
 
         // Skip data before start_ns
-        let mut data = self.data_iterator.next_item();
-        while let Some(ref d) = data {
+        while let Some(d) = self.data_iterator.peek() {
             if d.ts_init() >= start_ns {
                 break;
             }
-            data = self.data_iterator.next_item();
+            self.data_iterator.next_item();
         }
 
         // Initialize last_ns before first data point
-        if let Some(ref d) = data {
+        if let Some(d) = self.data_iterator.peek() {
             let ts = d.ts_init();
             self.last_ns = if ts.as_u64() > 0 {
                 UnixNanos::from(ts.as_u64() - 1)
@@ -826,7 +822,7 @@ impl BacktestEngine {
                 break;
             }
 
-            if data.is_none() {
+            let Some(d) = self.data_iterator.peek() else {
                 if streaming {
                     // In streaming mode, don't advance timers past the
                     // current batch. The next batch will provide more data
@@ -834,19 +830,19 @@ impl BacktestEngine {
                     break;
                 }
                 let done = self.process_next_timer(&clocks)?;
-                data = self.data_iterator.next_item();
-                if data.is_none() && done {
+                if self.data_iterator.peek().is_none() && done {
                     break;
                 }
                 continue;
-            }
+            };
 
-            let d = data.as_ref().unwrap();
             let ts_init = d.ts_init();
 
             if ts_init > end_ns {
                 break;
             }
+
+            let d = self.data_iterator.next_item().unwrap();
 
             if ts_init > self.last_ns {
                 self.last_ns = ts_init;
@@ -860,18 +856,20 @@ impl BacktestEngine {
                 break;
             }
 
-            self.route_data_to_exchange(d);
-            self.kernel.data_engine.borrow_mut().process_data(d.clone());
+            self.route_data_to_exchange(&d);
+            self.kernel.data_engine.borrow_mut().process_data(d);
 
             // Drain deferred commands, then process exchange queues
             self.drain_command_queues();
             self.settle_venues(ts_init);
 
             let prev_last_ns = self.last_ns;
-            data = self.data_iterator.next_item();
-
             // If timestamp changed (or exhausted), flush timers then run modules
-            if data.is_none() || data.as_ref().unwrap().ts_init() > prev_last_ns {
+            if self
+                .data_iterator
+                .peek()
+                .is_none_or(|next| next.ts_init() > prev_last_ns)
+            {
                 self.flush_accumulator_events(&clocks, prev_last_ns)?;
                 self.finalize_timestamp(&clocks, prev_last_ns)?;
             }
