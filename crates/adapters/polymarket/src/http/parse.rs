@@ -72,6 +72,9 @@ pub struct PolymarketInstrumentDef {
     pub end_date: Option<String>,
     /// Whether the market is active and accepting orders.
     pub active: bool,
+    /// Whether Gamma reports the market closed.
+    #[serde(default)]
+    pub closed: bool,
     /// URL slug for the market.
     pub market_slug: Option<String>,
     /// Whether the market uses the neg-risk CTF exchange contract.
@@ -166,6 +169,7 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
             start_date: market.start_date.clone(),
             end_date: market.end_date.clone(),
             active,
+            closed: market.closed.unwrap_or(false),
             market_slug: market.market_slug.clone(),
             neg_risk,
             fee_schedule: market.fee_schedule.clone(),
@@ -354,6 +358,7 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
         "neg_risk".to_string(),
         serde_json::Value::Bool(def.neg_risk),
     );
+    map.insert("closed".to_string(), serde_json::Value::Bool(def.closed));
 
     if let Some(fee_schedule) = &def.fee_schedule
         && let Ok(value) = serde_json::to_value(fee_schedule)
@@ -634,6 +639,27 @@ mod tests {
         );
         assert_eq!(info.get_u64("game_id"), None);
         assert_eq!(info.get("fee_schedule"), None);
+    }
+
+    #[rstest]
+    fn test_past_end_market_preserves_open_market_state() {
+        let mut market = load_gamma_market("gamma_market_past_end_date_open.json");
+        let defs = parse_gamma_market(&market).unwrap();
+
+        assert!(!defs[0].closed);
+
+        let instrument =
+            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
+        let binary = match &instrument {
+            InstrumentAny::BinaryOption(binary) => binary,
+            other => panic!("Expected BinaryOption, was {other:?}"),
+        };
+        let info = binary.info.as_ref().expect("info should be present");
+        assert_eq!(info.get_bool("closed"), Some(false));
+
+        market.closed = Some(true);
+        let closed = parse_gamma_market(&market).unwrap();
+        assert!(closed[0].closed);
     }
 
     #[rstest]
