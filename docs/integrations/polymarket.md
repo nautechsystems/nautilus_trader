@@ -589,6 +589,18 @@ create an inferred fill. Runtime order checks fetch confirmed trade history when
 more matched quantity than the local order and WebSocket fill tracker contain. Unpaired fill reports
 retain the normal fill-only path.
 
+Reconciliation omits and counts any order or position it cannot represent rather than coercing it.
+Order prices must lie strictly inside `(0, 1)`; only the unit bound is enforced because tick size
+varies per market. A non-zero position with an average price outside `(0, 1)` is rejected and counted
+because the live reconciliation engine cannot create that position without an open average price.
+Dust holdings are omitted by policy and counted separately from malformed venue data.
+
+Explicit zero-size venue rows emit `Flat` position reports so stale cached positions can close. A
+`Flat` report is withheld and counted when the same mass-status pass contains an order or fill report
+for that instrument, because the separate Data API positions indexer can lag current CLOB activity.
+Mass-status lookback filtering is based on the local clock; any order or trade rows removed by the
+lookback are counted in an aggregated warning for visibility into clock skew and policy filtering.
+
 ### Single-order recovery from trades
 
 `/data/order/{id}` can return live or terminal orders. When it returns no order for a known ID,

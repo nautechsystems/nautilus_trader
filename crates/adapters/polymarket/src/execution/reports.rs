@@ -38,7 +38,8 @@ use super::{
         weighted_average_price,
     },
     reconciliation::{
-        FillContext, apply_fill_filters, build_fill_reports_from_trades, build_position_reports,
+        FillBuildDiscards, FillContext, OrderBuildDiscards, PositionBuildDiscards,
+        apply_fill_filters, build_fill_reports_from_trades, build_position_reports,
         cap_order_report_filled_qty, confirmed_filled_quantities,
         normalize_terminal_order_report_quantity,
     },
@@ -284,7 +285,7 @@ impl PolymarketExecutionClient {
         self.spawn_task("query_order", async move {
             match http_client.get_order_optional(&venue_order_id).await {
                 Ok(Some(order)) => {
-                    let mut report = parse_order_status_report(
+                    let Some(mut report) = parse_order_status_report(
                         &order,
                         instrument_id,
                         account_id,
@@ -292,7 +293,9 @@ impl PolymarketExecutionClient {
                         price_prec,
                         size_prec,
                         clock.get_time_ns(),
-                    );
+                    ) else {
+                        return Ok(());
+                    };
                     let venue_order_id = VenueOrderId::from(venue_order_id.as_str());
                     let tracked_filled = fill_tracker
                         .get_cumulative_filled(&venue_order_id)
@@ -381,7 +384,7 @@ impl PolymarketExecutionClient {
         };
 
         if let Some(order) = order {
-            let mut report = parse_order_status_report(
+            let Some(mut report) = parse_order_status_report(
                 &order,
                 instrument_id,
                 self.core.account_id,
@@ -389,7 +392,9 @@ impl PolymarketExecutionClient {
                 price_prec,
                 size_prec,
                 self.clock.get_time_ns(),
-            );
+            ) else {
+                return Ok(None);
+            };
             let cached_filled = cmd
                 .client_order_id
                 .and_then(|id| self.core.cache().order(&id).map(|order| order.filled_qty()))
@@ -453,7 +458,7 @@ impl PolymarketExecutionClient {
             .await
             .context("failed to fetch orders")?;
 
-        let (mut reports, _) = super::reconciliation::build_order_reports_from_orders(
+        let (mut reports, discards) = super::reconciliation::build_order_reports_from_orders(
             &orders,
             &self.shared_token_instruments,
             self.core.account_id,
@@ -520,7 +525,7 @@ impl PolymarketExecutionClient {
             reports
         };
 
-        log::debug!("Generated {} order status reports", reports.len());
+        log_order_report_summary(reports.len(), &discards);
         Ok(reports)
     }
 
@@ -535,7 +540,7 @@ impl PolymarketExecutionClient {
             .context("failed to fetch trades")?;
 
         let ctx = self.fill_context();
-        let (mut reports, _) = build_fill_reports_from_trades(
+        let (mut reports, discards) = build_fill_reports_from_trades(
             &trades,
             &ctx,
             &self.shared_token_instruments,
@@ -547,7 +552,7 @@ impl PolymarketExecutionClient {
 
         let reports = apply_fill_filters(reports, cmd.venue_order_id, cmd.start, cmd.end);
 
-        log::debug!("Generated {} fill reports", reports.len());
+        log_fill_report_summary(reports.len(), &discards);
         Ok(reports)
     }
 
@@ -563,13 +568,14 @@ impl PolymarketExecutionClient {
             .context("failed to fetch positions from Data API")?;
 
         let ts_now = self.clock.get_time_ns();
-        let mut reports = build_position_reports(&positions, self.core.account_id, ts_now);
+        let (mut reports, discards) =
+            build_position_reports(&positions, self.core.account_id, ts_now);
 
         if let Some(ref filter_id) = cmd.instrument_id {
             reports.retain(|r| &r.instrument_id == filter_id);
         }
 
-        log::debug!("Generated {} position status reports", reports.len());
+        log_position_report_summary(reports.len(), &discards);
         Ok(reports)
     }
 
@@ -589,6 +595,51 @@ impl PolymarketExecutionClient {
             lookback_mins,
         )
         .await
+    }
+}
+
+fn log_order_report_summary(report_count: usize, discards: &OrderBuildDiscards) {
+    let message = format!(
+        "Generated {report_count} order status report(s); omitted {} unmapped order(s) and {} unrepresentable order(s)",
+        discards.unmapped_instruments, discards.unrepresentable_orders,
+    );
+
+    if discards.has_anomalies() {
+        log::warn!("{message}");
+    } else {
+        log::debug!("{message}");
+    }
+}
+
+fn log_fill_report_summary(report_count: usize, discards: &FillBuildDiscards) {
+    let message = format!(
+        "Generated {report_count} fill report(s); omitted {} fill(s) with unmapped instruments, {} fill(s) with invalid timestamps, {} fill(s) with invalid values, and {} unowned maker trade(s)",
+        discards.unmapped_instruments,
+        discards.invalid_timestamps,
+        discards.invalid_values,
+        discards.unowned_maker_trades,
+    );
+
+    if discards.has_anomalies() {
+        log::warn!("{message}");
+    } else {
+        log::debug!("{message}");
+    }
+}
+
+fn log_position_report_summary(report_count: usize, discards: &PositionBuildDiscards) {
+    let message = format!(
+        "Generated {report_count} position status report(s); omitted {} dust position(s), {} unrepresentable position(s), {} position(s) with invalid average prices, and {} Flat report(s) withheld for activity",
+        discards.dust_positions,
+        discards.unrepresentable_positions,
+        discards.invalid_avg_prices,
+        discards.flat_withheld_activity,
+    );
+
+    if discards.has_anomalies() {
+        log::warn!("{message}");
+    } else {
+        log::debug!("{message}");
     }
 }
 

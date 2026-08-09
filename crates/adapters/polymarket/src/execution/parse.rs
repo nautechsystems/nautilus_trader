@@ -125,7 +125,7 @@ pub fn parse_order_status_report(
     price_precision: u8,
     size_precision: u8,
     ts_init: UnixNanos,
-) -> OrderStatusReport {
+) -> Option<OrderStatusReport> {
     let venue_order_id = VenueOrderId::from(order.id.as_str());
     let order_side = OrderSide::from(order.side);
     let time_in_force = TimeInForce::from(order.order_type);
@@ -137,15 +137,83 @@ pub fn parse_order_status_report(
     } else {
         OrderStatus::from(order.status)
     };
-    let quantity = Quantity::from_decimal_dp(order.original_size, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
-    let raw_filled_qty = Quantity::from_decimal_dp(order.size_matched, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
-    let filled_qty = snap_filled_qty_to_quantity(quantity, raw_filled_qty, order_status);
-    let price = Price::from_decimal_dp(order.price, price_precision)
-        .unwrap_or_else(|_| Price::zero(price_precision));
+    let quantity = match Quantity::from_decimal_dp(order.original_size, size_precision) {
+        Ok(quantity) => quantity,
+        Err(e) => {
+            log::warn!(
+                "Skipping order {venue_order_id}: original_size {} is unrepresentable: {e}",
+                order.original_size,
+            );
+            return None;
+        }
+    };
 
-    let ts_accepted = UnixNanos::from(order.created_at * NANOSECONDS_IN_SECOND);
+    if quantity.is_zero() {
+        log::warn!(
+            "Skipping order {venue_order_id}: original_size {} rounds to zero at precision {size_precision}",
+            order.original_size,
+        );
+        return None;
+    }
+
+    let raw_filled_qty = match Quantity::from_decimal_dp(order.size_matched, size_precision) {
+        Ok(quantity) => quantity,
+        Err(e) => {
+            log::warn!(
+                "Skipping order {venue_order_id}: size_matched {} is unrepresentable: {e}",
+                order.size_matched,
+            );
+            return None;
+        }
+    };
+
+    if order_status == OrderStatus::Filled && raw_filled_qty.is_zero() {
+        log::warn!(
+            "Skipping order {venue_order_id}: Filled status has zero filled_qty after converting size_matched {}",
+            order.size_matched,
+        );
+        return None;
+    }
+    let filled_qty = snap_filled_qty_to_quantity(quantity, raw_filled_qty, order_status);
+
+    let price = match Price::from_decimal_dp(order.price, price_precision) {
+        Ok(price) => price,
+        Err(e) => {
+            log::warn!(
+                "Skipping order {venue_order_id}: price {} is unrepresentable: {e}",
+                order.price,
+            );
+            return None;
+        }
+    };
+
+    if price.as_decimal() <= Decimal::ZERO {
+        log::warn!(
+            "Skipping order {venue_order_id}: price {} is not strictly positive",
+            order.price,
+        );
+        return None;
+    }
+
+    // Binary-option prices lie strictly inside (0, 1); tick bounds vary by market.
+    if price.as_decimal() >= Decimal::ONE {
+        log::warn!(
+            "Skipping order {venue_order_id}: price {} is not strictly below 1",
+            order.price,
+        );
+        return None;
+    }
+
+    let ts_accepted = match order.created_at.checked_mul(NANOSECONDS_IN_SECOND) {
+        Some(nanos) => UnixNanos::from(nanos),
+        None => {
+            log::warn!(
+                "Skipping order {venue_order_id}: created_at {} is unrepresentable",
+                order.created_at,
+            );
+            return None;
+        }
+    };
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -168,7 +236,7 @@ pub fn parse_order_status_report(
     if let Some(nanos) = order.expiration.as_deref().and_then(parse_expiration_nanos) {
         report.expire_time = Some(UnixNanos::from(nanos));
     }
-    report
+    Some(report)
 }
 
 /// Parses a CLOB V2 `expiration` string into a Unix-nanos value. Returns
@@ -200,14 +268,12 @@ pub fn parse_fill_report(
     taker_fee_rate: Decimal,
     fee_exponent: f64,
     ts_init: UnixNanos,
-) -> FillReport {
+) -> Option<FillReport> {
     let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
     let trade_id = TradeId::from(trade.id.as_str());
     let order_side = OrderSide::from(trade.side);
-    let last_qty = Quantity::from_decimal_dp(trade.size, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
-    let last_px = Price::from_decimal_dp(trade.price, price_precision)
-        .unwrap_or_else(|_| Price::zero(price_precision));
+    let last_qty = Quantity::from_decimal_dp(trade.size, size_precision).ok()?;
+    let last_px = Price::from_decimal_dp(trade.price, price_precision).ok()?;
     let liquidity_side = parse_liquidity_side(trade.trader_side);
 
     let commission_value = compute_commission(
@@ -218,10 +284,9 @@ pub fn parse_fill_report(
         liquidity_side,
     );
     let commission = Money::new(commission_value, currency);
+    let ts_event = parse_timestamp(&trade.match_time)?;
 
-    let ts_event = parse_timestamp(&trade.match_time).unwrap_or(ts_init);
-
-    FillReport {
+    Some(FillReport {
         account_id,
         instrument_id,
         venue_order_id,
@@ -237,7 +302,7 @@ pub fn parse_fill_report(
         ts_init,
         client_order_id,
         venue_position_id: None,
-    }
+    })
 }
 
 /// Builds a [`FillReport`] from a [`PolymarketMakerOrder`] and trade-level context.
@@ -260,7 +325,7 @@ pub fn build_maker_fill_report(
     liquidity_side: LiquiditySide,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> FillReport {
+) -> Option<FillReport> {
     let venue_order_id = VenueOrderId::from(mo.order_id.as_str());
     let fill_trade_id = make_composite_trade_id(trade_id, &mo.order_id);
     let order_side = determine_order_side(
@@ -269,10 +334,8 @@ pub fn build_maker_fill_report(
         taker_asset_id,
         mo.asset_id.as_str(),
     );
-    let last_qty = Quantity::from_decimal_dp(mo.matched_amount, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
-    let last_px = Price::from_decimal_dp(mo.price, price_precision)
-        .unwrap_or_else(|_| Price::zero(price_precision));
+    let last_qty = Quantity::from_decimal_dp(mo.matched_amount, size_precision).ok()?;
+    let last_px = Price::from_decimal_dp(mo.price, price_precision).ok()?;
     let commission_value = compute_commission(
         Decimal::ZERO,
         1.0,
@@ -281,7 +344,7 @@ pub fn build_maker_fill_report(
         liquidity_side,
     );
 
-    FillReport {
+    Some(FillReport {
         account_id,
         instrument_id,
         venue_order_id,
@@ -297,7 +360,7 @@ pub fn build_maker_fill_report(
         ts_init,
         client_order_id: None,
         venue_position_id: None,
-    }
+    })
 }
 
 /// Returns the effective taker fee rate for a Polymarket instrument.
@@ -583,11 +646,12 @@ pub fn calculate_market_price(
 /// and RFC3339 strings ("2024-01-01T00:00:00Z").
 pub fn parse_timestamp(ts_str: &str) -> Option<UnixNanos> {
     if let Ok(n) = ts_str.parse::<u64>() {
-        return if n > 1_000_000_000_000 {
-            Some(UnixNanos::from(n * NANOSECONDS_IN_MILLISECOND))
+        let multiplier = if n >= 1_000_000_000_000 {
+            NANOSECONDS_IN_MILLISECOND
         } else {
-            Some(UnixNanos::from(n * NANOSECONDS_IN_SECOND))
+            NANOSECONDS_IN_SECOND
         };
+        return n.checked_mul(multiplier).map(UnixNanos::from);
     }
     let dt = ts_str.parse::<Timestamp>().ok()?;
     Some(UnixNanos::from(u64::try_from(dt.as_nanosecond()).ok()?))
@@ -1218,9 +1282,20 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_timestamp_boundary_is_milliseconds() {
+        let ts = parse_timestamp("1000000000000").unwrap();
+        assert_eq!(ts, UnixNanos::from(1_000_000_000_000_000_000u64));
+    }
+
+    #[rstest]
     fn test_parse_timestamp_secs() {
         let ts = parse_timestamp("1703875200").unwrap();
         assert_eq!(ts, UnixNanos::from(1_703_875_200_000_000_000u64));
+    }
+
+    #[rstest]
+    fn test_parse_timestamp_rejects_numeric_overflow() {
+        assert_eq!(parse_timestamp(&u64::MAX.to_string()), None);
     }
 
     #[rstest]
@@ -1263,7 +1338,8 @@ mod tests {
             4,
             6,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("fixture order must be representable");
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
@@ -1283,6 +1359,78 @@ mod tests {
         assert_eq!(report.ts_init, UnixNanos::from(1_000_000_000u64));
         // Fixture has expiration=null which must surface as no expire_time.
         assert_eq!(report.expire_time, None);
+    }
+
+    #[rstest]
+    #[case::zero_original_size(
+        dec!(0),
+        dec!(0.5),
+        PolymarketOrderStatus::Live,
+        dec!(0)
+    )]
+    #[case::subprecision_original_size(
+        dec!(0.0000004),
+        dec!(0.5),
+        PolymarketOrderStatus::Live,
+        dec!(0)
+    )]
+    #[case::zero_price(
+        dec!(100),
+        dec!(0),
+        PolymarketOrderStatus::Live,
+        dec!(0)
+    )]
+    #[case::negative_price(
+        dec!(100),
+        dec!(-0.5),
+        PolymarketOrderStatus::Live,
+        dec!(0)
+    )]
+    #[case::price_at_one(
+        dec!(100),
+        dec!(1),
+        PolymarketOrderStatus::Live,
+        dec!(0)
+    )]
+    #[case::price_above_one(
+        dec!(100),
+        dec!(1.5),
+        PolymarketOrderStatus::Live,
+        dec!(0)
+    )]
+    #[case::filled_without_matched_quantity(
+        dec!(100),
+        dec!(0.5),
+        PolymarketOrderStatus::Matched,
+        dec!(0)
+    )]
+    fn test_parse_order_status_report_rejects_degenerate_values(
+        #[case] original_size: Decimal,
+        #[case] price: Decimal,
+        #[case] status: PolymarketOrderStatus,
+        #[case] size_matched: Decimal,
+    ) {
+        let path = "test_data/http_open_order.json";
+        let content = std::fs::read_to_string(path).expect("Failed to read test data");
+        let mut order: PolymarketOpenOrder =
+            serde_json::from_str(&content).expect("Failed to parse test data");
+        order.original_size = original_size;
+        order.price = price;
+        order.status = status;
+        order.size_matched = size_matched;
+        order.order_type = PolymarketOrderType::GTC;
+
+        let report = parse_order_status_report(
+            &order,
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            AccountId::from("POLYMARKET-001"),
+            None,
+            4,
+            6,
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        assert!(report.is_none());
     }
 
     // Verifies parse_order_status_report wires `snap_filled_qty_to_quantity`
@@ -1328,7 +1476,8 @@ mod tests {
             3,
             6,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("test order must be representable");
 
         assert_eq!(report.filled_qty, Quantity::new(expected_filled, 6));
         assert_eq!(
@@ -1365,7 +1514,8 @@ mod tests {
             3,
             6,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("test order must be representable");
 
         assert_eq!(report.order_status, OrderStatus::Canceled);
         assert_eq!(report.time_in_force, TimeInForce::Ioc);
@@ -1412,7 +1562,8 @@ mod tests {
             4,
             6,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("test order must be representable");
 
         assert_eq!(report.expire_time, expected);
     }
@@ -1439,13 +1590,68 @@ mod tests {
             Decimal::ZERO,
             1.0,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("fixture timestamp must be valid");
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.commission.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_rejects_invalid_match_time() {
+        let path = "test_data/http_trade_report.json";
+        let content = std::fs::read_to_string(path).expect("Failed to read test data");
+        let mut trade: PolymarketTradeReport =
+            serde_json::from_str(&content).expect("Failed to parse test data");
+        trade.match_time = "invalid-match-time".to_string();
+
+        let report = parse_fill_report(
+            &trade,
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            AccountId::from("POLYMARKET-001"),
+            None,
+            4,
+            6,
+            Currency::pUSD(),
+            Decimal::ZERO,
+            1.0,
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        assert!(report.is_none());
+    }
+
+    #[rstest]
+    #[case::quantity(Decimal::MAX, dec!(0.5))]
+    #[case::price(dec!(25), Decimal::MAX)]
+    fn test_parse_fill_report_rejects_unrepresentable_values(
+        #[case] size: Decimal,
+        #[case] price: Decimal,
+    ) {
+        let path = "test_data/http_trade_report.json";
+        let content = std::fs::read_to_string(path).expect("Failed to read test data");
+        let mut trade: PolymarketTradeReport =
+            serde_json::from_str(&content).expect("Failed to parse test data");
+        trade.size = size;
+        trade.price = price;
+
+        let report = parse_fill_report(
+            &trade,
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            AccountId::from("POLYMARKET-001"),
+            None,
+            4,
+            6,
+            Currency::pUSD(),
+            Decimal::ZERO,
+            1.0,
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        assert!(report.is_none());
     }
 
     #[rstest]
@@ -1471,7 +1677,8 @@ mod tests {
             dec!(0.03),
             2.0,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("fixture timestamp must be valid");
 
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.commission.as_f64(), 0.04688);

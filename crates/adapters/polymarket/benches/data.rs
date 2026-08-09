@@ -255,7 +255,7 @@ fn bench_order_fill_maker(c: &mut Criterion) {
             let reports: Vec<_> = trade
                 .maker_orders
                 .iter()
-                .map(|order| {
+                .filter_map(|order| {
                     build_maker_fill_report(
                         order,
                         &trade.id,

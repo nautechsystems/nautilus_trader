@@ -1155,6 +1155,8 @@ mod tests {
             discards,
             crate::execution::reconciliation::FillBuildDiscards {
                 unmapped_instruments: 1,
+                invalid_timestamps: 0,
+                invalid_values: 0,
                 unowned_maker_trades: 0,
             },
         );

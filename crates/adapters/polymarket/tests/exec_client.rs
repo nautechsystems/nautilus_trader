@@ -22,9 +22,10 @@ use std::{
     path::PathBuf,
     rc::Rc,
     sync::{
-        Arc,
+        Arc, Mutex, Once,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
+    thread::ThreadId,
     time::Duration,
 };
 
@@ -40,6 +41,7 @@ use axum::{
     routing::{delete, get, post},
 };
 use futures_util::StreamExt;
+use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_common::{
     cache::{Cache, INSTRUMENT_NOT_FOUND, InstrumentLookupError},
     clients::ExecutionClient,
@@ -55,7 +57,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, cash::CashAccount},
@@ -65,7 +67,7 @@ use nautilus_model::{
     },
     events::{AccountState, OrderEventAny, OrderPendingCancel},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TraderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
         VenueOrderId,
     },
     instruments::{BinaryOption, InstrumentAny},
@@ -87,6 +89,7 @@ use nautilus_polymarket::{
     signing::eip712::order_hash,
 };
 use rstest::rstest;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 
@@ -125,6 +128,79 @@ enum CancelChunkRetry {
 enum ShutdownAction {
     Stop,
     Disconnect,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum MassStatusSeverityCase {
+    Anomaly,
+    DustOnly,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CapturedMassStatusLog {
+    level: Level,
+    message: String,
+    thread_id: ThreadId,
+}
+
+struct MassStatusLogCapture {
+    records: Mutex<Vec<CapturedMassStatusLog>>,
+}
+
+static MASS_STATUS_LOG_CAPTURE: MassStatusLogCapture = MassStatusLogCapture {
+    records: Mutex::new(Vec::new()),
+};
+
+impl Log for MassStatusLogCapture {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+        matches!(
+            metadata.target(),
+            "nautilus_polymarket::execution::reconciliation"
+                | "nautilus_polymarket::execution::reports"
+        )
+    }
+
+    fn log(&self, record: &Record<'_>) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+
+        self.records.lock().unwrap().push(CapturedMassStatusLog {
+            level: record.level(),
+            message: record.args().to_string(),
+            thread_id: std::thread::current().id(),
+        });
+    }
+
+    fn flush(&self) {}
+}
+
+fn install_mass_status_log_capture() {
+    static INSTALL: Once = Once::new();
+
+    INSTALL.call_once(|| {
+        log::set_logger(&MASS_STATUS_LOG_CAPTURE).expect("test logger already installed");
+        log::set_max_level(LevelFilter::Trace);
+    });
+
+    let thread_id = std::thread::current().id();
+    MASS_STATUS_LOG_CAPTURE
+        .records
+        .lock()
+        .unwrap()
+        .retain(|record| record.thread_id != thread_id);
+}
+
+fn captured_mass_status_logs() -> Vec<CapturedMassStatusLog> {
+    let thread_id = std::thread::current().id();
+    MASS_STATUS_LOG_CAPTURE
+        .records
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|record| record.thread_id == thread_id)
+        .cloned()
+        .collect()
 }
 
 #[derive(Debug)]
@@ -217,6 +293,7 @@ struct TestServerState {
     book_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     single_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     trades_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
+    positions_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
 impl Default for TestServerState {
@@ -265,6 +342,7 @@ impl Default for TestServerState {
             orders_response_override: Arc::new(tokio::sync::Mutex::new(None)),
             single_order_response: Arc::new(tokio::sync::Mutex::new(None)),
             trades_response_override: Arc::new(tokio::sync::Mutex::new(None)),
+            positions_response_override: Arc::new(tokio::sync::Mutex::new(None)),
             book_response: Arc::new(tokio::sync::Mutex::new(Some(json!({
                 "bids": [
                     {"price": "0.48", "size": "100.00"},
@@ -740,7 +818,11 @@ async fn handle_health() -> impl IntoResponse {
     StatusCode::OK
 }
 
-async fn handle_get_positions() -> impl IntoResponse {
+async fn handle_get_positions(State(state): State<TestServerState>) -> impl IntoResponse {
+    if let Some(override_value) = state.positions_response_override.lock().await.as_ref() {
+        return Json(override_value.clone());
+    }
+
     Json(serde_json::json!([]))
 }
 
@@ -801,6 +883,238 @@ async fn test_exec_client_creation() {
     assert_eq!(client.account_id(), AccountId::from("POLYMARKET-001"));
     assert_eq!(client.venue(), *POLYMARKET_VENUE);
     assert_eq!(client.oms_type(), OmsType::Netting);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_forwards_lookback_to_order_and_fill_filters() {
+    let now_secs = get_atomic_clock_realtime().get_time_ns().as_u64() / 1_000_000_000;
+    let fresh_order_id = "0xfresh00000000000000000000000000000000000000000000000000000000001";
+    let stale_order_id = "0xstale00000000000000000000000000000000000000000000000000000000001";
+    let mut fresh_order = load_json("http_open_order.json");
+    fresh_order["id"] = json!(fresh_order_id);
+    fresh_order["created_at"] = json!(now_secs);
+    fresh_order["size_matched"] = json!("25.0000");
+    let mut stale_order = fresh_order.clone();
+    stale_order["id"] = json!(stale_order_id);
+    stale_order["created_at"] = json!(1);
+
+    let mut fresh_trade = load_json("http_trade_report.json");
+    fresh_trade["id"] = json!("trade-fresh");
+    fresh_trade["taker_order_id"] = json!(fresh_order_id);
+    fresh_trade["match_time"] = json!(now_secs.to_string());
+    fresh_trade["maker_orders"] = json!([]);
+    let mut stale_trade = fresh_trade.clone();
+    stale_trade["id"] = json!("trade-stale");
+    stale_trade["taker_order_id"] = json!(stale_order_id);
+    stale_trade["match_time"] = json!("1");
+
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [fresh_order, stale_order],
+        "next_cursor": "LTE="
+    }));
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [fresh_trade, stale_trade],
+        "next_cursor": "LTE="
+    }));
+    *state.positions_response_override.lock().await = Some(json!([
+        {
+            "asset": "777",
+            "conditionId": "0xwrap",
+            "size": "5",
+            "avgPrice": "0.5"
+        }
+    ]));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .expect("mass status payload");
+    let order_reports = mass_status.order_reports();
+    let fill_reports: Vec<_> = mass_status.fill_reports().into_values().flatten().collect();
+
+    assert_eq!(order_reports.len(), 1);
+    assert!(order_reports.contains_key(&VenueOrderId::from(fresh_order_id)));
+    assert!(!order_reports.contains_key(&VenueOrderId::from(stale_order_id)));
+    assert_eq!(fill_reports.len(), 1);
+    assert_eq!(fill_reports[0].trade_id, TradeId::from("trade-fresh"));
+    assert!(
+        fill_reports
+            .iter()
+            .all(|report| report.trade_id != TradeId::from("trade-stale"))
+    );
+
+    let position_reports = mass_status.position_reports();
+    let position_instrument_id = InstrumentId::from("0xwrap-777.POLYMARKET");
+    assert!(position_reports.contains_key(&position_instrument_id));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_withholds_flat_with_same_pass_fill() {
+    install_mass_status_log_capture();
+    let now_secs = get_atomic_clock_realtime().get_time_ns().as_u64() / 1_000_000_000;
+    let mut trade = load_json("http_trade_report.json");
+    trade["match_time"] = json!(now_secs.to_string());
+    trade["maker_orders"] = json!([]);
+
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE="
+    }));
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [trade],
+        "next_cursor": "LTE="
+    }));
+    *state.positions_response_override.lock().await = Some(json!([
+        {
+            "asset": "123",
+            "conditionId": "0xabc",
+            "size": "0",
+            "avgPrice": "0"
+        }
+    ]));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let instrument_id = InstrumentId::from("0xabc-123.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status payload");
+    let fill_reports: Vec<_> = mass_status.fill_reports().into_values().flatten().collect();
+    let logs = captured_mass_status_logs();
+
+    assert_eq!(fill_reports.len(), 1);
+    assert_eq!(fill_reports[0].instrument_id, instrument_id);
+    assert!(!mass_status.position_reports().contains_key(&instrument_id));
+    assert!(logs.iter().any(|record| {
+        record.level == Level::Warn
+            && record.message.contains(
+                "withheld 1 Flat position report(s) due to same-pass order or fill activity",
+            )
+    }));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_warns_for_lookback_removals_only_when_nonzero() {
+    install_mass_status_log_capture();
+    let mut order = load_json("http_open_order.json");
+    order["created_at"] = json!(1);
+    let mut trade = load_json("http_trade_report.json");
+    trade["match_time"] = json!("1");
+
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [order],
+        "next_cursor": "LTE="
+    }));
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [trade],
+        "next_cursor": "LTE="
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let (client, _rx, _cache) = create_test_execution_client(addr);
+
+    client.generate_mass_status(Some(60)).await.unwrap();
+    let logs = captured_mass_status_logs();
+    let matching: Vec<_> = logs
+        .iter()
+        .filter(|record| record.message.contains("lookback removed"))
+        .collect();
+
+    assert_eq!(matching.len(), 1, "matching mass-status logs: {logs:?}");
+    assert_eq!(matching[0].level, Level::Warn);
+    assert!(matching[0].message.contains("1 order row(s)"));
+    assert!(matching[0].message.contains("1 trade row(s)"));
+
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE="
+    }));
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE="
+    }));
+    install_mass_status_log_capture();
+    client.generate_mass_status(Some(60)).await.unwrap();
+
+    assert!(
+        captured_mass_status_logs()
+            .iter()
+            .all(|record| !record.message.contains("lookback removed"))
+    );
+}
+
+#[rstest]
+#[case::anomaly(MassStatusSeverityCase::Anomaly, Level::Error, "Mass status omitted")]
+#[case::dust_only(
+    MassStatusSeverityCase::DustOnly,
+    Level::Warn,
+    "position(s) below the dust threshold were omitted by policy"
+)]
+#[tokio::test]
+async fn test_generate_mass_status_surfaces_omissions_at_required_level(
+    #[case] severity_case: MassStatusSeverityCase,
+    #[case] expected_level: Level,
+    #[case] message_fragment: &str,
+) {
+    install_mass_status_log_capture();
+    let state = TestServerState::default();
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE="
+    }));
+
+    match severity_case {
+        MassStatusSeverityCase::Anomaly => {
+            *state.orders_response_override.lock().await = Some(json!({
+                "data": [load_json("http_open_order.json")],
+                "next_cursor": "LTE="
+            }));
+            *state.positions_response_override.lock().await = Some(json!([]));
+        }
+        MassStatusSeverityCase::DustOnly => {
+            *state.orders_response_override.lock().await = Some(json!({
+                "data": [],
+                "next_cursor": "LTE="
+            }));
+            *state.positions_response_override.lock().await = Some(json!([
+                {
+                    "asset": "777",
+                    "conditionId": "0xdust",
+                    "size": "0.001",
+                    "avgPrice": "0.5"
+                }
+            ]));
+        }
+    }
+
+    let addr = start_mock_server(state).await;
+    let (client, _rx, _cache) = create_test_execution_client(addr);
+    client.generate_mass_status(None).await.unwrap();
+    let logs = captured_mass_status_logs();
+    let matching: Vec<_> = logs
+        .iter()
+        .filter(|record| record.message.contains(message_fragment))
+        .collect();
+
+    assert_eq!(matching.len(), 1, "matching mass-status logs: {logs:?}");
+    assert_eq!(matching[0].level, expected_level);
 }
 
 #[rstest]
@@ -1183,8 +1497,13 @@ async fn test_exec_client_get_account_after_cache_add() {
 #[tokio::test]
 async fn test_generate_order_status_reports_empty_without_instruments() {
     let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [load_json("http_open_order.json")],
+        "next_cursor": "LTE="
+    }));
     let addr = start_mock_server(state).await;
     let (client, _rx, _cache) = create_test_execution_client(addr);
+    install_mass_status_log_capture();
 
     let cmd = GenerateOrderStatusReports {
         command_id: UUID4::new(),
@@ -1203,6 +1522,10 @@ async fn test_generate_order_status_reports_empty_without_instruments() {
 
     // Without loaded instruments, orders cannot be resolved to instrument IDs
     assert!(reports.is_empty());
+    let logs = captured_mass_status_logs();
+    assert!(logs.iter().any(|record| {
+        record.level == Level::Warn && record.message.contains("1 unmapped order(s)")
+    }));
 }
 
 #[rstest]
@@ -1274,6 +1597,7 @@ async fn test_generate_fill_reports_empty_without_instruments() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (client, _rx, _cache) = create_test_execution_client(addr);
+    install_mass_status_log_capture();
 
     let cmd = GenerateFillReports {
         command_id: UUID4::new(),
@@ -1291,14 +1615,30 @@ async fn test_generate_fill_reports_empty_without_instruments() {
     let reports = client.generate_fill_reports(cmd).await.unwrap();
 
     assert!(reports.is_empty());
+    let logs = captured_mass_status_logs();
+    assert!(logs.iter().any(|record| {
+        record.level == Level::Warn
+            && record
+                .message
+                .contains("1 fill(s) with unmapped instruments")
+    }));
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_position_status_reports_always_empty() {
+async fn test_generate_position_status_reports_warns_for_omitted_position() {
     let state = TestServerState::default();
+    *state.positions_response_override.lock().await = Some(json!([
+        {
+            "asset": "123",
+            "conditionId": "0xabc",
+            "size": Decimal::MAX.to_string(),
+            "avgPrice": "0.5"
+        }
+    ]));
     let addr = start_mock_server(state).await;
     let (client, _rx, _cache) = create_test_execution_client(addr);
+    install_mass_status_log_capture();
 
     let cmd = GeneratePositionStatusReports {
         command_id: UUID4::new(),
@@ -1314,8 +1654,11 @@ async fn test_generate_position_status_reports_always_empty() {
 
     let reports = client.generate_position_status_reports(&cmd).await.unwrap();
 
-    // Polymarket has no position endpoint
     assert!(reports.is_empty());
+    let logs = captured_mass_status_logs();
+    assert!(logs.iter().any(|record| {
+        record.level == Level::Warn && record.message.contains("1 unrepresentable position(s)")
+    }));
 }
 
 #[rstest]

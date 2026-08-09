@@ -525,7 +525,7 @@ fn dispatch_maker_fills(
                 continue;
             }
         };
-        let mut report = build_maker_fill_report(
+        let Some(mut report) = build_maker_fill_report(
             mo,
             &trade.id,
             trade.trader_side,
@@ -539,7 +539,16 @@ fn dispatch_maker_fills(
             liquidity_side,
             ts_event,
             ts_init,
-        );
+        ) else {
+            log::warn!(
+                "Skipping maker fill {}-{}: matched_amount {} or price {} is unrepresentable",
+                trade.id,
+                mo.order_id,
+                mo.matched_amount,
+                mo.price,
+            );
+            continue;
+        };
         let maker_venue_order_id = report.venue_order_id;
         report.client_order_id = ctx.pending_submits.client_order_id(&maker_venue_order_id);
         report.last_qty = ctx
