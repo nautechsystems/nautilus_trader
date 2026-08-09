@@ -609,10 +609,10 @@ cargo install cargo-nextest
 
 ## Contributing
 
-Thank you for considering contributing to NautilusTrader! We welcome any and all help to improve
-the project. If you have an idea for an enhancement or a bug fix, the first step is to open an [issue](https://github.com/nautechsystems/nautilus_trader/issues)
-on GitHub to discuss it with the team. This helps to ensure that your contribution will be
-well-aligned with the goals of the project and avoids duplication of effort.
+Thank you for considering a contribution to NautilusTrader. We welcome high‑quality work that
+improves the project. Before starting a substantial change, open an
+[issue](https://github.com/nautechsystems/nautilus_trader/issues) to discuss the problem and approach
+with the team. Small, self‑contained fixes do not require prior agreement.
 
 Before getting started, be sure to review the [open-source scope](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md#open-source-scope) outlined in the project's roadmap to understand what's in and out of scope.
 

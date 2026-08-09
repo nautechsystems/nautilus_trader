@@ -1,17 +1,47 @@
 # Contributing to NautilusTrader
 
-Contributions from the trading community help drive NautilusTrader forward. This guide covers how to
-pick something up, set up your environment, and get a PR merged. If you get stuck at any point, ask
-on [Discord](https://discord.gg/NautilusTrader).
+Thank you for helping improve NautilusTrader. High‑quality contributions from the trading
+community are welcome. This guide explains how to prepare a complete, review‑ready pull request.
+For questions, ask in
+[GitHub Discussions](https://github.com/nautechsystems/nautilus_trader/discussions) or on
+[Discord](https://discord.gg/NautilusTrader).
 
 > [!IMPORTANT]
 >
 > Never report a security vulnerability as a public issue. Follow [SECURITY.md](SECURITY.md) instead.
 
+## Review standard
+
+NautilusTrader can execute live trades involving real capital. Errors can cause financial loss, so
+all pull requests are held to a very high standard for correctness, reliability, testing, clarity,
+and maintainability.
+
+Maintainers appreciate the time and care a high‑quality pull request requires, with or without AI.
+Merge decisions still depend on evidence that the change meets this standard. Maintainers review
+complete, locally validated pull requests thoroughly. Contributors must resolve blocking feedback
+before a pull request merges, either by updating the change or agreeing with a maintainer on
+another resolution.
+
+## Use of AI
+
+If you use AI tools, you remain responsible for every submission. Read and follow the
+[AI Policy](AI_POLICY.md), which explains the requirements for human direction, review,
+communication, and attribution.
+
 ## Start with an issue
 
-Open a GitHub issue to discuss your proposed changes or enhancements. Early feedback is the quickest
-way to avoid work that can't be merged.
+Open a GitHub issue before starting a substantial change, such as a new feature, integration, or
+larger design change, then wait for a maintainer to agree on the problem and approach. Small,
+self‑contained fixes, such as typos, obvious documentation corrections, or narrowly scoped bug fixes
+with focused tests, do not need prior agreement. Pull requests for substantial changes without prior
+discussion and agreement may be closed without review. Early agreement is the quickest way to avoid
+work that can't be merged.
+
+Before starting work, check the issue and any open pull requests for an implementation already under
+review. Do not submit a competing implementation. Add any useful context or alternative approach to
+the existing issue instead so contributors and maintainers can coordinate. If an existing pull
+request appears inactive, ask on the pull request or its linked issue and wait for a maintainer to
+confirm that the work is available before starting.
 
 Check the [open-source scope](ROADMAP.md#open-source-scope) first so your idea fits what the project
 maintains, and read the [Code of Conduct](CODE_OF_CONDUCT.md).
@@ -54,7 +84,8 @@ for the full list, what each tool does, and which tools install separately.
 
 ## Make your change
 
-Include tests that cover your change. Running the relevant target locally first saves a round trip:
+Include tests that cover changed behavior or logic. Running the relevant target locally first saves
+a round trip:
 
 - `make cargo-test` runs the Rust tests.
 - `make pytest` runs the Python tests, building the extension and stubs first.
@@ -70,9 +101,21 @@ below).
 
 ## Before you open a PR
 
-These are the checks that most often send a PR back:
+### Prepare a review‑ready change
 
-- Run `make format` and `make pre-commit` so CI passes on the first attempt.
+Open a pull request only when the change is complete, locally validated, and ready for maintainer
+review, unless a maintainer asks for an early draft. Do not use draft or work‑in‑progress pull
+requests as a development workspace. Develop and iterate on your branch before opening the pull
+request.
+
+### Run local checks and follow repository rules
+
+Complete these requirements before opening or updating a pull request:
+
+- Run `make format`, then run `make pre-commit` locally and confirm it passes.
+- Run all tests relevant to the change locally. Include the exact commands and results in the pull
+  request description. If no tests apply, such as for a documentation‑only change, state that in the
+  pull request.
 - If you changed PyO3 bindings or the Rust docs behind them, run `make py-stubs` and commit the
   generated output. These stubs are generated rather than hand-edited, and CI fails on drift. See
   [Generated Python artifacts](docs/developer_guide/rust.md#generated-python-artifacts).
@@ -83,8 +126,31 @@ These are the checks that most often send a PR back:
   or PR titles. Follow [Commit messages](docs/developer_guide/coding_standards.md#commit-messages)
   instead. PR titles matter because a squash merge turns the PR title into the commit subject.
 
+For higher assurance, you can also run `make pre-flight`, which performs the project's broad local
+validation suite. It does not replace `make pre-commit`.
+
+### Use CI responsibly
+
+Project CI confirms a change that you have already validated locally. Do not rely on an open pull
+request as the primary development loop. Each push starts another CI run. Frequent incremental
+pushes consume compute, cancel work in progress, and make the Actions history harder to read, which
+can obscure meaningful failures.
+
+Batch related corrections into coherent updates. After review feedback, make the changes locally,
+rerun the relevant checks and tests, then push the complete update. If a platform, access, or local
+resource constraint prevents a relevant check, discuss the limitation with a maintainer before
+requesting review and state it clearly in the pull request.
+
+### Open the pull request
+
 Open the PR against `develop` with a summary comment and a reference to any relevant GitHub issue.
 Keep it small and focused, which makes review much faster.
 
-We typically respond to PRs within a couple of days, and will let you know if anything needs changing
-before merging.
+Make the PR description accurate, specific, and easy to review. Remove generic or bloated prose
+that could hide important details.
+
+By opening a PR, you confirm that you have read this guide and, if you used AI, the
+[AI Policy](AI_POLICY.md). You also confirm that you understand and can explain every submitted
+change and all information in the PR description.
+
+We typically respond to pull requests within a couple of days.

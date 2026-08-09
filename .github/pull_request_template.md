@@ -1,6 +1,7 @@
 # Pull Request
 
-**NautilusTrader prioritizes correctness and reliability, please follow existing patterns for validation and testing.**
+**NautilusTrader can execute live trades involving real capital. Pull requests are held to a very
+high standard for correctness, reliability, testing, clarity, and maintainability.**
 
 > External contributions must not modify files under `.github/workflows` or `.github/actions`;
 > workflow changes are maintainer‑only.
@@ -9,12 +10,27 @@
      "Fix Bybit post-only rejection flag". Do NOT use Conventional Commits (`feat:`, `fix:`) syntax.
      A squash merge turns this title into the commit subject. -->
 
-- [ ] I have reviewed [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) and followed the established practices
+- [ ] A maintainer agreed on the problem and approach in an issue, or this is a small,
+  self‑contained fix that does not need prior discussion
+- [ ] I have read and followed
+  [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md)
+  and, if I used AI,
+  [AI_POLICY.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/AI_POLICY.md)
+- [ ] I understand and can explain every submitted change and all information in this PR description
+- [ ] This change is complete, locally validated, and ready for review, or a maintainer requested
+  this draft
+- [ ] I ran `make format`, then ran `make pre-commit` locally and confirmed it passed, or I
+  described an agreed limitation below
+- [ ] I ran all relevant tests locally and listed the exact commands and results below, or no tests
+  apply to this change, or I described an agreed limitation below
 - [ ] I have not modified `RELEASES.md` (maintainers keep it current to avoid merge conflicts)
 
 ## Summary
 
-<!-- Provide a brief description of *what* changed, *why* it was changed, and the impact on the system or users (2-3 sentences). -->
+<!-- Provide a brief, accurate description of *what* changed, *why* it was changed, and the impact
+     on the system or users (2-3 sentences). Remove generic or bloated prose that could hide
+     important details. Do not add branded footers or attribution that names a specific AI lab,
+     vendor, tool, or model. -->
 
 ## Related issues/PRs
 
@@ -42,9 +58,12 @@
 
 ## Testing
 
-**Ensure new or changed logic is covered by tests.** Check at least one:
+**New or changed logic must be covered by tests.** Select all that apply:
 
 - [ ] Affected code paths are already covered by the test suite
 - [ ] I added/updated tests to cover new or changed logic
+- [ ] No logic changed (documentation, comments, or metadata only)
 
-<!-- Briefly describe how the changes were tested (e.g., unit tests in `tests/unit/test_file.py`, or *additional* manual testing). -->
+<!-- List the exact commands you ran and their results. Include any additional manual testing. If a
+     relevant check could not run locally, state why and describe the limitation discussed with a
+     maintainer. -->
