@@ -47,6 +47,8 @@ integration, scheduled checks, and publication.
 - [`performance.yml`](workflows/performance.yml): runs Rust tests and benchmarks on `nightly`.
 - [`security-audit.yml`](workflows/security-audit.yml): runs change‑aware and scheduled supply‑chain
   audits.
+- [`test.yml`](workflows/test.yml): runs pre‑commit, Python tests, and Rust tests on Linux x86 with
+  Python 3.14 for pushes to the protected `test` branch.
 
 ## Security
 
@@ -75,6 +77,8 @@ artifact integrity records, and verification flow. This section records CI‑spe
   pool only for same‑repository, non‑Dependabot pull requests with a known author. Fork, Dependabot,
   or incomplete pull request metadata routes these jobs to GitHub‑hosted runners. Untrusted pull
   request jobs remain read‑only and do not receive Actions secrets.
+- `test.yml` accepts only pushes to `test`, which the `test` ruleset restricts to
+  trusted repository maintainers before the workflow reaches the self‑hosted build pool.
 - `build.yml` cancels superseded pull request runs. Push runs use commit‑specific concurrency groups,
   so a later push cannot replace an earlier candidate's result.
 
