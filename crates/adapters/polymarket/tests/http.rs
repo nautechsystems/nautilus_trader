@@ -89,6 +89,7 @@ struct TestServerState {
     /// Delay before `handle_get_orders` responds. Used by the timeout test.
     get_orders_delay_secs: Arc<AtomicUsize>,
     orders_pages: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
+    trades_pages: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     gamma_markets_pages: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     gamma_markets_query_log: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
@@ -125,6 +126,7 @@ impl Default for TestServerState {
             rate_limit_response_headers: Arc::new(tokio::sync::Mutex::new(HeaderMap::new())),
             get_orders_delay_secs: Arc::new(AtomicUsize::new(0)),
             orders_pages: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+            trades_pages: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             gamma_response: Arc::new(tokio::sync::Mutex::new(None)),
             gamma_markets_pages: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             gamma_markets_query_log: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -263,6 +265,10 @@ async fn handle_get_trades(State(state): State<TestServerState>, headers: Header
         return r;
     }
     *state.last_headers.lock().await = extract_headers(&headers);
+    let mut pages = state.trades_pages.lock().await;
+    if let Some(page) = pages.pop_front() {
+        return Json(page).into_response();
+    }
     Json(load_json("http_trades_page.json")).into_response()
 }
 
@@ -1322,6 +1328,106 @@ async fn test_get_orders_auto_paginates_multiple_pages() {
         orders[1].id,
         "0xpage2order000000000000000000000000000000000000000000000000000002"
     );
+    assert_eq!(*state.request_count.lock().await, 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_orders_stops_on_empty_cursor() {
+    let state = TestServerState::default();
+    let mut page = load_json("http_open_orders_page.json");
+    page["next_cursor"] = json!("");
+    state.orders_pages.lock().await.push_back(page);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+
+    let orders = client.get_orders(GetOrdersParams::default()).await.unwrap();
+    let ids: Vec<_> = orders.iter().map(|order| order.id.as_str()).collect();
+
+    assert_eq!(
+        ids,
+        [
+            "0xaaaa000000000000000000000000000000000000000000000000000000000001",
+            "0xbbbb000000000000000000000000000000000000000000000000000000000002",
+        ]
+    );
+    assert_eq!(*state.request_count.lock().await, 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_orders_errors_on_repeated_caller_cursor() {
+    let state = TestServerState::default();
+    let mut page = load_json("http_open_orders_page.json");
+    page["next_cursor"] = json!("custom_cursor");
+    state.orders_pages.lock().await.push_back(page);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+    let params = GetOrdersParams {
+        next_cursor: Some("custom_cursor".to_string()),
+        ..Default::default()
+    };
+
+    let error = client.get_orders(params).await.unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "decode error: /data/orders pagination cursor did not advance from \"custom_cursor\""
+    );
+    assert_eq!(*state.request_count.lock().await, 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_trades_errors_on_absent_cursor() {
+    let state = TestServerState::default();
+    let mut page1 = load_json("http_trades_page.json");
+    page1["next_cursor"] = json!("page-2");
+    let mut page2 = load_json("http_trades_page.json");
+    page2["data"][0]["id"] = json!("trade-0x002");
+    page2.as_object_mut().unwrap().remove("next_cursor");
+    state.trades_pages.lock().await.push_back(page1);
+    state.trades_pages.lock().await.push_back(page2);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+
+    let error = client
+        .get_trades(GetTradesParams::default())
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "decode error: /data/trades response omitted next_cursor"
+    );
+    assert_eq!(*state.request_count.lock().await, 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_trades_errors_on_repeated_caller_cursor() {
+    let state = TestServerState::default();
+    let mut page = load_json("http_trades_page.json");
+    page["next_cursor"] = json!("custom_cursor");
+    state.trades_pages.lock().await.push_back(page);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+    let params = GetTradesParams {
+        next_cursor: Some("custom_cursor".to_string()),
+        ..Default::default()
+    };
+
+    let error = client.get_trades(params).await.unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "decode error: /data/trades pagination cursor did not advance from \"custom_cursor\""
+    );
+    assert_eq!(*state.request_count.lock().await, 1);
 }
 
 #[rstest]
@@ -1347,26 +1453,6 @@ async fn test_post_order_sends_order_body() {
         body.get("orderType").is_some(),
         "Body must contain 'orderType'"
     );
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_get_orders_with_caller_provided_cursor_not_overwritten() {
-    let state = TestServerState::default();
-
-    // The server returns a single page ending with LTE= from the default handler
-    let addr = start_mock_server(state.clone()).await;
-    let client = create_clob_client(&addr);
-
-    // Pass an explicit cursor; should NOT be overwritten with MA==
-    let params = GetOrdersParams {
-        next_cursor: Some("custom_cursor".to_string()),
-        ..Default::default()
-    };
-    let result = client.get_orders(params).await;
-
-    // Just verify it succeeds (cursor was passed through, server ignored it)
-    assert!(result.is_ok());
 }
 
 #[rstest]

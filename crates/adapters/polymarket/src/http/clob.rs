@@ -434,19 +434,20 @@ impl PolymarketClobHttpClient {
         &self,
         mut params: GetOrdersParams,
     ) -> Result<Vec<PolymarketOpenOrder>> {
-        if params.next_cursor.is_none() {
-            params.next_cursor = Some(CURSOR_START.to_string());
-        }
         let mut all = Vec::new();
 
         loop {
+            let cursor = params
+                .next_cursor
+                .get_or_insert_with(|| CURSOR_START.to_string())
+                .clone();
             let page: PaginatedResponse<PolymarketOpenOrder> =
                 self.send_get(PATH_ORDERS, Some(&params), true).await?;
             all.extend(page.data);
-            if page.next_cursor == CURSOR_END {
+            let Some(next_cursor) = cursor_next(PATH_ORDERS, &cursor, page.next_cursor)? else {
                 break;
-            }
-            params.next_cursor = Some(page.next_cursor);
+            };
+            params.next_cursor = Some(next_cursor);
         }
         Ok(all)
     }
@@ -472,19 +473,20 @@ impl PolymarketClobHttpClient {
         &self,
         mut params: GetTradesParams,
     ) -> Result<Vec<PolymarketTradeReport>> {
-        if params.next_cursor.is_none() {
-            params.next_cursor = Some(CURSOR_START.to_string());
-        }
         let mut all = Vec::new();
 
         loop {
+            let cursor = params
+                .next_cursor
+                .get_or_insert_with(|| CURSOR_START.to_string())
+                .clone();
             let page: PaginatedResponse<PolymarketTradeReport> =
                 self.send_get(PATH_TRADES, Some(&params), true).await?;
             all.extend(page.data);
-            if page.next_cursor == CURSOR_END {
+            let Some(next_cursor) = cursor_next(PATH_TRADES, &cursor, page.next_cursor)? else {
                 break;
-            }
-            params.next_cursor = Some(page.next_cursor);
+            };
+            params.next_cursor = Some(next_cursor);
         }
         Ok(all)
     }
@@ -743,6 +745,24 @@ impl PolymarketClobPublicClient {
         );
 
         Ok(book)
+    }
+}
+
+fn cursor_next(
+    endpoint: &'static str,
+    cursor: &str,
+    next_cursor: Option<String>,
+) -> Result<Option<String>> {
+    let next_cursor = next_cursor
+        .ok_or_else(|| Error::decode(format!("{endpoint} response omitted next_cursor")))?;
+    if next_cursor.is_empty() || next_cursor == CURSOR_END {
+        Ok(None)
+    } else if next_cursor == cursor {
+        Err(Error::decode(format!(
+            "{endpoint} pagination cursor did not advance from {cursor:?}"
+        )))
+    } else {
+        Ok(Some(next_cursor))
     }
 }
 

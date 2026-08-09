@@ -552,7 +552,7 @@ pub struct GetSearchParams {
 #[derive(Clone, Debug, Deserialize)]
 pub struct PaginatedResponse<T> {
     pub data: Vec<T>,
-    pub next_cursor: String,
+    pub next_cursor: Option<String>,
 }
 
 #[cfg(test)]
@@ -577,7 +577,7 @@ mod tests {
         let page: PaginatedResponse<PolymarketOpenOrder> = load("http_open_orders_page.json");
 
         assert_eq!(page.data.len(), 2);
-        assert_eq!(page.next_cursor, "LTE=");
+        assert_eq!(page.next_cursor.as_deref(), Some("LTE="));
         assert_eq!(page.data[0].side, PolymarketOrderSide::Buy);
         assert_eq!(page.data[1].side, PolymarketOrderSide::Sell);
     }
@@ -587,7 +587,7 @@ mod tests {
         let page: PaginatedResponse<PolymarketTradeReport> = load("http_trades_page.json");
 
         assert_eq!(page.data.len(), 1);
-        assert_eq!(page.next_cursor, "LTE=");
+        assert_eq!(page.next_cursor.as_deref(), Some("LTE="));
         assert_eq!(page.data[0].id, "trade-0x001");
     }
 
