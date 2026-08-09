@@ -275,9 +275,27 @@ impl BetPosition {
     }
 
     /// Increases the position with the provided bet.
+    ///
+    /// A same-side increase sets the price to the stake-weighted mean of the decimal odds.
     pub fn position_increase(&mut self, bet: &Bet) {
         if self.side().is_none() {
             self.price = bet.price;
+        } else {
+            let abs_self_exposure = self.exposure.abs();
+            let abs_bet_exposure = bet.exposure().abs();
+            // The mean is only meaningful for a same-side bet with well-formed odds:
+            // `add_bet` routes the opposite side to `position_decrease`, but this
+            // method is public, and `Bet` enforces neither a positive price nor a
+            // positive stake. These conditions also guarantee a positive denominator
+            // below. Anything else keeps the price it had.
+            if self.side() == Some(bet.side)
+                && self.price > Decimal::ZERO
+                && bet.price > Decimal::ZERO
+                && bet.stake > Decimal::ZERO
+            {
+                let total_stake = abs_self_exposure / self.price + bet.stake;
+                self.price = (abs_self_exposure + abs_bet_exposure) / total_stake;
+            }
         }
         self.exposure += bet.exposure();
     }
@@ -654,6 +672,92 @@ mod tests {
     }
 
     #[rstest]
+    fn test_position_increase_cancelling_stakes_preserves_price() {
+        let mut position = BetPosition::default();
+        position.add_bet(Bet::new(dec!(2.0), dec!(100.0), BetSide::Back));
+        // `Bet` does not enforce a positive stake, and a cancelling one drives the
+        // aggregate stake to zero.
+        position.add_bet(Bet::new(dec!(2.0), dec!(-100.0), BetSide::Back));
+
+        assert_eq!(position.price, dec!(2.0));
+        assert_eq!(position.exposure, dec!(0.0));
+    }
+
+    #[rstest]
+    fn test_position_increase_negative_stake_preserves_price() {
+        let mut position = BetPosition::default();
+        position.add_bet(Bet::new(dec!(2.0), dec!(100.0), BetSide::Back));
+        // Leaves a positive aggregate stake, so only the stake sign rejects it.
+        position.add_bet(Bet::new(dec!(3.0), dec!(-50.0), BetSide::Back));
+
+        assert_eq!(position.price, dec!(2.0));
+        assert_eq!(position.exposure, dec!(50.0));
+    }
+
+    #[rstest]
+    fn test_position_increase_opposite_side_preserves_price() {
+        let mut position = BetPosition::default();
+        position.add_bet(Bet::new(dec!(2.0), dec!(100.0), BetSide::Back));
+        // `add_bet` would route this to `position_decrease`; the public method is
+        // callable directly and must not average across sides.
+        position.position_increase(&Bet::new(dec!(3.0), dec!(50.0), BetSide::Lay));
+
+        assert_eq!(position.price, dec!(2.0));
+    }
+
+    #[rstest]
+    #[case(dec!(0.0))]
+    #[case(dec!(-3.0))]
+    fn test_position_increase_non_positive_incoming_price_preserves_price(#[case] price: Decimal) {
+        let mut position = BetPosition::default();
+        position.add_bet(Bet::new(dec!(2.0), dec!(100.0), BetSide::Back));
+        // Both stakes are positive, so only the incoming price rejects it.
+        position.add_bet(Bet::new(price, dec!(50.0), BetSide::Back));
+
+        assert_eq!(position.price, dec!(2.0));
+    }
+
+    #[rstest]
+    fn test_position_increase_non_positive_current_price_preserves_price() {
+        let mut position = BetPosition::default();
+        // `Bet` enforces no positive price, so an opening bet can leave a nonempty
+        // position whose current price is negative.
+        position.add_bet(Bet::new(dec!(-3.0), dec!(100.0), BetSide::Lay));
+        assert_eq!(position.side(), Some(BetSide::Back));
+
+        // Same side, positive incoming price and stake, so only the current price
+        // rejects it: the aggregate stake would be 300 / -3 + 100, and averaging
+        // would divide by zero.
+        position.add_bet(Bet::new(dec!(2.0), dec!(100.0), BetSide::Back));
+
+        assert_eq!(position.price, dec!(-3.0));
+        assert_eq!(position.exposure, dec!(500.0));
+    }
+
+    #[rstest]
+    fn test_position_increase_back_averages_price_and_conserves_pnl() {
+        let mut position = BetPosition::default();
+        let bet1 = Bet::new(dec!(2.0), dec!(100.0), BetSide::Back);
+        let bet2 = Bet::new(dec!(4.0), dec!(50.0), BetSide::Back);
+        let settlement_price = dec!(3.0);
+        let constituent_pnl = calc_bets_pnl(&[
+            bet1.clone(),
+            bet1.hedging_bet(settlement_price),
+            bet2.clone(),
+            bet2.hedging_bet(settlement_price),
+        ]);
+
+        position.add_bet(bet1);
+        position.add_bet(bet2);
+
+        assert_eq!(position.price, dec!(400.0) / dec!(150.0));
+        assert_eq!(
+            position.total_pnl(settlement_price).round_dp(8),
+            constituent_pnl.round_dp(8)
+        );
+    }
+
+    #[rstest]
     fn test_position_increase_lay() {
         let mut position = BetPosition::default();
         let bet1 = Bet::new(dec!(2.0), dec!(100.0), BetSide::Lay);
@@ -662,6 +766,29 @@ mod tests {
         position.add_bet(bet2);
         // exposure = -200 + (-100) = -300
         assert_eq!(position.exposure, dec!(-300.0));
+    }
+
+    #[rstest]
+    fn test_position_increase_lay_averages_price_and_conserves_pnl() {
+        let mut position = BetPosition::default();
+        let bet1 = Bet::new(dec!(2.0), dec!(100.0), BetSide::Lay);
+        let bet2 = Bet::new(dec!(4.0), dec!(50.0), BetSide::Lay);
+        let settlement_price = dec!(3.0);
+        let constituent_pnl = calc_bets_pnl(&[
+            bet1.clone(),
+            bet1.hedging_bet(settlement_price),
+            bet2.clone(),
+            bet2.hedging_bet(settlement_price),
+        ]);
+
+        position.add_bet(bet1);
+        position.add_bet(bet2);
+
+        assert_eq!(position.price, dec!(400.0) / dec!(150.0));
+        assert_eq!(
+            position.total_pnl(settlement_price).round_dp(8),
+            constituent_pnl.round_dp(8)
+        );
     }
 
     #[rstest]
