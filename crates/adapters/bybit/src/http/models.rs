@@ -35,7 +35,7 @@ use crate::common::{
     },
     parse::{
         bool_or_int, deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
-        deserialize_string_to_u8, masked_secret, on_off_bool,
+        deserialize_string_to_u8, int_or_string, masked_secret, on_off_bool,
     },
 };
 
@@ -850,9 +850,9 @@ pub struct BybitAccountInfo {
     // for accounts that predate the disconnection-protection feature.
     #[serde(default, with = "on_off_bool")]
     pub dcp_status: bool,
-    #[serde(default)]
+    #[serde(default, with = "int_or_string")]
     pub time_window: i32,
-    #[serde(default)]
+    #[serde(default, with = "int_or_string")]
     pub smp_group: i32,
 }
 
@@ -885,6 +885,7 @@ pub struct BybitOrder {
     pub qty: String,
     pub side: BybitOrderSide,
     pub is_leverage: String,
+    #[serde(with = "int_or_string")]
     pub position_idx: i32,
     pub order_status: BybitOrderStatus,
     pub cancel_type: BybitCancelType,
@@ -910,6 +911,7 @@ pub struct BybitOrder {
     pub reduce_only: bool,
     pub close_on_trigger: bool,
     pub smp_type: BybitSmpType,
+    #[serde(with = "int_or_string")]
     pub smp_group: i32,
     pub smp_order_id: Ustr,
     pub tpsl_mode: Option<BybitTpSlMode>,
@@ -1273,6 +1275,7 @@ pub type BybitTradeHistoryResponse = BybitCursorListResponse<BybitExecution>;
 #[serde(rename_all = "camelCase")]
 pub struct BybitPosition {
     pub position_idx: BybitPositionIdx,
+    #[serde(with = "int_or_string")]
     pub risk_id: i32,
     pub risk_limit_value: String,
     pub symbol: Ustr,
@@ -1280,9 +1283,12 @@ pub struct BybitPosition {
     pub size: String,
     pub avg_price: String,
     pub position_value: String,
+    #[serde(with = "int_or_string")]
     pub trade_mode: i32,
     pub position_status: BybitPositionStatus,
+    #[serde(with = "int_or_string")]
     pub auto_add_margin: i32,
+    #[serde(with = "int_or_string")]
     pub adl_rank_indicator: i32,
     pub leverage: String,
     pub position_balance: String,
