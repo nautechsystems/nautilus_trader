@@ -22,10 +22,12 @@ use std::{
     cell::{Cell, RefCell},
     collections::HashSet,
     rc::Rc,
+    sync::Mutex,
 };
 
 use async_trait::async_trait;
 use indexmap::IndexSet;
+use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
@@ -102,6 +104,31 @@ struct TestContext {
     cache: Rc<RefCell<Cache>>,
     manager: ExecutionManager,
     exec_engine: Rc<RefCell<ExecutionEngine>>,
+}
+
+struct MassStatusLogCapture {
+    messages: Mutex<Vec<String>>,
+}
+
+static MASS_STATUS_LOG_CAPTURE: MassStatusLogCapture = MassStatusLogCapture {
+    messages: Mutex::new(Vec::new()),
+};
+
+impl Log for MassStatusLogCapture {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+        metadata.level() == Level::Info && metadata.target() == "nautilus_live::execution::manager"
+    }
+
+    fn log(&self, record: &Record<'_>) {
+        if self.enabled(record.metadata()) {
+            self.messages
+                .lock()
+                .unwrap()
+                .push(record.args().to_string());
+        }
+    }
+
+    fn flush(&self) {}
 }
 
 impl TestContext {
@@ -5499,6 +5526,22 @@ fn close_test_long_position(
     position
 }
 
+fn add_non_terminal_synthetic_order(
+    ctx: &TestContext,
+    venue_order_id: VenueOrderId,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    quantity: Quantity,
+) {
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .client_order_id(ClientOrderId::from(venue_order_id.as_str()))
+        .instrument_id(instrument_id)
+        .side(side)
+        .quantity(quantity)
+        .build();
+    ctx.add_order(order);
+}
+
 #[tokio::test]
 async fn test_reconcile_mass_status_iterates_all_position_reports() {
     // Tests that we iterate ALL position reports, not just the first one
@@ -5645,6 +5688,7 @@ async fn test_reconcile_mass_status_routes_to_netting_without_venue_position_id(
     assert!(!result.events.is_empty());
 }
 
+#[rstest]
 #[tokio::test]
 async fn test_reconcile_mass_status_skips_hedge_position_when_fills_in_batch() {
     // Tests that hedge position reconciliation is skipped when fills for the same
@@ -5656,7 +5700,17 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_fills_in_batch() {
     let venue_position_id = PositionId::from("P-HEDGE-001");
 
     ctx.add_instrument(test_instrument());
-    let order = create_limit_order("O-001", instrument_id, OrderSide::Buy, "5.0", "3000.00");
+    let order = create_accepted_order(
+        "O-001",
+        instrument_id,
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        venue_order_id,
+    );
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(order.strategy_id(), OmsType::Hedging);
     ctx.add_order(order);
 
     let mut mass_status = ExecutionMassStatus::new(
@@ -5685,6 +5739,26 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_fills_in_batch() {
         None,
     );
     mass_status.add_fill_reports(vec![fill]);
+    mass_status.add_order_reports(vec![
+        OrderStatusReport::new(
+            test_account_id(),
+            instrument_id,
+            Some(client_order_id),
+            venue_order_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Filled,
+            Quantity::from("5.0"),
+            Quantity::from("5.0"),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            None,
+        )
+        .with_avg_px(dec!(3000.00))
+        .with_venue_position_id(venue_position_id),
+    ]);
 
     // Add a hedge position report for the same venue_position_id
     let position_report = PositionStatusReport::new(
@@ -5704,10 +5778,113 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_fills_in_batch() {
         .manager
         .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
         .await;
+    let cached_positions = ctx
+        .cache
+        .borrow()
+        .positions(None, Some(&instrument_id), None, None, None)
+        .into_iter()
+        .map(|position| (position.id, position.signed_decimal_qty()))
+        .collect::<Vec<_>>();
 
     // Should only have fill event, no synthetic order from position report
     assert_eq!(result.events.len(), 1);
     assert!(matches!(result.events[0], OrderEventAny::Filled(_)));
+    assert_eq!(cached_positions, vec![(venue_position_id, dec!(5.0))]);
+    assert_eq!(result.position_reports_dropped, 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reconcile_mass_status_counts_hedge_report_drop_when_batch_fill_qty_differs() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-HEDGE-MISMATCH");
+    let venue_order_id = VenueOrderId::from("V-HEDGE-MISMATCH");
+    let venue_position_id = PositionId::from("P-HEDGE-MISMATCH");
+
+    ctx.add_instrument(test_instrument());
+    let order = create_accepted_order(
+        client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        venue_order_id,
+    );
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(order.strategy_id(), OmsType::Hedging);
+    ctx.add_order(order);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_fill_reports(vec![FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        TradeId::from("T-HEDGE-MISMATCH"),
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Maker,
+        Some(client_order_id),
+        Some(venue_position_id),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )]);
+    mass_status.add_order_reports(vec![
+        OrderStatusReport::new(
+            test_account_id(),
+            instrument_id,
+            Some(client_order_id),
+            venue_order_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::PartiallyFilled,
+            Quantity::from("5.0"),
+            Quantity::from("1.0"),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            None,
+        )
+        .with_avg_px(dec!(3000.00))
+        .with_venue_position_id(venue_position_id),
+    ]);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(venue_position_id),
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(
+        result
+            .events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count(),
+        1,
+    );
+    assert_eq!(result.position_reports_dropped, 1);
 }
 
 #[tokio::test]
@@ -5843,6 +6020,290 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_fills_lack_positio
     // Should only have fill event, position report skipped due to instrument-level fill
     assert_eq!(result.events.len(), 1);
     assert!(matches!(result.events[0], OrderEventAny::Filled(_)));
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_preserves_open_order_for_cross_account_position_id_collision() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_a = test_account_id();
+    let account_b = AccountId::from("BINANCE-002");
+    let venue_position_id = PositionId::from("P-SHARED-OPEN-ORDER");
+    let venue_order_id = VenueOrderId::from("V-SHARED-OPEN-ORDER");
+
+    ctx.add_instrument(instrument.clone());
+    ctx.add_margin_account(account_b);
+    ctx.add_position(&create_test_position_for_account(
+        &instrument,
+        venue_position_id,
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        account_a,
+    ));
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        account_a,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_order_reports(vec![
+        OrderStatusReport::new(
+            account_b,
+            instrument_id,
+            None,
+            venue_order_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("5.0"),
+            Quantity::from("0.0"),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            None,
+        )
+        .with_price(Price::from("3000.00"))
+        .with_venue_position_id(venue_position_id),
+    ]);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        account_b,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(venue_position_id),
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert!(
+        result
+            .events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Accepted(_)))
+    );
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+#[tokio::test]
+async fn test_reconcile_mass_status_applies_external_order_under_envelope_account(
+    #[case] has_client_order_id: bool,
+) {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let envelope_account = test_account_id();
+    let report_account = AccountId::from("BINANCE-002");
+    let venue_position_id = PositionId::from("P-REPORT-ACCOUNT-FILL");
+
+    ctx.add_instrument(test_instrument());
+    ctx.add_margin_account(report_account);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        envelope_account,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_order_reports(vec![
+        OrderStatusReport::new(
+            report_account,
+            instrument_id,
+            has_client_order_id.then(|| ClientOrderId::from("O-REPORT-ACCOUNT-FILL")),
+            VenueOrderId::from("V-REPORT-ACCOUNT-FILL"),
+            OrderSide::Buy,
+            OrderType::Market,
+            TimeInForce::Gtc,
+            OrderStatus::Filled,
+            Quantity::from("3.0"),
+            Quantity::from("3.0"),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            None,
+        )
+        .with_avg_px(dec!(3100.00))
+        .with_venue_position_id(venue_position_id),
+    ]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 0);
+    assert_eq!(result.positions_created, 0);
+    assert!(result.events.iter().any(|event| {
+        matches!(
+            event,
+            OrderEventAny::Filled(fill)
+                if fill.account_id == envelope_account
+                    && fill.position_id == Some(venue_position_id)
+        )
+    }));
+    assert_eq!(
+        ctx.cache
+            .borrow()
+            .position(&venue_position_id)
+            .expect("envelope-account position should be cached")
+            .account_id,
+        envelope_account,
+    );
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_counts_uncached_report_account_drop() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let report_account = AccountId::from("BINANCE-UNREGISTERED");
+
+    ctx.add_instrument(test_instrument());
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        report_account,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3100.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 1);
+    assert_eq!(result.positions_created, 0);
+    assert!(
+        !result
+            .events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_)))
+    );
+}
+
+#[rstest]
+#[case(false, true)]
+#[case(true, false)]
+#[case(true, true)]
+#[tokio::test]
+async fn test_reconcile_mass_status_preserves_fill_for_cross_account_position_id_collision(
+    #[case] order_has_position_id: bool,
+    #[case] fill_has_position_id: bool,
+) {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_a = test_account_id();
+    let account_b = AccountId::from("BINANCE-002");
+    let venue_position_id = PositionId::from("P-SHARED-CROSS-ACCOUNT");
+    let venue_order_id = VenueOrderId::from("V-SHARED-CROSS-ACCOUNT");
+
+    ctx.add_instrument(instrument.clone());
+    ctx.add_margin_account(account_b);
+    ctx.add_position(&create_test_position_for_account(
+        &instrument,
+        venue_position_id,
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        account_a,
+    ));
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        account_a,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let mut order_report = OrderStatusReport::new(
+        account_b,
+        instrument_id,
+        None,
+        venue_order_id,
+        OrderSide::Buy,
+        OrderType::Market,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        Quantity::from("5.0"),
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )
+    .with_avg_px(dec!(3000.00));
+
+    if order_has_position_id {
+        order_report = order_report.with_venue_position_id(venue_position_id);
+    }
+
+    mass_status.add_order_reports(vec![order_report]);
+    mass_status.add_fill_reports(vec![FillReport::new(
+        account_b,
+        instrument_id,
+        venue_order_id,
+        TradeId::from("T-SHARED-CROSS-ACCOUNT"),
+        OrderSide::Buy,
+        Quantity::from("5.0"),
+        Price::from("3000.00"),
+        Money::from("0.10 USDT"),
+        LiquiditySide::Taker,
+        None,
+        fill_has_position_id.then_some(venue_position_id),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )]);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        account_b,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(venue_position_id),
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert!(result.events.iter().any(|event| {
+        matches!(
+            event,
+            OrderEventAny::Filled(fill)
+                if fill.trade_id == TradeId::from("T-SHARED-CROSS-ACCOUNT")
+        )
+    }));
 }
 
 #[tokio::test]
@@ -6794,6 +7255,7 @@ async fn test_cross_zero_unbuildable_open_leg_has_no_side_effects() {
         .signed_decimal_qty();
 
     assert!(events.is_empty());
+    assert_eq!(ctx.manager.position_reports_dropped(), 1);
     assert_eq!(
         cache.orders_total_count(None, None, None, None, None),
         order_count_before,
@@ -6811,6 +7273,59 @@ async fn test_cross_zero_unbuildable_open_leg_has_no_side_effects() {
     assert!(
         event_messages.get_messages().is_empty(),
         "an unbuildable open leg must not publish any order event",
+    );
+}
+
+#[tokio::test]
+async fn test_cross_zero_unrepresentable_open_price_counts_drop_without_side_effects() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position_id = PositionId::from("P-CROSS-ZERO-PRICE");
+
+    ctx.add_instrument(instrument.clone());
+    ctx.add_position(&create_test_position(
+        &instrument,
+        position_id,
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    ));
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Short,
+        Quantity::from("3.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(Decimal::MAX),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 1);
+    assert_eq!(result.positions_created, 0);
+    assert!(result.events.is_empty());
+    assert_eq!(
+        ctx.cache
+            .borrow()
+            .position(&position_id)
+            .expect("cached position should remain present")
+            .signed_decimal_qty(),
+        dec!(5.0),
     );
 }
 
@@ -7881,7 +8396,7 @@ async fn test_adjust_fills_filter_to_current_lifecycle_preserves_working_orders(
 }
 
 #[tokio::test]
-async fn test_cross_zero_with_missing_cached_avg_px_returns_none() {
+async fn test_cross_zero_with_missing_cached_avg_px_counts_dropped_report() {
     // When cached position has no avg_px, cross-zero cannot generate close fill
     let mut ctx = TestContext::new();
     let instrument = test_instrument();
@@ -7929,10 +8444,11 @@ async fn test_cross_zero_with_missing_cached_avg_px_returns_none() {
         result.events.len() <= 4,
         "Should not produce excessive events"
     );
+    assert_eq!(result.position_reports_dropped, 1);
 }
 
 #[tokio::test]
-async fn test_cross_zero_with_missing_venue_avg_px_closes_only() {
+async fn test_cross_zero_with_missing_venue_avg_px_counts_partial_drop() {
     // When venue position has no avg_px, cross-zero can close but not open new position
     let mut ctx = TestContext::new();
     let instrument = test_instrument();
@@ -7974,7 +8490,7 @@ async fn test_cross_zero_with_missing_venue_avg_px_closes_only() {
         .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
         .await;
 
-    // Should generate close fill only (not open fill due to missing venue avg_px)
+    // A missing venue average price permits only the cached-position close fill.
     let fill_events: Vec<_> = result
         .events
         .iter()
@@ -7995,6 +8511,733 @@ async fn test_cross_zero_with_missing_venue_avg_px_closes_only() {
     );
     assert_eq!(fill_events[0].order_side, OrderSide::Sell);
     assert_eq!(fill_events[0].last_qty, Quantity::from("5.0"));
+    assert_eq!(result.position_reports_dropped, 1);
+}
+
+#[tokio::test]
+async fn test_cross_zero_empty_close_events_count_dropped_report() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = test_account_id();
+    let ts_last = UnixNanos::from(1_000_000);
+    let close_qty = Quantity::from_decimal_dp(dec!(5.0), instrument.size_precision()).unwrap();
+    let close_price = Price::from_decimal_dp(dec!(3000.00), instrument.price_precision()).ok();
+    let close_venue_order_id = create_position_reconciliation_venue_order_id(
+        account_id,
+        instrument_id,
+        OrderSide::Sell,
+        OrderType::Market,
+        close_qty,
+        close_price,
+        None,
+        Some("CLOSE"),
+        ts_last,
+    );
+
+    ctx.add_instrument(instrument.clone());
+    ctx.add_position(&create_test_position(
+        &instrument,
+        PositionId::new("P-CLOSE-COLLISION"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    ));
+    add_non_terminal_synthetic_order(
+        &ctx,
+        close_venue_order_id,
+        instrument_id,
+        OrderSide::Sell,
+        close_qty,
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        account_id,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Short,
+        Quantity::from("3.0"),
+        ts_last,
+        ts_last,
+        None,
+        None,
+        Some(dec!(3100.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 1);
+    assert!(result.events.iter().any(
+        |event| matches!(event, OrderEventAny::Filled(fill) if fill.last_qty == Quantity::from("3.0"))
+    ));
+}
+
+#[tokio::test]
+async fn test_cross_zero_empty_open_events_count_dropped_report() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = test_account_id();
+    let ts_last = UnixNanos::from(1_000_000);
+    let open_qty = Quantity::from_decimal_dp(dec!(3.0), instrument.size_precision()).unwrap();
+    let open_price = Price::from_decimal_dp(dec!(3100.00), instrument.price_precision()).ok();
+    let open_venue_order_id = create_position_reconciliation_venue_order_id(
+        account_id,
+        instrument_id,
+        OrderSide::Sell,
+        OrderType::Market,
+        open_qty,
+        open_price,
+        None,
+        Some("OPEN"),
+        ts_last,
+    );
+
+    ctx.add_instrument(instrument.clone());
+    ctx.add_position(&create_test_position(
+        &instrument,
+        PositionId::new("P-OPEN-COLLISION"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    ));
+    add_non_terminal_synthetic_order(
+        &ctx,
+        open_venue_order_id,
+        instrument_id,
+        OrderSide::Sell,
+        open_qty,
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        account_id,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Short,
+        Quantity::from("3.0"),
+        ts_last,
+        ts_last,
+        None,
+        None,
+        Some(dec!(3100.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 1);
+    assert!(result.events.iter().any(
+        |event| matches!(event, OrderEventAny::Filled(fill) if fill.last_qty == Quantity::from("5.0"))
+    ));
+}
+
+#[tokio::test]
+async fn test_cross_zero_two_failed_legs_count_dropped_report_once() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = test_account_id();
+    let ts_last = UnixNanos::from(1_000_000);
+    let close_qty = Quantity::from_decimal_dp(dec!(5.0), instrument.size_precision()).unwrap();
+    let close_price = Price::from_decimal_dp(dec!(3000.00), instrument.price_precision()).ok();
+    let close_venue_order_id = create_position_reconciliation_venue_order_id(
+        account_id,
+        instrument_id,
+        OrderSide::Sell,
+        OrderType::Market,
+        close_qty,
+        close_price,
+        None,
+        Some("CLOSE"),
+        ts_last,
+    );
+
+    ctx.add_instrument(instrument.clone());
+    ctx.add_position(&create_test_position(
+        &instrument,
+        PositionId::new("P-TWO-FAILED-LEGS"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    ));
+    add_non_terminal_synthetic_order(
+        &ctx,
+        close_venue_order_id,
+        instrument_id,
+        OrderSide::Sell,
+        close_qty,
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        account_id,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Short,
+        Quantity::from("3.0"),
+        ts_last,
+        ts_last,
+        None,
+        None,
+        None,
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 1);
+    assert!(result.events.is_empty());
+}
+
+#[tokio::test]
+async fn test_flat_report_with_cached_open_position_emits_close_events() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = test_instrument_id();
+    ctx.add_instrument(instrument.clone());
+
+    let position = create_test_position(
+        &instrument,
+        PositionId::new("P-001"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    ctx.add_position(&position);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let position_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Flat,
+        Quantity::from("0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        None,
+    );
+    mass_status.add_position_reports(vec![position_report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+    let fill_events: Vec<_> = result
+        .events
+        .iter()
+        .filter_map(|event| {
+            if let OrderEventAny::Filled(fill) = event {
+                Some(fill)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    assert_eq!(result.position_reports_dropped, 0);
+    assert_eq!(fill_events.len(), 1);
+    assert_eq!(fill_events[0].order_side, OrderSide::Sell);
+    assert_eq!(fill_events[0].last_qty, Quantity::from("5.0"));
+}
+
+#[tokio::test]
+async fn test_flat_report_with_uncached_instrument_and_cached_open_position_counts_drop() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = test_instrument_id();
+
+    let position = create_test_position(
+        &instrument,
+        PositionId::new("P-001"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    ctx.add_position(&position);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let position_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Flat,
+        Quantity::from("0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        None,
+    );
+    mass_status.add_position_reports(vec![position_report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 1);
+    assert!(result.events.is_empty());
+}
+
+#[tokio::test]
+async fn test_flat_report_ignores_other_account_position_when_instrument_uncached() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_a = test_account_id();
+    let account_b = AccountId::from("BINANCE-002");
+
+    ctx.add_margin_account(account_b);
+    ctx.add_position(&create_test_position_for_account(
+        &instrument,
+        PositionId::new("P-OTHER-ACCOUNT"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        account_b,
+    ));
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        account_a,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        account_a,
+        instrument_id,
+        PositionSideSpecified::Flat,
+        Quantity::from("0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        None,
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 0);
+    assert!(result.events.is_empty());
+}
+
+#[tokio::test]
+async fn test_mass_position_synthetic_collision_counts_drop_not_created_position() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = test_account_id();
+    let ts_last = UnixNanos::from(1_000_000);
+    let order_qty = Quantity::from_decimal_dp(dec!(3.0), instrument.size_precision()).unwrap();
+    let fill_price = Price::from_decimal_dp(dec!(3000.00), instrument.price_precision()).ok();
+    let venue_order_id = create_position_reconciliation_venue_order_id(
+        account_id,
+        instrument_id,
+        OrderSide::Buy,
+        OrderType::Market,
+        order_qty,
+        fill_price,
+        None,
+        None,
+        ts_last,
+    );
+
+    ctx.add_instrument(instrument);
+    add_non_terminal_synthetic_order(
+        &ctx,
+        venue_order_id,
+        instrument_id,
+        OrderSide::Buy,
+        order_qty,
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        account_id,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.0"),
+        ts_last,
+        ts_last,
+        None,
+        None,
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 1);
+    assert_eq!(result.positions_created, 0);
+    assert!(result.events.is_empty());
+}
+
+#[tokio::test]
+async fn test_mass_position_difference_collision_counts_drop_not_created_position() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = test_account_id();
+    let ts_last = UnixNanos::from(1_000_000);
+    let order_qty = Quantity::from_decimal_dp(dec!(2.0), instrument.size_precision()).unwrap();
+    let fill_price = Price::from_decimal_dp(dec!(3000.00), instrument.price_precision()).ok();
+    let venue_order_id = create_position_reconciliation_venue_order_id(
+        account_id,
+        instrument_id,
+        OrderSide::Sell,
+        OrderType::Market,
+        order_qty,
+        fill_price,
+        None,
+        None,
+        ts_last,
+    );
+
+    ctx.add_instrument(instrument.clone());
+    ctx.add_position(&create_test_position(
+        &instrument,
+        PositionId::from("P-DIFFERENCE-COLLISION"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    ));
+    add_non_terminal_synthetic_order(
+        &ctx,
+        venue_order_id,
+        instrument_id,
+        OrderSide::Sell,
+        order_qty,
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        account_id,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.0"),
+        ts_last,
+        ts_last,
+        None,
+        None,
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 1);
+    assert_eq!(result.positions_created, 0);
+    assert!(result.events.is_empty());
+}
+
+#[tokio::test]
+async fn test_mass_position_created_counts_applied_synthetic_position() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = test_account_id();
+    let ts_last = UnixNanos::from(1_000_000);
+
+    ctx.add_instrument(instrument);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        account_id,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.0"),
+        ts_last,
+        ts_last,
+        None,
+        None,
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.positions_created, 1);
+    assert_eq!(result.position_reports_dropped, 0);
+    assert!(!result.events.is_empty());
+}
+
+#[tokio::test]
+async fn test_mass_unrepresentable_position_price_counts_drop_not_created_position() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = test_account_id();
+
+    ctx.add_instrument(instrument);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        account_id,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(Decimal::MAX),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 1);
+    assert_eq!(result.positions_created, 0);
+    assert!(result.events.is_empty());
+}
+
+#[tokio::test]
+async fn test_netting_subprecision_difference_counts_drop() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = test_account_id();
+    let ts_last = UnixNanos::from(1_000_000);
+
+    ctx.add_instrument(instrument.clone());
+    ctx.add_position(&create_test_position(
+        &instrument,
+        PositionId::from("P-SUBPRECISION"),
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+    ));
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        account_id,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("1.0004"),
+        ts_last,
+        ts_last,
+        None,
+        None,
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 1);
+    assert_eq!(result.positions_created, 0);
+    assert!(result.events.is_empty());
+}
+
+#[tokio::test]
+async fn test_missing_hedge_subprecision_quantity_counts_drop() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = test_account_id();
+    let ts_last = UnixNanos::from(1_000_000);
+
+    ctx.add_instrument(instrument);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        account_id,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("0.0004"),
+        ts_last,
+        ts_last,
+        None,
+        Some(PositionId::from("P-VENUE-HEDGE")),
+        None,
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 1);
+    assert_eq!(result.positions_created, 0);
+    assert!(result.events.is_empty());
+}
+
+#[tokio::test]
+async fn test_flat_report_counts_drop_for_report_account_open_position() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let envelope_account = test_account_id();
+    let report_account = AccountId::from("BINANCE-002");
+
+    ctx.add_margin_account(report_account);
+    ctx.add_position(&create_test_position_for_account(
+        &instrument,
+        PositionId::new("P-REPORT-ACCOUNT"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        report_account,
+    ));
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        envelope_account,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        report_account,
+        instrument_id,
+        PositionSideSpecified::Flat,
+        Quantity::from("0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        None,
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 1);
+    assert!(result.events.is_empty());
+}
+
+#[tokio::test]
+async fn test_flat_report_exemption_scopes_to_report_account_not_envelope() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let envelope_account = test_account_id();
+    let report_account = AccountId::from("BINANCE-002");
+
+    ctx.add_margin_account(report_account);
+    ctx.add_position(&create_test_position_for_account(
+        &instrument,
+        PositionId::new("P-ENVELOPE-ACCOUNT"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        envelope_account,
+    ));
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        envelope_account,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        report_account,
+        instrument_id,
+        PositionSideSpecified::Flat,
+        Quantity::from("0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        None,
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 0);
+    assert!(result.events.is_empty());
 }
 
 #[tokio::test]
@@ -10847,6 +12090,325 @@ async fn test_position_check_preserves_retry_for_uncovered_position_opened_durin
 }
 
 #[tokio::test]
+async fn test_position_check_missing_instrument_counts_unreconcilable_cached_position() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    ctx.add_position(&create_test_position(
+        &instrument,
+        PositionId::from("P-MISSING-INSTRUMENT"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    ));
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(ctx.manager.position_reports_dropped(), 0);
+    assert_eq!(ctx.manager.unreconcilable_cached_positions(), 1);
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, test_account_id())),
+        1,
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_without_price_counts_drop_on_each_retry() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    ctx.add_instrument(instrument.clone());
+    ctx.add_position(&create_test_position(
+        &instrument,
+        PositionId::from("P-NO-PRICE"),
+        OrderSide::Buy,
+        "5.0",
+        "0.00",
+    ));
+    let venue_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        None,
+    );
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let first_events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(first_events.is_empty());
+    assert_eq!(ctx.manager.position_reports_dropped(), 1);
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, test_account_id())),
+        1,
+    );
+
+    let second_events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(second_events.is_empty());
+    assert_eq!(ctx.manager.position_reports_dropped(), 1);
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, test_account_id())),
+        2,
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_empty_synthetic_events_count_drop_and_retry() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = test_account_id();
+    let ts_last = UnixNanos::from(1_000_000);
+    let order_qty = Quantity::from_decimal_dp(dec!(3.0), instrument.size_precision()).unwrap();
+    let fill_price = Price::from_decimal_dp(dec!(3000.00), instrument.price_precision()).ok();
+    let venue_order_id = create_position_reconciliation_venue_order_id(
+        account_id,
+        instrument_id,
+        OrderSide::Buy,
+        OrderType::Market,
+        order_qty,
+        fill_price,
+        None,
+        None,
+        ts_last,
+    );
+
+    ctx.add_instrument(instrument);
+    add_non_terminal_synthetic_order(
+        &ctx,
+        venue_order_id,
+        instrument_id,
+        OrderSide::Buy,
+        order_qty,
+    );
+    let venue_report = PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.0"),
+        ts_last,
+        ts_last,
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(ctx.manager.position_reports_dropped(), 1);
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_id)),
+        1,
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_unrepresentable_price_counts_drop_and_retry() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = test_account_id();
+
+    ctx.add_instrument(instrument);
+
+    let venue_report = PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(Decimal::MAX),
+    );
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(ctx.manager.position_reports_dropped(), 1);
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_id)),
+        1,
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_unrepresentable_difference_quantity_counts_drop_and_retry() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = test_account_id();
+
+    ctx.add_instrument(instrument.clone());
+    ctx.add_position(&create_test_position(
+        &instrument,
+        PositionId::from("P-UNREPRESENTABLE-DIFFERENCE-QUANTITY"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    ));
+
+    let mut venue_report = PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3100.00)),
+    );
+    venue_report.signed_decimal_qty = dec!(10000000000000000000);
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(ctx.manager.position_reports_dropped(), 1);
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_id)),
+        1,
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_uncached_report_account_counts_drop_and_retry() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let report_account = AccountId::from("BINANCE-UNREGISTERED");
+
+    ctx.add_instrument(instrument);
+
+    let venue_report = PositionStatusReport::new(
+        report_account,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(ctx.manager.position_reports_dropped(), 1);
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, report_account)),
+        1,
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_position_check_unknown_account_is_counted_before_quantity_match() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let report_account = AccountId::from("BINANCE-REMOVED");
+
+    ctx.add_instrument(instrument.clone());
+    ctx.add_margin_account(report_account);
+    ctx.add_position(&create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-REMOVED-ACCOUNT"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        report_account,
+    ));
+    assert!(
+        ctx.cache
+            .borrow_mut()
+            .take_account(&report_account)
+            .is_some()
+    );
+
+    let venue_report = PositionStatusReport::new(
+        report_account,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(ctx.manager.position_reports_dropped(), 1);
+}
+
+#[tokio::test]
 async fn test_position_check_retries_stops_after_max() {
     // When instrument is not in cache, check_position_discrepancy returns None
     // (can't generate fills), so retries should increment until exhausted
@@ -13144,4 +14706,352 @@ async fn test_reconcile_mass_status_does_not_capture_synthetic_reports() {
         TradeId::from("T-SYN-RAW"),
         "captured trade_id must match the original raw input, not a synthetic `S-` id",
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mass_status_unknown_report_account_cannot_adjust_envelope_account_fills() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let envelope_account_id = test_account_id();
+    let report_account_id = AccountId::from("BINANCE-UNKNOWN");
+    let client_order_id = ClientOrderId::from("O-CROSS-ACCOUNT-ADJUST");
+    let venue_order_id = VenueOrderId::from("V-CROSS-ACCOUNT-ADJUST");
+
+    ctx.add_instrument(instrument);
+    ctx.add_order(create_limit_order(
+        client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+    ));
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        envelope_account_id,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_fill_reports(vec![FillReport::new(
+        envelope_account_id,
+        instrument_id,
+        venue_order_id,
+        TradeId::from("T-CROSS-ACCOUNT-ADJUST"),
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Maker,
+        Some(client_order_id),
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )]);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        report_account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    let applied_fills = result
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let cache = ctx.cache.borrow();
+
+    assert_eq!(result.position_reports_dropped, 1);
+    assert_eq!(
+        applied_fills.len(),
+        1,
+        "no synthetic fill should be applied"
+    );
+    assert_eq!(
+        applied_fills[0].trade_id,
+        TradeId::from("T-CROSS-ACCOUNT-ADJUST"),
+    );
+    assert_eq!(
+        cache.orders_total_count(None, None, None, None, None),
+        1,
+        "no synthetic order should be cached",
+    );
+    assert!(
+        cache
+            .positions_open(
+                None,
+                Some(&instrument_id),
+                None,
+                Some(&report_account_id),
+                None,
+            )
+            .is_empty()
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mass_status_flat_report_for_cached_instrument_requires_known_account() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let report_account_id = AccountId::from("BINANCE-UNKNOWN-FLAT");
+
+    ctx.add_instrument(instrument);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        report_account_id,
+        instrument_id,
+        PositionSideSpecified::Flat,
+        Quantity::from("0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        None,
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert!(result.events.is_empty());
+    assert_eq!(result.position_reports_dropped, 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mass_status_completion_log_includes_position_drop_counts() {
+    log::set_logger(&MASS_STATUS_LOG_CAPTURE).expect("test logger already installed");
+    log::set_max_level(LevelFilter::Info);
+    MASS_STATUS_LOG_CAPTURE.messages.lock().unwrap().clear();
+
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let client_order_id = ClientOrderId::from("O-COMPLETION-COUNTS");
+    let venue_order_id = VenueOrderId::from("V-COMPLETION-COUNTS");
+
+    ctx.add_instrument(instrument);
+    ctx.add_order(create_limit_order(
+        client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+    ));
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_fill_reports(vec![FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        TradeId::from("T-COMPLETION-COUNTS"),
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Maker,
+        Some(client_order_id),
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )]);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        AccountId::from("BINANCE-UNKNOWN-COMPLETION"),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("1.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.events.len(), 1);
+    assert!(matches!(result.events[0], OrderEventAny::Filled(_)));
+    assert_eq!(result.position_reports_dropped, 1);
+
+    let messages = MASS_STATUS_LOG_CAPTURE.messages.lock().unwrap();
+    let completion = messages
+        .iter()
+        .find(|message| message.starts_with("Reconciliation complete for BINANCE:"))
+        .expect("mass-status reconciliation completion log was not emitted");
+    assert!(
+        completion.contains("position_reports_dropped=1"),
+        "completion line missing dropped-report count: {completion}",
+    );
+    assert!(
+        completion.contains("unreconcilable_cached_positions=0"),
+        "completion line missing cached-position anomaly count: {completion}",
+    );
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_counts_dropped_position_reports() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+
+    let mut non_flat_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let position_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    non_flat_status.add_position_reports(vec![position_report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(non_flat_status, ctx.exec_engine.clone())
+        .await;
+    assert_eq!(result.position_reports_dropped, 1);
+
+    let mut flat_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let flat_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Flat,
+        Quantity::from("0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        None,
+    );
+    flat_status.add_position_reports(vec![flat_report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(flat_status, ctx.exec_engine.clone())
+        .await;
+    assert_eq!(result.position_reports_dropped, 0);
+
+    ctx.add_instrument(test_instrument());
+
+    let mut missing_avg_px_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let missing_avg_px_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        None,
+    );
+    missing_avg_px_status.add_position_reports(vec![missing_avg_px_report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(missing_avg_px_status, ctx.exec_engine.clone())
+        .await;
+    assert_eq!(result.position_reports_dropped, 1);
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_aggregates_two_dropped_position_reports() {
+    let mut ctx = TestContext::new();
+    let first_instrument_id = test_instrument_id();
+    let second_instrument_id = InstrumentId::from("UNKNOWN-PERP.BINANCE");
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let first_report = PositionStatusReport::new(
+        test_account_id(),
+        first_instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    let second_report = PositionStatusReport::new(
+        test_account_id(),
+        second_instrument_id,
+        PositionSideSpecified::Short,
+        Quantity::from("2.000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(2000.00)),
+    );
+    mass_status.add_position_reports(vec![first_report, second_report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.position_reports_dropped, 2);
 }

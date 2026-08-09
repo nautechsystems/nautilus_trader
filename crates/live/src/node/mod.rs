@@ -385,6 +385,8 @@ impl LiveNode {
                 .await;
         }
 
+        self.drain_runner_pending();
+
         if let Some(reason) = self.startup_abort_reason() {
             self.abort_startup(reason).await?;
             return Ok(());
@@ -759,7 +761,16 @@ impl LiveNode {
                         .reconcile_execution_mass_status(mass_status, exec_engine_rc)
                         .await;
 
-                    if result.events.is_empty() {
+                    if result.position_reports_dropped > 0 {
+                        log::warn!(
+                            "{}",
+                            reconciliation_drop_warning(
+                                client_id,
+                                result.events.len(),
+                                result.position_reports_dropped,
+                            )
+                        );
+                    } else if result.events.is_empty() {
                         log_info!(
                             "Reconciliation for {} succeeded",
                             client_id,
@@ -3178,6 +3189,16 @@ fn render_client_statuses(rows: Vec<ClientStatus>) -> String {
     builder.build().with(Style::rounded()).to_string()
 }
 
+fn reconciliation_drop_warning(
+    client_id: ClientId,
+    event_count: usize,
+    position_reports_dropped: usize,
+) -> String {
+    format!(
+        "Reconciliation for {client_id} processed {event_count} events with {position_reports_dropped} venue position report(s) dropped"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -3300,6 +3321,14 @@ mod tests {
 ╰─────────┴───────────┴───────────╯";
 
         assert_eq!(output, expected);
+    }
+
+    #[rstest]
+    fn test_reconciliation_drop_warning_includes_processed_events() {
+        assert_eq!(
+            reconciliation_drop_warning(ClientId::from("BINANCE"), 3, 2),
+            "Reconciliation for BINANCE processed 3 events with 2 venue position report(s) dropped",
+        );
     }
 
     #[rstest]
@@ -5008,6 +5037,56 @@ mod tests {
         assert_eq!(handle.state(), NodeState::Stopped);
         assert!(handle.should_stop());
         assert!(!handle.is_running());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_drains_pending_account_event_before_reconciliation() {
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            timeout_connection: Duration::ZERO,
+            timeout_reconciliation: Duration::ZERO,
+            timeout_portfolio: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            timeout_shutdown: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("StartupAccountNode".to_string(), Some(config)).unwrap();
+        let account_id = AccountId::from("STARTUP-001");
+        let account_state = AccountState::new(
+            account_id,
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::from("1000000 USDT"),
+                Money::from("0 USDT"),
+                Money::from("1000000 USDT"),
+            )],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(Currency::USDT()),
+        );
+
+        node.runner.as_ref().unwrap().bind_senders();
+        get_exec_event_sender()
+            .send(ExecutionEvent::Account(account_state))
+            .unwrap();
+
+        assert!(node.kernel.cache().borrow().account(&account_id).is_none());
+
+        node.start().await.unwrap();
+
+        assert!(node.kernel.cache().borrow().account(&account_id).is_some());
+        assert_eq!(node.poll().unwrap(), 0);
+
+        node.stop().await.unwrap();
+        node.dispose();
     }
 
     #[rstest]
