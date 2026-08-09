@@ -20,7 +20,14 @@
 
 #[cfg(feature = "node")]
 use std::collections::HashSet;
-use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr, sync::LazyLock, time::Duration};
+use std::{
+    cell::RefCell,
+    fmt::{Debug, Display},
+    rc::Rc,
+    str::FromStr,
+    sync::LazyLock,
+    time::Duration,
+};
 
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
@@ -160,6 +167,199 @@ pub struct ReconciliationResult {
     pub events: Vec<OrderEventAny>,
     /// External orders that need to be registered with execution clients.
     pub external_orders: Vec<ExternalOrderMetadata>,
+    /// Reason the complete mass status was rejected before state mutation.
+    pub rejection: Option<ReconciliationRejection>,
+    /// Exactly-once accounting for position reports in the mass status.
+    pub position_reports: PositionReconciliationSummary,
+}
+
+/// Exactly-once accounting for position reports consumed from one mass status.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PositionReconciliationSummary {
+    unchanged: usize,
+    applied: usize,
+    rejected: usize,
+    filtered: usize,
+    generation_disabled: usize,
+    insufficient_evidence: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PositionReconciliationSkip {
+    Filtered,
+    GenerationDisabled,
+    InsufficientEvidence,
+}
+
+#[derive(Debug)]
+enum PositionReconciliationOutcome {
+    Unchanged,
+    Applied(Vec<OrderEventAny>),
+    Skipped(PositionReconciliationSkip),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PositionReportGroupDisposition {
+    Reconcile,
+    Skipped(PositionReconciliationSkip),
+}
+
+impl PositionReconciliationOutcome {
+    fn from_events(events: Option<Vec<OrderEventAny>>) -> Self {
+        match events {
+            Some(events) if events.is_empty() => Self::Unchanged,
+            Some(events) => Self::Applied(events),
+            None => Self::Skipped(PositionReconciliationSkip::InsufficientEvidence),
+        }
+    }
+}
+
+impl PositionReconciliationSummary {
+    /// Returns the number of reports represented by this summary.
+    #[must_use]
+    pub const fn received(&self) -> usize {
+        self.unchanged
+            + self.applied
+            + self.rejected
+            + self.filtered
+            + self.generation_disabled
+            + self.insufficient_evidence
+    }
+
+    /// Returns the number of reports already equal to post-fill cached state.
+    #[must_use]
+    pub const fn unchanged(&self) -> usize {
+        self.unchanged
+    }
+
+    /// Returns the number of reports that produced reconciliation events.
+    #[must_use]
+    pub const fn applied(&self) -> usize {
+        self.applied
+    }
+
+    /// Returns the number of reports intentionally not applied.
+    #[must_use]
+    pub const fn skipped(&self) -> usize {
+        self.rejected + self.filtered + self.generation_disabled + self.insufficient_evidence
+    }
+
+    /// Returns the number of reports skipped because the complete mass status was rejected.
+    #[must_use]
+    pub const fn rejected(&self) -> usize {
+        self.rejected
+    }
+
+    /// Returns the number of reports excluded by reconciliation configuration.
+    #[must_use]
+    pub const fn filtered(&self) -> usize {
+        self.filtered
+    }
+
+    /// Returns the number of discrepant reports not applied because generation is disabled.
+    #[must_use]
+    pub const fn generation_disabled(&self) -> usize {
+        self.generation_disabled
+    }
+
+    /// Returns the number of discrepant reports lacking representable synthetic-event evidence.
+    #[must_use]
+    pub const fn insufficient_evidence(&self) -> usize {
+        self.insufficient_evidence
+    }
+
+    fn record(&mut self, outcome: &PositionReconciliationOutcome) {
+        match outcome {
+            PositionReconciliationOutcome::Unchanged => self.unchanged += 1,
+            PositionReconciliationOutcome::Applied(_) => self.applied += 1,
+            PositionReconciliationOutcome::Skipped(reason) => match reason {
+                PositionReconciliationSkip::Filtered => self.filtered += 1,
+                PositionReconciliationSkip::GenerationDisabled => {
+                    self.generation_disabled += 1;
+                }
+                PositionReconciliationSkip::InsufficientEvidence => {
+                    self.insufficient_evidence += 1;
+                }
+            },
+        }
+    }
+
+    fn reject_all(received: usize) -> Self {
+        Self {
+            rejected: received,
+            ..Self::default()
+        }
+    }
+}
+
+/// Report category whose account violated a mass-status envelope.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReconciliationReportKind {
+    /// Order status report.
+    Order,
+    /// Fill report.
+    Fill,
+    /// Position status report.
+    Position,
+}
+
+impl Display for ReconciliationReportKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Order => f.write_str("order"),
+            Self::Fill => f.write_str("fill"),
+            Self::Position => f.write_str("position"),
+        }
+    }
+}
+
+/// Reason an execution mass status was rejected before state mutation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReconciliationRejection {
+    /// The envelope account is absent from the cache.
+    AccountNotCached {
+        /// Account declared by the mass-status envelope.
+        account_id: AccountId,
+    },
+    /// A child report account differs from the envelope account.
+    ReportAccountMismatch {
+        /// Account declared by the mass-status envelope.
+        envelope_account_id: AccountId,
+        /// Account declared by the child report.
+        report_account_id: AccountId,
+        /// Category of the mismatched child report.
+        report_kind: ReconciliationReportKind,
+    },
+}
+
+impl Display for ReconciliationRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AccountNotCached { account_id } => {
+                write!(f, "mass-status account {account_id} is not cached")
+            }
+            Self::ReportAccountMismatch {
+                envelope_account_id,
+                report_account_id,
+                report_kind,
+            } => write!(
+                f,
+                "{report_kind} report account {report_account_id} does not match mass-status account {envelope_account_id}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ReconciliationRejection {}
+
+impl ReconciliationResult {
+    fn rejected(rejection: ReconciliationRejection, position_reports: usize) -> Self {
+        Self {
+            rejection: Some(rejection),
+            position_reports: PositionReconciliationSummary::reject_all(position_reports),
+            ..Self::default()
+        }
+    }
 }
 
 /// Result of inflight order checks containing terminal events and intermediate queries.
@@ -476,6 +676,124 @@ impl ExecutionManager {
             .unwrap_or(DEFAULT_POSITION_RECONCILIATION_TOLERANCE)
     }
 
+    fn validate_mass_status_account_scope(
+        &self,
+        mass_status: &ExecutionMassStatus,
+    ) -> Result<(), ReconciliationRejection> {
+        let envelope_account_id = mass_status.account_id;
+        if self.cache.borrow().account(&envelope_account_id).is_none() {
+            return Err(ReconciliationRejection::AccountNotCached {
+                account_id: envelope_account_id,
+            });
+        }
+
+        let order_reports = mass_status.order_reports();
+        let fill_reports = mass_status.fill_reports();
+        let position_reports = mass_status.position_reports();
+        let mut report_accounts = order_reports
+            .values()
+            .map(|report| (ReconciliationReportKind::Order, report.account_id))
+            .chain(
+                fill_reports
+                    .values()
+                    .flatten()
+                    .map(|report| (ReconciliationReportKind::Fill, report.account_id)),
+            )
+            .chain(
+                position_reports
+                    .values()
+                    .flatten()
+                    .map(|report| (ReconciliationReportKind::Position, report.account_id)),
+            );
+
+        if let Some((report_kind, report_account_id)) =
+            report_accounts.find(|(_, account_id)| *account_id != envelope_account_id)
+        {
+            return Err(ReconciliationRejection::ReportAccountMismatch {
+                envelope_account_id,
+                report_account_id,
+                report_kind,
+            });
+        }
+
+        Ok(())
+    }
+
+    fn classify_mass_position_group(
+        &self,
+        instrument_id: InstrumentId,
+        reports: &[PositionStatusReport],
+        instruments_with_unattributed_fills: &IndexSet<InstrumentId>,
+    ) -> PositionReportGroupDisposition {
+        if self.config.filter_position_reports {
+            return PositionReportGroupDisposition::Skipped(PositionReconciliationSkip::Filtered);
+        }
+
+        if !self.should_reconcile_instrument(&instrument_id) {
+            return PositionReportGroupDisposition::Skipped(PositionReconciliationSkip::Filtered);
+        }
+
+        let hedge_mode = reports
+            .iter()
+            .any(|report| report.venue_position_id.is_some());
+        if !hedge_mode || !instruments_with_unattributed_fills.contains(&instrument_id) {
+            return PositionReportGroupDisposition::Reconcile;
+        }
+
+        PositionReportGroupDisposition::Skipped(PositionReconciliationSkip::InsufficientEvidence)
+    }
+
+    fn hedge_position_baseline(
+        &self,
+        reports: &IndexMap<InstrumentId, Vec<PositionStatusReport>>,
+    ) -> IndexMap<PositionId, Position> {
+        let cache = self.cache.borrow();
+
+        reports
+            .values()
+            .flatten()
+            .filter_map(|report| report.venue_position_id)
+            .filter_map(|position_id| {
+                cache
+                    .position_owned(&position_id)
+                    .map(|position| (position_id, position))
+            })
+            .collect()
+    }
+
+    fn project_attributed_hedge_fills(
+        &self,
+        baseline: &IndexMap<PositionId, Position>,
+        fills: &[OrderFilled],
+    ) -> IndexMap<PositionId, Position> {
+        let mut projected: IndexMap<PositionId, Position> = IndexMap::new();
+
+        for fill in fills {
+            let Some(position_id) = fill.position_id else {
+                continue;
+            };
+
+            if let Some(position) = projected.get_mut(&position_id) {
+                position.apply(fill);
+                continue;
+            }
+
+            let position = if let Some(position) = baseline.get(&position_id) {
+                let mut position = position.clone();
+                position.apply(fill);
+                position
+            } else {
+                let Some(instrument) = self.get_instrument(&fill.instrument_id) else {
+                    continue;
+                };
+                Position::new(&instrument, fill.clone())
+            };
+            projected.insert(position_id, position);
+        }
+
+        projected
+    }
+
     /// Reconciles orders and fills from a mass status report.
     ///
     /// Order events are collected, sorted globally by `ts_event`, then processed through
@@ -492,6 +810,15 @@ impl ExecutionManager {
         mass_status: ExecutionMassStatus,
         exec_engine: Rc<RefCell<ExecutionEngine>>,
     ) -> ReconciliationResult {
+        let mass_position_reports = mass_status.position_reports();
+        let position_report_count: usize = mass_position_reports.values().map(Vec::len).sum();
+
+        if let Err(rejection) = self.validate_mass_status_account_scope(&mass_status) {
+            log::error!("Rejected ExecutionMassStatus: {rejection}");
+            return ReconciliationResult::rejected(rejection, position_report_count);
+        }
+        let hedge_position_baseline = self.hedge_position_baseline(&mass_position_reports);
+
         // Publish raw reports before any state mutation (including fill adjustment
         // below, which can synthesise replacement order/fill reports). The
         // execution engine's per-report `reconcile_*` entry points are bypassed by
@@ -514,7 +841,7 @@ impl ExecutionManager {
         let raw_position_topic =
             MessagingSwitchboard::reconciliation_raw_position_status_report_topic();
 
-        for reports in mass_status.position_reports().values() {
+        for reports in mass_position_reports.values() {
             for report in reports {
                 msgbus::publish_any(raw_position_topic, report);
             }
@@ -523,7 +850,7 @@ impl ExecutionManager {
         let venue = mass_status.venue;
         let order_count = mass_status.order_reports().len();
         let fill_count: usize = mass_status.fill_reports().values().map(|v| v.len()).sum();
-        let position_count = mass_status.position_reports().len();
+        let position_count = position_report_count;
 
         log_info!(
             "Reconciling ExecutionMassStatus for {venue}",
@@ -890,33 +1217,39 @@ impl ExecutionManager {
         }
 
         events.sort_by_key(|e| e.ts_event());
+        let mut applied_position_fills = Vec::new();
 
         for event in &events {
-            if let OrderEventAny::Filled(fill) = event
-                && (retained_fill_state.fill_keys.contains(&(
-                    fill.account_id,
-                    fill.instrument_id,
-                    fill.trade_id,
-                )) || ((retained_fill_state.missing_order_ids.contains(&(
-                    fill.account_id,
-                    fill.instrument_id,
-                    fill.client_order_id,
-                )) || retained_fill_state.missing_venue_order_ids.contains(&(
-                    fill.account_id,
-                    fill.instrument_id,
-                    fill.venue_order_id,
-                ))) && !reported_fill_keys.contains(&(
-                    fill.account_id,
-                    fill.instrument_id,
-                    fill.trade_id,
-                ))) || retained_fill_state
-                    .netting_lifecycle_starts
-                    .get(&(fill.account_id, fill.instrument_id, fill.strategy_id))
-                    .is_some_and(|ts_opened| fill.ts_event < *ts_opened))
-            {
-                exec_engine.borrow_mut().project_reconciliation_fill(fill);
-            } else {
-                exec_engine.borrow_mut().process(event);
+            let project_fill = matches!(
+                event,
+                OrderEventAny::Filled(fill)
+                    if retained_fill_state.fill_keys.contains(&(
+                        fill.account_id,
+                        fill.instrument_id,
+                        fill.trade_id,
+                    )) || ((retained_fill_state.missing_order_ids.contains(&(
+                        fill.account_id,
+                        fill.instrument_id,
+                        fill.client_order_id,
+                    )) || retained_fill_state.missing_venue_order_ids.contains(&(
+                        fill.account_id,
+                        fill.instrument_id,
+                        fill.venue_order_id,
+                    ))) && !reported_fill_keys.contains(&(
+                        fill.account_id,
+                        fill.instrument_id,
+                        fill.trade_id,
+                    ))) || retained_fill_state
+                        .netting_lifecycle_starts
+                        .get(&(fill.account_id, fill.instrument_id, fill.strategy_id))
+                        .is_some_and(|ts_opened| fill.ts_event < *ts_opened)
+            );
+
+            match (project_fill, event) {
+                (true, OrderEventAny::Filled(fill)) => {
+                    exec_engine.borrow_mut().project_reconciliation_fill(fill);
+                }
+                _ => exec_engine.borrow_mut().process(event),
             }
 
             if let OrderEventAny::Filled(fill) = event
@@ -924,63 +1257,56 @@ impl ExecutionManager {
                 && self.is_fill_applied(fill, fill_key)
             {
                 self.processed_fills.mark(fill_key);
+
+                if !project_fill {
+                    applied_position_fills.push(fill.clone());
+                }
             }
         }
 
-        let mut positions_created = 0usize;
+        let projected_hedge_positions =
+            self.project_attributed_hedge_fills(&hedge_position_baseline, &applied_position_fills);
 
-        if !self.config.filter_position_reports {
-            // Collect instruments with fills that lack venue_position_id (can't attribute to
-            // specific hedge position, so must skip all hedge reports for that instrument)
-            let instruments_with_unattributed_fills: IndexSet<InstrumentId> = mass_status
-                .fill_reports()
-                .values()
-                .flatten()
-                .filter(|f| f.venue_position_id.is_none())
-                .map(|f| f.instrument_id)
-                .chain(
-                    mass_status
-                        .order_reports()
-                        .values()
-                        .filter(|r| !r.filled_qty.is_zero() && r.venue_position_id.is_none())
-                        .map(|r| r.instrument_id),
-                )
-                .collect();
+        let instruments_with_unattributed_fills: IndexSet<InstrumentId> = adjusted_fill_reports
+            .values()
+            .flatten()
+            .filter(|report| report.venue_position_id.is_none())
+            .map(|report| report.instrument_id)
+            .chain(
+                adjusted_order_reports
+                    .values()
+                    .filter(|report| {
+                        !report.filled_qty.is_zero() && report.venue_position_id.is_none()
+                    })
+                    .map(|report| report.instrument_id),
+            )
+            .collect();
+        let mut position_reports = PositionReconciliationSummary::default();
 
-            let positions_with_fills: IndexSet<PositionId> = mass_status
-                .fill_reports()
-                .values()
-                .flatten()
-                .filter_map(|f| f.venue_position_id)
-                .chain(
-                    mass_status
-                        .order_reports()
-                        .values()
-                        .filter(|r| !r.filled_qty.is_zero())
-                        .filter_map(|r| r.venue_position_id),
-                )
-                .collect();
+        for (instrument_id, reports) in mass_position_reports {
+            let disposition = self.classify_mass_position_group(
+                instrument_id,
+                &reports,
+                &instruments_with_unattributed_fills,
+            );
 
-            for (instrument_id, reports) in mass_status.position_reports() {
-                if !self.should_reconcile_instrument(&instrument_id) {
-                    log::debug!(
-                        "Skipping position reports for {instrument_id}: not in reconciliation_instrument_ids"
-                    );
-                    continue;
-                }
-
-                for report in reports {
-                    if let Some(position_events) = self.reconcile_position_report(
+            for report in reports {
+                let outcome = match disposition {
+                    PositionReportGroupDisposition::Reconcile => self.reconcile_position_report(
                         &report,
                         mass_status.account_id,
-                        &instruments_with_unattributed_fills,
-                        &positions_with_fills,
-                    ) {
-                        for event in position_events {
-                            exec_engine.borrow_mut().process(&event);
-                            events.push(event);
-                        }
-                        positions_created += 1;
+                        &projected_hedge_positions,
+                    ),
+                    PositionReportGroupDisposition::Skipped(reason) => {
+                        PositionReconciliationOutcome::Skipped(reason)
+                    }
+                };
+                position_reports.record(&outcome);
+
+                if let PositionReconciliationOutcome::Applied(position_events) = outcome {
+                    for event in position_events {
+                        exec_engine.borrow_mut().process(&event);
+                        events.push(event);
                     }
                 }
             }
@@ -1000,12 +1326,23 @@ impl ExecutionManager {
 
         log::info!(
             color = LogColor::Blue as u8;
-            "Reconciliation complete for {venue}: reconciled={orders_reconciled}, external={external_orders_created}, open={open_orders_initialized}, fills={fills_applied}, positions={positions_created}, skipped={orders_skipped_duplicate}, filtered={orders_skipped_filtered}",
+            "Reconciliation complete for {venue}: reconciled={orders_reconciled}, external={external_orders_created}, open={open_orders_initialized}, fills={fills_applied}, position_reports={}, positions_applied={}, positions_unchanged={}, positions_skipped={} (filtered={}, generation_disabled={}, insufficient_evidence={}), skipped={orders_skipped_duplicate}, filtered={orders_skipped_filtered}",
+            position_reports.received(),
+            position_reports.applied(),
+            position_reports.unchanged(),
+            position_reports.skipped(),
+            position_reports.filtered(),
+            position_reports.generation_disabled(),
+            position_reports.insufficient_evidence(),
         );
+
+        debug_assert_eq!(position_reports.received(), position_report_count);
 
         ReconciliationResult {
             events,
             external_orders,
+            rejection: None,
+            position_reports,
         }
     }
 
@@ -1867,6 +2204,23 @@ impl ExecutionManager {
         failed_clients: &IndexSet<ClientId>,
     ) -> Vec<OrderEventAny> {
         log::debug!("Checking position consistency between cached-state and venues");
+
+        let report_count = reports.len();
+        let uncached_accounts = {
+            let cache = self.cache.borrow();
+            reports
+                .iter()
+                .map(|report| report.account_id)
+                .filter(|account_id| cache.account(account_id).is_none())
+                .collect::<IndexSet<_>>()
+        };
+
+        if !uncached_accounts.is_empty() {
+            log::warn!(
+                "Rejected periodic position reconciliation: position_reports={report_count}, uncached_accounts={uncached_accounts:?}"
+            );
+            return Vec::new();
+        }
 
         let mut venue_positions: IndexMap<InstrumentAccountKey, Vec<PositionStatusReport>> =
             IndexMap::new();
@@ -3016,16 +3370,10 @@ impl ExecutionManager {
         &self,
         report: &PositionStatusReport,
         account_id: AccountId,
-        instruments_with_unattributed_fills: &IndexSet<InstrumentId>,
-        positions_with_fills: &IndexSet<PositionId>,
-    ) -> Option<Vec<OrderEventAny>> {
+        projected_hedge_positions: &IndexMap<PositionId, Position>,
+    ) -> PositionReconciliationOutcome {
         if report.venue_position_id.is_some() {
-            self.reconcile_position_report_hedging(
-                report,
-                account_id,
-                instruments_with_unattributed_fills,
-                positions_with_fills,
-            )
+            self.reconcile_position_report_hedging(report, account_id, projected_hedge_positions)
         } else {
             self.reconcile_position_report_netting(report, account_id)
         }
@@ -3035,33 +3383,42 @@ impl ExecutionManager {
         &self,
         report: &PositionStatusReport,
         account_id: AccountId,
-        instruments_with_unattributed_fills: &IndexSet<InstrumentId>,
-        positions_with_fills: &IndexSet<PositionId>,
-    ) -> Option<Vec<OrderEventAny>> {
-        let venue_position_id = report.venue_position_id?;
-
-        // Skip if batch already has fills for this position (will be created from fills)
-        if positions_with_fills.contains(&venue_position_id) {
-            log::debug!(
-                "Skipping hedge position {venue_position_id} reconciliation: fills already in batch"
+        projected_hedge_positions: &IndexMap<PositionId, Position>,
+    ) -> PositionReconciliationOutcome {
+        let Some(venue_position_id) = report.venue_position_id else {
+            return PositionReconciliationOutcome::Skipped(
+                PositionReconciliationSkip::InsufficientEvidence,
             );
-            return None;
-        }
-
-        // Skip if fills exist for this instrument but lack venue_position_id
-        // (can't determine which hedge position they belong to)
-        if instruments_with_unattributed_fills.contains(&report.instrument_id) {
-            log::debug!(
-                "Skipping hedge position {venue_position_id} reconciliation: unattributed fills in batch"
-            );
-            return None;
-        }
+        };
 
         log::debug!(
             "Reconciling HEDGE position for {}, venue_position_id={}",
             report.instrument_id,
             venue_position_id
         );
+
+        if let Some(projected_position) = projected_hedge_positions.get(&venue_position_id) {
+            let projected_qty = projected_position.signed_decimal_qty();
+            let tolerance = self.position_reconciliation_tolerance(account_id);
+            if (projected_qty - report.signed_decimal_qty).abs() <= tolerance {
+                return PositionReconciliationOutcome::Unchanged;
+            }
+
+            if !self.config.generate_missing_orders {
+                return PositionReconciliationOutcome::Skipped(
+                    PositionReconciliationSkip::GenerationDisabled,
+                );
+            }
+
+            return PositionReconciliationOutcome::from_events(
+                self.reconcile_hedge_position_discrepancy(
+                    report,
+                    account_id,
+                    projected_position,
+                    projected_qty,
+                ),
+            );
+        }
 
         let position = {
             let cache = self.cache.borrow();
@@ -3077,45 +3434,38 @@ impl ExecutionManager {
                     log::debug!(
                         "Hedge position {venue_position_id} matches venue: qty={cached_signed_qty}"
                     );
-                    return None;
-                }
-
-                if venue_signed_qty == Decimal::ZERO && cached_signed_qty == Decimal::ZERO {
-                    return None;
+                    return PositionReconciliationOutcome::Unchanged;
                 }
 
                 if !self.config.generate_missing_orders {
-                    log::error!(
-                        "Cannot reconcile {} {}: position net qty {} != reported net qty {} \
-                         and `generate_missing_orders` is disabled",
-                        report.instrument_id,
-                        venue_position_id,
-                        cached_signed_qty,
-                        venue_signed_qty
+                    return PositionReconciliationOutcome::Skipped(
+                        PositionReconciliationSkip::GenerationDisabled,
                     );
-                    return None;
                 }
 
-                self.reconcile_hedge_position_discrepancy(
-                    report,
-                    account_id,
-                    &position,
-                    cached_signed_qty,
+                PositionReconciliationOutcome::from_events(
+                    self.reconcile_hedge_position_discrepancy(
+                        report,
+                        account_id,
+                        &position,
+                        cached_signed_qty,
+                    ),
                 )
             }
             None => {
                 if report.signed_decimal_qty == Decimal::ZERO {
-                    return None;
+                    return PositionReconciliationOutcome::Unchanged;
                 }
 
                 if !self.config.generate_missing_orders {
-                    log::error!(
-                        "Cannot reconcile position: {venue_position_id} not found and `generate_missing_orders` is disabled"
+                    return PositionReconciliationOutcome::Skipped(
+                        PositionReconciliationSkip::GenerationDisabled,
                     );
-                    return None;
                 }
 
-                self.reconcile_missing_hedge_position(report, account_id)
+                PositionReconciliationOutcome::from_events(
+                    self.reconcile_missing_hedge_position(report, account_id),
+                )
             }
         }
     }
@@ -3203,12 +3553,16 @@ impl ExecutionManager {
         &self,
         report: &PositionStatusReport,
         account_id: AccountId,
-    ) -> Option<Vec<OrderEventAny>> {
+    ) -> PositionReconciliationOutcome {
         let instrument_id = report.instrument_id;
 
         log::debug!("Reconciling NET position for {instrument_id}");
 
-        let instrument = self.get_instrument(&instrument_id)?;
+        let Some(instrument) = self.get_instrument(&instrument_id) else {
+            return PositionReconciliationOutcome::Skipped(
+                PositionReconciliationSkip::InsufficientEvidence,
+            );
+        };
 
         let (cached_signed_qty, cached_avg_px) = {
             let cache = self.cache.borrow();
@@ -3251,24 +3605,27 @@ impl ExecutionManager {
         let tolerance = self.position_reconciliation_tolerance(account_id);
         if (cached_signed_qty - venue_signed_qty).abs() <= tolerance {
             log::debug!("Position quantities match for {instrument_id}, no reconciliation needed");
-            return None;
+            return PositionReconciliationOutcome::Unchanged;
         }
 
         if !self.config.generate_missing_orders {
-            log::debug!(
-                "Discrepancy for {instrument_id} position when `generate_missing_orders` disabled, skipping"
+            return PositionReconciliationOutcome::Skipped(
+                PositionReconciliationSkip::GenerationDisabled,
             );
-            return None;
         }
 
         let diff = (cached_signed_qty - venue_signed_qty).abs();
-        let diff_qty = Quantity::from_decimal_dp(diff, instrument.size_precision()).ok()?;
+        let Ok(diff_qty) = Quantity::from_decimal_dp(diff, instrument.size_precision()) else {
+            return PositionReconciliationOutcome::Skipped(
+                PositionReconciliationSkip::InsufficientEvidence,
+            );
+        };
 
         if diff_qty.is_zero() {
             log::debug!(
                 "Difference quantity rounds to zero for {instrument_id}, skipping order generation"
             );
-            return None;
+            return PositionReconciliationOutcome::Unchanged;
         }
 
         let crosses_zero = cached_signed_qty != Decimal::ZERO
@@ -3278,7 +3635,7 @@ impl ExecutionManager {
 
         if crosses_zero {
             let ts_now = self.clock.borrow().timestamp_ns();
-            return self.reconcile_cross_zero_position(
+            return PositionReconciliationOutcome::from_events(self.reconcile_cross_zero_position(
                 &instrument,
                 account_id,
                 instrument_id,
@@ -3288,21 +3645,25 @@ impl ExecutionManager {
                 report.avg_px_open,
                 ts_now,
                 report.ts_last,
-            );
+            ));
         }
 
         if cached_signed_qty == Decimal::ZERO {
-            return self.create_position_from_report(report, account_id, &instrument);
+            return PositionReconciliationOutcome::from_events(self.create_position_from_report(
+                report,
+                account_id,
+                &instrument,
+            ));
         }
 
-        self.create_position_reconciliation_order(
+        PositionReconciliationOutcome::from_events(self.create_position_reconciliation_order(
             report,
             account_id,
             &instrument,
             cached_signed_qty,
             diff_qty,
             cached_avg_px,
-        )
+        ))
     }
 
     fn create_position_reconciliation_order(
@@ -4034,8 +4395,10 @@ mod tests {
     use nautilus_core::datetime::NANOSECONDS_IN_SECOND;
     use nautilus_execution::reconciliation::generate_reconciliation_order_events;
     use nautilus_model::{
+        accounts::AccountAny,
         enums::{LiquiditySide, OmsType, PositionSideSpecified},
         events::order::spec::{OrderPendingUpdateSpec, OrderUpdatedSpec},
+        identifiers::PositionId,
         instruments::{
             Instrument,
             stubs::{crypto_perpetual_ethusdt, xbtusd_bitmex},
@@ -4046,6 +4409,50 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_periodic_uncached_account_rejects_complete_pass_without_touching_retry_state() {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default());
+        let instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
+        let account_id = AccountId::from("UNCACHED-001");
+        let key = (instrument_id, account_id);
+        manager.position_reconciliation_states.insert(
+            key,
+            PositionReconciliationState {
+                report_shape: PositionReportShape::Unambiguous,
+                retries: 3,
+            },
+        );
+        let check = manager.prepare_position_report_check(UUID4::new(), &[]);
+        let report = PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSideSpecified::Flat,
+            Quantity::zero(0),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            None,
+            None,
+            None,
+        );
+
+        let events = manager.reconcile_position_reports(
+            &check,
+            vec![report],
+            &IndexSet::new(),
+            &IndexSet::new(),
+        );
+
+        assert!(events.is_empty());
+        let state = manager
+            .position_reconciliation_states
+            .get(&key)
+            .expect("uncached account must not alter its retry state");
+        assert_eq!(state.retries, 3);
+        assert!(state.report_shape == PositionReportShape::Unambiguous);
+    }
 
     #[rstest]
     fn test_clear_recon_tracking_removes_targeted_query() {
@@ -4710,6 +5117,9 @@ mod tests {
         quantity: &str,
         price: &str,
     ) -> Position {
+        let account = AccountAny::default();
+        let account_id = account.id();
+        cache.borrow_mut().add_account(account).unwrap();
         let order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument.id())
             .side(side)
@@ -4725,7 +5135,7 @@ mod tests {
             None,
             None,
             None,
-            Some(AccountId::from("TEST-001")),
+            Some(account_id),
         );
         let order_filled: OrderFilled = fill.into();
         let position = Position::new(instrument, order_filled);

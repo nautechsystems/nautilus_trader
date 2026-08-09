@@ -325,9 +325,9 @@ impl LiveNode {
 
     /// Starts the live node without entering a select loop.
     ///
-    /// Connects clients, runs reconciliation, and starts the trader, but does
-    /// not consume the runner or drive channel receivers. Channel traffic that
-    /// arrives after startup is not serviced until the caller provides a loop.
+    /// Connects clients, runs reconciliation, and starts the trader while routing
+    /// startup channel traffic. Channel traffic that arrives after startup is not
+    /// serviced until the caller polls the node.
     ///
     /// For a self-contained entry point that owns the event loop, use [`run`](Self::run).
     ///
@@ -374,52 +374,83 @@ impl LiveNode {
         }
 
         let connection_deadline = dst::time::Instant::now() + self.config.timeout_connection;
+        let mut pending = PendingEvents::default();
 
-        // Connect data clients first and flush instrument events into cache
-        if let Err(e) = self.connect_data_phase(connection_deadline).await {
+        // Drive every startup phase through the same event-routing contract as `run`.
+        let Some(mut runner) = self.runner.take() else {
+            return self
+                .abort_startup_with_error(
+                    "Startup event routing unavailable",
+                    anyhow::anyhow!("LiveNode runner is unavailable"),
+                )
+                .await;
+        };
+        let data_connect_result = drive_with_runner_event_buffering(
+            self.connect_data_phase(connection_deadline),
+            &mut runner,
+            &mut pending,
+        )
+        .await;
+
+        if let Err(e) = data_connect_result {
+            self.runner = Some(runner);
+            pending.drain();
             return self
                 .abort_startup_with_error("Data client connection timed out", e)
                 .await;
         }
 
-        if let Some(runner) = self.runner.as_mut() {
-            runner.flush_pending_data();
-        }
+        pending.drain_data();
 
-        if let Err(e) = self.connect_exec_clients(connection_deadline).await {
+        let engine_connection_result = drive_with_runner_event_buffering(
+            self.connect_exec_phase(connection_deadline),
+            &mut runner,
+            &mut pending,
+        )
+        .await;
+        pending.drain();
+
+        let engine_connection_status = match engine_connection_result {
+            Ok(status) => status,
+            Err(e) => {
+                self.runner = Some(runner);
+                return self
+                    .abort_startup_with_error("Execution client connection timed out", e)
+                    .await;
+            }
+        };
+
+        if engine_connection_status == EngineConnectionStatus::TimedOut {
+            self.runner = Some(runner);
             return self
-                .abort_startup_with_error("Execution client connection timed out", e)
+                .abort_startup_with_error(
+                    "Engine readiness timed out",
+                    anyhow::anyhow!("readiness timeout while waiting for engine connections"),
+                )
                 .await;
         }
 
-        if let Some(reason) = self.startup_abort_reason() {
+        if let Some(reason) = engine_connection_status
+            .abort_reason()
+            .or_else(|| self.startup_abort_reason())
+        {
+            self.runner = Some(runner);
             self.abort_startup(reason).await?;
             return Ok(());
         }
 
-        match self.await_engines_connected(connection_deadline).await {
-            EngineConnectionStatus::Connected => {}
-            EngineConnectionStatus::TimedOut => {
-                return self
-                    .abort_startup_with_error(
-                        "Engine readiness timed out",
-                        anyhow::anyhow!("readiness timeout while waiting for engine connections"),
-                    )
-                    .await;
-            }
-            EngineConnectionStatus::StopRequested => {
-                self.abort_startup("Stop signal received during startup")
-                    .await?;
-                return Ok(());
-            }
-            EngineConnectionStatus::ShutdownRequested => {
-                self.abort_startup("Shutdown signal received during startup")
-                    .await?;
-                return Ok(());
-            }
-        }
+        debug_assert_eq!(engine_connection_status, EngineConnectionStatus::Connected);
 
-        if let Err(e) = self.perform_startup_reconciliation().await {
+        let reconciliation_result = drive_with_runner_event_buffering(
+            self.perform_startup_reconciliation(),
+            &mut runner,
+            &mut pending,
+        )
+        .await;
+        self.runner = Some(runner);
+        pending.drain();
+
+        if let Err(e) = reconciliation_result {
             if let Err(finalize_err) = self.abort_startup("Startup reconciliation failed").await {
                 anyhow::bail!(
                     "startup reconciliation failed: {e}; failed to finalize startup abort: {finalize_err}"
@@ -766,6 +797,12 @@ impl LiveNode {
                         .reconcile_execution_mass_status(mass_status, exec_engine_rc)
                         .await;
 
+                    if let Some(rejection) = &result.rejection {
+                        anyhow::bail!(
+                            "ExecutionMassStatus from {client_id} was rejected: {rejection}"
+                        );
+                    }
+
                     if result.events.is_empty() {
                         log_info!(
                             "Reconciliation for {} succeeded",
@@ -1043,7 +1080,26 @@ impl LiveNode {
         debug_assert_eq!(engine_connection_status, EngineConnectionStatus::Connected);
 
         // Run reconciliation now that instruments are in cache and start trader
-        if let Err(e) = self.perform_startup_reconciliation().await {
+        let reconciliation_result = drive_with_event_buffering(
+            self.perform_startup_reconciliation(),
+            &mut pending,
+            &mut time_evt_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+            &mut exec_evt_rx,
+            &mut exec_cmd_rx,
+        )
+        .await;
+        flush_all_pending(
+            &mut pending,
+            &mut time_evt_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+            &mut exec_evt_rx,
+            &mut exec_cmd_rx,
+        );
+
+        if let Err(e) = reconciliation_result {
             let result = self.abort_startup("Startup reconciliation failed").await;
             Self::drain_channels(
                 &mut time_evt_rx,
@@ -3030,32 +3086,7 @@ fn flush_all_pending(
     }
 
     while let Ok(evt) = exec_evt_rx.try_recv() {
-        match evt {
-            ExecutionEvent::Account(_) => {
-                AsyncRunner::handle_exec_event(evt);
-            }
-            ExecutionEvent::Report(report) => {
-                pending.exec_reports.push(report);
-            }
-            ExecutionEvent::Order(order_evt) => {
-                pending.order_evts.push(order_evt);
-            }
-            ExecutionEvent::OrderSubmittedBatch(batch) => {
-                for submitted in batch {
-                    pending.order_evts.push(OrderEventAny::Submitted(submitted));
-                }
-            }
-            ExecutionEvent::OrderAcceptedBatch(batch) => {
-                for accepted in batch {
-                    pending.order_evts.push(OrderEventAny::Accepted(accepted));
-                }
-            }
-            ExecutionEvent::OrderCanceledBatch(batch) => {
-                for canceled in batch {
-                    pending.order_evts.push(OrderEventAny::Canceled(canceled));
-                }
-            }
-        }
+        pending.capture_execution_event(evt);
     }
 
     while let Ok(cmd) = exec_cmd_rx.try_recv() {
@@ -3091,35 +3122,7 @@ async fn drive_with_event_buffering<F: std::future::Future>(
                 let _ = AsyncRunner::handle_time_event(handler);
             }
             Some(evt) = exec_evt_rx.recv() => {
-                // Account events are safe to process immediately. Report and
-                // Order events need ExecEngine borrow_mut which may conflict
-                // with the borrow held by the driven future.
-                match evt {
-                    ExecutionEvent::Account(_) => {
-                        AsyncRunner::handle_exec_event(evt);
-                    }
-                    ExecutionEvent::Report(report) => {
-                        pending.exec_reports.push(report);
-                    }
-                    ExecutionEvent::Order(order_evt) => {
-                        pending.order_evts.push(order_evt);
-                    }
-                    ExecutionEvent::OrderSubmittedBatch(batch) => {
-                        for submitted in batch {
-                            pending.order_evts.push(OrderEventAny::Submitted(submitted));
-                        }
-                    }
-                    ExecutionEvent::OrderAcceptedBatch(batch) => {
-                        for accepted in batch {
-                            pending.order_evts.push(OrderEventAny::Accepted(accepted));
-                        }
-                    }
-                    ExecutionEvent::OrderCanceledBatch(batch) => {
-                        for canceled in batch {
-                            pending.order_evts.push(OrderEventAny::Canceled(canceled));
-                        }
-                    }
-                }
+                pending.capture_execution_event(evt);
             }
             Some(cmd) = exec_cmd_rx.recv() => {
                 pending.exec_cmds.push(cmd);
@@ -3132,6 +3135,32 @@ async fn drive_with_event_buffering<F: std::future::Future>(
             }
         }
     }
+}
+
+/// Drives a startup future while preserving the same event-routing contract as [`LiveNode::run`].
+async fn drive_with_runner_event_buffering<F: std::future::Future>(
+    future: F,
+    runner: &mut AsyncRunner,
+    pending: &mut PendingEvents,
+) -> F::Output {
+    tokio::pin!(future);
+
+    let result = loop {
+        tokio::select! {
+            biased;
+
+            result = &mut future => break result,
+            event = runner.recv() => {
+                let Some(event) = event else {
+                    break future.await;
+                };
+                pending.capture_runner_event(event);
+            }
+        }
+    };
+
+    runner.poll_pending(|event| pending.capture_runner_event(event));
+    result
 }
 
 #[derive(Default)]
@@ -3150,6 +3179,35 @@ impl PendingEvents {
             && self.exec_cmds.is_empty()
             && self.exec_reports.is_empty()
             && self.order_evts.is_empty()
+    }
+
+    fn capture_execution_event(&mut self, event: ExecutionEvent) {
+        match event {
+            ExecutionEvent::Account(_) => AsyncRunner::handle_exec_event(event),
+            ExecutionEvent::Report(report) => self.exec_reports.push(report),
+            ExecutionEvent::Order(order_event) => self.order_evts.push(order_event),
+            ExecutionEvent::OrderSubmittedBatch(batch) => self
+                .order_evts
+                .extend(batch.into_iter().map(OrderEventAny::Submitted)),
+            ExecutionEvent::OrderAcceptedBatch(batch) => self
+                .order_evts
+                .extend(batch.into_iter().map(OrderEventAny::Accepted)),
+            ExecutionEvent::OrderCanceledBatch(batch) => self
+                .order_evts
+                .extend(batch.into_iter().map(OrderEventAny::Canceled)),
+        }
+    }
+
+    fn capture_runner_event(&mut self, event: PendingRunnerEvent) {
+        match event {
+            PendingRunnerEvent::Time(message) => {
+                let _ = AsyncRunner::handle_time_event(message);
+            }
+            PendingRunnerEvent::ExecEvent(event) => self.capture_execution_event(event),
+            PendingRunnerEvent::ExecCommand(command) => self.exec_cmds.push(command),
+            PendingRunnerEvent::DataEvent(event) => self.data_evts.push(event),
+            PendingRunnerEvent::DataCommand(command) => self.data_cmds.push(command),
+        }
     }
 
     /// Drains only data events and commands into the cache.
@@ -6613,6 +6671,29 @@ mod tests {
         assert!(pending.order_evts.is_empty());
         assert!(pending.exec_cmds.is_empty());
         assert!(exec_evt_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_runner_startup_driver_routes_accounts_and_buffers_mutating_events() {
+        let mut runner = AsyncRunner::new();
+        runner.bind_senders();
+        let exec_event_sender = get_exec_event_sender();
+        let mut pending = PendingEvents::default();
+
+        drive_with_runner_event_buffering(
+            async move {
+                exec_event_sender.send(stub_account_event()).unwrap();
+                exec_event_sender.send(stub_order_event()).unwrap();
+                tokio::task::yield_now().await;
+            },
+            &mut runner,
+            &mut pending,
+        )
+        .await;
+
+        assert_eq!(pending.order_evts.len(), 1);
+        assert!(pending.exec_reports.is_empty());
+        assert!(pending.exec_cmds.is_empty());
     }
 
     #[rstest]

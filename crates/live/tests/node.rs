@@ -38,8 +38,9 @@ use nautilus_common::{
     component::Component,
     enums::Environment,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
-    live::dst,
+    live::{dst, runner::get_exec_event_sender},
     messages::{
+        ExecutionEvent,
         execution::{
             CancelAllOrders, GenerateOrderStatusReport, GenerateOrderStatusReports,
             GeneratePositionStatusReports, QueryOrder,
@@ -337,6 +338,7 @@ mod serial_tests {
     struct StartupMassStatusExecutionClient {
         state: StartupMassStatusClientState,
         behavior: StartupMassStatusBehavior,
+        cache: CacheView,
     }
 
     struct FailingDisconnectDataClient {
@@ -356,8 +358,16 @@ mod serial_tests {
     impl StartupMassStatusExecutionClient {
         const CLIENT_ID: &'static str = "STARTUP-MASS-STATUS";
 
-        fn new(state: StartupMassStatusClientState, behavior: StartupMassStatusBehavior) -> Self {
-            Self { state, behavior }
+        fn new(
+            state: StartupMassStatusClientState,
+            behavior: StartupMassStatusBehavior,
+            cache: CacheView,
+        ) -> Self {
+            Self {
+                state,
+                behavior,
+                cache,
+            }
         }
     }
 
@@ -457,11 +467,12 @@ mod serial_tests {
             &self,
             _name: &str,
             _config: &dyn ClientConfig,
-            _cache: CacheView,
+            cache: CacheView,
         ) -> anyhow::Result<Box<dyn ExecutionClient>> {
             Ok(Box::new(StartupMassStatusExecutionClient::new(
                 self.state.clone(),
                 self.behavior,
+                cache,
             )))
         }
 
@@ -692,7 +703,7 @@ mod serial_tests {
         }
 
         fn account_id(&self) -> AccountId {
-            AccountId::from("STARTUP-MASS-STATUS-001")
+            AccountAny::default().id()
         }
 
         fn venue(&self) -> Venue {
@@ -737,6 +748,19 @@ mod serial_tests {
         }
 
         async fn connect(&mut self) -> anyhow::Result<()> {
+            let account = AccountAny::default();
+            let account_id = account.id();
+            let account_state = account
+                .last_event()
+                .expect("default test account has an initial state");
+            get_exec_event_sender()
+                .send(ExecutionEvent::Account(account_state))
+                .map_err(|e| anyhow::anyhow!("failed to emit account state: {e}"))?;
+
+            while self.cache.borrow().account(&account_id).is_none() {
+                tokio::task::yield_now().await;
+            }
+
             self.state.connected.store(true, Ordering::Relaxed);
             Ok(())
         }
@@ -2163,6 +2187,14 @@ mod serial_tests {
         assert!(state.mass_status_requested.load(Ordering::Relaxed));
         assert_eq!(handle.state(), NodeState::Running);
         assert!(state.connected.load(Ordering::Relaxed));
+        assert!(
+            node.kernel()
+                .cache
+                .borrow()
+                .account(&AccountAny::default().id())
+                .is_some(),
+            "start must route the account event required to complete client connection",
+        );
 
         node.stop().await.unwrap();
 
@@ -2245,7 +2277,7 @@ mod serial_tests {
         let strategy_id = StrategyId::from("STOP-ON-START-001");
         let instrument = crypto_perpetual_ethusdt();
         let instrument_id = instrument.id();
-        let account_id = AccountId::from("STARTUP-MASS-STATUS-001");
+        let account_id = AccountAny::default().id();
         let client_id = ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID);
         let stop_count = Arc::new(AtomicUsize::new(0));
 

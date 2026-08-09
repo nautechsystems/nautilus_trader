@@ -54,7 +54,9 @@ use nautilus_execution::{
         create_position_reconciliation_venue_order_id, process_mass_status_for_reconciliation,
     },
 };
-use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig};
+use nautilus_live::manager::{
+    ExecutionManager, ExecutionManagerConfig, ReconciliationRejection, ReconciliationReportKind,
+};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
@@ -104,6 +106,25 @@ struct TestContext {
     exec_engine: Rc<RefCell<ExecutionEngine>>,
 }
 
+fn test_account(account_id: AccountId) -> AccountAny {
+    let account_state = AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::from("1000000 USDT"),
+            Money::from("0 USDT"),
+            Money::from("1000000 USDT"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::USDT()),
+    );
+    AccountAny::Margin(MarginAccount::new(account_state, true))
+}
+
 impl TestContext {
     fn new() -> Self {
         Self::with_config(ExecutionManagerConfig::default())
@@ -114,23 +135,10 @@ impl TestContext {
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         // Add test account to cache (required for position creation in ExecutionEngine)
-        let account_state = AccountState::new(
-            test_account_id(),
-            AccountType::Margin,
-            vec![AccountBalance::new(
-                Money::from("1000000 USDT"),
-                Money::from("0 USDT"),
-                Money::from("1000000 USDT"),
-            )],
-            vec![],
-            true,
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            Some(Currency::USDT()),
-        );
-        let account = AccountAny::Margin(MarginAccount::new(account_state, true));
-        cache.borrow_mut().add_account(account).unwrap();
+        cache
+            .borrow_mut()
+            .add_account(test_account(test_account_id()))
+            .unwrap();
 
         let manager = ExecutionManager::new(clock.clone(), cache.clone(), config);
         let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
@@ -162,6 +170,13 @@ impl TestContext {
 
     fn add_instrument(&self, instrument: InstrumentAny) {
         self.cache.borrow_mut().add_instrument(instrument).unwrap();
+    }
+
+    fn add_account(&self, account_id: AccountId) {
+        self.cache
+            .borrow_mut()
+            .add_account(test_account(account_id))
+            .unwrap();
     }
 
     fn add_order(&self, order: OrderAny) {
@@ -683,6 +698,100 @@ async fn test_reconcile_mass_status_with_empty_reports() {
         .await;
 
     assert!(result.events.is_empty());
+    assert!(result.rejection.is_none());
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_rejects_uncached_envelope_account() {
+    let mut ctx = TestContext::new();
+    let account_id = AccountId::from("UNCACHED-001");
+    let mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        account_id,
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(
+        result.rejection,
+        Some(ReconciliationRejection::AccountNotCached { account_id })
+    );
+    assert!(result.events.is_empty());
+    assert!(result.external_orders.is_empty());
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_rejects_child_account_mismatch_atomically() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let report_account_id = AccountId::from("TEST-002");
+    ctx.add_instrument(instrument);
+    ctx.add_account(report_account_id);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_fill_reports(vec![FillReport::new(
+        test_account_id(),
+        instrument_id,
+        VenueOrderId::from("V-SCOPE-001"),
+        TradeId::from("T-SCOPE-001"),
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::from("0 USDT"),
+        LiquiditySide::Taker,
+        None,
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )]);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        report_account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(
+        result.rejection,
+        Some(ReconciliationRejection::ReportAccountMismatch {
+            envelope_account_id: test_account_id(),
+            report_account_id,
+            report_kind: ReconciliationReportKind::Position,
+        })
+    );
+    assert!(result.events.is_empty());
+    assert!(
+        ctx.cache
+            .borrow()
+            .positions(None, None, None, None, None)
+            .is_empty()
+    );
+    assert_eq!(result.position_reports.received(), 1);
+    assert_eq!(result.position_reports.rejected(), 1);
 }
 
 #[tokio::test]
@@ -5645,10 +5754,16 @@ async fn test_reconcile_mass_status_routes_to_netting_without_venue_position_id(
     assert!(!result.events.is_empty());
 }
 
+#[rstest]
+#[case("5.0", 1, 0, 1)]
+#[case("6.0", 2, 1, 0)]
 #[tokio::test]
-async fn test_reconcile_mass_status_skips_hedge_position_when_fills_in_batch() {
-    // Tests that hedge position reconciliation is skipped when fills for the same
-    // venue_position_id exist in the batch (prevents duplicate synthetic orders)
+async fn test_reconcile_mass_status_projects_attributed_hedge_fill_before_position_report(
+    #[case] report_qty: &str,
+    #[case] expected_fills: usize,
+    #[case] expected_applied: usize,
+    #[case] expected_unchanged: usize,
+) {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     let client_order_id = ClientOrderId::from("O-001");
@@ -5656,7 +5771,14 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_fills_in_batch() {
     let venue_position_id = PositionId::from("P-HEDGE-001");
 
     ctx.add_instrument(test_instrument());
-    let order = create_limit_order("O-001", instrument_id, OrderSide::Buy, "5.0", "3000.00");
+    let order = create_accepted_order(
+        "O-001",
+        instrument_id,
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        venue_order_id,
+    );
     ctx.add_order(order);
 
     let mut mass_status = ExecutionMassStatus::new(
@@ -5691,7 +5813,7 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_fills_in_batch() {
         test_account_id(),
         instrument_id,
         PositionSideSpecified::Long,
-        Quantity::from("5.0"),
+        Quantity::from(report_qty),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
         None,
@@ -5705,9 +5827,18 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_fills_in_batch() {
         .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
         .await;
 
-    // Should only have fill event, no synthetic order from position report
-    assert_eq!(result.events.len(), 1);
-    assert!(matches!(result.events[0], OrderEventAny::Filled(_)));
+    assert_eq!(
+        result
+            .events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count(),
+        expected_fills,
+    );
+    assert_eq!(result.position_reports.received(), 1);
+    assert_eq!(result.position_reports.applied(), expected_applied);
+    assert_eq!(result.position_reports.unchanged(), expected_unchanged);
+    assert_eq!(result.position_reports.skipped(), 0);
 }
 
 #[tokio::test]
@@ -5781,10 +5912,7 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_filled_order_in_ba
 }
 
 #[tokio::test]
-async fn test_reconcile_mass_status_skips_hedge_position_when_fills_lack_position_id() {
-    // Tests that hedge position reconciliation is skipped when fills exist for the
-    // instrument but lack venue_position_id (common when venues only include IDs on
-    // position reports)
+async fn test_reconcile_mass_status_counts_ambiguous_unattributed_hedge_report() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     let client_order_id = ClientOrderId::from("O-001");
@@ -5840,9 +5968,89 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_fills_lack_positio
         .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
         .await;
 
-    // Should only have fill event, position report skipped due to instrument-level fill
+    // The fill cannot be attributed to the hedge report, so no synthetic position event is safe.
     assert_eq!(result.events.len(), 1);
     assert!(matches!(result.events[0], OrderEventAny::Filled(_)));
+    assert_eq!(result.position_reports.received(), 1);
+    assert_eq!(result.position_reports.skipped(), 1);
+    assert_eq!(result.position_reports.insufficient_evidence(), 1);
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_counts_unattributed_hedge_aggregate_mismatch() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position_id = PositionId::from("P-HEDGE-UNATTRIBUTED");
+    let client_order_id = ClientOrderId::from("O-HEDGE-UNATTRIBUTED");
+    let venue_order_id = VenueOrderId::from("V-HEDGE-UNATTRIBUTED");
+    ctx.add_instrument(instrument.clone());
+    ctx.add_position(&create_test_position(
+        &instrument,
+        position_id,
+        OrderSide::Buy,
+        "2.0",
+        "3000.00",
+    ));
+    ctx.add_order(create_limit_order(
+        client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+    ));
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_fill_reports(vec![FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        TradeId::from("T-HEDGE-UNATTRIBUTED"),
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Maker,
+        Some(client_order_id),
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )]);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(position_id),
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(
+        result
+            .events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count(),
+        1
+    );
+    assert_eq!(result.position_reports.received(), 1);
+    assert_eq!(result.position_reports.skipped(), 1);
+    assert_eq!(result.position_reports.insufficient_evidence(), 1);
 }
 
 #[tokio::test]
@@ -6130,6 +6338,9 @@ async fn test_reconcile_hedge_position_discrepancy_disabled() {
         result.events.is_empty(),
         "Expected no events when generate_missing_orders is disabled"
     );
+    assert_eq!(result.position_reports.received(), 1);
+    assert_eq!(result.position_reports.skipped(), 1);
+    assert_eq!(result.position_reports.generation_disabled(), 1);
 }
 
 #[tokio::test]
