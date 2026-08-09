@@ -374,23 +374,17 @@ impl LiveNode {
             });
 
         if let Err(e) = validation_result {
-            return Err(cleanup_late_data_client(
-                guard,
-                self.config.timeout_disconnection,
-                client_id,
-                e,
-            )
-            .await);
+            return Err(self.cleanup_late_data_client(guard, client_id, e).await);
         }
 
         if let Err(e) = guard.adapter_mut().start() {
-            return Err(cleanup_late_data_client(
-                guard,
-                self.config.timeout_disconnection,
-                client_id,
-                e.context(format!("Failed to start data client {client_id}")),
-            )
-            .await);
+            return Err(self
+                .cleanup_late_data_client(
+                    guard,
+                    client_id,
+                    e.context(format!("Failed to start data client {client_id}")),
+                )
+                .await);
         }
 
         if let Some(runner) = self.runner.as_mut() {
@@ -473,13 +467,13 @@ impl LiveNode {
         };
 
         if let Err(e) = registration_result {
-            return Err(cleanup_late_data_client(
-                guard,
-                self.config.timeout_disconnection,
-                client_id,
-                e.context(format!("Failed to connect data client {client_id}")),
-            )
-            .await);
+            return Err(self
+                .cleanup_late_data_client(
+                    guard,
+                    client_id,
+                    e.context(format!("Failed to connect data client {client_id}")),
+                )
+                .await);
         }
 
         // One borrow spans revalidation and commit: no await separates them, so the
@@ -507,13 +501,7 @@ impl LiveNode {
             });
 
         if let Err(e) = commit_result {
-            return Err(cleanup_late_data_client(
-                guard,
-                self.config.timeout_disconnection,
-                client_id,
-                e,
-            )
-            .await);
+            return Err(self.cleanup_late_data_client(guard, client_id, e).await);
         }
         self.data_client_names.insert(name);
 
@@ -3012,6 +3000,44 @@ impl LiveNode {
         drop(position_report_task.take());
         self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
     }
+
+    async fn cleanup_late_data_client(
+        &mut self,
+        guard: LateDataClientGuard,
+        client_id: ClientId,
+        error: anyhow::Error,
+    ) -> anyhow::Error {
+        let cleanup = guard.cleanup(self.config.timeout_disconnection);
+        tokio::pin!(cleanup);
+
+        let result = loop {
+            let outcome = if let Some(runner) = self.runner.as_mut() {
+                tokio::select! {
+                    biased;
+                    result = &mut cleanup => CleanupOutcome::Complete(result),
+                    event = runner.recv() => match event {
+                        Some(event) => CleanupOutcome::Event(Box::new(event)),
+                        None => CleanupOutcome::RunnerClosed,
+                    },
+                }
+            } else {
+                break cleanup.await;
+            };
+
+            match outcome {
+                CleanupOutcome::Complete(result) => break result,
+                CleanupOutcome::Event(event) => self.process_runner_event(*event),
+                CleanupOutcome::RunnerClosed => break cleanup.await,
+            }
+        };
+
+        match result {
+            Ok(()) => error,
+            Err(cleanup_error) => error.context(format!(
+                "Failed to clean up data client {client_id}: {cleanup_error}"
+            )),
+        }
+    }
 }
 
 struct LateDataClientGuard {
@@ -3102,18 +3128,10 @@ enum RegistrationOutcome {
     Event(Box<PendingRunnerEvent>),
 }
 
-async fn cleanup_late_data_client(
-    guard: LateDataClientGuard,
-    timeout: Duration,
-    client_id: ClientId,
-    error: anyhow::Error,
-) -> anyhow::Error {
-    match guard.cleanup(timeout).await {
-        Ok(()) => error,
-        Err(cleanup_error) => error.context(format!(
-            "Failed to clean up data client {client_id}: {cleanup_error}"
-        )),
-    }
+enum CleanupOutcome {
+    Complete(anyhow::Result<()>),
+    RunnerClosed,
+    Event(Box<PendingRunnerEvent>),
 }
 
 fn record_runner_dispatch(

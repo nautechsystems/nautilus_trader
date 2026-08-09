@@ -329,6 +329,8 @@ mod serial_tests {
         disconnect_attempted: Arc<AtomicBool>,
         connect_entered: Arc<tokio::sync::Notify>,
         release_connect: Arc<tokio::sync::Notify>,
+        disconnect_entered: Arc<tokio::sync::Notify>,
+        release_disconnect: Arc<tokio::sync::Notify>,
     }
 
     #[derive(Clone, Copy, Debug)]
@@ -336,6 +338,7 @@ mod serial_tests {
         Connects,
         ConnectFailsCleanup,
         ConnectFailsDisconnectPending,
+        ConnectFailsDisconnectGated,
         ConnectGated,
         ConnectPending,
         ReadinessGated,
@@ -695,6 +698,9 @@ mod serial_tests {
                 LifecycleClientBehavior::ConnectFailsDisconnectPending => {
                     anyhow::bail!("simulated data client connect failure before pending disconnect")
                 }
+                LifecycleClientBehavior::ConnectFailsDisconnectGated => {
+                    anyhow::bail!("simulated data client connect failure before gated disconnect")
+                }
                 LifecycleClientBehavior::ConnectGated => {
                     self.state.connect_entered.notify_one();
                     self.state.release_connect.notified().await;
@@ -729,6 +735,15 @@ mod serial_tests {
 
             if matches!(self.behavior, LifecycleClientBehavior::ConnectFailsCleanup) {
                 anyhow::bail!("simulated late data client cleanup failure");
+            }
+
+            if matches!(
+                self.behavior,
+                LifecycleClientBehavior::ConnectFailsDisconnectGated
+            ) {
+                self.state.disconnect_entered.notify_one();
+                self.state.release_disconnect.notified().await;
+                return Ok(());
             }
 
             if matches!(
@@ -908,7 +923,8 @@ mod serial_tests {
 
             match self.behavior {
                 LifecycleClientBehavior::ConnectFailsCleanup
-                | LifecycleClientBehavior::ConnectFailsDisconnectPending => {
+                | LifecycleClientBehavior::ConnectFailsDisconnectPending
+                | LifecycleClientBehavior::ConnectFailsDisconnectGated => {
                     anyhow::bail!("simulated execution client connect failure")
                 }
                 LifecycleClientBehavior::ConnectGated | LifecycleClientBehavior::ReadinessGated => {
@@ -1676,6 +1692,120 @@ mod serial_tests {
             LifecycleClientBehavior::ReadinessGated,
         )
         .await;
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_data_client_services_runner_while_cleanup_is_blocked() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            // Both durations here are watchdogs, not part of the assertion: the
+            // barriers below sequence the test. They are set far apart so a
+            // loaded host cannot let cleanup expire before the producer runs.
+            timeout_disconnection: Duration::from_secs(30),
+            ..Default::default()
+        };
+        let mut node =
+            LiveNode::build("LateDataClientCleanupTrafficNode".to_string(), Some(config)).unwrap();
+        node.start().await.unwrap();
+
+        let instrument_id = crypto_perpetual_ethusdt().id();
+        let strategy_id = StrategyId::from("LATE-CLEANUP-001");
+        let account_id = AccountId::from("LATE-CLEANUP-001");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("1.0"))
+            .price(Price::from("100.0"))
+            .build();
+        let client_order_id = order.client_order_id();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        let exec_engine = node.kernel().exec_engine.clone();
+        let pre_event_count = exec_engine.borrow().event_count();
+        let pre_command_count = exec_engine.borrow().command_count();
+        let state = LifecycleClientState::default();
+        let producer_state = state.clone();
+        let registration_returned = Arc::new(AtomicBool::new(false));
+        let producer_registration_returned = registration_returned.clone();
+        let time_acknowledged = Arc::new(AtomicBool::new(false));
+        let producer_time_acknowledged = time_acknowledged.clone();
+
+        let registration = async {
+            let result = node
+                .add_data_client(
+                    Some("cleanup-traffic-gated".to_string()),
+                    Box::new(LifecycleDataClientFactory::new(
+                        state.clone(),
+                        LifecycleClientBehavior::ConnectFailsDisconnectGated,
+                    )),
+                    Box::new(LifecycleDataClientConfig),
+                )
+                .await;
+            registration_returned.store(true, Ordering::Relaxed);
+            (result, state)
+        };
+        let producer = async move {
+            producer_state.disconnect_entered.notified().await;
+            let time_ack = producer_time_acknowledged.clone();
+            get_time_event_sender().send(TimeEventMessage::new(
+                TimeEvent::new(
+                    "late-cleanup".into(),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                ),
+                TimeEventCallback::from(move |_: TimeEvent| {
+                    time_ack.store(true, Ordering::Relaxed);
+                }),
+            ));
+            get_exec_event_sender()
+                .send(ExecutionEvent::Order(submitted))
+                .unwrap();
+            get_trading_cmd_sender().execute(TradingCommandMessage::new(
+                MessagingSwitchboard::exec_engine_execute(),
+                TradingCommand::QueryOrder(QueryOrder::new(
+                    TraderId::from("TESTER-001"),
+                    None,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                )),
+            ));
+
+            wait_until_async(
+                || async {
+                    producer_time_acknowledged.load(Ordering::Relaxed)
+                        && exec_engine.borrow().event_count() > pre_event_count
+                        && exec_engine.borrow().command_count() > pre_command_count
+                },
+                Duration::from_secs(5),
+            )
+            .await;
+            assert!(!producer_registration_returned.load(Ordering::Relaxed));
+            producer_state.release_disconnect.notify_one();
+        };
+
+        let ((result, state), ()) = tokio::join!(registration, producer);
+        let error = result.expect_err("connect should fail");
+        assert!(error.to_string().contains("Failed to connect data client"));
+        assert!(state.stopped.load(Ordering::Relaxed));
+        assert!(state.disposed.load(Ordering::Relaxed));
+        node.stop().await.unwrap();
     }
 
     #[rstest]
