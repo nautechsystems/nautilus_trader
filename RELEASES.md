@@ -28,14 +28,15 @@ Released on TBD (UTC).
 - Removed Databento `load_*_as_pycapsule` methods; use the corresponding `load_*` methods
 - Removed generic Python clients and support APIs from `nautilus_trader.network`; use adapter APIs or `nautilus-network`
 - Removed unused Rust `SocketClient` connection/disconnection callbacks and `WebSocketClient` reconnection callback; use message or epoch handlers
+- Removed Rust `nautilus_execution::matching_engine::adapter::OrderEngineAdapter`; use `nautilus_execution::matching_engine::OrderMatchingEngine` directly
 - Removed `nautilus_trader.data.OptionChainManager`; use `subscribe_option_chain` and handle `OptionChainSlice` in `on_option_chain`
 - Removed duck-typed object conversion from `BacktestEngine.add_data`; pass model objects such as `QuoteTick`, `TradeTick`, and `Bar`
 - Removed Rust `from_pyobject` constructors from `nautilus_model` data types; use `Bound::extract` for the target type
 - Removed `Cache.actor_ids()`, which always returned an empty set because no data flowing through the cache carries an actor ID; the Rust `Trader::actor_ids()` still lists registered actors
 - Replaced Rust `nautilus_model::python::data::data_to_pycapsule` with `data_to_pyobject`
 - Changed Rust `OrderMatchingEngine` import to `nautilus_execution::matching_engine::OrderMatchingEngine`
-- Changed `DataQueryResult` iteration to return Python object lists instead of `DataFFI` capsules
 - Changed Rust `QueryResult` and `DataQueryResult` to iterate `Result` items carrying a new `QueryError`; collect with `collect::<Result<Vec<_>, _>>()` to surface query failures
+- Changed `DataQueryResult` iteration to return Python object lists instead of `DataFFI` capsules
 - Changed adapter callbacks to receive typed model objects instead of `PyCapsule` objects
 - Changed the cache actor APIs to use `ActorId` instead of `ComponentId`, covering the Rust `CacheDatabaseAdapter` actor state methods
 - Changed Interactive Brokers historical tick responses and Tardis batch streams to provide typed model objects
