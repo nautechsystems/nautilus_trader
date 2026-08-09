@@ -122,7 +122,7 @@ aapl_call = OptionContract(
 Representative adapters that create or consume `OptionContract` instruments include:
 
 - [Databento](../../integrations/databento.md) for listed options data.
-- [Interactive Brokers](../../integrations/ib.md) for listed option contracts.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for listed option contracts.
 
 ## Related guides
 

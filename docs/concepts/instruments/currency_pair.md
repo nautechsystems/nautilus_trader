@@ -130,7 +130,7 @@ Representative adapters that create or consume `CurrencyPair` instruments includ
 - [Kraken](../../integrations/kraken.md) for spot markets.
 - [OKX](../../integrations/okx.md) for spot markets.
 - [Tardis](../../integrations/tardis.md) for spot metadata.
-- [Interactive Brokers](../../integrations/ib.md) for FX cash contracts.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for FX cash contracts.
 - [Hyperliquid](../../integrations/hyperliquid.md) for spot assets.
 
 ## Related guides

@@ -4,7 +4,7 @@ Interactive Brokers (IB) provides market access across equities, options, future
 bonds, funds, and other asset classes. The NautilusTrader adapter connects to Trader Workstation
 (TWS) or IB Gateway through the [TWS API](https://ibkrcampus.com/campus/ibkr-api-page/twsapi-doc/).
 
-The adapter provides live data, execution, historical data, instrument loading, and optional
+The adapter provides live market data, execution, historical data, instrument loading, and optional
 Dockerized IB Gateway management through the same Rust implementation and Python bindings.
 
 ## Installation
@@ -20,9 +20,8 @@ adapter‑specific extra is required.
 
 ## Getting started
 
-Run either TWS or IB Gateway before starting a client. Configure that application to accept socket
-API connections and to return market data timestamps in UTC. The adapter does not convert the TWS
-or IB Gateway timezone at runtime.
+Run either TWS or IB Gateway before starting a client, and configure that application to accept
+socket API connections.
 
 IB uses different default ports for each application and trading mode:
 
@@ -63,8 +62,8 @@ Use a distinct client ID for each process connected to the same TWS or IB Gatewa
 execution client ID cannot be a multiple of `1000` because the adapter partitions order IDs by
 `client_id % 1000`.
 
-The current [Python data tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/interactive_brokers/data_tester.py)
-and [execution tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/interactive_brokers/exec_tester.py)
+The current [TWS example](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/interactive_brokers/connect_with_tws.py)
+and [Dockerized gateway example](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/interactive_brokers/connect_with_dockerized_gateway.py)
 show how to add these configs and their factories to a `LiveNode`.
 
 ### Use a Dockerized IB Gateway
@@ -224,6 +223,10 @@ Its async Python methods support:
 - `request_bars` for one or more bar specifications.
 - `request_ticks` for historical trade or bid‑ask ticks.
 
+For `CONTFUT` bar requests, the client omits `end_date_time` because IB rejects an explicit end
+date. It requests only the first duration segment, anchored to the current time, so returned bars
+may fall outside the requested start and end range.
+
 IB controls historical availability, pacing, bar sizes, durations, and regular‑trading‑hours
 filtering. Check the
 [official historical bars](https://ibkrcampus.com/campus/ibkr-api-page/twsapi-doc/#historical-bars)
@@ -311,7 +314,6 @@ for the supported order attributes.
 - Confirm the API client ID is not already in use.
 - Confirm the account has the required market data subscriptions. Use
   `MarketDataType.DELAYED` only when delayed data is acceptable.
-- Confirm TWS or IB Gateway is configured to emit UTC timestamps.
 
 For IB error codes and connection settings, see the
 [official TWS API reference](https://ibkrcampus.com/campus/ibkr-api-page/twsapi-doc/).

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
 #  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
@@ -9,6 +8,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+from collections.abc import Sequence
 from typing import Any
 from uuid import uuid4
 
@@ -20,6 +20,7 @@ from _common import default_ym_future_instrument_id
 from nautilus_trader.adapters import interactive_brokers
 from nautilus_trader.core import UUID4
 from nautilus_trader.core.datetime import unix_nanos_to_dt
+from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import ClientOrderId
@@ -781,7 +782,7 @@ class DatabentoInstrumentIdStrategy(IbV2OrderStrategy):
         if self._bar_count <= self._max_prints:
             print(f"{self.strategy_id}: bar #{self._bar_count}: {bar}", flush=True)
 
-    def on_historical_bars(self, bars: list[Any]) -> None:
+    def on_historical_bars(self, bars: Sequence[Bar]) -> None:
         print(f"{self.strategy_id}: received {len(bars)} historical bar(s)", flush=True)
 
     def on_position_opened(self, event: Any) -> None:

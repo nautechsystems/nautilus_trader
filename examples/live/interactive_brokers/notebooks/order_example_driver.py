@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
 #  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
@@ -33,7 +32,10 @@ from _common import schedule_node_stop
 from nautilus_trader.adapters import interactive_brokers
 
 
-ProviderConfigFactory = Callable[[], object]
+ProviderConfigFactory = Callable[
+    [],
+    interactive_brokers.InteractiveBrokersInstrumentProviderConfig,
+]
 BeforeBuildHook = Callable[[], None]
 AfterBuildHook = Callable[[Any], None]
 
@@ -61,7 +63,7 @@ class OrderExample:
         self.auto_stop_seconds = auto_stop_seconds
 
 
-def futures_provider_config() -> object:
+def futures_provider_config() -> interactive_brokers.InteractiveBrokersInstrumentProviderConfig:
     return instrument_provider_config(
         load_ids=[
             os.getenv("IB_V2_ORDER_INSTRUMENT_ID", default_es_future_instrument_id()),
@@ -69,7 +71,7 @@ def futures_provider_config() -> object:
     )
 
 
-def spread_provider_config() -> object:
+def spread_provider_config() -> interactive_brokers.InteractiveBrokersInstrumentProviderConfig:
     return instrument_provider_config(
         load_ids=[
             os.getenv("IB_V2_SPREAD_INSTRUMENT_ID", default_es_put_spread_instrument_id()),
@@ -77,7 +79,7 @@ def spread_provider_config() -> object:
     )
 
 
-def databento_provider_config() -> object:
+def databento_provider_config() -> interactive_brokers.InteractiveBrokersInstrumentProviderConfig:
     return instrument_provider_config(
         load_ids=[
             os.getenv("IB_V2_DATABENTO_INSTRUMENT_ID", default_ym_future_instrument_id()),

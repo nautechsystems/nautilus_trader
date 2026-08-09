@@ -118,7 +118,7 @@ es_spread = FuturesSpread(
 Representative adapters that create or consume `FuturesSpread` instruments include:
 
 - [Databento](../../integrations/databento.md) for listed futures spread markets.
-- [Interactive Brokers](../../integrations/ib.md) for exchange-defined futures strategies.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for exchange‑defined futures strategies.
 
 ## Related guides
 

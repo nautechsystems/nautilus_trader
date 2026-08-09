@@ -72,7 +72,7 @@ NautilusTrader. The adapter does not convert these timestamps automatically at r
 ## Documentation
 
 - [Crate docs](https://docs.rs/nautilus-interactive-brokers): generated Rust API reference.
-- [Interactive Brokers integration guide](https://nautilustrader.io/docs/nightly/integrations/ib/):
+- [Interactive Brokers integration guide](https://nautilustrader.io/docs/nightly/integrations/interactive_brokers/):
   setup, configuration, symbology, and usage.
 - [Rust node examples](examples): live data and execution testers.
 - [Python live‑node examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers):

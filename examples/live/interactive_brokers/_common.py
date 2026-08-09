@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
 #  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
@@ -107,7 +106,7 @@ def active_quarterly_contract(
     today: dt.date | None = None,
     min_days_to_expiry: int = 45,
 ) -> tuple[str, str, str]:
-    today = today or dt.date.today()
+    today = today or dt.datetime.now(dt.UTC).date()
     target_expiry = today + dt.timedelta(days=min_days_to_expiry)
     year = today.year
 
@@ -127,7 +126,7 @@ def active_monthly_contract(
     today: dt.date | None = None,
     min_days_to_contract_month: int = 45,
 ) -> tuple[str, str, str]:
-    today = today or dt.date.today()
+    today = today or dt.datetime.now(dt.UTC).date()
     target_month = today + dt.timedelta(days=min_days_to_contract_month)
     year = today.year
     month = today.month
@@ -300,7 +299,7 @@ def instrument_provider_config(
     load_ids: Sequence[str] | None = None,
     load_contracts: Sequence[dict[str, object]] | None = None,
     symbol_to_mic_venue: dict[str, str] | None = None,
-) -> object:
+) -> interactive_brokers.InteractiveBrokersInstrumentProviderConfig:
     ib = interactive_brokers
     return ib.InteractiveBrokersInstrumentProviderConfig(
         symbology_method=ib.SymbologyMethod.SIMPLIFIED,
@@ -321,7 +320,7 @@ def build_ib_live_node(
     data_client_id: int,
     exec_client_id: int | None = None,
     account_id: str | None = None,
-    provider_config: object | None = None,
+    provider_config: interactive_brokers.InteractiveBrokersInstrumentProviderConfig | None = None,
 ) -> object:
     ib = interactive_brokers
     trader = TraderId.from_str(trader_id)

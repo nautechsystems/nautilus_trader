@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
 #  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
@@ -31,7 +30,9 @@ from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataC
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientFactory
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecutionClientFactory
+from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers import MarketDataType
+from nautilus_trader.adapters.interactive_brokers import SymbologyMethod
 from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
@@ -54,6 +55,10 @@ def main() -> None:
     account_id = AccountId.from_str(args.account_id)
     instrument_id = InstrumentId.from_str(args.instrument)
     order_qty = Quantity.from_str(args.quantity)
+    provider_config = InteractiveBrokersInstrumentProviderConfig(
+        symbology_method=SymbologyMethod.RAW,
+        load_ids={instrument_id},
+    )
 
     builder = (
         LiveNode.builder("IB-EXEC-TESTER-001", trader_id, Environment.LIVE)
@@ -67,6 +72,7 @@ def main() -> None:
                 port=args.port,
                 client_id=args.client_id,
                 market_data_type=MarketDataType.DELAYED,
+                instrument_provider=provider_config,
             ),
         )
         .add_exec_client(
@@ -77,6 +83,7 @@ def main() -> None:
                 port=args.port,
                 client_id=args.client_id,
                 account_id=args.ib_account_id,
+                instrument_provider=provider_config,
             ),
         )
     )

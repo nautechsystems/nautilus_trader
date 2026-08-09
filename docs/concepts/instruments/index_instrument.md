@@ -80,7 +80,7 @@ spx = IndexInstrument(
 
 Representative adapters that create or consume `IndexInstrument` instruments include:
 
-- [Interactive Brokers](../../integrations/ib.md) for reference indexes.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for reference indexes.
 - [Databento](../../integrations/databento.md) for reference data feeds.
 
 ## Related guides

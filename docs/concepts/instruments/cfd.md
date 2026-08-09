@@ -112,7 +112,7 @@ audusd = Cfd(
 
 Representative adapters that create or consume `Cfd` instruments include:
 
-- [Interactive Brokers](../../integrations/ib.md) for CFD contracts.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for CFD contracts.
 
 ## Related guides
 

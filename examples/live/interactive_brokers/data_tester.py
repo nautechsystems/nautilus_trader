@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
 #  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
@@ -27,7 +26,9 @@ import argparse
 
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientFactory
+from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers import MarketDataType
+from nautilus_trader.adapters.interactive_brokers import SymbologyMethod
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import BarType
@@ -43,6 +44,10 @@ IB = "IB"
 def main() -> None:
     args = parse_args()
     instrument_id = InstrumentId.from_str(args.instrument)
+    provider_config = InteractiveBrokersInstrumentProviderConfig(
+        symbology_method=SymbologyMethod.RAW,
+        load_ids={instrument_id},
+    )
 
     builder = LiveNode.builder(
         "IB-DATA-TESTER-001",
@@ -56,6 +61,7 @@ def main() -> None:
             port=args.port,
             client_id=args.client_id,
             market_data_type=MarketDataType.DELAYED,
+            instrument_provider=provider_config,
         ),
     )
 

@@ -100,7 +100,7 @@ gold = Commodity(
 
 Representative adapters that create or consume `Commodity` instruments include:
 
-- [Interactive Brokers](../../integrations/ib.md) for spot commodity and metal contracts.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for spot commodity and metal contracts.
 
 ## Related guides
 

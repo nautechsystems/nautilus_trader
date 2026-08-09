@@ -116,7 +116,7 @@ esz21 = FuturesContract(
 Representative adapters that create or consume `FuturesContract` instruments include:
 
 - [Databento](../../integrations/databento.md) for futures reference data and market data.
-- [Interactive Brokers](../../integrations/ib.md) for listed futures contracts.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for listed futures contracts.
 
 ## Related guides
 
