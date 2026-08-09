@@ -708,13 +708,30 @@ mod tests {
     #[rstest]
     #[case(dec!(0.0))]
     #[case(dec!(-3.0))]
-    fn test_position_increase_non_positive_price_preserves_price(#[case] price: Decimal) {
+    fn test_position_increase_non_positive_incoming_price_preserves_price(#[case] price: Decimal) {
         let mut position = BetPosition::default();
         position.add_bet(Bet::new(dec!(2.0), dec!(100.0), BetSide::Back));
         // Both stakes are positive, so only the incoming price rejects it.
         position.add_bet(Bet::new(price, dec!(50.0), BetSide::Back));
 
         assert_eq!(position.price, dec!(2.0));
+    }
+
+    #[rstest]
+    fn test_position_increase_non_positive_current_price_preserves_price() {
+        let mut position = BetPosition::default();
+        // `Bet` enforces no positive price, so an opening bet can leave a nonempty
+        // position whose current price is negative.
+        position.add_bet(Bet::new(dec!(-3.0), dec!(100.0), BetSide::Lay));
+        assert_eq!(position.side(), Some(BetSide::Back));
+
+        // Same side, positive incoming price and stake, so only the current price
+        // rejects it: the aggregate stake would be 300 / -3 + 100, and averaging
+        // would divide by zero.
+        position.add_bet(Bet::new(dec!(2.0), dec!(100.0), BetSide::Back));
+
+        assert_eq!(position.price, dec!(-3.0));
+        assert_eq!(position.exposure, dec!(500.0));
     }
 
     #[rstest]
