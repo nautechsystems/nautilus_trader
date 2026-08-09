@@ -44,9 +44,9 @@ use nautilus_common::{
             CancelAllOrders, GenerateOrderStatusReport, GenerateOrderStatusReports,
             GeneratePositionStatusReports, QueryOrder,
         },
-        system::ShutdownSystem,
+        system::{QueueStateChanged, ShutdownSystem},
     },
-    msgbus::{self, MessagingSwitchboard, switchboard},
+    msgbus::{self, MessagingSwitchboard, ShareableMessageHandler, switchboard},
     nautilus_actor,
     testing::{wait_until, wait_until_async},
 };
@@ -2547,6 +2547,52 @@ mod serial_tests {
             "run() should succeed after maintenance dispatcher fires"
         );
         assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_queue_monitor_unset_does_not_publish() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("QueueMonitorUnsetNode".to_string(), Some(config)).unwrap();
+        let handle = node.handle();
+        let received = Rc::new(RefCell::new(Vec::<QueueStateChanged>::new()));
+
+        let handler = ShareableMessageHandler::from_typed({
+            let received = received.clone();
+            move |event: &QueueStateChanged| received.borrow_mut().push(event.clone())
+        });
+
+        msgbus::subscribe_any(
+            MessagingSwitchboard::queue_state_changed_topic().into(),
+            handler,
+            None,
+        );
+        let stop_handle = handle.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { stop_handle.is_running() },
+                Duration::from_secs(5),
+            )
+            .await;
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(5), node.run()).await;
+
+        assert!(result.is_ok(), "run() should complete within timeout");
+        assert!(result.unwrap().is_ok(), "run() should succeed");
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(received.borrow().is_empty());
+        msgbus::get_message_bus().borrow_mut().dispose();
     }
 
     #[rstest]

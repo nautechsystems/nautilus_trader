@@ -1014,6 +1014,7 @@ impl LiveNodeConfig {
             portfolio,
             emulator: None,
             streaming: None,
+            queue_monitor: None,
             event_store: None,
             loop_debug: loop_debug.unwrap_or(false),
             data_engine: data_engine.unwrap_or_default(),

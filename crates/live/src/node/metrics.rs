@@ -423,12 +423,13 @@ fn saturating_fetch_add(atomic: &AtomicU64, value: u64) {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{collections::HashMap, time::Duration};
 
     use nautilus_common::{
         messages::{
             data::{SubscribeCommand, subscribe::SubscribeInstruments},
             execution::{QueryAccount, TradingCommand},
+            system::{QueueCondition, QueueState},
         },
         msgbus::MessagingSwitchboard,
         timer::{TimeEvent, TimeEventCallback},
@@ -443,7 +444,12 @@ mod tests {
     use rstest::rstest;
     use ustr::Ustr;
 
-    use super::*;
+    use super::{
+        super::queue::{
+            QueueMonitor, QueueMonitorConfig, QueueMonitorOverride, QueueStateTransition,
+        },
+        *,
+    };
 
     #[rstest]
     fn test_runner_metrics_default_snapshot_is_zero() {
@@ -540,6 +546,225 @@ mod tests {
         assert_eq!(delta.data_events_busy_ns, 20);
         assert_eq!(delta.data_commands_busy_ns, 40);
         assert_eq!(delta.dispatch_busy_ns, 120);
+    }
+
+    #[rstest]
+    fn test_queue_monitor_uses_successive_snapshot_delta_and_crossing_values() {
+        let previous = with_queue_depths(
+            runner_snapshot([10, 0, 0, 0, 0], [1_000, 0, 0, 0, 0], 0, 0, 100),
+            [999, 0, 0, 0, 0],
+        );
+        let mut monitor = QueueMonitor::new(&queue_monitor_config(), previous);
+        let snapshot = with_queue_depths(
+            runner_snapshot([12, 0, 0, 0, 0], [1_300, 0, 0, 0, 0], 0, 0, 200),
+            [10, 0, 0, 0, 0],
+        );
+
+        let transitions = monitor.evaluate(snapshot);
+
+        assert_eq!(
+            transitions,
+            vec![
+                QueueStateTransition {
+                    channel: SystemChannel::TimeEvents,
+                    condition: QueueCondition::Backlogged,
+                    state: QueueState::Triggered,
+                    queue_depth: 10,
+                    mean_dispatch_ns: 150,
+                },
+                QueueStateTransition {
+                    channel: SystemChannel::TimeEvents,
+                    condition: QueueCondition::Slow,
+                    state: QueueState::Triggered,
+                    queue_depth: 10,
+                    mean_dispatch_ns: 150,
+                },
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_queue_monitor_hysteresis_does_not_flap_between_thresholds() {
+        let mut monitor =
+            QueueMonitor::new(&queue_monitor_config(), RunnerMetricsSnapshot::default());
+        let triggered = with_queue_depths(
+            runner_snapshot([1, 0, 0, 0, 0], [100, 0, 0, 0, 0], 0, 0, 100),
+            [10, 0, 0, 0, 0],
+        );
+        let between = with_queue_depths(
+            runner_snapshot([2, 0, 0, 0, 0], [175, 0, 0, 0, 0], 0, 0, 200),
+            [7, 0, 0, 0, 0],
+        );
+        let cleared = with_queue_depths(
+            runner_snapshot([3, 0, 0, 0, 0], [225, 0, 0, 0, 0], 0, 0, 300),
+            [5, 0, 0, 0, 0],
+        );
+
+        assert_eq!(monitor.evaluate(triggered).len(), 2);
+        assert!(monitor.evaluate(between).is_empty());
+        assert_eq!(
+            monitor.evaluate(cleared),
+            vec![
+                QueueStateTransition {
+                    channel: SystemChannel::TimeEvents,
+                    condition: QueueCondition::Backlogged,
+                    state: QueueState::Cleared,
+                    queue_depth: 5,
+                    mean_dispatch_ns: 50,
+                },
+                QueueStateTransition {
+                    channel: SystemChannel::TimeEvents,
+                    condition: QueueCondition::Slow,
+                    state: QueueState::Cleared,
+                    queue_depth: 5,
+                    mean_dispatch_ns: 50,
+                },
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_queue_monitor_holds_slow_state_without_dispatch_sample() {
+        let mut monitor =
+            QueueMonitor::new(&queue_monitor_config(), RunnerMetricsSnapshot::default());
+        let triggered = runner_snapshot([1, 0, 0, 0, 0], [100, 0, 0, 0, 0], 0, 0, 100);
+        let idle = runner_snapshot([1, 0, 0, 0, 0], [100, 0, 0, 0, 0], 0, 0, 200);
+        let cleared = runner_snapshot([2, 0, 0, 0, 0], [150, 0, 0, 0, 0], 0, 0, 300);
+
+        assert_eq!(
+            monitor.evaluate(triggered),
+            vec![QueueStateTransition {
+                channel: SystemChannel::TimeEvents,
+                condition: QueueCondition::Slow,
+                state: QueueState::Triggered,
+                queue_depth: 0,
+                mean_dispatch_ns: 100,
+            }]
+        );
+        assert!(monitor.evaluate(idle).is_empty());
+        assert_eq!(
+            monitor.evaluate(cleared),
+            vec![QueueStateTransition {
+                channel: SystemChannel::TimeEvents,
+                condition: QueueCondition::Slow,
+                state: QueueState::Cleared,
+                queue_depth: 0,
+                mean_dispatch_ns: 50,
+            }]
+        );
+    }
+
+    #[rstest]
+    fn test_queue_monitor_conditions_trigger_and_clear_independently() {
+        let mut monitor =
+            QueueMonitor::new(&queue_monitor_config(), RunnerMetricsSnapshot::default());
+        let triggered = with_queue_depths(
+            runner_snapshot([1, 0, 0, 0, 0], [100, 0, 0, 0, 0], 0, 0, 100),
+            [10, 0, 0, 0, 0],
+        );
+        let slow_cleared = with_queue_depths(
+            runner_snapshot([2, 0, 0, 0, 0], [150, 0, 0, 0, 0], 0, 0, 200),
+            [7, 0, 0, 0, 0],
+        );
+        let backlog_cleared = with_queue_depths(
+            runner_snapshot([3, 0, 0, 0, 0], [225, 0, 0, 0, 0], 0, 0, 300),
+            [5, 0, 0, 0, 0],
+        );
+
+        assert_eq!(monitor.evaluate(triggered).len(), 2);
+        assert_eq!(
+            monitor.evaluate(slow_cleared),
+            vec![QueueStateTransition {
+                channel: SystemChannel::TimeEvents,
+                condition: QueueCondition::Slow,
+                state: QueueState::Cleared,
+                queue_depth: 7,
+                mean_dispatch_ns: 50,
+            }]
+        );
+        assert_eq!(
+            monitor.evaluate(backlog_cleared),
+            vec![QueueStateTransition {
+                channel: SystemChannel::TimeEvents,
+                condition: QueueCondition::Backlogged,
+                state: QueueState::Cleared,
+                queue_depth: 5,
+                mean_dispatch_ns: 75,
+            }]
+        );
+    }
+
+    #[rstest]
+    fn test_queue_monitor_keeps_channel_state_isolated() {
+        let mut monitor =
+            QueueMonitor::new(&queue_monitor_config(), RunnerMetricsSnapshot::default());
+        let first = with_queue_depths(
+            runner_snapshot([0, 0, 0, 1, 0], [0, 0, 0, 100, 0], 0, 0, 100),
+            [0, 0, 0, 10, 0],
+        );
+        let second = with_queue_depths(
+            runner_snapshot([0, 1, 0, 2, 0], [0, 100, 0, 175, 0], 0, 0, 200),
+            [0, 10, 0, 7, 0],
+        );
+
+        assert_eq!(
+            monitor
+                .evaluate(first)
+                .iter()
+                .map(|transition| transition.channel)
+                .collect::<Vec<_>>(),
+            vec![SystemChannel::DataEvents, SystemChannel::DataEvents]
+        );
+        assert_eq!(
+            monitor.evaluate(second),
+            vec![
+                QueueStateTransition {
+                    channel: SystemChannel::ExecEvents,
+                    condition: QueueCondition::Backlogged,
+                    state: QueueState::Triggered,
+                    queue_depth: 10,
+                    mean_dispatch_ns: 100,
+                },
+                QueueStateTransition {
+                    channel: SystemChannel::ExecEvents,
+                    condition: QueueCondition::Slow,
+                    state: QueueState::Triggered,
+                    queue_depth: 10,
+                    mean_dispatch_ns: 100,
+                },
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_queue_monitor_resolves_channel_overrides_at_creation() {
+        let config = QueueMonitorConfig {
+            queue_depth_trigger: 1_000,
+            queue_depth_clear: 500,
+            mean_dispatch_ns_trigger: 1_000,
+            mean_dispatch_ns_clear: 500,
+            overrides: HashMap::from([(
+                "data_events".to_string(),
+                QueueMonitorOverride {
+                    queue_depth_trigger: Some(10),
+                    queue_depth_clear: Some(5),
+                    ..Default::default()
+                },
+            )]),
+        };
+        let mut monitor = QueueMonitor::new(&config, RunnerMetricsSnapshot::default());
+        let snapshot = with_queue_depths(RunnerMetricsSnapshot::default(), [0, 0, 0, 10, 0]);
+
+        assert_eq!(
+            monitor.evaluate(snapshot),
+            vec![QueueStateTransition {
+                channel: SystemChannel::DataEvents,
+                condition: QueueCondition::Backlogged,
+                state: QueueState::Triggered,
+                queue_depth: 10,
+                mean_dispatch_ns: 0,
+            }]
+        );
     }
 
     #[rstest]
@@ -727,6 +952,35 @@ mod tests {
             maintenance_busy_ns,
             external_msgbus_busy_ns,
             elapsed_ns,
+        }
+    }
+
+    fn with_queue_depths(
+        mut snapshot: RunnerMetricsSnapshot,
+        depths: [usize; 5],
+    ) -> RunnerMetricsSnapshot {
+        let [
+            time_events,
+            exec_events,
+            exec_commands,
+            data_events,
+            data_commands,
+        ] = depths;
+        snapshot.time_events.queue_depth = time_events;
+        snapshot.exec_events.queue_depth = exec_events;
+        snapshot.exec_commands.queue_depth = exec_commands;
+        snapshot.data_events.queue_depth = data_events;
+        snapshot.data_commands.queue_depth = data_commands;
+        snapshot
+    }
+
+    fn queue_monitor_config() -> QueueMonitorConfig {
+        QueueMonitorConfig {
+            queue_depth_trigger: 10,
+            queue_depth_clear: 5,
+            mean_dispatch_ns_trigger: 100,
+            mean_dispatch_ns_clear: 50,
+            overrides: std::collections::HashMap::new(),
         }
     }
 

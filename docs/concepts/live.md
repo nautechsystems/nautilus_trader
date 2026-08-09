@@ -122,6 +122,84 @@ samples from the maintenance tick while the node is running, and can be stale du
 Snapshots are lock-free and may not be a consistent cross-field view; derive rates from successive
 snapshots with saturating deltas. Counters reset when `LiveNode::run` enters steady state.
 
+## Queue pressure monitoring
+
+A Rust `LiveNode` can convert runner queue samples into typed state transitions. Set
+`LiveNodeConfig.queue_monitor` when Rust actors need an edge‑triggered signal for growing queues or
+slow dispatch. The monitor is disabled by default and publishes no queue‑state events while the
+field is unset.
+
+### Configure thresholds
+
+The following example sets global thresholds and overrides the queue depth thresholds for the data
+event channel:
+
+```rust
+use std::collections::HashMap;
+
+use nautilus_live::config::{LiveNodeConfig, QueueMonitorConfig, QueueMonitorOverride};
+
+let config = LiveNodeConfig {
+    queue_monitor: Some(QueueMonitorConfig {
+        queue_depth_trigger: 1_000,
+        queue_depth_clear: 500,
+        mean_dispatch_ns_trigger: 250_000,
+        mean_dispatch_ns_clear: 150_000,
+        overrides: HashMap::from([(
+            "data_events".to_string(),
+            QueueMonitorOverride {
+                queue_depth_trigger: Some(2_000),
+                queue_depth_clear: Some(1_000),
+                ..Default::default()
+            },
+        )]),
+    }),
+    ..Default::default()
+};
+```
+
+The four global values apply to every runner channel. An override can replace any subset of those
+values for these channels:
+
+- `time_events`
+- `exec_events`
+- `exec_commands`
+- `data_events`
+- `data_commands`
+
+Omitted override values inherit the global threshold. Each resolved clear threshold must be lower
+than its trigger threshold. Configuration validation rejects equal or inverted thresholds and
+unknown channel names.
+
+### State transitions
+
+The live runner evaluates the monitor on its 100 ms maintenance tick, after sampling current queue
+depths. Queue depth is a point‑in‑time value. Mean dispatch time uses the messages and dispatch busy
+time accumulated since the previous metrics snapshot.
+
+| Condition    | Measure                                               | `Triggered`                                    | `Cleared`                                    |
+| ------------ | ----------------------------------------------------- | ---------------------------------------------- | -------------------------------------------- |
+| `Backlogged` | Point‑in‑time queue depth.                            | `queue_depth >= queue_depth_trigger`           | `queue_depth <= queue_depth_clear`           |
+| `Slow`       | Per‑channel mean dispatch time for the sample window. | `mean_dispatch_ns >= mean_dispatch_ns_trigger` | `mean_dispatch_ns <= mean_dispatch_ns_clear` |
+
+Each channel tracks `Backlogged` and `Slow` independently. A value between the clear and trigger
+thresholds retains the prior state, so it does not publish another event. If both conditions cross
+on one tick, the node publishes two events, and each condition clears independently. A sample window
+with no dispatches does not evaluate `Slow`; the condition retains its prior state until a window
+contains a dispatch.
+
+### Typed delivery
+
+Each transition publishes a fresh `QueueStateChanged` value on
+`events.system.QueueStateChanged`. The event identifies the configured trader, runner channel,
+condition, and transition state. It also records the queue depth and mean dispatch time at the
+crossing, a fresh event ID, and event timestamps.
+
+Rust‑native `DataActor` implementations subscribe with `subscribe_queue_state_changed(...)` and
+receive events through `on_queue_state_changed(...)`. Publication stays on the in‑process typed
+message bus. Python configuration and actor handlers do not expose the monitor, and the event has no
+wire representation for external message‑bus streaming or socket state output.
+
 ## Shutdown on error
 
 Set `LiveNodeConfig.shutdown_on_error=True` so that a Rust error log requests a live node
@@ -153,4 +231,5 @@ node/kernel level instead. Shutdown-on-error observes Rust `log` records, not Py
 - [Run live trading with Rust](../how_to/run_rust_live_trading.md) - Rust node setup and venue connection.
 - [Adapters](adapters.md) - Venue connectivity.
 - [Execution](execution.md) - Command outcomes and order execution.
+- [Message bus](message_bus.md) - Typed in‑process publish and subscribe behavior.
 - [Backtesting](backtesting/) - Testing strategies before deployment.

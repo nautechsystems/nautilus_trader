@@ -93,6 +93,7 @@ use nautilus_common::{
         DataEvent, ExecutionEvent, ExecutionReport,
         data::DataCommand,
         execution::{GenerateOrderStatusReports, GeneratePositionStatusReports, TradingCommand},
+        system::QueueStateChanged,
     },
     msgbus::{self, BusMessage, MessagingSwitchboard},
     runner::{SystemChannel, TimeEventMessage, TradingCommandMessage},
@@ -135,6 +136,7 @@ pub mod config;
 pub mod plugin;
 
 mod metrics;
+mod queue;
 mod state;
 
 use builder::ExternalMessageBusIngress;
@@ -142,6 +144,7 @@ pub use builder::LiveNodeBuilder;
 use config::{LiveNodeConfig, PluginConfig, validate_live_environment};
 pub use metrics::{RunnerChannelMetricsSnapshot, RunnerMetricsDelta, RunnerMetricsSnapshot};
 use metrics::{RunnerChannelQueueDepths, RunnerMetrics};
+use queue::{QueueMonitor, QueueStateTransition};
 use state::{EngineConnectionStatus, RunningTransition};
 pub use state::{LiveNodeHandle, NodeState};
 
@@ -1252,6 +1255,11 @@ impl LiveNode {
         let metrics = self.handle.metrics.clone();
         let metrics_start = dst::time::Instant::now();
         metrics.reset();
+        let mut queue_monitor = self
+            .config
+            .queue_monitor
+            .as_ref()
+            .map(|config| QueueMonitor::new(config, metrics.snapshot()));
 
         loop {
             let shutdown_deadline = self.shutdown_deadline;
@@ -1404,6 +1412,11 @@ impl LiveNode {
                         ),
                         metrics_start.elapsed(),
                     );
+
+                    if let Some(queue_monitor) = queue_monitor.as_mut() {
+                        let transitions = queue_monitor.evaluate(metrics.snapshot());
+                        self.publish_queue_state_transitions(&transitions);
+                    }
 
                     let mut now = dst::time::Instant::now();
 
@@ -1599,6 +1612,27 @@ impl LiveNode {
         log::info!("Event loop stopped");
 
         stop_result
+    }
+
+    fn publish_queue_state_transitions(&self, transitions: &[QueueStateTransition]) {
+        let topic = MessagingSwitchboard::queue_state_changed_topic();
+
+        for transition in transitions {
+            let timestamp = self.kernel.generate_timestamp_ns();
+            let event = QueueStateChanged::new(
+                self.config.trader_id,
+                transition.channel,
+                transition.condition,
+                transition.state,
+                transition.queue_depth,
+                transition.mean_dispatch_ns,
+                UUID4::new(),
+                timestamp,
+                timestamp,
+            );
+
+            msgbus::publish_any(topic, event.as_any());
+        }
     }
 
     #[expect(
@@ -3211,6 +3245,7 @@ fn render_client_statuses(rows: Vec<ClientStatus>) -> String {
 mod tests {
     use std::{
         cell::{Cell, RefCell},
+        collections::HashMap,
         fmt::Debug,
         rc::Rc,
         sync::{
@@ -3233,11 +3268,14 @@ mod tests {
         clock::{Clock, TestClock},
         enums::SerializationEncoding,
         live::runner::{get_data_event_sender, get_exec_event_sender},
-        messages::execution::{QueryAccount, SubmitOrder, TradingCommand},
+        messages::{
+            execution::{QueryAccount, SubmitOrder, TradingCommand},
+            system::{QueueCondition, QueueState},
+        },
         msgbus::{
             self, BusMessage, BusPayloadType, MessageBusBacking, MessageBusBackingFactory,
             MessageBusConfig, MessageBusExternalEgress, MessageBusExternalIngress,
-            MessagingSwitchboard, TypedHandler, TypedIntoHandler,
+            MessagingSwitchboard, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
         },
         testing::wait_until_async,
     };
@@ -3358,6 +3396,145 @@ mod tests {
                     .to_string()
             ],
         );
+    }
+
+    #[rstest]
+    fn test_publish_queue_state_transitions_reaches_typed_subscriber() {
+        let config = LiveNodeConfig {
+            trader_id: TraderId::from("QUEUE-001"),
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let node = LiveNode::build("QueuePublicationNode".to_string(), Some(config)).unwrap();
+        let received = Rc::new(RefCell::new(Vec::<QueueStateChanged>::new()));
+
+        let handler = ShareableMessageHandler::from_typed({
+            let received = received.clone();
+            move |event: &QueueStateChanged| received.borrow_mut().push(event.clone())
+        });
+
+        msgbus::subscribe_any(
+            MessagingSwitchboard::queue_state_changed_topic().into(),
+            handler,
+            None,
+        );
+        let transitions = [
+            QueueStateTransition {
+                channel: SystemChannel::DataEvents,
+                condition: QueueCondition::Backlogged,
+                state: QueueState::Triggered,
+                queue_depth: 17,
+                mean_dispatch_ns: 23,
+            },
+            QueueStateTransition {
+                channel: SystemChannel::DataEvents,
+                condition: QueueCondition::Slow,
+                state: QueueState::Triggered,
+                queue_depth: 17,
+                mean_dispatch_ns: 23,
+            },
+        ];
+
+        node.publish_queue_state_transitions(&transitions);
+
+        let events = received.borrow();
+        assert_eq!(events.len(), 2);
+
+        for (event, transition) in events.iter().zip(transitions) {
+            assert_eq!(event.trader_id, TraderId::from("QUEUE-001"));
+            assert_eq!(event.channel, transition.channel);
+            assert_eq!(event.condition, transition.condition);
+            assert_eq!(event.state, transition.state);
+            assert_eq!(event.queue_depth, transition.queue_depth);
+            assert_eq!(event.mean_dispatch_ns, transition.mean_dispatch_ns);
+            assert_ne!(event.event_id, UUID4::default());
+            assert_ne!(event.ts_event, UnixNanos::default());
+            assert_eq!(event.ts_init, event.ts_event);
+        }
+        assert_ne!(events[0].event_id, events[1].event_id);
+        drop(events);
+        msgbus::get_message_bus().borrow_mut().dispose();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_run_publishes_queue_state_after_dispatch_sample() {
+        let config = LiveNodeConfig {
+            trader_id: TraderId::from("QUEUE-RUN-001"),
+            queue_monitor: Some(crate::config::QueueMonitorConfig {
+                queue_depth_trigger: usize::MAX,
+                queue_depth_clear: 0,
+                mean_dispatch_ns_trigger: 1,
+                mean_dispatch_ns_clear: 0,
+                overrides: HashMap::default(),
+            }),
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("QueueMonitorRunNode".to_string(), Some(config)).unwrap();
+        let handle = node.handle();
+        let received = Rc::new(RefCell::new(Vec::<QueueStateChanged>::new()));
+
+        let handler = ShareableMessageHandler::from_typed({
+            let received = received.clone();
+            let stop_handle = handle.clone();
+
+            move |event: &QueueStateChanged| {
+                received.borrow_mut().push(event.clone());
+                stop_handle.stop();
+            }
+        });
+
+        msgbus::subscribe_any(
+            MessagingSwitchboard::queue_state_changed_topic().into(),
+            handler,
+            None,
+        );
+        let drive_handle = handle.clone();
+
+        let result = tokio::time::timeout(Duration::from_secs(5), async {
+            let run = node.run();
+            tokio::pin!(run);
+
+            let drive = async move {
+                wait_until_async(
+                    || async { drive_handle.is_running() },
+                    Duration::from_secs(2),
+                )
+                .await;
+                get_data_event_sender().send(stub_data_event()).unwrap();
+            };
+
+            let (run_result, ()) = tokio::join!(run, drive);
+            run_result
+        })
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "queue state event should arrive before timeout"
+        );
+        assert!(result.unwrap().is_ok(), "run() should succeed");
+        let events = received.borrow();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].trader_id, TraderId::from("QUEUE-RUN-001"));
+        assert_eq!(events[0].channel, SystemChannel::DataEvents);
+        assert_eq!(events[0].condition, QueueCondition::Slow);
+        assert_eq!(events[0].state, QueueState::Triggered);
+        assert_eq!(events[0].queue_depth, 0);
+        assert!(events[0].mean_dispatch_ns > 0);
+        assert_ne!(events[0].event_id, UUID4::default());
+        assert_ne!(events[0].ts_event, UnixNanos::default());
+        assert_eq!(events[0].ts_init, events[0].ts_event);
+        drop(events);
+        msgbus::get_message_bus().borrow_mut().dispose();
     }
 
     #[rstest]
