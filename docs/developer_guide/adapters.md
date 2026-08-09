@@ -599,10 +599,11 @@ updates. Test active‑context retention separately from bounded replay eviction
 
 Separate three evidence classes:
 
-- **Definitive local failure:** deterministic validation proves that a submit command cannot be
-  sent. Emit `OrderDenied` before `OrderSubmitted`. For cancel or modify preparation, emit the
-  matching rejection only when the failure is attributable to that command and proves it was not
-  sent. Otherwise, log the failure without inventing a rejection.
+- **Definitive local failure:** local evidence proves that the command was never transmitted.
+  Deterministic validation before a submit is one example. Emit `OrderDenied` before
+  `OrderSubmitted`. For cancel or modify preparation, emit the matching rejection only when the
+  failure is attributable to that command and proves it was not sent. Otherwise, log the failure
+  without inventing a rejection.
 - **Definitive venue result:** a structured venue response or status explicitly accepts, updates,
   or rejects one command. Emit the matching domain event.
 - **Unknown outcome:** the request may have reached the venue, but no definitive result is
@@ -613,16 +614,19 @@ flowchart TD
     command[Submit order] --> valid{Deterministic local validation passes?}
     valid -->|No| denied[OrderDenied]
     valid -->|Yes| submitted[OrderSubmitted]
-    submitted --> evidence{Definitive venue evidence?}
+    submitted --> unsent{Local evidence proves no transmission?}
+    unsent -->|Yes| rejected[Emit OrderRejected]
+    unsent -->|No| evidence{Definitive venue evidence?}
     evidence -->|Accepted or updated| event[Apply the venue event]
-    evidence -->|Explicit rejection| rejected[Emit OrderRejected]
+    evidence -->|Explicit rejection| rejected
     evidence -->|No| unknown[Keep the outcome unknown]
     unknown --> recovery[Resolve from stream, query, polling, or reconciliation]
     recovery --> event
     recovery --> rejected
 ```
 
-If submit validation fails after `OrderSubmitted`, leave the order in flight unless definitive
+If a submit failure occurs after `OrderSubmitted`, emit `OrderRejected` when local evidence proves
+that the command was never transmitted. Otherwise, leave the order in flight unless definitive
 venue evidence resolves it.
 
 Transport errors, timeouts, disconnects, task cancellation, retry exhaustion, HTTP 5xx responses,
@@ -718,7 +722,8 @@ empty page so it cannot loop forever.
 
 ### Request signing and authentication
 
-Build the exact canonical bytes required by the venue, then sign those bytes once. Test:
+For each attempt, build the exact canonical bytes required by the venue, then sign that
+representation once. Test:
 
 - Field order and delimiters.
 - Timestamp and receive‑window units.
@@ -742,17 +747,75 @@ recovery after a rejected sequence.
 ### Error handling and retry logic
 
 Map transport, HTTP status, venue error, parse, and validation failures without erasing their
-source. Retry policy follows operation safety:
+source. Retry only when the failure is classified as transient and the operation is safe to repeat.
+Compose both decisions at the client boundary; a predicate on the error alone is not a complete
+retry policy. This contract applies to HTTP and WebSocket request paths.
 
-- Retry reads and other idempotent operations only for classified transient failures.
-- Respect venue backoff and rate‑limit signals.
-- Stop retries on cancellation.
-- Treat an interrupted or exhausted state‑changing request as unknown unless positive evidence
-  proves rejection.
+#### Classify transient failures
 
-Use the shared [`RetryManager`](../../crates/network/src/retry.rs) when its cancellation and backoff
-model fits. An adapter‑specific classifier remains responsible for venue codes and operation
-semantics.
+Keep transient failure classification adapter‑owned because venue status codes, error codes, and
+rate‑limit semantics differ. Give each adapter transport one production classifier entry point.
+Define rules shared by HTTP and WebSocket once within the adapter, then call them from those entry
+points. Remove superseded classifier paths. Do not introduce a cross‑adapter venue classifier or
+shared trait.
+
+#### Gate retries by operation safety
+
+At each call site, bypass retry for an unsafe operation or pass a `should_retry` predicate that
+combines transient failure classification with operation safety. Reads and other idempotent
+operations may retry classified transient failures.
+
+Retry a state‑changing operation only when repeating the same request cannot apply the command
+twice or cause another state change. The protocol may guarantee this through duplicate detection
+for a stable request identity or idempotent semantics for the same target. Otherwise, send the
+command once and resolve an unknown outcome through stream updates, queries, polling, or
+reconciliation.
+
+#### Preserve identity and ambiguity
+
+Allocate the semantic request identity outside the retry closure and keep it stable across
+attempts. Regenerate authentication timestamps, signatures, or other transport fields only when
+changing them does not alter the venue's request identity or duplicate detection.
+
+If any attempt may have reached the venue, a later failure remains ambiguous. A later venue
+rejection resolves it only when documented semantics make the response authoritative for the same
+request identity and prove that no attempt was applied.
+
+Treat a venue duplicate‑identity response as evidence that the venue saw an earlier request with
+that wire identity, not as a rejection of the original command by default. Use it to resolve the
+current command only when the adapter proves the same semantic identity. If the identity may
+collide or its scope is uncertain, keep the outcome ambiguous and reconcile it against venue state.
+
+#### Handle backoff and termination
+
+Respect venue backoff and rate‑limit signals, and stop retries on cancellation. Use the shared
+[`RetryManager`](../../crates/network/src/retry.rs) when its cancellation and backoff model fits.
+
+`RetryManager` control errors do not record whether the operation ran. Track possible transmission
+at the adapter boundary for state‑changing commands, treating entry into the send operation as
+possible transmission unless more precise evidence exists. Classify cancellation, per‑attempt
+timeout, and retry exhaustion as `CommandFailure::NotSent` only when local evidence proves that no
+attempt was transmitted; otherwise, classify them as `CommandFailure::Ambiguous`.
+
+Map every elapsed‑budget termination path by transmission evidence rather than the returned error
+shape. When an error provides a minimum delay and the effective retry delay cannot fit within the
+remaining budget, `RetryManager` returns the original operation error instead of a synthesized
+budget error.
+
+#### Test retry behavior
+
+Focused tests distinguish:
+
+- Transient failures from permanent failures.
+- HTTP 429 responses with and without a venue backoff hint when the protocol exposes one.
+- An idempotent operation that retries and a state‑changing operation that must not retry.
+- A final failure after a possibly transmitted earlier attempt, including a later venue rejection.
+- A duplicate‑identity response for the same semantic command and a wire‑identity collision with a
+  different command.
+- Stable semantic request identity across attempts, including retries with refreshed authentication
+  fields when the protocol permits them.
+- Cancellation, per‑attempt timeout, and every elapsed‑budget termination path before and after
+  possible transmission.
 
 ### Rate limiting
 
