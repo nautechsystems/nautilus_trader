@@ -32,8 +32,8 @@ standard for correctness, reliability, testing, clarity, and maintainability.**
 **Prepare a complete, review‑ready change before opening a pull request.**
 
 Run the smallest relevant test while developing. Before opening or updating a pull request, run
-`make format`, `make pre-commit`, and all tests relevant to the change locally. Record the exact
-commands and results in the pull request.
+`make format`, `make pre-commit`, and all tests relevant to the change locally. Follow
+`CONTRIBUTING.md` and the pull request template when preparing the pull request description.
 
 For higher assurance, run `make pre-flight`, which performs the project's broad local validation
 suite.

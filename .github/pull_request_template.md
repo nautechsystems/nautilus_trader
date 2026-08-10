@@ -22,8 +22,8 @@ high standard for correctness, reliability, testing, clarity, and maintainabilit
   this draft
 - [ ] I ran `make format`, then ran `make pre-commit` locally and confirmed it passed, or I
   described an agreed limitation below
-- [ ] I ran all relevant tests locally and listed the exact commands and results below, or no tests
-  apply to this change, or I described an agreed limitation below
+- [ ] I ran all relevant tests locally, no tests apply to this change, or I described an agreed
+  limitation below
 - [ ] I have not modified `RELEASES.md` (maintainers keep it current to avoid merge conflicts)
 
 ## Summary
@@ -65,6 +65,6 @@ high standard for correctness, reliability, testing, clarity, and maintainabilit
 - [ ] I added/updated tests to cover new or changed logic
 - [ ] No logic changed (documentation, comments, or metadata only)
 
-<!-- List the exact commands you ran and their results. Include any additional manual testing. If a
-     relevant check could not run locally, state why and describe the limitation discussed with a
-     maintainer. -->
+<!-- Optional: summarize relevant automated or manual validation when it helps reviewers. Exact
+     commands and full output are not required. If a relevant check could not run locally, state why
+     and describe the limitation discussed with a maintainer. -->

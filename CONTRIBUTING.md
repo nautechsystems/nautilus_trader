@@ -116,9 +116,8 @@ request.
 Complete these requirements before opening or updating a pull request:
 
 - Run `make format`, then run `make pre-commit` locally and confirm it passes.
-- Run all tests relevant to the change locally. Include the exact commands and results in the pull
-  request description. If no tests apply, such as for a documentation‑only change, state that in the
-  pull request.
+- Run all tests relevant to the change locally. You may summarize relevant validation in the pull
+  request when it helps reviewers, but exact commands and full output are not required.
 - If you changed PyO3 bindings or the Rust docs behind them, run `make py-stubs` and commit the
   generated output. These stubs are generated rather than hand-edited, and CI fails on drift. See
   [Generated Python artifacts](docs/developer_guide/rust.md#generated-python-artifacts).
