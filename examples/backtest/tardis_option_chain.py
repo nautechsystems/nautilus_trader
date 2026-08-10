@@ -21,6 +21,7 @@ and OptionGreeks data, such as data written by the Tardis Machine replay pipelin
 
 Run with a built extension:
     python examples/backtest/tardis_option_chain.py --catalog-path /path/to/catalog
+
 """
 
 from __future__ import annotations

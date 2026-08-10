@@ -728,8 +728,9 @@ class BybitOptionsDataCollector(Strategy):
 
     def rotate_log_file(self) -> str | None:
         """
-        Rotate the current log file and create a new one. Useful for long-running
-        sessions to manage log file sizes.
+        Rotate the current log file and create a new one.
+
+        Useful for long-running sessions to manage log file sizes.
 
         Returns
         -------

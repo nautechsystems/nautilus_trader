@@ -493,6 +493,12 @@ criteria = "safe-to-deploy"
 delta = "0.4.42 -> 0.4.43"
 notes = "Fixes a hang when a corrupt later zstd frame leaves unread input by polling again only after the input is consumed. No new unsafe or ambient capabilities."
 
+[[audits.async-trait]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.91 -> 0.1.92"
+notes = "Removes the generated must_use attribute from default async trait methods, changing lint behavior only. No new unsafe, build script, filesystem, network, process, credential, or data-exfiltration behavior."
+
 [[audits.aws-lc-rs]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1380,6 +1386,18 @@ notes = "Adds Settings::modify, Color::is_empty, ColumnNames padding and RowName
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
 delta = "3.26.0 -> 3.27.0"
+
+[[audits.thiserror]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.0.19 -> 2.0.20"
+notes = "Version bump to the paired thiserror-impl 2.0.20; runtime source is otherwise unchanged. No new unsafe, build script, filesystem, network, process, credential, or data-exfiltration behavior."
+
+[[audits.thiserror-impl]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.0.19 -> 2.0.20"
+notes = "Adds a scoped redundant_field_names Clippy allowance to generated From implementations. No generated runtime logic, unsafe code, build script, filesystem, network, process, credential, or data-exfiltration behavior changes."
 
 [[audits.time]]
 who = "Nautech Systems <info@nautechsystems.io>"

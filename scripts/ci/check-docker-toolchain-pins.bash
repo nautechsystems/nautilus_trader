@@ -113,7 +113,7 @@ check_python_alignment() {
 
 check_refs \
   "uv ${UV_VERSION}" \
-  "python/pyproject.toml [tool.uv].required-version" \
+  "tools.toml [uv].version" \
   "$EXPECTED_UV_PREFIX" \
   'ghcr\.io/astral-sh/uv:[^[:space:]\\]+@sha256:[0-9a-f]+' \
   ".docker/DockerfileUbuntu" \

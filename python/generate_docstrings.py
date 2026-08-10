@@ -118,10 +118,9 @@ def collect_source_docs(src_dir: Path) -> dict[tuple[str | None, str], list[str]
     """
     Collect doc comments for items in a crate, excluding python/ files.
 
-    Returns {(type_name_or_none, item_name): [doc_line, ...]} where lines
-    exclude the ``///`` prefix. Free functions and type definitions use
-    ``None`` as the type_name. Methods inside ``impl TypeName`` blocks use
-    the enclosing type name.
+    Returns {(type_name_or_none, item_name): [doc_line, ...]} where lines exclude the
+    ``///`` prefix. Free functions and type definitions use ``None`` as the type_name.
+    Methods inside ``impl TypeName`` blocks use the enclosing type name.
 
     """
     docs: dict[tuple[str | None, str], list[str]] = {}
@@ -212,9 +211,8 @@ def transform_doc(
     """
     Copy doc lines, dropping sections that do not belong on the Python wrapper.
 
-    Section headers like ``# Errors`` and ``# Safety`` are kept as-is
-    for clippy compatibility. The numpydoc transformation happens later
-    in the stub post-processor.
+    Section headers like ``# Errors`` and ``# Safety`` are kept as-is for clippy
+    compatibility. The numpydoc transformation happens later in the stub post-processor.
 
     """
     result: list[str] = []

@@ -23,6 +23,7 @@ On start, this actor:
 4. Subscribes to an option chain with 3 strikes above and 3 below ATM
 5. Uses ForwardPrice as the ATM source (auto-resolved from option ticker underlying_price)
 6. Logs received OptionChainSlice snapshots in the on_option_chain handler
+
 """
 
 from nautilus_trader.adapters.bybit import BYBIT

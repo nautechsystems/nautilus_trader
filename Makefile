@@ -20,12 +20,12 @@ FLAMEGRAPH_VERSION := $(shell bash scripts/cargo-tool-version.sh flamegraph)
 LYCHEE_VERSION := $(shell bash scripts/cargo-tool-version.sh lychee)
 # Tool versions from tools.toml
 PREK_VERSION := $(shell bash scripts/tool-version.sh prek)
+UV_VERSION := $(shell bash scripts/uv-version.sh)
 UV_REQUIRED_SPEC := $(shell awk -F'"' '\
 	/^\[tool\.uv\]/ { in_section=1; next } \
 	/^\[/ { in_section=0 } \
 	in_section && /^[[:space:]]*required-version[[:space:]]*=/ { print $$2; exit } \
 ' python/pyproject.toml)
-UV_REQUIRED_VERSION := $(patsubst ==%,%,$(UV_REQUIRED_SPEC))
 
 V = 0  # 0 / 1 - verbose mode
 Q = $(if $(filter 1,$V),,@) # Quiet mode, suppress command output
@@ -269,17 +269,9 @@ sync:  #-- Sync Python dependencies without building the package
 		printf "$(RED)ERROR: Could not find required-version in python/pyproject.toml$(RESET)\n"; \
 		exit 1; \
 	fi
-	@if [ "$(UV_REQUIRED_SPEC)" = "$(UV_REQUIRED_VERSION)" ]; then \
-		printf "$(RED)ERROR: python/pyproject.toml required-version must use ==A.B.C, found $(UV_REQUIRED_SPEC)$(RESET)\n"; \
-		exit 1; \
-	fi
 	@found="$$(uv --version 2>/dev/null | awk '{print $$2}' || true)"; \
 	if [ -z "$$found" ]; then \
-		printf "$(RED)ERROR: uv not found, ==$(UV_REQUIRED_VERSION) required; run \`uv self update $(UV_REQUIRED_VERSION)\` or prepend a matching binary to PATH.$(RESET)\n"; \
-		exit 1; \
-	fi; \
-	if [ "$$found" != "$(UV_REQUIRED_VERSION)" ]; then \
-		printf "$(RED)ERROR: uv $$found found, ==$(UV_REQUIRED_VERSION) required; run \`uv self update $(UV_REQUIRED_VERSION)\` or prepend a matching binary to PATH.$(RESET)\n"; \
+		printf "$(RED)ERROR: uv not found, $(UV_REQUIRED_SPEC) required; run \`make update-uv\` to install $(UV_VERSION).$(RESET)\n"; \
 		exit 1; \
 	fi
 	$(info $(M) Syncing Python dependencies...)
@@ -505,16 +497,16 @@ update: cargo-update update-uv  #-- Update all dependencies (cargo and uv)
 	$Q cd python && VIRTUAL_ENV= uv lock --upgrade
 
 .PHONY: update-uv
-update-uv:  #-- Install or upgrade uv to the version pinned in pyproject.toml
-	$(info $(M) Ensuring uv $(UV_REQUIRED_VERSION) is installed...)
-	@if [ "$$(uv --version 2>/dev/null | awk '{print $$2}')" = "$(UV_REQUIRED_VERSION)" ]; then \
-		printf "$(GREEN)uv $(UV_REQUIRED_VERSION) already installed$(RESET)\n"; \
+update-uv:  #-- Install or upgrade uv to the version pinned in tools.toml
+	$(info $(M) Ensuring uv $(UV_VERSION) is installed...)
+	@if [ "$$(uv --version 2>/dev/null | awk '{print $$2}')" = "$(UV_VERSION)" ]; then \
+		printf "$(GREEN)uv $(UV_VERSION) already installed$(RESET)\n"; \
 	else \
-		curl -LsSf https://astral.sh/uv/$(UV_REQUIRED_VERSION)/install.sh | sh; \
+		curl -LsSf https://astral.sh/uv/$(UV_VERSION)/install.sh | sh; \
 	fi
 
 .PHONY: install-tools
-install-tools: check-binstall-installed update-uv  #-- Install required development tools (pinned versions from Cargo.toml, tools.toml, pyproject.toml)
+install-tools: check-binstall-installed update-uv  #-- Install required development tools (pinned versions from Cargo.toml and tools.toml)
 	cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked \
 	&& cargo install cargo-edit --version $(CARGO_EDIT_VERSION) --locked \
 	&& cargo install cargo-fuzz --version $(CARGO_FUZZ_VERSION) --locked \

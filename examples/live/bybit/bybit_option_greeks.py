@@ -16,8 +16,9 @@
 """
 Example: Subscribe to option greeks for individual BTC CALL options on Bybit.
 
-Discovers BTC CALL options from the instrument cache, filters out expired contracts,
-and subscribes to exchange-provided greeks (delta, gamma, vega, theta, IV) for each.
+Discovers BTC CALL options from the instrument cache, filters out expired contracts, and
+subscribes to exchange-provided greeks (delta, gamma, vega, theta, IV) for each.
+
 """
 
 from nautilus_trader.adapters.bybit import BYBIT

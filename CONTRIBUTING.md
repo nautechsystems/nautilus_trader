@@ -80,8 +80,7 @@ prek install
 
 `prek install` installs both hook types configured by the repository.
 
-`make install-tools` reads pinned versions from `Cargo.toml`, `tools.toml`, and
-`python/pyproject.toml`. See
+`make install-tools` reads pinned versions from `Cargo.toml` and `tools.toml`. See
 [Install development tools](docs/developer_guide/environment_setup.md#2-install-development-tools)
 for the full list, what each tool does, and which tools install separately.
 

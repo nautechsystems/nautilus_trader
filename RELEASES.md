@@ -47,6 +47,7 @@ Released on TBD (UTC).
 
 ### Security
 
+- Hardened development wheel publishing to validate exact artifacts and fail closed
 - Pinned the direct `alloy` crate dependency to v2.2.0 to limit its larger supply‑chain risk surface
 - Fixed malformed external message topics aborting Python v2 `LiveNode` (#4630), thanks for reporting @davidgreyme
 - Fixed macOS ARM64 PyArrow SIGSEGVs (#4633, #4642), thanks for reporting @ZhongxuanWang; thanks @alex09x
@@ -71,9 +72,19 @@ Released on TBD (UTC).
 - Fixed portfolio realized PnL converting snapshot and position amounts at different exchange rates when `use_mark_xrates` is enabled
 - Fixed account state log throttling for events carrying an earlier `ts_init`
 - Fixed catalog and session queries reporting a DataFusion stream or record‑batch decode failure as a successfully exhausted query, which truncated data without warning and aborted the process in release builds; Python `DataQueryResult` iteration and `to_list` now raise `RuntimeError`
+- Fixed default execution mass status generation to compose granular reports (#4669), thanks @folknor
+- Fixed Parquet custom data queries for `Vec<u8>` fields (#4670), thanks @TheoBabilon
+- Fixed delayed WebSocket pongs being sent on replacement connections (#4683), thanks @folknor
+- Fixed backtest windows dropping boundary data and empty runs advancing time (#4685), thanks @folknor
+- Fixed `BetPosition` average price and PnL after stake increases (#4684), thanks @folknor
+- Fixed option expiry settlement dispatching partial legs and failing to retry missing prices (#4618), thanks @folknor
+- Fixed simulated exchange order queries returning all orders for unknown instruments (#4687), thanks @folknor
+- Fixed `FixedRiskSizer` omitting instrument contract multipliers (#4699), thanks @dfjmax
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
+- Fixed Databento MBO snapshots advancing the incremental sequence (#4686), thanks @faysou
 - Fixed Derive cancel‑only replacements and reused labels during order reconciliation
+- Fixed Interactive Brokers continuous futures historical bar requests (#4664), thanks @dfjmax
 - Fixed Polymarket commissions to preserve exact decimal values in `Money` construction
 - Fixed Polymarket maker fill ownership and reported mass‑status trade drops (#4662), thanks @seungpyoson
 - Fixed Polymarket WebSocket asset and discovery subscription replay across reconnects
@@ -85,7 +96,6 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Added `From` conversions from `ActorId`, `ExecAlgorithmId`, and `StrategyId` to `ComponentId` that reuse the interned value
-- Hardened development wheel publishing to validate exact artifacts and fail closed
 - Improved native backtest workload coverage for canonical result checks
 - Improved Coinbase request tests by removing redundant waits (#4637), thanks @pengpengyi92
 - Improved network crate tests for retries, rate limits, mutual TLS, HTTP, socket reconnects, and WebSocket messages
@@ -96,7 +106,8 @@ Released on TBD (UTC).
 - Standardized Rust adapter order command failure classification with a shared `CommandFailure` type for Architect AX, Bybit, and Kraken
 - Updated concept and tutorial docs to describe current Rust and PyO3 behavior after the v1 removal
 - Upgraded Rust development tools: `cargo-hawk` v0.1.12, `cargo-nextest` v0.9.143, and Miri `nightly-2026-08-01`
-- Upgraded Python and workflow tools: `uv` v0.12.1, `pypi-attestations` v0.0.30, and `zizmor` v1.29.0
+- Upgraded Python and workflow tools: `uv` v0.12.3, `pypi-attestations` v0.0.30, and `zizmor` v1.29.0
+- Upgraded `async-trait` crate to v0.1.92
 - Upgraded `base64` crate to v0.23.1 with only its safe `std` feature enabled
 - Upgraded `capnp` and `capnpc` crates to v0.27.0 and regenerated schema bindings
 - Upgraded `clap` crate to v4.6.6
@@ -104,6 +115,7 @@ Released on TBD (UTC).
 - Upgraded `pem` crate to v4.0.0 to align with the current Base64 API
 - Upgraded `pyo3` crate to v0.29.2 for object‑lifetime, free‑threading, and compatibility fixes
 - Upgraded `redis` crate to v1.5.0
+- Upgraded `thiserror` crate to v2.0.20
 - Upgraded `time` crate to v0.3.55
 - Upgraded `toml` crate to v1.1.4
 

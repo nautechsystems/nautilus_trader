@@ -106,7 +106,8 @@ This installs:
   `cargo-vet`, `flamegraph`, `lychee`.
 - **Prebuilt binaries** pinned in `tools.toml`: `prek` (pre-commit runner) and `osv-scanner`
   (vulnerability scanner).
-- **uv**, synced to the version required by `python/pyproject.toml`.
+- **uv**, installed at the project version pinned in `tools.toml`. The supported local uv minor
+  series is defined in `python/pyproject.toml`.
 
 Cap'n Proto is also pinned in `tools.toml` but installs separately; see the [Cap'n Proto](#capn-proto)
 section below.
@@ -136,16 +137,16 @@ The repository manifests are the canonical source for dependency and tool versio
 current version numbers into docs, runner images, or scripts unless there is no manifest-backed way
 to read them.
 
-| Source file or section                    | Defines                                               |
-| ----------------------------------------- | ----------------------------------------------------- |
-| `rust-toolchain.toml`                     | Rust toolchain.                                       |
-| `Cargo.toml` and `Cargo.lock`             | Rust workspace dependencies and exact resolution.     |
-| `Cargo.toml` `[workspace.metadata.tools]` | Cargo‑installable development tools.                  |
-| `python/pyproject.toml`                   | Python dependencies, supported Python range, and uv.  |
-| `python/uv.lock`                          | Exact Python dependency resolution.                   |
-| `tools.toml`                              | External CLIs and binaries without a native manifest. |
+| Source file or section                    | Defines                                                 |
+| ----------------------------------------- | ------------------------------------------------------- |
+| `rust-toolchain.toml`                     | Rust toolchain.                                         |
+| `Cargo.toml` and `Cargo.lock`             | Rust workspace dependencies and exact resolution.       |
+| `Cargo.toml` `[workspace.metadata.tools]` | Cargo‑installable development tools.                    |
+| `python/pyproject.toml`                   | Python dependencies and supported Python and uv ranges. |
+| `python/uv.lock`                          | Exact Python dependency resolution.                     |
+| `tools.toml`                              | External CLIs and binaries without a native manifest.   |
 
-The external tool pins in `tools.toml` include `prek`, `pip-audit`, `pypi-attestations`,
+The external tool pins in `tools.toml` include uv, `prek`, `pip-audit`, `pypi-attestations`,
 `osv-scanner`, and `capnp`.
 
 The Makefile reads these via `scripts/cargo-tool-version.sh`, `scripts/tool-version.sh`, and
@@ -215,16 +216,15 @@ echo "PYTHONHOME: $PYTHONHOME"
 Python dependencies are managed by [uv](https://docs.astral.sh/uv). The `[tool.uv]` section in
 `python/pyproject.toml` enforces three supply chain safety settings:
 
-- **`required-version`**: all developers and CI use the same uv version. The version is extracted
-  by `scripts/uv-version.sh` for Makefile, CI, and Docker builds. If your local uv drifts off the
-  pin, `uv lock`/`uv sync` will fail with `Required uv version ... does not match the running
-  version ...`. Run `make update-uv` to install the pinned version (or follow uv's own
-  `uv self update <version>` hint). The stub targets check the same pin
-  before running `uv`; see [Generated Python artifacts](rust.md#generated-python-artifacts).
-- **`exclude-newer = "3 days"`**: `uv lock` ignores package versions published within the last
-  3 days. This gives the community time to detect and quarantine compromised releases before they
+- **`required-version`**: local uv commands accept any patch release in the supported minor series.
+  If your local uv is outside that range, `uv lock` and `uv sync` fail with a version mismatch.
+  `tools.toml` separately pins the exact version used by CI, Docker, pre‑commit, and
+  `make update-uv`. The stub targets run through `make sync`, so they enforce the same supported
+  range; see [Generated Python artifacts](rust.md#generated-python-artifacts).
+- **`exclude-newer = "7 days"`**: `uv lock` ignores package versions published within the last
+  7 days. This gives the community time to detect and quarantine compromised releases before they
   enter the lockfile. The value accepts an RFC 3339 timestamp (`"2026-03-30T00:00:00Z"`), a friendly
-  duration (`"3 days"`, `"1 week"`, `"24 hours"`), or an ISO 8601 duration (`"P3D"`, `"P1W"`,
+  duration (`"7 days"`, `"1 week"`, `"24 hours"`), or an ISO 8601 duration (`"P7D"`, `"P1W"`,
   `"PT24H"`). uv 0.11.8+ stores the friendly/ISO form as `exclude-newer-span` inside
   `python/uv.lock` and emits a sentinel `exclude-newer` timestamp alongside it for backwards
   compatibility. `python/uv.lock` uses that format.
@@ -239,8 +239,10 @@ Python dependencies are managed by [uv](https://docs.astral.sh/uv). The `[tool.u
 
 ### Bypassing the cooldown
 
-When a security patch or critical bug fix must be pulled in immediately, override `exclude-newer`
-on the command line. All forms accept a timestamp, friendly duration, or ISO duration; package
+When a security patch or critical bug fix must be pulled in immediately, review the release and
+override `exclude-newer` for that lock operation. Prefer a package‑scoped override so unrelated
+packages remain subject to the 7‑day default. Do not add persistent package overrides to
+`python/pyproject.toml`. All forms accept a timestamp, friendly duration, or ISO duration; package
 overrides additionally accept `false` to exempt a package from the cooldown entirely.
 
 ```bash
@@ -253,7 +255,7 @@ uv lock --project python --exclude-newer-package "somepackage=2026-03-30T00:00:0
 # Exempt a single package from the cooldown entirely
 uv lock --project python --exclude-newer-package "somepackage=false"
 
-# Disable the cooldown for the whole resolution
+# Disable the cooldown for the whole resolution after reviewing every newly eligible package
 uv lock --project python --exclude-newer "0 seconds"
 ```
 
@@ -262,9 +264,10 @@ remains unchanged for subsequent runs.
 
 ### Updating uv
 
-To update the pinned uv version, change `required-version` in `python/pyproject.toml`, then update
-the `rev` in `.pre-commit-config.yaml` to match. Run `make update-uv` to install the new pinned
-version locally.
+To support a new uv minor series, change `required-version` in `python/pyproject.toml`. To update the
+exact project version within that range, change `[uv].version` in `tools.toml`, the `rev` in
+`.pre-commit-config.yaml`, and each digest‑pinned uv Docker image. Run `make update-uv` to install the
+project version locally.
 
 ## Builds
 

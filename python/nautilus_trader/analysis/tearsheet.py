@@ -810,8 +810,8 @@ def _calculate_account_returns(
     """
     Compute daily portfolio returns by aggregating v2 account reports.
 
-    Returns ``None`` when accounts use mixed currencies without an explicit
-    ``currency`` filter.
+    Returns ``None`` when accounts use mixed currencies without an explicit ``currency``
+    filter.
 
     """
     if engine is None:

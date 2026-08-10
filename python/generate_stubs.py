@@ -59,9 +59,9 @@ def to_screaming_snake_case(name: str) -> str:
     """
     Convert a PascalCase or camelCase name to SCREAMING_SNAKE_CASE.
 
-    Uses the same word-splitting algorithm as the ``heck`` crate (which PyO3
-    uses for ``rename_all``). Digits are treated as lowercase, so ``Level1``
-    becomes ``LEVEL1`` (no underscore before the digit).
+    Uses the same word-splitting algorithm as the ``heck`` crate (which PyO3 uses for
+    ``rename_all``). Digits are treated as lowercase, so ``Level1`` becomes ``LEVEL1``
+    (no underscore before the digit).
 
     """
     if not name:
@@ -243,8 +243,8 @@ def python_libdir_env() -> dict[str, str]:
     ``libpython`` locate it at runtime.
 
     uv-managed CPython is a shared build whose ``libpython`` lives under its own ``lib``
-    directory, which is not on the system loader path. The standalone ``python-stub-gen``
-    binary has no rpath, so without this it cannot load ``libpython`` at runtime.
+    directory, which is not on the system loader path. The ``python-stub-gen`` binary
+    has no rpath, so without this it cannot load ``libpython`` at runtime.
 
     """
     env = os.environ.copy()
@@ -446,7 +446,9 @@ def inject_reexports(content: str, stub_path: Path) -> str:
 
 
 def post_process_stubs(root: Path) -> None:
-    """Post-process all stub files: fix headers, rename methods, fix return types."""
+    """
+    Post-process all stub files: fix headers, rename methods, fix return types.
+    """
     workspace_root = Path(__file__).parent.parent
     rust_fixups = collect_rust_class_fixups(workspace_root)
     renamed_enums = collect_renamed_enums(workspace_root)
@@ -612,8 +614,7 @@ def _resolve_signature_params(
     Parse each parameter in a pyo3 signature string and translate its default to Python
     syntax.
 
-    The ``*`` separator is dropped because pyo3-stub-gen
-    does not emit it in stubs.
+    The ``*`` separator is dropped because pyo3-stub-gen does not emit it in stubs.
 
     """
     params: list[tuple[str, str | None]] = []
@@ -1006,9 +1007,9 @@ def elide_forward_class_defaults_in_signatures(content: str) -> str:
     Replace local class defaults with ``...`` when the class is declared later in the
     same stub file.
 
-    This keeps the signature shape while avoiding invalid runtime expressions
-    like ``BitmexEnvironment.MAINNET`` inside a class body before
-    ``BitmexEnvironment`` is defined.
+    This keeps the signature shape while avoiding invalid runtime expressions like
+    ``BitmexEnvironment.MAINNET`` inside a class body before ``BitmexEnvironment`` is
+    defined.
 
     """
     lines = content.split("\n")
@@ -1246,8 +1247,8 @@ def _collect_pyfunction_signature_defaults(
     """
     Collect signature defaults from ``#[pyfunction]`` free functions.
 
-    Stores defaults under the ``_FREE_FUNCTIONS_KEY`` sentinel so they can be
-    applied to module-level function stubs.
+    Stores defaults under the ``_FREE_FUNCTIONS_KEY`` sentinel so they can be applied to
+    module-level function stubs.
 
     """
     lines = source.splitlines()
@@ -2486,13 +2487,12 @@ def add_optional_defaults(content: str) -> str:
     Add ``= ...`` to trailing Optional parameters that lack a default value.
 
     pyo3-stub-gen omits defaults for ``Option<T>`` parameters declared in
-    ``#[pyo3(signature)]`` when the ``infer_signature`` feature is off.
-    Using ``...`` (ellipsis) rather than ``None`` because the actual default
-    may be a non-None value like ``Some(true)`` or ``Some(30)``.
+    ``#[pyo3(signature)]`` when the ``infer_signature`` feature is off. Using ``...``
+    (ellipsis) rather than ``None`` because the actual default may be a non-None value
+    like ``Some(true)`` or ``Some(30)``.
 
-    Only adds defaults to trailing Optional params (right-to-left from the end
-    of the parameter list) to avoid placing a defaulted parameter before a
-    required one.
+    Only adds defaults to trailing Optional params (right-to-left from the end of the
+    parameter list) to avoid placing a defaulted parameter before a required one.
 
     """
     lines = content.split("\n")
@@ -2635,10 +2635,10 @@ def _scan_param_type(line: str, start: int) -> tuple[int, int, bool]:
     """
     Scan a parameter type annotation from *start*, respecting bracket depth.
 
-    Returns ``(end_pos, eq_pos, has_ellipsis)`` where *end_pos* is the index
-    of the first top-level comma or close-paren, *eq_pos* is the index of a
-    top-level ``=`` (or -1 if none), and *has_ellipsis* is ``True`` when the
-    existing default value is ``...``.
+    Returns ``(end_pos, eq_pos, has_ellipsis)`` where *end_pos* is the index of the
+    first top-level comma or close-paren, *eq_pos* is the index of a top-level ``=`` (or
+    -1 if none), and *has_ellipsis* is ``True`` when the existing default value is
+    ``...``.
 
     """
     depth = 0
@@ -2705,8 +2705,8 @@ def _qualify_enum_default(py_default: str, type_text: str) -> str:
     Qualify an enum default value with its module prefix when the type annotation uses a
     qualified form like ``model.BookType``.
 
-    For example, if the default is ``BookType.L1_MBP`` and the type text
-    contains ``model.BookType``, returns ``model.BookType.L1_MBP``.
+    For example, if the default is ``BookType.L1_MBP`` and the type text contains
+    ``model.BookType``, returns ``model.BookType.L1_MBP``.
 
     """
     if "." not in py_default:
@@ -2975,8 +2975,8 @@ def _derive_module_path(crate_dir: Path, workspace_root: Path) -> str:
     """
     Derive the stub module path from a crate directory.
 
-    Adapter crates map to the public adapter package path, so
-    ``crates/adapters/bybit`` maps to ``"adapters.bybit"``.
+    Adapter crates map to the public adapter package path, so ``crates/adapters/bybit``
+    maps to ``"adapters.bybit"``.
 
     """
     relative = crate_dir.relative_to(workspace_root / "crates")
@@ -3077,11 +3077,11 @@ def sync_adapter_all_exports(root: Path) -> None:
     """
     Replace each adapter stub's ``__all__`` with the runtime adapter ``__all__``.
 
-    pyo3-stub-gen derives ``__all__`` from every registered module member, which
-    exposes raw clients, wire models, and endpoint helpers that the runtime
-    facade keeps private. Each adapter ``__init__.py`` defines a curated
-    ``__all__``; this copies it into the matching stub so runtime and stub
-    exports stay in exact agreement after every regeneration.
+    pyo3-stub-gen derives ``__all__`` from every registered module member, which exposes
+    raw clients, wire models, and endpoint helpers that the runtime facade keeps
+    private. Each adapter ``__init__.py`` defines a curated ``__all__``; this copies it
+    into the matching stub so runtime and stub exports stay in exact agreement after
+    every regeneration.
 
     """
     adapters_dir = root / "adapters"
@@ -3135,9 +3135,9 @@ def _validate_stub_exports(stub_content: str, exports: list[str], stub_path: Pat
     """
     Fail generation when a runtime export is absent from the stub.
 
-    A name in ``__all__`` that the stub neither defines nor re-exports would
-    break ``from <adapter> import <name>`` for type checkers, so surface it as a
-    generation error rather than silently shipping a broken stub.
+    A name in ``__all__`` that the stub neither defines nor re-exports would break
+    ``from <adapter> import <name>`` for type checkers, so surface it as a generation
+    error rather than silently shipping a broken stub.
 
     """
     available = _stub_top_level_names(stub_content)

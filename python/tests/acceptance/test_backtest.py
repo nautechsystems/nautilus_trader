@@ -15,9 +15,10 @@
 """
 Acceptance tests for the v2 BacktestEngine.
 
-This suite mirrors the v1 acceptance suite under `tests/acceptance_tests/test_backtest.py`
-so we can validate v2 feature parity. Tests that depend on v2 features that have not yet
-been ported are marked with `pytest.skip` and a `v2 missing: ...` reason.
+This suite mirrors the v1 acceptance suite under
+`tests/acceptance_tests/test_backtest.py` so we can validate v2 feature parity. Tests
+that depend on v2 features that have not yet been ported are marked with `pytest.skip`
+and a `v2 missing: ...` reason.
 
 Most magic-number assertions from the v1 suite (msgbus counts, exact balances) are not
 replicated since v2's runtime has different internal counters; instead we assert on the
@@ -1713,9 +1714,8 @@ def test_engine_cache_shares_kernel_state():
     The ``BacktestEngine.cache`` getter must return a wrapper backed by the kernel's own
     cache (not a fresh detached one).
 
-    A regression that constructs
-    a new ``Cache`` per call would silently break parity assertions in the
-    rerun acceptance test.
+    A regression that constructs a new ``Cache`` per call would silently break parity
+    assertions in the rerun acceptance test.
 
     """
     engine = _engine()

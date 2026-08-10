@@ -1,30 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Extract the uv version from [tool.uv] required-version in python/pyproject.toml
+# Extract the exact uv install version from tools.toml.
 #
 # Usage: uv-version.sh
-# Example output: 0.11.2
+# Example output: 0.12.3
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYPROJECT="${SCRIPT_DIR}/../python/pyproject.toml"
 
-if [[ ! -f "$PYPROJECT" ]]; then
-  echo "Error: python/pyproject.toml not found at $PYPROJECT" >&2
-  exit 1
-fi
-
-# Extract version from: required-version = "==0.11.2"
-# Strips the == prefix to return the bare version
-VERSION=$(awk '
-  /^\[tool\.uv\]/ { in_section=1; next }
-  /^\[/ { in_section=0 }
-  in_section && /^required-version/ { gsub(/[" =]/, "", $3); print $3; exit }
-' "$PYPROJECT")
-
-if [[ -z "$VERSION" ]]; then
-  echo "Error: Could not find required-version in [tool.uv]" >&2
-  exit 1
-fi
-
-echo -n "$VERSION"
+exec bash "${SCRIPT_DIR}/tool-version.sh" uv

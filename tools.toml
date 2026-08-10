@@ -3,12 +3,15 @@
 # Rust toolchain: rust-toolchain.toml
 # Miri toolchain: tools.toml [miri]
 # Cargo CLIs:     Cargo.toml [workspace.metadata.tools]
-# Python CLIs:    tools.toml
-# uv:             pyproject.toml [tool.uv]
+# External CLIs:  tools.toml
+# uv range:       pyproject.toml [tool.uv]
 
 [miri]
 version = "nightly-2026-08-01"
 rustc-version = "1.99.0"
+
+[uv]
+version = "0.12.3"
 
 [prek]
 version = "0.4.12"

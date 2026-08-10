@@ -678,10 +678,9 @@ def test_margin_account_full_account_api():
     MarginAccount must expose the full Account trait surface in pyo3 (parity with
     CashAccount and BettingAccount).
 
-    Each newly exposed method below was missing
-    before this patch; assert exact values rather than just ``isinstance`` so a
-    regression that returns the wrong field (e.g. ``balance_free`` from
-    ``balance_total``) would fail.
+    Each newly exposed method below was missing before this patch; assert exact values
+    rather than just ``isinstance`` so a regression that returns the wrong field (e.g.
+    ``balance_free`` from ``balance_total``) would fail.
 
     """
     usd = Currency.from_str("USD")

@@ -89,13 +89,12 @@ The sections below detail the controls at each layer of that lifecycle.
 - **Version pinning and lock files**: Rust dependencies are pinned in `Cargo.lock` with
   cryptographic checksums. Python dependencies are pinned in `python/uv.lock` with integrity
   hashes. Wildcard version requirements are prohibited.
-- **Dependency and tool cooldown**: Python dependency resolution excludes packages published
-  within the last 3 days via `exclude-newer` in `python/pyproject.toml`. Development tools are pinned to
-  explicit versions across `tools.toml`, `Cargo.toml`, and related manifests, and version bumps are
-  reviewed during security audits. Rust crate updates are reviewed through our cargo-vet audit
-  process and policy, and in practice are not adopted within roughly 3 days of publication unless
-  they carry a security fix or are needed for development after extensive review. The cooldown gives
-  the community time to detect and quarantine compromised releases.
+- **Dependency cooldowns**: Python dependency resolution excludes packages published within the
+  last 7 days through `exclude-newer` in `python/pyproject.toml`. Rust crate updates remain subject
+  to a 3‑day cooldown and cargo-vet review. A security fix or critical bug fix may bypass either
+  cooldown after explicit review. These windows give the community time to detect and quarantine
+  compromised releases. Development tools are pinned to explicit versions across `tools.toml`,
+  `Cargo.toml`, and related manifests, and version bumps are reviewed during security audits.
 - **Wheel-only Python installs**: The `no-build-package` list in `[tool.uv]` enumerates every
   third-party package locked in `python/uv.lock` and forbids `uv` from building any of them from source.
   In normal operation uv prefers wheels, so the setting is a no-op; it kicks in only if a listed
@@ -104,9 +103,9 @@ The sections below detail the controls at each layer of that lifecycle.
   must be built by the workspace's own build backend. The `check-no-build-packages` pre-commit hook
   verifies the list stays in lock-step with `python/uv.lock` on every commit that touches the lock
   or the manifest.
-- **Toolchain pinning**: The uv package manager version is pinned via `required-version` in
-  `python/pyproject.toml` and enforced across CI, Docker, and local development. Release and audit tool
-  Python CLIs are pinned in `tools.toml`.
+- **Toolchain pinning**: `python/pyproject.toml` limits local uv use to the supported minor series.
+  `tools.toml` pins the exact uv version used by CI, Docker, pre‑commit, and project install commands.
+  Release and audit tool Python CLIs are also pinned in `tools.toml`.
 - **License compliance**: Automated checks ensure LGPL-3.0-or-later compatibility.
 
 ### Pre-merge and scheduled scanning
@@ -188,9 +187,9 @@ the canonical repository.
 
 ## Advisories addressed
 
-Third-party security advisories we have addressed via dependency upgrades.
-Detection lag for each upgrade is gated by the `exclude-newer` cooldown described
-above; the cooldown can be bypassed when a CVE warrants immediate response.
+Third‑party security advisories we have addressed via dependency upgrades. Security scanning is
+not delayed by the dependency cooldowns described above. When an advisory requires a newer
+package, a reviewed fix can bypass the applicable cooldown.
 
 - **1.227.0**:
   - [GHSA-mf9v-mfxr-j63j](https://github.com/urllib3/urllib3/security/advisories/GHSA-mf9v-mfxr-j63j):

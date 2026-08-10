@@ -139,7 +139,7 @@ arrow = { version = "58.4.0", default-features = false, features = [
 ] }
 arrow-row = "58.4.0"
 async-stream = "0.3.6"
-async-trait = "0.1.91"
+async-trait = "0.1.92"
 aws-lc-rs = { version = "1.18.0", default-features = false, features = [
   "non-fips", # FIPS 140-3 mode blocked: aws-lc-fips-sys requires Go toolchain
 ] }
@@ -283,7 +283,7 @@ sysinfo = { version = "0.39.6", default-features = false, features = [
   "system",
 ] }
 tabled = { version = "0.21.0", default-features = false, features = ["std"] }
-thiserror = "2.0.19"
+thiserror = "2.0.20"
 tokio = { version = "1.53.1", default-features = false, features = [
   "rt-multi-thread",
   "sync",

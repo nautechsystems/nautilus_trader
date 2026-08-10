@@ -98,9 +98,9 @@ def walk_fills(
     """
     Walk the fill sequence tracking running net position on a Netting OMS.
 
-    Returns entries, partial reductions, full closes, and (open_ts, close_ts)
-    intervals per position cycle. ``close_ts`` is None for a position that is
-    still open at the end of the fill series.
+    Returns entries, partial reductions, full closes, and (open_ts, close_ts) intervals
+    per position cycle. ``close_ts`` is None for a position that is still open at the
+    end of the fill series.
 
     """
     entries: list[dict] = []
