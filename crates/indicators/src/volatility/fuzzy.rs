@@ -249,6 +249,14 @@ impl Indicator for FuzzyCandlesticks {
         self.body_percents.clear();
         self.upper_wick_percents.clear();
         self.lower_wick_percents.clear();
+        self.value = FuzzyCandle::new(
+            CandleDirection::None,
+            CandleSize::None,
+            CandleBodySize::None,
+            CandleWickSize::None,
+            CandleWickSize::None,
+        );
+        self.vector = Vec::new();
         self.last_open = 0.0;
         self.last_high = 0.0;
         self.last_close = 0.0;
@@ -390,24 +398,7 @@ impl FuzzyCandlesticks {
     }
 
     pub fn reset(&mut self) {
-        self.lengths.clear();
-        self.body_percents.clear();
-        self.upper_wick_percents.clear();
-        self.lower_wick_percents.clear();
-        self.value = FuzzyCandle::new(
-            CandleDirection::None,
-            CandleSize::None,
-            CandleBodySize::None,
-            CandleWickSize::None,
-            CandleWickSize::None,
-        );
-        self.vector = Vec::new();
-        self.last_open = 0.0;
-        self.last_high = 0.0;
-        self.last_close = 0.0;
-        self.last_low = 0.0;
-        self.has_inputs = false;
-        self.initialized = false;
+        Indicator::reset(self);
     }
 
     fn fuzzify_direction(open: f64, close: f64) -> CandleDirection {
@@ -661,9 +652,20 @@ mod tests {
     }
 
     #[rstest]
-    fn test_reset(mut fuzzy_candlesticks_10: FuzzyCandlesticks) {
-        fuzzy_candlesticks_10.update_raw(151.6, 156.4, 151.0, 155.8);
-        fuzzy_candlesticks_10.reset();
+    #[case::inherent(FuzzyCandlesticks::reset)]
+    #[case::indicator(<FuzzyCandlesticks as Indicator>::reset)]
+    fn test_reset(
+        #[case] reset: fn(&mut FuzzyCandlesticks),
+        mut fuzzy_candlesticks_10: FuzzyCandlesticks,
+    ) {
+        for _ in 0..10 {
+            fuzzy_candlesticks_10.update_raw(151.6, 156.4, 151.0, 155.8);
+        }
+        assert!(fuzzy_candlesticks_10.initialized);
+        assert!(!fuzzy_candlesticks_10.vector.is_empty());
+
+        reset(&mut fuzzy_candlesticks_10);
+
         assert_eq!(fuzzy_candlesticks_10.lengths.len(), 0);
         assert_eq!(fuzzy_candlesticks_10.body_percents.len(), 0);
         assert_eq!(fuzzy_candlesticks_10.upper_wick_percents.len(), 0);

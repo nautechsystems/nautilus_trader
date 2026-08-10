@@ -102,9 +102,11 @@ impl Indicator for AdaptiveMovingAverage {
 
     fn reset(&mut self) {
         self.value = 0.0;
+        self.prior_value = None;
         self.count = 0;
         self.has_inputs = false;
         self.initialized = false;
+        self.efficiency_ratio.reset();
     }
 }
 
@@ -166,12 +168,8 @@ impl AdaptiveMovingAverage {
         self.alpha_slow
     }
 
-    pub const fn reset(&mut self) {
-        self.value = 0.0;
-        self.prior_value = None;
-        self.count = 0;
-        self.has_inputs = false;
-        self.initialized = false;
+    pub fn reset(&mut self) {
+        Indicator::reset(self);
     }
 }
 
@@ -258,16 +256,27 @@ mod tests {
     }
 
     #[rstest]
-    fn test_reset(mut indicator_ama_10: AdaptiveMovingAverage) {
-        for _ in 0..10 {
-            indicator_ama_10.update_raw(1.0);
+    #[case::inherent(AdaptiveMovingAverage::reset)]
+    #[case::indicator(<AdaptiveMovingAverage as Indicator>::reset)]
+    fn test_reset(
+        #[case] reset: fn(&mut AdaptiveMovingAverage),
+        mut indicator_ama_10: AdaptiveMovingAverage,
+    ) {
+        for value in 1..=10 {
+            indicator_ama_10.update_raw(f64::from(value));
         }
         assert!(indicator_ama_10.initialized);
-        indicator_ama_10.reset();
+
+        reset(&mut indicator_ama_10);
+
         assert!(!indicator_ama_10.initialized);
         assert!(!indicator_ama_10.has_inputs);
         assert_eq!(indicator_ama_10.value, 0.0);
+        assert_eq!(indicator_ama_10.prior_value, None);
         assert_eq!(indicator_ama_10.count, 0);
+        assert!(!indicator_ama_10.efficiency_ratio.has_inputs());
+        assert!(!indicator_ama_10.efficiency_ratio.initialized());
+        assert_eq!(indicator_ama_10.efficiency_ratio.value, 0.0);
     }
 
     #[rstest]
