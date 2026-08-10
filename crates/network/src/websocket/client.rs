@@ -1003,7 +1003,7 @@ impl WebSocketClientInner {
     /// - The reconnection attempt times out.
     /// - The connection to the server fails.
     pub async fn reconnect(&mut self) -> Result<(), TransportError> {
-        self.reconnect_with_outcome().await.map(|_| ())
+        Box::pin(self.reconnect_with_outcome()).await.map(|_| ())
     }
 
     async fn reconnect_with_outcome(&mut self) -> Result<ReconnectOutcome, TransportError> {
@@ -1036,12 +1036,12 @@ impl WebSocketClientInner {
         // Bound only connection establishment; the swap below must run to completion
         let (new_writer, reader) = dst::time::timeout(
             self.reconnect_timeout,
-            Self::connect_with_server(
+            Box::pin(Self::connect_with_server(
                 &self.config.url,
                 self.reconnect_headers.snapshot()?,
                 self.config.backend,
                 self.config.proxy_url.as_deref(),
-            ),
+            )),
         )
         .await
         .map_err(|_| {
@@ -1836,12 +1836,12 @@ impl WebSocketClient {
         let connect_timeout = Duration::from_secs(10);
         let (writer, reader) = dst::time::timeout(
             connect_timeout,
-            WebSocketClientInner::connect_with_server(
+            Box::pin(WebSocketClientInner::connect_with_server(
                 &config.url,
                 config.headers.clone(),
                 config.backend,
                 config.proxy_url.as_deref(),
-            ),
+            )),
         )
         .await
         .map_err(|_| {

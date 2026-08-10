@@ -184,9 +184,12 @@ CORE_SELECTED_FEATURES := $(subst $(space),$(comma),$(strip $(CORE_SELECTED_FEAT
 # `#[allow(clippy::useless_conversion)]` in crates/model/src/types/quantity.rs and confirming
 # clippy reports it under this selection.
 STANDARD_PRECISION_ARGS := --workspace --exclude nautilus-blockchain --no-default-features --lib --tests --features "ffi,python"
+SIM_PACKAGES := -p nautilus-common -p nautilus-core -p nautilus-network \
+	-p nautilus-execution -p nautilus-live
+SIM_RUSTFLAGS := --cfg madsim -Aclippy::drop_non_drop
 
 CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug build-wheel py-stubs check-code \
-	check-code-standard-precision \
+	check-code-sim check-code-standard-precision \
 	check-all-targets clippy clippy-fix clippy-fix-nightly clippy-pedantic-crate-% \
 	docs docs-rust docsrs-check cargo-build cargo-check check-features hawk cargo-test \
 	cargo-test-extras cargo-test-postgres-ci cargo-test-doc cargo-test-core-local cargo-test-core-selected \
@@ -398,6 +401,13 @@ check-code-standard-precision:  #-- Run clippy on lib/test targets with standard
 	@cargo clippy $(STANDARD_PRECISION_ARGS) --profile nextest -- -D warnings
 	@printf "$(GREEN)Standard-precision checks passed$(RESET)\n"
 
+.PHONY: check-code-sim
+check-code-sim: export RUSTFLAGS=$(SIM_RUSTFLAGS)
+check-code-sim:  #-- Run clippy on DST simulation lib/test targets
+	$(info $(M) Running DST simulation code quality checks...)
+	@cargo clippy $(SIM_PACKAGES) --lib --tests --features simulation --profile nextest -- -D warnings
+	@printf "$(GREEN)DST simulation checks passed$(RESET)\n"
+
 .PHONY: check-all-targets
 check-all-targets:  #-- Run clippy on all targets including bins and examples (nightly)
 	$(info $(M) Running full clippy on all targets...)
@@ -434,6 +444,7 @@ pre-flight:  #-- Run pre-flight checks (format, tests, build, generated drift, a
 		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-doc EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-extras \
+		&& $(MAKE) --no-print-directory check-code-sim \
 		&& $(MAKE) --no-print-directory cargo-test-sim \
 		&& $(MAKE) --no-print-directory cargo-test-postgres-ci \
 		&& $(MAKE) --no-print-directory build-debug \
@@ -871,11 +882,11 @@ endif
 # DST scope.
 .PHONY: cargo-test-sim
 cargo-test-sim: export RUST_BACKTRACE=1
-cargo-test-sim: export RUSTFLAGS=--cfg madsim
+cargo-test-sim: export RUSTFLAGS=$(SIM_RUSTFLAGS)
 cargo-test-sim: check-nextest-installed
 cargo-test-sim:  #-- Run DST simulation smoke tests (cfg madsim + simulation feature)
 	$(info $(M) Building in-scope crates under simulation (compile gate)...)
-	cargo build -p nautilus-common -p nautilus-core -p nautilus-network -p nautilus-execution -p nautilus-live --tests --lib --features simulation
+	cargo build $(SIM_PACKAGES) --tests --lib --features simulation
 	$(info $(M) Running nautilus-common tests under simulation...)
 	cargo nextest run -p nautilus-common --features simulation $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
 	$(info $(M) Running nautilus-common tests under simulation + high-precision...)

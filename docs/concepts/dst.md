@@ -486,14 +486,15 @@ else, the pre-existing test layers are the right tool.
 
 ### Simulation smoke gate
 
-The `dst` workflow (`.github/workflows/dst.yml`) invokes `make cargo-test-sim`, which builds
-`nautilus-common`, `nautilus-core`, `nautilus-network`, `nautilus-execution`, and `nautilus-live`
-with `--features simulation` under `cfg(madsim)`, then runs the sim-compatible legs below. Each
-leg runs with its own crate's `--features simulation` and uses `#[madsim::test]` where applicable,
-so the explicit cfg branches and virtual time are both validated. `nautilus-common` and
-`nautilus-execution` consume `nautilus-model` types, so each also runs a second leg with
-`--features "simulation,high-precision"`, exercising the seam-routed code paths under both
-fixed-point widths (`QuantityRaw` and `PriceRaw` as `u64` and as `u128`).
+The `dst` workflow (`.github/workflows/dst.yml`) runs `make check-code-sim` before
+`make cargo-test-sim`. The first target lints `nautilus-common`, `nautilus-core`,
+`nautilus-network`, `nautilus-execution`, and `nautilus-live` with pinned stable Clippy under
+`--features simulation` and `cfg(madsim)`. The second builds the same crate scope, then runs the
+simulation‑compatible legs below. Each leg runs with its own crate's `--features simulation` and
+uses `#[madsim::test]` where applicable, so the explicit cfg branches and virtual time are both
+validated. `nautilus-common` and `nautilus-execution` consume `nautilus-model` types, so each also
+runs a second leg with `--features "simulation,high-precision"`, exercising the seam‑routed code
+paths under both fixed‑point widths (`QuantityRaw` and `PriceRaw` as `u64` and as `u128`).
 
 The gate covers:
 

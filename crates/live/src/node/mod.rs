@@ -5698,7 +5698,9 @@ mod tests {
     fn test_record_runner_dispatch_updates_selected_channel() {
         let metrics = RunnerMetrics::default();
         let dispatch_start = dst::time::Instant::now();
-        let metrics_start = dispatch_start - Duration::from_micros(1);
+        let metrics_start = dispatch_start
+            .checked_sub(Duration::from_micros(1))
+            .expect("test instant should support a one-microsecond lookback");
 
         record_runner_dispatch(
             &metrics,

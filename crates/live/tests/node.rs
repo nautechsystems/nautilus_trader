@@ -1808,7 +1808,7 @@ mod serial_tests {
         let result = dst::time::timeout(Duration::from_millis(200), node.start())
             .await
             .expect("start should finish within the lifecycle timeout");
-        let elapsed = dst::time::Instant::now() - started_at;
+        let elapsed = started_at.elapsed();
         let err = result.expect_err("start should fail on a readiness timeout");
 
         assert!(

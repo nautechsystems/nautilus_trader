@@ -2,7 +2,8 @@ name: dst
 
 # Deterministic simulation testing (DST) smoke gate.
 #
-# Builds the in-scope crates under `--cfg madsim --features simulation` and
+# Runs pinned stable Clippy on the in-scope crates under
+# `--cfg madsim --features simulation`, then builds the same crate scope and
 # runs the test subset known to work under simulation (all of nautilus-common,
 # nautilus-network, and nautilus-execution; the focused nautilus-live startup
 # reconciliation regression; and the nautilus-core seam pinning tests).
@@ -62,6 +63,9 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
           rust-cache-enabled: "false"
+
+      - name: Run DST simulation Clippy
+        run: make check-code-sim
 
       - name: Run DST simulation smoke tests
         run: |-

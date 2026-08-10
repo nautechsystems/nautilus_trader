@@ -930,7 +930,10 @@ impl Logger {
     /// # Errors
     ///
     /// Returns an error if the logger fails to register or initialize the background thread.
-    #[expect(clippy::needless_pass_by_value)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        expect(clippy::needless_pass_by_value)
+    )]
     pub fn init_with_config(
         trader_id: TraderId,
         instance_id: UUID4,
@@ -1329,7 +1332,7 @@ pub(crate) fn is_running() -> bool {
 pub fn sync_to_disk() -> anyhow::Result<()> {
     #[cfg(all(feature = "simulation", madsim))]
     {
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(all(feature = "simulation", madsim)))]
