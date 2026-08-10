@@ -52,8 +52,9 @@ From the repository root, connect to mainnet with explicit instruments:
     --run
 ```
 
-Rust examples live under `crates/adapters/lighter/examples/`. Both testers connect when run, but
-the execution tester submits orders only after its source sets `DRY_RUN = false`:
+Rust examples live under `crates/adapters/lighter/examples/`. Both testers connect when run. The
+execution tester has `DRY_RUN = false` in its source, so the command below can submit live mainnet
+orders:
 
 ```bash
 cargo run --example lighter-data-tester --package nautilus-lighter --features examples
@@ -124,13 +125,18 @@ configuration. URL overrides are available for private gateways or local test fi
 
 Create and modify transactions carry the NautilusTrader integrator account index in
 `L2TxAttributes` to measure adapter usage. Maker and taker integrator fees are zero. The execution
-client submits the required **zero‑fee** `ApproveIntegrator` approval during startup.
+client submits the required **zero‑fee** `ApproveIntegrator` approval during startup when the API
+key is not maker‑only.
+
+Maker‑only API keys cannot submit `ApproveIntegrator`. The execution client detects these keys and
+skips automatic approval. Approval is account‑scoped, so a non‑maker‑only key on the same account
+must approve the integrator before a maker‑only key can trade through the adapter.
 
 ### Revoking the approval
 
 Use revocation as cleanup when leaving the adapter. It sends `ApproveIntegrator` with
-`approval_expiry = 0` and zero max fees. The next execution‑client startup records a new zero‑fee
-approval.
+`approval_expiry = 0` and zero max fees. The next execution‑client startup with a non‑maker‑only
+key records a new zero‑fee approval.
 
 ```bash
 export LIGHTER_API_KEY_INDEX=5
@@ -365,7 +371,8 @@ initial_margin_fraction, margin_mode)`. The `initial_margin_fraction` is in venu
 (1e-4 fraction): `500` is 5% initial margin (20x leverage), `1000` is 10% (10x), and so on.
 
 `UpdateLeverage`, `CancelAllOrders`, modify orders with integrator attributes, and conditional
-create orders are byte-pinned against the official Lighter v1.1.2 signer.
+create orders are byte‑pinned against the signer distributed with the official `lighter-python`
+SDK version 1.1.2.
 
 ### Order querying and reconciliation
 
@@ -450,7 +457,7 @@ range up to the adapter's page cap, subject to an explicit `limit`; see
 
 Lighter account tiers set latency, rate limits, and fees. The execution client reads the tier from
 `GET /api/v1/account` and logs it, including unknown raw `account_type` values. It does not raise
-limits automatically because higher venue limits require IP registration.
+limits automatically because a local quota override does not grant a higher venue limit.
 
 | Tier     | Latency (maker / taker) | REST weighted limit | `sendTx` limit       | Fees (maker / taker)      | Notes                                   |
 | -------- | ----------------------- | ------------------- | -------------------- | ------------------------- | --------------------------------------- |
@@ -459,19 +466,26 @@ limits automatically because higher venue limits require IP registration.
 | Plus     | 200 ms / 300 ms         | 120,000 req/min     | 8,000 req/min        | 0.5 / 0.5 bps             | Raised limits, standard latency.        |
 | Builder  | -                       | 240,000 req/min     | -                    | -                         | Highest REST throughput.                |
 
-Premium figures scale with staked LIT and can change. To use a higher tier, register the caller IP
-and set the quota explicitly (see [Rate limiting](#rate-limiting)).
+Premium figures scale with staked LIT and can change. Before raising a local quota, confirm that
+Lighter applies the matching tier limit to the client's traffic, then set the quota explicitly
+(see [Rate limiting](#rate-limiting)).
 
 ## Rate limiting
 
-Lighter limits both IP and L1 addresses. Both clients default to standard‑account quotas; using
-higher [account tiers](#account-tiers) requires IP registration and explicit client quotas:
+Lighter limits both IP and L1 addresses. Each data and execution client owns a separate REST
+limiter and defaults to the standard‑account quota. Configure their combined traffic within the
+venue limit.
 
-- `rest_quota_per_min`: REST read-bucket quota in requests per minute. Unset keeps 60 req/min.
+Higher [account tiers](#account-tiers) still require explicit client quotas:
+
+- `rest_quota_per_min`: REST read‑bucket quota in requests per minute. Unset keeps 60 req/min.
   Available on both the data and execution clients.
 - `sendtx_quota_per_min`: transaction quota in requests per minute, metered in a bucket separate
   from reads. Unset keeps it at the standard 60 req/min, independent of `rest_quota_per_min`.
   Execution client only.
+
+These options change local pacing only. Public data requests remain unauthenticated, so setting a
+higher local quota does not make those requests eligible for an account‑level venue limit.
 
 The REST limiter counts one token per call rather than venue endpoint weights. Set
 `rest_quota_per_min` for the effective endpoint mix: a 24,000 weighted req/min premium limit yields
@@ -481,7 +495,8 @@ The REST limiter counts one token per call rather than venue endpoint weights. S
 The venue meters transactions per account across both transports in one bucket. The execution
 client enforces `sendtx_quota_per_min` with a single shared limiter across WebSocket `sendTx`
 (including order-list and cancel fanout) and the HTTP `sendTx` used for startup integrator
-approval. The public low-level HTTP `sendTxBatch` API uses the same limiter when called directly.
+approval. Low‑level raw `sendTx` and `sendTxBatch` calls use that limiter when the client is
+constructed with it; otherwise, they fall back to the raw client's REST limiter.
 
 The clients share one WebSocket message limiter per venue URL. It paces non‑transaction control
 frames at 200 messages/minute across both clients. A closed‑loop subscription gate caps
@@ -491,9 +506,9 @@ acknowledgement latency, not send rate. `sendTx` does not count against the clie
 | Scope                                | Venue limit                 | Adapter behavior                                     |
 | ------------------------------------ | --------------------------- | ---------------------------------------------------- |
 | REST, standard account               | 60 req/min                  | Default; set `rest_quota_per_min` to override.       |
-| REST, premium account                | 24,000 weighted req/min     | Logged; set `rest_quota_per_min` to use it.          |
-| REST, plus account                   | 120,000 weighted req/min    | Logged; set `rest_quota_per_min` to use it.          |
-| REST, builder account                | 240,000 weighted req/min    | Logged; set `rest_quota_per_min` to use it.          |
+| REST, premium account                | 24,000 weighted req/min     | Local override required; venue attribution applies.  |
+| REST, plus account                   | 120,000 weighted req/min    | Local override required; venue attribution applies.  |
+| REST, builder account                | 240,000 weighted req/min    | Local override required; venue attribution applies.  |
 | `sendTx` / `sendTxBatch`, standard   | 60 req/min                  | Execution orders use WebSocket `sendTx`.             |
 | `sendTx` / `sendTxBatch`, plus       | 8,000 req/min               | Set `sendtx_quota_per_min` to use it.                |
 | `sendTx` / `sendTxBatch`, premium    | 4,000-40,000 req/min        | Set `sendtx_quota_per_min` (scales with staked LIT). |
@@ -524,7 +539,7 @@ Common REST endpoint weights from the official docs:
 | WebSocket connections / minute         | 255        | Venue limit.                                         |
 | WebSocket client messages / minute     | 200        | Adapter paces non‑tx control frames at this cap.     |
 | WebSocket inflight messages            | 50         | Venue cap; subscriptions use a 35-frame closed loop. |
-| `sendTxBatch` batch size               | 15 txs     | Low‑level API limit; fanout cap is also 15.          |
+| WebSocket `sendTxBatch` batch size     | 15 txs     | Venue limit; adapter fanout is also capped at 15.    |
 | WebSocket keepalive                    | 2 minutes  | Adapter sends heartbeats every 30 seconds.           |
 | WebSocket outbound command queue       | Not capped | Paced before writes; no queue‑depth cap.             |
 
@@ -566,9 +581,9 @@ and order identity for WebSocket or reconciliation recovery.
 
 `LighterExecutionClient::connect()` waits up to 30 seconds for every account stream
 (`account_all_orders`, `account_all_trades`, `account_all_positions`, `account_all_assets`,
-`user_stats`) to deliver its first frame. Lighter has no REST source for account or position state,
-so `connect()` blocks on these streams as its only ground truth. Each attempt clears old position
-and account caches before awaiting the current session's frames. Transparent WebSocket reconnects
+`user_stats`) to deliver its first frame. The adapter does not use REST account payloads as a
+fallback, so `connect()` blocks on these streams as its ground truth. Each attempt clears old
+position and account caches before awaiting the session's frames. Transparent WebSocket reconnects
 do not re‑enter `connect()`: they retain cached positions until the next `account_all_positions`
 frame applies the snapshot replacement rules.
 
@@ -577,8 +592,8 @@ frame applies the snapshot replacement rules.
 Lighter signing requires all three credential values:
 
 - Account index: numeric Lighter account identifier.
-- API key index: numeric API key slot. Use the user-created key index assigned by Lighter, avoid
-  reserved low indexes, and do not use `255`; it is an `apikeys` query sentinel, not a signing key.
+- API key index: numeric API key slot. Lighter reserves indexes `0-3`; use a user‑created key in the
+  `4-254` range. Do not use `255`; it is an `apikeys` query sentinel, not a signing key.
 - API private key: 40-byte hex private key, with or without a `0x` prefix.
 
 Config values take precedence. A missing config field, or a blank API private key (empty or
@@ -640,14 +655,15 @@ use nautilus_lighter::{
     common::enums::LighterEnvironment,
     config::{LighterDataClientConfig, LighterExecClientConfig},
 };
+use nautilus_model::identifiers::{AccountId, TraderId};
 
 let data_config = LighterDataClientConfig::builder()
     .environment(LighterEnvironment::Testnet)
     .build();
 
 let exec_config = LighterExecClientConfig::builder()
-    .trader_id(trader_id)
-    .account_id(account_id)
+    .trader_id(TraderId::from("TRADER-001"))
+    .account_id(AccountId::from("LIGHTER-001"))
     .environment(LighterEnvironment::Testnet)
     .build();
 ```
@@ -659,14 +675,15 @@ credential fields directly to override them. Use
 
 ## Official documentation
 
-- Get started: <https://apidocs.lighter.xyz/docs/get-started>
-- Trading and signing: <https://apidocs.lighter.xyz/docs/trading>
-- API keys: <https://apidocs.lighter.xyz/docs/api-keys>
-- Rate limits: <https://apidocs.lighter.xyz/docs/rate-limits>
-- Volume quota: <https://apidocs.lighter.xyz/docs/volume-quota-program>
-- Data structures, constants, and errors: <https://apidocs.lighter.xyz/docs/data-structures-constants-and-errors>
-- REST OpenAPI: <https://raw.githubusercontent.com/elliottech/lighter-python/main/openapi.json>
-- WebSocket reference: <https://apidocs.lighter.xyz/docs/websocket-reference>
+- [Get started](https://apidocs.lighter.xyz/docs/get-started)
+- [Trading and signing](https://apidocs.lighter.xyz/docs/trading)
+- [API keys](https://apidocs.lighter.xyz/docs/api-keys)
+- [Account types](https://apidocs.lighter.xyz/docs/account-types)
+- [Rate limits](https://apidocs.lighter.xyz/docs/rate-limits)
+- [Volume quota](https://apidocs.lighter.xyz/docs/volume-quota-program)
+- [Data structures, constants, and errors](https://apidocs.lighter.xyz/docs/data-structures-constants-and-errors)
+- [REST OpenAPI](https://raw.githubusercontent.com/elliottech/lighter-python/main/openapi.json)
+- [WebSocket reference](https://apidocs.lighter.xyz/docs/websocket-reference)
 
 ## Contributing
 
