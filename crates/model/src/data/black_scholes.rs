@@ -128,6 +128,15 @@ impl BlackScholesReal for f32 {
             std::f32::consts::LOG2_E,
             if self > 0.0 { 0.5 } else { -0.5 },
         )) as i32;
+
+        if k <= -151 {
+            return 0.0;
+        }
+
+        if k >= 129 {
+            return Self::INFINITY;
+        }
+
         let r = self - (k as Self * 0.693_145_75) - (k as Self * 1.428_606_8e-6);
         let mut res = 0.001_388_89_f32;
         res = r.mul_add(res, 0.008_333_33);
@@ -135,7 +144,19 @@ impl BlackScholesReal for f32 {
         res = r.mul_add(res, 0.166_666_67);
         res = r.mul_add(res, 0.5);
         res = r.mul_add(res, 1.0);
-        r.mul_add(res, 1.0) * Self::from_bits(((k + 127) as u32) << 23)
+        if (-126..=127).contains(&k) {
+            r.mul_add(res, 1.0) * Self::from_bits(((k + 127) as u32) << 23)
+        } else {
+            // Split 2^k across two valid biased exponents; a single one would be
+            // out of range here. Apply them in sequence: pre-multiplying the two
+            // factors underflows to zero at k = -150 before the polynomial can
+            // round the result up into the subnormal range.
+            let ka = k >> 1;
+            let kb = k - ka;
+            r.mul_add(res, 1.0)
+                * Self::from_bits(((ka + 127) as u32) << 23)
+                * Self::from_bits(((kb + 127) as u32) << 23)
+        }
     }
 
     #[inline(always)]
@@ -373,6 +394,73 @@ mod tests {
 
     use super::*;
     use crate::data::greeks::black_scholes_greeks_exact;
+
+    fn assert_exp_close(actual: f32, expected: f32, max_ulps: u32) {
+        assert_eq!(actual.is_nan(), expected.is_nan());
+        assert_eq!(actual.is_infinite(), expected.is_infinite());
+        assert_eq!(actual.is_sign_negative(), expected.is_sign_negative());
+        if actual.is_finite() {
+            assert!(
+                actual.to_bits().abs_diff(expected.to_bits()) <= max_ulps,
+                "exp mismatch: actual={actual:e} ({:#010x}), expected={expected:e} ({:#010x})",
+                actual.to_bits(),
+                expected.to_bits(),
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_exp_exponent_boundaries() {
+        let ln_2 = std::f32::consts::LN_2;
+        let inputs = [
+            -126.5 * ln_2 - 0.000_1,
+            -126.5 * ln_2 + 0.000_1,
+            -127.5 * ln_2 - 0.000_1,
+            -127.5 * ln_2 + 0.000_1,
+            -150.0 * ln_2 + 0.1,
+            88.7,
+            88.8,
+            129.0 * ln_2,
+        ];
+
+        for input in inputs {
+            assert_exp_close(<f32 as BlackScholesReal>::exp(input), input.exp(), 3);
+        }
+    }
+
+    #[rstest]
+    fn test_exp_tail_sweep() {
+        let mut previous = 0.0;
+        let mut input = -105.0_f32;
+        while input <= 89.0 {
+            let actual = <f32 as BlackScholesReal>::exp(input);
+            assert!(!actual.is_nan(), "exp({input}) returned NaN");
+            assert!(actual >= 0.0, "exp({input}) returned {actual}");
+            assert!(
+                actual >= previous,
+                "exp is not monotonic at {input}: {actual} < {previous}"
+            );
+            assert_exp_close(actual, input.exp(), 3);
+            previous = actual;
+            input += 0.031_25;
+        }
+    }
+
+    #[rstest]
+    fn test_exp_extreme_inputs() {
+        for input in [-1e10_f32, -1e30, f32::NEG_INFINITY] {
+            assert_eq!(<f32 as BlackScholesReal>::exp(input), 0.0, "input={input}");
+        }
+
+        for input in [1e10_f32, 1e30, f32::INFINITY] {
+            assert_eq!(
+                <f32 as BlackScholesReal>::exp(input),
+                f32::INFINITY,
+                "input={input}"
+            );
+        }
+        assert!(<f32 as BlackScholesReal>::exp(f32::NAN).is_nan());
+    }
 
     #[rstest]
     fn test_accuracy_1e7() {
