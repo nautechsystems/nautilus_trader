@@ -15,6 +15,10 @@ standard for correctness, reliability, testing, clarity, and maintainability.**
 - Preserve exact arithmetic for prices, quantities, money, fees, and other discrete values. Use the
   project domain types or `Decimal`.
 - Do not add test‑only behavior, branches, attributes, or interfaces to production code.
+- Do not weaken, remove, bypass, or rewrite tests or required behavior merely to obtain a passing
+  result. Fix the underlying problem and preserve the behavior the tests are intended to protect.
+  Change a test only when the task intentionally changes the required behavior or when you can
+  independently verify that the test is wrong.
 - Expose the minimum public API and keep the patch focused. Avoid drive‑by refactors, renames, and
   abstractions unrelated to the contribution.
 - Change generated artifacts through their source and generator. Never edit them by hand.

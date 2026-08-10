@@ -17,10 +17,11 @@ all pull requests are held to a very high standard for correctness, reliability,
 and maintainability.
 
 Maintainers appreciate the time and care a high‑quality pull request requires, with or without AI.
-Merge decisions still depend on evidence that the change meets this standard. Maintainers review
-complete, locally validated pull requests thoroughly. Contributors must resolve blocking feedback
-before a pull request merges, either by updating the change or agreeing with a maintainer on
-another resolution.
+They review complete, locally validated pull requests thoroughly. Merge decisions still depend on
+evidence that the change meets this standard. When a contribution's expected review and maintenance
+cost is disproportionate to its value to the project, maintainers may decline it. Contributors must
+resolve blocking feedback before a pull request merges, either by updating the change or agreeing
+with a maintainer on another resolution.
 
 ## Use of AI
 
