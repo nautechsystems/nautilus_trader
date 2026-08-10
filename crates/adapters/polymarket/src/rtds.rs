@@ -154,6 +154,8 @@ struct ParsedSubscription {
 
 #[derive(Debug, Deserialize)]
 struct RtdsEnvelope {
+    #[allow(dead_code, reason = "modeled for RTDS envelope conformance")]
+    connection_id: Option<String>,
     topic: String,
     #[serde(rename = "type")]
     msg_type: String,
@@ -1152,6 +1154,7 @@ mod tests {
 
     use super::*;
 
+    // Sanitized captured update; subscribe and equity fixtures are constructed protocol cases
     const RTDS_CRYPTO_UPDATE_FIXTURE: &str =
         include_str!("../test_data/rtds_crypto_prices_update.json");
     const RTDS_CRYPTO_SUBSCRIBE_FIXTURE: &str =
@@ -1185,6 +1188,42 @@ mod tests {
             tx,
         );
         (feed, rx)
+    }
+
+    #[rstest]
+    fn test_rtds_envelope_captured_fields() {
+        let envelope: RtdsEnvelope =
+            serde_json::from_str(RTDS_CRYPTO_UPDATE_FIXTURE).expect("captured RTDS envelope");
+
+        assert_eq!(
+            envelope.connection_id.as_deref(),
+            Some("11111111-2222-3333-4444-555555555555")
+        );
+        assert_eq!(envelope.topic, "crypto_prices");
+        assert_eq!(envelope.msg_type, "update");
+        assert_eq!(envelope.timestamp, 1786179814147);
+        assert_eq!(
+            envelope.payload,
+            json!({
+                "full_accuracy_value": "64997.81000000",
+                "symbol": "btcusdt",
+                "timestamp": 1786179814000_u64,
+                "value": 64997.81,
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_rtds_envelope_without_connection_id() {
+        let envelope: RtdsEnvelope =
+            serde_json::from_str(RTDS_CRYPTO_SUBSCRIBE_FIXTURE).expect("legacy RTDS envelope");
+
+        assert!(envelope.connection_id.is_none());
+        assert_eq!(envelope.topic, "crypto_prices");
+        assert_eq!(envelope.msg_type, "subscribe");
+        assert_eq!(envelope.timestamp, 1780726213178);
+        assert_eq!(envelope.payload["symbol"], "btcusdt");
+        assert_eq!(envelope.payload["data"].as_array().map(Vec::len), Some(3));
     }
 
     #[rstest]
@@ -1466,9 +1505,9 @@ mod tests {
 
         assert_eq!(custom.data_type, data_type);
         assert_eq!(payload.symbol, "btcusdt");
-        assert_eq!(payload.value, Price::from("61035.86"));
-        assert_eq!(payload.price_timestamp_ms, 1780730269000);
-        assert_eq!(payload.message_timestamp_ms, 1780730269142);
+        assert_eq!(payload.value, Price::from("64997.81"));
+        assert_eq!(payload.price_timestamp_ms, 1786179814000);
+        assert_eq!(payload.message_timestamp_ms, 1786179814147);
     }
 
     #[rstest]
@@ -1519,14 +1558,14 @@ mod tests {
 
         let mut second: serde_json::Value =
             serde_json::from_str(RTDS_CRYPTO_UPDATE_FIXTURE).expect("parse fixture");
-        second["payload"]["value"] = json!(61040.12);
+        second["payload"]["value"] = json!(65000.12);
         feed.handle_text_for_test(&second.to_string());
 
         let first_event = rx.try_recv().expect("first custom data event");
         let second_event = rx.try_recv().expect("second custom data event");
         assert!(rx.try_recv().is_err());
 
-        for (event, expected_value) in [(first_event, "61035.86"), (second_event, "61040.12")] {
+        for (event, expected_value) in [(first_event, "64997.81"), (second_event, "65000.12")] {
             let DataEvent::Data(NautilusData::Custom(custom)) = event else {
                 panic!("expected custom data event");
             };
@@ -1537,7 +1576,7 @@ mod tests {
                 .expect("PolymarketRtdsCryptoPrice");
 
             assert_eq!(payload.value, Price::from(expected_value));
-            assert_eq!(payload.price_timestamp_ms, 1780730269000);
+            assert_eq!(payload.price_timestamp_ms, 1786179814000);
         }
     }
 

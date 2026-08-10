@@ -1,11 +1,12 @@
 {
-  "topic": "crypto_prices",
-  "type": "update",
-  "timestamp": 1780730269142,
+  "connection_id": "11111111-2222-3333-4444-555555555555",
   "payload": {
+    "full_accuracy_value": "64997.81000000",
     "symbol": "btcusdt",
-    "timestamp": 1780730269000,
-    "value": 61035.86,
-    "full_accuracy_value": "61035.86000000"
-  }
+    "timestamp": 1786179814000,
+    "value": 64997.81
+  },
+  "timestamp": 1786179814147,
+  "topic": "crypto_prices",
+  "type": "update"
 }

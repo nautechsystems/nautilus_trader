@@ -19,7 +19,7 @@ use ahash::{AHashMap, AHashSet};
 use derive_builder::Builder;
 use jiff::{Timestamp, civil::Date, tz::Offset};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::Error};
 
 use crate::{
     common::{
@@ -100,6 +100,17 @@ pub struct BalanceAllowance {
     pub balance: Decimal,
     #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
     pub allowance: Option<Decimal>,
+    #[serde(default)]
+    pub allowances: std::collections::HashMap<String, String>,
+}
+
+/// Status returned after an order submission is processed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OrderResponseStatus {
+    Live,
+    Matched,
+    Delayed,
+    Unmatched,
 }
 
 /// Order submission response from `POST /order` and `POST /orders`.
@@ -108,8 +119,48 @@ pub struct OrderResponse {
     pub success: bool,
     #[serde(rename = "orderID")]
     pub order_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_order_response_status"
+    )]
+    pub status: Option<OrderResponseStatus>,
+    #[serde(
+        default,
+        rename = "makingAmount",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub making_amount: Option<Decimal>,
+    #[serde(
+        default,
+        rename = "takingAmount",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub taking_amount: Option<Decimal>,
+    #[serde(rename = "transactionsHashes")]
+    pub transaction_hashes: Option<Vec<String>>,
+    #[serde(rename = "tradeIDs")]
+    pub trade_ids: Option<Vec<String>>,
     #[serde(rename = "errorMsg")]
     pub error_msg: Option<String>,
+}
+
+fn deserialize_optional_order_response_status<'de, D>(
+    deserializer: D,
+) -> Result<Option<OrderResponseStatus>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match Option::<String>::deserialize(deserializer)?.as_deref() {
+        None | Some("") => Ok(None),
+        Some("live") => Ok(Some(OrderResponseStatus::Live)),
+        Some("matched") => Ok(Some(OrderResponseStatus::Matched)),
+        Some("delayed") => Ok(Some(OrderResponseStatus::Delayed)),
+        Some("unmatched") => Ok(Some(OrderResponseStatus::Unmatched)),
+        Some(value) => Err(D::Error::unknown_variant(
+            value,
+            &["live", "matched", "delayed", "unmatched"],
+        )),
+    }
 }
 
 /// Cancel response from all cancel endpoints (`DELETE /order`, `/orders`,
@@ -566,6 +617,9 @@ mod tests {
         http::models::{PolymarketOpenOrder, PolymarketTradeReport},
     };
 
+    const MAX_ALLOWANCE: &str =
+        "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+
     fn load<T: serde::de::DeserializeOwned>(filename: &str) -> T {
         let path = format!("test_data/{filename}");
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
@@ -593,20 +647,58 @@ mod tests {
 
     #[rstest]
     fn test_balance_allowance_with_allowance() {
-        // The Polymarket API returns balances and allowances as integer
-        // micro-pUSD strings (e.g. `"1000000000"` == 1000 pUSD).
         let ba: BalanceAllowance = load("http_balance_allowance_collateral.json");
 
-        assert_eq!(ba.balance, dec!(1_000_000_000));
-        assert_eq!(ba.allowance, Some(dec!(999_999_999_000_000)));
+        assert_eq!(ba.balance, dec!(37_506_152));
+        assert!(ba.allowance.is_none());
+        assert_eq!(
+            ba.allowances,
+            std::collections::HashMap::from([
+                (
+                    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+                    MAX_ALLOWANCE.to_string(),
+                ),
+                (
+                    "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                    MAX_ALLOWANCE.to_string(),
+                ),
+                (
+                    "0xcccccccccccccccccccccccccccccccccccccccc".to_string(),
+                    MAX_ALLOWANCE.to_string(),
+                ),
+            ])
+        );
     }
 
     #[rstest]
-    fn test_balance_allowance_no_allowance() {
+    fn test_balance_allowance_conditional() {
+        let ba: BalanceAllowance = load("http_balance_allowance_conditional.json");
+
+        assert_eq!(ba.balance, Decimal::ZERO);
+        assert!(ba.allowance.is_none());
+        assert_eq!(ba.allowances.len(), 3);
+        assert!(ba.allowances.values().all(|value| value == MAX_ALLOWANCE));
+    }
+
+    #[rstest]
+    fn test_balance_allowance_without_allowances() {
+        // Constructed compatibility case retained from the legacy balance-only shape
         let ba: BalanceAllowance = load("http_balance_allowance_no_allowance.json");
 
         assert_eq!(ba.balance, dec!(250.500000));
         assert!(ba.allowance.is_none());
+        assert!(ba.allowances.is_empty());
+    }
+
+    #[rstest]
+    fn test_balance_allowance_legacy_singular() {
+        // Constructed compatibility case for the previously modeled singular field
+        let ba: BalanceAllowance =
+            serde_json::from_str(r#"{"balance":"250.5","allowance":"1000"}"#).unwrap();
+
+        assert_eq!(ba.balance, dec!(250.5));
+        assert_eq!(ba.allowance, Some(dec!(1000)));
+        assert!(ba.allowances.is_empty());
     }
 
     #[rstest]
@@ -616,25 +708,81 @@ mod tests {
         assert!(resp.success);
         assert_eq!(
             resp.order_id.as_deref(),
-            Some("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12")
+            Some("0x1111111111111111111111111111111111111111111111111111111111111111")
         );
-        assert!(resp.error_msg.is_none());
+        assert_eq!(resp.status, Some(OrderResponseStatus::Delayed));
+        assert!(resp.making_amount.is_none());
+        assert!(resp.taking_amount.is_none());
+        assert!(resp.transaction_hashes.is_none());
+        assert!(resp.trade_ids.is_none());
+        assert_eq!(resp.error_msg.as_deref(), Some(""));
     }
 
     #[rstest]
     fn test_order_response_failure() {
+        // Constructed compatibility case for a legacy failure response
         let resp: OrderResponse = load("http_order_response_failed.json");
 
         assert!(!resp.success);
         assert!(resp.order_id.is_none());
+        assert!(resp.status.is_none());
+        assert!(resp.making_amount.is_none());
+        assert!(resp.taking_amount.is_none());
+        assert!(resp.transaction_hashes.is_none());
+        assert!(resp.trade_ids.is_none());
         assert_eq!(resp.error_msg.as_deref(), Some("Insufficient balance"));
     }
 
     #[rstest]
-    fn test_order_response_ignores_async_execution_fields() {
-        // After the CLOB async execution rollout, matched POST /order responses
-        // carry `tradeIDs` (and may surface `transactionsHashes`); OrderResponse
-        // models neither, so serde must ignore them rather than reject the body.
+    fn test_order_response_empty_status() {
+        // Constructed from the documented post-only response, which uses empty strings
+        let json = r#"{
+            "success":true,
+            "orderID":"",
+            "status":"",
+            "makingAmount":"",
+            "takingAmount":"",
+            "errorMsg":"post-only mode"
+        }"#;
+        let resp: OrderResponse = serde_json::from_str(json).unwrap();
+
+        assert!(resp.success);
+        assert_eq!(resp.order_id.as_deref(), Some(""));
+        assert!(resp.status.is_none());
+        assert!(resp.making_amount.is_none());
+        assert!(resp.taking_amount.is_none());
+        assert!(resp.transaction_hashes.is_none());
+        assert!(resp.trade_ids.is_none());
+        assert_eq!(resp.error_msg.as_deref(), Some("post-only mode"));
+    }
+
+    #[rstest]
+    fn test_order_response_unmatched_status() {
+        // Constructed compatibility case for a failed delayed placement
+        let json = r#"{
+            "success":false,
+            "orderID":"",
+            "status":"unmatched",
+            "makingAmount":"",
+            "takingAmount":"",
+            "errorMsg":"placement failed"
+        }"#;
+        let resp: OrderResponse = serde_json::from_str(json).unwrap();
+
+        assert!(!resp.success);
+        assert_eq!(resp.order_id.as_deref(), Some(""));
+        assert_eq!(resp.status, Some(OrderResponseStatus::Unmatched));
+        assert!(resp.making_amount.is_none());
+        assert!(resp.taking_amount.is_none());
+        assert!(resp.transaction_hashes.is_none());
+        assert!(resp.trade_ids.is_none());
+        assert_eq!(resp.error_msg.as_deref(), Some("placement failed"));
+    }
+
+    #[rstest]
+    fn test_order_response_matched_fields() {
+        // Constructed documented shape; commit 031318184d only established that these fields
+        // were ignored without breaking decoding
         let resp: OrderResponse = load("http_order_response_async_exec.json");
 
         assert!(resp.success);
@@ -642,13 +790,30 @@ mod tests {
             resp.order_id.as_deref(),
             Some("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12")
         );
+        assert_eq!(resp.status, Some(OrderResponseStatus::Matched));
+        assert_eq!(resp.making_amount, Some(dec!(100_000_000)));
+        assert_eq!(resp.taking_amount, Some(dec!(200_000_000)));
+        assert_eq!(
+            resp.transaction_hashes.as_deref(),
+            Some(
+                &[
+                    "0xaaaa000000000000000000000000000000000000000000000000000000000000"
+                        .to_string(),
+                    "0xbbbb000000000000000000000000000000000000000000000000000000000000"
+                        .to_string(),
+                ][..]
+            )
+        );
+        assert_eq!(
+            resp.trade_ids.as_deref(),
+            Some(&["trade-0x001".to_string(), "trade-0x002".to_string()][..])
+        );
         assert!(resp.error_msg.is_none());
     }
 
     #[rstest]
     fn test_order_response_trade_ids_without_transaction_hashes() {
-        // The post-rollout matched shape drops `transactionsHashes` and returns `tradeIDs`
-        // alone, so the modeled fields must survive without the hashes present.
+        // Constructed compatibility case for a matched response without transaction hashes
         let resp: OrderResponse = load("http_order_response_trade_ids_only.json");
 
         assert!(resp.success);
@@ -656,38 +821,41 @@ mod tests {
             resp.order_id.as_deref(),
             Some("0xfedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fe")
         );
+        assert_eq!(resp.status, Some(OrderResponseStatus::Matched));
+        assert_eq!(resp.making_amount, Some(dec!(25_000_000)));
+        assert_eq!(resp.taking_amount, Some(dec!(50_000_000)));
+        assert!(resp.transaction_hashes.is_none());
+        assert_eq!(
+            resp.trade_ids.as_deref(),
+            Some(&["trade-0x101".to_string(), "trade-0x102".to_string()][..])
+        );
         assert!(resp.error_msg.is_none());
     }
 
     #[rstest]
     fn test_batch_order_response_legs() {
-        // `POST /orders` returns one entry per submitted leg, and the three outcomes carry
-        // different field combinations: accepted with an ID, rejected as success=true with an
-        // empty ID and a reason, and a hard failure with a null ID.
+        // Sanitized mainnet capture from `POST /orders`
         let resps: Vec<OrderResponse> = load("http_batch_order_response.json");
 
-        assert_eq!(resps.len(), 3);
+        assert_eq!(resps.len(), 2);
 
-        assert!(resps[0].success);
-        assert_eq!(
-            resps[0].order_id.as_deref(),
-            Some("0x1111111111111111111111111111111111111111111111111111111111111111")
-        );
-        assert!(resps[0].error_msg.is_none());
-
-        assert!(resps[1].success);
-        assert_eq!(resps[1].order_id.as_deref(), Some(""));
-        assert_eq!(
-            resps[1].error_msg.as_deref(),
-            Some("not enough balance / allowance: the balance is not enough")
-        );
-
-        assert!(!resps[2].success);
-        assert!(resps[2].order_id.is_none());
-        assert_eq!(
-            resps[2].error_msg.as_deref(),
-            Some("invalid post-only order: order crosses book")
-        );
+        for (index, resp) in resps.iter().enumerate() {
+            assert!(resp.success);
+            assert_eq!(
+                resp.order_id.as_deref(),
+                Some(if index == 0 {
+                    "0x1111111111111111111111111111111111111111111111111111111111111111"
+                } else {
+                    "0x2222222222222222222222222222222222222222222222222222222222222222"
+                })
+            );
+            assert_eq!(resp.status, Some(OrderResponseStatus::Delayed));
+            assert!(resp.making_amount.is_none());
+            assert!(resp.taking_amount.is_none());
+            assert!(resp.transaction_hashes.is_none());
+            assert!(resp.trade_ids.is_none());
+            assert_eq!(resp.error_msg.as_deref(), Some(""));
+        }
     }
 
     #[rstest]

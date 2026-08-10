@@ -17,6 +17,7 @@
 
 use std::{collections::HashMap, result::Result as StdResult};
 
+use anyhow::Context;
 use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT};
 use nautilus_model::{
     data::TradeTick,
@@ -28,6 +29,7 @@ use nautilus_network::{
     http::{HttpClient, HttpClientError, Method, USER_AGENT},
     websocket::proxy::ProxyUrl,
 };
+use rust_decimal::Decimal;
 
 use crate::{
     common::enums::PolymarketOrderSide,
@@ -38,7 +40,7 @@ use crate::{
 };
 
 // Composite key for stabilising same-second trades across paginated responses
-fn data_api_trade_sort_key(t: &DataApiTrade) -> (i64, &str, &str, &'static str, String, String) {
+fn data_api_trade_sort_key(t: &DataApiTrade) -> (i64, &str, &str, &'static str, Decimal, Decimal) {
     (
         t.timestamp,
         t.transaction_hash.as_str(),
@@ -47,8 +49,8 @@ fn data_api_trade_sort_key(t: &DataApiTrade) -> (i64, &str, &str, &'static str, 
             PolymarketOrderSide::Buy => "BUY",
             PolymarketOrderSide::Sell => "SELL",
         },
-        t.price.to_string(),
-        t.size.to_string(),
+        t.price,
+        t.size,
     )
 }
 
@@ -327,7 +329,7 @@ impl PolymarketDataApiHttpClient {
             token_id,
             price_precision,
             size_precision,
-        );
+        )?;
         trades.retain(|trade| {
             let event_secs = trade.ts_event.as_u64() / 1_000_000_000;
             start_secs.is_none_or(|start| event_secs >= start as u64)
@@ -374,7 +376,7 @@ fn parse_trade_ticks(
     token_id: &str,
     price_precision: u8,
     size_precision: u8,
-) -> Vec<TradeTick> {
+) -> anyhow::Result<Vec<TradeTick>> {
     // Composite sort to stabilise same-second trades across pages
     data_api_trades.sort_by(|a, b| data_api_trade_sort_key(a).cmp(&data_api_trade_sort_key(b)));
 
@@ -387,8 +389,18 @@ fn parse_trade_ticks(
             continue;
         }
 
-        let price = Price::new(t.price, price_precision);
-        let size = Quantity::new(t.size, size_precision);
+        let price = Price::from_decimal_dp(t.price, price_precision).with_context(|| {
+            format!(
+                "failed to convert Data API trade price {} with precision {price_precision}",
+                t.price
+            )
+        })?;
+        let size = Quantity::from_decimal_dp(t.size, size_precision).with_context(|| {
+            format!(
+                "failed to convert Data API trade size {} with precision {size_precision}",
+                t.size
+            )
+        })?;
         let aggressor_side = AggressorSide::from(t.side);
 
         let base_ns = (t.timestamp as u64) * 1_000_000_000;
@@ -419,7 +431,7 @@ fn parse_trade_ticks(
         ));
     }
 
-    trades
+    Ok(trades)
 }
 
 #[cfg(test)]
@@ -445,6 +457,7 @@ mod tests {
     }
 
     fn load_trades() -> Vec<DataApiTrade> {
+        // Constructed fixture retained for conversion, filtering, and ordering tests
         let path = "test_data/data_api_trades_response.json";
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
         serde_json::from_str(&content).expect("Failed to parse test data")
@@ -535,8 +548,8 @@ mod tests {
             trades[0].condition_id,
             "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47"
         );
-        assert_eq!(trades[0].price, 0.55);
-        assert_eq!(trades[0].size, 100.0);
+        assert_eq!(trades[0].price, dec!(0.55));
+        assert_eq!(trades[0].size, dec!(100.0));
         assert_eq!(trades[0].timestamp, 1710000000);
         assert_eq!(
             trades[0].transaction_hash,
@@ -566,8 +579,8 @@ mod tests {
             .into_iter()
             .filter(|t| t.asset == token_id)
             .map(|t| {
-                let price = Price::new(t.price, price_precision);
-                let size = Quantity::new(t.size, size_precision);
+                let price = Price::from_decimal_dp(t.price, price_precision).unwrap();
+                let size = Quantity::from_decimal_dp(t.size, size_precision).unwrap();
                 let aggressor_side = AggressorSide::from(t.side);
                 // TradeId max length is 36; tx hash is 66 chars, take last 36
                 let hash = &t.transaction_hash;
@@ -610,8 +623,8 @@ mod tests {
             .into_iter()
             .filter(|t| t.asset == token_id)
             .map(|t| {
-                let price = Price::new(t.price, 2);
-                let size = Quantity::new(t.size, 2);
+                let price = Price::from_decimal_dp(t.price, 2).unwrap();
+                let size = Quantity::from_decimal_dp(t.size, 2).unwrap();
                 let aggressor_side = AggressorSide::from(t.side);
                 // TradeId max length is 36; tx hash is 66 chars, take last 36
                 let hash = &t.transaction_hash;
@@ -652,12 +665,24 @@ mod tests {
         size: f64,
     ) -> DataApiTrade {
         DataApiTrade {
+            proxy_wallet: None,
             asset: asset.to_string(),
             condition_id: "0xcond".to_string(),
             side,
-            price,
-            size,
+            price: Decimal::from_str_exact(&price.to_string()).unwrap(),
+            size: Decimal::from_str_exact(&size.to_string()).unwrap(),
             timestamp,
+            title: None,
+            slug: None,
+            icon: None,
+            event_slug: None,
+            outcome: None,
+            outcome_index: None,
+            name: None,
+            pseudonym: None,
+            bio: None,
+            profile_image: None,
+            profile_image_optimized: None,
             transaction_hash: transaction_hash.to_string(),
         }
     }
@@ -704,15 +729,15 @@ mod tests {
         //   3. asset=Ta side=BUY  price=0.6 size=1.0 (price breaks tie)
         //   4. asset=Ta side=SELL price=0.5 size=1.0 (side breaks tie)
         //   5. asset=Tb side=BUY  price=0.5 size=1.0 (asset breaks tie)
-        let key: Vec<(String, String, f64, f64)> = trades
+        let key: Vec<(String, String, Decimal, Decimal)> = trades
             .iter()
             .map(|t| (t.asset.clone(), t.side.to_string(), t.price, t.size))
             .collect();
-        assert_eq!(key[0], ("Ta".into(), "BUY".into(), 0.5, 1.0));
-        assert_eq!(key[1], ("Ta".into(), "BUY".into(), 0.5, 2.0));
-        assert_eq!(key[2], ("Ta".into(), "BUY".into(), 0.6, 1.0));
-        assert_eq!(key[3], ("Ta".into(), "SELL".into(), 0.5, 1.0));
-        assert_eq!(key[4], ("Tb".into(), "BUY".into(), 0.5, 1.0));
+        assert_eq!(key[0], ("Ta".into(), "BUY".into(), dec!(0.5), dec!(1.0)));
+        assert_eq!(key[1], ("Ta".into(), "BUY".into(), dec!(0.5), dec!(2.0)));
+        assert_eq!(key[2], ("Ta".into(), "BUY".into(), dec!(0.6), dec!(1.0)));
+        assert_eq!(key[3], ("Ta".into(), "SELL".into(), dec!(0.5), dec!(1.0)));
+        assert_eq!(key[4], ("Tb".into(), "BUY".into(), dec!(0.5), dec!(1.0)));
     }
 
     #[rstest]
@@ -737,7 +762,7 @@ mod tests {
             ),
         ];
 
-        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2);
+        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2).unwrap();
 
         assert_eq!(trades.len(), 1);
         assert_eq!(trades[0].aggressor_side, AggressorSide::Buyer);
@@ -767,7 +792,7 @@ mod tests {
             ),
         ];
 
-        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2);
+        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2).unwrap();
 
         assert_eq!(trades.len(), 2);
         assert_ne!(trades[0].trade_id, trades[1].trade_id);
@@ -814,7 +839,7 @@ mod tests {
             ),
         ];
 
-        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2);
+        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2).unwrap();
 
         assert_eq!(trades.len(), 3);
         // Strictly increasing ts_event
@@ -845,7 +870,7 @@ mod tests {
             ));
         }
 
-        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2);
+        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2).unwrap();
 
         assert_eq!(trades.len(), 3);
         let base_ns = 1_729_000_000u64 * 1_000_000_000;
@@ -896,7 +921,7 @@ mod tests {
             ),
         ];
 
-        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2);
+        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2).unwrap();
 
         assert_eq!(trades.len(), 4);
 
@@ -911,5 +936,50 @@ mod tests {
         assert!(trade_ids[1].contains("0xB"));
         assert!(trade_ids[2].contains("0xC"));
         assert!(trade_ids[3].contains("0xZ"));
+    }
+
+    #[rstest]
+    fn test_parse_trade_ticks_propagates_invalid_price() {
+        let token_id = "T";
+        let mut trade = make_trade(
+            1729000000,
+            "0xtx",
+            token_id,
+            PolymarketOrderSide::Buy,
+            0.5,
+            1.0,
+        );
+        trade.price = Decimal::from_str_exact("99999999999999999999.99").unwrap();
+
+        let error = parse_trade_ticks(vec![trade], test_instrument_id(), token_id, 2, 2)
+            .expect_err("out-of-range price should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "failed to convert Data API trade price 99999999999999999999.99 with precision 2"
+        );
+        assert_eq!(error.chain().count(), 2);
+    }
+
+    #[rstest]
+    fn test_parse_trade_ticks_propagates_invalid_size() {
+        let token_id = "T";
+        let trade = make_trade(
+            1729000000,
+            "0xtx",
+            token_id,
+            PolymarketOrderSide::Buy,
+            0.5,
+            -1.5,
+        );
+
+        let error = parse_trade_ticks(vec![trade], test_instrument_id(), token_id, 2, 2)
+            .expect_err("negative size should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "failed to convert Data API trade size -1.5 with precision 2"
+        );
+        assert_eq!(error.chain().count(), 2);
     }
 }

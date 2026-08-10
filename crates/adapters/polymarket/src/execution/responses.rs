@@ -976,6 +976,11 @@ mod tests {
         let response = OrderResponse {
             success: true,
             order_id: Some(venue_order_id.to_string()),
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
             error_msg: None,
         };
         let deferred_cancel = handle_order_response(
@@ -1830,6 +1835,11 @@ mod tests {
         let response = OrderResponse {
             success: true,
             order_id: Some(venue_order_id.to_string()),
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
             error_msg: None,
         };
         assert!(
@@ -1938,6 +1948,11 @@ mod tests {
         let response = OrderResponse {
             success: true,
             order_id: Some(venue_order_id.to_string()),
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
             error_msg: None,
         };
         assert!(
@@ -2047,6 +2062,11 @@ mod tests {
         let response = OrderResponse {
             success: true,
             order_id: Some(venue_order_id.to_string()),
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
             error_msg: None,
         };
         handle_order_response(
@@ -2108,6 +2128,11 @@ mod tests {
         let response = OrderResponse {
             success: true,
             order_id: Some(String::new()),
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
             error_msg: None,
         };
 
@@ -2151,6 +2176,11 @@ mod tests {
         let response = OrderResponse {
             success: true,
             order_id: Some(String::new()),
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
             error_msg: Some(reason.to_string()),
         };
 
@@ -2199,6 +2229,11 @@ mod tests {
         let response = OrderResponse {
             success: false,
             order_id: None,
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
             error_msg: Some(reason.to_string()),
         };
 

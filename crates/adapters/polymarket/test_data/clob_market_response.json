@@ -1,0 +1,53 @@
+{
+  "enable_order_book": true,
+  "active": true,
+  "closed": false,
+  "archived": false,
+  "accepting_orders": true,
+  "accepting_order_timestamp": "2026-08-01T22:56:49Z",
+  "minimum_order_size": 5,
+  "minimum_tick_size": 0.01,
+  "condition_id": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "question_id": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "question": "LoL: T1 vs Hanwha Life Esports (BO3) - LCK Round 3-4 Legend Group",
+  "description": "This market refers to the LoL match between T1 and Hanwha Life Esports in the LCK Round 3-4 Legend Group, initially scheduled for August 8 at 4:00AM ET.\n\nThis market will resolve to \"T1\" if T1 win the match against Hanwha Life Esports.\n\nThis market will resolve to \"Hanwha Life Esports\" if Hanwha Life Esports win the match against T1.\n\nIf the match is canceled (not played at all), ends in a tie, or is delayed beyond 7 days from the scheduled date without a winner determined, this market will resolve to 50-50. \n\nIf the match begins but is not completed, and one team wins due to the opponent's forfeiture, disqualification, or walkover, this market will resolve to the team who wins. \n\nIf the match ends in a forfeit, disqualification, or walkover (team withdraws before the start and the other wins automatically), this market will resolve to 50-50. \n\nThe resolution source for this market will be official information from https://gol.gg/esports/home. However, if https://gol.gg/esports/home has not published final results within 2 hours after the event’s conclusion, a consensus of credible reporting may be used instead including video evidence.\n\nIn cases where a team’s listed name includes minor discrepancies from the resolution source, this market will resolve based on the underlying real-world match rather than exact name matching. Recognizable abbreviations, alternate or erroneous spellings, sponsor tags, affiliate or academy designations, regional identifiers, and minor formatting differences will be treated as referring to the same team, provided the intended team can be clearly and uniquely identified within the relevant competition. If a listed team name has no reasonable connection to any participating team, or if it matches or could reasonably refer to another team in the same competition such that the intended team cannot be unambiguously determined, this market will resolve 50-50.",
+  "market_slug": "sanitized-clob-market",
+  "end_date_iso": "2026-08-08T00:00:00Z",
+  "game_start_time": "2026-08-08T08:00:00Z",
+  "seconds_delay": 1,
+  "fpmm": "",
+  "maker_base_fee": 1000,
+  "taker_base_fee": 1000,
+  "notifications_enabled": true,
+  "neg_risk": false,
+  "neg_risk_market_id": "",
+  "neg_risk_request_id": "",
+  "icon": "https://example.com/sanitized-market.png",
+  "image": "https://example.com/sanitized-market.png",
+  "rewards": {
+    "rates": null,
+    "min_size": 50,
+    "max_spread": 4.5
+  },
+  "is_50_50_outcome": false,
+  "tokens": [
+    {
+      "token_id": "10000000000000000000000000000000000000000000000000000000000000000000000000001",
+      "outcome": "T1",
+      "price": 0.715,
+      "winner": false
+    },
+    {
+      "token_id": "10000000000000000000000000000000000000000000000000000000000000000000000000002",
+      "outcome": "Hanwha Life Esports",
+      "price": 0.285,
+      "winner": false
+    }
+  ],
+  "tags": [
+    "Sports",
+    "Esports",
+    "league of legends",
+    "Games"
+  ]
+}

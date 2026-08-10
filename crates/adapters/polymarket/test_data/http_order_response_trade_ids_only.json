@@ -1,6 +1,9 @@
 {
   "success": true,
   "orderID": "0xfedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fe",
+  "status": "matched",
+  "makingAmount": "25000000",
+  "takingAmount": "50000000",
   "errorMsg": null,
   "tradeIDs": [
     "trade-0x101",

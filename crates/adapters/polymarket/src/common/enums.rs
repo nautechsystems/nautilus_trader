@@ -202,17 +202,18 @@ impl<'de> Deserialize<'de> for PolymarketOrderStatus {
         ];
 
         let s = String::deserialize(deserializer)?;
+        let value = s.strip_prefix("ORDER_STATUS_").unwrap_or(&s);
 
         // Fast path: exact match through the strum-derived `FromStr`.
-        if let Ok(status) = <Self as std::str::FromStr>::from_str(&s) {
+        if let Ok(status) = <Self as std::str::FromStr>::from_str(value) {
             return Ok(status);
         }
 
         for (prefix, status) in VARIANTS {
-            if s.len() > prefix.len()
-                && s.is_char_boundary(prefix.len())
-                && &s[..prefix.len()] == *prefix
-                && s.as_bytes()[prefix.len()] == b'_'
+            if value.len() > prefix.len()
+                && value.is_char_boundary(prefix.len())
+                && &value[..prefix.len()] == *prefix
+                && value.as_bytes()[prefix.len()] == b'_'
             {
                 return Ok(*status);
             }
@@ -231,14 +232,19 @@ impl<'de> Deserialize<'de> for PolymarketOrderStatus {
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum PolymarketTradeStatus {
     /// Sent to the executor service for on-chain submission.
+    #[serde(alias = "TRADE_STATUS_MATCHED")]
     Matched,
     /// Mined on-chain, no finality threshold yet.
+    #[serde(alias = "TRADE_STATUS_MINED")]
     Mined,
     /// Strong probabilistic finality achieved.
+    #[serde(alias = "TRADE_STATUS_CONFIRMED")]
     Confirmed,
     /// Transaction failed, being retried by the operator.
+    #[serde(alias = "TRADE_STATUS_RETRYING")]
     Retrying,
     /// Permanently failed, no more retries.
+    #[serde(alias = "TRADE_STATUS_FAILED")]
     Failed,
 }
 
@@ -418,6 +424,19 @@ mod tests {
     }
 
     #[rstest]
+    fn test_order_status_deserializes_openapi_prefix() {
+        assert_eq!(
+            serde_json::from_str::<PolymarketOrderStatus>("\"ORDER_STATUS_LIVE\"").unwrap(),
+            PolymarketOrderStatus::Live
+        );
+        assert_eq!(
+            serde_json::from_str::<PolymarketOrderStatus>("\"ORDER_STATUS_CANCELED_reason\"")
+                .unwrap(),
+            PolymarketOrderStatus::Canceled
+        );
+    }
+
+    #[rstest]
     #[case(
         "\"CANCELED_order couldn't be fully filled. FOK orders are fully filled or killed.\"",
         PolymarketOrderStatus::Canceled
@@ -456,6 +475,14 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<PolymarketTradeStatus>("\"RETRYING\"").unwrap(),
             PolymarketTradeStatus::Retrying
+        );
+    }
+
+    #[rstest]
+    fn test_trade_status_deserializes_openapi_prefix() {
+        assert_eq!(
+            serde_json::from_str::<PolymarketTradeStatus>("\"TRADE_STATUS_CONFIRMED\"").unwrap(),
+            PolymarketTradeStatus::Confirmed
         );
     }
 

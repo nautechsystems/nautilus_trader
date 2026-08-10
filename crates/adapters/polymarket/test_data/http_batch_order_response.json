@@ -1,20 +1,18 @@
 [
   {
-    "success": true,
+    "errorMsg": "",
     "orderID": "0x1111111111111111111111111111111111111111111111111111111111111111",
-    "errorMsg": null,
-    "tradeIDs": [
-      "trade-0x201"
-    ]
+    "takingAmount": "",
+    "makingAmount": "",
+    "status": "delayed",
+    "success": true
   },
   {
-    "success": true,
-    "orderID": "",
-    "errorMsg": "not enough balance / allowance: the balance is not enough"
-  },
-  {
-    "success": false,
-    "orderID": null,
-    "errorMsg": "invalid post-only order: order crosses book"
+    "errorMsg": "",
+    "orderID": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "takingAmount": "",
+    "makingAmount": "",
+    "status": "delayed",
+    "success": true
   }
 ]

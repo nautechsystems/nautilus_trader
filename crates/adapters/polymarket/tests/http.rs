@@ -744,12 +744,12 @@ async fn test_get_balance_allowance_returns_data() {
         .await
         .unwrap();
 
-    // Fixture is now in integer-micro-pUSD form, matching the live API.
-    assert_eq!(balance.balance, rust_decimal_macros::dec!(1_000_000_000));
-    assert_eq!(
-        balance.allowance,
-        Some(rust_decimal_macros::dec!(999_999_999_000_000)),
-    );
+    assert_eq!(balance.balance, rust_decimal_macros::dec!(37_506_152));
+    assert!(balance.allowance.is_none());
+    assert_eq!(balance.allowances.len(), 3);
+    assert!(balance.allowances.values().all(|value| {
+        value == "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+    }));
 }
 
 #[rstest]

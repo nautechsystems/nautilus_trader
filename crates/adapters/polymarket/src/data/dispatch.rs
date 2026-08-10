@@ -1199,6 +1199,12 @@ mod tests {
             order_price_min_tick_size: None,
             group_item_title: None,
             event_message: None,
+            sports_market_type: None,
+            line: None,
+            game_start_time: None,
+            taker_base_fee: None,
+            fees_enabled: None,
+            fee_schedule: None,
         }))
     }
 

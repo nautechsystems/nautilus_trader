@@ -151,6 +151,15 @@ fn dispatch_order_update(
     ctx: &WsDispatchContext<'_>,
     state: &mut WsDispatchState,
 ) {
+    let Some(status) = order.status else {
+        log::warn!("Ignoring order update without status: {}", order.id);
+        return;
+    };
+    let Some(order_type) = order.order_type else {
+        log::warn!("Ignoring order update without order_type: {}", order.id);
+        return;
+    };
+
     let instruments = ctx.token_instruments.load();
     let instrument = match instruments.get(&order.asset_id) {
         Some(i) => i,
@@ -164,8 +173,15 @@ fn dispatch_order_update(
     let venue_order_id = VenueOrderId::from(order.id.as_str());
 
     let ts_init = ctx.clock.get_time_ns();
-    let mut report =
-        build_ws_order_status_report(order, instrument, ctx.account_id, ts_event, ts_init);
+    let mut report = build_ws_order_status_report(
+        order,
+        status,
+        order_type,
+        instrument,
+        ctx.account_id,
+        ts_event,
+        ts_init,
+    );
     let local_client_order_id = ctx.pending_submits.client_order_id(&venue_order_id);
     let mut is_accepted = ctx.fill_tracker.contains(&venue_order_id);
     report.client_order_id = local_client_order_id;
@@ -241,7 +257,7 @@ fn dispatch_order_update(
         }
     }
 
-    if order.status == PolymarketOrderStatus::Matched
+    if status == PolymarketOrderStatus::Matched
         && let Some(trade_ids) = order.associate_trades.clone().filter(|ids| !ids.is_empty())
     {
         state.pending_terminal_orders.insert(
@@ -663,22 +679,23 @@ fn reemit_terminal_cancel(
 
 fn build_ws_order_status_report(
     order: &PolymarketUserOrder,
+    status: PolymarketOrderStatus,
+    order_type: PolymarketOrderType,
     instrument: &InstrumentAny,
     account_id: AccountId,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> OrderStatusReport {
     let venue_order_id = VenueOrderId::from(order.id.as_str());
-    let order_status =
-        crate::execution::parse::resolve_order_status(order.status, order.event_type);
+    let order_status = crate::execution::parse::resolve_order_status(status, order.event_type);
     let order_side = OrderSide::from(order.side);
-    let time_in_force = TimeInForce::from(order.order_type);
+    let time_in_force = TimeInForce::from(order_type);
     let size_precision = instrument.size_precision();
     let price_precision = instrument.price_precision();
     let price_dec = Decimal::from_str(&order.price).unwrap_or_default();
     let quantity = Decimal::from_str(&order.original_size)
         .ok()
-        .map(|size| original_size_to_shares(size, price_dec, order.side, order.order_type))
+        .map(|size| original_size_to_shares(size, price_dec, order.side, order_type))
         .and_then(|d| Quantity::from_decimal_dp(d, size_precision).ok())
         .unwrap_or_else(|| Quantity::zero(size_precision));
     let filled_qty = Decimal::from_str(&order.size_matched)
@@ -1173,6 +1190,8 @@ mod tests {
 
         let report = build_ws_order_status_report(
             &order,
+            order.status.unwrap(),
+            order.order_type.unwrap(),
             &instrument,
             AccountId::from("POLY-001"),
             ts_event,
@@ -1200,6 +1219,8 @@ mod tests {
 
         let report = build_ws_order_status_report(
             &order,
+            order.status.unwrap(),
+            order.order_type.unwrap(),
             &instrument,
             AccountId::from("POLY-001"),
             ts_event,
@@ -1291,6 +1312,8 @@ mod tests {
 
         let report = build_ws_order_status_report(
             &order,
+            order.status.unwrap(),
+            order.order_type.unwrap(),
             &instrument,
             AccountId::from("POLY-001"),
             UnixNanos::from(1_000_000_000u64),
@@ -1502,6 +1525,48 @@ mod tests {
         // Order not registered in fill_tracker, so should be buffered
         let venue_order_id = VenueOrderId::from(order.id.as_str());
         assert!(fill_tracker.has_pending_report(&venue_order_id));
+    }
+
+    #[rstest]
+    fn test_dispatch_order_message_ignores_missing_lifecycle_fields() {
+        let order: PolymarketUserOrder = load("ws_user_order_placement.json");
+        let instrument = test_instrument();
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(order.asset_id, instrument);
+        let fill_tracker = OrderFillTrackerMap::new();
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        let emitter = test_emitter();
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            order_identities: &order_identities,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+        let venue_order_id = VenueOrderId::from(order.id.as_str());
+
+        let mut missing_status = order.clone();
+        missing_status.status = None;
+        dispatch_user_message(
+            &UserWsMessage::Order(missing_status),
+            &ctx,
+            &mut WsDispatchState::default(),
+        );
+        assert!(!fill_tracker.has_pending_report(&venue_order_id));
+
+        let mut missing_order_type = order;
+        missing_order_type.order_type = None;
+        dispatch_user_message(
+            &UserWsMessage::Order(missing_order_type),
+            &ctx,
+            &mut WsDispatchState::default(),
+        );
+        assert!(!fill_tracker.has_pending_report(&venue_order_id));
     }
 
     #[rstest]
@@ -2356,7 +2421,7 @@ mod tests {
         #[case] expected_order_status: OrderStatus,
     ) {
         let mut terminal_order: PolymarketUserOrder = load("ws_user_order_cancellation.json");
-        terminal_order.status = status;
+        terminal_order.status = Some(status);
         let trade: PolymarketUserTrade = load("ws_user_trade.json");
         let instrument = test_instrument();
 
@@ -2531,20 +2596,20 @@ mod tests {
             |size_matched: &str, ts: &str, event_type: PolymarketEventType| PolymarketUserOrder {
                 asset_id,
                 associate_trades: None,
-                created_at: "1775074735".to_string(),
+                created_at: Some("1775074735".to_string()),
                 expiration: Some("0".to_string()),
                 id: order_id.clone(),
-                maker_address: Ustr::from("0xabc"),
+                maker_address: Some(Ustr::from("0xabc")),
                 market: Ustr::from("0x4134"),
-                order_owner: Ustr::from("xxx"),
-                order_type: PolymarketOrderType::GTC,
+                order_owner: Some(Ustr::from("xxx")),
+                order_type: Some(PolymarketOrderType::GTC),
                 original_size: "20".to_string(),
-                outcome: PolymarketOutcome::yes(),
+                outcome: Some(PolymarketOutcome::yes()),
                 owner: Ustr::from("xxx"),
                 price: "0.18".to_string(),
                 side: PolymarketOrderSide::Buy,
                 size_matched: size_matched.to_string(),
-                status: PolymarketOrderStatus::Canceled,
+                status: Some(PolymarketOrderStatus::Canceled),
                 timestamp: ts.to_string(),
                 event_type,
             };
@@ -3141,20 +3206,20 @@ mod tests {
         let order = PolymarketUserOrder {
             asset_id,
             associate_trades: None,
-            created_at: "1775074735".to_string(),
+            created_at: Some("1775074735".to_string()),
             expiration: Some("0".to_string()),
             id: order_id,
-            maker_address: Ustr::from("0xabc"),
+            maker_address: Some(Ustr::from("0xabc")),
             market: Ustr::from("0x4134"),
-            order_owner: Ustr::from("xxx"),
-            order_type: PolymarketOrderType::FOK,
+            order_owner: Some(Ustr::from("xxx")),
+            order_type: Some(PolymarketOrderType::FOK),
             original_size: "10".to_string(),
-            outcome: PolymarketOutcome::yes(),
+            outcome: Some(PolymarketOutcome::yes()),
             owner: Ustr::from("xxx"),
             price: "0.50".to_string(),
             side: PolymarketOrderSide::Buy,
             size_matched: "0".to_string(),
-            status,
+            status: Some(status),
             timestamp: "1775074738031".to_string(),
             event_type: PolymarketEventType::Placement,
         };

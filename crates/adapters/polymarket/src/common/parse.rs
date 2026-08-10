@@ -20,9 +20,58 @@ pub use nautilus_core::serialization::{
     serialize_optional_decimal_as_str,
 };
 use nautilus_model::identifiers::TradeId;
-use serde::{Deserialize, Deserializer, de::Error};
+use rust_decimal::Decimal;
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+use serde_json::value::RawValue;
 
 use crate::common::enums::PolymarketOrderSide;
+
+/// Deserializes a decimal directly from its JSON number token without an `f64` conversion.
+pub fn deserialize_decimal_from_json_number<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = Box::<RawValue>::deserialize(deserializer)?;
+    Decimal::from_str_exact(raw.get()).map_err(D::Error::custom)
+}
+
+/// Deserializes an optional decimal directly from its JSON number token.
+pub fn deserialize_optional_decimal_from_json_number<'de, D>(
+    deserializer: D,
+) -> Result<Option<Decimal>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<Box<RawValue>>::deserialize(deserializer)?
+        .map(|raw| Decimal::from_str_exact(raw.get()).map_err(D::Error::custom))
+        .transpose()
+}
+
+/// Serializes a decimal as an exact JSON number token.
+pub fn serialize_decimal_as_json_number<S>(
+    value: &Decimal,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let raw = RawValue::from_string(value.to_string()).map_err(serde::ser::Error::custom)?;
+    raw.serialize(serializer)
+}
+
+/// Serializes an optional decimal as an exact JSON number token or `null`.
+pub fn serialize_optional_decimal_as_json_number<S>(
+    value: &Option<Decimal>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match value {
+        Some(value) => serialize_decimal_as_json_number(value, serializer),
+        None => serializer.serialize_none(),
+    }
+}
 
 /// Deserializes a Polymarket game ID. The Gamma API returns the field in two
 /// shapes (string on `GammaMarket`, integer on `GammaEvent`) and uses both
@@ -102,7 +151,7 @@ pub fn determine_trade_id(
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
 
     use super::*;
 
@@ -110,6 +159,50 @@ mod tests {
     struct GameIdHolder {
         #[serde(default, deserialize_with = "deserialize_optional_polymarket_game_id")]
         game_id: Option<u64>,
+    }
+
+    #[derive(Debug, Deserialize, Serialize)]
+    struct JsonDecimalHolder {
+        #[serde(
+            deserialize_with = "deserialize_decimal_from_json_number",
+            serialize_with = "serialize_decimal_as_json_number"
+        )]
+        value: Decimal,
+        #[serde(
+            default,
+            deserialize_with = "deserialize_optional_decimal_from_json_number",
+            serialize_with = "serialize_optional_decimal_as_json_number"
+        )]
+        optional: Option<Decimal>,
+    }
+
+    #[rstest]
+    fn test_json_decimal_number_preserves_precision() {
+        let json =
+            r#"{"value":0.1234567890123456789012345678,"optional":123456789.1234567890123456789}"#;
+        let holder: JsonDecimalHolder = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            holder.value,
+            Decimal::from_str_exact("0.1234567890123456789012345678").unwrap()
+        );
+        assert_eq!(
+            holder.optional,
+            Some(Decimal::from_str_exact("123456789.1234567890123456789").unwrap())
+        );
+        assert_eq!(serde_json::to_string(&holder).unwrap(), json);
+    }
+
+    #[rstest]
+    fn test_optional_json_decimal_number_accepts_null_and_missing() {
+        let null: JsonDecimalHolder =
+            serde_json::from_str(r#"{"value":1,"optional":null}"#).unwrap();
+        let missing: JsonDecimalHolder = serde_json::from_str(r#"{"value":1}"#).unwrap();
+
+        assert_eq!(null.value, Decimal::ONE);
+        assert!(null.optional.is_none());
+        assert_eq!(missing.value, Decimal::ONE);
+        assert!(missing.optional.is_none());
     }
 
     #[rstest]

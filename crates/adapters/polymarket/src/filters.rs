@@ -567,6 +567,12 @@ mod tests {
                 title: "Test event".to_string(),
                 description: String::new(),
             }),
+            sports_market_type: None,
+            line: None,
+            game_start_time: None,
+            taker_base_fee: None,
+            fees_enabled: None,
+            fee_schedule: None,
         }
     }
 
