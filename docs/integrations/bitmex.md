@@ -1,5 +1,12 @@
 # BitMEX
 
+:::warning
+BitMEX will close on 23 September 2026 at 04:00 UTC. This adapter is deprecated and receives only
+critical fixes during the wind‑down. NautilusTrader plans to remove the live integration in the
+first release after the closure. See the
+[BitMEX decommissioning RFC](https://github.com/nautechsystems/nautilus_trader/issues/4552).
+:::
+
 Founded in 2014, BitMEX (Bitcoin Mercantile Exchange) is a cryptocurrency derivatives
 trading platform offering spot, perpetual contracts, traditional futures, prediction
 markets, and other advanced trading products. This integration supports live market data
