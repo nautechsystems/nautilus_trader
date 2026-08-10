@@ -1,0 +1,21 @@
+{
+  "id": "2063130",
+  "conditionId": "0x72af7d77091bd2209f78a45a13876beefc734768177dbc0c8171f515ba1a52a7",
+  "questionID": "0x55ab76d092f682bf5cbb7e14f13ee12f8410ce7cc1b7906f23b8fb56c11f6502",
+  "question": "Will Berhanu Nega be the next Prime Minister of Ethiopia?",
+  "description": "General elections are scheduled to be held in Ethiopia on June 1, 2026.\n\nThis market will resolve to the next individual who officially assumes the office of Prime Minister of Ethiopia following the 2026 General elections.\n\nTo count for resolution, the individual must be officially appointed and sworn in as Prime Minister of Ethiopia. Any interim or caretaker Prime Minister will not count toward the resolution of this market.\n\nIf no such Prime Minister takes office by December 31, 2028, 11:59 PM ET, this market will resolve to \u201cOther\u201d.\n\nThe primary resolution source for this market will be official information from the Government of Ethiopia; however, a consensus of credible reporting may also be used.",
+  "slug": "will-berhanu-nega-be-the-next-prime-minister-of-ethiopia",
+  "startDate": "2026-04-27T21:54:45.451Z",
+  "endDate": "2026-06-01T00:00:00Z",
+  "active": true,
+  "closed": false,
+  "acceptingOrders": true,
+  "enableOrderBook": true,
+  "clobTokenIds": "[\"9700525976462326306802795530553376348116310383328382626789994562350229436531\", \"9684129004308889646536044141330168144866101175836994432446145127310478131443\"]",
+  "outcomes": "[\"Yes\", \"No\"]",
+  "orderPriceMinTickSize": 0.001,
+  "orderMinSize": 5,
+  "negRisk": true,
+  "negRiskMarketID": "0x55ab76d092f682bf5cbb7e14f13ee12f8410ce7cc1b7906f23b8fb56c11f6500",
+  "umaResolutionStatuses": "[]"
+}

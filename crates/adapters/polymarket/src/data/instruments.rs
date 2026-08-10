@@ -15,6 +15,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use ahash::{AHashMap, AHashSet};
 use dashmap::DashMap;
 use nautilus_common::{live::get_runtime, messages::DataEvent, providers::InstrumentProvider};
 use nautilus_core::{AtomicMap, UnixNanos, time::AtomicTime};
@@ -25,7 +26,14 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use super::{PolymarketDataClient, runtime::is_instrument_expired};
-use crate::{filters::InstrumentFilter, http::gamma::PolymarketGammaHttpClient};
+use crate::{
+    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
+    filters::{
+        InstrumentFilter, binary_market_closed, is_expired, market_closed, set_market_closed,
+    },
+    http::{gamma::PolymarketGammaHttpClient, query::GetGammaMarketsParams},
+    providers::extract_condition_id,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct TokenMeta {
@@ -123,6 +131,137 @@ pub(super) async fn refresh_scoped_instruments(
     ))
 }
 
+// Returns the condition IDs Gamma positively reports as `closed=true`.
+//
+// Condition IDs the unfiltered lookup does not return are re-queried with `closed=true`, so a
+// market that lookup leaves out is still checked. A condition ID absent from both lookups is left
+// out: closure was not observed.
+async fn probe_closed_condition_ids(
+    http: &PolymarketGammaHttpClient,
+    condition_ids: &[String],
+) -> anyhow::Result<Vec<String>> {
+    let open = http
+        .request_markets_by_params(GetGammaMarketsParams {
+            condition_ids: Some(condition_ids.to_vec()),
+            ..Default::default()
+        })
+        .await?;
+    let returned = open
+        .iter()
+        .map(|market| market.condition_id.as_str())
+        .collect::<AHashSet<_>>();
+    let mut closed_ids = open
+        .iter()
+        .filter(|market| market.closed == Some(true))
+        .map(|market| market.condition_id.clone())
+        .collect::<Vec<_>>();
+    let missing = condition_ids
+        .iter()
+        .filter(|condition_id| !returned.contains(condition_id.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if missing.is_empty() {
+        return Ok(closed_ids);
+    }
+
+    let closed = http
+        .request_markets_by_params(GetGammaMarketsParams {
+            condition_ids: Some(missing),
+            closed: Some(true),
+            ..Default::default()
+        })
+        .await?;
+    closed_ids.extend(
+        closed
+            .into_iter()
+            .filter(|market| market.closed == Some(true))
+            .map(|market| market.condition_id),
+    );
+
+    Ok(closed_ids)
+}
+
+pub(super) async fn refresh_expired_market_closure(
+    http: &PolymarketGammaHttpClient,
+    cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    now_ns: UnixNanos,
+) -> anyhow::Result<usize> {
+    let mut carried: AHashMap<String, Vec<InstrumentId>> = AHashMap::new();
+
+    for (id, instrument) in cache.load().iter() {
+        if is_expired(instrument, now_ns)
+            && market_closed(instrument) == Some(false)
+            && let Ok(condition_id) = extract_condition_id(id)
+        {
+            carried.entry(condition_id).or_default().push(*id);
+        }
+    }
+
+    let condition_ids = carried.keys().cloned().collect::<Vec<_>>();
+    let chunks = condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE);
+    let total_chunks = chunks.len();
+    let mut closed_ids = AHashSet::new();
+    let mut failed_chunks = 0;
+
+    // A failed chunk must not discard closures the other chunks already confirmed.
+    for chunk in chunks {
+        match probe_closed_condition_ids(http, chunk).await {
+            Ok(chunk_closed_ids) => closed_ids.extend(chunk_closed_ids),
+            Err(e) => {
+                failed_chunks += 1;
+                log::warn!(
+                    "Failed to probe market closure for {} condition ID(s): {e}",
+                    chunk.len()
+                );
+            }
+        }
+    }
+
+    let closing_ids = closed_ids
+        .iter()
+        .filter_map(|condition_id| carried.get(condition_id))
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>();
+    let mut updated = Vec::new();
+
+    // Compose against the latest cached value, so a concurrent tick size change is not discarded.
+    // Guarded because `rcu` clones the whole cache, and most ticks have nothing to close.
+    if !closing_ids.is_empty() {
+        cache.rcu(|map| {
+            updated.clear();
+
+            for instrument_id in &closing_ids {
+                if let Some(InstrumentAny::BinaryOption(binary)) = map.get_mut(instrument_id)
+                    && binary_market_closed(binary) != Some(true)
+                {
+                    set_market_closed(binary, true);
+                    updated.push(InstrumentAny::BinaryOption(binary.clone()));
+                }
+            }
+        });
+    }
+
+    for instrument in &updated {
+        if let Err(e) = sender.send(DataEvent::Instrument(instrument.clone())) {
+            log::warn!(
+                "Failed to publish market closure update for {}: {e}",
+                instrument.id()
+            );
+        }
+    }
+
+    if failed_chunks > 0 {
+        anyhow::bail!(
+            "Failed to probe market closure for {failed_chunks} of {total_chunks} condition ID chunk(s)"
+        );
+    }
+
+    Ok(updated.len())
+}
+
 impl PolymarketDataClient {
     pub(super) async fn bootstrap_instruments(&mut self) -> anyhow::Result<()> {
         self.provider.initialize(false).await?;
@@ -213,6 +352,18 @@ impl PolymarketDataClient {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        net::SocketAddr,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    use axum::{
+        Json, Router,
+        extract::{RawQuery, State},
+        http::StatusCode,
+        response::{IntoResponse, Response},
+        routing::get,
+    };
     use nautilus_common::live::runner::replace_data_event_sender;
     use nautilus_core::UnixNanos;
     use nautilus_model::{
@@ -428,5 +579,171 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing token_meta for {token_id}"));
             assert_eq!(meta.instrument_id, inst.id());
         }
+    }
+
+    fn past_end_open_market() -> serde_json::Value {
+        serde_json::from_str(include_str!(
+            "../../test_data/gamma_market_past_end_date_open.json"
+        ))
+        .unwrap()
+    }
+
+    // Mirrors the live Gamma funnel, which records closure state the historical loader must not
+    // carry. See `parse_markets_with_transient`.
+    fn past_end_open_instrument() -> BinaryOption {
+        let market = serde_json::from_value(past_end_open_market()).unwrap();
+        let definitions = crate::http::parse::parse_gamma_market(&market).unwrap();
+        let instrument =
+            crate::http::parse::create_instrument_from_def(&definitions[0], UnixNanos::default())
+                .unwrap();
+        let InstrumentAny::BinaryOption(mut binary) = instrument else {
+            panic!("Expected BinaryOption, was {instrument:?}");
+        };
+        set_market_closed(&mut binary, false);
+        binary
+    }
+
+    fn requested_condition_ids(query: Option<&str>) -> Vec<String> {
+        query
+            .unwrap_or_default()
+            .split('&')
+            .filter_map(|pair| pair.strip_prefix("condition_ids="))
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    async fn market_closure_response(
+        State((closed, fail)): State<(bool, bool)>,
+        RawQuery(query): RawQuery,
+    ) -> Response {
+        if fail {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+        let wants_closed = query.unwrap_or_default().contains("closed=true");
+        let mut market = past_end_open_market();
+        market["closed"] = wants_closed.into();
+        market["orderPriceMinTickSize"] = serde_json::json!(0.01);
+        let markets = (wants_closed == closed)
+            .then_some(market)
+            .into_iter()
+            .collect::<Vec<_>>();
+        Json(serde_json::json!({"markets": markets, "next_cursor": null})).into_response()
+    }
+
+    async fn market_closure_server(closed: bool, fail: bool) -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/markets/keyset", get(market_closure_response))
+            .with_state((closed, fail));
+
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        addr
+    }
+
+    #[rstest]
+    #[case(false, false)]
+    #[case(true, false)]
+    #[case(false, true)]
+    #[tokio::test]
+    async fn market_closure_refresh_uses_positive_signal_without_replacing_definition(
+        #[case] closed: bool,
+        #[case] fail: bool,
+    ) {
+        let instrument = InstrumentAny::BinaryOption(past_end_open_instrument());
+        let instruments = Arc::new(AtomicMap::new());
+        instruments.insert(instrument.id(), instrument.clone());
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let addr = market_closure_server(closed, fail).await;
+        let client = PolymarketGammaHttpClient::new(
+            Some(format!("http://{addr}")),
+            1,
+            RetryConfig::default(),
+        )
+        .unwrap();
+
+        let result =
+            refresh_expired_market_closure(&client, &instruments, &tx, UnixNanos::from(u64::MAX))
+                .await;
+
+        if fail {
+            assert!(result.is_err());
+            return;
+        }
+
+        assert_eq!(result.unwrap(), usize::from(closed));
+        let cached = instruments.load();
+        let cached = cached.get(&instrument.id()).unwrap();
+        assert_eq!(market_closed(cached), Some(closed));
+        // Gamma reports a 0.01 tick size; the cached definition keeps its own 0.001.
+        assert_eq!(cached.price_increment(), Price::from("0.001"));
+    }
+
+    // Serves the first request only, echoing every requested condition ID back as closed.
+    async fn first_chunk_only_response(
+        State(requests): State<Arc<AtomicUsize>>,
+        RawQuery(query): RawQuery,
+    ) -> Response {
+        if requests.fetch_add(1, Ordering::SeqCst) > 0 {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+
+        let markets = requested_condition_ids(query.as_deref())
+            .into_iter()
+            .map(|condition_id| {
+                let mut market = past_end_open_market();
+                market["conditionId"] = condition_id.into();
+                market["closed"] = true.into();
+                market
+            })
+            .collect::<Vec<_>>();
+
+        Json(serde_json::json!({"markets": markets, "next_cursor": null})).into_response()
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn market_closure_refresh_keeps_earlier_chunk_results_when_a_later_chunk_fails() {
+        let base = past_end_open_instrument();
+        let instruments = Arc::new(AtomicMap::new());
+
+        // One more candidate than a single Gamma request accepts, so the probe spans two chunks.
+        for i in 0..=GAMMA_CONDITION_IDS_BATCH_SIZE {
+            let mut binary = base.clone();
+            binary.raw_symbol = Symbol::new(format!("0xCOND{i:04}-Yes"));
+            binary.id = InstrumentId::new(binary.raw_symbol, base.id.venue);
+            instruments.insert(binary.id, InstrumentAny::BinaryOption(binary));
+        }
+
+        let requests = Arc::new(AtomicUsize::new(0));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/markets/keyset", get(first_chunk_only_response))
+            .with_state(requests);
+
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let client = PolymarketGammaHttpClient::new(
+            Some(format!("http://{addr}")),
+            1,
+            RetryConfig::default(),
+        )
+        .unwrap();
+
+        let result =
+            refresh_expired_market_closure(&client, &instruments, &tx, UnixNanos::from(u64::MAX))
+                .await;
+
+        assert!(result.is_err());
+
+        let closed = instruments
+            .load()
+            .values()
+            .filter(|instrument| market_closed(instrument) == Some(true))
+            .count();
+
+        assert_eq!(closed, GAMMA_CONDITION_IDS_BATCH_SIZE);
     }
 }

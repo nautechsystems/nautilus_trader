@@ -36,7 +36,10 @@ use axum::{
     routing::{delete, get, post},
 };
 use nautilus_common::{providers::InstrumentProvider, testing::wait_until_async};
-use nautilus_model::{identifiers::InstrumentId, instruments::Instrument};
+use nautilus_model::{
+    identifiers::InstrumentId,
+    instruments::{Instrument, InstrumentAny},
+};
 use nautilus_network::{http::HttpClient, retry::RetryConfig};
 use nautilus_polymarket::{
     common::{
@@ -3375,6 +3378,46 @@ async fn test_fetch_gamma_markets_paginated_uses_100_per_page() {
 
     // The local offset spans two pages: 87 markets x 2 tokens each
     assert_eq!(instruments.len(), 174);
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+#[tokio::test]
+async fn test_gamma_instruments_record_market_closure_state(#[case] closed: bool) {
+    let state = TestServerState::default();
+    let mut market = gamma_market_with_slug(
+        "closure-state",
+        "0xclosure000000000000000000000000000000000000000000000000000000001",
+        [
+            "31000000000000000000000000000000000000000000000000000000000001",
+            "41000000000000000000000000000000000000000000000000000000000002",
+        ],
+    );
+    market["closed"] = closed.into();
+    state
+        .gamma_markets_pages
+        .lock()
+        .await
+        .push_back(json!({"markets": [market]}));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+    let instruments = client
+        .request_instruments_by_params(GetGammaMarketsParams::default())
+        .await
+        .unwrap();
+
+    assert_eq!(instruments.len(), 2);
+
+    for instrument in &instruments {
+        let InstrumentAny::BinaryOption(binary) = instrument else {
+            panic!("Expected BinaryOption, was {instrument:?}");
+        };
+        let info = binary.info.as_ref().expect("info should be present");
+
+        assert_eq!(info.get_bool("closed"), Some(closed));
+    }
 }
 
 #[rstest]

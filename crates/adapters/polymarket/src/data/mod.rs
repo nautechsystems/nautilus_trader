@@ -73,7 +73,7 @@ use self::{
         request_book_snapshot, request_data, request_instrument, request_instruments,
         request_trades,
     },
-    runtime::is_instrument_expired,
+    runtime::is_instrument_expired_and_not_reported_open,
     subscriptions::{resolve_token_id_from, sync_ws_subscription_async},
 };
 use crate::{
@@ -295,7 +295,7 @@ impl PolymarketDataClient {
             return Ok(());
         };
 
-        if is_instrument_expired(instrument, now_ns) {
+        if is_instrument_expired_and_not_reported_open(instrument, now_ns) {
             anyhow::bail!(
                 "Instrument {instrument_id} is expired and no longer available for live subscription"
             );
@@ -314,7 +314,7 @@ impl PolymarketDataClient {
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?
             .clone();
 
-        if is_instrument_expired(&instrument, self.clock.get_time_ns()) {
+        if is_instrument_expired_and_not_reported_open(&instrument, self.clock.get_time_ns()) {
             anyhow::bail!(
                 "Instrument {instrument_id} is expired and no longer available for market data requests"
             );
