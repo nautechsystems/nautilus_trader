@@ -2802,7 +2802,7 @@ impl ExecutionEngine {
         }
 
         let matching_positions: Vec<PositionId> = cache
-            .positions(
+            .positions_open(
                 Some(&fill.instrument_id.venue),
                 Some(&fill.instrument_id),
                 Some(&fill.strategy_id),

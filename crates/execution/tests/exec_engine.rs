@@ -2558,6 +2558,80 @@ fn test_hedging_leg_fill_without_order_reuses_position_for_same_synthetic_leg(
 }
 
 #[rstest]
+fn test_hedging_leg_fill_without_order_reuses_open_position_after_flip(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let (_instrument, fill, _) = prepare_leg_fill_without_order(&execution_engine);
+    let strategy_id = fill.strategy_id;
+    let client_order_id = fill.client_order_id;
+    execution_engine.register_oms_type(strategy_id, OmsType::Hedging);
+
+    execution_engine.process(&OrderEventAny::Filled(fill.clone()));
+
+    let mut flip_fill = fill.clone();
+    flip_fill.trade_id = TradeId::new("T-LEG-002");
+    flip_fill.venue_order_id = VenueOrderId::from("V-SPREAD-LEG-2");
+    flip_fill.order_side = OrderSide::Sell;
+    flip_fill.last_qty = Quantity::from(2);
+    flip_fill.position_id = None;
+    execution_engine.process(&OrderEventAny::Filled(flip_fill.clone()));
+
+    let flipped_position_id = {
+        let cache = execution_engine.cache().borrow();
+        let open_positions = cache.positions_open(
+            Some(&fill.instrument_id.venue),
+            Some(&fill.instrument_id),
+            Some(&strategy_id),
+            Some(&fill.account_id),
+            None,
+        );
+        let closed_positions = cache.positions_closed(
+            Some(&fill.instrument_id.venue),
+            Some(&fill.instrument_id),
+            Some(&strategy_id),
+            Some(&fill.account_id),
+            None,
+        );
+
+        assert_eq!(open_positions.len(), 1);
+        assert_eq!(closed_positions.len(), 1);
+        assert_eq!(open_positions[0].opening_order_id, client_order_id);
+        assert_eq!(closed_positions[0].opening_order_id, client_order_id);
+        assert_eq!(open_positions[0].side, PositionSide::Short);
+        assert_eq!(open_positions[0].quantity, Quantity::from(1));
+        open_positions[0].id
+    };
+
+    let mut subsequent_fill = fill.clone();
+    subsequent_fill.trade_id = TradeId::new("T-LEG-003");
+    subsequent_fill.venue_order_id = VenueOrderId::from("V-SPREAD-LEG-3");
+    subsequent_fill.order_side = OrderSide::Sell;
+    subsequent_fill.position_id = None;
+    execution_engine.process(&OrderEventAny::Filled(subsequent_fill.clone()));
+
+    let mut cache = execution_engine.cache().borrow_mut();
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 2);
+    assert_eq!(cache.positions_open_count(None, None, None, None, None), 1);
+    assert_eq!(
+        cache.positions_closed_count(None, None, None, None, None),
+        1
+    );
+    {
+        let position = cache
+            .position(&flipped_position_id)
+            .expect("subsequent leg fill should update the open flipped position");
+        assert_eq!(position.side, PositionSide::Short);
+        assert_eq!(position.quantity, Quantity::from(2));
+        assert_eq!(position.event_count(), 2);
+        assert!(position.trade_ids.contains(&flip_fill.trade_id));
+        assert!(position.trade_ids.contains(&subsequent_fill.trade_id));
+    }
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
 fn test_project_reconciliation_fill_applies_no_portfolio_economics_on_cash_account(
     mut execution_engine: ExecutionEngine,
 ) {
