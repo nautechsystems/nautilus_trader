@@ -71,12 +71,14 @@ artifact integrity records, and verification flow. This section records CI‑spe
 
 ### Execution boundaries
 
+- Dedicated script tests must pass in CI before pre‑commit begins, so important repository scripts
+  are tested before pre‑commit uses them.
 - Workflows default `GITHUB_TOKEN` to `contents: read` and `actions: read`. Individual jobs add only
   the permissions required for their operation.
-- The pre‑commit, Linux x86 wheel, and Linux x86 Rust jobs in `build.yml` use the self‑hosted build
-  pool only for same‑repository, non‑Dependabot pull requests with a known author. Fork, Dependabot,
-  or incomplete pull request metadata routes these jobs to GitHub‑hosted runners. Untrusted pull
-  request jobs remain read‑only and do not receive Actions secrets.
+- The script tests, pre‑commit, Linux x86 wheel, and Linux x86 Rust jobs in `build.yml` use the
+  self‑hosted build pool only for same‑repository, non‑Dependabot pull requests with a known author.
+  Fork, Dependabot, or incomplete pull request metadata routes these jobs to GitHub‑hosted runners.
+  Untrusted pull request jobs remain read‑only and do not receive Actions secrets.
 - `test.yml` accepts only pushes to `test`, which the `test` ruleset restricts to
   trusted repository maintainers before the workflow reaches the self‑hosted build pool.
 - `build.yml` cancels superseded pull request runs. Push runs use commit‑specific concurrency groups,

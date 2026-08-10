@@ -441,6 +441,7 @@ pre-flight:  #-- Run pre-flight checks (format, tests, build, generated drift, a
 	@$(timer_start) \
 		$(MAKE) --no-print-directory sync \
 		&& $(MAKE) --no-print-directory format \
+		&& $(MAKE) --no-print-directory test-scripts-quiet \
 		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-doc EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-extras \
@@ -774,6 +775,56 @@ check-capnp-schemas:
 regen-capnp:
 	$(info $(M) Regenerating Cap'n Proto schemas...)
 	@bash scripts/regen-capnp.sh
+
+.PHONY: check-docker-toolchain-pins
+check-docker-toolchain-pins:  #-- Check Docker toolchain pins
+	$(info $(M) Checking Docker toolchain pins...)
+	$Q bash scripts/ci/check-docker-toolchain-pins.bash
+
+.PHONY: check-github-action-pins
+check-github-action-pins:  #-- Check GitHub Action pins
+	$(info $(M) Checking GitHub Action pins...)
+	$Q bash scripts/ci/check-github-action-shas.sh \
+		$$(git ls-files \
+			'.github/actions/**/action.yml' \
+			'.github/actions/**/action.yaml' \
+			'.github/workflows/*.yml' \
+			'.github/workflows/*.yaml')
+
+.PHONY: check-jiff-features
+check-jiff-features:  #-- Check jiff features
+	$(info $(M) Checking jiff features...)
+	$Q bash .pre-commit-hooks/check_jiff_features.sh
+
+.PHONY: test-scripts
+test-scripts:  #-- Run repository script tests
+	$(info $(M) Running script tests...)
+	$Q bash .pre-commit-hooks/test_check_formatting_rs.sh
+	$Q bash .pre-commit-hooks/test_check_logging_conventions.sh
+	$Q bash .pre-commit-hooks/test_check_unicode_typography.sh
+	$Q bash scripts/ci/test-check-miri-toolchain.bash
+	$Q bash scripts/ci/test-github-action-shas.bash
+	$Q bash scripts/ci/test-publish-cargo-crates-check.bash
+	$Q bash scripts/ci/test-publish-cli-r2-upload-installer.bash
+	$Q bash scripts/ci/test-publish-wheels.bash
+	$Q bash scripts/ci/test-release-github-assets.bash
+	$Q bash scripts/ci/test-release-verification-retry.bash
+	$Q bash scripts/ci/test-rust-toolchain.bash
+	$Q bash scripts/ci/test-verify-published-registries-crates.bash
+	$Q python3 -B scripts/ci/test_check_commit_message.py
+	@printf "$(GREEN)Script tests passed$(RESET)\n"
+
+.PHONY: test-scripts-quiet
+test-scripts-quiet:
+	@test_scripts_log="$$(mktemp "$${TMPDIR:-/tmp}/nautilus-script-tests.XXXXXX")"; \
+	trap 'rm -f "$$test_scripts_log"' EXIT; \
+	if $(MAKE) --no-print-directory test-scripts > "$$test_scripts_log" 2>&1; then \
+		:; \
+	else \
+		status=$$?; \
+		cat "$$test_scripts_log" >&2; \
+		exit $$status; \
+	fi
 
 #== Rust Testing
 

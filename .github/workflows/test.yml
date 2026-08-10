@@ -14,8 +14,55 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test-scripts:
+    name: script tests
+    runs-on: [self-hosted, Linux, X64, build]
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install ripgrep
+        run: |
+          sudo apt-get update -o Acquire::Retries=5
+          sudo apt-get install -y ripgrep -o Acquire::Retries=5
+
+      - name: Check GitHub Action pins
+        run: make check-github-action-pins
+
+      - name: Check Docker toolchain pins
+        run: make check-docker-toolchain-pins
+
+      - name: Get Rust toolchain version
+        run: echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
+
+      - name: Set up Rust toolchain
+        # https://github.com/actions-rust-lang/setup-rust-toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          toolchain: ${{ env.TOOLCHAIN }}
+          cache: false
+          override: true
+
+      - name: Check jiff features
+        run: make check-jiff-features
+
+      - name: Run script tests
+        run: make test-scripts
+
   pre-commit:
     name: pre-commit
+    needs: test-scripts
     runs-on: [self-hosted, Linux, X64, build]
     env:
       CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/test-pre-commit
@@ -82,7 +129,9 @@ jobs:
 
   python-tests-linux-x86:
     name: python (Linux x86_64, Python 3.14)
-    needs: pre-commit
+    needs:
+      - pre-commit
+      - test-scripts
     runs-on: [self-hosted, Linux, X64, build]
     defaults:
       run:
@@ -133,7 +182,9 @@ jobs:
 
   rust-tests-linux-x86:
     name: rust (Linux x86_64, Python 3.14)
-    needs: pre-commit
+    needs:
+      - pre-commit
+      - test-scripts
     runs-on: [self-hosted, Linux, X64, build]
     env:
       CARGO_CI_PROFILE: nextest

@@ -111,25 +111,6 @@ repos:
   ##############################################################################
   - repo: local
     hooks:
-      - id: check-github-action-shas
-        name: check GitHub Action pins
-        description: Verifies action source URLs and SHA release tags
-        entry: bash scripts/ci/check-github-action-shas.sh
-        language: system
-        files: ^\.github/(actions/.+/action\.ya?ml|workflows/.+\.ya?ml)$
-
-      - id: test-github-action-shas
-        name: test GitHub Action pin check
-        description: Verifies action source URLs, SHA parsing, tag comments, and mismatch failures
-        entry: bash scripts/ci/test-github-action-shas.bash
-        language: system
-        files: >-
-          (?x)^(
-            \.pre-commit-config\.yaml|
-            scripts/ci/(check-github-action-shas\.sh|test-github-action-shas\.bash)
-          )$
-        pass_filenames: false
-
       - id: check-commit-message
         name: check commit message
         description: Validates the pending commit subject, body, and AI attribution
@@ -138,76 +119,6 @@ repos:
         stages: [commit-msg]
         always_run: true
         verbose: true
-
-      - id: test-cli-r2-upload-installer
-        name: test CLI R2 installer upload
-        description: Verifies installer uploads fail after retry exhaustion
-        entry: bash scripts/ci/test-publish-cli-r2-upload-installer.bash
-        language: system
-        files: >-
-          (?x)^(
-            \.github/workflows/cli-binaries\.yml|
-            \.pre-commit-config\.yaml|
-            scripts/ci/(publish-cli-r2-upload-installer\.sh|test-publish-cli-r2-upload-installer\.bash)
-          )$
-        pass_filenames: false
-
-      - id: test-wheel-publishing
-        name: test wheel publishing
-        description: Verifies wheel publication policy, validation, retention, index, and recovery
-        entry: bash scripts/ci/test-publish-wheels.bash
-        language: system
-        files: >-
-          (?x)^(
-            \.github/actions/publish-wheels/action\.yml|
-            \.github/workflows/(build|security-audit)\.yml|
-            \.pre-commit-config\.yaml|
-            scripts/purge-orphan-dev-wheels\.sh|
-            scripts/ci/(
-              check-security-(audit|gate)-result|
-              plan-wheel-publication|
-              publish-wheels(
-                -generate-index|
-                -policy|
-                -r2(-remove-old-wheels|-upload-index|-upload-new-wheels|-verify-files)?|
-                -sha256
-              )?|
-              release-version-policy|
-              security-audit-gate|
-              test-publish-wheels|
-              update-pyproject-version|
-              validate-wheel-artifacts
-            )\.(bash|sh)
-          )$
-        pass_filenames: false
-
-      - id: test-release-verification-retry
-        name: test release verification retry
-        description: Verifies transient release verification retries and fail-fast mismatches
-        entry: bash scripts/ci/test-release-verification-retry.bash
-        language: system
-        files: >-
-          (?x)^(
-            \.pre-commit-config\.yaml|
-            scripts/ci/(release-verification-retry|test-release-verification-retry)\.bash
-          )$
-        pass_filenames: false
-
-      - id: test-published-registries
-        name: test published registry verification
-        description: Verifies registry propagation, provenance, checksums, and publisher policy
-        entry: bash scripts/ci/test-verify-published-registries-crates.bash
-        language: system
-        files: >-
-          (?x)^(
-            \.pre-commit-config\.yaml|
-            scripts/ci/(
-              release-verification-retry|
-              test-verify-published-registries-crates|
-              verify-published-registries
-            )\.bash
-          )$
-        pass_filenames: false
 
       - id: check-hidden-chars
         name: check hidden unicode/control chars
@@ -223,14 +134,6 @@ repos:
         entry: bash .pre-commit-hooks/check_unicode_typography.sh
         language: system
         types: [text]
-
-      - id: test-unicode-typography
-        name: test Unicode typography hook
-        description: Verifies rejected characters, allowed characters, and exceptions
-        entry: bash .pre-commit-hooks/test_check_unicode_typography.sh
-        language: system
-        files: ^(\.pre-commit-config\.yaml|\.pre-commit-hooks/(check|test_check)_unicode_typography\.sh)$
-        pass_filenames: false
 
       - id: check-non-latin-text
         name: check non-Latin text
@@ -253,45 +156,6 @@ repos:
         entry: bash scripts/check-no-build-packages.sh
         language: system
         files: ^python/(uv\.lock|pyproject\.toml)$
-        pass_filenames: false
-
-      - id: check-docker-toolchain-pins
-        name: check Docker toolchain pins
-        description: Ensures Docker uv, Rust, and Python pins match project toolchain versions
-        entry: bash scripts/ci/check-docker-toolchain-pins.bash
-        language: system
-        files: >-
-          (?x)^(
-            \.docker/(DockerfileUbuntu|nautilus_trader\.dockerfile|jupyterlab\.dockerfile)|
-            python/pyproject\.toml|
-            rust-toolchain\.toml|
-            scripts/(uv-version|rust-toolchain)\.sh|
-            scripts/ci/check-docker-toolchain-pins\.bash
-          )$
-        pass_filenames: false
-
-      - id: check-rust-toolchain
-        name: check Rust toolchain
-        description: Ensures the Rust toolchain parser requires an exact pinned channel
-        entry: bash scripts/ci/test-rust-toolchain.bash
-        language: system
-        files: ^(rust-toolchain\.toml|scripts/rust-toolchain\.sh|scripts/ci/test-rust-toolchain\.bash)$
-        pass_filenames: false
-
-      - id: check-miri-toolchain
-        name: check Miri toolchain
-        description: Ensures the pinned Miri compiler supports the workspace Rust version
-        entry: bash scripts/ci/test-check-miri-toolchain.bash
-        language: system
-        files: >-
-          (?x)^(
-            \.github/workflows/nightly-miri\.yml|
-            Cargo\.toml|
-            Makefile|
-            tools\.toml|
-            scripts/tool-version\.sh|
-            scripts/ci/(check-miri-toolchain|test-check-miri-toolchain)\.bash
-          )$
         pass_filenames: false
 
       - id: check-copyright-year
@@ -348,14 +212,6 @@ repos:
         files: "\\.rs$"
         pass_filenames: false
 
-      - id: test-logging-conventions
-        name: test logging conventions hook
-        description: Verifies direct output and process termination rules
-        entry: bash .pre-commit-hooks/test_check_logging_conventions.sh
-        language: system
-        files: ^(\.pre-commit-config\.yaml|\.pre-commit-hooks/(check|test_check)_logging_conventions\.sh)$
-        pass_filenames: false
-
       - id: check-tokio-usage
         name: check tokio usage
         description: Enforces tokio usage conventions
@@ -404,14 +260,6 @@ repos:
         files: "\\.rs$"
         pass_filenames: false
 
-      - id: test-formatting-rs
-        name: test Rust formatting hook
-        description: Verifies blank-line and module-ordering rules
-        entry: bash .pre-commit-hooks/test_check_formatting_rs.sh
-        language: system
-        files: ^(\.pre-commit-config\.yaml|\.pre-commit-hooks/(check|test_check)_formatting_rs\.sh)$
-        pass_filenames: false
-
       - id: check-formatting-py
         name: check formatting (Python)
         description: Enforces formatting conventions in Python code
@@ -436,14 +284,6 @@ repos:
         files: "Cargo\\.toml$"
         pass_filenames: false
 
-      - id: check-jiff-features
-        name: check Jiff features
-        description: Locks resolved Jiff feature policy across Rust and Python builds
-        entry: bash .pre-commit-hooks/check_jiff_features.sh
-        language: system
-        files: "(^|/)(Cargo\\.(toml|lock))$"
-        pass_filenames: false
-
       - id: check-workspace-test-coverage
         name: check workspace test coverage
         description: Reconciles workspace members with Rust test selection
@@ -456,22 +296,6 @@ repos:
             Makefile|
             scripts/ci/check-workspace-test-coverage\.sh
           )$
-        pass_filenames: false
-
-      - id: check-cargo-crates-publish
-        name: check mocked cargo publish plan
-        description: Checks mocked Cargo publish-plan logic, not the real workspace crate graph
-        entry: bash scripts/ci/test-publish-cargo-crates-check.bash
-        language: system
-        files: "^scripts/ci/(publish-cargo-crates\\.sh|test-publish-cargo-crates-check\\.bash)$"
-        pass_filenames: false
-
-      - id: check-release-github-assets
-        name: check mocked GitHub release assets
-        description: Checks mocked GitHub release asset verification and checksum publication
-        entry: bash scripts/ci/test-release-github-assets.bash
-        language: system
-        files: "^scripts/ci/(publish-release-checksums\\.sh|(verify-github-release|test-release-github)-assets\\.bash)$"
         pass_filenames: false
 
       - id: fmt

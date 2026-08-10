@@ -331,7 +331,7 @@ is_allowed_direct_output() {
 
 direct_output=$(rg -n --no-heading \
   '\b(e?println|e?print)!\s*\(' \
-  "${PRODUCTION_CODE_GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${PRODUCTION_CODE_GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 if [[ -n "$direct_output" ]]; then
   while IFS=: read -r file line_num content; do
@@ -481,7 +481,7 @@ line_has_process_exit_call() {
 
 process_exit=$(rg -n --no-heading \
   '\b(std::process::exit|process::exit|exit)\s*\(' \
-  "${PRODUCTION_CODE_GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${PRODUCTION_CODE_GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 if [[ -n "$process_exit" ]]; then
   while IFS=: read -r file line_num content; do
