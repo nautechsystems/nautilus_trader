@@ -61,7 +61,8 @@ impl OrderBookDeltas {
     ///
     /// # Panics
     ///
-    /// Panics if `deltas` is empty.
+    /// Panics if `deltas` is empty or contains an instrument ID that does not match
+    /// `instrument_id`.
     #[must_use]
     pub fn new(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) -> Self {
         Self::new_checked(instrument_id, deltas).expect(FAILED)
@@ -71,7 +72,8 @@ impl OrderBookDeltas {
     ///
     /// # Errors
     ///
-    /// Returns an error if `deltas` is empty.
+    /// Returns an error if `deltas` is empty or contains an instrument ID that does not match
+    /// `instrument_id`.
     ///
     /// # Notes
     ///
@@ -85,6 +87,14 @@ impl OrderBookDeltas {
         deltas: Vec<OrderBookDelta>,
     ) -> anyhow::Result<Self> {
         check_predicate_true(!deltas.is_empty(), "`deltas` cannot be empty")?;
+        check_predicate_true(
+            deltas.iter().all(|delta| {
+                instrument_id == delta.instrument_id
+                    || (instrument_id.symbol.as_str() == delta.instrument_id.symbol.as_str()
+                        && instrument_id.venue.as_str() == delta.instrument_id.venue.as_str())
+            }),
+            "`deltas` instrument IDs must match `instrument_id`",
+        )?;
         let last = deltas.last().expect("deltas not empty");
         let flags = last.flags;
         let sequence = last.sequence;
@@ -297,6 +307,37 @@ mod tests {
     }
 
     #[rstest]
+    fn test_order_book_deltas_new_checked_accepts_homogeneous_deltas() {
+        let instrument_id = InstrumentId::from("EURUSD.SIM");
+        let delta1 = create_test_delta();
+        let mut delta2 = create_test_delta();
+        delta2.sequence = 124;
+
+        let result = OrderBookDeltas::new_checked(instrument_id, vec![delta1, delta2]);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().deltas.len(), 2);
+    }
+
+    #[rstest]
+    #[case::first(0)]
+    #[case::later(1)]
+    fn test_order_book_deltas_new_checked_rejects_mismatched_instrument(
+        #[case] mismatch_index: usize,
+    ) {
+        let instrument_id = InstrumentId::from("EURUSD.SIM");
+        let mut deltas = vec![create_test_delta(), create_test_delta()];
+        deltas[mismatch_index].instrument_id = InstrumentId::from("GBPUSD.SIM");
+
+        let result = OrderBookDeltas::new_checked(instrument_id, deltas);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "`deltas` instrument IDs must match `instrument_id`"
+        );
+    }
+
+    #[rstest]
     fn test_order_book_deltas_new_checked_empty_deltas() {
         let instrument_id = InstrumentId::from("EURUSD.SIM");
 
@@ -481,8 +522,8 @@ mod tests {
 
     #[rstest]
     fn test_order_book_deltas_single_delta() {
-        let instrument_id = InstrumentId::from("BTCUSD.CRYPTO");
         let delta = create_test_delta();
+        let instrument_id = delta.instrument_id;
 
         let deltas = OrderBookDeltas::new(instrument_id, vec![delta]);
 

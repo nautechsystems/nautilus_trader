@@ -148,9 +148,14 @@ fn test_order_book_deltas_roundtrip() {
 
 #[rstest]
 fn test_order_book_deltas_preserve_delta_instrument_ids() {
-    let value = OrderBookDeltas::new(
-        InstrumentId::from("AAPL.XNAS"),
-        vec![
+    // Built as a literal because `OrderBookDeltas::new` rejects children whose
+    // instrument ID differs from the wrapper's. The heterogeneity is the point
+    // here: SBE encodes each child's own ID, and this pins that it survives a
+    // round trip. Wrapper metadata matches what the constructor derives from
+    // the last child.
+    let value = OrderBookDeltas {
+        instrument_id: InstrumentId::from("AAPL.XNAS"),
+        deltas: vec![
             OrderBookDelta::new(
                 InstrumentId::from("AAPL.XNAS"),
                 BookAction::Add,
@@ -180,7 +185,11 @@ fn test_order_book_deltas_preserve_delta_instrument_ids() {
                 13.into(),
             ),
         ],
-    );
+        flags: 1,
+        sequence: 2,
+        ts_event: 12.into(),
+        ts_init: 13.into(),
+    };
 
     let bytes = value.to_sbe().unwrap();
     let decoded = OrderBookDeltas::from_sbe(&bytes).unwrap();
