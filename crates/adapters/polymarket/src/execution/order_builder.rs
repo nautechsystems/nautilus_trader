@@ -151,6 +151,13 @@ impl PolymarketOrderBuilder {
         neg_risk: bool,
         tick_decimals: u32,
     ) -> anyhow::Result<PolymarketOrder> {
+        if side == PolymarketOrderSide::Buy && amount.trunc_with_scale(LOT_SIZE_SCALE).is_zero() {
+            anyhow::bail!(
+                "Polymarket market BUY amount {} pUSD truncates to zero at {LOT_SIZE_SCALE} decimal places",
+                amount.normalize(),
+            );
+        }
+
         let (maker_amount, taker_amount) =
             compute_market_maker_taker_amounts(price, amount, side, tick_decimals);
         self.build_and_sign(token_id, side, maker_amount, taker_amount, "0", neg_risk)
@@ -449,6 +456,7 @@ mod tests {
     use super::*;
     use crate::{
         common::{credential::EvmPrivateKey, enums::PolymarketOrderSide},
+        execution::parse::adjust_market_buy_amount,
         signing::eip712::OrderSigner,
     };
 
@@ -995,6 +1003,32 @@ mod tests {
         // Quote-denominated BUY: 10 pUSD spend -> 20 shares at price 0.50.
         assert_eq!(order.maker_amount, dec!(10_000_000));
         assert_eq!(order.taker_amount, dec!(20_000_000));
+    }
+
+    #[rstest]
+    fn test_build_market_buy_order_rejects_fee_adjusted_amount_below_lot_size() {
+        let builder = make_test_builder();
+        let adjusted =
+            adjust_market_buy_amount(dec!(10), dec!(0.009), dec!(0.5), dec!(0.04), 1.0, dec!(0))
+                .unwrap();
+        assert_eq!(adjusted, dec!(0.008823));
+
+        let err = builder
+            .build_market_order(
+                "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+                PolymarketOrderSide::Buy,
+                dec!(0.5),
+                adjusted,
+                false,
+                2,
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Polymarket market BUY amount 0.008823 pUSD truncates to zero at 2 decimal places",
+        );
+        assert_eq!(builder.last_timestamp_ms.load(Ordering::Relaxed), 0);
     }
 
     #[rstest]
