@@ -595,7 +595,8 @@ Commit the generated `.pyi` files and PyO3 wrapper doc comments changed by this 
 
 [cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader.
 Its key benefit is isolating each test in its own process, ensuring test reliability
-by avoiding interference.
+by avoiding interference. See the [Rust testing guidance](docs/developer_guide/testing.md#rust-tests)
+for details about full‑suite support and the limits of plain `cargo test`.
 
 You can install cargo-nextest by running:
 

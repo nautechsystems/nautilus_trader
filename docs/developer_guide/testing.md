@@ -178,6 +178,15 @@ make cargo-test
 cargo nextest run --workspace --features "arrow,ffi,python,high-precision,streaming,defi" --cargo-profile nextest --lib --tests
 ```
 
+:::info
+`cargo nextest` is the supported runner for the full Rust unit and integration suite. The suite
+relies on nextest's per‑test process isolation for process‑global and thread‑local state, including
+logging, the message bus, and deterministic test state. Plain `cargo test --workspace` runs a test
+binary's cases in a shared process, so it is not a supported full‑suite gate and is not guaranteed to
+pass. Plain `cargo test` remains appropriate for doctests and focused tests that are known to work
+with the libtest runner.
+:::
+
 #### Rust doctests
 
 `cargo nextest` cannot execute doctests, so they run through a separate target:
