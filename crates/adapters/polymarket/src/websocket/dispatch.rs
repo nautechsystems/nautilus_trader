@@ -788,7 +788,8 @@ fn build_ws_taker_fill_report(
         order_side,
         last_qty,
         last_px,
-        commission: Money::new(commission_value, pusd),
+        commission: Money::from_decimal(commission_value, pusd)
+            .expect("commission should be representable as Money"),
         liquidity_side,
         avg_px: None,
         report_id: UUID4::new(),
@@ -1901,10 +1902,7 @@ mod tests {
         );
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
-        assert_eq!(
-            report.commission.as_decimal(),
-            Decimal::from_str_exact("0.1875").unwrap()
-        );
+        assert_eq!(report.commission.as_decimal(), dec!(0.1875));
         assert_eq!(report.commission.currency, Currency::pUSD());
         assert!(receiver.try_recv().is_err());
     }

@@ -495,7 +495,7 @@ mod tests {
             OrderSide::Buy,
             Quantity::from("4.0000"),
             Price::from("0.5000"),
-            Money::new(0.0, Currency::pUSD()),
+            Money::zero(Currency::pUSD()),
             LiquiditySide::Taker,
             None,
             None,

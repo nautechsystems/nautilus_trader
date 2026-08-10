@@ -694,6 +694,7 @@ impl PolymarketExecutionClient {
             liquidity_side,
         );
 
-        Money::new(commission, instrument.quote_currency())
+        Money::from_decimal(commission, instrument.quote_currency())
+            .expect("commission should be representable as Money")
     }
 }

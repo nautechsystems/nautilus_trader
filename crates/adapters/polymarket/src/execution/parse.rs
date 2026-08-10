@@ -188,6 +188,11 @@ fn parse_expiration_nanos(value: &str) -> Option<u64> {
 /// Produces one fill report for the overall trade. The `trade_id` is
 /// derived from the Polymarket trade ID. Commission is computed from the
 /// instrument's effective taker fee rate, fee exponent, and fill notional.
+///
+/// # Panics
+///
+/// Panics if the trade identifiers are invalid or the computed commission exceeds the
+/// representable range of [`Money`].
 #[expect(clippy::too_many_arguments)]
 pub fn parse_fill_report(
     trade: &PolymarketTradeReport,
@@ -217,7 +222,8 @@ pub fn parse_fill_report(
         trade.price,
         liquidity_side,
     );
-    let commission = Money::new(commission_value, currency);
+    let commission = Money::from_decimal(commission_value, currency)
+        .expect("commission should be representable as Money");
 
     let ts_event = parse_timestamp(&trade.match_time).unwrap_or(ts_init);
 
@@ -245,6 +251,10 @@ pub fn parse_fill_report(
 /// Used by both the WS stream handler and REST fill report generation since both
 /// share the same [`PolymarketMakerOrder`] type for maker fills. Maker fills never
 /// pay commission per Polymarket's fee rules.
+///
+/// # Panics
+///
+/// Panics if the maker order or generated trade identifier is invalid.
 #[expect(clippy::too_many_arguments)]
 pub fn build_maker_fill_report(
     mo: &PolymarketMakerOrder,
@@ -289,7 +299,8 @@ pub fn build_maker_fill_report(
         order_side,
         last_qty,
         last_px,
-        commission: Money::new(commission_value, currency),
+        commission: Money::from_decimal(commission_value, currency)
+            .expect("commission should be representable as Money"),
         liquidity_side,
         avg_px: None,
         report_id: UUID4::new(),
@@ -408,14 +419,13 @@ pub fn compute_commission(
     size: Decimal,
     price: Decimal,
     liquidity_side: LiquiditySide,
-) -> f64 {
+) -> Decimal {
     if liquidity_side != LiquiditySide::Taker || fee_rate.is_zero() {
-        return 0.0;
+        return Decimal::ZERO;
     }
 
     let commission = size * fee_curve_rate(fee_rate, price, fee_exponent);
-    let rounded = commission.round_dp(5);
-    rounded.to_string().parse().unwrap_or(0.0)
+    commission.round_dp(5)
 }
 
 fn fee_curve_rate(fee_rate: Decimal, price: Decimal, fee_exponent: f64) -> Decimal {
@@ -651,7 +661,7 @@ mod tests {
             OrderSide::Buy,
             Quantity::new(qty, 4),
             Price::new(px, 4),
-            Money::new(0.0, Currency::pUSD()),
+            Money::zero(Currency::pUSD()),
             LiquiditySide::Taker,
             None,
             None,
@@ -729,26 +739,26 @@ mod tests {
     }
 
     #[rstest]
-    #[case::crypto_p50("0.07", "0.50", 1.75)]
-    #[case::crypto_p01("0.07", "0.01", 0.0693)]
-    #[case::crypto_p05("0.07", "0.05", 0.3325)]
-    #[case::crypto_p10("0.07", "0.10", 0.63)]
-    #[case::crypto_p30("0.07", "0.30", 1.47)]
-    #[case::crypto_p70("0.07", "0.70", 1.47)]
-    #[case::crypto_p90("0.07", "0.90", 0.63)]
-    #[case::crypto_p99("0.07", "0.99", 0.0693)]
-    #[case::sports_p50("0.05", "0.50", 1.25)]
-    #[case::sports_p30("0.05", "0.30", 1.05)]
-    #[case::sports_p70("0.05", "0.70", 1.05)]
-    #[case::politics_p50("0.04", "0.50", 1.0)]
-    #[case::politics_p30("0.04", "0.30", 0.84)]
-    #[case::economics_p50("0.05", "0.50", 1.25)]
-    #[case::economics_p30("0.05", "0.30", 1.05)]
-    #[case::geopolitics_p50("0", "0.50", 0.0)]
+    #[case::crypto_p50("0.07", "0.50", dec!(1.75))]
+    #[case::crypto_p01("0.07", "0.01", dec!(0.0693))]
+    #[case::crypto_p05("0.07", "0.05", dec!(0.3325))]
+    #[case::crypto_p10("0.07", "0.10", dec!(0.63))]
+    #[case::crypto_p30("0.07", "0.30", dec!(1.47))]
+    #[case::crypto_p70("0.07", "0.70", dec!(1.47))]
+    #[case::crypto_p90("0.07", "0.90", dec!(0.63))]
+    #[case::crypto_p99("0.07", "0.99", dec!(0.0693))]
+    #[case::sports_p50("0.05", "0.50", dec!(1.25))]
+    #[case::sports_p30("0.05", "0.30", dec!(1.05))]
+    #[case::sports_p70("0.05", "0.70", dec!(1.05))]
+    #[case::politics_p50("0.04", "0.50", dec!(1.0))]
+    #[case::politics_p30("0.04", "0.30", dec!(0.84))]
+    #[case::economics_p50("0.05", "0.50", dec!(1.25))]
+    #[case::economics_p30("0.05", "0.30", dec!(1.05))]
+    #[case::geopolitics_p50("0", "0.50", dec!(0.0))]
     fn test_compute_commission_docs_table(
         #[case] fee_rate: &str,
         #[case] price: &str,
-        #[case] expected: f64,
+        #[case] expected: Decimal,
     ) {
         let commission = compute_commission(
             Decimal::from_str_exact(fee_rate).unwrap(),
@@ -757,10 +767,7 @@ mod tests {
             Decimal::from_str_exact(price).unwrap(),
             LiquiditySide::Taker,
         );
-        assert!(
-            (commission - expected).abs() < 1e-10,
-            "at p={price}, fee_rate={fee_rate}: expected {expected}, was {commission}"
-        );
+        assert_eq!(commission, expected);
     }
 
     #[rstest]
@@ -775,10 +782,7 @@ mod tests {
             dec!(0.97),
             LiquiditySide::Taker,
         );
-        assert!(
-            (commission - 0.03240).abs() < 1e-5,
-            "expected 0.03240, was {commission}"
-        );
+        assert_eq!(commission, dec!(0.03240));
     }
 
     #[rstest]
@@ -794,10 +798,7 @@ mod tests {
             dec!(0.98),
             LiquiditySide::Taker,
         );
-        assert!(
-            (commission - 0.00005).abs() < 1e-5,
-            "expected 0.00005, was {commission}"
-        );
+        assert_eq!(commission, dec!(0.00005));
     }
 
     #[rstest]
@@ -809,14 +810,14 @@ mod tests {
             Decimal::from_str_exact("0.50").unwrap(),
             LiquiditySide::Maker,
         );
-        assert_eq!(commission, 0.0);
+        assert_eq!(commission, dec!(0));
     }
 
     #[rstest]
     fn test_compute_commission_uses_fee_exponent() {
         let commission =
             compute_commission(dec!(0.04), 2.0, dec!(10), dec!(0.5), LiquiditySide::Taker);
-        assert_eq!(commission, 0.025);
+        assert_eq!(commission, dec!(0.025));
     }
 
     #[rstest]
@@ -852,8 +853,6 @@ mod tests {
             Decimal::from_str_exact(price).unwrap(),
             liquidity_side,
         );
-
-        let expected = Decimal::from_str_exact(expected.to_string().as_str()).unwrap();
 
         assert_eq!(commission.as_decimal(), expected);
     }
@@ -1445,7 +1444,7 @@ mod tests {
         assert_eq!(report.instrument_id, instrument_id);
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
-        assert_eq!(report.commission.as_f64(), 0.0);
+        assert_eq!(report.commission.as_decimal(), dec!(0.0));
     }
 
     #[rstest]
@@ -1474,7 +1473,7 @@ mod tests {
         );
 
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
-        assert_eq!(report.commission.as_f64(), 0.04688);
+        assert_eq!(report.commission.as_decimal(), dec!(0.04688));
     }
 
     #[rstest]

@@ -74,6 +74,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
 - Fixed Derive cancel‑only replacements and reused labels during order reconciliation
+- Fixed Polymarket commissions to preserve exact decimal values in `Money` construction
 - Fixed Polymarket maker fill ownership and reported mass‑status trade drops (#4662), thanks @seungpyoson
 - Fixed Polymarket WebSocket asset and discovery subscription replay across reconnects
 - Fixed Polymarket WebSocket buffered fills emitting after a terminal order status, which left canceled orders `PartiallyFilled` and dropped fills on market‑resolution expiry
