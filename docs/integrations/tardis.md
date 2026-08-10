@@ -806,8 +806,7 @@ from nautilus_trader.adapters.tardis import TardisDataClientFactory
 
 
 stream_options = StreamNormalizedRequestOptions.from_json(
-    b'{"exchange":"binance-futures","symbols":["BTCUSDT"],'
-    b'"dataTypes":["trade","quote"]}',
+    b'{"exchange":"binance-futures","symbols":["BTCUSDT"],"dataTypes":["trade","quote"]}',
 )
 config = TardisDataClientConfig(stream_options=[stream_options])
 factory = TardisDataClientFactory()
