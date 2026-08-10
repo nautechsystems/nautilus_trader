@@ -2,34 +2,28 @@
 
 Kraken offers spot and derivatives trading across a wide range of digital
 assets. This integration connects to Kraken Pro and supports live market data
-ingest and order execution for Kraken Spot and Kraken Derivatives (Futures).
+and order execution for Kraken Spot and Kraken Derivatives (Futures).
 
 ## Overview
 
-This adapter is implemented in Rust with Python bindings for ease of use in
-Python-based workflows. It does not require external Kraken client libraries; the
-core components are compiled as a static library and linked automatically during
-the build.
+The adapter is implemented in Rust with Python bindings and does not require an
+external Kraken client library. Each data or execution configuration selects a
+Spot or Futures client through its `product_type`.
 
-This guide assumes a trader is setting up for both live market data feeds and
-trade execution. The Kraken adapter includes multiple components, which can be
-used together or separately depending on the use case.
+The main Python components are:
 
-- `KrakenSpotRawHttpClient` and `KrakenFuturesRawHttpClient`: Low-level HTTP
-  API connectivity.
-- `KrakenSpotHttpClient` and `KrakenFuturesHttpClient`: Higher-level HTTP
-  clients with instrument caching and reconciliation support.
-- `KrakenInstrumentProvider`: Instrument parsing and loading functionality.
-- `KrakenDataClient`: Market data feed manager.
-- `KrakenExecutionClient`: Account management and trade execution gateway.
-- `KrakenDataClientFactory`: Factory for Kraken data clients (used by the
-  trading node builder).
-- `KrakenExecutionClientFactory`: Factory for Kraken execution clients (used by
-  the trading node builder).
+- `KrakenDataClientConfig` and `KrakenExecClientConfig`: Live client
+  configuration.
+- `KrakenDataClientFactory` and `KrakenExecutionClientFactory`: Factories used
+  by the trading node builder.
+- `KrakenSpotHttpClient` and `KrakenFuturesHttpClient`: Lower‑level HTTP access
+  for direct requests.
+- `KrakenSpotWebSocketClient` and `KrakenFuturesWebSocketClient`: Lower‑level
+  WebSocket access.
 
 :::note
-Most users will define a configuration for a live trading node (as below), and
-won't need to work directly with these lower-level components.
+Most users configure these components through a live trading node and do not
+need to work directly with the lower‑level clients.
 :::
 
 ## Examples
@@ -41,22 +35,22 @@ won't need to work directly with these lower-level components.
 
 Kraken provides detailed documentation for users:
 
-- [Kraken API Documentation](https://docs.kraken.com/api/)
-- [Kraken Spot REST API](https://docs.kraken.com/api/docs/guides/spot-rest-intro)
-- [Kraken Futures REST API](https://docs.kraken.com/api/docs/futures-api)
+- [Kraken API documentation](https://docs.kraken.com/)
+- [Kraken Spot REST API](https://docs.kraken.com/exchange/guides/rest/introduction)
+- [Kraken Derivatives API](https://docs.kraken.com/exchange/guides/futures/introduction)
 
 Refer to the Kraken documentation in conjunction with this NautilusTrader
 integration guide.
 
 ## Products
 
-Kraken supports two primary product categories:
+The adapter supports these product categories:
 
-| Product Type         | Supported | Notes                                                     |
-| -------------------- | --------- | --------------------------------------------------------- |
-| Spot                 | ✓         | Standard cryptocurrency pairs with margin support.        |
-| Futures (Perpetual)  | ✓         | Inverse (`PI_`) and USD-margined (`PF_`) perpetual swaps. |
-| Futures (Dated/Flex) | ✓         | Fixed maturity (`FI_`) and flex (`FF_`) contracts.        |
+| Product type          | Supported | Notes                                               |
+| --------------------- | --------- | --------------------------------------------------- |
+| Spot currency pairs   | ✓         | Cash trading and margin on eligible pairs.          |
+| Spot tokenized assets | ✓         | Loaded from Kraken's `tokenized_asset` asset class. |
+| Futures               | ✓         | Instruments returned by the Kraken Futures API.     |
 
 :::note
 **Single product type per client**: Each Kraken data or execution client is
@@ -90,23 +84,22 @@ WebSocket. Use `request_bars()` for historical bar data instead.
 
 ### Bar emission latency
 
-Kraken's WebSocket OHLC channel pushes updates for the *current* (incomplete)
-bar on every trade. Unlike some exchanges (e.g., Binance), Kraken does not
-provide an "is_closed" indicator to signal when a bar is complete.
+Kraken's [Spot WebSocket OHLC channel](https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/ohlc)
+updates the current, incomplete bar on trade events. It does not provide a
+field that marks a bar as closed.
 
-To avoid emitting partial/incomplete bars, the adapter buffers the current bar
-and only emits it when the next bar period begins (i.e., when a message with a
-new `interval_begin` timestamp arrives). This means:
+During normal streaming, the adapter buffers the current bar and emits it after
+receiving an update with a new `interval_begin`. The delay therefore depends on
+the first trade in the next interval and is not bounded to one bar period when a
+market has no trades. When the WebSocket message handler stops, the adapter
+flushes its buffered bars, including a current bar that may still be incomplete.
 
-- Bars are emitted with a delay of up to one bar period.
-- For 1-minute bars, the maximum delay is ~1 minute.
-- The emitted bar data is complete and final.
+The adapter uses buffering instead of timer‑based emission because:
 
-We chose this approach over timer-based emission because:
-
-- Timer-based emission could miss the final update before the bar closes.
+- Timer‑based emission could miss the final update before the bar closes.
 - Kraken's updates are not guaranteed to arrive at exact interval boundaries.
-- Buffering preserves data integrity at the cost of latency.
+
+This favors the latest venue update at the cost of latency.
 
 :::warning
 If bar latency matters for your strategy, consider using trade tick data
@@ -124,7 +117,7 @@ trades and aggregating bars locally) rather than `EXTERNAL` exchange-provided ba
 
 ## Symbology
 
-### Bitcoin symbol format (BTC vs XBT)
+### Spot symbol normalization
 
 Kraken uses different Bitcoin symbol conventions across their APIs:
 
@@ -134,18 +127,20 @@ Kraken uses different Bitcoin symbol conventions across their APIs:
 | Futures | `XBT`         | `PI_XBTUSD.KRAKEN` | Uses Kraken's native XBT format.            |
 
 :::note
-Kraken's REST API returns `XBT` for Bitcoin (following ISO 4217 conventions for
-supranational currencies), but their WebSocket v2 API requires the `BTC` format.
-The adapter automatically normalizes spot symbols to `BTC` when loading instruments,
-whether XBT appears as the base currency (e.g., `XBT/USD` to `BTC/USD`) or quote
-currency (e.g., `ETH/XBT` to `ETH/BTC`). Futures retain Kraken's native `XBT` format.
+Kraken's REST API can return `XBT` for Bitcoin, while its WebSocket v2 API
+requires `BTC`. The adapter normalizes Spot symbols to `BTC` when loading
+instruments, whether `XBT` appears as the base currency (for example, `XBT/USD`
+to `BTC/USD`) or quote currency (for example, `ETH/XBT` to `ETH/BTC`). Futures
+retain Kraken's native `XBT` format.
 :::
+
+Kraken also uses `XDG` for Dogecoin in some Spot responses. The adapter
+normalizes it to `DOGE`, including in quote currency symbols.
 
 ### Spot markets
 
-NautilusTrader uses ISO 4217-A3 format for Kraken Spot instrument symbols,
-which provides a standardized representation across exchanges. The adapter
-handles translation to Kraken's native format internally.
+NautilusTrader uses normalized, slash‑separated symbols for Kraken Spot
+instruments. The adapter translates them to Kraken's native format internally.
 
 **Instrument ID format:**
 
@@ -162,7 +157,8 @@ InstrumentId.from_str("ETH/BTC.KRAKEN")  # Spot ETH/BTC (normalized from ETH/XBT
 Kraken Futures instruments use a specific naming convention with prefixes:
 
 - `PI_` - Perpetual Inverse contracts (e.g., `PI_XBTUSD`)
-- `PF_` - Perpetual Fixed-margin contracts (e.g., `PF_XBTUSD`)
+- `PF_` - Perpetual Fixed‑margin contracts (e.g., `PF_XBTUSD`)
+- `PV_` - Perpetual Vanilla contracts (e.g., `PV_XRPXBT`)
 - `FI_` - Fixed maturity Inverse contracts (e.g., `FI_XBTUSD_230929`)
 - `FF_` - Flex futures contracts
 
@@ -178,17 +174,17 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 
 ### Subscriptions (real-time)
 
-| Data type           | Spot | Futures | Notes                                   |
-| ------------------- | ---- | ------- | --------------------------------------- |
-| `QuoteTick`         | ✓    | ✓       | Derived from ticker channel.            |
-| `TradeTick`         | ✓    | ✓       |                                         |
-| `OrderBookDeltas`   | ✓    | ✓       | Spot L2/L3 and Futures L2 updates.      |
-| `OrderBookDepth10`  | -    | -       | Use `OrderBookDeltas` with depth `10`.  |
-| `Bar`               | ✓    | -       | Spot WS OHLC channel. See bar section.  |
-| `MarkPriceUpdate`   | -    | ✓       | From futures ticker feed.               |
-| `IndexPriceUpdate`  | -    | ✓       | From futures ticker feed.               |
-| `FundingRateUpdate` | -    | ✓       | Perpetuals only.                        |
-| `InstrumentStatus`  | ✓    | ✓       | The adapter polls instrument refreshes. |
+| Data type           | Spot | Futures | Notes                                    |
+| ------------------- | ---- | ------- | ---------------------------------------- |
+| `QuoteTick`         | ✓    | ✓       | Spot ticker; Futures L2 book.            |
+| `TradeTick`         | ✓    | ✓       |                                          |
+| `OrderBookDeltas`   | ✓    | ✓       | Spot L2/L3 and Futures L2 updates.       |
+| `OrderBookDepth10`  | -    | -       | Use `OrderBookDeltas` with depth `10`.   |
+| `Bar`               | ✓    | -       | Spot WS OHLC channel. See bar section.   |
+| `MarkPriceUpdate`   | -    | ✓       | From futures ticker feed.                |
+| `IndexPriceUpdate`  | -    | ✓       | From futures ticker feed.                |
+| `FundingRateUpdate` | -    | ✓       | Perpetuals only.                         |
+| `InstrumentStatus`  | -    | -       | Live clients do not emit status updates. |
 
 ### Requests (historical)
 
@@ -209,8 +205,7 @@ venue order ID into the `u64` `BookOrder.order_id` field used by NautilusTrader.
 ### Prerequisites
 
 L3 subscriptions require Spot API credentials because Kraken's `level3` channel
-is authenticated. Set them in `KrakenDataClientConfig` or via
-`KRAKEN_SPOT_API_KEY` and `KRAKEN_SPOT_API_SECRET`:
+is authenticated. Pass them to `KrakenDataClientConfig`:
 
 ```python
 from nautilus_trader.adapters.kraken import KrakenDataClientConfig
@@ -295,7 +290,7 @@ more events per instrument than L2. Recommended settings:
 | ---------------- | ---- | ------- | -------------------------------------------------------------- |
 | `post_only`      | ✓    | ✓       | Available for limit orders.                                    |
 | `reduce_only`    | ✓    | ✓       | Spot requires `spot_account_type=Margin` (margin orders only). |
-| `quote_quantity` | ✓    | -       | Spot only. Volume in quote currency (`viqc`).                  |
+| `quote_quantity` | ✓    | -       | Spot only. Volume in quote currency (`viqc`); REST routed.     |
 | `display_qty`    | ✓    | -       | Spot only. Iceberg orders (`displayvol`).                      |
 
 ### Trigger types
@@ -325,9 +320,10 @@ time rather than silently coercing them.
 :::note
 **Cancel all orders**:
 
-- Order side filtering is not supported; all orders are canceled regardless of side.
-- Spot: Cancels all open orders across all symbols.
-- Futures: Requires an `instrument_id`; cancels orders for that symbol only.
+- With no side filter, Spot cancels all open orders across all symbols, while
+  Futures cancels all orders for the requested instrument.
+- With a side filter, both clients select matching cached orders for the
+  requested instrument and cancel them individually.
 
 :::
 
@@ -337,7 +333,7 @@ time rather than silently coercing them.
 | ---------------- | ---- | ------- | --------------------------------------------------- |
 | Query positions  | ✓    | ✓       | Spot margin via `OpenPositions`; spot cash opt‑in.  |
 | Position mode    | -    | -       | Single position per instrument.                     |
-| Leverage control | ✓    | ✓       | Spot tiers; per‑order `params={"leverage": N}`.     |
+| Leverage control | ✓    | -       | Spot tiers; per‑order `params={"leverage": N}`.     |
 | Margin mode      | ✓    | ✓       | Spot/Futures cross margin; no isolated spot margin. |
 
 ### Order querying
@@ -351,78 +347,71 @@ time rather than silently coercing them.
 
 ### Contingent orders
 
-| Feature            | Spot | Futures | Notes                        |
-| ------------------ | ---- | ------- | ---------------------------- |
-| Order lists        | -    | -       | *Not supported*.             |
-| OCO orders         | -    | -       | *Not supported*.             |
-| Bracket orders     | -    | -       | *Not supported*.             |
-| Conditional orders | ✓    | ✓       | Stop and take‑profit orders. |
+| Feature            | Spot | Futures | Notes                                       |
+| ------------------ | ---- | ------- | ------------------------------------------- |
+| Linked order lists | -    | -       | Submitted lists contain independent orders. |
+| OCO orders         | -    | -       | *Not supported*.                            |
+| Bracket orders     | -    | -       | *Not supported*.                            |
+| Conditional orders | ✓    | ✓       | Stop and take‑profit orders.                |
 
 ## Order routing (Spot)
 
-The Spot execution client routes `submit_order`, `modify_order`,
-`cancel_order`, and `submit_order_list` through Kraken's authenticated
-WebSocket v2 trade channel by default, falling back to REST when the
-WebSocket is inactive. Set `use_ws_trade=False` on `KrakenExecClientConfig`
-to route all order operations through REST.
+The Spot execution client routes order submission, modification, cancellation,
+and batch cancellation through Kraken's authenticated WebSocket v2 trade
+channel by default. It falls back to REST when the WebSocket is inactive. Set
+`use_ws_trade=False` on `KrakenExecClientConfig` to route these operations
+through REST.
 
 ### Order shapes routed via REST
 
-Some Spot order shapes always route via REST. They split into two
-categories: shapes Kraken's WS v2 API does not support at all, and shapes
-the WS API supports but this adapter does not yet encode.
+Kraken's [Spot WebSocket v2 `add_order` method](https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/add_order)
+supports these shapes, but the adapter routes them through REST:
 
-**Kraken WS v2 limitation:**
+| Shape                      | Adapter behavior                                                  |
+| -------------------------- | ----------------------------------------------------------------- |
+| `FOK` time in force        | The WebSocket parameter builder does not encode `FOK`.            |
+| Trailing stop / stop‑limit | The WebSocket parameter builder does not encode trailing offsets. |
+| Iceberg (`display_qty`)    | The WebSocket parameter builder does not encode iceberg orders.   |
+| Quote‑quantity orders      | WS supports non‑margin buy market orders; the adapter uses REST.  |
 
-| Shape                     | Reason                                                |
-| ------------------------- | ----------------------------------------------------- |
-| Unsupported trigger types | `triggers.reference` accepts only `last` and `index`. |
-| Mixed‑symbol order lists  | `batch_add` requires a single shared symbol.          |
-
-**Not yet encoded by this adapter (follow-up work, currently REST):**
-
-| Shape                      | Notes                                                                                |
-| -------------------------- | ------------------------------------------------------------------------------------ |
-| `FOK` time in force        | Encodable as the `FOK` time in force, but the builder routes REST.                   |
-| Trailing stop / stop‑limit | Encodable via `triggers.price` + `triggers.price_type`, but the builder routes REST. |
-| Iceberg (`display_qty`)    | Encodable as `order_type: "iceberg"` + `display_qty`, but the builder routes REST.   |
-| Quote‑quantity orders      | Buy market quote‑qty maps to `cash_order_qty`; routed REST today.                    |
+Mixed‑symbol order lists also use REST because Kraken's WebSocket `batch_add`
+request requires one shared symbol. Unsupported trigger references fall back to
+the REST path, which rejects them locally before sending a request to Kraken.
 
 The per-call `params={"use_ws_trade": False}` override forces a single
 command through REST regardless of the configured default. Set it on
-`SubmitOrder`, `ModifyOrder`, `CancelOrder`, or `SubmitOrderList`.
+`SubmitOrder`, `ModifyOrder`, `CancelOrder`, `SubmitOrderList`, or
+`BatchCancelOrders`.
 
 ### WebSocket request timeout
 
-When a WebSocket round-trip exceeds `ws_request_timeout_secs` (default `5`)
-the dispatcher treats the command outcome as unknown and leaves the order in
-its current in-flight state:
+When a WebSocket round‑trip exceeds `ws_request_timeout_secs` (default `5`),
+the venue outcome may still be unknown. The dispatcher handles each operation
+as follows:
 
-- Submit / batch_add: the dispatcher may send a best-effort compensating
-  `cancel_order` over the same WebSocket so a delayed venue acceptance is not
-  left as an orphan order.
-- Modify: the order remains in `PENDING_UPDATE`.
-- Cancel: the order remains in `PENDING_CANCEL`.
+- Submit and batch add: emits `OrderRejected` for each affected order, then
+  sends a best‑effort compensating cancel over the same WebSocket.
+- Modify: emits `OrderModifyRejected`.
+- Cancel: emits no rejection event, logs the timeout, and awaits
+  reconciliation.
 
-The timeout does not emit `OrderRejected`, `OrderModifyRejected`, or
-`OrderCancelRejected` by itself. If the venue actually accepted the command,
-WebSocket order updates or the live execution reconciliation engine
-(`open_check_interval_secs`) are the recovery path.
+A delayed venue acceptance can race with the local rejection. WebSocket order
+updates or the live execution reconciliation engine (`open_check_interval_secs`)
+recover divergent state.
 
 :::tip
-Set `ws_request_timeout_secs` comfortably above your observed round-trip
-latency (the default `5` is roughly 25x typical) so the timeout only fires
-under genuine network failure.
+Set `ws_request_timeout_secs` comfortably above your observed round‑trip
+latency so ordinary network variation does not trigger timeout recovery.
 :::
 
 ### WebSocket order-routing options
 
 `KrakenExecClientConfig` exposes:
 
-| Option                    | Default | Description                                                   |
-| ------------------------- | ------- | ------------------------------------------------------------- |
-| `use_ws_trade`            | `True`  | Route orders via WS when the trade channel is active.         |
-| `ws_request_timeout_secs` | `5`     | WS round‑trip timeout before marking command outcome unknown. |
+| Option                    | Default | Description                                             |
+| ------------------------- | ------- | ------------------------------------------------------- |
+| `use_ws_trade`            | `True`  | Route orders via WS when the trade channel is active.   |
+| `ws_request_timeout_secs` | `5`     | WS response timeout before operation‑specific recovery. |
 
 ## Reconciliation
 
@@ -453,8 +442,8 @@ the exchange state at startup or during operation.
   `OpenPositions`), the adapter emits a synthetic FLAT report on the next
   position-check tick so the engine reconciles to closed.
 - Margin balances: `POST /0/private/TradeBalance` is called alongside the
-  account-state refresh; used margin populates `MarginBalance.initial`,
-  remaining metrics flow into `AccountState.info` (see Spot margin trading).
+  account‑state refresh; used margin populates `MarginBalance.initial`, while
+  equity and free margin populate the summary balance (see Spot margin trading).
 
 ### Futures reconciliation
 
@@ -579,32 +568,24 @@ an invalid tier produces an `OrderDenied` event and never hits the venue.
 
 ### Reduce-only
 
-Margin orders can carry `reduce_only=True`; Kraken rejects the order if no
-matching position exists. Cash orders ignore the flag.
+Margin orders can carry `reduce_only=True` so they reduce an existing position
+without opening a larger opposite position. The adapter denies cash orders with
+`reduce_only` before sending them to Kraken.
 
 ### Account state
 
-When `spot_account_type=Margin`, the adapter calls Kraken's `TradeBalance`
-endpoint and surfaces the result in two places:
+When `spot_account_type=Margin`, the execution client calls Kraken's
+`TradeBalance` endpoint during account refreshes. The live account state uses:
 
-- `MarginBalance.initial`: used margin (`m`).
-- `AccountState.info` dict: full `TradeBalance` snapshot:
-  - `equity`: net equity
-  - `free_margin`: equity minus used margin
-  - `unrealized_pnl`: open-position P&L
-  - `margin_level`: equity / used margin (%) when positions are open
-  - `trade_balance`: collateral on deposit
-  - `equivalent_balance`: combined-currency wallet equivalent
-  - `cost_basis`, `valuation`, `unexecuted_value`, `used_margin`: raw `TradeBalance` fields
-  - `asset`: resolved denominating asset (e.g. `USD`, `GBP`)
+- Equity (`e`) and free margin (`mf`) for the balance denominated by
+  `margin_balance_asset`.
+- Used margin (`m`) for `MarginBalance.initial`. Maintenance margin is zero
+  because Kraken does not return a separate maintenance‑margin amount.
 
-A single INFO log line is emitted on every account state refresh:
-
-```text
-Margin metrics: equity=1234.56 GBP, free_margin=1100.00, unrealized_pnl=12.34
-```
-
-Strategies read the values via `account_state.info["equity"]`, etc.
+The lower‑level `KrakenSpotHttpClient` methods `request_margin_metrics()` and
+`request_account_state_with_metrics()` return the full `TradeBalance` metrics
+dictionary for direct consumers. The live execution client does not attach
+that dictionary to `AccountState.info`.
 
 ### Position reconciliation
 
@@ -617,60 +598,63 @@ wallet-derived, cash-mode-only).
 ## Funding rates
 
 The adapter receives funding rate data from the
-[Ticker](https://docs.kraken.com/api/docs/futures-api/websocket/ticker)
-WebSocket feed, which provides `relative_funding_rate` and `next_funding_rate_time` for
-perpetual futures.
+[Futures ticker](https://docs.kraken.com/exchange/api-reference/futures-websocket/ticker)
+WebSocket feed, which provides `relative_funding_rate` and
+`next_funding_rate_time` for perpetual futures.
 
-The `interval` field on `FundingRateUpdate` is `None` for Kraken because the ticker feed
-does not include a funding interval field and the Kraken API documentation does not
-specify a fixed funding period.
+The `interval` field on `FundingRateUpdate` is `None` for Kraken because the
+ticker feed does not include a funding interval field and the Kraken API
+documentation does not specify a fixed funding period.
 
 ## Rate limiting
 
-The adapter implements automatic rate limiting to comply with Kraken's API requirements.
+Each Kraken HTTP client applies an adapter‑side request throttle. The default is
+five requests per second and `max_requests_per_second` can override it. This is
+a request‑count throttle, not a complete model of Kraken's endpoint costs or
+account‑tier budgets.
 
-| Endpoint Type         | Limit (requests/sec) | Notes                              |
-| --------------------- | -------------------- | ---------------------------------- |
-| Spot REST (global)    | 5                    | Global rate limit for Spot API.    |
-| Futures REST (global) | 5                    | Global rate limit for Futures API. |
+Kraken applies different venue limits to Spot and Futures:
 
-:::info
-Kraken uses a counter-based rate limiting system with tier-dependent limits:
+- [Spot REST rate limits](https://docs.kraken.com/exchange/guides/rest/ratelimits)
+  use a tier‑dependent call counter. Ledger and trade history calls add `2`,
+  most other REST calls add `1`, and order management uses a separate trading
+  limiter.
+- [Derivatives rate limits](https://docs.kraken.com/exchange/guides/futures/ratelimits)
+  use endpoint costs and separate budgets for `/derivatives` and `/history`
+  paths.
 
-- **Starter tier**: 15 max counter, -0.33/sec decay
-- **Intermediate tier**: 20 max counter, -0.5/sec decay
-- **Pro tier**: 20 max counter, -1/sec decay
+The current Spot REST call‑counter limits are:
 
-Ledger/trade history calls add +2 to the counter; other calls add +1.
-:::
+| Spot tier    | Maximum counter | Counter decay |
+| ------------ | --------------- | ------------- |
+| Starter      | 15              | 0.33/second   |
+| Intermediate | 20              | 0.5/second    |
+| Pro          | 20              | 1/second      |
 
-:::warning
-Kraken may temporarily block IP addresses that exceed rate limits. The adapter
-automatically queues requests when limits are approached.
-:::
+If the adapter's fixed request rate is too high for the endpoint mix and account
+tier, Kraken can still reject or throttle requests.
 
 ### Reconciliation interval guidance
 
 The execution engine's `open_check_interval_secs` and
-`position_check_interval_secs` settings create sustained REST API load that
-can exhaust Kraken's counter-based rate limit, especially on the Starter tier
-where the counter decays at only 0.33/sec. Each open-order check generates
-1-3 REST calls (+1 or +2 counter each), and at short intervals the counter
-overflows before it can decay, causing `EAPI:Rate limit exceeded` errors.
+`position_check_interval_secs` settings create sustained private REST API load.
+Short intervals can exhaust Kraken's venue budgets even when the adapter stays
+below its configured requests‑per‑second throttle.
 
-Recommended settings for Kraken:
+Use conservative intervals as a starting point, especially for a Spot Starter
+account:
 
 ```python
 exec_engine = LiveExecEngineConfig(
     reconciliation=True,
-    open_check_interval_secs=30.0,  # 30s minimum for Starter tier
-    position_check_interval_secs=120.0,  # 2 minutes
+    open_check_interval_secs=30.0,  # Conservative Spot Starter-tier starting point
+    position_check_interval_secs=120.0,
 )
 ```
 
-Higher-tier accounts with faster counter decay can use shorter intervals.
-If you see `EAPI:Rate limit exceeded` errors in the logs, increase these
-intervals or reduce `max_requests_per_second` in the adapter config.
+Tune these values for the account tier, enabled reconciliation checks, and other
+clients using the same API key. If Kraken returns `EAPI:Rate limit exceeded`,
+increase the intervals or reduce `max_requests_per_second`.
 
 ## Configuration
 
@@ -682,8 +666,8 @@ The product type for each client is specified via the `product_type` option.
 | ------------------------- | --------- | -------------------------------------------------------------- |
 | `product_type`            | `SPOT`    | Product type for this client (`SPOT` or `FUTURES`).            |
 | `environment`             | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures. |
-| `api_key`                 | `None`    | API key; loaded from environment variables when omitted.       |
-| `api_secret`              | `None`    | API secret; loaded from environment variables when omitted.    |
+| `api_key`                 | `None`    | API key for authenticated Spot data such as L3.                |
+| `api_secret`              | `None`    | API secret for authenticated Spot data such as L3.             |
 | `base_url`                | `None`    | Override for the Kraken REST base URL.                         |
 | `ws_public_url`           | `None`    | Override for the public WebSocket URL.                         |
 | `ws_private_url`          | `None`    | Override for the private WebSocket URL.                        |
@@ -693,13 +677,15 @@ The product type for each client is specified via the `product_type` option.
 | `timeout_secs`            | `30`      | HTTP request timeout in seconds.                               |
 | `heartbeat_interval_secs` | `30`      | WebSocket heartbeat interval in seconds.                       |
 | `ws_idle_timeout_ms`      | `10000`   | Idle timeout for the Spot v2 WebSocket; `0` disables.          |
-| `max_requests_per_second` | `None`    | Override rate limit; default is 5 req/s.                       |
+| `max_requests_per_second` | `None`    | Per‑client request throttle; default is 5 req/s.               |
 | `transport_backend`       | `Sockudo` | WebSocket transport backend.                                   |
 
 ### Execution client configuration options
 
 | Option                          | Default   | Description                                                           |
 | ------------------------------- | --------- | --------------------------------------------------------------------- |
+| `trader_id`                     | required  | Trader ID for the execution client.                                   |
+| `account_id`                    | required  | Account ID for the Kraken account.                                    |
 | `api_key`                       | required  | Kraken API key.                                                       |
 | `api_secret`                    | required  | Kraken API secret.                                                    |
 | `product_type`                  | `SPOT`    | Product type for this client (`SPOT` or `FUTURES`).                   |
@@ -709,12 +695,15 @@ The product type for each client is specified via the `product_type` option.
 | `proxy_url`                     | `None`    | Optional proxy URL for HTTP and WebSocket transports.                 |
 | `timeout_secs`                  | `30`      | HTTP request timeout in seconds.                                      |
 | `heartbeat_interval_secs`       | `30`      | WebSocket heartbeat interval in seconds.                              |
-| `max_requests_per_second`       | `None`    | Override rate limit; default is 5 req/s.                              |
+| `auth_timeout_secs`             | `None`    | Futures WebSocket auth timeout; `None` uses the client default.       |
+| `max_requests_per_second`       | `None`    | Per‑client request throttle; default is 5 req/s.                      |
 | `spot_account_type`             | `CASH`    | Account type for spot trading; `MARGIN` enables leverage and reports. |
 | `default_leverage`              | `None`    | Default spot margin leverage sent as `"N:1"` when set.                |
 | `use_spot_position_reports`     | `False`   | Report wallet balances as positions; cash mode only.                  |
 | `spot_positions_quote_currency` | `"USDT"`  | Quote currency filter for spot wallet position reports.               |
 | `margin_balance_asset`          | `None`    | Summary asset for `TradeBalance`; `None` defaults to `ZUSD`.          |
+| `use_ws_trade`                  | `True`    | Use Spot WebSocket v2 for order operations when active.               |
+| `ws_request_timeout_secs`       | `5`       | Spot WebSocket order response timeout.                                |
 | `transport_backend`             | `Sockudo` | WebSocket transport backend.                                          |
 
 For spot margin, `default_leverage` applies when an order has no per-order leverage
@@ -725,12 +714,13 @@ per-position figures remain in the pair's quote currency.
 
 To test with Kraken Futures demo (paper trading):
 
-1. Sign up at [https://demo-futures.kraken.com](https://demo-futures.kraken.com)
+1. Sign up at [Kraken Futures demo](https://demo-futures.kraken.com)
    and generate API credentials.
-2. Set environment variables with your demo credentials:
+1. Set environment variables with your demo credentials:
    - `KRAKEN_FUTURES_DEMO_API_KEY`
    - `KRAKEN_FUTURES_DEMO_API_SECRET`
-3. Configure the adapter with `environment=KrakenEnvironment.DEMO` and
+1. Read the credentials and pass them to `KrakenExecClientConfig`, then set
+   `environment=KrakenEnvironment.DEMO` and
    `product_type=KrakenProductType.FUTURES`.
 
 The [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/kraken/)
@@ -738,15 +728,23 @@ show the complete demo and live `LiveNode` configurations.
 
 ### Production configuration
 
-Use `KrakenDataClientConfig` with `KrakenDataClientFactory` and `KrakenExecClientConfig` with
-`KrakenExecutionClientFactory`. The current Python examples show the complete
-`LiveNode.builder(...)` configuration for data and execution clients.
+Use `KrakenDataClientConfig` with `KrakenDataClientFactory`, and use
+`KrakenExecClientConfig` with `KrakenExecutionClientFactory`. The Python
+examples show the complete `LiveNode.builder(...)` configuration for data and
+execution clients.
 
 ### API credentials
 
-There are two options for supplying your credentials to the Kraken clients.
-Either pass the corresponding `api_key` and `api_secret` values to the
-configuration objects, or set the following environment variables:
+Live‑node configuration objects do not read credential environment variables
+automatically. Pass `api_key` and `api_secret` explicitly to
+`KrakenExecClientConfig` and, for Spot L3 data, to `KrakenDataClientConfig`.
+Public market data does not require credentials.
+
+The lower‑level Python HTTP and WebSocket clients load the following variables
+when their credential arguments are omitted. Rust applications can use
+`KrakenCredential::from_env_spot()` or
+`KrakenCredential::from_env_futures(demo)` to load them before constructing
+live‑node configs.
 
 | Environment Variable             | Description                              |
 | -------------------------------- | ---------------------------------------- |
@@ -764,11 +762,13 @@ does not have a demo or testnet environment.
 :::
 
 :::tip
-We recommend using environment variables to manage your credentials.
+Use environment variables to store credentials, then pass their values into
+live‑node configuration at the application boundary.
 :::
 
-When starting the trading node, you'll receive immediate confirmation of whether
-your credentials are valid and have trading permissions.
+Authentication errors are reported when a private client connects or performs a
+private operation. Required permissions depend on the requested data or trading
+operation.
 
 ## Contributing
 
