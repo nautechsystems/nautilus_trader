@@ -2,13 +2,15 @@
 
 ## Introduction
 
-Adapters connect NautilusTrader to venues and data providers. A good adapter does more than move
-bytes: it preserves venue semantics, produces valid Nautilus domain events, and makes uncertain
-outcomes explicit. The work is exacting, but the repository already provides strong contracts and
-useful examples.
+Use this guide to build or extend a Rust‑native adapter for NautilusTrader v2. Adapters connect the
+platform to venues and data providers, preserve venue semantics, produce valid Nautilus domain
+events, and make uncertain outcomes explicit. They implement the platform data and execution
+client traits in Rust, then expose configs, factories, and selected low‑level APIs to Python
+through PyO3.
 
-Adapters are Rust‑native. They implement the platform data and execution client traits in Rust,
-then expose configs, factories, and selected low‑level APIs to Python through PyO3.
+:::note
+Python v2 will eventually provide a custom‑adapter API that matches Python v1.
+:::
 
 Use reference adapters selectively. Their layouts reflect different venue protocols, product
 families, and implementation histories.
@@ -99,9 +101,9 @@ Product‑specific splits are legitimate when product families have different pr
 client can also span distinct endpoints when request and state semantics remain common. Match the
 venue's real boundaries and keep shared behavior above those splits.
 
-Python package files live under `python/nautilus_trader/adapters/<adapter>/`. In current Rust‑native
-adapters, the package usually re‑exports generated bindings. Change Rust binding metadata or other
-generator inputs, then run `make py-stubs`; do not edit generated `.pyi` files.
+An adapter's public Python package lives under `python/nautilus_trader/adapters/<adapter>/` and
+usually re‑exports generated bindings. Change Rust binding metadata or other generator inputs,
+then run `make py-stubs`; do not edit generated `.pyi` files.
 
 ### Repository and Python wiring
 
@@ -130,10 +132,9 @@ PyO3 module list as a public API allowlist. The
 Use these phases to organize the work. They describe dependencies, not release gates. A
 market‑data‑only adapter omits execution, and an adapter can complete one product before starting
 another. Keep the capability matrix current throughout the work rather than waiting for the final
-documentation phase. The step identifiers provide a shared vocabulary for progress and handoffs;
-omit steps that do not apply to the adapter.
+documentation phase. Omit phases and steps that do not apply to the adapter.
 
-### Before phase 1: Define scope
+### Phase 0: Define scope
 
 | Step | Component           | Work                                                                                                      |
 | ---- | ------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -225,7 +226,7 @@ base paths.
 | Step | Component             | Work                                                                                             |
 | ---- | --------------------- | ------------------------------------------------------------------------------------------------ |
 | 6.1  | Configuration structs | Finalize typed data and execution configs, defaults, environment fallback, and secret redaction. |
-| 6.2  | Client factories      | Implement Rust factories with the required clock and `CacheView` inputs.                         |
+| 6.2  | Client factories      | Implement Rust factories with `CacheView` inputs and the data client clock.                      |
 | 6.3  | PyO3 registration     | Register applicable factories and config extractors with the PyO3 registry.                      |
 | 6.4  | Python package        | Add the public package and Python boundary tests for the capabilities exposed to Python.         |
 | 6.5  | Generated stubs       | Add Rust stub metadata and regenerate the `.pyi` output with `make py-stubs`.                    |
@@ -1010,7 +1011,7 @@ owner when client objects can be cloned.
 
 ### Backpressure
 
-Current shared WebSocket transport and adapter event paths use unbounded Tokio channels so receive
+Shared WebSocket transport and adapter event paths use unbounded Tokio channels so receive
 loops do not wait for queue capacity. Preserve that convention for live event paths. Introducing a
 bounded channel, coalescing, dropping, or disconnect‑on‑full policy changes platform semantics and
 needs an explicit shared design, not an adapter‑local change.
@@ -1040,8 +1041,8 @@ where
     F: Future<Output = anyhow::Result<()>> + Send + 'static,
 {
     let handle = get_runtime().spawn(async move {
-        if let Err(error) = future.await {
-            log::warn!("{description} failed: {error:?}");
+        if let Err(e) = future.await {
+            log::warn!("{description} failed: {e:?}");
         }
     });
     self.tasks.push(handle);
@@ -1195,8 +1196,8 @@ Provide the applicable tester entry points:
 
 Python tester scripts build without connecting by default and require `--run` to connect.
 Execution testers require the separate `--live-orders` opt‑in before order submission. Preserve
-that safety boundary. Rust tester controls currently vary; inspect them before running, and make
-any new or revised execution tester default to `ExecTester` dry‑run behavior.
+that safety boundary. Rust tester controls vary; inspect them before running, and make any new or
+revised execution tester default to `ExecTester` dry‑run behavior.
 
 ### Python boundary testing
 
