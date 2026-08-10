@@ -30,18 +30,18 @@
 use std::hint::black_box;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use nautilus_execution::matching_core::{OrderMatchingCore, RestingOrder};
+use nautilus_execution::matching_core::{MatchAction, OrderMatchingCore, RestingOrder};
 use nautilus_model::{
     enums::{OrderSide, OrderSideSpecified, OrderType},
     events::{OrderEventAny, order::spec::OrderInitializedSpec},
     identifiers::{ClientOrderId, InstrumentId},
-    orders::{Order, OrderAny, PassiveOrderAny},
+    orders::{OrderAny, OrderError, PassiveOrderAny},
     types::{Price, Quantity},
 };
 
 const SIZES: &[usize] = &[4, 32, 100, 1_000];
 
-fn make_limit(side: OrderSide, price: &str, seq: usize) -> OrderAny {
+fn make_limit(side: OrderSide, price: &str, seq: usize) -> RestingOrder {
     let init = OrderInitializedSpec::builder()
         .client_order_id(ClientOrderId::from(format!("O-{seq}").as_str()))
         .order_side(side)
@@ -49,7 +49,8 @@ fn make_limit(side: OrderSide, price: &str, seq: usize) -> OrderAny {
         .quantity(Quantity::from("10"))
         .price(Price::from(price))
         .build();
-    OrderAny::from_events(vec![OrderEventAny::Initialized(init)]).unwrap()
+    let order = OrderAny::from_events(vec![OrderEventAny::Initialized(init)]).unwrap();
+    RestingOrder::from(&PassiveOrderAny::try_from(order).unwrap())
 }
 
 /// Builds a core seeded with `n` limit orders split evenly between bid and ask
@@ -64,33 +65,40 @@ fn seeded_core(n: usize) -> (OrderMatchingCore, Vec<ClientOrderId>, Vec<ClientOr
     let mut bid_ids = Vec::with_capacity(n / 2 + 1);
     let mut ask_ids = Vec::with_capacity(n / 2);
     for i in 0..n {
-        let (side, price) = if i % 2 == 0 {
-            (OrderSide::Buy, format!("100.{:02}", (i / 2) % 100))
-        } else {
-            (OrderSide::Sell, format!("101.{:02}", (i / 2) % 100))
-        };
-        let order = make_limit(side, &price, i);
-        let oid = order.client_order_id();
-        match side {
-            OrderSide::Buy => bid_ids.push(oid),
-            OrderSide::Sell => ask_ids.push(oid),
-            _ => unreachable!(),
+        let order = seeded_limit(i);
+        match order.order_side {
+            OrderSideSpecified::Buy => bid_ids.push(order.client_order_id),
+            OrderSideSpecified::Sell => ask_ids.push(order.client_order_id),
         }
-        core.add_order(RestingOrder::from(
-            &PassiveOrderAny::try_from(order).unwrap(),
-        ));
+        core.add_order(order);
     }
     (core, bid_ids, ask_ids)
+}
+
+fn seeded_limit(seq: usize) -> RestingOrder {
+    if seq.is_multiple_of(2) {
+        make_limit(OrderSide::Buy, &format!("100.{:02}", (seq / 2) % 100), seq)
+    } else {
+        make_limit(OrderSide::Sell, &format!("101.{:02}", (seq / 2) % 100), seq)
+    }
 }
 
 fn bench_add_order(c: &mut Criterion) {
     let mut group = c.benchmark_group("matching_core/add_order");
     // The duplicate-check in `add_order` is a `debug_assert!` and is stripped
     // in bench builds, so we measure only side routing + push at population n.
-    let new_order = make_limit(OrderSide::Buy, "200.00", usize::MAX);
-    let info = RestingOrder::from(&PassiveOrderAny::try_from(new_order).unwrap());
+    let info = make_limit(OrderSide::Buy, "200.00", usize::MAX);
 
     for &n in SIZES {
+        let (mut core, _, _) = seeded_core(n);
+        let before = core.get_orders();
+        core.add_order(info);
+        let after = core.get_orders();
+        assert_eq!(after.len(), before.len() + 1);
+        assert_eq!(after[0], info);
+        assert_eq!(&after[1..], before.as_slice());
+        assert_eq!(core.get_order(info.client_order_id), Some(&info));
+
         group.throughput(Throughput::Elements(1));
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
             b.iter_batched_ref(
@@ -111,6 +119,11 @@ fn bench_get_order(c: &mut Criterion) {
         // Target an ask-side order: hash index lookup is O(1) regardless of
         // side, so scaling shows index overhead vs bucket size, not scan cost.
         let target = *ask_ids.last().unwrap_or(bid_ids.last().unwrap());
+        let expected = seeded_limit(n - 1);
+        let before = core.get_orders();
+        assert_eq!(expected.client_order_id, target);
+        assert_eq!(core.get_order(target), Some(&expected));
+        assert_eq!(core.get_orders(), before);
 
         group.throughput(Throughput::Elements(1));
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, _| {
@@ -127,6 +140,9 @@ fn bench_order_exists(c: &mut Criterion) {
         let (core, _, _) = seeded_core(n);
         // Miss: hash index `contains_key` returns false in O(1).
         let missing = ClientOrderId::from("O-MISSING");
+        let before = core.get_orders();
+        assert!(!core.order_exists(missing));
+        assert_eq!(core.get_orders(), before);
 
         group.throughput(Throughput::Elements(1));
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, _| {
@@ -170,19 +186,30 @@ fn bench_delete_order(c: &mut Criterion) {
 
     for case in cases {
         for &n in SIZES {
+            let (mut core, target) = delete_input(case, n);
+            let before = core.get_orders();
+            let result = core.delete_order(target);
+
+            match case {
+                DeleteCase::Missing => {
+                    assert!(matches!(result, Err(OrderError::NotFound(id)) if id == target));
+                    assert_eq!(core.get_orders(), before);
+                }
+                _ => {
+                    assert!(result.is_ok());
+                    let expected = before
+                        .into_iter()
+                        .filter(|order| order.client_order_id != target)
+                        .collect::<Vec<_>>();
+                    assert_eq!(core.get_orders(), expected);
+                    assert!(!core.order_exists(target));
+                }
+            }
+
             group.throughput(Throughput::Elements(1));
             group.bench_with_input(BenchmarkId::new(case.label(), n), &n, |b, &n| {
                 b.iter_batched_ref(
-                    || {
-                        let (core, bids, asks) = seeded_core(n);
-                        let target = match case {
-                            DeleteCase::BidHead => bids[0],
-                            DeleteCase::BidTail => *bids.last().unwrap(),
-                            DeleteCase::AskHead => asks[0],
-                            DeleteCase::Missing => ClientOrderId::from("O-MISSING"),
-                        };
-                        (core, target)
-                    },
+                    || delete_input(case, n),
                     |(core, target)| {
                         // Missing returns Err: we don't unwrap to keep the
                         // hot path free of the panic branch.
@@ -196,10 +223,26 @@ fn bench_delete_order(c: &mut Criterion) {
     group.finish();
 }
 
+fn delete_input(case: DeleteCase, n: usize) -> (OrderMatchingCore, ClientOrderId) {
+    let (core, bid_ids, ask_ids) = seeded_core(n);
+    let target = match case {
+        DeleteCase::BidHead => bid_ids[0],
+        DeleteCase::BidTail => *bid_ids.last().unwrap(),
+        DeleteCase::AskHead => ask_ids[0],
+        DeleteCase::Missing => ClientOrderId::from("O-MISSING"),
+    };
+    (core, target)
+}
+
 fn bench_iterate(c: &mut Criterion) {
     let mut group = c.benchmark_group("matching_core/iterate");
 
     for &n in SIZES {
+        let no_fill = seeded_core(n).0;
+        let no_fill_orders = no_fill.get_orders();
+        assert_eq!(no_fill.iterate(), Vec::<MatchAction>::new());
+        assert_eq!(no_fill.get_orders(), no_fill_orders);
+
         // no_fill: ask above all bid limits, bid below all ask limits.
         // Measures clone + per-order match dispatch with no MatchAction
         // pushes (allocation-free hot path).
@@ -212,23 +255,34 @@ fn bench_iterate(c: &mut Criterion) {
             );
         });
 
+        let all_fills = all_fill_core(n);
+        let all_fill_orders = all_fills.get_orders();
+        let expected = all_fill_orders
+            .iter()
+            .map(|order| MatchAction::FillLimit(order.client_order_id))
+            .collect::<Vec<_>>();
+        assert_eq!(all_fills.iterate(), expected);
+        assert_eq!(all_fills.get_orders(), all_fill_orders);
+
         // all_fills: ask at 1.00 and bid at 200.00, every order matches.
         // Adds the per-order MatchAction push to the result vec on top of the
         // dispatch cost, exercising the `collect()` allocation path.
         group.bench_with_input(BenchmarkId::new("all_fills", n), &n, |b, &n| {
             b.iter_batched_ref(
-                || {
-                    let (mut core, _, _) = seeded_core(n);
-                    core.set_ask_raw(Price::from("1.00"));
-                    core.set_bid_raw(Price::from("200.00"));
-                    core
-                },
+                || all_fill_core(n),
                 |core| black_box(core.iterate()),
                 BatchSize::SmallInput,
             );
         });
     }
     group.finish();
+}
+
+fn all_fill_core(n: usize) -> OrderMatchingCore {
+    let (mut core, _, _) = seeded_core(n);
+    core.set_ask_raw(Price::from("1.00"));
+    core.set_bid_raw(Price::from("200.00"));
+    core
 }
 
 fn bench_predicates(c: &mut Criterion) {
@@ -238,6 +292,12 @@ fn bench_predicates(c: &mut Criterion) {
     core.set_ask_raw(Price::from("100.01"));
 
     let buy_price = Price::from("100.00");
+    let before = core.get_orders();
+    assert!(!core.is_limit_matched(OrderSideSpecified::Buy, buy_price));
+    assert!(core.is_stop_matched(OrderSideSpecified::Buy, buy_price));
+    assert!(!core.is_touch_triggered(OrderSideSpecified::Buy, buy_price));
+    assert!(!core.is_limit_fillable(OrderSideSpecified::Buy, buy_price));
+    assert_eq!(core.get_orders(), before);
 
     // Single-call predicates; useful as a baseline against `iterate` per-order cost.
     c.bench_function("matching_core/is_limit_matched/buy", |b| {

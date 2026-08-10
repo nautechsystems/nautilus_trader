@@ -847,7 +847,7 @@ impl AlternatingMarketOrders {
         Self {
             core: StrategyCore::new(config),
             instrument_id,
-            trade_size: Quantity::from("0.010"),
+            trade_size: Quantity::from("0.011"),
             max_orders,
             quote_count: 0,
             orders_submitted: 0,
