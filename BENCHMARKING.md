@@ -1,82 +1,79 @@
 # Benchmarking
 
-NautilusTrader is performance-sensitive software. This document describes
-how the project approaches benchmarking: what we measure, why, when, and
-with what tools. It is intended for contributors and reviewers who need to
-understand the policy before writing or evaluating performance work.
+NautilusTrader is performance-sensitive software. This policy explains what
+the project measures, which tools and controls it uses, and how contributors
+and reviewers should evaluate performance work.
 
-For practitioner detail (how to write a benchmark, run it locally, generate
-a flamegraph, registered templates) see
+For instructions on writing and running benchmarks, generating flamegraphs,
+and using the registered templates, see
 [`docs/developer_guide/benchmarking.md`](docs/developer_guide/benchmarking.md).
 
 ---
 
 ## Purpose
 
-Benchmarks exist to answer one of two questions:
+Benchmarks provide absolute measurements for workload sizing, implementation
+comparisons, and decisions about whether an optimization justifies its
+complexity.
 
-1. **How fast is this code today, in absolute terms?** Used when sizing a
-   workload, comparing alternatives, or judging whether an optimization is
-   worth the change in complexity.
-2. **Did this change shift performance in either direction?** Used as a
-   change-detection signal: regressions to catch, improvements to confirm.
-   Primarily lives in CI.
+Back‑to‑back comparisons show whether a proposed change shifts performance.
+This evidence is most useful when both runs use the same workload, toolchain,
+machine, and measurement controls.
 
-These two purposes call for different tools and different rigor. We use
-**Criterion** for the first and prefer instruction-counting tools (**iai**)
-for the second. A single benchmark may serve both purposes, but the
-methodology each requires is different and that distinction runs through
-the rest of this document.
+Choose a measurement based on the question it must answer. Criterion reports
+elapsed time for representative work, iai provides an instruction‑count signal
+for small and deterministic operations, and a profile identifies where a
+workload spends its time. A workload may support more than one measurement,
+but each result must follow its tool's method.
 
 ---
 
 ## Approach
 
-A few principles shape how the project treats benchmarks.
+Apply these principles when adding or evaluating benchmarks.
 
 **Benchmarks are documentation.** A benchmark records what we considered the
 hot path, what inputs we judged realistic, and what the resulting cost looked
 like at a point in time. Future contributors read benchmarks to understand
-where time goes, not just to verify changes haven't regressed.
+where time goes and which behavior a performance change must preserve. An
+unexplained regression is a code‑review concern.
 
 **Prefer measuring real units of work.** A benchmark that times a meaningful
 public method on a populated structure is more useful than one that times a
-private helper in isolation. The former survives refactoring; the latter
-breaks every time the caller changes.
+private implementation detail. The public method usually survives refactoring
+and continues to represent user‑visible work.
 
-**Bench what you optimize, not what is easy to bench.** Adding a benchmark
-because the code is convenient to drive does not justify the maintenance
-cost. New benchmarks should target hot paths or paths under active
-optimization, not arbitrary functions.
+**Target hot paths.** Adding a benchmark because the code is convenient to
+drive does not justify the maintenance cost. New benchmarks should target hot
+paths or work under active optimization.
 
-**Absolute numbers vary by machine; relative numbers vary less.** Wall-clock
-figures are not portable across hardware, and even ratios shift with cache
-sizes, microarchitecture, and frequency behavior. Compare back-to-back on
-the same machine when you need a meaningful delta. CI change detection
-runs on a fixed self-hosted machine; local numbers from a developer laptop
-should not be quoted as authoritative.
+**Compare equivalent wall-clock runs.** Wall-clock figures vary with cache
+sizes, microarchitecture, frequency behavior, thermal state, scheduler
+decisions, and ASLR. Compare back‑to‑back on the same machine under the same
+controls when evaluating a delta. Use a designated, documented performance
+host for authoritative absolute baselines; treat other machines as local
+evidence.
 
-**Don't optimize without measuring.** Profile or bench first. The codebase
-is large enough that intuition about hot paths is unreliable.
+**Measure before optimizing.** Profile or benchmark first. The codebase is
+large enough that intuition about hot paths is unreliable.
 
-**Don't claim a win without a bench.** Performance claims in PR descriptions
-or release notes should reference a benchmark or profile. "Faster" without
-numbers is not actionable for reviewers and won't survive the next refactor.
+**Support performance claims with evidence.** Performance claims in pull
+request descriptions or release notes should reference a benchmark or
+profile so reviewers can evaluate and reproduce the result.
 
 ---
 
-## What we bench, and when
+## What we bench
 
-Benchmarks are added in three contexts. Each has different scope and
-maintenance expectations.
+Choose the workload scope based on the behavior the result needs to represent.
 
-### 1. Hot-path micro-benchmarks (per crate)
+### Hot-path microbenchmarks
 
 These live in each crate's `benches/` folder and target individual functions
 or public methods judged to be hot paths. Examples:
 
-- `crates/execution/benches/matching_core.rs`: the `OrderMatchingCore` add /
-  delete / lookup / iterate API.
+- `crates/execution/benches/matching_core.rs`: the `OrderMatchingCore` add,
+  delete, lookup, and iterate API.
 - `crates/execution/benches/matching_engine.rs`: market data, order submission,
   passive matching, resting fills, modify, and cancel paths through
   `OrderMatchingEngine`.
@@ -90,79 +87,83 @@ Add one when:
 - A code path is performance-sensitive and lacks coverage.
 - A reviewer asks for evidence of a change's performance impact.
 
-Skip when:
+A separate microbenchmark is usually unnecessary when:
 
 - The function is straight-line code with no allocations or branches.
-- The function is on a cold administrative path (startup, config validation,
-  diagnostics).
-- An existing benchmark already covers the relevant work via a higher-level
-  call.
+- The function is on a cold administrative path such as startup,
+  configuration validation, or diagnostics.
+- A higher-level benchmark already covers the relevant work.
 
-### 2. End-to-end / scenario benchmarks
+### Scenario benchmarks
 
 These exercise larger units of work: ingesting a tick burst through the
 data engine, replaying a market session, dispatching through the live-node
-runner. Heavier to maintain but a closer proxy for user-observable
-performance than a single-function micro. Examples live under
-`crates/backtest/benches/`, `crates/data/benches/`, and `crates/live/benches/`.
-The backtest engine benchmark covers single‑stream and multi‑stream market data replay
-plus representative order workloads. Note that `crates/live/benches/` are still
-scoped (e.g. dispatch only, not the full select loop); the deeper
-runner-plus-engine workload is the ignored stress test at
-`crates/live/tests/stress.rs`.
+runner. They cost more to maintain but provide a closer proxy for
+user-observable performance than a single-function microbenchmark. Examples
+live under `crates/backtest/benches/`, `crates/data/benches/`, and
+`crates/live/benches/`.
 
-### 3. CI change-detection benches
+The backtest engine benchmark covers single‑stream and multi‑stream market
+data replay plus representative order workloads. Its
+[canonical v2 matrix](crates/backtest/benches/BENCHMARKS.md) replays checked‑in
+raw data with replay‑only, scheduled market‑order, passive limit‑order, and
+bar‑strategy scenarios. Each scenario checks an exact semantic fingerprint
+before Criterion measures either preloaded `run()` time or full data loading,
+engine setup, and `run()` time.
 
-A subset of crates runs benchmarks in CI on pushes to the `nightly`
-branch via the
-[`performance` workflow](.github/workflows/performance.yml). The included
-crates are listed in the `CI_BENCH_CRATES` variable of the workspace
-`Makefile` (currently `nautilus-core`, `nautilus-model`, `nautilus-common`,
-`nautilus-execution`, `nautilus-backtest`, and `nautilus-live`). To opt a new
-bench into nightly CI execution, register it in its crate's `Cargo.toml` and
-ensure that crate is in `CI_BENCH_CRATES`.
-
-CI does not currently fail PRs on Rust benchmark deltas: the performance
-workflow only runs on pushes to `nightly`, not on PR opens. Contributors
-investigating a suspected regression or confirming a claimed improvement
-should run a local Criterion comparison against `develop` for any PR that
-materially changes a hot path; the nightly run is consulted after the
-fact.
-
-### Python benchmarks vs Rust benches
-
-Add a Rust bench (Criterion or iai under `crates/<crate>/benches/`) when
-the work is in Rust and you want either an absolute number or an
-instruction‑count change signal. CodSpeed is suitable for a Python benchmark that
-measures end‑user PyO3 API cost not visible in a pure‑Rust bench.
-
-No canonical Python performance suite is wired into CI, so the nightly workflow
-runs only Rust benches. Before wiring a Python benchmark into nightly CI, prove
-that it exercises the `nautilus_trader` package built from `python/pyproject.toml`,
-then add its suite path and runner command in the same change.
+The benchmarks under `crates/live/benches/` cover scoped operations such as
+dispatch. The ignored stress test at `crates/live/tests/stress.rs` covers the
+deeper runner and engine workload.
 
 ---
 
-## Tooling at a glance
+## Nightly benchmark execution
 
-| Framework                                                     | Measures                                  | Use for                                              |
-| ------------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------- |
-| [**Criterion**](https://docs.rs/criterion/latest/criterion/)  | Wall‑clock time with confidence bands     | Anything ≥ 100 ns; absolute measurement; comparison. |
-| [**iai**](https://docs.rs/iai/latest/iai/)                    | Retired CPU instructions (via Cachegrind) | Sub‑100 ns functions; CI change detection.           |
-| [**flamegraph**](https://github.com/flamegraph-rs/flamegraph) | Sampled call‑stack profile                | Investigating where time goes inside a slow bench.   |
+The [`performance` workflow](.github/workflows/performance.yml) executes
+registered Rust Criterion and iai benchmarks on pushes to `nightly`. It does
+not compare benchmark deltas or gate pull requests.
+
+The `CI_BENCH_CRATES` variable in the workspace [`Makefile`](Makefile) is the
+authoritative crate set. Register a benchmark in its crate's `Cargo.toml`, then
+add the crate to `CI_BENCH_CRATES` when the nightly workflow does not already
+cover it.
+
+For a pull request that materially changes a hot path, run a local Criterion
+comparison against `develop`. The nightly workflow provides an execution check
+after the change reaches `nightly`.
+
+---
+
+## Python benchmarks and Rust benches
+
+Add a Rust bench under `crates/<crate>/benches/` when the measured work stays
+inside Rust. Use a Python benchmark when the workload must include end-user
+PyO3 API cost.
+
+The nightly workflow runs the registered Rust benches. CodSpeed is suitable
+when a Python-level workload is required and the benchmark proves that it
+exercises the `nautilus_trader` package built from `python/pyproject.toml`.
+Add the suite path and runner command with any future Python CI integration.
+
+---
+
+## Choosing a tool
+
+| Task                                                  | Tool                                                      | Result                                    |
+| ----------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------- |
+| Measure elapsed time or compare implementations       | [Criterion](https://docs.rs/criterion/latest/criterion/)  | Wall‑clock time with confidence intervals |
+| Detect instruction‑count changes in a small operation | [iai](https://docs.rs/iai/latest/iai/)                    | Retired CPU instructions under Cachegrind |
+| Locate work inside a representative slow path         | [flamegraph](https://github.com/flamegraph-rs/flamegraph) | Sampled call‑stack profile                |
 
 Criterion produces wall-clock numbers. They reflect what the user actually
 experiences but vary with CPU frequency, thermal state, scheduler decisions,
-ASLR, and cache state. Reduce that noise (see
-[Reducing noise](#reducing-noise) below) before quoting them.
+ASLR, and cache state. Apply the project's measurement controls before
+publishing them.
 
-iai counts machine instructions under valgrind's Cachegrind. For a fixed
-binary, toolchain, inputs, and environment the count is deterministic, so
-small changes in count are a reliable change signal in either direction.
-The count is not directly comparable to wall-clock time, and counts
-measured on different binaries (toolchain bumps, codegen changes) shift in
-ways that are not portable. Use iai to detect changes on the same machine
-and toolchain, not to size workloads.
+iai counts machine instructions under Cachegrind. For a fixed binary,
+toolchain, and input, the count gives a stable change signal. It is not
+directly comparable to wall-clock time, and code generation changes can shift
+it independently of runtime performance.
 
 For setup, examples, and templates, see the
 [developer guide](docs/developer_guide/benchmarking.md).
@@ -171,87 +172,58 @@ For setup, examples, and templates, see the
 
 ## Recording results
 
-We record benchmark results in three places, depending on context.
+Record benchmark results according to how readers will use them.
 
 **Inline Criterion HTML reports.** Each `cargo bench` run writes
 `target/criterion/<group>/<id>/report/index.html`. Criterion's saved
-baselines (in the same directory) provide PR-vs-base comparisons when the
-two runs are done back-to-back on the same machine.
+baselines in the same directory support local back-to-back comparisons.
 
-**Release notes.** When a change produces a measurable performance
-improvement, add a brief entry under "Internal Improvements" naming the
-optimized component. Don't paste full bench tables into release notes;
-one line is enough. Larger headline numbers belong in the PR description.
+**Component baseline reports.** A checked‑in `BENCHMARKS.md` records a
+reproducible baseline, its revision, and the measurement method. Refresh that
+report explicitly when a new baseline replaces the published one.
 
-**PR descriptions.** Substantive optimization or restructure efforts that
-span multiple changes should include a "headline numbers" table in the PR
-description, with hardware and toolchain noted alongside (see the example
-below). The PR description is the durable home for those numbers; release
-notes get one terse line.
+**Pull request descriptions.** Substantive optimization or restructuring work
+should include a headline comparison with the hardware, toolchain, and build
+profile. The pull request provides the durable context for the change and its
+measurements.
 
-We do not maintain a checked‑in historical bench database.
-Store durable results in PR descriptions and release notes.
+**Release notes.** A measured user-visible improvement belongs under
+"Internal Improvements" as a brief entry naming the optimized component. Keep
+detailed result tables in the pull request.
+
+The repository does not maintain a separate historical benchmark database.
+Pull request descriptions and Git history retain historical comparisons,
+while checked‑in component reports publish the reproducible baseline for their
+stated revision.
 
 ---
 
-## Reducing noise
+## Measurement requirements
 
-For Criterion runs whose numbers will be reported or compared, reduce noise
-before measuring:
+For Criterion runs whose numbers will be reported or compared:
 
 - **Build with the right profile.** Two profiles inherit from `release` and
   preserve full debug symbols:
-  - `bench`: the `cargo bench` default. No LTO, fast turnaround, suitable
-    for local iteration and ad-hoc comparison.
+  - `bench`: the `cargo bench` default. It omits LTO for faster local
+    iteration and ad-hoc comparison.
   - `bench-lto`: adds `lto = "fat"` and `codegen-units = 1` to match the
-    production release binary. Use this for any numbers that will be
-    reported or published (per-adapter `BENCHMARKS.md`, PR-description
-    headline tables, release-note figures): `cargo bench --profile bench-lto`.
-- **Quiesce the machine.** Close other workloads. On Linux, set the CPU
-  governor to `performance`:
+    production release binary. Use it for published results in component
+    `BENCHMARKS.md` reports, pull request descriptions, and release notes.
+- **Quiesce the machine.** Close other workloads. On Linux, use the
+  performance CPU governor and disable ASLR for the benchmark process.
+- **Reserve firmware controls for deeper analysis.** Hyper-threading and
+  dynamic frequency scaling can be controlled when the investigation needs
+  tighter conditions.
+- **Run the benchmark multiple times.** Report the best or median per case and
+  state which aggregate was used. Criterion's confidence intervals describe
+  each run; multiple full runs expose session-level drift.
+- **Record the measurement context.** Published results include the CPU model,
+  kernel or operating system, Rust toolchain, and build profile.
 
-  ```bash
-  sudo cpupower frequency-set -g performance
-  ```
+Cachegrind's virtual CPU model makes host quiescence and frequency scaling
+irrelevant to iai instruction counts. Run iai directly while keeping the
+binary, toolchain, and input fixed.
 
-- **Disable ASLR for repeatability** (Linux):
-
-  ```bash
-  setarch -R cargo bench --profile bench-lto -p <crate> --bench <name>
-  ```
-
-- **Disable hyper-threading and dynamic frequency scaling** in BIOS for
-  deeper analysis. Not required for casual measurement.
-- **Run the bench multiple times** and take the best or median per case.
-  Criterion's confidence intervals already help, but multiple full runs
-  catch session-level drift.
-- **Record the machine.** When publishing numbers, note CPU model,
-  kernel/OS, Rust toolchain, and which build profile produced them.
-  Numbers without this context are not actionable.
-
-Example header to accompany published results:
-
-```text
-Hardware: AMD Ryzen Threadripper 9980X (64C), Linux 6.17.0
-Toolchain: rustc 1.95.0
-Profile: bench-lto (release + lto = "fat" + codegen-units = 1, debug = full)
-```
-
-For iai, none of the above applies: Cachegrind's virtual CPU model means
-instruction counts do not depend on machine quiescence or frequency
-scaling. Run it directly without the noise mitigations above.
-
----
-
-## Summary
-
-- Two questions, two tools: Criterion for absolute time, iai for change detection.
-- Bench what you optimize, not what is easy to bench.
-- Reduce noise before quoting numbers; record the machine when you do.
-- Opt into nightly CI execution by adding the crate to `CI_BENCH_CRATES`.
-- Treat existing benchmarks as documentation of what we believe is hot.
-  Regressing one without explanation is a code-review concern.
-
-For implementation detail (writing benches, running locally, flamegraphs,
-templates), see
-[`docs/developer_guide/benchmarking.md`](docs/developer_guide/benchmarking.md).
+Follow the
+[published Criterion measurement procedure](docs/developer_guide/benchmarking.md#measure-criterion-for-publication)
+for the commands and result header.
