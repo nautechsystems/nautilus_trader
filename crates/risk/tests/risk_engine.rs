@@ -2928,6 +2928,147 @@ fn test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
 }
 
 #[rstest]
+#[case::not_reduce_only(false, true, true)]
+#[case::reduce_only_with_position(true, true, false)]
+#[case::reduce_only_without_position(true, false, false)]
+fn test_submit_order_below_min_notional_respects_reduce_only(
+    #[case] reduce_only: bool,
+    #[case] include_position_id: bool,
+    #[case] expect_denied: bool,
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+
+    let mut margin_account = margin_account_with_usdt_balance("100 USDT", "0 USDT", "100 USDT");
+    margin_account.set_default_leverage(dec!(10));
+    simple_cache
+        .add_account(AccountAny::Margin(margin_account))
+        .unwrap();
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("5000.00"),
+        Price::from("5000.00"),
+        Quantity::from("100"),
+        Quantity::from("100"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    simple_cache.add_quote(quote).unwrap();
+
+    let entry_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("0.002"))
+        .build();
+    let position_id = PositionId::from("P-MIN-NOTIONAL");
+    let mut fill = order_filled(
+        &entry_order,
+        &instrument_eth_usdt,
+        None,
+        Some(AccountId::from("BINANCE-001")),
+        Some(VenueOrderId::from("V-MIN-NOTIONAL")),
+        None,
+        None,
+        Some(Price::from("5000.00")),
+        None,
+        None,
+        None,
+    );
+    fill.position_id = Some(position_id);
+    let position = Position::new(&instrument_eth_usdt, fill);
+    assert_eq!(position.side, PositionSide::Short);
+    assert_eq!(position.quantity, Quantity::from("0.002"));
+    simple_cache
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.001"))
+        .reduce_only(reduce_only)
+        .build();
+    let notional = instrument_eth_usdt
+        .try_calculate_notional_value(order.quantity(), quote.ask_price, Some(true))
+        .unwrap();
+
+    assert_eq!(
+        instrument_eth_usdt.min_quantity(),
+        Some(Quantity::from("0.001"))
+    );
+    assert_eq!(
+        instrument_eth_usdt.min_notional(),
+        Some(Money::from("10.00 USDT"))
+    );
+    assert_eq!(notional, Money::from("5.00 USDT"));
+    assert!(order.would_reduce_only(position.side, position.quantity));
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let command_position_id = include_position_id.then_some(position_id);
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_eth_usdt.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        command_position_id,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let saved_process_messages =
+        get_process_order_event_handler_messages(&process_order_event_handler);
+    let saved_execute_messages =
+        get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    if expect_denied {
+        assert_eq!(saved_process_messages.len(), 1);
+        assert_eq!(
+            saved_process_messages[0].client_order_id(),
+            order.client_order_id()
+        );
+        assert_eq!(
+            saved_process_messages[0].message().unwrap(),
+            Ustr::from(
+                "NOTIONAL_BELOW_MINIMUM: min_notional=Money(10.00000000, USDT), notional=Money(5.00000000, USDT)"
+            )
+        );
+        assert!(saved_execute_messages.is_empty());
+    } else {
+        assert!(saved_process_messages.is_empty());
+        assert_eq!(saved_execute_messages.len(), 1);
+        let TradingCommand::SubmitOrder(forwarded) = &saved_execute_messages[0] else {
+            panic!("Expected SubmitOrder command");
+        };
+        assert_eq!(forwarded.client_order_id, order.client_order_id());
+        assert_eq!(forwarded.position_id, command_position_id);
+        assert!(forwarded.order_init.reduce_only);
+    }
+}
+
+#[rstest]
 fn test_submit_order_when_greater_than_max_notional_for_instrument_then_denies(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,

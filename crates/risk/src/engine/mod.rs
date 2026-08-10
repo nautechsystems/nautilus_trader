@@ -1433,8 +1433,9 @@ impl RiskEngine {
                 return false; // Denied
             }
 
-            // Check MIN notional instrument limit
-            if let Some(min_notional) = instrument.min_notional()
+            // Reduce-only orders may close residual positions below venue minimum
+            if !order.is_reduce_only()
+                && let Some(min_notional) = instrument.min_notional()
                 && notional.currency == min_notional.currency
                 && notional < min_notional
             {
