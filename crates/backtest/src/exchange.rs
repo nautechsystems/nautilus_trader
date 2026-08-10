@@ -490,54 +490,57 @@ impl SimulatedExchange {
     }
 
     /// Returns all open orders, optionally filtered by instrument ID.
+    ///
+    /// An instrument ID with no matching engine returns no orders.
     #[must_use]
     pub fn get_open_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<RestingOrder> {
-        instrument_id
-            .and_then(|id| {
-                self.matching_engines
-                    .get(&id)
-                    .map(OrderMatchingEngine::get_open_orders)
-            })
-            .unwrap_or_else(|| {
-                self.matching_engines
-                    .values()
-                    .flat_map(OrderMatchingEngine::get_open_orders)
-                    .collect()
-            })
+        match instrument_id {
+            Some(id) => self
+                .matching_engines
+                .get(&id)
+                .map_or_else(Vec::new, OrderMatchingEngine::get_open_orders),
+            None => self
+                .matching_engines
+                .values()
+                .flat_map(OrderMatchingEngine::get_open_orders)
+                .collect(),
+        }
     }
 
     /// Returns all open bid orders, optionally filtered by instrument ID.
+    ///
+    /// An instrument ID with no matching engine returns no orders.
     #[must_use]
     pub fn get_open_bid_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<RestingOrder> {
-        instrument_id
-            .and_then(|id| {
-                self.matching_engines
-                    .get(&id)
-                    .map(OrderMatchingEngine::get_open_bid_orders)
-            })
-            .unwrap_or_else(|| {
-                self.matching_engines
-                    .values()
-                    .flat_map(OrderMatchingEngine::get_open_bid_orders)
-                    .collect()
-            })
+        match instrument_id {
+            Some(id) => self
+                .matching_engines
+                .get(&id)
+                .map_or_else(Vec::new, OrderMatchingEngine::get_open_bid_orders),
+            None => self
+                .matching_engines
+                .values()
+                .flat_map(OrderMatchingEngine::get_open_bid_orders)
+                .collect(),
+        }
     }
 
     /// Returns all open ask orders, optionally filtered by instrument ID.
+    ///
+    /// An instrument ID with no matching engine returns no orders.
     #[must_use]
     pub fn get_open_ask_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<RestingOrder> {
-        instrument_id
-            .and_then(|id| {
-                self.matching_engines
-                    .get(&id)
-                    .map(OrderMatchingEngine::get_open_ask_orders)
-            })
-            .unwrap_or_else(|| {
-                self.matching_engines
-                    .values()
-                    .flat_map(OrderMatchingEngine::get_open_ask_orders)
-                    .collect()
-            })
+        match instrument_id {
+            Some(id) => self
+                .matching_engines
+                .get(&id)
+                .map_or_else(Vec::new, OrderMatchingEngine::get_open_ask_orders),
+            None => self
+                .matching_engines
+                .values()
+                .flat_map(OrderMatchingEngine::get_open_ask_orders)
+                .collect(),
+        }
     }
 
     /// Returns the account for this exchange, if an execution client is registered.
