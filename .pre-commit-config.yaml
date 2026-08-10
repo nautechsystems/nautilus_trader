@@ -1,4 +1,6 @@
 exclude: ^patches/pyo3-stub-gen/
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
 
 repos:
   ##############################################################################
@@ -127,6 +129,15 @@ repos:
             scripts/ci/(check-github-action-shas\.sh|test-github-action-shas\.bash)
           )$
         pass_filenames: false
+
+      - id: check-commit-message
+        name: check commit message
+        description: Validates the pending commit subject, body, and AI attribution
+        entry: python3 -B scripts/ci/check_commit_message.py
+        language: system
+        stages: [commit-msg]
+        always_run: true
+        verbose: true
 
       - id: test-cli-r2-upload-installer
         name: test CLI R2 installer upload

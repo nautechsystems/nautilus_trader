@@ -156,13 +156,15 @@ change. To check the pinned cargo tool versions against crates.io, run:
 make outdated
 ```
 
-### 3. Set up pre-commit
+### 3. Set up Git hooks
 
-Set up the pre-commit hook which will then run automatically at commit:
+Set up the file and commit‑message hooks, which run automatically when committing:
 
 ```bash
 prek install
 ```
+
+Rerun `prek install` after pulling a change to the configured hook types.
 
 Before opening a pull-request run the formatting and lint suite locally so that CI passes on the
 first attempt:

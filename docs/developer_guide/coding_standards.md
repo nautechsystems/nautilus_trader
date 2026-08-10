@@ -126,7 +126,10 @@ explaining the change.
 - Open with a capitalized imperative verb, so the subject describes what the commit does when applied.
   `Add`, `Fix`, `Improve`, `Refine`, `Update`, `Remove`, `Refactor`, and `Standardize` cover most of the history.
 - Name the affected surface (crate, adapter, subsystem, or type) so the log stays scannable.
-- Keep the subject between 10 and 60 characters for clear GitHub rendering and concise but descriptive text.
+- Keep the subject at 10 characters or more so it can name the affected surface clearly.
+- Aim for 60 characters or fewer for clear GitHub rendering and concise text. The commit‑message
+  hook warns without failing when the subject exceeds this target. The project plans to enforce
+  this limit in the future.
 - Do not end the subject with a period.
 
 ```text
@@ -169,4 +172,5 @@ restate the diff.
   issue, or `Related to #4547` when it is partial work.
 - GitHub appends the pull request number to the subject on squash merge, producing subjects such as
   `Fix TWAP child-order sizing and interval validation (#4544)`. Do not add that suffix by hand.
-- The appended suffix can make the resulting squash‑merged subject exceed the 60‑character limit.
+- Aim to keep the pull request title short enough for the appended suffix to leave the squash‑merged
+  subject at 60 characters or fewer.

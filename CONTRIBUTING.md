@@ -69,14 +69,16 @@ If you aren't sure where a change belongs, ask in the issue.
 Fork the repository and branch from `develop`, merging upstream changes regularly to keep your fork
 current. Then follow the [Environment setup guide](docs/developer_guide/environment_setup.md) for
 Rust, Python, and uv. With those in place, install the pinned development tools. This includes
-[prek](https://github.com/j178/prek), which runs pre-commit checks, formatters, and linters before
-each commit:
+[prek](https://github.com/j178/prek), which runs file checks before each commit and validates the
+commit message before Git records it:
 
 ```bash
 cargo install cargo-binstall --locked  # one-off prerequisite
 make install-tools
 prek install
 ```
+
+`prek install` installs both hook types configured by the repository.
 
 `make install-tools` reads pinned versions from `Cargo.toml`, `tools.toml`, and
 `python/pyproject.toml`. See
