@@ -1,48 +1,38 @@
 # Actors
 
-The `DataActor` class receives data, handles events, and manages state. The `Strategy` class extends it
-with order management capabilities.
+A data actor receives requested and subscribed data, handles system events, and manages component
+state. In Python, extend the `DataActor` class; in Rust, implement the `DataActor` trait. A strategy
+adds order‑management capabilities.
 
 **Key capabilities**:
 
-- Data subscription and requests (market data, custom data).
-- Event handling and publishing.
-- Timers and alerts.
+- Market and custom data subscriptions and requests.
+- Custom data and signal publishing.
+- Event, timer, and alert handling.
 - Cache access.
-- Logging.
+- Structured logging.
 
-## Basic example
+## Basic Python example
 
 Actors support configuration through a pattern similar to strategies.
 
 ```python
-from collections.abc import Sequence
-
 from nautilus_trader.common import DataActor
 from nautilus_trader.config import DataActorConfig
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
-from nautilus_trader.model import InstrumentId
 
 
 class MyActorConfig(DataActorConfig):
-    def __init__(
-        self,
-        instrument_id: InstrumentId,
-        bar_type: BarType,
-        lookback_period: int = 10,
-        **_kwargs,
-    ) -> None:
-        self.instrument_id = instrument_id
+    def __init__(self, bar_type: BarType, **_kwargs) -> None:
         self.bar_type = bar_type
-        self.lookback_period = lookback_period
 
 
 class MyActor(DataActor):
     def __init__(self, config: MyActorConfig) -> None:
         super().__init__(config)
 
-        # Custom state variables
+        # Keep runtime state on the actor
         self.count_of_processed_bars: int = 0
 
     def on_start(self) -> None:
@@ -55,81 +45,98 @@ class MyActor(DataActor):
 
 ## Actor configuration and IDs
 
-Data actors can receive a `DataActorConfig` subclass. The base config may include an `actor_id`;
-if supplied, the actor registers with that ID. If omitted, the system derives a runtime
-actor ID.
+Data actors can receive a `DataActorConfig` subclass. The base config accepts an optional `actor_id`.
+If supplied, the actor registers with that ID; otherwise, the system derives a runtime actor ID.
 
-Treat configuration as construction data for the actor. Read user-supplied settings through
+Treat configuration as construction data for the actor. Read user‑supplied settings through
 `self.config`, and keep runtime state on the actor itself.
 
 :::info Rust implementation
-For Rust actors, generated or assigned runtime IDs live on the actor core rather than being
-written back into `DataActorConfig`. This differs from Python bridge paths which may copy
-inherited config fields into runtime state when a Python object is created from an importable
-config.
+Rust actors store runtime identity and state in `DataActorCore`. Read the runtime ID through
+`actor_id()` rather than expecting a generated ID to be written back into `DataActorConfig`.
 
 Rust authors implement `DataActor` and use the facade methods on `self`.
-`DataActorNative` is native-only access for runtime wiring and borrowed
-core state. Import it only for same-binary performance paths or internal runtime wiring.
+`DataActorNative` is native‑only access for runtime wiring and borrowed
+core state. Import it only for same‑binary performance paths or internal runtime wiring.
 :::
 
 ## Lifecycle
 
-Actors follow a defined state machine through their lifecycle:
+Actors move through the main stable states shown below:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PRE_INITIALIZED
-    PRE_INITIALIZED --> READY : register()
-    READY --> STARTING : start()
-    STARTING --> RUNNING : on_start()
-    RUNNING --> STOPPING : stop()
-    STOPPING --> STOPPED : on_stop()
+    [*] --> READY : register()
+    READY --> RUNNING : start()
+    RUNNING --> STOPPED : stop()
     STOPPED --> RUNNING : resume()
-    RUNNING --> DEGRADING : degrade()
-    DEGRADING --> DEGRADED : on_degrade()
+    RUNNING --> DEGRADED : degrade()
     DEGRADED --> RUNNING : resume()
-    RUNNING --> FAULTING : fault()
-    FAULTING --> FAULTED : on_fault()
-    RUNNING --> DISPOSED : dispose()
+    STOPPED --> READY : reset()
+    RUNNING --> FAULTED : fault()
+    STOPPED --> DISPOSED : dispose()
 ```
+
+Main flow only: transitional states and less common valid edges are omitted. For actions with a
+lifecycle handler, the actor reaches the destination state only after that handler succeeds.
 
 Override these methods to hook into lifecycle events:
 
-| Method         | When called                                                         |
-| -------------- | ------------------------------------------------------------------- |
-| `on_start()`   | Actor is starting (subscribe to data here).                         |
-| `on_stop()`    | Actor is stopping (cancel timers, clean up resources).              |
-| `on_resume()`  | Actor is resuming from a stopped state.                             |
-| `on_reset()`   | Reset indicators and internal state (called between backtest runs). |
-| `on_degrade()` | Actor is entering a degraded state (partial functionality).         |
-| `on_fault()`   | Actor has encountered a fault.                                      |
-| `on_dispose()` | Actor is being disposed (final cleanup).                            |
+| Method         | When called                                                                    |
+| -------------- | ------------------------------------------------------------------------------ |
+| `on_start()`   | Actor is starting; subscribe to data here.                                     |
+| `on_stop()`    | Actor is stopping; clean up actor‑owned resources.                             |
+| `on_resume()`  | Actor is resuming after it stopped or degraded.                                |
+| `on_reset()`   | Actor is resetting, including when the engine resets between backtest runs.    |
+| `on_degrade()` | Actor is entering a degraded state and may provide only partial functionality. |
+| `on_fault()`   | Actor is entering the faulted state after it encounters a fault.               |
+| `on_dispose()` | Actor is being disposed and must release its remaining resources.              |
 
 ## Timers and alerts
 
 Actors have access to a clock for scheduling:
 
 ```python
+from datetime import timedelta
+
+from nautilus_trader.common import TimeEvent
+
+
 def on_start(self) -> None:
-    # Set a recurring timer with a callback (fires every 5 seconds)
+    self._schedule_clock_events()
+
+
+def on_resume(self) -> None:
+    self._schedule_clock_events()
+
+
+def on_stop(self) -> None:
+    self._cancel_clock_events()
+
+
+def on_degrade(self) -> None:
+    self._cancel_clock_events()
+
+
+def _cancel_clock_events(self) -> None:
+    self.clock.cancel_timer("my_actor.timer")
+    self.clock.cancel_timer("my_actor.alert")
+
+
+def _schedule_clock_events(self) -> None:
+    # Set a recurring timer with a callback that fires every 5 seconds
     self.clock.set_timer(
-        "my_timer",
+        "my_actor.timer",
         timedelta(seconds=5),
         callback=self._on_timer,
     )
 
     # Set a one-time alert with a callback
     self.clock.set_time_alert(
-        "my_alert",
+        "my_actor.alert",
         self.clock.utc_now() + timedelta(minutes=1),
         callback=self._on_alert,
     )
-
-
-def on_stop(self) -> None:
-    # Cancel timers to prevent resource leaks across stop/resume cycles
-    self.clock.cancel_timer("my_timer")
 
 
 def _on_timer(self, event: TimeEvent) -> None:
@@ -140,135 +147,125 @@ def _on_alert(self, event: TimeEvent) -> None:
     self.log.info("Alert triggered!")
 ```
 
-Pass a `callback` to direct `TimeEvent` objects to your own method. If you omit the callback, the
-event is delivered to `on_time_event` instead.
+Pass a `callback` to direct `TimeEvent` objects to your own method. Without one, the actor runtime
+connects the clock's registered default handler to `on_time_event()`. Use explicit callbacks when
+components share a clock. Timer names also share the clock's namespace, so use names unique to the
+component; registering the same name replaces the existing timer.
 
 ## System access
 
 Actors have access to core system components:
 
-| Property     | Description                                                             |
-| ------------ | ----------------------------------------------------------------------- |
-| `self.cache` | Shared state for instruments, orders, positions, etc.                   |
-| `self.clock` | Current time and timer/alert scheduling.                                |
-| `self.log`   | Structured logging.                                                     |
-| Signals      | Publish and subscribe with `publish_signal()` and `subscribe_signal()`. |
+| API                                       | Description                                          |
+| ----------------------------------------- | ---------------------------------------------------- |
+| `self.cache`                              | Shared state for instruments, orders, and positions. |
+| `self.clock`                              | Current time and timer or alert scheduling.          |
+| `self.log`                                | Structured logging.                                  |
+| `publish_data()` / `subscribe_data()`     | Structured custom data messaging.                    |
+| `publish_signal()` / `subscribe_signal()` | Lightweight alerts and notifications.                |
 
-For supported custom messaging between Python components, use signals. The raw message bus remains
-an internal runtime surface.
+The Python `DataActor` and `Strategy` APIs do not expose `self.msgbus`. Use custom data for
+structured payloads and signals for lightweight values.
 
 ## Data handling and callbacks
 
-The system uses different callback handlers depending on whether data is historical or real-time.
-Understanding the relationship between data *requests/subscriptions* and their handlers is key.
+The system dispatches request responses separately from subscribed updates. The operation determines
+which callback handles the data.
 
-### Historical vs real-time data
+### Request responses and subscriptions
 
 The system distinguishes between two data flows:
 
-1. **Historical data** (from *requests*):
+1. **Request responses**:
    - Obtained through methods like `request_bars()`, `request_quotes()`, etc.
-   - Processed through type-specific batch handlers such as `on_historical_bars()` and
+   - Processed through type‑specific batch handlers such as `on_historical_bars()` and
      `on_historical_quotes()`.
    - Custom data uses `on_historical_data()` once per response. A scalar `CustomData` arrives as
      that object, while a batch arrives as one list, including an empty list.
    - Used for initial data loading and historical analysis.
 
-2. **Real-time data** (from *subscriptions*):
+2. **Subscribed data**:
    - Obtained through methods like `subscribe_bars()`, `subscribe_quotes()`, etc.
    - Processed through specific handlers like `on_bar()`, `on_quote()`, etc.
-   - Used for live data processing.
+   - Used for ongoing event processing.
 
 ### Callback handlers
 
-Different data operations map to these handlers:
+Common data operations map to these handlers:
 
-| Operation                       | Category   | Handler                         | Purpose                                         |
-| ------------------------------- | ---------- | ------------------------------- | ----------------------------------------------- |
-| `subscribe_data()`              | Real‑time  | `on_data()`                     | Live data updates.                              |
-| `subscribe_instrument()`        | Real‑time  | `on_instrument()`               | Live instrument definition updates.             |
-| `subscribe_instruments()`       | Real‑time  | `on_instrument()`               | Live instrument definition updates (for venue). |
-| `subscribe_book_deltas()`       | Real‑time  | `on_book_deltas()`              | Live order book deltas.                         |
-| `subscribe_book_depth10()`      | Real‑time  | `on_book_depth()`               | Live order book depth snapshots.                |
-| `subscribe_book_at_interval()`  | Real‑time  | `on_book()`                     | Live order book snapshots at intervals.         |
-| `subscribe_quotes()`            | Real‑time  | `on_quote()`                    | Live quote updates.                             |
-| `subscribe_trades()`            | Real‑time  | `on_trade()`                    | Live trade updates.                             |
-| `subscribe_mark_prices()`       | Real‑time  | `on_mark_price()`               | Live mark price updates.                        |
-| `subscribe_index_prices()`      | Real‑time  | `on_index_price()`              | Live index price updates.                       |
-| `subscribe_bars()`              | Real‑time  | `on_bar()`                      | Live bar updates.                               |
-| `subscribe_funding_rates()`     | Real‑time  | `on_funding_rate()`             | Live funding rate updates.                      |
-| `subscribe_instrument_status()` | Real‑time  | `on_instrument_status()`        | Live instrument status updates.                 |
-| `subscribe_instrument_close()`  | Real‑time  | `on_instrument_close()`         | Live instrument close updates.                  |
-| `subscribe_option_greeks()`     | Real‑time  | `on_option_greeks()`            | Live option greeks updates.                     |
-| `subscribe_option_chain()`      | Real‑time  | `on_option_chain()`             | Live option chain slice snapshots.              |
-| `request_data()`                | Historical | `on_historical_data()`          | Historical custom data.                         |
-| `request_book_deltas()`         | Historical | `on_historical_book_deltas()`   | Historical order book deltas.                   |
-| `request_book_depth()`          | Historical | `on_historical_book_depth()`    | Historical order book depth.                    |
-| `request_book_snapshot()`       | Historical | `on_book()`                     | Historical order book snapshot.                 |
-| `request_instrument()`          | Historical | `on_instrument()`               | Instrument definition.                          |
-| `request_instruments()`         | Historical | `on_instrument()`               | Instrument definitions.                         |
-| `request_quotes()`              | Historical | `on_historical_quotes()`        | Historical quotes.                              |
-| `request_trades()`              | Historical | `on_historical_trades()`        | Historical trades.                              |
-| `request_bars()`                | Historical | `on_historical_bars()`          | Historical bars.                                |
-| `request_funding_rates()`       | Historical | `on_historical_funding_rates()` | Historical funding rates.                       |
+| Operation                       | Category     | Handler                         | Purpose                                    |
+| ------------------------------- | ------------ | ------------------------------- | ------------------------------------------ |
+| `subscribe_data()`              | Subscription | `on_data()`                     | Custom data updates.                       |
+| `subscribe_signal()`            | Subscription | `on_signal()`                   | Signal updates.                            |
+| `subscribe_instrument()`        | Subscription | `on_instrument()`               | Instrument definition updates.             |
+| `subscribe_instruments()`       | Subscription | `on_instrument()`               | Instrument definition updates for a venue. |
+| `subscribe_book_deltas()`       | Subscription | `on_book_deltas()`              | Order book deltas.                         |
+| `subscribe_book_depth10()`      | Subscription | `on_book_depth()`               | Order book depth snapshots.                |
+| `subscribe_book_at_interval()`  | Subscription | `on_book()`                     | Order book snapshots at intervals.         |
+| `subscribe_quotes()`            | Subscription | `on_quote()`                    | Quote updates.                             |
+| `subscribe_trades()`            | Subscription | `on_trade()`                    | Trade updates.                             |
+| `subscribe_mark_prices()`       | Subscription | `on_mark_price()`               | Mark price updates.                        |
+| `subscribe_index_prices()`      | Subscription | `on_index_price()`              | Index price updates.                       |
+| `subscribe_bars()`              | Subscription | `on_bar()`                      | Bar updates.                               |
+| `subscribe_funding_rates()`     | Subscription | `on_funding_rate()`             | Funding rate updates.                      |
+| `subscribe_instrument_status()` | Subscription | `on_instrument_status()`        | Instrument status updates.                 |
+| `subscribe_instrument_close()`  | Subscription | `on_instrument_close()`         | Instrument close updates.                  |
+| `subscribe_option_greeks()`     | Subscription | `on_option_greeks()`            | Option Greek updates.                      |
+| `subscribe_option_chain()`      | Subscription | `on_option_chain()`             | Option chain slice snapshots.              |
+| `request_data()`                | Request      | `on_historical_data()`          | Historical custom data.                    |
+| `request_book_deltas()`         | Request      | `on_historical_book_deltas()`   | Historical order book deltas.              |
+| `request_book_depth()`          | Request      | `on_historical_book_depth()`    | Historical order book depth.               |
+| `request_book_snapshot()`       | Request      | `on_book()`                     | Order book snapshot.                       |
+| `request_instrument()`          | Request      | `on_instrument()`               | Instrument definition.                     |
+| `request_instruments()`         | Request      | `on_instrument()`               | Instrument definitions.                    |
+| `request_quotes()`              | Request      | `on_historical_quotes()`        | Historical quotes.                         |
+| `request_trades()`              | Request      | `on_historical_trades()`        | Historical trades.                         |
+| `request_bars()`                | Request      | `on_historical_bars()`          | Historical bars.                           |
+| `request_funding_rates()`       | Request      | `on_historical_funding_rates()` | Historical funding rates.                  |
 
-### Example
+### Request and subscription example
 
-This example shows both historical and real-time data handling:
+This example shows both request and subscription handling:
 
 ```python
+from collections.abc import Sequence
+
 from nautilus_trader.common import DataActor
 from nautilus_trader.config import DataActorConfig
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
-from nautilus_trader.model import InstrumentId
 
 
 class MyActorConfig(DataActorConfig):
-    def __init__(self, instrument_id: InstrumentId, bar_type: BarType, **_kwargs) -> None:
-        self.instrument_id = instrument_id
+    def __init__(self, bar_type: BarType, **_kwargs) -> None:
         self.bar_type = bar_type
 
 
 class MyActor(DataActor):
     def __init__(self, config: MyActorConfig) -> None:
         super().__init__(config)
-        self.bar_type = config.bar_type
 
     def on_start(self) -> None:
-        # Request historical bars, which are processed by on_historical_bars()
+        # Limit the historical response, which is handled by on_historical_bars()
         self.request_bars(
-            bar_type=self.bar_type,
-            start=None,
-            end=None,
-            limit=None,
-            client_id=None,
-            params=None,
+            bar_type=self.config.bar_type,
+            limit=100,
         )
 
-        # Subscribe to real-time data - will be processed by on_bar() handler
-        self.subscribe_bars(
-            bar_type=self.bar_type,
-            # Many optional parameters
-            client_id=None,  # ClientId, optional
-            params=None,  # dict[str, Any], optional
-        )
+        # Deliver subscribed updates to on_bar()
+        self.subscribe_bars(self.config.bar_type)
 
     def on_historical_bars(self, bars: Sequence[Bar]) -> None:
         for bar in bars:
             self.log.info(f"Received historical bar: {bar}")
 
     def on_bar(self, bar: Bar) -> None:
-        # Handle real-time bar updates (from subscriptions)
-        self.log.info(f"Received real-time bar: {bar}")
+        self.log.info(f"Received subscribed bar: {bar}")
 ```
 
-Separating historical and real-time handlers lets you apply different processing logic
-based on context. For example:
-
-- Use historical data to initialize indicators or establish baseline metrics.
-- Process real-time data differently for live trading decisions.
-- Apply different validation or logging for historical vs real-time data.
+Separate request and subscription handlers let an actor distinguish bootstrap data from ongoing
+updates. Use historical bars to initialize indicators or baseline state, and apply different
+validation or logging to response batches and individual subscribed updates.
 
 :::tip
 When debugging data flow issues, check that you're looking at the correct handler for your data source.
@@ -278,13 +275,13 @@ If you're not seeing data in `on_bar()` but see log messages about receiving bar
 
 ## Order event handling
 
-The Python `DataActor` API does not expose order event callbacks or the raw message bus. Handle
-order events in a `Strategy` through its specific order callbacks or `on_order_event()`. Use signals
-to pass derived values to a data actor when another component needs them. See
+Data actors do not manage orders or define order event callbacks. Handle order events in a `Strategy`
+through its specific order callbacks or `on_order_event()`. Use custom data or signals to pass
+derived values to a data actor when another component needs them. See
 [Strategies: order management](strategies.md#order-management) for the callback list.
 
 ## Related guides
 
-- [Strategies](strategies.md) - Strategies extend actors with order management capabilities.
-- [Data](data/) - Data types and subscriptions available to actors.
-- [Message Bus](message_bus.md) - The messaging system actors use for communication.
+- [Strategies](strategies.md): Strategies extend actors with order‑management capabilities.
+- [Data](data/): Data types and subscriptions available to actors.
+- [Message Bus](message_bus.md): The messaging system actors use for communication.
