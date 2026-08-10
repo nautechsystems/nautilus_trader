@@ -2604,7 +2604,7 @@ fn test_hedging_leg_fill_without_order_reuses_open_position_after_flip(
         open_positions[0].id
     };
 
-    let mut subsequent_fill = fill.clone();
+    let mut subsequent_fill = fill;
     subsequent_fill.trade_id = TradeId::new("T-LEG-003");
     subsequent_fill.venue_order_id = VenueOrderId::from("V-SPREAD-LEG-3");
     subsequent_fill.order_side = OrderSide::Sell;
