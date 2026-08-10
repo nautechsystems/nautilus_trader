@@ -34,8 +34,9 @@ use nautilus_model::{
 use crate::{
     common::{Credential, get_date_time_range},
     decode::{
-        decode_imbalance_msg, decode_instrument_def_msg, decode_mbo_msg, decode_mbp10_msg,
-        decode_record, decode_statistics_msg, decode_status_msg, is_supported_stat_type,
+        MboDeltaBuffer, decode_imbalance_msg, decode_instrument_def_msg, decode_mbo_msg,
+        decode_mbp10_msg, decode_record, decode_statistics_msg, decode_status_msg,
+        is_supported_stat_type,
     },
     symbology::{
         MetadataCache, check_consistent_symbology, decode_nautilus_instrument_id,
@@ -591,6 +592,7 @@ impl DatabentoHistoricalClient {
         let mut metadata_cache = MetadataCache::new(metadata);
         let mut precision_cache = AHashMap::new();
         let mut result: Vec<OrderBookDelta> = Vec::new();
+        let mut delta_buffer = MboDeltaBuffer::default();
 
         let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
             let sym_map = self.symbol_venue_map.load();
@@ -609,8 +611,8 @@ impl DatabentoHistoricalClient {
             if let Some(msg) = record.get::<dbn::MboMsg>() {
                 let (delta, _trade) =
                     decode_mbo_msg(msg, instrument_id, price_precision, None, false)?;
-
-                if let Some(delta) = delta {
+                delta_buffer.push(msg, instrument_id, delta);
+                while let Some(delta) = delta_buffer.pop_ready() {
                     result.push(delta);
                 }
             }
@@ -620,6 +622,11 @@ impl DatabentoHistoricalClient {
 
         while let Some(msg) = decoder.decode_record::<dbn::MboMsg>().await? {
             process_record(dbn::RecordRef::from(msg))?;
+        }
+
+        delta_buffer.finish();
+        while let Some(delta) = delta_buffer.pop_ready() {
+            result.push(delta);
         }
 
         Ok(result)
@@ -1048,8 +1055,16 @@ impl DatabentoHistoricalClient {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::c_char;
+
+    use databento::dbn::{MappingInterval, SymbolMapping, encode::EncodeRecord};
     use nautilus_core::time::get_atomic_clock_realtime;
     use rstest::{fixture, rstest};
+    use time::macros::date;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
 
     use super::*;
 
@@ -1059,6 +1074,73 @@ mod tests {
 
     fn publishers_path() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json")
+    }
+
+    fn mbo_record(action: c_char, flags: u8, sequence: u32) -> dbn::MboMsg {
+        let ts_event = 1_609_160_400_000_000_000;
+        dbn::MboMsg {
+            hd: dbn::RecordHeader::new::<dbn::MboMsg>(dbn::rtype::MBO, 1, 1, ts_event),
+            order_id: u64::from(sequence),
+            price: 4_800_250_000_000,
+            size: 2,
+            flags: dbn::FlagSet::new(flags),
+            channel_id: 1,
+            action,
+            side: 'A' as c_char,
+            ts_recv: ts_event,
+            ts_in_delta: 0,
+            sequence,
+        }
+    }
+
+    fn encode_mbo_response(records: &[dbn::MboMsg]) -> Vec<u8> {
+        let metadata = dbn::Metadata::builder()
+            .dataset("GLBX.MDP3")
+            .schema(Some(dbn::Schema::Mbo))
+            .start(1_609_160_400_000_000_000)
+            .stype_in(Some(dbn::SType::RawSymbol))
+            .stype_out(dbn::SType::InstrumentId)
+            .symbols(vec!["ESM4".to_string()])
+            .mappings(vec![SymbolMapping {
+                raw_symbol: "ESM4".to_string(),
+                intervals: vec![MappingInterval {
+                    start_date: date!(2020 - 12 - 28),
+                    end_date: date!(2020 - 12 - 29),
+                    symbol: "1".to_string(),
+                }],
+            }])
+            .build();
+        let mut body = Vec::new();
+        {
+            let mut encoder = dbn::encode::dbn::Encoder::with_zstd(&mut body, &metadata).unwrap();
+            encoder.encode_records(records).unwrap();
+            encoder.flush().unwrap();
+        }
+        body
+    }
+
+    async fn serve_response(listener: TcpListener, body: Vec<u8>) {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        let mut buffer = [0_u8; 1024];
+        loop {
+            let read = stream.read(&mut buffer).await.unwrap();
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&buffer[..read]);
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len(),
+        );
+        stream.write_all(headers.as_bytes()).await.unwrap();
+        stream.write_all(&body).await.unwrap();
+        stream.shutdown().await.unwrap();
     }
 
     #[fixture]
@@ -1088,6 +1170,51 @@ mod tests {
             err_msg.contains("Failed to parse Databento Historical API base URL"),
             "unexpected error message: {err_msg}",
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_range_order_book_deltas_preserves_boundaries_and_drains_end() {
+        let last = dbn::flags::LAST;
+        let body = encode_mbo_response(&[
+            mbo_record('C' as c_char, 0, 1),
+            mbo_record('N' as c_char, last, 2),
+            mbo_record('C' as c_char, 0, 3),
+        ]);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}/", listener.local_addr().unwrap());
+        let server = tokio::spawn(serve_response(listener, body));
+        let client = DatabentoHistoricalClient::new_with_base_url(
+            Credential::new(test_api_key()),
+            publishers_path(),
+            get_atomic_clock_realtime(),
+            false,
+            &base_url,
+        )
+        .unwrap();
+
+        let deltas = client
+            .get_range_order_book_deltas(RangeQueryParams {
+                dataset: "GLBX.MDP3".to_string(),
+                symbols: vec!["ESM4".to_string()],
+                start: 1_609_160_000_000_000_000.into(),
+                end: Some(1_609_161_000_000_000_000.into()),
+                limit: None,
+                price_precision: Some(2),
+            })
+            .await
+            .unwrap();
+        server.await.unwrap();
+
+        assert_eq!(deltas.len(), 2);
+        assert_eq!(deltas[0].instrument_id, InstrumentId::from("ESM4.GLBX"));
+        assert_eq!(deltas[0].order.order_id, 1);
+        assert_eq!(deltas[0].flags, last);
+        assert_eq!(deltas[0].sequence, 1);
+        assert_eq!(deltas[1].instrument_id, InstrumentId::from("ESM4.GLBX"));
+        assert_eq!(deltas[1].order.order_id, 3);
+        assert_eq!(deltas[1].flags, 0);
+        assert_eq!(deltas[1].sequence, 3);
     }
 
     #[rstest]

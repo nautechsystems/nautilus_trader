@@ -35,8 +35,8 @@ use nautilus_model::{
 
 use super::{
     decode::{
-        decode_imbalance_msg, decode_record, decode_statistics_msg, decode_status_msg,
-        is_supported_stat_type,
+        MboDeltaBuffer, decode_imbalance_msg, decode_mbo_msg, decode_record, decode_statistics_msg,
+        decode_status_msg, is_supported_stat_type,
     },
     symbology::decode_nautilus_instrument_id,
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
@@ -446,24 +446,68 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<OrderBookDelta>> + '_> {
-        let records = self.read_records::<dbn::MboMsg>(
-            filepath,
-            instrument_id,
-            price_precision,
-            false,
-            None,
-        )?;
+        let decoder = Decoder::from_zstd_file(filepath)?;
+        let mut metadata_cache = if instrument_id.is_none() {
+            Some(MetadataCache::new(decoder.metadata().clone()))
+        } else {
+            None
+        };
+        let mut dbn_stream = decoder.decode_stream::<dbn::MboMsg>();
+        let fixed_instrument_id = instrument_id.is_some();
+        let mut fixed_price_precision = price_precision;
+        let mut delta_buffer = MboDeltaBuffer::default();
+        let mut terminal_error = None;
+        let mut finished = false;
 
-        Ok(records.filter_map(|result| match result {
-            Ok((Some(item1), _)) => {
-                if let Data::Delta(delta) = item1 {
-                    Some(Ok(delta))
-                } else {
-                    None
+        Ok(std::iter::from_fn(move || {
+            loop {
+                if let Some(delta) = delta_buffer.pop_ready() {
+                    return Some(Ok(delta));
+                }
+
+                if finished {
+                    return terminal_error.take().map(Err);
+                }
+
+                let result: anyhow::Result<bool> = (|| {
+                    dbn_stream
+                        .advance()
+                        .map_err(|e| anyhow::anyhow!("Stream advance error: {e}"))?;
+
+                    let Some(rec) = dbn_stream.get() else {
+                        return Ok(false);
+                    };
+                    let record = dbn::RecordRef::from(rec);
+                    let instrument_id = self
+                        .resolve_record_instrument_id(&record, instrument_id, &mut metadata_cache)
+                        .context("failed to decode instrument id")?;
+                    let resolved_precision = self.resolve_stream_price_precision(
+                        &instrument_id,
+                        fixed_instrument_id,
+                        &mut fixed_price_precision,
+                    )?;
+                    let msg = record
+                        .get::<dbn::MboMsg>()
+                        .ok_or_else(|| anyhow::anyhow!("Failed to decode MboMsg"))?;
+                    let (delta, _trade) =
+                        decode_mbo_msg(msg, instrument_id, resolved_precision, None, false)?;
+                    delta_buffer.push(msg, instrument_id, delta);
+                    Ok(true)
+                })();
+
+                match result {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        delta_buffer.finish();
+                        finished = true;
+                    }
+                    Err(e) => {
+                        delta_buffer.finish();
+                        terminal_error = Some(e);
+                        finished = true;
+                    }
                 }
             }
-            Ok((None, _)) => None,
-            Err(e) => Some(Err(e)),
         }))
     }
 
@@ -976,9 +1020,20 @@ fn apply_default_venue_dataset_mappings(venue_dataset_map: &mut IndexMap<Venue, 
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::{
+        ffi::c_char,
+        fs::{File, OpenOptions},
+        io::Write,
+        path::{Path, PathBuf},
+        process,
+        sync::atomic::{AtomicU64, Ordering},
+    };
 
-    use nautilus_model::types::{Price, Quantity};
+    use databento::dbn::encode::EncodeRecord;
+    use nautilus_model::{
+        enums::BookAction,
+        types::{Price, Quantity},
+    };
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
@@ -986,6 +1041,47 @@ mod tests {
 
     fn test_data_path() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data")
+    }
+
+    fn mbo_record(action: c_char, flags: u8, sequence: u32) -> dbn::MboMsg {
+        let ts_event = 1_609_160_400_000_000_000;
+        dbn::MboMsg {
+            hd: dbn::RecordHeader::new::<dbn::MboMsg>(dbn::rtype::MBO, 1, 1, ts_event),
+            order_id: 42,
+            price: 4_800_250_000_000,
+            size: 2,
+            flags: dbn::FlagSet::new(flags),
+            channel_id: 1,
+            action,
+            side: 'A' as c_char,
+            ts_recv: ts_event,
+            ts_in_delta: 0,
+            sequence,
+        }
+    }
+
+    fn write_mbo_records(records: &[dbn::MboMsg]) -> PathBuf {
+        static FILE_ID: AtomicU64 = AtomicU64::new(0);
+
+        let id = FILE_ID.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "nautilus-databento-mbo-{}-{id}.dbn.zst",
+            process::id(),
+        ));
+        let metadata = dbn::Metadata::builder()
+            .dataset("GLBX.MDP3")
+            .schema(Some(dbn::Schema::Mbo))
+            .start(0)
+            .stype_in(Some(dbn::SType::InstrumentId))
+            .stype_out(dbn::SType::InstrumentId)
+            .build();
+        let file = File::create(&path).unwrap();
+        let mut encoder = dbn::encode::dbn::Encoder::with_zstd(file, &metadata).unwrap();
+        encoder.encode_records(records).unwrap();
+        encoder.flush().unwrap();
+        drop(encoder);
+
+        path
     }
 
     #[fixture]
@@ -1160,6 +1256,68 @@ mod tests {
             .unwrap();
 
         assert_eq!(count, 2);
+    }
+
+    #[rstest]
+    #[case::standalone(false)]
+    #[case::legacy_inline(true)]
+    fn test_load_order_book_deltas_preserves_event_boundary(
+        loader: DatabentoDataLoader,
+        #[case] inline_last: bool,
+    ) {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let last = dbn::flags::LAST;
+        let mut records = vec![mbo_record(
+            'C' as c_char,
+            if inline_last { last } else { 0 },
+            1,
+        )];
+
+        if !inline_last {
+            records.push(mbo_record('N' as c_char, last, 2));
+        }
+        let path = write_mbo_records(&records);
+
+        let deltas = loader
+            .load_order_book_deltas(&path, Some(instrument_id), Some(2))
+            .unwrap();
+        std::fs::remove_file(path).unwrap();
+
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0].instrument_id, instrument_id);
+        assert_eq!(deltas[0].action, BookAction::Delete);
+        assert_eq!(deltas[0].order.order_id, 42);
+        assert_eq!(deltas[0].flags, last);
+        assert_eq!(deltas[0].sequence, 1);
+    }
+
+    #[rstest]
+    fn test_read_order_book_deltas_drains_before_terminal_error(loader: DatabentoDataLoader) {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let path = write_mbo_records(&[mbo_record('C' as c_char, 0, 1)]);
+        OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(&[0; 8])
+            .unwrap();
+        let mut deltas = loader
+            .read_order_book_deltas(&path, Some(instrument_id), Some(2))
+            .unwrap();
+
+        let delta = deltas.next().unwrap().unwrap();
+        let error = deltas
+            .next()
+            .unwrap()
+            .expect_err("expected trailing decode error");
+        let end = deltas.next();
+        std::fs::remove_file(path).unwrap();
+
+        assert_eq!(delta.instrument_id, instrument_id);
+        assert_eq!(delta.order.order_id, 42);
+        assert_eq!(delta.flags, 0);
+        assert!(format!("{error}").contains("Stream advance error"));
+        assert!(end.is_none());
     }
 
     #[rstest]

@@ -19,13 +19,22 @@
 //! `historical_loader` measures the user-facing loader path from DBN fixture
 //! file to Nautilus domain values. Both groups include file open and zstd setup
 //! because that is the cost paid by historical-data users.
+//! `mbo_boundaries` compares standalone, interleaved, and delayed MBO event boundaries.
 
 mod common;
 
-use std::{hint::black_box, path::Path};
+use std::{
+    ffi::c_char,
+    fs::File,
+    hint::black_box,
+    path::{Path, PathBuf},
+    process,
+};
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use databento::dbn::{self, decode::DecodeStream};
+use databento::dbn::{
+    self, MappingInterval, SymbolMapping, decode::DecodeStream, encode::EncodeRecord,
+};
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use nautilus_databento::{
     loader::DatabentoDataLoader,
@@ -35,8 +44,10 @@ use nautilus_model::{
     data::{Bar, InstrumentStatus, OrderBookDelta, OrderBookDepth10, QuoteTick},
     identifiers::InstrumentId,
 };
+use time::macros::date;
 
 const LARGE_MBO_FIXTURE: &str = "test_data/databento/esh4-glbx-mdp3-20231225.mbo.dbn.zst";
+const MBO_BOUNDARY_EVENTS: u32 = 65_536;
 
 fn bench_dbn_stream_decode(c: &mut Criterion) {
     let mut group = c.benchmark_group("dbn_stream_decode");
@@ -252,6 +263,219 @@ fn bench_large_mbo(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_mbo_boundaries(c: &mut Criterion) {
+    let standalone_fixture = MboBoundaryFixture::standalone(MBO_BOUNDARY_EVENTS);
+    let interleaved_fixture = MboBoundaryFixture::interleaved(MBO_BOUNDARY_EVENTS);
+    let delayed_fixture = MboBoundaryFixture::delayed(MBO_BOUNDARY_EVENTS);
+    let loader = common::loader();
+    let instrument_id = common::instrument_id();
+    let delta_count = u64::from(MBO_BOUNDARY_EVENTS);
+    let raw_records = delta_count * 2;
+
+    let mut group = c.benchmark_group("mbo_boundaries");
+
+    bench_stream_path::<dbn::MboMsg>(
+        &mut group,
+        "standalone_dbn_stream_decode",
+        &standalone_fixture.path,
+        raw_records,
+    );
+
+    group.throughput(Throughput::Elements(delta_count));
+    group.bench_function("standalone_loader_collect", |b| {
+        b.iter(|| {
+            let items: Vec<OrderBookDelta> = loader
+                .load_order_book_deltas(
+                    black_box(&standalone_fixture.path),
+                    Some(instrument_id),
+                    Some(common::PRICE_PRECISION),
+                )
+                .unwrap();
+            black_box(items);
+        });
+    });
+
+    group.throughput(Throughput::Elements(delta_count));
+    group.bench_function("standalone_loader_stream_count", |b| {
+        b.iter(|| {
+            let count = loader
+                .read_order_book_deltas(
+                    black_box(&standalone_fixture.path),
+                    Some(instrument_id),
+                    Some(common::PRICE_PRECISION),
+                )
+                .unwrap()
+                .map(|result| result.map(|_| 1_u64))
+                .sum::<anyhow::Result<u64>>()
+                .unwrap();
+            black_box(count);
+        });
+    });
+
+    group.throughput(Throughput::Elements(delta_count));
+    group.bench_function("interleaved_loader_stream_count", |b| {
+        b.iter(|| {
+            let count = loader
+                .read_order_book_deltas(
+                    black_box(&interleaved_fixture.path),
+                    None,
+                    Some(common::PRICE_PRECISION),
+                )
+                .unwrap()
+                .map(|result| result.map(|_| 1_u64))
+                .sum::<anyhow::Result<u64>>()
+                .unwrap();
+            black_box(count);
+        });
+    });
+
+    group.throughput(Throughput::Elements(delta_count));
+    group.bench_function("delayed_boundary_loader_stream_count", |b| {
+        b.iter(|| {
+            let count = loader
+                .read_order_book_deltas(
+                    black_box(&delayed_fixture.path),
+                    None,
+                    Some(common::PRICE_PRECISION),
+                )
+                .unwrap()
+                .map(|result| result.map(|_| 1_u64))
+                .sum::<anyhow::Result<u64>>()
+                .unwrap();
+            black_box(count);
+        });
+    });
+
+    group.finish();
+}
+
+struct MboBoundaryFixture {
+    path: PathBuf,
+}
+
+impl MboBoundaryFixture {
+    fn standalone(events: u32) -> Self {
+        let records: Vec<dbn::MboMsg> = (0..events)
+            .flat_map(|event| {
+                let sequence = event * 2 + 1;
+                [
+                    mbo_record(b'C' as c_char, 0, sequence, 1),
+                    mbo_record(
+                        b'N' as c_char,
+                        dbn::flags::LAST,
+                        sequence.checked_add(1).unwrap(),
+                        1,
+                    ),
+                ]
+            })
+            .collect();
+        Self::write("standalone", &records)
+    }
+
+    fn interleaved(events: u32) -> Self {
+        assert_eq!(events % 2, 0);
+        let records: Vec<dbn::MboMsg> = (0..events / 2)
+            .flat_map(|event| {
+                let sequence = event * 4 + 1;
+                [
+                    mbo_record(b'C' as c_char, 0, sequence, 1),
+                    mbo_record(b'C' as c_char, 0, sequence + 1, 2),
+                    mbo_record(b'N' as c_char, dbn::flags::LAST, sequence + 2, 1),
+                    mbo_record(b'N' as c_char, dbn::flags::LAST, sequence + 3, 2),
+                ]
+            })
+            .collect();
+        Self::write("interleaved", &records)
+    }
+
+    fn delayed(events: u32) -> Self {
+        assert!(events > 0);
+        let mut records = Vec::with_capacity(events as usize * 2);
+        records.push(mbo_record(b'C' as c_char, 0, 1, 1));
+
+        for event in 0..events - 1 {
+            let sequence = event * 2 + 2;
+            records.push(mbo_record(b'C' as c_char, 0, sequence, 2));
+            records.push(mbo_record(
+                b'N' as c_char,
+                dbn::flags::LAST,
+                sequence + 1,
+                2,
+            ));
+        }
+
+        records.push(mbo_record(b'N' as c_char, dbn::flags::LAST, events * 2, 1));
+        Self::write("delayed", &records)
+    }
+
+    fn write(name: &str, records: &[dbn::MboMsg]) -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "nautilus-databento-mbo-boundary-bench-{name}-{}.dbn.zst",
+            process::id(),
+        ));
+        let metadata = dbn::Metadata::builder()
+            .dataset("GLBX.MDP3")
+            .schema(Some(dbn::Schema::Mbo))
+            .start(0)
+            .stype_in(Some(dbn::SType::InstrumentId))
+            .stype_out(dbn::SType::InstrumentId)
+            .symbols(vec!["ESM4".to_string(), "NQM4".to_string()])
+            .mappings(vec![
+                SymbolMapping {
+                    raw_symbol: "ESM4".to_string(),
+                    intervals: vec![MappingInterval {
+                        start_date: date!(2020 - 12 - 28),
+                        end_date: date!(2020 - 12 - 29),
+                        symbol: "1".to_string(),
+                    }],
+                },
+                SymbolMapping {
+                    raw_symbol: "NQM4".to_string(),
+                    intervals: vec![MappingInterval {
+                        start_date: date!(2020 - 12 - 28),
+                        end_date: date!(2020 - 12 - 29),
+                        symbol: "2".to_string(),
+                    }],
+                },
+            ])
+            .build();
+        let file = File::create(&path).unwrap();
+        let mut encoder = dbn::encode::dbn::Encoder::with_zstd(file, &metadata).unwrap();
+        encoder.encode_records(records).unwrap();
+        encoder.flush().unwrap();
+        drop(encoder);
+
+        Self { path }
+    }
+}
+
+impl Drop for MboBoundaryFixture {
+    fn drop(&mut self) {
+        std::fs::remove_file(&self.path).unwrap();
+    }
+}
+
+fn mbo_record(action: c_char, flags: u8, sequence: u32, instrument_id: u32) -> dbn::MboMsg {
+    let ts_event = 1_609_160_400_000_000_000 + u64::from(sequence);
+    dbn::MboMsg {
+        hd: dbn::RecordHeader::new::<dbn::MboMsg>(dbn::rtype::MBO, 1, instrument_id, ts_event),
+        order_id: u64::from(sequence),
+        price: 4_800_250_000_000,
+        size: 2,
+        flags: dbn::FlagSet::new(flags),
+        channel_id: 1,
+        action,
+        side: if action == b'N' as c_char {
+            b'N' as c_char
+        } else {
+            b'A' as c_char
+        },
+        ts_recv: ts_event,
+        ts_in_delta: 0,
+        sequence,
+    }
+}
+
 fn bench_stream<T>(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     name: &str,
@@ -310,6 +534,7 @@ criterion_group!(
     benches,
     bench_dbn_stream_decode,
     bench_historical_loader,
-    bench_large_mbo
+    bench_large_mbo,
+    bench_mbo_boundaries,
 );
 criterion_main!(benches);

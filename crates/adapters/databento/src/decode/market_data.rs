@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{ffi::c_char, num::NonZeroUsize};
+use std::{collections::VecDeque, ffi::c_char, num::NonZeroUsize};
 
+use ahash::AHashMap;
 use databento::dbn;
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::{
@@ -213,6 +214,94 @@ pub fn decode_mbo_msg(
     );
 
     Ok((Some(delta), None))
+}
+
+#[derive(Debug)]
+struct QueuedMboDelta {
+    delta: OrderBookDelta,
+    ready: bool,
+}
+
+// TODO: Consider consolidating this boundary framing with the live client while keeping
+// source-order queuing specific to historical data.
+/// Preserves source order while retaining each instrument's unresolved tail until its raw
+/// `F_LAST` boundary can be attached.
+#[derive(Debug, Default)]
+pub(crate) struct MboDeltaBuffer {
+    queue: VecDeque<QueuedMboDelta>,
+    tail: Option<(InstrumentId, u64)>,
+    tails: AHashMap<InstrumentId, u64>,
+    head: u64,
+    next: u64,
+}
+
+impl MboDeltaBuffer {
+    pub(crate) fn push(
+        &mut self,
+        msg: &dbn::MboMsg,
+        instrument_id: InstrumentId,
+        delta: Option<OrderBookDelta>,
+    ) {
+        if let Some(delta) = delta {
+            self.release(instrument_id, 0);
+
+            let index = self.next;
+            self.next = self.next.checked_add(1).expect("MBO delta index overflow");
+            let ready = msg.flags.is_last();
+            self.queue.push_back(QueuedMboDelta { delta, ready });
+
+            if !ready
+                && let Some((tail_instrument_id, tail)) = self.tail.replace((instrument_id, index))
+            {
+                self.tails.insert(tail_instrument_id, tail);
+            }
+        } else if msg.flags.is_last() {
+            self.release(instrument_id, dbn::flags::LAST);
+        }
+    }
+
+    pub(crate) fn pop_ready(&mut self) -> Option<OrderBookDelta> {
+        if !self.queue.front().is_some_and(|queued| queued.ready) {
+            return None;
+        }
+
+        self.head = self.head.checked_add(1).expect("MBO delta index overflow");
+        self.queue.pop_front().map(|queued| queued.delta)
+    }
+
+    pub(crate) fn finish(&mut self) {
+        self.tail = None;
+        self.tails.clear();
+
+        for queued in &mut self.queue {
+            queued.ready = true;
+        }
+    }
+
+    fn release(&mut self, instrument_id: InstrumentId, flags: u8) {
+        let tail = match self.tail {
+            Some((tail_instrument_id, tail)) if tail_instrument_id == instrument_id => {
+                self.tail = None;
+                tail
+            }
+            _ => {
+                let Some(tail) = self.tails.remove(&instrument_id) else {
+                    return;
+                };
+                tail
+            }
+        };
+        let offset = tail
+            .checked_sub(self.head)
+            .and_then(|offset| usize::try_from(offset).ok())
+            .expect("MBO delta tail must be queued");
+        let queued = self
+            .queue
+            .get_mut(offset)
+            .expect("MBO delta tail must be queued");
+        queued.delta.flags |= flags;
+        queued.ready = true;
+    }
 }
 
 /// Decodes a Databento Trade message into a `TradeTick`.
