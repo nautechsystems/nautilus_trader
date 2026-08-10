@@ -135,6 +135,7 @@ harness = false
 [[bench]]
 name = "queue_monitor"
 harness = false
+required-features = ["node"]
 
 [[test]]
 name = "manager"
