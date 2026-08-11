@@ -43,7 +43,7 @@ use nautilus_common::{
         ExecutionEvent,
         execution::{
             BatchCancelOrders, CancelOrder, ExecutionReport as CommonExecutionReport, ModifyOrder,
-            QueryAccount, SubmitOrder, SubmitOrderList,
+            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
             report::{GenerateFillReports, GenerateOrderStatusReports},
         },
     },
@@ -58,7 +58,12 @@ use nautilus_model::{
         AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce,
         TriggerType,
     },
-    events::{OrderEventAny, OrderInitialized},
+    events::{
+        OrderEventAny, OrderInitialized,
+        order::spec::{
+            OrderAcceptedSpec, OrderSubmittedSpec, OrderTriggeredSpec, OrderUpdatedSpec,
+        },
+    },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
         VenueOrderId,
@@ -83,10 +88,15 @@ use nautilus_okx::{
         enums::{
             OKXInstrumentType, OKXMarginMode, OKXOrderStatus, OKXOrderType, OKXSide, OKXTradeMode,
         },
+        models::OKXInstrument,
+        parse::parse_instrument_any,
     },
     config::OKXExecClientConfig,
     execution::OKXExecutionClient,
-    http::models::{OKXCancelAlgoOrderResponse, OKXSpreadOrder},
+    http::{
+        client::OKXResponse,
+        models::{OKXCancelAlgoOrderResponse, OKXSpreadOrder},
+    },
     websocket::{
         dispatch::{
             AlgoCancelContext, WsDispatchState, dispatch_execution_reports, dispatch_ws_message,
@@ -295,6 +305,31 @@ fn drain_events(
         events.push(e);
     }
     events
+}
+
+async fn recv_query_order_report(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    client_order_id: ClientOrderId,
+) -> OrderStatusReport {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+    loop {
+        tokio::select! {
+            event = rx.recv() => {
+                let Some(event) = event else {
+                    panic!("event stream closed before query order report");
+                };
+
+                if let ExecutionEvent::Report(CommonExecutionReport::Order(report)) = event {
+                    assert_eq!(report.client_order_id, Some(client_order_id));
+                    return *report;
+                }
+            }
+            () = tokio::time::sleep_until(deadline) => {
+                panic!("timed out waiting for query order report for {client_order_id}");
+            }
+        }
+    }
 }
 
 #[rstest]
@@ -2298,6 +2333,125 @@ fn load_test_data(filename: &str) -> serde_json::Value {
     serde_json::from_str(&content).unwrap()
 }
 
+fn query_order_instrument() -> InstrumentAny {
+    let response: OKXResponse<OKXInstrument> =
+        serde_json::from_value(load_test_data("http_get_instruments_swap.json")).unwrap();
+    let raw = response
+        .data
+        .iter()
+        .find(|instrument| instrument.inst_id == Ustr::from("ETH-USDT-SWAP"))
+        .expect("expected ETH-USDT-SWAP fixture");
+
+    parse_instrument_any(raw, None, None, None, None, UnixNanos::default())
+        .unwrap()
+        .expect("expected parsed ETH-USDT-SWAP instrument")
+}
+
+fn regular_order_detail_response(client_order_id: &str) -> serde_json::Value {
+    let mut response = load_test_data("http_get_orders_history.json");
+    let order = &mut response["data"][0];
+    order["accFillSz"] = json!("0");
+    order["avgPx"] = json!("");
+    order["clOrdId"] = json!(client_order_id);
+    order["fillPx"] = json!("");
+    order["fillSz"] = json!("");
+    order["instId"] = json!("ETH-USDT-SWAP");
+    order["ordId"] = json!("regular-venue-id");
+    order["ordType"] = json!("limit");
+    order["posSide"] = json!("net");
+    order["px"] = json!("2000.00");
+    order["state"] = json!("live");
+    order["sz"] = json!("1");
+    order["tdMode"] = json!("cross");
+    response
+}
+
+fn algo_order_detail_response(params: &HashMap<String, String>) -> serde_json::Value {
+    let mut response = load_test_data("http_get_orders_algo_pending_close_fraction.json");
+    let order = &mut response["data"][0];
+    order["algoId"] = json!(
+        params
+            .get("algoId")
+            .map_or("unknown-algo-id", String::as_str)
+    );
+    order["algoClOrdId"] = json!(
+        params
+            .get("algoClOrdId")
+            .map_or("unknown-algo-client-id", String::as_str)
+    );
+    order["instId"] = json!("ETH-USDT-SWAP");
+    response
+}
+
+#[derive(Default)]
+struct QueryOrderRouteState {
+    regular_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+    algo_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+    sequence: tokio::sync::Mutex<Vec<String>>,
+}
+
+async fn start_exec_query_order_test_server(state: Arc<QueryOrderRouteState>) -> SocketAddr {
+    let regular_state = Arc::clone(&state);
+    let algo_state = state;
+    let router = create_exec_test_router()
+        .route(
+            "/api/v5/public/instruments",
+            get(|| async { Json(load_test_data("http_get_instruments_swap.json")) }),
+        )
+        .route(
+            "/api/v5/trade/order",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&regular_state);
+                async move {
+                    let client_order_id = params.get("clOrdId").cloned().unwrap_or_default();
+                    state
+                        .sequence
+                        .lock()
+                        .await
+                        .push(format!("regular:{client_order_id}"));
+                    state.regular_queries.lock().await.push(params);
+
+                    if client_order_id == "OQUERYUNKNOWN1" {
+                        return Json(json!({
+                            "code": "51603",
+                            "msg": "Order does not exist",
+                            "data": [],
+                        }))
+                        .into_response();
+                    }
+
+                    Json(regular_order_detail_response(&client_order_id)).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/order-algo",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&algo_state);
+                async move {
+                    let client_order_id = params.get("algoClOrdId").cloned().unwrap_or_default();
+                    state
+                        .sequence
+                        .lock()
+                        .await
+                        .push(format!("algo:{client_order_id}"));
+                    state.algo_queries.lock().await.push(params.clone());
+                    Json(algo_order_detail_response(&params))
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    addr
+}
+
 fn create_exec_test_router() -> Router {
     Router::new().route(
         "/api/v5/account/balance",
@@ -2768,6 +2922,134 @@ async fn test_margin_only_restart_recovers_spot_fill_reports() {
 
 #[rstest]
 #[tokio::test]
+async fn test_query_order_routes_regular_untriggered_triggered_and_unknown_orders() {
+    let state = Arc::new(QueryOrderRouteState::default());
+    let addr = start_exec_query_order_test_server(Arc::clone(&state)).await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) =
+        create_test_execution_client_configured(&base_url, |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+    client.on_instrument(query_order_instrument());
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+
+    let regular_client_order_id = ClientOrderId::from("OQUERYREGULAR1");
+    cache_limit_order(&cache, regular_client_order_id);
+    client
+        .query_order(query_order_command(
+            regular_client_order_id,
+            Some(VenueOrderId::from("stale-regular-venue-id")),
+        ))
+        .unwrap();
+    let regular_report = recv_query_order_report(&mut rx, regular_client_order_id).await;
+    assert_eq!(regular_report.order_type, OrderType::Limit);
+    assert_eq!(
+        regular_report.venue_order_id,
+        VenueOrderId::from("regular-venue-id")
+    );
+
+    let algo_client_order_id = ClientOrderId::from("OQUERYALGO1");
+    let algo_order = build_test_stop_order(algo_client_order_id);
+    cache
+        .borrow_mut()
+        .add_order(algo_order, None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+    client
+        .query_order(query_order_command(
+            algo_client_order_id,
+            Some(VenueOrderId::from("algo-venue-id")),
+        ))
+        .unwrap();
+    let algo_report = recv_query_order_report(&mut rx, algo_client_order_id).await;
+    assert_eq!(algo_report.order_type, OrderType::StopMarket);
+
+    let triggered_client_order_id = ClientOrderId::from("OQUERYTRIGGERED1");
+    let child_venue_order_id = VenueOrderId::from("triggered-child-venue-id");
+    let triggered_order =
+        build_test_triggered_conditional_order(triggered_client_order_id, child_venue_order_id);
+    cache
+        .borrow_mut()
+        .add_order(triggered_order, None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+    client
+        .query_order(query_order_command(
+            triggered_client_order_id,
+            Some(child_venue_order_id),
+        ))
+        .unwrap();
+    let triggered_report = recv_query_order_report(&mut rx, triggered_client_order_id).await;
+    assert_eq!(triggered_report.order_type, OrderType::StopMarket);
+
+    let unknown_client_order_id = ClientOrderId::from("OQUERYUNKNOWN1");
+    client
+        .query_order(query_order_command(unknown_client_order_id, None))
+        .unwrap();
+    let unknown_report = recv_query_order_report(&mut rx, unknown_client_order_id).await;
+    assert_eq!(unknown_report.order_type, OrderType::StopMarket);
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let unexpected_reports: Vec<_> = drain_events(&mut rx)
+        .into_iter()
+        .filter(|event| {
+            matches!(
+                event,
+                ExecutionEvent::Report(CommonExecutionReport::Order(_))
+            )
+        })
+        .collect();
+    assert!(
+        unexpected_reports.is_empty(),
+        "query_order emitted duplicate reports: {unexpected_reports:?}"
+    );
+
+    let regular_queries = state.regular_queries.lock().await;
+    let algo_queries = state.algo_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+
+    assert_eq!(regular_queries.len(), 2);
+    assert_eq!(
+        regular_queries[0].get("clOrdId").map(String::as_str),
+        Some("OQUERYREGULAR1")
+    );
+    assert!(!regular_queries[0].contains_key("ordId"));
+    assert_eq!(
+        regular_queries[1].get("clOrdId").map(String::as_str),
+        Some("OQUERYUNKNOWN1")
+    );
+    assert_eq!(algo_queries.len(), 3);
+    assert_eq!(
+        algo_queries[0].get("algoId").map(String::as_str),
+        Some("algo-venue-id")
+    );
+    assert_eq!(
+        algo_queries[0].get("algoClOrdId").map(String::as_str),
+        Some("OQUERYALGO1")
+    );
+    assert_eq!(
+        algo_queries[1].get("algoClOrdId").map(String::as_str),
+        Some("OQUERYTRIGGERED1")
+    );
+    assert!(!algo_queries[1].contains_key("algoId"));
+    assert_eq!(
+        algo_queries[2].get("algoClOrdId").map(String::as_str),
+        Some("OQUERYUNKNOWN1")
+    );
+    assert!(!algo_queries[2].contains_key("algoId"));
+    assert_eq!(
+        sequence.as_slice(),
+        [
+            "regular:OQUERYREGULAR1",
+            "algo:OQUERYALGO1",
+            "algo:OQUERYTRIGGERED1",
+            "regular:OQUERYUNKNOWN1",
+            "algo:OQUERYUNKNOWN1",
+        ]
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_order_status_reports_includes_spreads_when_enabled() {
     let state = Arc::new(ReportRouteState::default());
     let addr = start_exec_report_test_server(Arc::clone(&state)).await;
@@ -2915,6 +3197,87 @@ fn build_test_stop_order(client_order_id: ClientOrderId) -> OrderAny {
         .trigger_type(TriggerType::MarkPrice)
         .time_in_force(TimeInForce::Gtc)
         .build()
+}
+
+fn build_test_triggered_conditional_order(
+    client_order_id: ClientOrderId,
+    child_venue_order_id: VenueOrderId,
+) -> OrderAny {
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+    let account_id = AccountId::from("OKX-001");
+    let mut order = OrderTestBuilder::new(OrderType::StopLimit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("900.00"))
+        .quantity(Quantity::from("1"))
+        .trigger_price(Price::from("1000.00"))
+        .trigger_type(TriggerType::MarkPrice)
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    let submitted = OrderSubmittedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .build();
+    let accepted = OrderAcceptedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(VenueOrderId::from("parent-algo-id"))
+        .account_id(account_id)
+        .build();
+    let triggered = OrderTriggeredSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(child_venue_order_id)
+        .account_id(account_id)
+        .build();
+    let updated = OrderUpdatedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(child_venue_order_id)
+        .account_id(account_id)
+        .quantity(Quantity::from("1"))
+        .build();
+
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+    order.apply(OrderEventAny::Triggered(triggered)).unwrap();
+    order.apply(OrderEventAny::Updated(updated)).unwrap();
+
+    assert_eq!(order.is_triggered(), Some(true));
+    assert_eq!(order.venue_order_id(), Some(child_venue_order_id));
+    order
+}
+
+fn query_order_command(
+    client_order_id: ClientOrderId,
+    venue_order_id: Option<VenueOrderId>,
+) -> QueryOrder {
+    QueryOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*OKX_CLIENT_ID),
+        StrategyId::from("STRATEGY-001"),
+        InstrumentId::from("ETH-USDT-SWAP.OKX"),
+        client_order_id,
+        venue_order_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
 }
 
 fn collect_order_denied_events(events: Vec<ExecutionEvent>) -> HashMap<ClientOrderId, String> {

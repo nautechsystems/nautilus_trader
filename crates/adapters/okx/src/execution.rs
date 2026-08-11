@@ -1257,47 +1257,85 @@ impl ExecutionClient for OKXExecutionClient {
         let instrument_id = cmd.instrument_id;
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
-        let should_query_algo = !is_spread_instrument(instrument_id)
-            && supports_algo_orders(okx_instrument_type_from_symbol(
-                instrument_id.symbol.as_str(),
-            ));
+        let order_state = {
+            let cache = self.core.cache();
+            cache
+                .order(&client_order_id)
+                .map(|order| (order.order_type(), order.is_triggered()))
+        };
+        let route = query_order_route(instrument_id, order_state.map(|state| state.0));
+        let algo_id = order_state
+            .filter(|(order_type, is_triggered)| {
+                OKX_CONDITIONAL_ORDER_TYPES.contains(order_type) && *is_triggered == Some(false)
+            })
+            .and_then(|_| {
+                venue_order_id
+                    .as_ref()
+                    .map(|venue_order_id| venue_order_id.as_str().to_string())
+            });
 
         self.spawn_task("query_order", async move {
-            let mut reports = match http_client
-                .request_order_status_reports(
-                    account_id,
-                    None,
-                    Some(instrument_id),
-                    None,
-                    None,
-                    false,
-                    None,
-                )
-                .await
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    log::error!("OKX query_order failed to fetch orders: {e}");
-                    Vec::new()
-                }
-            };
+            let mut reports = Vec::with_capacity(1);
+            let mut query_algo = route == QueryOrderRoute::Algo;
 
-            // Merge algo orders (stop, OCO, TP/SL, trailing) so query_order can
-            // resolve conditional orders as well.
-            if should_query_algo {
+            match route {
+                QueryOrderRoute::Spread => {
+                    match http_client
+                        .request_order_status_reports(
+                            account_id,
+                            None,
+                            Some(instrument_id),
+                            None,
+                            None,
+                            false,
+                            None,
+                        )
+                        .await
+                    {
+                        Ok(spread_reports) => reports.extend(spread_reports),
+                        Err(e) => {
+                            log::error!("OKX query_order failed to fetch spread order: {e}");
+                        }
+                    }
+                }
+                QueryOrderRoute::Regular | QueryOrderRoute::RegularThenAlgo => {
+                    match http_client
+                        .request_order_status_report(
+                            account_id,
+                            instrument_id,
+                            client_order_id,
+                        )
+                        .await
+                    {
+                        Ok(Some(report)) => reports.push(report),
+                        Ok(None) => {
+                            query_algo = route == QueryOrderRoute::RegularThenAlgo;
+                        }
+                        Err(e) => {
+                            log::error!("OKX query_order failed to fetch regular order: {e}");
+                        }
+                    }
+                }
+                QueryOrderRoute::Algo => {}
+            }
+
+            // Known conditional orders route directly to the algo endpoint. For
+            // an uncached order, only fall back when the regular detail lookup
+            // has no match (including OKX 51603).
+            if query_algo {
                 match http_client
                     .request_algo_order_status_reports(
                         account_id,
                         None,
                         Some(instrument_id),
-                        None,
+                        algo_id,
                         Some(client_order_id),
                         None,
-                        None,
+                        Some(1),
                     )
                     .await
                 {
-                    Ok(algo) => merge_order_status_reports(&mut reports, algo),
+                    Ok(algo_reports) => merge_order_status_reports(&mut reports, algo_reports),
                     Err(e) => {
                         log::warn!("OKX query_order algo lookup failed for {instrument_id}: {e}");
                     }
@@ -2364,6 +2402,14 @@ enum OrderCommandRoute {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QueryOrderRoute {
+    Regular,
+    Algo,
+    RegularThenAlgo,
+    Spread,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CancelAllOrdersRoute {
     BatchWs,
     MassCancelHttp,
@@ -2483,6 +2529,27 @@ fn order_routing_instrument_types(
     routing_types
 }
 
+fn query_order_route(
+    instrument_id: InstrumentId,
+    order_type: Option<OrderType>,
+) -> QueryOrderRoute {
+    if is_spread_instrument(instrument_id) {
+        return QueryOrderRoute::Spread;
+    }
+
+    let supports_algo = supports_algo_orders(okx_instrument_type_from_symbol(
+        instrument_id.symbol.as_str(),
+    ));
+
+    match order_type {
+        Some(order_type) if supports_algo && OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type) => {
+            QueryOrderRoute::Algo
+        }
+        None if supports_algo => QueryOrderRoute::RegularThenAlgo,
+        _ => QueryOrderRoute::Regular,
+    }
+}
+
 fn is_spread_instrument(instrument_id: InstrumentId) -> bool {
     is_okx_spread_symbol(instrument_id.symbol.as_str())
 }
@@ -2516,10 +2583,10 @@ fn merge_order_status_reports(
 //      still valid; OKX rotates venue_order_id once an algo order triggers).
 //
 // Triggered-algo recovery is handled by the algo endpoint in the caller,
-// which queries by algo_cl_ord_id and returns the parent's algo record
-// directly. `linked_order_ids` is deliberately not consulted here because
-// it is also populated with attached TP/SL child ids on the parent order,
-// which would otherwise let a query for a child match the parent's report.
+// which queries by `algo_id` when it is known to be stable and otherwise by
+// `algo_cl_ord_id`. `linked_order_ids` is deliberately not consulted here
+// because it is also populated with attached TP/SL child ids on the parent
+// order, which would otherwise let a query for a child match the parent report.
 fn select_query_order_report(
     reports: Vec<OrderStatusReport>,
     client_order_id: ClientOrderId,
@@ -2554,6 +2621,37 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
+
+    #[rstest]
+    #[case(OrderType::Market, QueryOrderRoute::Regular)]
+    #[case(OrderType::Limit, QueryOrderRoute::Regular)]
+    #[case(OrderType::StopMarket, QueryOrderRoute::Algo)]
+    #[case(OrderType::TrailingStopMarket, QueryOrderRoute::Algo)]
+    fn test_query_order_route_for_known_order_type(
+        #[case] order_type: OrderType,
+        #[case] expected: QueryOrderRoute,
+    ) {
+        assert_eq!(
+            query_order_route(InstrumentId::from("BTC-USDT.OKX"), Some(order_type)),
+            expected
+        );
+    }
+
+    #[rstest]
+    fn test_query_order_route_for_unknown_order_type() {
+        assert_eq!(
+            query_order_route(InstrumentId::from("BTC-USDT.OKX"), None),
+            QueryOrderRoute::RegularThenAlgo,
+        );
+    }
+
+    #[rstest]
+    fn test_query_order_route_for_spread() {
+        assert_eq!(
+            query_order_route(InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"), None,),
+            QueryOrderRoute::Spread,
+        );
+    }
 
     fn build_config(
         margin_mode: Option<OKXMarginMode>,

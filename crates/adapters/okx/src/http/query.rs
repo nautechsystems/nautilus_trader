@@ -33,7 +33,7 @@ use serde::{self, Deserialize, Serialize};
 use crate::{
     common::enums::{
         OKXAlgoOrderStatus, OKXAlgoOrderType, OKXInstrumentType, OKXOrderStatus, OKXOrderType,
-        OKXPositionMode, OKXPositionSide, OKXTradeMode,
+        OKXPositionMode, OKXTradeMode,
     },
     http::error::BuildError,
 };
@@ -703,8 +703,6 @@ pub struct GetPositionsHistoryParams {
 #[builder(setter(into, strip_option))]
 #[serde(rename_all = "camelCase")]
 pub struct GetOrderParams {
-    /// Instrument type: SPOT, MARGIN, SWAP, FUTURES, OPTION.
-    pub inst_type: OKXInstrumentType,
     /// Instrument ID, e.g. "BTC-USDT".
     pub inst_id: String,
     /// Exchange-assigned order ID (optional if client order ID is provided).
@@ -713,9 +711,6 @@ pub struct GetOrderParams {
     /// User-assigned client order ID (optional if order ID is provided).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cl_ord_id: Option<String>,
-    /// Position side (optional).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pos_side: Option<OKXPositionSide>,
 }
 
 /// Parameters for the GET /api/v5/account/trade-fee endpoint.

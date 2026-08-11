@@ -108,6 +108,15 @@ impl From<serde_json::Error> for OKXHttpError {
 }
 
 impl OKXHttpError {
+    /// Returns whether OKX reported that the requested order does not exist.
+    #[must_use]
+    pub fn is_order_not_found(&self) -> bool {
+        matches!(
+            self,
+            Self::OkxError { error_code, .. } if error_code == "51603"
+        )
+    }
+
     /// Returns whether this error is retryable.
     #[must_use]
     pub fn is_retryable(&self) -> bool {
@@ -142,5 +151,19 @@ mod tests {
     #[case(OKXHttpError::Canceled("shutdown".to_string()), false)]
     fn test_is_retryable(#[case] error: OKXHttpError, #[case] expected: bool) {
         assert_eq!(error.is_retryable(), expected);
+    }
+
+    #[rstest]
+    #[case(OKXHttpError::OkxError {
+        error_code: "51603".to_string(),
+        message: "Order does not exist".to_string(),
+    }, true)]
+    #[case(OKXHttpError::OkxError {
+        error_code: "51000".to_string(),
+        message: "Parameter error".to_string(),
+    }, false)]
+    #[case(OKXHttpError::ValidationError("bad".to_string()), false)]
+    fn test_is_order_not_found(#[case] error: OKXHttpError, #[case] expected: bool) {
+        assert_eq!(error.is_order_not_found(), expected);
     }
 }

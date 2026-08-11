@@ -1134,9 +1134,15 @@ pub struct OKXOrderAlgo {
     /// Client order ID (empty until triggered).
     #[serde(default)]
     pub cl_ord_id: String,
-    /// Venue order ID (empty until triggered).
+    /// Latest regular order ID (deprecated by OKX; empty until triggered).
     #[serde(default)]
     pub ord_id: String,
+    /// Regular order IDs created after the algo order triggers.
+    #[serde(default)]
+    pub ord_id_list: Vec<String>,
+    /// Child algo order IDs created for split take-profit orders.
+    #[serde(default)]
+    pub sub_algo_id_list: Vec<String>,
     /// Instrument ID, e.g. `ETH-USDT-SWAP`.
     pub inst_id: Ustr,
     /// Instrument type.
@@ -1586,6 +1592,30 @@ mod tests {
     use serde_json;
 
     use super::*;
+
+    #[rstest]
+    fn test_algo_order_deserializes_current_child_identifier_lists() {
+        let order: OKXOrderAlgo = serde_json::from_value(serde_json::json!({
+            "algoId": "123",
+            "algoClOrdId": "algo-client-1",
+            "ordId": "456",
+            "ordIdList": ["456", "457"],
+            "subAlgoIdList": ["789"],
+            "instId": "ETH-USDT-SWAP",
+            "instType": "SWAP",
+            "ordType": "conditional",
+            "state": "effective",
+            "side": "sell",
+            "posSide": "net",
+            "tdMode": "cross",
+            "cTime": "1700000000000",
+            "uTime": "1700000001000"
+        }))
+        .unwrap();
+
+        assert_eq!(order.ord_id_list, ["456", "457"]);
+        assert_eq!(order.sub_algo_id_list, ["789"]);
+    }
 
     #[rstest]
     fn test_algo_order_request_serialization() {

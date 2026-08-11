@@ -789,6 +789,15 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                                 .into_response();
                         }
 
+                        if params.get("clOrdId").map(String::as_str) == Some("O-missing-regular") {
+                            return Json(json!({
+                                "code": "51603",
+                                "msg": "Order does not exist",
+                                "data": [],
+                            }))
+                            .into_response();
+                        }
+
                         *state.last_order_detail_query.lock().await = Some(params);
                         Json(load_test_data("http_get_orders_history.json")).into_response()
                     }
@@ -1022,6 +1031,15 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                                 })),
                             )
                                 .into_response();
+                        }
+
+                        if params.get("algoClOrdId").map(String::as_str) == Some("O-missing") {
+                            return Json(json!({
+                                "code": "51603",
+                                "msg": "Order does not exist",
+                                "data": [],
+                            }))
+                            .into_response();
                         }
 
                         let fixture = match params.get("algoClOrdId").map(String::as_str) {
@@ -2402,7 +2420,6 @@ async fn test_http_get_order_by_client_and_exchange_ids() {
     .unwrap();
 
     let params = GetOrderParamsBuilder::default()
-        .inst_type(OKXInstrumentType::Swap)
         .inst_id("BTC-USDT-SWAP")
         .ord_id("1234567890123456789")
         .cl_ord_id("client-order-1")
@@ -2413,10 +2430,64 @@ async fn test_http_get_order_by_client_and_exchange_ids() {
     assert_eq!(orders.len(), 1);
 
     let query = state.last_order_detail_query.lock().await.clone().unwrap();
-    assert_eq!(query.get("instType"), Some(&"SWAP".to_string()));
+    assert_eq!(query.len(), 3);
     assert_eq!(query.get("instId"), Some(&"BTC-USDT-SWAP".to_string()));
     assert_eq!(query.get("ordId"), Some(&"1234567890123456789".to_string()));
     assert_eq!(query.get("clOrdId"), Some(&"client-order-1".to_string()));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_order_status_report_uses_client_order_id_and_handles_missing_order() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::with_credentials(
+        Some("key".to_string()),
+        Some("secret".to_string()),
+        Some("pass".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let report = client
+        .request_order_status_report(
+            AccountId::new("OKX-001"),
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            ClientOrderId::from("O-recover"),
+        )
+        .await
+        .unwrap()
+        .expect("expected regular order report");
+
+    assert_eq!(report.venue_order_id.as_str(), "2497956918703120384");
+    let query = state.last_order_detail_query.lock().await.clone().unwrap();
+    assert_eq!(
+        query.get("instId").map(String::as_str),
+        Some("BTC-USDT-SWAP")
+    );
+    assert_eq!(query.get("clOrdId").map(String::as_str), Some("O-recover"));
+    assert!(!query.contains_key("ordId"));
+
+    let missing = client
+        .request_order_status_report(
+            AccountId::new("OKX-001"),
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            ClientOrderId::from("O-missing-regular"),
+        )
+        .await
+        .unwrap();
+    assert!(missing.is_none());
 }
 
 #[tokio::test]
@@ -3830,6 +3901,41 @@ async fn test_http_request_algo_order_status_report_parses_close_fraction_condit
 
 #[rstest]
 #[tokio::test]
+async fn test_http_request_algo_order_status_report_treats_missing_order_as_none() {
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let report = client
+        .request_algo_order_status_report(
+            AccountId::new("OKX-001"),
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            ClientOrderId::from("O-missing"),
+        )
+        .await
+        .unwrap();
+
+    assert!(report.is_none());
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_http_request_algo_order_status_report_queries_attached_oco_details() {
     let state = Arc::new(TestServerState::default());
     let addr = start_test_server(state.clone()).await;
@@ -4146,7 +4252,7 @@ async fn test_http_request_algo_order_status_reports_uses_details_for_exact_look
             None,
             Some(InstrumentId::from("ETH-USDT-SWAP.OKX")),
             Some("987654321".to_string()),
-            None,
+            Some(ClientOrderId::from("client_algo_2")),
             None,
             Some(1),
         )
@@ -4167,6 +4273,10 @@ async fn test_http_request_algo_order_status_reports_uses_details_for_exact_look
     assert_eq!(
         details_queries[0].get("algoId").map(String::as_str),
         Some("987654321")
+    );
+    assert_eq!(
+        details_queries[0].get("algoClOrdId").map(String::as_str),
+        Some("client_algo_2")
     );
     assert!(pending_queries.is_empty());
     assert!(history_queries.is_empty());
