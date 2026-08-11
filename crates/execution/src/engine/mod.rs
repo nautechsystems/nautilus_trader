@@ -2782,11 +2782,51 @@ impl ExecutionEngine {
         }
 
         match oms_type {
-            OmsType::Hedging => fill
-                .position_id
+            OmsType::Hedging => self
+                .orderless_hedging_leg_position_id(fill)
+                .or(fill.position_id)
                 .unwrap_or_else(|| self.pos_id_generator.generate(fill.strategy_id, false)),
             OmsType::Netting => self.determine_netting_position_id(fill),
             _ => self.determine_netting_position_id(fill),
+        }
+    }
+
+    fn orderless_hedging_leg_position_id(&self, fill: &OrderFilled) -> Option<PositionId> {
+        if !self.is_leg_fill(fill) {
+            return None;
+        }
+
+        let cache = self.cache.borrow();
+        if cache.order_exists(&fill.client_order_id()) {
+            return None;
+        }
+
+        let matching_positions: Vec<PositionId> = cache
+            .positions_open(
+                Some(&fill.instrument_id.venue),
+                Some(&fill.instrument_id),
+                Some(&fill.strategy_id),
+                Some(&fill.account_id),
+                None,
+            )
+            .iter()
+            .filter(|position| position.opening_order_id == fill.client_order_id)
+            .map(|position| position.id)
+            .collect();
+
+        match matching_positions.as_slice() {
+            [position_id] => Some(*position_id),
+            [] => None,
+            _ => {
+                log::warn!(
+                    "Cannot uniquely correlate HEDGING leg fill {} to an orderless position: \
+                     found {} positions with opening_order_id={}",
+                    fill.trade_id,
+                    matching_positions.len(),
+                    fill.client_order_id,
+                );
+                None
+            }
         }
     }
 
@@ -3766,7 +3806,15 @@ impl ExecutionEngine {
             position.replay_events.extend(current_replay);
             position.fill_voids = prior.fill_voids;
         }
-        self.cache.borrow_mut().add_position(&position, oms_type)?;
+        let is_orderless_leg = self.is_leg_fill(&fill)
+            && !self.cache.borrow().order_exists(&position.opening_order_id);
+        if is_orderless_leg {
+            self.cache
+                .borrow_mut()
+                .add_position_without_order(&position, oms_type)?;
+        } else {
+            self.cache.borrow_mut().add_position(&position, oms_type)?;
+        }
 
         if self.config.snapshot_positions {
             self.create_position_state_snapshot(&position, true);
@@ -3901,82 +3949,11 @@ impl ExecutionEngine {
         oms_type: OmsType,
     ) -> Vec<PositionEvent> {
         let mut position_events = Vec::new();
-        let difference = match position.side {
-            PositionSide::Long => Quantity::from_raw(
-                fill.last_qty.raw - position.quantity.raw,
-                position.size_precision,
-            ),
-            PositionSide::Short => Quantity::from_raw(
-                position.quantity.raw.abs_diff(fill.last_qty.raw), // Equivalent to Python's abs(position.quantity - fill.last_qty)
-                position.size_precision,
-            ),
-            _ => fill.last_qty,
-        };
 
-        // Split commission between two positions
-        let fill_percent = position.quantity.as_decimal() / fill.last_qty.as_decimal();
-        let (commission1, commission2) = if let Some(commission) = fill.commission {
-            let commission_currency = commission.currency;
-            let commission1 =
-                Money::from_decimal(commission.as_decimal() * fill_percent, commission_currency)
-                    .expect("Invalid split commission");
-            let commission2 = commission - commission1;
-            (Some(commission1), Some(commission2))
-        } else {
+        if fill.commission.is_none() {
             log::warn!(
                 "Commission is not available for position flip, splitting with no commission"
             );
-            (None, None)
-        };
-
-        let mut fill_split1: Option<OrderFilled> = None;
-
-        if position.is_open() {
-            let mut split = OrderFilled::new(
-                fill.trader_id,
-                fill.strategy_id,
-                fill.instrument_id,
-                fill.client_order_id,
-                fill.venue_order_id,
-                fill.account_id,
-                fill.trade_id,
-                fill.order_side,
-                fill.order_type,
-                position.quantity,
-                fill.last_px,
-                fill.currency,
-                fill.liquidity_side,
-                fill.event_id,
-                fill.ts_event,
-                fill.ts_init,
-                fill.reconciliation,
-                fill.position_id,
-                commission1,
-                fill.info.clone(),
-            );
-            split.causation_id = fill.causation_id;
-            fill_split1 = Some(split);
-
-            if let Some(position_event) =
-                self.update_position(position, fill_split1.as_ref().unwrap())
-            {
-                position_events.push(position_event);
-            }
-
-            // Snapshot closed position before reusing ID (NETTING mode)
-            if oms_type == OmsType::Netting
-                && let Err(e) = self.snapshot_position(position)
-            {
-                log::warn!("Failed to snapshot position during flip: {e:?}");
-            }
-        }
-
-        // Guard against flipping a position with a zero fill size
-        if difference.raw == 0 {
-            log::warn!(
-                "Zero fill size during position flip calculation, this could be caused by a mismatch between instrument `size_precision` and a quantity `size_precision`"
-            );
-            return position_events;
         }
 
         let position_id_flip = if oms_type == OmsType::Hedging
@@ -3990,29 +3967,20 @@ impl ExecutionEngine {
             fill.position_id
         };
 
-        let mut fill_split2 = OrderFilled::new(
-            fill.trader_id,
-            fill.strategy_id,
-            fill.instrument_id,
-            fill.client_order_id,
-            fill.venue_order_id,
-            fill.account_id,
-            fill.trade_id,
-            fill.order_side,
-            fill.order_type,
-            difference,
-            fill.last_px,
-            fill.currency,
-            fill.liquidity_side,
-            UUID4::new(),
-            fill.ts_event,
-            fill.ts_init,
-            fill.reconciliation,
-            position_id_flip,
-            commission2,
-            fill.info.clone(),
-        );
-        fill_split2.causation_id = Some(fill.event_id);
+        let (fill_split1, fill_split2) = fill
+            .split_for_position_flip(position.quantity, position_id_flip, UUID4::new())
+            .expect("Invalid position flip split");
+
+        if let Some(position_event) = self.update_position(position, &fill_split1) {
+            position_events.push(position_event);
+        }
+
+        // Snapshot closed position before reusing ID (NETTING mode)
+        if oms_type == OmsType::Netting
+            && let Err(e) = self.snapshot_position(position)
+        {
+            log::warn!("Failed to snapshot position during flip: {e:?}");
+        }
 
         if oms_type == OmsType::Hedging
             && let Some(position_id) = fill.position_id
