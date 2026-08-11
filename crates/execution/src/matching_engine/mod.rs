@@ -7443,7 +7443,7 @@ mod tests {
     // unseen-id ignore paths
     #[rstest]
     fn test_l3_queue_position_replay_databento_mbo_stays_synced() {
-        let json = include_str!("../../test_data/databento_esh4_mbo.json");
+        let json = include_str!("../../../../test_data/databento/esh4-glbx-mdp3-20231225.mbo.json");
         let records: Vec<serde_json::Value> = serde_json::from_str(json).unwrap();
         assert!(records.len() > 1000);
 
