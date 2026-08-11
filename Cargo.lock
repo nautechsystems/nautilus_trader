@@ -6636,6 +6636,7 @@ dependencies = [
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
+ "ruint",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",

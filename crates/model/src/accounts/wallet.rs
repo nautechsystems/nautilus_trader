@@ -26,7 +26,8 @@
 //! without changing the reported on-chain totals: `free = total - locked`. Account state events
 //! contribute totals only; locked and free balances are always derived from local reservations.
 //! Rebuilding an instrument reservation clears its prior currency locks before applying the new
-//! exact set.
+//! exact set. Computed BUY notionals for non-inverse, non-quanto instruments round up to the
+//! observed currency's smallest unit so the reservation never understates the possible spend.
 //!
 //! # Graceful degradation
 //!
@@ -35,6 +36,7 @@
 //! preventing new orders while avoiding crashes in live trading.
 
 use std::{
+    cmp::Ordering,
     fmt::Display,
     ops::{Deref, DerefMut},
 };
@@ -42,8 +44,10 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use indexmap::IndexMap;
 use nautilus_core::correctness::{
-    CorrectnessResult, CorrectnessResultExt, FAILED, check_predicate_false, check_predicate_true,
+    CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED, check_predicate_false,
+    check_predicate_true,
 };
+use ruint::aliases::U512;
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 use crate::{
@@ -54,9 +58,13 @@ use crate::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
     identifiers::{AccountId, InstrumentId},
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     position::Position,
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{
+        AccountBalance, Currency, Money, Price, Quantity,
+        fixed::{FIXED_PRECISION, check_fixed_raw_i128, check_fixed_raw_u128, raw_scale},
+        money::MoneyRaw,
+    },
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -114,7 +122,6 @@ impl WalletAccount {
         instrument_id: InstrumentId,
         locked: Money,
     ) -> anyhow::Result<()> {
-        anyhow::ensure!(locked.raw >= 0, "locked balance was negative: {locked}");
         let current_balance = self
             .base
             .balances
@@ -123,32 +130,58 @@ impl WalletAccount {
             .ok_or_else(|| {
                 anyhow::anyhow!("wallet has no observed balance for {}", locked.currency)
             })?;
-        let key = (instrument_id, locked.currency);
-        let previous = self.balances_locked.insert(key, locked);
-        let balance = match base::balance_from_locks(current_balance, &self.balances_locked) {
+        Self::validate_observed_balance(current_balance)?;
+        let locked = Self::normalize_reservation(locked, current_balance.currency)?;
+        let key = (instrument_id, current_balance.currency);
+        let previous = self.balances_locked.remove_entry(&key);
+        self.balances_locked.insert(key, locked);
+        let balance = match Self::balance_from_locks_checked(current_balance, &self.balances_locked)
+        {
             Ok(balance) => balance,
             Err(e) => {
-                if let Some(previous) = previous {
-                    self.balances_locked.insert(key, previous);
-                } else {
-                    self.balances_locked.remove(&key);
+                self.balances_locked.remove(&key);
+                if let Some((previous_key, previous)) = previous {
+                    self.balances_locked.insert(previous_key, previous);
                 }
 
                 return Err(e.into());
             }
         };
-        self.base.balances.insert(locked.currency, balance);
+        self.base.balances.insert(current_balance.currency, balance);
 
         Ok(())
     }
 
     /// Clears all locked balances for the given instrument ID.
     pub fn clear_balance_locked(&mut self, instrument_id: InstrumentId) {
-        base::clear_balance_locked(
-            &mut self.base.balances,
-            &mut self.balances_locked,
-            instrument_id,
-        );
+        let currencies = self
+            .balances_locked
+            .iter()
+            .filter(|((id, _), _)| *id == instrument_id)
+            .flat_map(|((_, key_currency), locked)| [*key_currency, locked.currency])
+            .collect::<AHashSet<_>>();
+        let mut balances_locked = self.balances_locked.clone();
+        balances_locked.retain(|(id, _), _| *id != instrument_id);
+        let mut balances = self.base.balances.clone();
+
+        for currency in currencies {
+            let Some(current_balance) = balances.get(&currency).copied() else {
+                log::error!("Cannot clear wallet reservations: no observed balance for {currency}");
+                return;
+            };
+            let balance = match Self::balance_from_locks_checked(current_balance, &balances_locked)
+            {
+                Ok(balance) => balance,
+                Err(e) => {
+                    log::error!("Cannot clear wallet reservations for {currency}: {e}");
+                    return;
+                }
+            };
+            balances.insert(current_balance.currency, balance);
+        }
+
+        self.base.balances = balances;
+        self.balances_locked = balances_locked;
     }
 
     /// Updates the account balances, rejecting negative totals.
@@ -162,7 +195,7 @@ impl WalletAccount {
     pub fn update_balances(&mut self, balances: &[AccountBalance]) -> anyhow::Result<()> {
         let balances = Self::normalize_balances(balances)?
             .into_iter()
-            .map(|balance| base::balance_from_locks(balance, &self.balances_locked))
+            .map(|balance| Self::balance_from_locks_checked(balance, &self.balances_locked))
             .collect::<CorrectnessResult<Vec<_>>>()?;
         self.base.update_balances(&balances);
 
@@ -179,7 +212,19 @@ impl WalletAccount {
     /// Sums all per-instrument locked amounts for the currency and updates the balance.
     /// If the total locked exceeds the total balance, clamps to total (free = 0).
     pub fn recalculate_balance(&mut self, currency: Currency) {
-        base::recalculate_balance(&mut self.base.balances, &self.balances_locked, currency);
+        let Some(current_balance) = self.base.balances.get(&currency).copied() else {
+            log::debug!("Cannot recalculate balance when no current balance for {currency}");
+            return;
+        };
+
+        match Self::balance_from_locks_checked(current_balance, &self.balances_locked) {
+            Ok(balance) => {
+                self.base.balances.insert(current_balance.currency, balance);
+            }
+            Err(e) => {
+                log::error!("Cannot recalculate {currency} balance from reservations: {e}");
+            }
+        }
     }
 
     fn validate_event(event: &AccountState) -> CorrectnessResult<()> {
@@ -215,6 +260,7 @@ impl WalletAccount {
                     balance.total.raw < 0,
                     "Wallet account balance total was negative",
                 )?;
+                Self::validate_observed_balance(*balance)?;
                 AccountBalance::new_checked(
                     balance.total,
                     Money::zero(balance.currency),
@@ -222,6 +268,268 @@ impl WalletAccount {
                 )
             })
             .collect()
+    }
+
+    fn validate_observed_balance(balance: AccountBalance) -> CorrectnessResult<()> {
+        check_predicate_true(
+            balance.currency == balance.total.currency
+                && balance.currency.precision == balance.total.currency.precision,
+            &format!(
+                "Wallet account balance currency {} precision {} differed from total currency {} precision {}",
+                balance.currency,
+                balance.currency.precision,
+                balance.total.currency,
+                balance.total.currency.precision,
+            ),
+        )?;
+        Self::validate_money(balance.total)
+    }
+
+    #[allow(
+        clippy::useless_conversion,
+        reason = "the raw width differs when high-precision is disabled"
+    )]
+    fn validate_money(money: Money) -> CorrectnessResult<()> {
+        Money::from_raw_checked(money.raw, money.currency)?;
+        Self::validate_raw(i128::from(money.raw), money.currency.precision)
+    }
+
+    fn validate_raw(raw: i128, precision: u8) -> CorrectnessResult<()> {
+        check_fixed_raw_i128(raw, precision).map_err(|e| CorrectnessError::PredicateViolation {
+            message: e.to_string(),
+        })
+    }
+
+    #[allow(
+        clippy::useless_conversion,
+        reason = "the raw width differs when high-precision is disabled"
+    )]
+    fn validate_quantity(quantity: Quantity) -> CorrectnessResult<()> {
+        check_predicate_false(quantity.is_undefined(), "quantity was undefined")?;
+        Quantity::from_raw_checked(quantity.raw, quantity.precision)?;
+        check_fixed_raw_u128(u128::from(quantity.raw), quantity.precision).map_err(|e| {
+            CorrectnessError::PredicateViolation {
+                message: e.to_string(),
+            }
+        })
+    }
+
+    #[allow(
+        clippy::useless_conversion,
+        reason = "the raw width differs when high-precision is disabled"
+    )]
+    fn validate_price(price: Price) -> CorrectnessResult<()> {
+        check_predicate_true(price.is_positive(), "price was not positive")?;
+        Price::from_raw_checked(price.raw, price.precision)?;
+        check_fixed_raw_i128(i128::from(price.raw), price.precision).map_err(|e| {
+            CorrectnessError::PredicateViolation {
+                message: e.to_string(),
+            }
+        })
+    }
+
+    #[allow(
+        clippy::useless_conversion,
+        reason = "the raw width differs when high-precision is disabled"
+    )]
+    fn normalize_reservation(locked: Money, currency: Currency) -> CorrectnessResult<Money> {
+        check_predicate_false(
+            locked.raw < 0,
+            &format!("locked balance was negative: {locked}"),
+        )?;
+        Self::validate_money(locked)?;
+
+        let source_precision = locked.currency.precision.max(FIXED_PRECISION);
+        let target_precision = currency.precision.max(FIXED_PRECISION);
+        let raw = i128::from(locked.raw);
+        let raw = match source_precision.cmp(&target_precision) {
+            Ordering::Less => {
+                let scale = 10_i128.pow(u32::from(target_precision - source_precision));
+                raw.checked_mul(scale)
+                    .ok_or_else(|| CorrectnessError::PredicateViolation {
+                        message: format!(
+                            "wallet reservation for {currency} overflowed while increasing raw scale"
+                        ),
+                    })?
+            }
+            Ordering::Greater => {
+                let scale = 10_i128.pow(u32::from(source_precision - target_precision));
+                check_predicate_true(
+                    raw % scale == 0,
+                    &format!(
+                        "wallet reservation for {currency} loses precision when decreasing raw scale"
+                    ),
+                )?;
+                raw / scale
+            }
+            Ordering::Equal => raw,
+        };
+        Self::validate_raw(raw, currency.precision)?;
+        let raw: MoneyRaw = raw
+            .try_into()
+            .map_err(|_| CorrectnessError::PredicateViolation {
+                message: format!("wallet reservation for {currency} exceeds Money raw bounds"),
+            })?;
+
+        Money::from_raw_checked(raw, currency)
+    }
+
+    #[allow(
+        clippy::useless_conversion,
+        reason = "the raw width differs when high-precision is disabled"
+    )]
+    fn money_from_quantity(quantity: Quantity, currency: Currency) -> CorrectnessResult<Money> {
+        Self::validate_quantity(quantity)?;
+        let source_precision = quantity.precision.max(FIXED_PRECISION);
+        let target_precision = currency.precision.max(FIXED_PRECISION);
+        let raw = i128::try_from(u128::from(quantity.raw)).map_err(|_| {
+            CorrectnessError::PredicateViolation {
+                message: format!("quantity for {currency} exceeds signed raw bounds"),
+            }
+        })?;
+        let raw = match source_precision.cmp(&target_precision) {
+            Ordering::Less => {
+                let scale = 10_i128.pow(u32::from(target_precision - source_precision));
+                raw.checked_mul(scale)
+                    .ok_or_else(|| CorrectnessError::PredicateViolation {
+                        message: format!(
+                            "quantity for {currency} overflowed while increasing raw scale"
+                        ),
+                    })?
+            }
+            Ordering::Greater => {
+                let scale = 10_i128.pow(u32::from(source_precision - target_precision));
+                check_predicate_true(
+                    raw % scale == 0,
+                    &format!("quantity for {currency} loses precision when decreasing raw scale"),
+                )?;
+                raw / scale
+            }
+            Ordering::Equal => raw,
+        };
+        Self::validate_raw(raw, currency.precision)?;
+        let raw: MoneyRaw = raw
+            .try_into()
+            .map_err(|_| CorrectnessError::PredicateViolation {
+                message: format!("quantity for {currency} exceeds Money raw bounds"),
+            })?;
+
+        Money::from_raw_checked(raw, currency)
+    }
+
+    #[allow(
+        clippy::useless_conversion,
+        reason = "the raw width differs when high-precision is disabled"
+    )]
+    fn calculate_notional_exact(
+        instrument: &InstrumentAny,
+        quantity: Quantity,
+        price: Price,
+        currency: Currency,
+    ) -> CorrectnessResult<Money> {
+        let multiplier = instrument.multiplier();
+        Self::validate_quantity(quantity)?;
+        Self::validate_quantity(multiplier)?;
+        Self::validate_price(price)?;
+
+        let quantity_raw = U512::from(quantity.raw);
+        let multiplier_raw = U512::from(multiplier.raw);
+        let price_raw = U512::from(u128::try_from(price.raw).map_err(|_| {
+            CorrectnessError::PredicateViolation {
+                message: "price raw value was negative".to_string(),
+            }
+        })?);
+        let target_scale = U512::from(raw_scale(currency.precision));
+        let numerator = quantity_raw
+            .checked_mul(multiplier_raw)
+            .and_then(|value| value.checked_mul(price_raw))
+            .and_then(|value| value.checked_mul(target_scale))
+            .ok_or_else(|| CorrectnessError::PredicateViolation {
+                message: "wallet notional numerator overflowed".to_string(),
+            })?;
+        let denominator = U512::from(raw_scale(quantity.precision))
+            .checked_mul(U512::from(raw_scale(multiplier.precision)))
+            .and_then(|value| value.checked_mul(U512::from(raw_scale(price.precision))))
+            .ok_or_else(|| CorrectnessError::PredicateViolation {
+                message: "wallet notional denominator overflowed".to_string(),
+            })?;
+        let grid = raw_scale(currency.precision) / 10_u128.pow(u32::from(currency.precision));
+        let denominator = denominator.checked_mul(U512::from(grid)).ok_or_else(|| {
+            CorrectnessError::PredicateViolation {
+                message: "wallet notional grid denominator overflowed".to_string(),
+            }
+        })?;
+        let units = numerator / denominator;
+        let units = if (numerator % denominator).is_zero() {
+            units
+        } else {
+            units.checked_add(U512::from(1_u8)).ok_or_else(|| {
+                CorrectnessError::PredicateViolation {
+                    message: "wallet notional ceiling overflowed".to_string(),
+                }
+            })?
+        };
+        let raw = units.checked_mul(U512::from(grid)).ok_or_else(|| {
+            CorrectnessError::PredicateViolation {
+                message: "wallet notional raw value overflowed".to_string(),
+            }
+        })?;
+        let raw = u128::try_from(raw).map_err(|_| CorrectnessError::PredicateViolation {
+            message: format!("wallet notional for {currency} exceeds raw bounds"),
+        })?;
+        let raw: MoneyRaw = raw
+            .try_into()
+            .map_err(|_| CorrectnessError::PredicateViolation {
+                message: format!("wallet notional for {currency} exceeds Money raw bounds"),
+            })?;
+        Self::validate_raw(i128::from(raw), currency.precision)?;
+
+        Money::from_raw_checked(raw, currency)
+    }
+
+    fn balance_from_locks_checked(
+        current_balance: AccountBalance,
+        balances_locked: &AHashMap<(InstrumentId, Currency), Money>,
+    ) -> CorrectnessResult<AccountBalance> {
+        Self::validate_observed_balance(current_balance)?;
+        let currency = current_balance.currency;
+        let mut total_locked = Money::zero(currency);
+
+        for ((_, key_currency), locked) in balances_locked
+            .iter()
+            .filter(|((_, key), locked)| *key == currency || locked.currency == currency)
+        {
+            check_predicate_true(
+                *key_currency == locked.currency
+                    && key_currency.precision == locked.currency.precision,
+                &format!(
+                    "wallet reservation key currency {} precision {} differed from value currency {} precision {}",
+                    key_currency,
+                    key_currency.precision,
+                    locked.currency,
+                    locked.currency.precision,
+                ),
+            )?;
+            check_predicate_true(
+                locked.currency.precision == currency.precision,
+                &format!(
+                    "locked balance precision {} differed from balance precision {} for {currency}",
+                    locked.currency.precision, currency.precision
+                ),
+            )?;
+            check_predicate_false(
+                locked.raw < 0,
+                &format!("locked balance was negative: {locked}"),
+            )?;
+            Self::validate_money(*locked)?;
+            total_locked = total_locked.checked_add(*locked).ok_or_else(|| {
+                CorrectnessError::PredicateViolation {
+                    message: format!("{currency} wallet reservation total exceeds Money bounds"),
+                }
+            })?;
+        }
+
+        base::balance_from_locks(current_balance, balances_locked)
     }
 
     fn from_base_checked(mut base: BaseAccount) -> CorrectnessResult<Self> {
@@ -365,7 +673,7 @@ impl Account for WalletAccount {
         let mut event = event;
         event.balances = Self::normalize_balances(&event.balances)?
             .into_iter()
-            .map(|balance| base::balance_from_locks(balance, &self.balances_locked))
+            .map(|balance| Self::balance_from_locks_checked(balance, &self.balances_locked))
             .collect::<CorrectnessResult<Vec<_>>>()?;
         self.base_apply(event);
 
@@ -384,7 +692,55 @@ impl Account for WalletAccount {
         price: Price,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
-        self.base_calculate_balance_locked(instrument, side, quantity, price, use_quote_for_inverse)
+        let base_currency = instrument
+            .base_currency()
+            .unwrap_or(instrument.quote_currency());
+        let source_currency = if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false)
+        {
+            base_currency
+        } else if side == OrderSide::Buy {
+            instrument.quote_currency()
+        } else if side == OrderSide::Sell {
+            base_currency
+        } else {
+            anyhow::bail!("Invalid `OrderSide` in `calculate_balance_locked`: {side}")
+        };
+        let current_balance = self
+            .base
+            .balances
+            .get(&source_currency)
+            .copied()
+            .ok_or_else(|| {
+                anyhow::anyhow!("wallet has no observed balance for {source_currency}")
+            })?;
+        Self::validate_observed_balance(current_balance)?;
+
+        if side == OrderSide::Sell {
+            return Self::money_from_quantity(quantity, current_balance.currency)
+                .map_err(Into::into);
+        }
+
+        Self::validate_quantity(quantity)?;
+        Self::validate_price(price)?;
+
+        if !instrument.is_inverse() && !instrument.is_quanto() {
+            return Self::calculate_notional_exact(
+                instrument,
+                quantity,
+                price,
+                current_balance.currency,
+            )
+            .map_err(Into::into);
+        }
+
+        let locked = self.base_calculate_balance_locked(
+            instrument,
+            side,
+            quantity,
+            price,
+            use_quote_for_inverse,
+        )?;
+        Self::normalize_reservation(locked, current_balance.currency).map_err(Into::into)
     }
 
     fn calculate_pnls(
@@ -463,8 +819,13 @@ mod tests {
         identifiers::{AccountId, InstrumentId, stubs::uuid4},
         instruments::{CurrencyPair, Instrument, stubs::*},
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
-        types::{AccountBalance, Currency, Money, Price, Quantity, money::MONEY_RAW_MAX},
+        types::{
+            AccountBalance, Currency, Money, Price, Quantity,
+            money::{MONEY_RAW_MAX, MoneyRaw},
+        },
     };
+    #[cfg(feature = "defi")]
+    use crate::{enums::CurrencyType, identifiers::Symbol, types::fixed::FIXED_PRECISION};
 
     #[rstest]
     fn test_display(wallet_account: WalletAccount) {
@@ -716,6 +1077,9 @@ mod tests {
         mut wallet_account: WalletAccount,
         currency_pair_btcusdt: CurrencyPair,
     ) {
+        let balances_before = wallet_account.base.balances.clone();
+        let locks_before = wallet_account.balances_locked.clone();
+        let events_before = wallet_account.events.clone();
         let result =
             wallet_account.update_balance_locked(currency_pair_btcusdt.id, Money::from("1 BTC"));
 
@@ -723,7 +1087,9 @@ mod tests {
             result.unwrap_err().to_string(),
             "wallet has no observed balance for BTC"
         );
-        assert!(wallet_account.balances_locked.is_empty());
+        assert_eq!(wallet_account.base.balances, balances_before);
+        assert_eq!(wallet_account.balances_locked, locks_before);
+        assert_eq!(wallet_account.events, events_before);
     }
 
     #[rstest]
@@ -790,21 +1156,229 @@ mod tests {
     }
 
     #[rstest]
-    fn test_update_balance_locked_clamps_aggregate_raw_overflow(mut wallet_account: WalletAccount) {
+    fn test_update_balance_locked_rejects_aggregate_overflow_without_mutation(
+        mut wallet_account: WalletAccount,
+    ) {
         let maximum = Money::from_raw(MONEY_RAW_MAX, Currency::ETH());
 
         wallet_account
             .update_balance_locked(InstrumentId::from("WETHUSDC.BLOCKCHAIN"), maximum)
             .unwrap();
-        wallet_account
-            .update_balance_locked(InstrumentId::from("WETHDAI.BLOCKCHAIN"), maximum)
+        let balances_before = wallet_account.base.balances.clone();
+        let locks_before = wallet_account.balances_locked.clone();
+        let events_before = wallet_account.events.clone();
+
+        let result =
+            wallet_account.update_balance_locked(InstrumentId::from("WETHDAI.BLOCKCHAIN"), maximum);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "ETH wallet reservation total exceeds Money bounds"
+        );
+        assert_eq!(wallet_account.base.balances, balances_before);
+        assert_eq!(wallet_account.balances_locked, locks_before);
+        assert_eq!(wallet_account.events, events_before);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_update_balance_locked_normalizes_to_observed_precision() {
+        let observed = test_currency("TST", 18);
+        let source = test_currency("TST", 16);
+        let mut wallet = wallet_with_total(observed, 1_000_000_000_000_000_000);
+        let instrument_id = InstrumentId::from("TSTUSDC.BLOCKCHAIN");
+        let reservation = Money::from_raw(1_234_567_890_123_456, source);
+
+        wallet
+            .update_balance_locked(instrument_id, reservation)
             .unwrap();
 
-        let balance = wallet_account.balance(Some(Currency::ETH())).unwrap();
-        assert_eq!(balance.total, Money::from("10 ETH"));
-        assert_eq!(balance.locked, Money::from("10 ETH"));
-        assert_eq!(balance.free, Money::from("0 ETH"));
-        assert_eq!(wallet_account.balances_locked.len(), 2);
+        let stored = wallet
+            .balances_locked
+            .get(&(instrument_id, observed))
+            .unwrap();
+        let balance = wallet.balance(Some(observed)).unwrap();
+        assert_eq!(stored.currency, observed);
+        assert_eq!(stored.currency.precision, 18);
+        assert_eq!(stored.raw, 123_456_789_012_345_600);
+        assert_eq!(balance.total.raw, 1_000_000_000_000_000_000);
+        assert_eq!(balance.locked.raw, 123_456_789_012_345_600);
+        assert_eq!(balance.free.raw, 876_543_210_987_654_400);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_update_balance_locked_normalizes_to_observed_currency_grid() {
+        let observed = test_currency("GRID", 6);
+        let source = test_currency("GRID", FIXED_PRECISION);
+        let scale = money_raw(10_i128.pow(u32::from(FIXED_PRECISION)));
+        let grid = money_raw(10_i128.pow(u32::from(FIXED_PRECISION - observed.precision)));
+        let reservation_raw = 123_456 * grid;
+        let mut wallet = wallet_with_total(observed, scale);
+        let instrument_id = InstrumentId::from("GRIDUSDC.BLOCKCHAIN");
+        let reservation = Money::from_raw(reservation_raw, source);
+
+        wallet
+            .update_balance_locked(instrument_id, reservation)
+            .unwrap();
+
+        let stored = wallet
+            .balances_locked
+            .get(&(instrument_id, observed))
+            .unwrap();
+        let balance = wallet.balance(Some(observed)).unwrap();
+        assert_eq!(stored.currency, observed);
+        assert_eq!(stored.currency.precision, 6);
+        assert_eq!(stored.raw, reservation_raw);
+        assert_eq!(balance.total.raw, scale);
+        assert_eq!(balance.locked.raw, reservation_raw);
+        assert_eq!(balance.free.raw, scale - reservation_raw);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_update_balance_locked_rejects_observed_currency_grid_loss_without_mutation() {
+        let observed = test_currency("GRID", 6);
+        let source = test_currency("GRID", FIXED_PRECISION);
+        let scale = money_raw(10_i128.pow(u32::from(FIXED_PRECISION)));
+        let grid = money_raw(10_i128.pow(u32::from(FIXED_PRECISION - observed.precision)));
+        let mut wallet = wallet_with_total(observed, scale);
+        let balances_before = wallet.base.balances.clone();
+        let locks_before = wallet.balances_locked.clone();
+        let events_before = wallet.events.clone();
+
+        let result = wallet.update_balance_locked(
+            InstrumentId::from("GRIDUSDC.BLOCKCHAIN"),
+            Money::from_raw(123_456 * grid + 1, source),
+        );
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid fixed-point raw value")
+        );
+        assert_eq!(wallet.base.balances, balances_before);
+        assert_eq!(wallet.balances_locked, locks_before);
+        assert_eq!(wallet.events, events_before);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_update_balance_locked_rejects_lossy_downscale_without_mutation() {
+        let observed = test_currency("LOSS", 16);
+        let source = test_currency("LOSS", 18);
+        let mut wallet = wallet_with_total(observed, 10_000_000_000_000_000);
+        let balances_before = wallet.base.balances.clone();
+        let locks_before = wallet.balances_locked.clone();
+        let events_before = wallet.events.clone();
+
+        let result = wallet.update_balance_locked(
+            InstrumentId::from("LOSSUSDC.BLOCKCHAIN"),
+            Money::from_raw(1, source),
+        );
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("loses precision when decreasing raw scale")
+        );
+        assert_eq!(wallet.base.balances, balances_before);
+        assert_eq!(wallet.balances_locked, locks_before);
+        assert_eq!(wallet.events, events_before);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_update_balance_locked_rejects_non_canonical_raw_without_mutation() {
+        let observed = test_currency("RAW", 18);
+        let source = test_currency("RAW", 15);
+        let mut wallet = wallet_with_total(observed, 10_000_000_000_000_000);
+        let balances_before = wallet.base.balances.clone();
+        let locks_before = wallet.balances_locked.clone();
+        let events_before = wallet.events.clone();
+
+        let result = wallet.update_balance_locked(
+            InstrumentId::from("RAWUSDC.BLOCKCHAIN"),
+            Money::from_raw(1, source),
+        );
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid fixed-point raw value")
+        );
+        assert_eq!(wallet.base.balances, balances_before);
+        assert_eq!(wallet.balances_locked, locks_before);
+        assert_eq!(wallet.events, events_before);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_update_balance_locked_rejects_scale_overflow_without_mutation() {
+        let observed = test_currency("OVR", 18);
+        let source = test_currency("OVR", 16);
+        let mut wallet = wallet_with_total(observed, 10_000_000_000_000_000);
+        let balances_before = wallet.base.balances.clone();
+        let locks_before = wallet.balances_locked.clone();
+        let events_before = wallet.events.clone();
+
+        let result = wallet.update_balance_locked(
+            InstrumentId::from("OVRUSDC.BLOCKCHAIN"),
+            Money::from_raw(MONEY_RAW_MAX, source),
+        );
+
+        assert!(result.unwrap_err().to_string().contains("exceeded bounds"));
+        assert_eq!(wallet.base.balances, balances_before);
+        assert_eq!(wallet.balances_locked, locks_before);
+        assert_eq!(wallet.events, events_before);
+    }
+
+    #[rstest]
+    fn test_update_balance_locked_rejects_negative_without_mutation() {
+        let mut wallet = wallet_with_total(Currency::ETH(), 10_000_000_000_000_000);
+        let balances_before = wallet.base.balances.clone();
+        let locks_before = wallet.balances_locked.clone();
+        let events_before = wallet.events.clone();
+
+        let result = wallet.update_balance_locked(
+            InstrumentId::from("WETHUSDC.BLOCKCHAIN"),
+            Money::from("-1 ETH"),
+        );
+
+        assert!(result.unwrap_err().to_string().contains("was negative"));
+        assert_eq!(wallet.base.balances, balances_before);
+        assert_eq!(wallet.balances_locked, locks_before);
+        assert_eq!(wallet.events, events_before);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_new_checked_rejects_non_canonical_observed_total() {
+        let currency = test_currency("OBS", 15);
+        let total = Money::from_raw(1, currency);
+        let state = AccountState::new(
+            AccountId::from("WALLET-OBS"),
+            AccountType::Wallet,
+            vec![AccountBalance::new(total, Money::zero(currency), total)],
+            vec![],
+            true,
+            uuid4(),
+            0.into(),
+            0.into(),
+            None,
+        );
+
+        let result = WalletAccount::new_checked(state, true);
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid fixed-point raw value")
+        );
     }
 
     #[rstest]
@@ -998,10 +1572,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_balance_locked_buy(
-        mut wallet_account: WalletAccount,
-        audusd_sim: CurrencyPair,
-    ) {
+    fn test_calculate_balance_locked_buy(audusd_sim: CurrencyPair) {
+        let mut wallet_account = wallet_with_total(Currency::USD(), 1_000_000_000_000_000_000);
         let balance_locked = wallet_account
             .calculate_balance_locked(
                 &audusd_sim.into_any(),
@@ -1016,10 +1588,24 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_balance_locked_sell(
-        mut wallet_account: WalletAccount,
-        audusd_sim: CurrencyPair,
-    ) {
+    fn test_calculate_balance_locked_buy_ceil_to_currency_grid(audusd_sim: CurrencyPair) {
+        let mut wallet_account = wallet_with_total(Currency::USD(), Money::from("1 USD").raw);
+        let balance_locked = wallet_account
+            .calculate_balance_locked(
+                &audusd_sim.into_any(),
+                OrderSide::Buy,
+                Quantity::from("1"),
+                Price::from("0.001"),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(balance_locked, Money::from("0.01 USD"));
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_sell(audusd_sim: CurrencyPair) {
+        let mut wallet_account = wallet_with_total(Currency::AUD(), 1_000_000_000_000_000_000);
         let balance_locked = wallet_account
             .calculate_balance_locked(
                 &audusd_sim.into_any(),
@@ -1031,6 +1617,32 @@ mod tests {
             .unwrap();
 
         assert_eq!(balance_locked, Money::from("2 AUD"));
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_calculate_balance_locked_buy_ceil_to_observed_currency_grid() {
+        let base = test_currency("WBASE", 16);
+        let quote = test_currency("WQUOTE", 16);
+        let observed = test_currency("WQUOTE", 6);
+        let instrument = test_currency_pair(base, quote);
+        let scale = money_raw(10_i128.pow(u32::from(FIXED_PRECISION)));
+        let grid = money_raw(10_i128.pow(u32::from(FIXED_PRECISION - observed.precision)));
+        let mut wallet = wallet_with_total(observed, 10 * scale);
+
+        let locked = wallet
+            .calculate_balance_locked(
+                &instrument.into_any(),
+                OrderSide::Buy,
+                Quantity::from("1.55"),
+                Price::from("3.123456"),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(locked.currency, observed);
+        assert_eq!(locked.currency.precision, 6);
+        assert_eq!(locked.raw, 4_841_357 * grid);
     }
 
     #[rstest]
@@ -1094,5 +1706,67 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[cfg(feature = "defi")]
+    fn test_currency(code: &str, precision: u8) -> Currency {
+        Currency::new(code, precision, 0, code, CurrencyType::Crypto)
+    }
+
+    #[cfg(feature = "defi")]
+    #[allow(
+        clippy::useless_conversion,
+        reason = "the raw width differs when high-precision is disabled"
+    )]
+    fn money_raw(raw: i128) -> MoneyRaw {
+        raw.try_into().unwrap()
+    }
+
+    #[cfg(feature = "defi")]
+    fn test_currency_pair(base: Currency, quote: Currency) -> CurrencyPair {
+        CurrencyPair::new(
+            InstrumentId::from("WBASEWQUOTE.BLOCKCHAIN"),
+            Symbol::from("WBASEWQUOTE"),
+            base,
+            quote,
+            16,
+            16,
+            Price::from_raw(1, 16),
+            Quantity::from_raw(1, 16),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        )
+    }
+
+    fn wallet_with_total(currency: Currency, raw: MoneyRaw) -> WalletAccount {
+        let total = Money::from_raw(raw, currency);
+        WalletAccount::new(
+            AccountState::new(
+                AccountId::from("WALLET-TEST"),
+                AccountType::Wallet,
+                vec![AccountBalance::new(total, Money::zero(currency), total)],
+                vec![],
+                true,
+                uuid4(),
+                0.into(),
+                0.into(),
+                None,
+            ),
+            true,
+        )
     }
 }
