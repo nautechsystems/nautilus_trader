@@ -3949,6 +3949,7 @@ impl ExecutionEngine {
         oms_type: OmsType,
     ) -> Vec<PositionEvent> {
         let mut position_events = Vec::new();
+
         if fill.commission.is_none() {
             log::warn!(
                 "Commission is not available for position flip, splitting with no commission"

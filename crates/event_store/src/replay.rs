@@ -1437,6 +1437,7 @@ fn apply_order_filled(
 
     let flip_applied =
         orderless_leg_fill && apply_orderless_flip_fill(cache, entry, &fill, context)?;
+
     if flip_applied {
         return Ok(true);
     }
@@ -1460,12 +1461,15 @@ fn apply_orderless_flip_fill(
     let Some(mut position) = cache.position_owned(&position_id) else {
         return Ok(false);
     };
+
     if !position.is_opposite_side(fill.order_side) || fill.last_qty.raw <= position.quantity.raw {
         return Ok(false);
     }
+
     if position.side != PositionSide::Flat && position.trade_ids().contains(&fill.trade_id) {
         return Ok(true);
     }
+
     if !context.allow_deferred_orderless_flips {
         return Err(apply_error(
             entry,
