@@ -1,1 +1,168 @@
-/etc/nautilus-trader/config.toml
+[grid_mm]
+execution_environment = "live" # backtest, live, sandbox
+exchange = "bybit"
+trader_id = "TESTER-001"
+instrument_id = "OPUSDT-LINEAR.BYBIT"
+max_position = "30"
+trade_size = "10"
+num_levels = 1
+grid_step_bps = 12
+skew_factor = 0.0
+requote_threshold_bps = 3
+expire_time_secs = 5
+on_cancel_resubmit = false
+path = "/var/lib/nautilus-trader/"
+
+[grid_mm.optimize]
+trials = 20
+sampler = "tpe"
+seed = 42
+weight_obj0 = 0.5
+db_path = "optimizer.sqlite3"
+study_name = "grid-2026-w35"
+train_start = "2026-08-01"
+train_end = "2026-08-06"
+oos_start = "2026-08-08"
+oos_end = "2026-08-09"
+json_out = "study.json"
+best_params_out = "best.toml"
+snapshot_interval_ms = 3600000
+account_id = "BYBIT-001"
+
+[grid_mm.optimize.params.num_levels]
+type = "int"
+min = 1
+max = 20
+
+[grid_mm.optimize.params.grid_step_bps]
+type = "int"
+min = 1
+max = 100
+
+[grid_mm.optimize.params.requote_threshold_bps]
+type = "int"
+min = 0
+max = 50
+
+[grid_mm.optimize.params.skew_factor]
+type = "float"
+min = 0.0
+max = 1.0
+
+[grid_mm.optimize.params.max_position]
+type = "float"
+min = 10.0
+max = 60.0
+
+[grid_mm.optimize.params.trade_size]
+type = "float"
+min = 1.0
+max = 20.0
+
+[grid_mm.optimize.params.expire_time_secs]
+type = "int"
+min = 0
+max = 300
+
+[recorder]
+exchange = "bybit"
+trader_id = "TESTER-001"
+instrument_id = ["OPUSDT-LINEAR.BYBIT", "BTCUSDT-LINEAR.BYBIT", "ETHUSDT-LINEAR.BYBIT", "XAUTUSDT-LINEAR.BYBIT"]
+catalog_path = "/var/lib/nautilus-trader/"
+book_depth = 50
+interval_parquet_dump_seconds = 60
+
+[mmm]
+execution_environment = "backtest" # backtest, live, sandbox
+exchange = "bybit"
+trader_id = "TESTER-001"
+instrument_id = "XAUTUSDT-LINEAR.BYBIT"
+path = "/var/lib/nautilus-trader/"
+Q_max = "10"
+"Φ_0" = "0.001"
+"Φ_n" = 2
+"β" = "0.0"
+"Δ_μ" = "0.0"
+"Δ_0" = "1.0"
+
+[mmm.optimize]
+trials = 200
+sampler = "tpe"
+seed = 42
+weight_obj0 = 0.5
+db_path = "optimizer.sqlite3"
+study_name = "mmm-2026-w35"
+train_start = "2026-08-01"
+train_end = "2026-08-07"
+oos_start = "2026-08-08"
+oos_end = "2026-08-09"
+json_out = "study-mmm.json"
+best_params_out = "best-mmm.toml"
+snapshot_interval_ms = 3600000
+account_id = "BYBIT-001"
+
+[mmm.optimize.params.phi_0]
+type = "float"
+min = 0.0001
+max = 0.01
+
+[mmm.optimize.params.phi_n]
+type = "int"
+min = 1
+max = 5
+
+[mmm.optimize.params.q_max]
+type = "float"
+min = 1.0
+max = 50.0
+
+[mmm.optimize.params.delta_0]
+type = "float"
+min = 0.1
+max = 5.0
+
+[mmm.optimize.params.delta_mu]
+type = "float"
+min = 0.0
+max = 1.0
+
+[mmm.optimize.params.beta]
+type = "float"
+min = 0.0
+max = 1.0
+
+[vpin_mm]
+execution_environment = "backtest" # backtest, live, sandbox
+exchange = "bybit"
+trader_id = "TESTER-001"
+instrument_id = "OPUSDT-LINEAR.BYBIT"
+max_position = "30"
+trade_size = "10"
+num_levels = 3
+grid_step_bps = 10
+skew_factor = 0.5
+requote_threshold_bps = 5
+expire_time_secs = 30
+on_cancel_resubmit = false
+path = "/var/lib/nautilus-trader/"
+vpin_window = 50
+vpin_spread_alpha = 2.0
+vpin_pull_threshold = 0.7
+bucket_target_volume = 1000.0
+timer_interval_secs = 5
+
+[avellaneda_stoikov]
+execution_environment = "backtest"
+exchange = "bybit"
+trader_id = "TESTER-001"
+instrument_id = "OPUSDT-LINEAR.BYBIT"
+trade_size = "10"
+gamma = 0.1
+sigma = 0.02
+kappa = 1000
+arrival_rate = 140.0
+time_horizon_secs = 60.0
+lookback_secs = 300
+expire_time_secs = 5
+path = "/var/lib/nautilus-trader/"
+
