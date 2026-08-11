@@ -44,6 +44,7 @@ use serde_json::Value;
 
 use crate::{
     common::urls::gamma_api_url,
+    filters::set_market_closed,
     http::{
         error::{Error, Result},
         models::{GammaEvent, GammaMarket, GammaTag, SearchResponse},
@@ -369,6 +370,11 @@ fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> 
 // Returns parsed instruments alongside condition IDs of markets still in the
 // CLOB hydration window (empty or empty-entry `clob_token_ids`), so callers
 // can retry rather than treating them as terminal.
+//
+// This is the single funnel through which live instruments reach the client caches, so Gamma's
+// `closed` state is recorded here rather than in `create_instrument_from_def`. Historical loader
+// instruments share that constructor and must not carry terminal state in `info`; they expose it
+// through `resolution_metadata` instead.
 fn parse_markets_with_transient(
     markets: &[GammaMarket],
     ts_init: UnixNanos,
@@ -386,7 +392,11 @@ fn parse_markets_with_transient(
             Ok(defs) => {
                 for def in defs {
                     match create_instrument_from_def(&def, ts_init) {
-                        Ok(instrument) => instruments.push(instrument),
+                        Ok(InstrumentAny::BinaryOption(mut binary)) => {
+                            set_market_closed(&mut binary, def.closed);
+                            instruments.push(InstrumentAny::BinaryOption(binary));
+                        }
+                        Ok(other) => instruments.push(other),
                         Err(e) => log::warn!("Failed to create instrument: {e}"),
                     }
                 }

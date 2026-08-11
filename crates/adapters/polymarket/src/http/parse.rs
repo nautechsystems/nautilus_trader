@@ -72,6 +72,9 @@ pub struct PolymarketInstrumentDef {
     pub end_date: Option<String>,
     /// Whether the market is active and accepting orders.
     pub active: bool,
+    /// Whether Gamma reports the market closed.
+    #[serde(default)]
+    pub closed: bool,
     /// URL slug for the market.
     pub market_slug: Option<String>,
     /// Whether the market uses the neg-risk CTF exchange contract.
@@ -166,6 +169,7 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
             start_date: market.start_date.clone(),
             end_date: market.end_date.clone(),
             active,
+            closed: market.closed.unwrap_or(false),
             market_slug: market.market_slug.clone(),
             neg_risk,
             fee_schedule: market.fee_schedule.clone(),
@@ -634,6 +638,33 @@ mod tests {
         );
         assert_eq!(info.get_u64("game_id"), None);
         assert_eq!(info.get("fee_schedule"), None);
+    }
+
+    #[rstest]
+    fn test_past_end_market_carries_closure_state_on_the_definition_only() {
+        let mut market = load_gamma_market("gamma_market_past_end_date_open.json");
+        let defs = parse_gamma_market(&market).unwrap();
+
+        assert!(!defs[0].closed);
+
+        market.closed = Some(true);
+        let closed_defs = parse_gamma_market(&market).unwrap();
+
+        assert!(closed_defs[0].closed);
+
+        // `create_instrument_from_def` is shared with the historical loader, which keeps terminal
+        // state in `resolution_metadata`. Closure is stamped on the live Gamma path instead.
+        for def in [&defs[0], &closed_defs[0]] {
+            let instrument =
+                create_instrument_from_def(def, UnixNanos::from(1_000_000_000u64)).unwrap();
+            let binary = match &instrument {
+                InstrumentAny::BinaryOption(binary) => binary,
+                other => panic!("Expected BinaryOption, was {other:?}"),
+            };
+            let info = binary.info.as_ref().expect("info should be present");
+
+            assert_eq!(info.get_bool("closed"), None);
+        }
     }
 
     #[rstest]

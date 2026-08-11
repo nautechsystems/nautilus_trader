@@ -27,6 +27,7 @@ use nautilus_model::events::PositionEvent;
 use super::{
     PolymarketDataClient,
     dispatch::{WsMessageContext, handle_ws_message},
+    instruments::refresh_expired_market_closure,
     runtime::{retire_expired_local_instruments, seed_token_meta_from_live_instruments},
 };
 use crate::{
@@ -147,6 +148,8 @@ impl PolymarketDataClient {
         let ws_open_tokens = self.ws_open_tokens.clone();
         let ws_sub_mutex = self.ws_sub_mutex.clone();
         let ws = self.ws_client.handle();
+        let closure_client = gamma_client.clone();
+        let closure_sender = self.data_sender.clone();
 
         let ctx = WsMessageContext {
             clock: self.clock,
@@ -193,6 +196,15 @@ impl PolymarketDataClient {
                     () = cancellation.cancelled() => break,
                     _ = interval.tick() => {
                         let now_ns = clock.get_time_ns();
+
+                        // Runs on every tick so retirement never trails closure by more than one
+                        // cycle. Without an expired instrument reported open, no request is sent.
+                        if let Err(e) = refresh_expired_market_closure(
+                            &closure_client, &instruments, &closure_sender, now_ns,
+                        ).await {
+                            log::warn!("Failed to refresh Polymarket market closure state: {e}");
+                        }
+
                         retire_expired_local_instruments(
                             now_ns,
                             &instruments,

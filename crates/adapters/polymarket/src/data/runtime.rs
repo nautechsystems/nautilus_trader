@@ -38,6 +38,13 @@ pub(crate) fn is_instrument_expired(instrument: &InstrumentAny, now_ns: UnixNano
     crate::filters::is_expired(instrument, now_ns)
 }
 
+pub(crate) fn is_instrument_expired_and_not_reported_open(
+    instrument: &InstrumentAny,
+    now_ns: UnixNanos,
+) -> bool {
+    crate::filters::is_expired_and_not_reported_open(instrument, now_ns)
+}
+
 pub(crate) fn seed_token_meta_from_live_instruments(
     now_ns: UnixNanos,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
@@ -46,7 +53,7 @@ pub(crate) fn seed_token_meta_from_live_instruments(
     let loaded = instruments.load();
 
     for instrument in loaded.values() {
-        if is_instrument_expired(instrument, now_ns) {
+        if is_instrument_expired_and_not_reported_open(instrument, now_ns) {
             continue;
         }
 
@@ -202,7 +209,7 @@ pub(crate) async fn retire_expired_local_instruments(
         loaded
             .iter()
             .filter_map(|(instrument_id, instrument)| {
-                is_instrument_expired(instrument, now_ns)
+                is_instrument_expired_and_not_reported_open(instrument, now_ns)
                     .then_some((*instrument_id, instrument.raw_symbol().as_str().to_string()))
             })
             .collect()
@@ -231,6 +238,13 @@ pub(crate) async fn retire_expired_local_instruments(
         }
 
         expired_ids.push(instrument_id);
+    }
+
+    if !expired_ids.is_empty() {
+        log::info!(
+            "Removing live state for {} closed Polymarket instrument(s)",
+            expired_ids.len()
+        );
     }
 
     for instrument_id in expired_ids {

@@ -1358,6 +1358,20 @@ available partial result and logs a warning. A start-anchored request raises an 
 because Rust cannot guarantee complete results from the requested start; narrow the time window and
 retry.
 
+### Closed market cleanup
+
+Gamma `endDate` is a scheduled end, not proof that trading stopped. The client keeps cached
+instruments while Gamma reports `closed=false` and removes live state after a positive `closed=true`.
+
+The closure check runs on every resolve-poll tick, so retirement never trails closure by more than
+one cycle, and it retries failed requests on the next tick. A failed condition ID batch does not
+discard the closures confirmed by the other batches. If both Gamma lookups omit a market, the client
+keeps it because closure was not observed.
+
+Only live instruments carry this state. The historical data loader reports terminal state through
+`resolution_metadata` instead, so a backtest cannot see a market's current closure through
+`instrument.info`.
+
 ## Contributing
 
 :::info

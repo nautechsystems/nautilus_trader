@@ -486,6 +486,8 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 return;
             }
 
+            drop(instruments);
+
             log::debug!(
                 "Tick size changed for {}: {} -> {}",
                 change.asset_id,
@@ -501,25 +503,42 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 },
             );
 
-            if let Some(existing) = existing {
-                let ts_init = ctx.clock.get_time_ns();
+            let ts_init = ctx.clock.get_time_ns();
+            let mut rebuilt = None;
+            let mut rebuild_error = None;
+
+            // Rebuild from the value the map holds now, so a concurrent market closure update is
+            // carried forward rather than reverted by an older snapshot. Resolving presence here
+            // rather than from the snapshot above also covers an instrument cached after it, whose
+            // `token_meta` precision was already advanced.
+            ctx.instruments.rcu(|map| {
+                rebuilt = None;
+                rebuild_error = None;
+
+                let Some(current) = map.get(&meta.instrument_id).cloned() else {
+                    return;
+                };
 
                 match rebuild_instrument_with_tick_size(
-                    existing,
+                    &current,
                     &change.new_tick_size,
                     ts_init,
                     ts_init,
                 ) {
-                    Ok(rebuilt) => {
-                        ctx.instruments.insert(rebuilt.id(), rebuilt.clone());
-                        if let Err(e) = ctx.data_sender.send(DataEvent::Instrument(rebuilt)) {
-                            log::error!("Failed to emit rebuilt instrument: {e}");
-                        }
+                    Ok(instrument) => {
+                        map.insert(instrument.id(), instrument.clone());
+                        rebuilt = Some(instrument);
                     }
-                    Err(e) => {
-                        log::error!("Failed to rebuild instrument for tick size change: {e}");
-                    }
+                    Err(e) => rebuild_error = Some(e.to_string()),
                 }
+            });
+
+            if let Some(e) = rebuild_error {
+                log::error!("Failed to rebuild instrument for tick size change: {e}");
+            } else if let Some(rebuilt) = rebuilt
+                && let Err(e) = ctx.data_sender.send(DataEvent::Instrument(rebuilt))
+            {
+                log::error!("Failed to emit rebuilt instrument: {e}");
             }
 
             // Book epoch transition; see module docs.
@@ -1054,6 +1073,7 @@ mod tests {
         market_id: Option<&'a str>,
         condition_id: Option<&'a str>,
         expiration_ns: Option<UnixNanos>,
+        market_closed: Option<bool>,
     }
 
     fn seed_instrument_with_context(
@@ -1096,6 +1116,9 @@ mod tests {
                 );
             }
 
+            if let Some(closed) = seed_ctx.market_closed {
+                info.insert("closed".to_string(), closed.into());
+            }
             binary.info = Some(info);
         }
 
@@ -2188,6 +2211,7 @@ mod tests {
                 market_id: Some("1778973900"),
                 condition_id: Some("0xCOND-BTC"),
                 expiration_ns: Some(expiration_ns),
+                market_closed: None,
             },
         );
         let no = seed_instrument_with_context(
@@ -2200,6 +2224,7 @@ mod tests {
                 market_id: Some("1778973900"),
                 condition_id: Some("0xCOND-BTC"),
                 expiration_ns: Some(expiration_ns),
+                market_closed: None,
             },
         );
 
@@ -2300,6 +2325,7 @@ mod tests {
                 market_id: Some("1778973900"),
                 condition_id: Some("0xCOND-BTC"),
                 expiration_ns: Some(expiration_ns),
+                market_closed: None,
             },
         );
         let no = seed_instrument_with_context(
@@ -2312,6 +2338,7 @@ mod tests {
                 market_id: Some("1778973900"),
                 condition_id: Some("0xCOND-BTC"),
                 expiration_ns: Some(expiration_ns),
+                market_closed: None,
             },
         );
 
@@ -3001,12 +3028,12 @@ mod tests {
             make_gamma_market_value_with_outcome_prices(
                 "0xCOND-POLL",
                 "[\"0xTOKEN_YES\",\"0xTOKEN_NO\"]",
-                Some("[\"1\",\"0\"]"),
-                Some(true),
+                None,
+                Some(false),
                 Some(false),
             )
         ]));
-        let addr = start_mock_server(state).await;
+        let addr = start_mock_server(state.clone()).await;
         let (mut client, mut data_rx) = create_test_client(addr);
         client.config.resolve_poll_enabled = true;
         client.config.resolve_poll_interval_secs = 1;
@@ -3023,23 +3050,25 @@ mod tests {
         );
         let inst_yes = seed_instrument_with_context(
             &ws_ctx,
-            "0xTOKEN_YES",
+            "0xCOND-POLL-YES",
             Price::from("0.001"),
             Quantity::from("0.01"),
             SeedInstrumentContext {
                 condition_id: Some("0xCOND-POLL"),
                 expiration_ns: Some(expiration_ns),
+                market_closed: Some(false),
                 ..SeedInstrumentContext::default()
             },
         );
         let inst_no = seed_instrument_with_context(
             &ws_ctx,
-            "0xTOKEN_NO",
+            "0xCOND-POLL-NO",
             Price::from("0.001"),
             Quantity::from("0.01"),
             SeedInstrumentContext {
                 condition_id: Some("0xCOND-POLL"),
                 expiration_ns: Some(expiration_ns),
+                market_closed: Some(false),
                 ..SeedInstrumentContext::default()
             },
         );
@@ -3055,6 +3084,22 @@ mod tests {
         );
 
         client.spawn_resolve_poll_task();
+        tokio::time::sleep(StdDuration::from_millis(200)).await;
+        state.gamma_response.lock().await.as_mut().unwrap()[0]["closed"] = true.into();
+
+        wait_until_async(
+            || async {
+                let loaded = client.instruments.load();
+                let closed = loaded
+                    .get(&inst_yes.id())
+                    .map(crate::filters::market_closed);
+                closed == Some(Some(true))
+            },
+            StdDuration::from_secs(5),
+        )
+        .await;
+        state.gamma_response.lock().await.as_mut().unwrap()[0]["outcomePrices"] =
+            serde_json::json!("[1,0]");
 
         wait_until_async(
             || async {
@@ -3235,10 +3280,11 @@ mod tests {
     #[rstest]
     #[case::quotes(ExpiredPath::Quotes, "0xTOKEN_EXPIRED")]
     #[case::book(ExpiredPath::BookSnapshot, "0xTOKEN_EXPIRED_BOOK")]
-    #[case::trades(ExpiredPath::Trades, "0xTOKEN_EXPIRED_TRADES")]
-    fn cached_expired_instrument_live_paths_are_rejected(
+    #[case::trades(ExpiredPath::Trades, "0xCOND-EXPIRED-TRADES")]
+    fn cached_expired_instrument_live_paths_honor_market_closure(
         #[case] path: ExpiredPath,
         #[case] raw_symbol: &str,
+        #[values(None, Some(true), Some(false))] market_closed: Option<bool>,
     ) {
         let mut client = make_local_test_client();
         let expired = seed_instrument_with_context(
@@ -3249,6 +3295,7 @@ mod tests {
             SeedInstrumentContext {
                 condition_id: Some("0xCOND-EXPIRED"),
                 expiration_ns: Some(UnixNanos::from(1)),
+                market_closed,
                 ..SeedInstrumentContext::default()
             },
         );
@@ -3283,9 +3330,13 @@ mod tests {
             )),
         };
 
-        assert!(result.is_err());
+        // Only a positive `closed=false` retains an expired market; unknown state retires it.
+        let retained = market_closed == Some(false);
+
+        assert_eq!(result.is_ok(), retained);
+
         if matches!(path, ExpiredPath::Quotes) {
-            assert!(!client.active_quote_subs.contains(&expired.id()));
+            assert_eq!(client.active_quote_subs.contains(&expired.id()), retained);
         }
     }
 
@@ -3547,6 +3598,42 @@ mod tests {
             events.iter().any(|e| matches!(e, DataEvent::Instrument(_))),
             "expected rebuilt instrument event, found: {events:?}",
         );
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn tick_size_change_preserves_market_closure_state(#[case] closed: bool) {
+        let asset_id_str = "0xTOKEN_CLOSURE";
+        let market = "0xMARKET";
+
+        let (ctx, _data_rx) = make_ws_ctx();
+        let inst = seed_instrument_with_context(
+            &ctx,
+            asset_id_str,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                market_closed: Some(closed),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let instrument_id = inst.id();
+
+        handle_market_message(
+            make_tick_change(market, asset_id_str, "0.001", "0.01"),
+            &ctx,
+        );
+
+        let rebuilt = ctx
+            .instruments
+            .load()
+            .get(&instrument_id)
+            .cloned()
+            .expect("rebuilt instrument");
+
+        assert_eq!(rebuilt.price_increment(), Price::from("0.01"));
+        assert_eq!(crate::filters::market_closed(&rebuilt), Some(closed));
     }
 
     #[rstest]
