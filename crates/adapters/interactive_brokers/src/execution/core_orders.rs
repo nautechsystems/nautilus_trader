@@ -245,10 +245,16 @@ impl InteractiveBrokersExecutionClient {
 
             Self::apply_modify_fields_to_ib_order(cmd, &mut ib_order, instrument_provider);
 
-            client
-                .submit_order(ib_order_id, &contract, &ib_order)
-                .await
-                .context("Failed to submit modified order")?;
+            if let Err(e) = client.submit_order(ib_order_id, &contract, &ib_order).await {
+                if Self::is_definitive_order_submit_error(&e) {
+                    return Err(e).context("IB rejected the modified order before sending it");
+                }
+                tracing::error!(
+                    "Modify outcome is unknown after attempting to send order {} to IB: {e}",
+                    cmd.client_order_id
+                );
+                return Ok(());
+            }
 
             tracing::debug!(
                 "Modified order {} (IB order ID: {})",
@@ -340,6 +346,10 @@ impl InteractiveBrokersExecutionClient {
         while let Some(order_result) = subscription.next().await {
             match order_result {
                 Ok(Orders::OrderData(data)) => {
+                    if !Self::is_active_open_order(&data.order) {
+                        continue;
+                    }
+
                     let matches_order_id =
                         target_ib_order_id.is_some_and(|order_id| data.order_id == order_id);
                     let matches_order_ref = data.order.order_ref == client_order_id;
@@ -375,10 +385,17 @@ impl InteractiveBrokersExecutionClient {
                         map.insert(ib_order_id, cmd.instrument_id);
                     }
 
-                    client
-                        .submit_order(ib_order_id, &contract, &ib_order)
-                        .await
-                        .context("Failed to submit modified open order")?;
+                    if let Err(e) = client.submit_order(ib_order_id, &contract, &ib_order).await {
+                        if Self::is_definitive_order_submit_error(&e) {
+                            return Err(e)
+                                .context("IB rejected the modified open order before sending it");
+                        }
+                        tracing::error!(
+                            "Modify outcome is unknown after attempting to send open order {} to IB: {e}",
+                            cmd.client_order_id
+                        );
+                        return Ok(());
+                    }
 
                     tracing::debug!(
                         "Modified open order {} (IB order ID: {}) after cache miss",

@@ -85,6 +85,8 @@ Released on TBD (UTC).
 - Fixed Databento MBO snapshots advancing the incremental sequence (#4686), thanks @faysou
 - Fixed Derive cancel‑only replacements and reused labels during order reconciliation
 - Fixed Interactive Brokers continuous futures historical bar requests (#4664), thanks @dfjmax
+- Fixed Interactive Brokers deactivated open‑order processing
+- Fixed Interactive Brokers local modify and cancel rejection event emission (#4564), thanks for reporting @davidgreyme
 - Fixed Polymarket commissions to preserve exact decimal values in `Money` construction
 - Fixed Polymarket maker fill ownership and reported mass‑status trade drops (#4662), thanks @seungpyoson
 - Fixed Polymarket WebSocket asset and discovery subscription replay across reconnects
@@ -112,6 +114,7 @@ Released on TBD (UTC).
 - Upgraded `capnp` and `capnpc` crates to v0.27.0 and regenerated schema bindings
 - Upgraded `clap` crate to v4.6.6
 - Upgraded `http` crate to v1.5.0
+- Upgraded `ibapi` crate to v3.3.0
 - Upgraded `pem` crate to v4.0.0 to align with the current Base64 API
 - Upgraded `pyo3` crate to v0.29.2 for object‑lifetime, free‑threading, and compatibility fixes
 - Upgraded `redis` crate to v1.5.0

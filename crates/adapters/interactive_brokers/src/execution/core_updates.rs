@@ -285,6 +285,15 @@ impl InteractiveBrokersExecutionClient {
                 }
             }
             OrderUpdate::OpenOrder(order_data) => {
+                if !Self::is_active_open_order(&order_data.order) {
+                    tracing::debug!(
+                        "Ignoring deactivated open order: order_id={}, order_ref={}",
+                        order_data.order_id,
+                        order_data.order.order_ref
+                    );
+                    return Ok(());
+                }
+
                 if order_data.order.what_if
                     && IbOrderStatus::from_str(order_data.order_state.status.as_str())
                         .is_ok_and(|status| status == IbOrderStatus::PreSubmitted)

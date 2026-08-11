@@ -167,6 +167,50 @@ fn ib_order_selector_parses_perm_venue_order_id() {
 }
 
 #[rstest]
+#[case(
+    "PERM-invalid",
+    "Failed to parse venue_order_id \"PERM-invalid\" as IB perm_id"
+)]
+#[case("invalid", "Failed to parse venue_order_id \"invalid\" as IB order_id")]
+fn ib_order_selector_rejects_invalid_venue_order_id(
+    #[case] venue_order_id: &str,
+    #[case] expected: &str,
+) {
+    let result = IbOrderSelector::from_venue_order_id(&VenueOrderId::from(venue_order_id));
+
+    assert_eq!(result.unwrap_err().to_string(), expected);
+}
+
+#[rstest]
+#[case(false, true)]
+#[case(true, false)]
+fn active_open_order_excludes_deactivated_records(
+    #[case] deactivate: bool,
+    #[case] expected: bool,
+) {
+    let order = IBOrder {
+        deactivate,
+        ..Default::default()
+    };
+
+    assert_eq!(
+        InteractiveBrokersExecutionClient::is_active_open_order(&order),
+        expected
+    );
+}
+
+#[rstest]
+fn order_submit_error_classifies_only_known_pre_send_failures_as_definitive() {
+    let invalid = ibapi::Error::InvalidArgument("invalid quantity".to_string());
+    let unsupported = ibapi::Error::ServerVersion(100, 99, "feature".to_string());
+    let ambiguous = ibapi::Error::ConnectionReset;
+
+    assert!(InteractiveBrokersExecutionClient::is_definitive_order_submit_error(&invalid));
+    assert!(InteractiveBrokersExecutionClient::is_definitive_order_submit_error(&unsupported));
+    assert!(!InteractiveBrokersExecutionClient::is_definitive_order_submit_error(&ambiguous));
+}
+
+#[rstest]
 fn submit_order_denies_when_client_not_ready() {
     let (client, mut rx, _) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
@@ -239,7 +283,7 @@ fn submit_order_list_denies_all_orders_when_client_not_ready() {
 }
 
 #[rstest]
-fn modify_order_emits_no_event_when_client_not_ready() {
+fn modify_order_rejects_when_client_not_ready() {
     let (client, mut rx, _) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
     let cmd = ModifyOrder::new(
@@ -260,12 +304,29 @@ fn modify_order_emits_no_event_when_client_not_ready() {
 
     client.modify_order(cmd).unwrap();
 
-    // Local validation failure: no rejection event, awaiting in-flight resolution
-    assert!(rx.try_recv().is_err(), "expected no event");
+    match next_order_event(&mut rx) {
+        OrderEventAny::ModifyRejected(event) => {
+            assert_eq!(event.trader_id, client.core.trader_id);
+            assert_eq!(event.client_order_id, order.client_order_id());
+            assert_eq!(event.instrument_id, order.instrument_id());
+            assert_eq!(event.strategy_id, order.strategy_id());
+            assert_eq!(event.venue_order_id, Some(VenueOrderId::from("1001")));
+            assert_eq!(event.account_id, Some(client.core.account_id));
+            assert_eq!(event.ts_init, event.ts_event);
+            assert!(!event.reconciliation);
+            assert_eq!(event.causation_id, None);
+            assert_eq!(
+                event.reason.to_string(),
+                "Interactive Brokers client is not ready; refusing to modify order"
+            );
+        }
+        event => panic!("Expected OrderModifyRejected, was {event:?}"),
+    }
+    assert!(rx.try_recv().is_err());
 }
 
 #[rstest]
-fn cancel_order_emits_no_event_when_client_not_ready() {
+fn cancel_order_rejects_when_client_not_ready() {
     let (client, mut rx, _) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
     let cmd = CancelOrder::new(
@@ -283,8 +344,25 @@ fn cancel_order_emits_no_event_when_client_not_ready() {
 
     client.cancel_order(cmd).unwrap();
 
-    // Local validation failure: no rejection event, awaiting in-flight resolution
-    assert!(rx.try_recv().is_err(), "expected no event");
+    match next_order_event(&mut rx) {
+        OrderEventAny::CancelRejected(event) => {
+            assert_eq!(event.trader_id, client.core.trader_id);
+            assert_eq!(event.client_order_id, order.client_order_id());
+            assert_eq!(event.instrument_id, order.instrument_id());
+            assert_eq!(event.strategy_id, order.strategy_id());
+            assert_eq!(event.venue_order_id, Some(VenueOrderId::from("1001")));
+            assert_eq!(event.account_id, Some(client.core.account_id));
+            assert_eq!(event.ts_init, event.ts_event);
+            assert!(!event.reconciliation);
+            assert_eq!(event.causation_id, None);
+            assert_eq!(
+                event.reason.to_string(),
+                "Interactive Brokers client is not ready; refusing to cancel order"
+            );
+        }
+        event => panic!("Expected OrderCancelRejected, was {event:?}"),
+    }
+    assert!(rx.try_recv().is_err());
 }
 
 #[rstest]
@@ -580,6 +658,114 @@ fn create_test_open_order(order_id: i32, status: &str, order_ref: &str) -> IBOrd
             ..Default::default()
         },
     }
+}
+
+#[rstest]
+#[case(false, "Submitted")]
+#[case(true, "PreSubmitted")]
+#[tokio::test]
+async fn handle_order_update_ignores_deactivated_open_order(
+    #[case] what_if: bool,
+    #[case] status: &str,
+) {
+    let order_id = 7009;
+    let client_order_id = ClientOrderId::from("O-DEACTIVATED");
+    let equity = equity_aapl();
+    let instrument_id = equity.id();
+    let order_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let venue_order_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let instrument_provider = create_test_instrument_provider();
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
+    let instrument_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let trader_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let strategy_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let active_order_contexts = Arc::new(Mutex::new(AHashMap::new()));
+    let terminal_order_contexts = Arc::new(Mutex::new(FifoCacheMap::new()));
+    let spread_fill_tracking = Arc::new(Mutex::new(AHashMap::new()));
+    let order_avg_prices = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_combo_fills = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_combo_fill_avgs = Arc::new(Mutex::new(AHashMap::new()));
+    let order_fill_progress = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_cancel_orders = Arc::new(Mutex::new(ahash::AHashSet::new()));
+    let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let mut open_order = create_test_open_order(order_id, status, client_order_id.as_str());
+    open_order.order.what_if = what_if;
+    open_order.order.deactivate = true;
+    open_order.order.total_quantity = 1.0;
+
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), 12345, 1);
+    order_id_map
+        .lock()
+        .unwrap()
+        .insert(client_order_id, order_id);
+    venue_order_id_map
+        .lock()
+        .unwrap()
+        .insert(order_id, client_order_id);
+    instrument_id_map
+        .lock()
+        .unwrap()
+        .insert(order_id, instrument_id);
+    trader_id_map
+        .lock()
+        .unwrap()
+        .insert(order_id, TraderId::from("TRADER-001"));
+    strategy_id_map
+        .lock()
+        .unwrap()
+        .insert(order_id, StrategyId::from("STRATEGY-001"));
+    active_order_contexts.lock().unwrap().insert(
+        order_id,
+        create_tracked_order_context(client_order_id, instrument_id),
+    );
+
+    let result = InteractiveBrokersExecutionClient::handle_order_update(
+        &OrderUpdate::OpenOrder(open_order),
+        &order_id_map,
+        &venue_order_id_map,
+        &instrument_provider,
+        &exec_sender,
+        nautilus_core::time::get_atomic_clock_realtime(),
+        AccountId::from("IB-001"),
+        &commission_cache,
+        &instrument_id_map,
+        &trader_id_map,
+        &strategy_id_map,
+        &active_order_contexts,
+        &terminal_order_contexts,
+        &spread_fill_tracking,
+        &order_avg_prices,
+        &pending_combo_fills,
+        &pending_combo_fill_avgs,
+        &order_fill_progress,
+        &pending_cancel_orders,
+        &pending_execution_cache,
+    )
+    .await;
+
+    result.unwrap();
+    assert!(exec_receiver.try_recv().is_err());
+    assert_eq!(
+        order_id_map.lock().unwrap().get(&client_order_id),
+        Some(&order_id)
+    );
+    assert_eq!(
+        venue_order_id_map.lock().unwrap().get(&order_id),
+        Some(&client_order_id)
+    );
+    assert_eq!(
+        instrument_id_map.lock().unwrap().get(&order_id),
+        Some(&instrument_id)
+    );
+    assert!(
+        !active_order_contexts
+            .lock()
+            .unwrap()
+            .get(&order_id)
+            .unwrap()
+            .accepted
+    );
 }
 
 #[rstest]
