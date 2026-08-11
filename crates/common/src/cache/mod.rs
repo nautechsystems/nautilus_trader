@@ -2347,7 +2347,8 @@ impl Cache {
             .collect();
 
         if let Some(db) = &self.database {
-            self.index.order_position = db.load_index_order_position()?;
+            let order_position = db.load_index_order_position()?;
+            self.index.order_position = self.sanitize_order_position_index(order_position);
             self.index.order_client = db.load_index_order_client()?;
         }
 
@@ -2444,7 +2445,8 @@ impl Cache {
         };
 
         if let Some(db) = &self.database {
-            self.index.order_position = db.load_index_order_position()?;
+            let order_position = db.load_index_order_position()?;
+            self.index.order_position = self.sanitize_order_position_index(order_position);
             self.index.order_client = db.load_index_order_client()?;
         }
 
@@ -2452,6 +2454,23 @@ impl Cache {
 
         self.assign_position_ids_to_contingencies();
         Ok(())
+    }
+
+    fn sanitize_order_position_index(
+        &self,
+        mut order_position: AHashMap<ClientOrderId, PositionId>,
+    ) -> AHashMap<ClientOrderId, PositionId> {
+        let original_len = order_position.len();
+        order_position.retain(|client_order_id, _| self.orders.contains_key(client_order_id));
+        let removed = original_len - order_position.len();
+
+        if removed > 0 {
+            log::warn!(
+                "Filtered {removed} stale order-position index entries without backing orders during cache load"
+            );
+        }
+
+        order_position
     }
 
     /// Clears and reloads the position cache from the database.
@@ -2644,11 +2663,13 @@ impl Cache {
                 .insert(*position_id, position.strategy_id);
 
             // 3: Build index.position_orders -> {PositionId, {ClientOrderId}}
-            self.index
-                .position_orders
-                .entry(*position_id)
-                .or_default()
-                .extend(position.client_order_ids());
+            let position_orders = self.index.position_orders.entry(*position_id).or_default();
+            position_orders.extend(
+                position
+                    .client_order_ids()
+                    .into_iter()
+                    .filter(|client_order_id| self.orders.contains_key(client_order_id)),
+            );
 
             // 4: Build index.instrument_positions -> {InstrumentId, {PositionId}}
             self.index
@@ -4637,16 +4658,20 @@ impl Cache {
             database.index_order_position(*client_order_id, *position_id)?;
         }
 
-        self.index_position_id(position_id, venue, client_order_id, strategy_id);
+        self.index_position(position_id, venue, strategy_id);
+        self.index
+            .position_orders
+            .entry(*position_id)
+            .or_default()
+            .insert(*client_order_id);
 
         Ok(())
     }
 
-    fn index_position_id(
+    fn index_position(
         &mut self,
         position_id: &PositionId,
         venue: &Venue,
-        client_order_id: &ClientOrderId,
         strategy_id: &StrategyId,
     ) {
         // Index: PositionId -> StrategyId
@@ -4654,12 +4679,8 @@ impl Cache {
             .position_strategy
             .insert(*position_id, *strategy_id);
 
-        // Index: PositionId -> set[ClientOrderId]
-        self.index
-            .position_orders
-            .entry(*position_id)
-            .or_default()
-            .insert(*client_order_id);
+        // Every position has a reverse-order bucket, including orderless positions.
+        self.index.position_orders.entry(*position_id).or_default();
 
         // Index: StrategyId -> set[PositionId]
         self.index
@@ -4781,10 +4802,9 @@ impl Cache {
                 &position.strategy_id,
             )?;
         } else {
-            self.index_position_id(
+            self.index_position(
                 &position.id,
                 &position.instrument_id.venue,
-                &position.opening_order_id,
                 &position.strategy_id,
             );
         }

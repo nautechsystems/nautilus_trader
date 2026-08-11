@@ -155,6 +155,54 @@ impl OrderFilled {
     pub fn is_sell(&self) -> bool {
         self.order_side == OrderSide::Sell
     }
+
+    /// Splits an overfill into the fragment which closes the current position and the
+    /// fragment which opens the flipped position.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `closing_qty` is zero, is not smaller than the fill quantity,
+    /// or the proportional commission cannot be represented.
+    pub fn split_for_position_flip(
+        &self,
+        closing_qty: Quantity,
+        opening_position_id: Option<PositionId>,
+        opening_event_id: UUID4,
+    ) -> anyhow::Result<(Self, Self)> {
+        anyhow::ensure!(!closing_qty.is_zero(), "closing quantity was zero");
+        anyhow::ensure!(
+            closing_qty.raw < self.last_qty.raw,
+            "closing quantity {closing_qty} must be smaller than fill quantity {}",
+            self.last_qty,
+        );
+
+        let opening_qty =
+            Quantity::from_raw(self.last_qty.raw - closing_qty.raw, closing_qty.precision);
+        let closing_fraction = closing_qty.as_decimal() / self.last_qty.as_decimal();
+        let (closing_commission, opening_commission) = match self.commission {
+            Some(commission) => {
+                let closing = Money::from_decimal(
+                    commission.as_decimal() * closing_fraction,
+                    commission.currency,
+                )?;
+                (Some(closing), Some(commission - closing))
+            }
+            None => (None, None),
+        };
+
+        let mut closing = self.clone();
+        closing.last_qty = closing_qty;
+        closing.commission = closing_commission;
+
+        let mut opening = self.clone();
+        opening.last_qty = opening_qty;
+        opening.position_id = opening_position_id;
+        opening.commission = opening_commission;
+        opening.event_id = opening_event_id;
+        opening.causation_id = Some(self.event_id);
+
+        Ok((closing, opening))
+    }
 }
 
 impl Debug for OrderFilled {
@@ -502,6 +550,35 @@ mod tests {
 
         assert!(order_filled.is_sell());
         assert!(!order_filled.is_buy());
+    }
+
+    #[rstest]
+    fn test_split_for_position_flip_preserves_provenance_and_commission() {
+        let mut fill = create_test_order_filled();
+        fill.last_qty = Quantity::from(100);
+        fill.commission = Some(Money::new(2.5, Currency::USD()));
+        let source_event_id = fill.event_id;
+        let opening_event_id = UUID4::new();
+        let opening_position_id = PositionId::from("P-FLIPPED");
+
+        let (closing, opening) = fill
+            .split_for_position_flip(
+                Quantity::from(40),
+                Some(opening_position_id),
+                opening_event_id,
+            )
+            .expect("split fill");
+
+        assert_eq!(closing.last_qty, Quantity::from(40));
+        assert_eq!(closing.position_id, fill.position_id);
+        assert_eq!(closing.event_id, source_event_id);
+        assert_eq!(closing.causation_id, fill.causation_id);
+        assert_eq!(closing.commission, Some(Money::new(1.0, Currency::USD())));
+        assert_eq!(opening.last_qty, Quantity::from(60));
+        assert_eq!(opening.position_id, Some(opening_position_id));
+        assert_eq!(opening.event_id, opening_event_id);
+        assert_eq!(opening.causation_id, Some(source_event_id));
+        assert_eq!(opening.commission, Some(Money::new(1.5, Currency::USD())));
     }
 
     #[rstest]

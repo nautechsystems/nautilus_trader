@@ -3949,82 +3949,10 @@ impl ExecutionEngine {
         oms_type: OmsType,
     ) -> Vec<PositionEvent> {
         let mut position_events = Vec::new();
-        let difference = match position.side {
-            PositionSide::Long => Quantity::from_raw(
-                fill.last_qty.raw - position.quantity.raw,
-                position.size_precision,
-            ),
-            PositionSide::Short => Quantity::from_raw(
-                position.quantity.raw.abs_diff(fill.last_qty.raw), // Equivalent to Python's abs(position.quantity - fill.last_qty)
-                position.size_precision,
-            ),
-            _ => fill.last_qty,
-        };
-
-        // Split commission between two positions
-        let fill_percent = position.quantity.as_decimal() / fill.last_qty.as_decimal();
-        let (commission1, commission2) = if let Some(commission) = fill.commission {
-            let commission_currency = commission.currency;
-            let commission1 =
-                Money::from_decimal(commission.as_decimal() * fill_percent, commission_currency)
-                    .expect("Invalid split commission");
-            let commission2 = commission - commission1;
-            (Some(commission1), Some(commission2))
-        } else {
+        if fill.commission.is_none() {
             log::warn!(
                 "Commission is not available for position flip, splitting with no commission"
             );
-            (None, None)
-        };
-
-        let mut fill_split1: Option<OrderFilled> = None;
-
-        if position.is_open() {
-            let mut split = OrderFilled::new(
-                fill.trader_id,
-                fill.strategy_id,
-                fill.instrument_id,
-                fill.client_order_id,
-                fill.venue_order_id,
-                fill.account_id,
-                fill.trade_id,
-                fill.order_side,
-                fill.order_type,
-                position.quantity,
-                fill.last_px,
-                fill.currency,
-                fill.liquidity_side,
-                fill.event_id,
-                fill.ts_event,
-                fill.ts_init,
-                fill.reconciliation,
-                fill.position_id,
-                commission1,
-                fill.info.clone(),
-            );
-            split.causation_id = fill.causation_id;
-            fill_split1 = Some(split);
-
-            if let Some(position_event) =
-                self.update_position(position, fill_split1.as_ref().unwrap())
-            {
-                position_events.push(position_event);
-            }
-
-            // Snapshot closed position before reusing ID (NETTING mode)
-            if oms_type == OmsType::Netting
-                && let Err(e) = self.snapshot_position(position)
-            {
-                log::warn!("Failed to snapshot position during flip: {e:?}");
-            }
-        }
-
-        // Guard against flipping a position with a zero fill size
-        if difference.raw == 0 {
-            log::warn!(
-                "Zero fill size during position flip calculation, this could be caused by a mismatch between instrument `size_precision` and a quantity `size_precision`"
-            );
-            return position_events;
         }
 
         let position_id_flip = if oms_type == OmsType::Hedging
@@ -4038,29 +3966,20 @@ impl ExecutionEngine {
             fill.position_id
         };
 
-        let mut fill_split2 = OrderFilled::new(
-            fill.trader_id,
-            fill.strategy_id,
-            fill.instrument_id,
-            fill.client_order_id,
-            fill.venue_order_id,
-            fill.account_id,
-            fill.trade_id,
-            fill.order_side,
-            fill.order_type,
-            difference,
-            fill.last_px,
-            fill.currency,
-            fill.liquidity_side,
-            UUID4::new(),
-            fill.ts_event,
-            fill.ts_init,
-            fill.reconciliation,
-            position_id_flip,
-            commission2,
-            fill.info.clone(),
-        );
-        fill_split2.causation_id = Some(fill.event_id);
+        let (fill_split1, fill_split2) = fill
+            .split_for_position_flip(position.quantity, position_id_flip, UUID4::new())
+            .expect("Invalid position flip split");
+
+        if let Some(position_event) = self.update_position(position, &fill_split1) {
+            position_events.push(position_event);
+        }
+
+        // Snapshot closed position before reusing ID (NETTING mode)
+        if oms_type == OmsType::Netting
+            && let Err(e) = self.snapshot_position(position)
+        {
+            log::warn!("Failed to snapshot position during flip: {e:?}");
+        }
 
         if oms_type == OmsType::Hedging
             && let Some(position_id) = fill.position_id
