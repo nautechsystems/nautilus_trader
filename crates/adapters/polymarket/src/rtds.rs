@@ -33,7 +33,7 @@ use nautilus_model::{
     types::Price,
 };
 use nautilus_network::{
-    RECONNECTED,
+    RECONNECTED, SocketStateSink,
     websocket::{
         TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
         proxy::ProxyUrl,
@@ -73,6 +73,7 @@ struct PolymarketRtdsFeedInner {
     transport_backend: TransportBackend,
     clock: &'static AtomicTime,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    state_sink: Option<SocketStateSink>,
     subscriptions: dashmap::DashMap<String, TrackedSubscription>,
     last_emitted_timestamps_ms: dashmap::DashMap<String, u64>,
     // Tracks the last venue state we successfully pushed so incremental syncs
@@ -212,12 +213,31 @@ impl PolymarketRtdsFeed {
         Self::new_with_proxy(url, transport_backend, clock, data_sender, None)
     }
 
+    #[cfg(test)]
     pub(crate) fn new_with_proxy(
         url: String,
         transport_backend: TransportBackend,
         clock: &'static AtomicTime,
         data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
         proxy_url: Option<ProxyUrl>,
+    ) -> Self {
+        Self::new_with_proxy_and_state_sink(
+            url,
+            transport_backend,
+            clock,
+            data_sender,
+            proxy_url,
+            None,
+        )
+    }
+
+    pub(crate) fn new_with_proxy_and_state_sink(
+        url: String,
+        transport_backend: TransportBackend,
+        clock: &'static AtomicTime,
+        data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        proxy_url: Option<ProxyUrl>,
+        state_sink: Option<SocketStateSink>,
     ) -> Self {
         Self {
             inner: Arc::new(PolymarketRtdsFeedInner {
@@ -226,6 +246,7 @@ impl PolymarketRtdsFeed {
                 transport_backend,
                 clock,
                 data_sender,
+                state_sink,
                 subscriptions: dashmap::DashMap::new(),
                 last_emitted_timestamps_ms: dashmap::DashMap::new(),
                 live_subscriptions: StdMutex::new(AHashMap::new()),
@@ -563,9 +584,16 @@ impl PolymarketRtdsFeed {
         let config = self.websocket_config();
 
         let ws = Arc::new(
-            WebSocketClient::connect(config, Some(handler), None, vec![], None)
-                .await
-                .context("failed to connect Polymarket RTDS WebSocket")?,
+            WebSocketClient::connect_with_state_sink(
+                config,
+                Some(handler),
+                None,
+                vec![],
+                None,
+                self.inner.state_sink.clone(),
+            )
+            .await
+            .context("failed to connect Polymarket RTDS WebSocket")?,
         );
         log::debug!("Polymarket RTDS WebSocket connected: {}", self.inner.url);
 
@@ -1147,12 +1175,17 @@ mod tests {
         routing::get,
     };
     use futures_util::StreamExt;
-    use nautilus_common::{messages::DataEvent, testing::wait_until_async};
+    use nautilus_common::{
+        live::runner::replace_system_event_sender,
+        messages::{DataEvent, SystemEvent, system::SocketState},
+        testing::wait_until_async,
+    };
     use nautilus_core::{Params, time::get_atomic_clock_realtime};
     use rstest::rstest;
     use serde_json::json;
 
     use super::*;
+    use crate::common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE};
 
     // Sanitized captured update; subscribe and equity fixtures are constructed protocol cases
     const RTDS_CRYPTO_UPDATE_FIXTURE: &str =
@@ -1420,6 +1453,48 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(50)).await;
         addr
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_socket_state_events_use_rtds_endpoint() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state).await;
+        let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+        replace_system_event_sender(system_tx);
+        let state_publisher =
+            crate::common::socket::SocketStatePublisher::new(*POLYMARKET_CLIENT_ID)
+                .expect("system event sender should be initialized");
+        let feed = PolymarketRtdsFeed::new_with_proxy_and_state_sink(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            data_tx,
+            None,
+            Some(state_publisher.sink(crate::common::socket::RTDS_STREAMS_ENDPOINT)),
+        );
+        assert!(
+            feed.track_subscribe(crypto_data_type("BTC"))
+                .expect("track RTDS subscription")
+        );
+
+        feed.connect().await.expect("connect RTDS feed");
+
+        let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+            .await
+            .expect("wait for socket state change")
+            .expect("system event channel closed");
+        let SystemEvent::SocketState(change) = event;
+
+        assert_eq!(change.client_id, *POLYMARKET_CLIENT_ID);
+        assert_eq!(change.venue, Some(*POLYMARKET_VENUE));
+        assert_eq!(change.endpoint, ustr::Ustr::from("polymarket-rtds-streams"));
+        assert_eq!(change.state, SocketState::Connected);
+
+        feed.disconnect().await;
+
+        assert!(system_rx.try_recv().is_err());
     }
 
     async fn connect_test_ws(url: String) -> Arc<WebSocketClient> {

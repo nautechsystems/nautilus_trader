@@ -24,6 +24,8 @@ from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.common import ComponentState
 from nautilus_trader.common import CustomData
 from nautilus_trader.common import Signal
+from nautilus_trader.common import SocketState
+from nautilus_trader.common import SocketStateChanged
 from nautilus_trader.common import TimeEvent
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountId
@@ -650,6 +652,8 @@ PUBLISH_DATA_PARAMETERS = ("data_type", "data")
 PUBLISH_SIGNAL_PARAMETERS = ("name", "value", "ts_event")
 SIGNAL_SUBSCRIPTION_PARAMETERS = ("name", "priority")
 SIGNAL_UNSUBSCRIBE_PARAMETERS = ("name",)
+SOCKET_STATE_SUBSCRIPTION_PARAMETERS = ("priority",)
+SOCKET_STATE_UNSUBSCRIBE_PARAMETERS = ()
 SYNTHETIC_PARAMETERS = ("synthetic",)
 DATA_SURFACE_SIGNATURES = [
     ("publish_data", PUBLISH_DATA_PARAMETERS),
@@ -658,6 +662,7 @@ DATA_SURFACE_SIGNATURES = [
     ("update_synthetic", SYNTHETIC_PARAMETERS),
     ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("subscribe_signal", SIGNAL_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_socket_state", SOCKET_STATE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
@@ -674,6 +679,7 @@ DATA_SURFACE_SIGNATURES = [
     ("subscribe_option_chain", OPTION_CHAIN_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_signal", SIGNAL_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_socket_state", SOCKET_STATE_UNSUBSCRIBE_PARAMETERS),
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -744,6 +750,7 @@ DATA_CALLBACK_SIGNATURES = [
     ("on_time_event", EVENT_PARAMETERS),
     ("on_data", ("data",)),
     ("on_signal", ("signal",)),
+    ("on_socket_state", EVENT_PARAMETERS),
     ("on_instrument", ("instrument",)),
     ("on_quote", ("quote",)),
     ("on_trade", ("trade",)),
@@ -1033,6 +1040,7 @@ DATA_CALLBACKS = [
     ("on_time_event", "time_event"),
     ("on_data", "custom_data"),
     ("on_signal", "signal"),
+    ("on_socket_state", "socket_state_changed"),
     ("on_instrument", "instrument"),
     ("on_quote", "quote"),
     ("on_trade", "trade"),
@@ -1127,6 +1135,16 @@ def strategy_sample_objects():
     time_event = TimeEvent("timer", UUID4(), 1, 2)
     custom_data = CustomData(DataType("X"), [1, 2], 3, 4)
     signal = Signal("sig", "value", 1, 2)
+    socket_state_changed = SocketStateChanged(
+        TraderId("TRADER-001"),
+        ClientId("BINANCE"),
+        Venue("BINANCE"),
+        "binance-futures-market-streams",
+        SocketState.CONNECTED,
+        UUID4(),
+        7,
+        8,
+    )
     mark_price = MarkPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
     index_price = IndexPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
     funding_rate = FundingRateUpdate(instrument.id, Decimal("0.0001"), 1, 2, interval=480)
@@ -1145,6 +1163,7 @@ def strategy_sample_objects():
         "time_event": time_event,
         "custom_data": custom_data,
         "signal": signal,
+        "socket_state_changed": socket_state_changed,
         "instrument": instrument,
         "quote": quote,
         "trade": trade,

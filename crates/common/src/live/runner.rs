@@ -19,7 +19,7 @@
 
 use std::cell::RefCell;
 
-use crate::messages::{DataEvent, ExecutionEvent};
+use crate::messages::{DataEvent, ExecutionEvent, SystemEvent};
 
 /// Gets the global data event sender.
 ///
@@ -64,6 +64,52 @@ pub fn set_data_event_sender(sender: tokio::sync::mpsc::UnboundedSender<DataEven
 /// Replaces the global data event sender for the current thread.
 pub fn replace_data_event_sender(sender: tokio::sync::mpsc::UnboundedSender<DataEvent>) {
     DATA_EVENT_SENDER.with(|s| {
+        *s.borrow_mut() = Some(sender);
+    });
+}
+
+/// Gets the global system event sender.
+///
+/// # Panics
+///
+/// Panics if the sender is uninitialized.
+#[must_use]
+pub fn get_system_event_sender() -> tokio::sync::mpsc::UnboundedSender<SystemEvent> {
+    SYSTEM_EVENT_SENDER.with(|sender| {
+        sender
+            .borrow()
+            .as_ref()
+            .expect("System event sender should be initialized by runner")
+            .clone()
+    })
+}
+
+/// Attempts to get the global system event sender without panicking.
+///
+/// Returns `None` if the sender is not initialized (e.g., in test environments).
+#[must_use]
+pub fn try_get_system_event_sender() -> Option<tokio::sync::mpsc::UnboundedSender<SystemEvent>> {
+    SYSTEM_EVENT_SENDER.with(|sender| sender.borrow().as_ref().cloned())
+}
+
+/// Sets the global system event sender.
+///
+/// Can only be called once per thread.
+///
+/// # Panics
+///
+/// Panics if a sender has already been set.
+pub fn set_system_event_sender(sender: tokio::sync::mpsc::UnboundedSender<SystemEvent>) {
+    SYSTEM_EVENT_SENDER.with(|s| {
+        let mut slot = s.borrow_mut();
+        assert!(slot.is_none(), "System event sender can only be set once");
+        *slot = Some(sender);
+    });
+}
+
+/// Replaces the global system event sender for the current thread.
+pub fn replace_system_event_sender(sender: tokio::sync::mpsc::UnboundedSender<SystemEvent>) {
+    SYSTEM_EVENT_SENDER.with(|s| {
         *s.borrow_mut() = Some(sender);
     });
 }
@@ -120,6 +166,7 @@ pub fn replace_exec_event_sender(sender: tokio::sync::mpsc::UnboundedSender<Exec
 thread_local! {
     static DATA_EVENT_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<DataEvent>>> = const { RefCell::new(None) };
     static EXEC_EVENT_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<ExecutionEvent>>> = const { RefCell::new(None) };
+    static SYSTEM_EVENT_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SystemEvent>>> = const { RefCell::new(None) };
 }
 
 #[cfg(test)]
@@ -155,6 +202,19 @@ mod tests {
     }
 
     #[rstest]
+    fn test_replace_system_event_sender_overwrites_previous() {
+        std::thread::spawn(|| {
+            let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
+            let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
+            replace_system_event_sender(tx1);
+            replace_system_event_sender(tx2);
+            let _sender = get_system_event_sender();
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[rstest]
     fn test_set_data_event_sender_panics_on_double_set() {
         let result = std::thread::spawn(|| {
             let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
@@ -179,8 +239,28 @@ mod tests {
     }
 
     #[rstest]
+    fn test_set_system_event_sender_panics_on_double_set() {
+        let result = std::thread::spawn(|| {
+            let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
+            let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
+            set_system_event_sender(tx1);
+            set_system_event_sender(tx2);
+        })
+        .join();
+        assert!(result.is_err());
+    }
+
+    #[rstest]
     fn test_try_get_exec_event_sender_returns_none_when_unset() {
         let result = std::thread::spawn(try_get_exec_event_sender)
+            .join()
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_try_get_system_event_sender_returns_none_when_unset() {
+        let result = std::thread::spawn(try_get_system_event_sender)
             .join()
             .unwrap();
         assert!(result.is_none());

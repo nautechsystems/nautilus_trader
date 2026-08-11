@@ -26,6 +26,8 @@ from nautilus_trader.common import CustomData
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.common import Signal
+from nautilus_trader.common import SocketState
+from nautilus_trader.common import SocketStateChanged
 from nautilus_trader.common import TimeEvent
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import ActorId
@@ -67,6 +69,7 @@ from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import Token
 from nautilus_trader.model import TradeId
+from nautilus_trader.model import TraderId
 from nautilus_trader.model import TradeTick
 from nautilus_trader.model import Venue
 from tests.providers import TestInstrumentProvider
@@ -98,6 +101,7 @@ TYPED_CALLBACKS = [
     ("on_time_event", "time_event"),
     ("on_data", "custom_data"),
     ("on_signal", "signal"),
+    ("on_socket_state", "socket_state_changed"),
     ("on_instrument", "instrument"),
     ("on_quote", "quote"),
     ("on_trade", "trade"),
@@ -149,6 +153,7 @@ DATA_CALLBACK_SIGNATURES = [
     ("on_time_event", ("event",)),
     ("on_data", ("data",)),
     ("on_signal", ("signal",)),
+    ("on_socket_state", ("event",)),
     ("on_instrument", ("instrument",)),
     ("on_quote", ("quote",)),
     ("on_trade", ("trade",)),
@@ -244,6 +249,7 @@ OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS = ("series_id", "client_id")
 
 REGISTRATION_REQUIRED_SIGNATURES = [
     ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_socket_state", ("priority",)),
     ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
@@ -265,6 +271,7 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("subscribe_pool_fee_collects", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_pool_flash_events", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_socket_state", NO_PARAMETERS),
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -331,6 +338,50 @@ def _create_recording_actor_type():
 
 
 RecordingActor = _create_recording_actor_type()
+
+
+@pytest.mark.parametrize(
+    ("venue", "state"),
+    [
+        pytest.param(Venue("BINANCE"), SocketState.CONNECTED, id="connected-with-venue"),
+        pytest.param(None, SocketState.DISCONNECTED, id="disconnected-without-venue"),
+    ],
+)
+def test_socket_state_changed_exposes_all_fields(venue, state):
+    trader_id = TraderId("TRADER-001")
+    client_id = ClientId("BINANCE")
+    endpoint = "binance-futures-market-streams"
+    event_id = UUID4()
+
+    event = SocketStateChanged(
+        trader_id,
+        client_id,
+        venue,
+        endpoint,
+        state,
+        event_id,
+        11,
+        13,
+    )
+
+    assert event.trader_id == trader_id
+    assert event.client_id == client_id
+    assert event.venue == venue
+    assert event.endpoint == endpoint
+    assert event.state == state
+    assert event.event_id == event_id
+    assert event.ts_event == 11
+    assert event.ts_init == 13
+    assert event == SocketStateChanged(
+        trader_id,
+        client_id,
+        venue,
+        endpoint,
+        state,
+        event_id,
+        11,
+        13,
+    )
 
 
 class HistoricalRequestProbeActor(TestActor):
@@ -529,6 +580,12 @@ def test_data_actor_shutdown_system_requires_registration(actor):
         actor.shutdown_system("unit test shutdown")
 
 
+def test_socket_state_changed_subscription_priority_defaults_to_none(actor):
+    signature = inspect.signature(actor.subscribe_socket_state)
+
+    assert signature.parameters["priority"].default is None
+
+
 @pytest.mark.parametrize(("method_name", "parameter_names"), CALLBACK_SIGNATURES)
 def test_data_actor_callback_methods_expose_expected_signatures(
     actor,
@@ -643,11 +700,22 @@ def sample_objects():
     mark_price = MarkPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
     index_price = IndexPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
     funding_rate = FundingRateUpdate(instrument.id, Decimal("0.0001"), 1, 2, interval=480)
+    socket_state_changed = SocketStateChanged(
+        TraderId("TRADER-001"),
+        ClientId("BINANCE"),
+        Venue("BINANCE"),
+        "binance-futures-market-streams",
+        SocketState.CONNECTED,
+        UUID4(),
+        7,
+        8,
+    )
 
     return {
         "time_event": time_event,
         "custom_data": custom_data,
         "signal": Signal("sig", "value", 1, 2),
+        "socket_state_changed": socket_state_changed,
         "instrument": instrument,
         "quote": quote,
         "trade": trade,

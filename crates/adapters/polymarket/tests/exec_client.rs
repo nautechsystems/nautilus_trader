@@ -44,14 +44,15 @@ use nautilus_common::{
     cache::{Cache, INSTRUMENT_NOT_FOUND, InstrumentLookupError},
     clients::ExecutionClient,
     enums::LogLevel,
-    live::runner::set_exec_event_sender,
+    live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
-        ExecutionEvent, ExecutionReport,
+        ExecutionEvent, ExecutionReport, SystemEvent,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
             GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
             ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
         },
+        system::SocketState,
     },
     testing::wait_until_async,
 };
@@ -927,6 +928,38 @@ async fn test_exec_client_not_connected_initially() {
     let (client, _rx, _cache) = create_test_execution_client(addr);
 
     assert!(!client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_emits_user_socket_state_change() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+    let (mut client, _exec_rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().expect("start execution client");
+
+    client.connect().await.expect("connect execution client");
+
+    let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+        .await
+        .expect("wait for socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+
+    assert_eq!(change.client_id, *POLYMARKET_CLIENT_ID);
+    assert_eq!(change.venue, Some(*POLYMARKET_VENUE));
+    assert_eq!(change.endpoint, ustr::Ustr::from("polymarket-user-streams"));
+    assert_eq!(change.state, SocketState::Connected);
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect execution client");
+
+    assert!(system_rx.try_recv().is_err());
 }
 
 #[rstest]

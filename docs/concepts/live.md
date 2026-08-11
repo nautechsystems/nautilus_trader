@@ -198,7 +198,48 @@ crossing, a fresh event ID, and event timestamps.
 Rust‑native `DataActor` implementations subscribe with `subscribe_queue_state_changed(...)` and
 receive events through `on_queue_state_changed(...)`. Publication stays on the in‑process typed
 message bus. Python configuration and actor handlers do not expose the monitor, and the event has no
-wire representation for external message‑bus streaming or socket state output.
+wire representation for external message‑bus streaming.
+
+## Socket transport state
+
+### Publication and routing
+
+Rust and Python actors can observe transport availability for adapters that opt into socket state
+reporting. Binance Futures and Polymarket provide reference implementations. `LiveNode` publishes
+`SocketStateChanged` on `events.system.SocketStateChanged` with the trader ID, client ID, optional
+venue, stable endpoint label, state, fresh event ID, and event timestamps. It sets both timestamps
+from the kernel clock when it handles the transport's neutral state notification. Adapters send the
+notification through the runner's system‑event channel, separately from market data. The internal
+channel is not part of queue‑pressure monitoring.
+
+### State semantics
+
+`Connected` means the TCP or WebSocket transport is available. It does not mean that authentication,
+subscription replay, or adapter recovery has completed. `Disconnected` means an active transport was
+lost. Failed connection and retry attempts do not publish events, and deliberate shutdown does not
+publish a disconnect event. Reconnect exhaustion also adds no event after the transport loss was
+reported.
+
+### Endpoint labels
+
+Endpoint labels identify a logical adapter stream group without exposing its URL. Multiple sockets
+in a connection pool can share one label, so events report individual transport edges rather than
+aggregate feed availability. The Binance Futures data client uses
+`binance-futures-market-streams` and `binance-futures-public-streams`. Polymarket uses
+`polymarket-market-streams` for pooled CLOB market connections, `polymarket-rtds-streams` for RTDS
+data, and `polymarket-user-streams` for execution events.
+
+### Adapter and actor integration
+
+Adapter integrations construct a `SocketStateSink` and pass it through `connect_with_state_sink` or
+`connect_stream_with_state_sink`. Publication requires the `LiveNode` runner; the standalone
+`AsyncRunner` does not publish these events.
+
+Rust‑native and Python actor implementations subscribe with
+`subscribe_socket_state(...)` and receive events through
+`on_socket_state(...)`. The Python API exposes `SocketState` and `SocketStateChanged` from
+`nautilus_trader.common`. Delivery stays on the typed in‑process bus; external message‑bus
+streaming and wire formats do not expose these events.
 
 ## Shutdown on error
 

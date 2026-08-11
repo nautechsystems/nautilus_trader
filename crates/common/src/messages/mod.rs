@@ -58,6 +58,12 @@ pub enum DataEvent {
     DeFi(nautilus_model::defi::data::DefiData),
 }
 
+/// System event variants routed to a live runner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+pub enum SystemEvent {
+    SocketState(system::SocketStateChange),
+}
+
 /// Execution event variants for order events and reports.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Display)]

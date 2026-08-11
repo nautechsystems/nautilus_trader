@@ -34,7 +34,10 @@ use std::sync::{
 
 use ahash::AHashMap;
 use nautilus_common::live::get_runtime;
-use nautilus_network::websocket::{TransportBackend, proxy::ProxyUrl};
+use nautilus_network::{
+    SocketStateSink,
+    websocket::{TransportBackend, proxy::ProxyUrl},
+};
 use ustr::Ustr;
 
 use super::{
@@ -73,6 +76,7 @@ struct PoolInner {
     state: StdMutex<PoolState>,
     out_tx: StdMutex<Option<tokio::sync::mpsc::UnboundedSender<PolymarketWsMessage>>>,
     out_rx: StdMutex<Option<tokio::sync::mpsc::UnboundedReceiver<PolymarketWsMessage>>>,
+    state_sink: StdMutex<Option<SocketStateSink>>,
     closed: AtomicBool,
 }
 
@@ -150,6 +154,17 @@ impl PolymarketMarketConnectionPool {
                 proxy_url,
             )),
         }
+    }
+
+    /// Configures socket state reporting for every connection in the pool.
+    #[must_use]
+    pub fn with_state_sink(self, state_sink: SocketStateSink) -> Self {
+        *self
+            .inner
+            .state_sink
+            .lock()
+            .expect("pool state sink mutex poisoned") = Some(state_sink);
+        self
     }
 
     #[cfg(test)]
@@ -409,6 +424,7 @@ impl PoolInner {
             state: StdMutex::new(PoolState::new()),
             out_tx: StdMutex::new(None),
             out_rx: StdMutex::new(None),
+            state_sink: StdMutex::new(None),
             closed: AtomicBool::new(false),
         }
     }
@@ -540,12 +556,23 @@ impl PoolInner {
     }
 
     fn market_client(&self, subscribe_new_markets: bool) -> PolymarketWebSocketClient {
-        PolymarketWebSocketClient::new_market_with_proxy(
+        let client = PolymarketWebSocketClient::new_market_with_proxy(
             self.base_url.clone(),
             subscribe_new_markets,
             self.transport_backend,
             self.proxy_url.clone(),
-        )
+        );
+        let state_sink = self
+            .state_sink
+            .lock()
+            .expect("pool state sink mutex poisoned")
+            .clone();
+
+        if let Some(sink) = state_sink {
+            client.with_state_sink(sink)
+        } else {
+            client
+        }
     }
 
     fn spawn_forwarder(

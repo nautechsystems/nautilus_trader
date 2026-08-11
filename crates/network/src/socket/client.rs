@@ -58,6 +58,7 @@ use tokio_tungstenite::tungstenite::{Error, client::IntoClientRequest, stream::M
 
 use super::{SocketConfig, TcpMessageHandler, TcpReader, TcpWriter, WriterCommand};
 use crate::{
+    SocketStateSink,
     backoff::{ExponentialBackoff, RECONNECT_STABILITY_THRESHOLD, wait_reconnect_delay},
     dst,
     error::{SendError, is_connection_drop_io_error},
@@ -90,6 +91,7 @@ struct SocketClientInner {
     backoff: ExponentialBackoff,
     reconnect_max_attempts: Option<u32>,
     reconnect_attempt_count: u32,
+    state_sink: Option<SocketStateSink>,
 }
 
 impl SocketClientInner {
@@ -98,7 +100,10 @@ impl SocketClientInner {
     /// # Errors
     ///
     /// Returns an error if connection fails or configuration is invalid.
-    pub(crate) async fn connect_url(config: SocketConfig) -> anyhow::Result<Self> {
+    async fn connect_url(
+        config: SocketConfig,
+        state_sink: Option<SocketStateSink>,
+    ) -> anyhow::Result<Self> {
         const CONNECTION_TIMEOUT_SECS: u64 = 10;
 
         install_cryptographic_provider();
@@ -202,8 +207,11 @@ impl SocketClientInner {
 
         log::debug!("Connected");
 
-        let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
         let state_notify = Arc::new(tokio::sync::Notify::new());
+        let outcome =
+            ConnectionMode::complete_reconnect_with_sink(&connection_mode, state_sink.as_ref());
+        debug_assert_eq!(outcome, ReconnectOutcome::Reconnected);
         let read_fence = ReadSessionFence::new();
 
         let read_task = Self::spawn_read_task(
@@ -223,6 +231,7 @@ impl SocketClientInner {
             writer,
             writer_rx,
             config.suffix.clone(),
+            state_sink.clone(),
         );
 
         // Optionally spawn a heartbeat task to periodically ping server
@@ -249,6 +258,7 @@ impl SocketClientInner {
             backoff: reconnect_backoff,
             reconnect_max_attempts,
             reconnect_attempt_count: 0,
+            state_sink,
         })
     }
 
@@ -431,7 +441,11 @@ impl SocketClientInner {
 
         // Atomically transition from Reconnect to Active
         // This prevents race condition where disconnect could be requested between check and store
-        if ConnectionMode::complete_reconnect(&self.connection_mode) == ReconnectOutcome::Aborted {
+        if ConnectionMode::complete_reconnect_with_sink(
+            &self.connection_mode,
+            self.state_sink.as_ref(),
+        ) == ReconnectOutcome::Aborted
+        {
             log::debug!("Reconnect aborted (state changed during reconnect)");
             return Ok(ReconnectOutcome::Aborted);
         }
@@ -650,6 +664,7 @@ impl SocketClientInner {
         writer: W,
         mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand<W>>,
         suffix: Vec<u8>,
+        state_sink: Option<SocketStateSink>,
     ) -> tokio::task::JoinHandle<()>
     where
         W: AsyncWrite + Unpin + Send + 'static,
@@ -763,7 +778,10 @@ impl SocketClientInner {
                                     reconnect_buffer.push_back(msg);
 
                                     // CAS: a disconnect landing mid-write must not be overwritten
-                                    if ConnectionMode::request_reconnect(&connection_state) {
+                                    if ConnectionMode::request_reconnect_with_sink(
+                                        &connection_state,
+                                        state_sink.as_ref(),
+                                    ) {
                                         log::warn!("Writer triggering reconnect");
                                         state_notify.notify_one();
                                     }
@@ -893,7 +911,20 @@ impl SocketClient {
         config: SocketConfig,
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
     ) -> anyhow::Result<Self> {
-        let inner = SocketClientInner::connect_url(config).await?;
+        Self::connect_with_state_sink(config, post_reconnection, None).await
+    }
+
+    /// Connects to the server and reports semantic transport availability changes.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error connecting to the server.
+    pub async fn connect_with_state_sink(
+        config: SocketConfig,
+        post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
+        state_sink: Option<SocketStateSink>,
+    ) -> anyhow::Result<Self> {
+        let inner = SocketClientInner::connect_url(config, state_sink).await?;
         let writer_tx = inner.writer_tx.clone();
         let connection_mode = inner.connection_mode.clone();
         let state_notify = inner.state_notify.clone();
@@ -1149,15 +1180,10 @@ impl SocketClient {
                 }
 
                 if mode.is_active() && !inner.is_alive() {
-                    if connection_mode
-                        .compare_exchange(
-                            ConnectionMode::Active.as_u8(),
-                            ConnectionMode::Reconnect.as_u8(),
-                            Ordering::SeqCst,
-                            Ordering::SeqCst,
-                        )
-                        .is_ok()
-                    {
+                    if ConnectionMode::request_reconnect_with_sink(
+                        &connection_mode,
+                        inner.state_sink.as_ref(),
+                    ) {
                         log::info!("Detected dead read task, transitioning to RECONNECT");
                     }
                     mode = ConnectionMode::from_atomic(&connection_mode);
@@ -1295,7 +1321,7 @@ impl SocketClient {
     }
 }
 
-// Dropping cancels background work without reporting a terminal lifecycle transition.
+// Dropping cancels background work without reporting a terminal socket state transition.
 impl Drop for SocketClient {
     fn drop(&mut self) {
         if !self.controller_task.is_finished() {
@@ -1310,7 +1336,10 @@ impl Drop for SocketClient {
 #[cfg(not(all(feature = "simulation", madsim)))] // transport-layer I/O not simulated
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
+    use std::sync::Mutex as StdMutex;
+
     use nautilus_common::testing::wait_until_async;
+    use rstest::rstest;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::{TcpListener, TcpStream},
@@ -1320,6 +1349,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::SocketState;
 
     async fn bind_test_server() -> (u16, TcpListener) {
         let listener = TcpListener::bind("127.0.0.1:0")
@@ -1660,6 +1690,101 @@ mod tests {
         client.close().await;
         server_task.abort();
     }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_state_sink_reports_initial_loss_and_recovery() {
+        let (port, listener) = bind_test_server().await;
+        let server_task = task::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            sleep(Duration::from_millis(100)).await;
+            socket.shutdown().await.unwrap();
+
+            let (socket, _) = listener.accept().await.unwrap();
+            run_echo_server(socket).await;
+        });
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(10),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_delay_max_ms: Some(10),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: Some(3),
+            connection_max_retries: Some(1),
+            idle_timeout_ms: None,
+            certs_dir: None,
+        };
+        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().unwrap().push(state);
+        });
+
+        let client = SocketClient::connect_with_state_sink(config, None, Some(sink))
+            .await
+            .unwrap();
+
+        assert_eq!(*states.lock().unwrap(), vec![SocketState::Connected]);
+
+        wait_until_async(
+            || {
+                let states = Arc::clone(&states);
+                async move { states.lock().unwrap().len() == 3 }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+        assert_eq!(
+            *states.lock().unwrap(),
+            vec![
+                SocketState::Connected,
+                SocketState::Disconnected,
+                SocketState::Connected,
+            ]
+        );
+
+        client.close().await;
+        assert_eq!(states.lock().unwrap().len(), 3);
+        server_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_state_sink_ignores_initial_connection_failure() {
+        let (port, listener) = bind_test_server().await;
+        drop(listener);
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: Some(100),
+            reconnect_delay_initial_ms: Some(1),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_delay_max_ms: Some(1),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: Some(1),
+            connection_max_retries: Some(1),
+            idle_timeout_ms: None,
+            certs_dir: None,
+        };
+        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().unwrap().push(state);
+        });
+
+        let result = SocketClient::connect_with_state_sink(config, None, Some(sink)).await;
+
+        assert!(result.is_err());
+        assert_eq!(*states.lock().unwrap(), Vec::new());
+    }
 }
 
 #[cfg(test)]
@@ -1683,6 +1808,7 @@ mod rust_tests {
     };
 
     use super::*;
+    use crate::SocketState;
 
     const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -1768,7 +1894,7 @@ mod rust_tests {
             let (_socket, _) = listener.accept().await.unwrap();
             std::future::pending::<()>().await;
         });
-        let mut inner = SocketClientInner::connect_url(reconnect_test_config(port))
+        let mut inner = SocketClientInner::connect_url(reconnect_test_config(port), None)
             .await
             .unwrap();
         inner
@@ -1791,7 +1917,7 @@ mod rust_tests {
             let (_second, _) = listener.accept().await.unwrap();
             std::future::pending::<()>().await;
         });
-        let mut inner = SocketClientInner::connect_url(reconnect_test_config(port))
+        let mut inner = SocketClientInner::connect_url(reconnect_test_config(port), None)
             .await
             .unwrap();
         inner
@@ -1973,16 +2099,74 @@ mod rust_tests {
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None).await.unwrap();
+        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().unwrap().push(state);
+        });
+        let client = SocketClient::connect_with_state_sink(config, None, Some(sink))
+            .await
+            .unwrap();
         accepted_rx.await.unwrap();
         release_tx.send(()).unwrap();
 
         wait_until_async(|| async { client.is_closed() }, Duration::from_secs(5)).await;
         assert!(client.is_closed());
+        assert_eq!(
+            *states.lock().unwrap(),
+            vec![SocketState::Connected, SocketState::Disconnected]
+        );
 
         client.close().await;
         assert!(client.is_closed());
+        assert_eq!(states.lock().unwrap().len(), 2);
         server.await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_drop_suppresses_socket_state_event() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (accepted_tx, accepted_rx) = oneshot::channel();
+
+        let server = task::spawn(async move {
+            let (_socket, _) = listener.accept().await.unwrap();
+            let _ = accepted_tx.send(());
+            std::future::pending::<()>().await;
+        });
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: Some(100),
+            reconnect_delay_initial_ms: Some(1),
+            reconnect_delay_max_ms: Some(1),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            connection_max_retries: Some(1),
+            reconnect_max_attempts: Some(1),
+            idle_timeout_ms: None,
+            certs_dir: None,
+        };
+        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().unwrap().push(state);
+        });
+        let client = SocketClient::connect_with_state_sink(config, None, Some(sink))
+            .await
+            .unwrap();
+        accepted_rx.await.unwrap();
+
+        drop(client);
+        sleep(Duration::from_millis(25)).await;
+
+        assert_eq!(*states.lock().unwrap(), vec![SocketState::Connected]);
+        server.abort();
     }
 
     #[rstest]
@@ -2181,12 +2365,18 @@ mod rust_tests {
         });
         let (writer_tx, writer_rx) =
             tokio::sync::mpsc::unbounded_channel::<WriterCommand<TestWriter>>();
+        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().unwrap().push(state);
+        });
         let write_task = SocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
             writer,
             writer_rx,
             b"\r\n".to_vec(),
+            Some(sink),
         );
 
         writer_tx
@@ -2223,6 +2413,8 @@ mod rust_tests {
         state_notify.notify_waiters();
         drop(writer_tx);
         write_task.await.unwrap();
+
+        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
     }
 
     #[rstest]
@@ -2248,7 +2440,7 @@ mod rust_tests {
             certs_dir: None,
         };
 
-        let error = match SocketClientInner::connect_url(config).await {
+        let error = match SocketClientInner::connect_url(config, None).await {
             Ok(_) => panic!("invalid reconnect backoff should be rejected"),
             Err(e) => e,
         };

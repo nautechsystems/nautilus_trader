@@ -62,7 +62,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     orderbook::OrderBook,
 };
-use nautilus_network::websocket::proxy::ProxyUrl;
+use nautilus_network::{SocketStateSink, websocket::proxy::ProxyUrl};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -77,7 +77,10 @@ use self::{
     subscriptions::{resolve_token_id_from, sync_ws_subscription_async},
 };
 use crate::{
-    common::consts::POLYMARKET_VENUE,
+    common::{
+        consts::POLYMARKET_VENUE,
+        socket::{MARKET_STREAMS_ENDPOINT, RTDS_STREAMS_ENDPOINT, SocketStatePublisher},
+    },
     config::PolymarketDataClientConfig,
     filters::InstrumentFilter,
     http::{
@@ -136,6 +139,7 @@ pub struct PolymarketDataClient {
     auto_load_scheduled: Arc<AtomicBool>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
     rtds_feed: PolymarketRtdsFeed,
+    rtds_state_sink: Option<SocketStateSink>,
     proxy_url: Option<ProxyUrl>,
 }
 
@@ -172,6 +176,16 @@ impl PolymarketDataClient {
     ) -> Self {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
+        let state_publisher = SocketStatePublisher::new(client_id);
+
+        let ws_client = if let Some(publisher) = state_publisher.as_ref() {
+            ws_client.with_state_sink(publisher.sink(MARKET_STREAMS_ENDPOINT))
+        } else {
+            ws_client
+        };
+        let rtds_state_sink = state_publisher
+            .as_ref()
+            .map(|publisher| publisher.sink(RTDS_STREAMS_ENDPOINT));
         let provider =
             PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone());
         let configured_fetch_max_concurrency = config.new_market_fetch_max_concurrency;
@@ -224,13 +238,15 @@ impl PolymarketDataClient {
             pending_auto_loads: Arc::new(StdMutex::new(AHashSet::new())),
             auto_load_scheduled: Arc::new(AtomicBool::new(false)),
             position_event_handler: None,
-            rtds_feed: PolymarketRtdsFeed::new_with_proxy(
+            rtds_feed: PolymarketRtdsFeed::new_with_proxy_and_state_sink(
                 rtds_url,
                 rtds_transport_backend,
                 clock,
                 rtds_data_sender,
                 proxy_url.clone(),
+                rtds_state_sink.clone(),
             ),
+            rtds_state_sink,
             proxy_url,
         }
     }

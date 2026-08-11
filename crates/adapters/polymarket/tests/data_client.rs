@@ -42,14 +42,15 @@ use futures_util::StreamExt;
 use jiff::{SignedDuration, Timestamp, tz::Offset};
 use nautilus_common::{
     clients::DataClient,
-    live::runner::replace_data_event_sender,
+    live::runner::{replace_data_event_sender, replace_system_event_sender},
     messages::{
-        DataEvent, DataResponse,
+        DataEvent, DataResponse, SystemEvent,
         data::{
             RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
             SubscribeBookDepth10, SubscribeInstrument, SubscribeInstrumentClose,
             SubscribeInstrumentStatus, SubscribeQuotes, UnsubscribeInstrument,
         },
+        system::SocketState,
     },
     testing::wait_until_async,
 };
@@ -217,6 +218,36 @@ fn create_test_data_client(
     tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
 ) {
     create_test_data_client_with_new_markets(addr, false)
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_emits_market_socket_state_change() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+    let (mut client, _data_rx) = create_test_data_client(addr);
+
+    client.connect().await.expect("connect data client");
+
+    let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+        .await
+        .expect("wait for socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+
+    assert_eq!(change.client_id, *POLYMARKET_CLIENT_ID);
+    assert_eq!(change.venue, Some(*POLYMARKET_VENUE));
+    assert_eq!(
+        change.endpoint,
+        ustr::Ustr::from("polymarket-market-streams")
+    );
+    assert_eq!(change.state, SocketState::Connected);
+
+    client.disconnect().await.expect("disconnect data client");
+
+    assert!(system_rx.try_recv().is_err());
 }
 
 fn create_test_data_client_with_new_markets(

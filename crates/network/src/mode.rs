@@ -22,46 +22,7 @@ use std::sync::{
 
 use strum::{AsRefStr, Display, EnumString};
 
-/// Irreversible validity token for a single connection's read task.
-#[derive(Clone, Debug)]
-pub(crate) struct ReadSessionFence {
-    valid: Arc<AtomicBool>,
-}
-
-impl ReadSessionFence {
-    /// Creates a valid fence for a newly spawned read task.
-    #[must_use]
-    pub(crate) fn new() -> Self {
-        Self {
-            valid: Arc::new(AtomicBool::new(true)),
-        }
-    }
-
-    /// Invalidates the associated read session.
-    pub(crate) fn invalidate(&self) {
-        self.valid.store(false, Ordering::SeqCst);
-    }
-
-    /// Returns whether the associated read session is still current.
-    #[must_use]
-    pub(crate) fn is_valid(&self) -> bool {
-        self.valid.load(Ordering::SeqCst)
-    }
-}
-
-/// Result of a reconnection attempt that did not fail outright.
-///
-/// A reconnect can finish without reconnecting: a teardown may be requested while
-/// it is in flight, at which point it unwinds and leaves the mode terminal. That is
-/// normal control flow rather than an error, so it needs to be distinguishable from
-/// a completed reconnection by the caller.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ReconnectOutcome {
-    /// A replacement connection was established and the mode is now `Active`.
-    Reconnected,
-    /// The attempt unwound without reconnecting; the mode was left unchanged.
-    Aborted,
-}
+use crate::sink::{SocketState, SocketStateSink};
 
 /// The lifecycle state of a socket client.
 ///
@@ -128,6 +89,39 @@ impl ConnectionMode {
             .is_ok()
     }
 
+    /// Atomically transitions from `Active` to `Reconnect` and reports the loss.
+    pub(crate) fn request_reconnect_with_sink(
+        value: &AtomicU8,
+        sink: Option<&SocketStateSink>,
+    ) -> bool {
+        sink.map_or_else(
+            || Self::request_reconnect(value),
+            |sink| {
+                sink.transition(
+                    value,
+                    Self::Active,
+                    Self::Reconnect,
+                    SocketState::Disconnected,
+                )
+            },
+        )
+    }
+
+    /// Atomically transitions from `Active` to `Closed` and reports the loss.
+    pub(crate) fn close_on_loss(value: &AtomicU8, sink: Option<&SocketStateSink>) -> bool {
+        sink.map_or_else(
+            || {
+                value
+                    .try_update(Ordering::SeqCst, Ordering::SeqCst, |mode| {
+                        matches!(Self::from_u8(mode), Self::Active | Self::Reconnect)
+                            .then_some(Self::Closed.as_u8())
+                    })
+                    .is_ok()
+            },
+            |sink| sink.close_on_loss(value),
+        )
+    }
+
     /// Atomically transitions to `Disconnect` from any non-`Closed` state.
     ///
     /// Returns `true` if the mode is now `Disconnect`; `false` if the
@@ -159,6 +153,23 @@ impl ConnectionMode {
             )
             .is_ok()
         {
+            ReconnectOutcome::Reconnected
+        } else {
+            ReconnectOutcome::Aborted
+        }
+    }
+
+    /// Atomically transitions from `Reconnect` to `Active` and reports availability.
+    pub(crate) fn complete_reconnect_with_sink(
+        value: &AtomicU8,
+        sink: Option<&SocketStateSink>,
+    ) -> ReconnectOutcome {
+        let reconnected = sink.map_or_else(
+            || Self::complete_reconnect(value) == ReconnectOutcome::Reconnected,
+            |sink| sink.transition(value, Self::Reconnect, Self::Active, SocketState::Connected),
+        );
+
+        if reconnected {
             ReconnectOutcome::Reconnected
         } else {
             ReconnectOutcome::Aborted
@@ -198,6 +209,47 @@ impl ConnectionMode {
     #[must_use]
     pub const fn is_closed(&self) -> bool {
         matches!(self, Self::Closed)
+    }
+}
+
+/// Result of a reconnection attempt that did not fail outright.
+///
+/// A reconnect can finish without reconnecting: a teardown may be requested while
+/// it is in flight, at which point it unwinds and leaves the mode terminal. That is
+/// normal control flow rather than an error, so it needs to be distinguishable from
+/// a completed reconnection by the caller.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ReconnectOutcome {
+    /// A replacement connection was established and the mode is now `Active`.
+    Reconnected,
+    /// The attempt unwound without reconnecting; the mode was left unchanged.
+    Aborted,
+}
+
+/// Irreversible validity token for a single connection's read task.
+#[derive(Clone, Debug)]
+pub(crate) struct ReadSessionFence {
+    valid: Arc<AtomicBool>,
+}
+
+impl ReadSessionFence {
+    /// Creates a valid fence for a newly spawned read task.
+    #[must_use]
+    pub(crate) fn new() -> Self {
+        Self {
+            valid: Arc::new(AtomicBool::new(true)),
+        }
+    }
+
+    /// Invalidates the associated read session.
+    pub(crate) fn invalidate(&self) {
+        self.valid.store(false, Ordering::SeqCst);
+    }
+
+    /// Returns whether the associated read session is still current.
+    #[must_use]
+    pub(crate) fn is_valid(&self) -> bool {
+        self.valid.load(Ordering::SeqCst)
     }
 }
 

@@ -22,6 +22,7 @@ use nautilus_common::{
     actor::{DataActor, DataActorNative, data_actor::DataActorCore},
     component::Component,
     enums::ComponentState,
+    messages::system::SocketStateChanged,
     python::{cache::PyCache, clock::PyClock, logging::PyLogger},
     signal::Signal,
     timer::TimeEvent,
@@ -204,6 +205,15 @@ impl PyExecutionAlgorithm {
         if let Some(ref py_self) = self.inner().py_self {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_signal", (signal.clone().into_py_any(py)?,))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_socket_state(&self, event: &SocketStateChanged) -> PyResult<()> {
+        if let Some(ref py_self) = self.inner().py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_socket_state", (event.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -550,6 +560,11 @@ impl DataActor for PyExecutionAlgorithm {
         self.dispatch_on_signal(signal)
             .map_err(|e| anyhow::anyhow!("Python on_signal failed: {e}"))
     }
+
+    fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
+        self.dispatch_on_socket_state(event)
+            .map_err(|e| anyhow::anyhow!("Python on_socket_state failed: {e}"))
+    }
 }
 
 #[pyo3::pymethods]
@@ -817,10 +832,21 @@ impl PyExecutionAlgorithm {
         DataActor::subscribe_signal(self, name, priority);
     }
 
+    #[pyo3(name = "subscribe_socket_state")]
+    #[pyo3(signature = (priority=None))]
+    fn py_subscribe_socket_state(&mut self, priority: Option<u32>) {
+        DataActor::subscribe_socket_state(self, priority);
+    }
+
     #[pyo3(name = "unsubscribe_signal")]
     #[pyo3(signature = (name=""))]
     fn py_unsubscribe_signal(&mut self, name: &str) {
         DataActor::unsubscribe_signal(self, name);
+    }
+
+    #[pyo3(name = "unsubscribe_socket_state")]
+    fn py_unsubscribe_socket_state(&mut self) {
+        DataActor::unsubscribe_socket_state(self);
     }
 
     #[pyo3(name = "on_start")]
@@ -851,6 +877,10 @@ impl PyExecutionAlgorithm {
     #[allow(unused_variables)]
     #[pyo3(name = "on_signal")]
     fn py_on_signal(&mut self, signal: &Signal) {}
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_socket_state")]
+    fn py_on_socket_state(&mut self, event: SocketStateChanged) {}
 
     #[allow(clippy::needless_pass_by_value)]
     #[pyo3(name = "execute")]
@@ -1341,15 +1371,106 @@ fn py_dict_to_json(config: &Bound<'_, PyDict>) -> PyResult<HashMap<String, serde
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{
+        cache::Cache,
+        clock::{Clock, TestClock},
+        messages::system::{SocketState, SocketStateChanged},
+        msgbus::{MessageBus, MessagingSwitchboard, get_message_bus},
+    };
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::OrderType,
-        identifiers::{ClientOrderId, InstrumentId, OrderListId, StrategyId},
+        identifiers::{
+            ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, Venue,
+        },
         orders::OrderTestBuilder,
     };
     use pyo3::ffi::c_str;
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
+
+    fn sample_socket_state_changed() -> SocketStateChanged {
+        SocketStateChanged::new(
+            TraderId::from("TRADER-001"),
+            ClientId::from("BINANCE"),
+            Some(Venue::from("BINANCE")),
+            Ustr::from("binance-futures-market-streams"),
+            SocketState::Connected,
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(1_700_000_000_000_000_001),
+            UnixNanos::from(1_700_000_000_000_000_002),
+        )
+    }
+
+    #[rstest]
+    fn test_python_socket_state_dispatches_exact_event() {
+        Python::initialize();
+
+        let tracker = Python::attach(|py| {
+            py.run(
+                c_str!(
+                    r#"
+class SocketStateTracker:
+    def __init__(self):
+        self.event = None
+
+    def on_socket_state(self, event):
+        self.event = event
+"#
+                ),
+                None,
+                None,
+            )
+            .unwrap();
+            py.eval(c_str!("SocketStateTracker()"), None, None)
+                .unwrap()
+                .unbind()
+        });
+        let mut algorithm = PyExecutionAlgorithm::new(None);
+        algorithm.set_python_instance(tracker);
+        let event = sample_socket_state_changed();
+
+        DataActor::on_socket_state(&mut algorithm, &event).unwrap();
+
+        let received = Python::attach(|py| {
+            algorithm
+                .inner()
+                .py_self
+                .as_ref()
+                .unwrap()
+                .getattr(py, "event")
+                .unwrap()
+                .extract::<SocketStateChanged>(py)
+                .unwrap()
+        });
+        assert_eq!(received, event);
+    }
+
+    #[rstest]
+    fn test_python_subscribe_and_unsubscribe_socket_state_update_msgbus() {
+        *get_message_bus().borrow_mut() = MessageBus::default();
+
+        let mut algorithm = PyExecutionAlgorithm::new(None);
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache).unwrap();
+
+        algorithm.py_subscribe_socket_state(Some(50));
+
+        let topic = MessagingSwitchboard::socket_state_changed_topic();
+        let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+        assert_eq!(subscriptions.len(), 1);
+        assert_eq!(subscriptions[0].priority, 50);
+
+        algorithm.py_unsubscribe_socket_state();
+
+        let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+        assert!(subscriptions.is_empty());
+    }
 
     #[rstest]
     fn test_python_order_list_override_receives_resolved_orders_without_fanout() {

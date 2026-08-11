@@ -16,10 +16,12 @@
 pub mod component;
 pub mod queue;
 pub mod shutdown;
+pub mod socket;
 pub mod trading;
 
 // Re-exports
 pub use component::ComponentStateChanged;
 pub use queue::{QueueCondition, QueueState, QueueStateChanged};
 pub use shutdown::ShutdownSystem;
+pub use socket::{SocketState, SocketStateChange, SocketStateChanged};
 pub use trading::TradingStateChanged;

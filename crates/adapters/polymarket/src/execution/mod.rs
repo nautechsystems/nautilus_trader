@@ -77,7 +77,12 @@ use self::{
     submitter::OrderSubmitter,
 };
 use crate::{
-    common::{consts::POLYMARKET_VENUE, credential::Secrets, enums::SignatureType},
+    common::{
+        consts::POLYMARKET_VENUE,
+        credential::Secrets,
+        enums::SignatureType,
+        socket::{SocketStatePublisher, USER_STREAMS_ENDPOINT},
+    },
     config::PolymarketExecClientConfig,
     http::{clob::PolymarketClobHttpClient, data_api::PolymarketDataApiHttpClient},
     signing::eip712::OrderSigner,
@@ -183,6 +188,12 @@ impl PolymarketExecutionClient {
             config.transport_backend,
             proxy_url,
         );
+
+        let ws_client = if let Some(publisher) = SocketStatePublisher::new(core.client_id) {
+            ws_client.with_state_sink(publisher.sink(USER_STREAMS_ENDPOINT))
+        } else {
+            ws_client
+        };
 
         let clock = get_atomic_clock_realtime();
         let pusd = get_pusd_currency();

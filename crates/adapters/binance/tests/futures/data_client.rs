@@ -52,9 +52,9 @@ use nautilus_binance::{
 };
 use nautilus_common::{
     clients::DataClient,
-    live::runner::set_data_event_sender,
+    live::runner::{set_data_event_sender, set_system_event_sender},
     messages::{
-        DataEvent,
+        DataEvent, SystemEvent,
         data::{
             DataResponse, RequestBars, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
             RequestTrades,
@@ -66,6 +66,7 @@ use nautilus_common::{
                 UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeQuotes, UnsubscribeTrades,
             },
         },
+        system::SocketState,
     },
     testing::wait_until_async,
 };
@@ -897,6 +898,54 @@ async fn test_connect_emits_instruments() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_emits_socket_state_changes() {
+    let addr = start_data_test_server().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    set_system_event_sender(system_tx);
+    let (mut client, _data_rx) = create_test_data_client(base_url_http, base_url_ws);
+
+    client.connect().await.unwrap();
+
+    let mut changes = Vec::new();
+    wait_until_async(
+        || {
+            while let Ok(event) = system_rx.try_recv() {
+                match event {
+                    SystemEvent::SocketState(change) => changes.push(change),
+                }
+            }
+            let done = changes.len() == 2;
+            async move { done }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(changes.len(), 2);
+    assert_eq!(changes[0].client_id, *BINANCE_CLIENT_ID);
+    assert_eq!(changes[0].venue, Some(*BINANCE_VENUE));
+    assert_eq!(
+        changes[0].endpoint,
+        ustr::Ustr::from("binance-futures-market-streams")
+    );
+    assert_eq!(changes[0].state, SocketState::Connected);
+    assert_eq!(changes[1].client_id, *BINANCE_CLIENT_ID);
+    assert_eq!(changes[1].venue, Some(*BINANCE_VENUE));
+    assert_eq!(
+        changes[1].endpoint,
+        ustr::Ustr::from("binance-futures-public-streams")
+    );
+    assert_eq!(changes[1].state, SocketState::Connected);
+
+    client.disconnect().await.unwrap();
+
+    assert!(system_rx.try_recv().is_err());
 }
 
 #[rstest]

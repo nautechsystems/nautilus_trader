@@ -87,7 +87,7 @@ use crate::{
             InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse, RequestCommand,
             SubscribeCommand, TradesResponse, UnsubscribeCommand,
         },
-        system::{QueueCondition, QueueState, QueueStateChanged},
+        system::{QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged},
     },
     msgbus::{
         self, MessageBus, get_message_bus,
@@ -168,6 +168,19 @@ fn make_queue_state_changed(state: QueueState, queue_depth: usize) -> QueueState
     )
 }
 
+fn make_socket_state_changed(state: SocketState) -> SocketStateChanged {
+    SocketStateChanged::new(
+        TraderId::from("TRADER-001"),
+        ClientId::from("BINANCE"),
+        Some(Venue::from("BINANCE")),
+        Ustr::from("binance-futures-market-streams"),
+        state,
+        UUID4::from("00000000-0000-4000-8000-000000000003"),
+        UnixNanos::from(71),
+        UnixNanos::from(73),
+    )
+}
+
 #[derive(Debug)]
 struct TestDataActor {
     core: DataActorCore,
@@ -189,6 +202,7 @@ struct TestDataActor {
     pub received_chain_slices: Vec<OptionChainSlice>,
     pub received_signals: Vec<Signal>,
     pub received_queue_state_changes: Vec<QueueStateChanged>,
+    pub received_socket_state_changes: Vec<SocketStateChanged>,
     pub received_custom_data: Vec<CustomData>,
     #[cfg(feature = "defi")]
     pub received_blocks: Vec<Block>,
@@ -268,6 +282,11 @@ impl DataActor for TestDataActor {
 
     fn on_queue_state_changed(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
         self.received_queue_state_changes.push(event.clone());
+        Ok(())
+    }
+
+    fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
+        self.received_socket_state_changes.push(event.clone());
         Ok(())
     }
 
@@ -440,6 +459,7 @@ impl TestDataActor {
             received_chain_slices: Vec::new(),
             received_signals: Vec::new(),
             received_queue_state_changes: Vec::new(),
+            received_socket_state_changes: Vec::new(),
             received_custom_data: Vec::new(),
             #[cfg(feature = "defi")]
             received_blocks: Vec::new(),
@@ -4071,6 +4091,20 @@ fn test_unsubscribe_queue_state_changed_panics_when_unregistered() {
 
 #[rstest]
 #[should_panic(expected = "Actor has not been registered")]
+fn test_subscribe_socket_state_panics_when_unregistered() {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    actor.subscribe_socket_state(None);
+}
+
+#[rstest]
+#[should_panic(expected = "Actor has not been registered")]
+fn test_unsubscribe_socket_state_panics_when_unregistered() {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    actor.unsubscribe_socket_state();
+}
+
+#[rstest]
+#[should_panic(expected = "Actor has not been registered")]
 fn test_add_synthetic_panics_when_unregistered() {
     use std::str::FromStr;
 
@@ -4196,6 +4230,146 @@ fn test_queue_state_changed_reaches_typed_subscriber(
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_queue_state_changes, vec![event]);
+}
+
+#[rstest]
+fn test_socket_state_changed_reaches_typed_subscriber(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_socket_state(None);
+    drop(actor);
+
+    let event = make_socket_state_changed(SocketState::Connected);
+    msgbus::publish_any(MessagingSwitchboard::socket_state_changed_topic(), &event);
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_socket_state_changes, vec![event]);
+}
+
+#[rstest]
+fn test_socket_state_changed_skips_delivery_when_not_running(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.subscribe_socket_state(None);
+    drop(actor);
+
+    let event = make_socket_state_changed(SocketState::Connected);
+    msgbus::publish_any(MessagingSwitchboard::socket_state_changed_topic(), &event);
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_socket_state_changes, Vec::new());
+}
+
+#[rstest]
+fn test_unsubscribe_socket_state_stops_delivery(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_socket_state(None);
+    drop(actor);
+
+    let connected = make_socket_state_changed(SocketState::Connected);
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(),
+        &connected,
+    );
+
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.unsubscribe_socket_state();
+    drop(actor);
+
+    let disconnected = make_socket_state_changed(SocketState::Disconnected);
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(),
+        &disconnected,
+    );
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_socket_state_changes, vec![connected]);
+}
+
+#[rstest]
+fn test_subscribe_socket_state_dispatches_in_priority_order(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    set_data_cmd_sender(Arc::new(SyncDataCommandSender));
+    *get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut actor_high = TestDataActor::new(DataActorConfig {
+        actor_id: Some(ActorId::new("ACTOR-HIGH")),
+        ..DataActorConfig::default()
+    });
+    actor_high
+        .register(trader_id, clock.clone(), cache.clone())
+        .unwrap();
+    let high_id = actor_high.actor_id().inner();
+    register_actor(actor_high);
+
+    let mut actor_low = TestDataActor::new(DataActorConfig {
+        actor_id: Some(ActorId::new("ACTOR-LOW")),
+        ..DataActorConfig::default()
+    });
+    actor_low.register(trader_id, clock, cache).unwrap();
+    let low_id = actor_low.actor_id().inner();
+    register_actor(actor_low);
+
+    let mut high = get_actor_unchecked::<TestDataActor>(&high_id);
+    high.start().unwrap();
+    high.subscribe_socket_state(Some(100));
+    drop(high);
+
+    let mut low = get_actor_unchecked::<TestDataActor>(&low_id);
+    low.start().unwrap();
+    low.subscribe_socket_state(Some(10));
+    drop(low);
+
+    let topic = MessagingSwitchboard::socket_state_changed_topic();
+    let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+    assert_eq!(subscriptions.len(), 2);
+    assert_eq!(subscriptions[0].priority, 100);
+    assert_eq!(subscriptions[1].priority, 10);
+
+    let event = make_socket_state_changed(SocketState::Disconnected);
+    msgbus::publish_any(topic, &event);
+
+    let high = get_actor_unchecked::<TestDataActor>(&high_id);
+    let low = get_actor_unchecked::<TestDataActor>(&low_id);
+    assert_eq!(high.received_socket_state_changes, vec![event.clone()]);
+    assert_eq!(low.received_socket_state_changes, vec![event]);
+}
+
+#[rstest]
+fn test_subscribe_socket_state_resubscribe_does_not_update_priority(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_socket_state(Some(10));
+    actor.subscribe_socket_state(Some(100));
+    drop(actor);
+
+    let topic = MessagingSwitchboard::socket_state_changed_topic();
+    let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+    assert_eq!(subscriptions.len(), 1);
+    assert_eq!(subscriptions[0].priority, 10);
 }
 
 #[rstest]

@@ -13,6 +13,7 @@ Released on TBD (UTC).
 - Added trader start warning when `load_state` or `save_state` is enabled without a cache database backing
 - Added runtime external‑order claim registration and removal to Rust `LiveNode` (#4620), thanks @folknor
 - Added `INFO` logs for socket and WebSocket connection loss and recovery (#4621), thanks @folknor
+- Added Rust and Python `SocketStateChanged` events for Binance Futures and Polymarket live clients
 - Added Deribit book summaries as requestable custom data (#4576), thanks @graceyangfan
 - Added Polymarket `compute_effective_deltas` config option to emit net changes for book snapshots (default `False`)
 - Added Polymarket `series_ids` instrument provider scoping for recurring Gamma market families (#4650), thanks @mystic-io

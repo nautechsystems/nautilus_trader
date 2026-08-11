@@ -19,7 +19,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -36,7 +36,7 @@ use axum::{
 };
 use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
-use nautilus_network::websocket::TransportBackend;
+use nautilus_network::{SocketState, SocketStateSink, websocket::TransportBackend};
 use nautilus_polymarket::{
     common::credential::Credential,
     websocket::{
@@ -775,8 +775,15 @@ async fn test_reconnect_resubscribes_all_market_assets() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws/market");
 
+    let socket_states = Arc::new(Mutex::new(Vec::new()));
+    let socket_states_callback = Arc::clone(&socket_states);
+    let sink = SocketStateSink::new(move |state| {
+        socket_states_callback.lock().unwrap().push(state);
+    });
+
     let mut client =
-        PolymarketWebSocketClient::new_market(Some(ws_url), true, TransportBackend::default());
+        PolymarketWebSocketClient::new_market(Some(ws_url), true, TransportBackend::default())
+            .with_state_sink(sink);
     client.connect().await.expect("connect failed");
     wait_until_active(&client, 2.0).await;
 
@@ -822,8 +829,22 @@ async fn test_reconnect_resubscribes_all_market_assets() {
         assets.contains(&TEST_ASSET_ID_2.to_string()),
         "asset_id_2 must be resubscribed after reconnect"
     );
+    wait_until_async(
+        || async { socket_states.lock().unwrap().len() == 3 },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_eq!(
+        *socket_states.lock().unwrap(),
+        vec![
+            SocketState::Connected,
+            SocketState::Disconnected,
+            SocketState::Connected,
+        ]
+    );
 
     client.disconnect().await.expect("disconnect failed");
+    assert_eq!(socket_states.lock().unwrap().len(), 3);
 }
 
 #[rstest]
@@ -1121,7 +1142,19 @@ async fn count_discovery_payloads(state: &TestServerState) -> usize {
 async fn pool_shards_assets_across_two_connections_at_cap() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
-    let pool = connect_market_pool(addr, false, 200).await;
+    let socket_states = Arc::new(Mutex::new(Vec::new()));
+    let socket_states_callback = Arc::clone(&socket_states);
+    let sink = SocketStateSink::new(move |state| {
+        socket_states_callback.lock().unwrap().push(state);
+    });
+    let pool = PolymarketMarketConnectionPool::new(
+        Some(format!("ws://{addr}/ws/market")),
+        false,
+        TransportBackend::default(),
+        200,
+    )
+    .with_state_sink(sink);
+    pool.connect().await.expect("pool connect failed");
     wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
 
     let assets: Vec<String> = (0..250).map(|i| format!("asset-{i}")).collect();
@@ -1135,7 +1168,14 @@ async fn pool_shards_assets_across_two_connections_at_cap() {
     wait_for_connection_count(&state, 2, Duration::from_secs(5)).await;
     wait_for_unique_subscribed_count(&state, 250, Duration::from_secs(5)).await;
 
+    assert_eq!(
+        *socket_states.lock().unwrap(),
+        vec![SocketState::Connected, SocketState::Connected]
+    );
+
     pool.disconnect().await.expect("disconnect failed");
+
+    assert_eq!(socket_states.lock().unwrap().len(), 2);
 }
 
 // A universe below the cap stays on a single connection.

@@ -80,7 +80,7 @@ use crate::{
             UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionChain,
             UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
         },
-        system::{QueueStateChanged, ShutdownSystem},
+        system::{QueueStateChanged, ShutdownSystem, SocketStateChanged},
     },
     msgbus::{
         self, MStr, Pattern, ShareableMessageHandler, Topic, TypedHandler, get_message_bus,
@@ -404,6 +404,16 @@ pub trait DataActor: Component {
     /// Returns an error if handling the queue state change fails.
     #[allow(unused_variables)]
     fn on_queue_state_changed(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Actions to be performed when receiving a socket state change.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the socket state change fails.
+    #[allow(unused_variables)]
+    fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -855,6 +865,20 @@ pub trait DataActor: Component {
         }
 
         if let Err(e) = self.on_queue_state_changed(event) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received socket state change.
+    fn handle_socket_state(&mut self, event: &SocketStateChanged) {
+        log_received(&event);
+
+        if self.not_running() {
+            log_not_running(&event);
+            return;
+        }
+
+        if let Err(e) = self.on_socket_state(event) {
             log_error(&e);
         }
     }
@@ -1383,6 +1407,28 @@ pub trait DataActor: Component {
         });
 
         DataActorCore::subscribe_queue_state_changed(self.core_mut(), handler, priority);
+    }
+
+    /// Subscribes to [`SocketStateChanged`] events.
+    ///
+    /// `priority` controls dispatch order when multiple actors subscribe to the event. Higher
+    /// values receive the event first. Re-subscribing does not update an existing priority; call
+    /// [`unsubscribe_socket_state`](Self::unsubscribe_socket_state) first.
+    fn subscribe_socket_state(&mut self, priority: Option<u32>)
+    where
+        Self: DataActorNative,
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.core().actor_id().inner();
+        let handler = ShareableMessageHandler::from_typed(move |event: &SocketStateChanged| {
+            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                actor.handle_socket_state(event);
+            } else {
+                log::error!("Actor {actor_id} not found for socket state change handling");
+            }
+        });
+
+        DataActorCore::subscribe_socket_state(self.core_mut(), handler, priority);
     }
 
     /// Subscribe to streaming [`QuoteTick`] data for the `instrument_id`.
@@ -2034,6 +2080,15 @@ pub trait DataActor: Component {
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_queue_state_changed(self.core_mut());
+    }
+
+    /// Unsubscribes from [`SocketStateChanged`] events.
+    fn unsubscribe_socket_state(&mut self)
+    where
+        Self: DataActorNative,
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_socket_state(self.core_mut());
     }
 
     /// Unsubscribe from streaming [`InstrumentAny`] data for the `venue`.
@@ -3787,6 +3842,22 @@ impl DataActorCore {
         self.add_subscription_any(topic, handler, priority);
     }
 
+    /// Registers a socket state change subscription from the trait.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor is not registered with a trader.
+    pub fn subscribe_socket_state(
+        &mut self,
+        handler: ShareableMessageHandler,
+        priority: Option<u32>,
+    ) {
+        self.check_registered();
+
+        let topic = MessagingSwitchboard::socket_state_changed_topic();
+        self.add_subscription_any(topic, handler, priority);
+    }
+
     /// Helper method for registering quotes subscriptions from the trait.
     pub fn subscribe_quotes(
         &mut self,
@@ -4260,6 +4331,18 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = MessagingSwitchboard::queue_state_changed_topic();
+        self.remove_subscription_any(topic);
+    }
+
+    /// Unsubscribes from socket state changes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor is not registered with a trader.
+    pub fn unsubscribe_socket_state(&mut self) {
+        self.check_registered();
+
+        let topic = MessagingSwitchboard::socket_state_changed_topic();
         self.remove_subscription_any(topic);
     }
 

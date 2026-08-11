@@ -163,9 +163,47 @@ Actors have access to core system components:
 | `self.log`                                | Structured logging.                                  |
 | `publish_data()` / `subscribe_data()`     | Structured custom data messaging.                    |
 | `publish_signal()` / `subscribe_signal()` | Lightweight alerts and notifications.                |
+| `subscribe_socket_state()`                | Live socket transport state changes.                 |
 
 The Python `DataActor` and `Strategy` APIs do not expose `self.msgbus`. Use custom data for
 structured payloads and signals for lightweight values.
+
+### Socket transport state
+
+Python `DataActor`, `Strategy`, and `ExecutionAlgorithm` implementations can subscribe to socket
+state changes from live adapters that report them:
+
+```python
+from nautilus_trader.common import SocketStateChanged
+
+
+def on_start(self) -> None:
+    self.subscribe_socket_state(priority=50)
+
+
+def on_stop(self) -> None:
+    self.unsubscribe_socket_state()
+
+
+def on_socket_state(self, event: SocketStateChanged) -> None:
+    self.log.info(
+        f"Socket {event.endpoint} for {event.client_id} changed to {event.state}",
+    )
+```
+
+The optional priority controls delivery order among matching subscribers. Higher values run first.
+Subscribing again does not change an existing priority; unsubscribe before subscribing with a new
+priority.
+
+`SocketStateChanged` includes the trader ID, client ID, optional venue, stable endpoint label,
+transport state, event ID, and timestamps. `SocketState.CONNECTED` reports transport availability,
+not authentication, subscription replay, or adapter readiness. `SocketState.DISCONNECTED` reports
+the loss of an active transport. The endpoint is a non‑secret logical label, not a raw connection
+URL.
+
+Delivery uses the typed in‑process message bus and has no external wire representation. See
+[Socket transport state](live.md#socket-transport-state) for supported adapters and the precise
+connection edge semantics.
 
 ## Data handling and callbacks
 

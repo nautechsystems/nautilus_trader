@@ -22,6 +22,7 @@ use std::sync::{
 
 use nautilus_common::live::get_runtime;
 use nautilus_network::{
+    SocketStateSink,
     mode::ConnectionMode,
     ratelimiter::RateLimiter,
     websocket::{
@@ -120,6 +121,7 @@ pub struct PolymarketWebSocketClient {
     subscribe_new_markets: bool,
     transport_backend: TransportBackend,
     proxy_url: Option<ProxyUrl>,
+    state_sink: Option<SocketStateSink>,
 }
 
 impl PolymarketWebSocketClient {
@@ -210,7 +212,15 @@ impl PolymarketWebSocketClient {
             subscribe_new_markets,
             transport_backend,
             proxy_url,
+            state_sink: None,
         }
+    }
+
+    /// Configures socket state reporting for the underlying transport.
+    #[must_use]
+    pub fn with_state_sink(mut self, state_sink: SocketStateSink) -> Self {
+        self.state_sink = Some(state_sink);
+        self
     }
 
     #[cfg(test)]
@@ -232,11 +242,12 @@ impl PolymarketWebSocketClient {
         let (message_handler, raw_rx) = channel_epoch_message_handler();
         let cfg = self.websocket_config();
 
-        let client = WebSocketClient::connect_with_rate_limiter_and_epoch_handler(
+        let client = WebSocketClient::connect_with_rate_limiter_and_epoch_handler_and_state_sink(
             cfg,
             message_handler,
             None,
             Arc::new(RateLimiter::new_with_quota(None, vec![])),
+            self.state_sink.clone(),
         )
         .await?;
         let connection_epoch = client.connection_epoch();

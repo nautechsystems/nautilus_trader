@@ -39,6 +39,7 @@ pub mod msgbus;
 pub mod order_factory;
 pub mod runtime;
 pub mod signal;
+pub mod system;
 pub mod timer;
 pub mod xrate;
 
@@ -67,6 +68,8 @@ pub fn config_error_to_pyvalue_err(e: ConfigError) -> PyErr {
 pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::custom::CustomData>()?;
     m.add_class::<crate::signal::Signal>()?;
+    m.add_class::<crate::messages::system::SocketState>()?;
+    m.add_class::<crate::messages::system::SocketStateChanged>()?;
     m.add_class::<crate::timer::TimeEvent>()?;
     m.add_class::<crate::cache::CacheConfig>()?;
     m.add_class::<crate::python::actor::PyDataActor>()?;
