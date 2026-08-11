@@ -569,7 +569,7 @@ impl LiveNode {
 
     fn process_runner_event(&mut self, event: PendingRunnerEvent) {
         match event {
-            PendingRunnerEvent::Time(message) => {
+            PendingRunnerEvent::TimeEvent(message) => {
                 let _ = AsyncRunner::handle_time_event(message);
             }
             PendingRunnerEvent::ExecEvent(event) => self.process_exec_event(event),

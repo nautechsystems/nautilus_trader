@@ -163,7 +163,7 @@ pub struct AsyncRunnerChannels {
     reason = "runner events are consumed immediately; boxing would add routing allocations"
 )]
 pub(crate) enum PendingRunnerEvent {
-    Time(TimeEventMessage),
+    TimeEvent(TimeEventMessage),
     ExecEvent(ExecutionEvent),
     ExecCommand(TradingCommandMessage),
     DataEvent(DataEvent),
@@ -488,7 +488,7 @@ impl AsyncRunner {
         processed += poll_channel(
             &mut self.channels.time_evt_rx,
             pending.0,
-            PendingRunnerEvent::Time,
+            PendingRunnerEvent::TimeEvent,
             &mut process,
         );
         processed += poll_channel(
@@ -523,7 +523,7 @@ impl AsyncRunner {
             biased;
 
             Some(message) = self.channels.time_evt_rx.recv() => {
-                Some(PendingRunnerEvent::Time(message))
+                Some(PendingRunnerEvent::TimeEvent(message))
             }
             Some(event) = self.channels.exec_evt_rx.recv() => {
                 Some(PendingRunnerEvent::ExecEvent(event))
@@ -731,7 +731,7 @@ mod tests {
         let mut processed_by_channel = [0; 5];
 
         let first = runner.poll_pending(|event| match event {
-            PendingRunnerEvent::Time(_) => processed_by_channel[0] += 1,
+            PendingRunnerEvent::TimeEvent(_) => processed_by_channel[0] += 1,
             PendingRunnerEvent::ExecEvent(_) => processed_by_channel[1] += 1,
             PendingRunnerEvent::ExecCommand(_) => processed_by_channel[2] += 1,
             PendingRunnerEvent::DataEvent(_) => {
