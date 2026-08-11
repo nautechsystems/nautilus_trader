@@ -660,10 +660,11 @@ from a stream update, query, poll, or reconciliation still resolves the command 
 A definitive venue acceptance or update is not a failure and carries no variant. Apply the venue
 event directly.
 
-Classify once, where the error surfaces, rather than re‑branching on the error enum at each emit
-site. Apply this to every state‑changing order command, submit, modify, and cancel alike, including
-their batch and list forms. A classifier scoped to one command type leaves the others to drift.
-Queries produce no terminal command event and need no classification.
+Classify once at the execution boundary, using the evidence preserved by lower layers, rather than
+re‑branching on the error enum at each emit site. Apply this to every state‑changing order command,
+submit, modify, and cancel alike, including their batch and list forms. A classifier scoped to one
+command type leaves the others to drift. Queries produce no terminal command event and need no
+classification.
 
 Keep this axis separate from `is_retryable`. Retryability answers whether to send the request
 again; ambiguity answers whether the venue may already have acted on the first attempt. An error
@@ -683,15 +684,26 @@ Two conditions are easy to misfile:
 
 ### Client structure
 
-A common design has two layers:
+A common design separates three responsibilities:
 
-| Layer         | Accepts                            | Returns                                       | Owns                                                               |
-| ------------- | ---------------------------------- | --------------------------------------------- | ------------------------------------------------------------------ |
-| Raw client    | Venue request and query types.     | Venue response models.                        | Transport, authentication, rate limits, and exact wire encoding.   |
-| Domain client | Nautilus identifiers and commands. | Domain objects, reports, or acknowledgements. | Operation semantics, parsing context, caching, and domain mapping. |
+| Layer            | Accepts                                 | Produces                                      | Owns                                                                           |
+| ---------------- | --------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------ |
+| Raw client       | Venue request and query types.          | Venue response models and transport errors.   | Transport, authentication, rate limits, and exact wire encoding.               |
+| Domain client    | Nautilus identifiers and domain values. | Domain objects, reports, or acknowledgements. | Operation semantics, parsing context, caching, and domain mapping.             |
+| Execution client | Nautilus execution commands.            | Lifecycle events and execution reports.       | Command lifecycle, failure evidence classification, and terminal event policy. |
 
-Use one layer when the protocol is small and the split would only add forwarding methods. Split by
-product when endpoints, signatures, or response models change for different product families.
+The execution client is the shared command outcome boundary. Raw and domain clients preserve
+enough adapter‑specific evidence to distinguish a failure before transmission from one after the
+venue may have received the request. They keep their natural venue and domain return types; do not
+make them return `CommandFailure` only to standardize command handling.
+
+Share the `CommandFailure` evidence classes and terminal event policy across adapters. Keep venue
+error codes, response statuses, protocol semantics, and their mapping to evidence classes inside
+the adapter. Do not introduce a cross‑adapter venue classifier or shared classification trait.
+
+Use one HTTP client layer when the protocol is small and a raw/domain split would only add
+forwarding methods. Split by product when endpoints, signatures, or response models change for
+different product families. The execution boundary remains the same in either structure.
 
 Name low‑level methods after the venue operation when practical, such as `get_instruments` or
 `place_order`. Name domain methods after Nautilus semantics, such as `request_instruments`,

@@ -30,7 +30,7 @@ use std::{
 
 use axum::{
     Router,
-    body::Body,
+    body::{Body, to_bytes},
     extract::{
         Request, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -45,7 +45,10 @@ use nautilus_common::{
     live::runner::set_exec_event_sender,
     messages::{
         ExecutionEvent,
-        execution::{BatchCancelOrders, CancelAllOrders, CancelOrder},
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder,
+            SubmitOrderList,
+        },
     },
     testing::wait_until_async,
 };
@@ -63,8 +66,10 @@ use nautilus_model::{
     accounts::{AccountAny, CashAccount, MarginAccount},
     enums::{AccountType, OmsType, OrderSide, TimeInForce},
     events::{AccountState, OrderEventAny},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-    orders::{LimitOrder, OrderAny},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
+    },
+    orders::{LimitOrder, Order, OrderAny, OrderList},
     types::{AccountBalance, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -89,18 +94,59 @@ enum BatchCancelResponse {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
+enum OrderCommandResponse {
+    #[default]
+    Success,
+    AmbiguousFailure,
+    StructuredReject,
+    UnknownStatus,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+enum BatchSubmitResponse {
+    #[default]
+    Success,
+    WholeFailure,
+    Mixed,
+    UnknownStatus,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 struct CommandResponses {
+    submit: OrderCommandResponse,
+    modify: OrderCommandResponse,
+    batch_submit: BatchSubmitResponse,
     single_cancel: SingleCancelResponse,
     batch_cancel: BatchCancelResponse,
     cancel_all: BatchCancelResponse,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct TestServerState {
     command_responses: Arc<tokio::sync::Mutex<CommandResponses>>,
+    submit_request_count: Arc<AtomicUsize>,
+    modify_request_count: Arc<AtomicUsize>,
+    batch_submit_request_count: Arc<AtomicUsize>,
     cancel_request_count: Arc<AtomicUsize>,
     batch_cancel_request_count: Arc<AtomicUsize>,
     cancel_all_request_count: Arc<AtomicUsize>,
+    ws_message_tx: tokio::sync::broadcast::Sender<String>,
+}
+
+impl Default for TestServerState {
+    fn default() -> Self {
+        let (ws_message_tx, _) = tokio::sync::broadcast::channel(8);
+        Self {
+            command_responses: Arc::new(tokio::sync::Mutex::new(CommandResponses::default())),
+            submit_request_count: Arc::new(AtomicUsize::new(0)),
+            modify_request_count: Arc::new(AtomicUsize::new(0)),
+            batch_submit_request_count: Arc::new(AtomicUsize::new(0)),
+            cancel_request_count: Arc::new(AtomicUsize::new(0)),
+            batch_cancel_request_count: Arc::new(AtomicUsize::new(0)),
+            cancel_all_request_count: Arc::new(AtomicUsize::new(0)),
+            ws_message_tx,
+        }
+    }
 }
 
 fn data_path() -> PathBuf {
@@ -112,16 +158,27 @@ fn load_test_data(filename: &str) -> String {
         .unwrap_or_else(|e| panic!("failed to read {filename}: {e}"))
 }
 
-async fn handle_ws_upgrade(
-    ws: WebSocketUpgrade,
-    State(_state): State<TestServerState>,
-) -> Response {
-    ws.on_upgrade(handle_socket)
+async fn handle_ws_upgrade(ws: WebSocketUpgrade, State(state): State<TestServerState>) -> Response {
+    ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
-async fn handle_socket(mut socket: WebSocket) {
-    while let Some(message) = socket.recv().await {
-        let Ok(message) = message else { break };
+async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
+    let mut ws_message_rx = state.ws_message_tx.subscribe();
+
+    loop {
+        let message = tokio::select! {
+            message = socket.recv() => {
+                let Some(Ok(message)) = message else { break };
+                message
+            }
+            message = ws_message_rx.recv() => {
+                let Ok(message) = message else { continue };
+                if socket.send(Message::Text(message.into())).await.is_err() {
+                    break;
+                }
+                continue;
+            }
+        };
 
         match message {
             Message::Text(text) => {
@@ -157,7 +214,8 @@ async fn handle_socket(mut socket: WebSocket) {
 }
 
 async fn handle_http_request(State(state): State<TestServerState>, req: Request) -> Response {
-    match req.uri().path() {
+    let path = req.uri().path().to_string();
+    match path.as_str() {
         "/health" => Response::builder()
             .status(StatusCode::OK)
             .body(Body::from("OK"))
@@ -167,6 +225,52 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
         }
         "/derivatives/api/v3/accounts" => {
             json_response(r#"{"result":"success","accounts":{}}"#.to_string())
+        }
+        "/derivatives/api/v3/openorders" => {
+            json_response(r#"{"result":"success","openOrders":[]}"#.to_string())
+        }
+        "/api/history/v2/orders" => json_response(r#"{"orderEvents":[]}"#.to_string()),
+        "/derivatives/api/v3/sendorder" => {
+            state.submit_request_count.fetch_add(1, Ordering::Relaxed);
+            match state.command_responses.lock().await.submit {
+                OrderCommandResponse::Success => json_response(
+                    r#"{"result":"success","sendStatus":{"status":"placed","order_id":"F-SUBMIT"}}"#
+                        .to_string(),
+                ),
+                OrderCommandResponse::AmbiguousFailure => Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("submit failed"))
+                    .unwrap(),
+                OrderCommandResponse::StructuredReject => json_response(
+                    r#"{"result":"error","error":"insufficientAvailableFunds","sendStatus":{"status":"insufficientAvailableFunds"}}"#
+                        .to_string(),
+                ),
+                OrderCommandResponse::UnknownStatus => json_response(
+                    r#"{"result":"success","sendStatus":{"status":"processing","order_id":"F-SUBMIT"}}"#
+                        .to_string(),
+                ),
+            }
+        }
+        "/derivatives/api/v3/editorder" => {
+            state.modify_request_count.fetch_add(1, Ordering::Relaxed);
+            match state.command_responses.lock().await.modify {
+                OrderCommandResponse::Success => json_response(
+                    r#"{"result":"success","editStatus":{"status":"edited","order_id":"F-MODIFY"}}"#
+                        .to_string(),
+                ),
+                OrderCommandResponse::AmbiguousFailure => Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("modify failed"))
+                    .unwrap(),
+                OrderCommandResponse::StructuredReject => json_response(
+                    r#"{"result":"error","editStatus":{"status":"notFound","order_id":"F-MODIFY"}}"#
+                        .to_string(),
+                ),
+                OrderCommandResponse::UnknownStatus => json_response(
+                    r#"{"result":"success","editStatus":{"status":"processing","order_id":"F-MODIFY"}}"#
+                        .to_string(),
+                ),
+            }
         }
         "/derivatives/api/v3/cancelorder" => {
             state.cancel_request_count.fetch_add(1, Ordering::Relaxed);
@@ -190,6 +294,31 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             }
         }
         "/derivatives/api/v3/batchorder" => {
+            let body = to_bytes(req.into_body(), 1024 * 1024).await.unwrap();
+            if String::from_utf8_lossy(&body).contains(r#""order":"send""#) {
+                state
+                    .batch_submit_request_count
+                    .fetch_add(1, Ordering::Relaxed);
+                return match state.command_responses.lock().await.batch_submit {
+                    BatchSubmitResponse::Success => json_response(
+                        r#"{"result":"success","batchStatus":[{"order_tag":"0","status":"placed","order_id":"F-BATCH-0"},{"order_tag":"1","status":"placed","order_id":"F-BATCH-1"}]}"#
+                            .to_string(),
+                    ),
+                    BatchSubmitResponse::WholeFailure => Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::from("batch submit failed"))
+                        .unwrap(),
+                    BatchSubmitResponse::Mixed => json_response(
+                        r#"{"result":"success","batchStatus":[{"order_tag":"1","status":"insufficientAvailableFunds"},{"order_tag":"0","status":"placed","order_id":"F-BATCH-0"}]}"#
+                            .to_string(),
+                    ),
+                    BatchSubmitResponse::UnknownStatus => json_response(
+                        r#"{"result":"success","batchStatus":[{"order_tag":"0","status":"processing"},{"order_tag":"1","status":"processing"}]}"#
+                            .to_string(),
+                    ),
+                };
+            }
+
             state
                 .batch_cancel_request_count
                 .fetch_add(1, Ordering::Relaxed);
@@ -229,6 +358,67 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             r#"{"error":[],"result":{"token":"TEST-TOKEN","expires":900}}"#.to_string(),
         ),
         "/0/private/Balance" => json_response(load_test_data("http_spot_balance.json")),
+        "/0/private/AddOrder" => {
+            state.submit_request_count.fetch_add(1, Ordering::Relaxed);
+            match state.command_responses.lock().await.submit {
+                OrderCommandResponse::Success => {
+                    json_response(r#"{"error":[],"result":{"txid":["S-SUBMIT"]}}"#.to_string())
+                }
+                OrderCommandResponse::AmbiguousFailure => Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("submit failed"))
+                    .unwrap(),
+                OrderCommandResponse::StructuredReject => {
+                    json_response(r#"{"error":["EOrder:Insufficient funds"]}"#.to_string())
+                }
+                OrderCommandResponse::UnknownStatus => {
+                    json_response(r#"{"error":[],"result":{"txid":[]}}"#.to_string())
+                }
+            }
+        }
+        "/0/private/AmendOrder" => {
+            state.modify_request_count.fetch_add(1, Ordering::Relaxed);
+            match state.command_responses.lock().await.modify {
+                OrderCommandResponse::Success => {
+                    json_response(r#"{"error":[],"result":{"amend_id":"S-MODIFY"}}"#.to_string())
+                }
+                OrderCommandResponse::AmbiguousFailure => Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("modify failed"))
+                    .unwrap(),
+                OrderCommandResponse::StructuredReject => {
+                    json_response(r#"{"error":["EOrder:Unknown order"]}"#.to_string())
+                }
+                OrderCommandResponse::UnknownStatus => {
+                    json_response(r#"{"error":[],"result":{}}"#.to_string())
+                }
+            }
+        }
+        "/0/private/AddOrderBatch" => {
+            state
+                .batch_submit_request_count
+                .fetch_add(1, Ordering::Relaxed);
+
+            match state.command_responses.lock().await.batch_submit {
+                BatchSubmitResponse::Success => json_response(
+                    r#"{"error":[],"result":{"orders":[{"txid":"S-BATCH-0"},{"txid":"S-BATCH-1"}]}}"#
+                        .to_string(),
+                ),
+                BatchSubmitResponse::WholeFailure => {
+                    Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::from("batch submit failed"))
+                        .unwrap()
+                }
+                BatchSubmitResponse::Mixed => json_response(
+                    r#"{"error":[],"result":{"orders":[{"txid":"S-BATCH-0"},{"error":"EOrder:Insufficient funds"}]}}"#
+                        .to_string(),
+                ),
+                BatchSubmitResponse::UnknownStatus => json_response(
+                    r#"{"error":[],"result":{"orders":[{},{}]}}"#.to_string(),
+                ),
+            }
+        }
         "/0/private/CancelOrder" => {
             state.cancel_request_count.fetch_add(1, Ordering::Relaxed);
             match state.command_responses.lock().await.single_cancel {
@@ -550,10 +740,18 @@ fn add_spot_limit_order_to_cache(
     cache: &Rc<RefCell<Cache>>,
     client_order_id: ClientOrderId,
 ) -> OrderAny {
+    add_spot_limit_order_on_instrument_to_cache(cache, client_order_id, test_spot_instrument_id())
+}
+
+fn add_spot_limit_order_on_instrument_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    instrument_id: InstrumentId,
+) -> OrderAny {
     let order = LimitOrder::new(
         test_trader_id(),
         test_strategy_id(),
-        test_spot_instrument_id(),
+        instrument_id,
         client_order_id,
         OrderSide::Buy,
         Quantity::from("0.1"),
@@ -584,6 +782,73 @@ fn add_spot_limit_order_to_cache(
         .add_order(order_any.clone(), None, None, false)
         .unwrap();
     order_any
+}
+
+fn submit_order_command(order: &OrderAny) -> SubmitOrder {
+    SubmitOrder::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )
+}
+
+fn modify_order_command(order: &OrderAny, venue_order_id: VenueOrderId) -> ModifyOrder {
+    ModifyOrder::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(venue_order_id),
+        Some(Quantity::from("0.2")),
+        Some(Price::from("49000")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn submit_order_list_command(
+    order_list_id: &str,
+    instrument_id: InstrumentId,
+    orders: &[OrderAny],
+) -> SubmitOrderList {
+    let order_list = OrderList::new(
+        OrderListId::from(order_list_id),
+        instrument_id,
+        test_strategy_id(),
+        orders.iter().map(Order::client_order_id).collect(),
+        UnixNanos::default(),
+    );
+    let order_inits = orders
+        .iter()
+        .map(|order| order.init_event().clone())
+        .collect();
+
+    SubmitOrderList::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        order_list,
+        order_inits,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )
 }
 
 fn test_trader_id() -> TraderId {
@@ -746,6 +1011,560 @@ where
     })
     .await
     .expect("Timed out waiting for execution event")
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_local_submit_failure_emits_rejected_without_request() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    let client_order_id = ClientOrderId::new("spot-submit-local-001");
+    let order = add_spot_limit_order_on_instrument_to_cache(
+        &cache,
+        client_order_id,
+        InstrumentId::from("UNKNOWN.KRAKEN"),
+    );
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.as_str().contains("not found"));
+        }
+        other => panic!("Expected OrderRejected event, was {other:?}"),
+    }
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_ambiguous_submit_failure_does_not_emit_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            submit: OrderCommandResponse::AmbiguousFailure,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("spot-submit-ambiguous-001");
+    let order = add_spot_limit_order_to_cache(&cache, client_order_id);
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+    wait_for_count(&state.submit_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::Rejected(event) if event.client_order_id == client_order_id)
+    })
+    .await;
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_structured_submit_rejection_emits_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            submit: OrderCommandResponse::StructuredReject,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("spot-submit-rejected-001");
+    let order = add_spot_limit_order_to_cache(&cache, client_order_id);
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.as_str().contains("EOrder:Insufficient funds"));
+        }
+        other => panic!("Expected OrderRejected event, was {other:?}"),
+    }
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_post_submit_lookup_failure_is_resolved_by_later_stream_acceptance() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: OrderCommandResponse::Success,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-submit-ambiguous-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+    wait_for_count(&state.submit_request_count, 1).await;
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::Rejected(event) if event.client_order_id == client_order_id)
+    })
+    .await;
+
+    state
+        .ws_message_tx
+        .send(
+            json!({
+                "feed": "open_orders",
+                "order": {
+                    "instrument": "PI_XBTUSD",
+                    "time": 1_567_702_877_410_i64,
+                    "last_update_time": 1_567_702_877_410_i64,
+                    "qty": 1,
+                    "filled": 0,
+                    "limit_price": 50_000,
+                    "stop_price": 0,
+                    "type": "limit",
+                    "order_id": "F-LATER-ACCEPT",
+                    "cli_ord_id": client_order_id.as_str(),
+                    "direction": 0,
+                    "reduce_only": false
+                },
+                "is_cancel": false,
+                "reason": "new_placed_order_by_user"
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Accepted(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Accepted(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert_eq!(event.venue_order_id, VenueOrderId::from("F-LATER-ACCEPT"));
+        }
+        other => panic!("Expected OrderAccepted event, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_structured_submit_rejection_emits_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: OrderCommandResponse::StructuredReject,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-submit-rejected-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.as_str().contains("insufficientAvailableFunds"));
+        }
+        other => panic!("Expected OrderRejected event, was {other:?}"),
+    }
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_unknown_submit_status_does_not_emit_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: OrderCommandResponse::UnknownStatus,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-submit-unknown-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+    wait_for_count(&state.submit_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::Rejected(event) if event.client_order_id == client_order_id)
+    })
+    .await;
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_ambiguous_modify_failure_does_not_emit_modify_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            modify: OrderCommandResponse::AmbiguousFailure,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("spot-modify-ambiguous-001");
+    let order = add_spot_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .modify_order(modify_order_command(&order, VenueOrderId::from("S-MODIFY")))
+        .unwrap();
+    wait_for_count(&state.modify_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::ModifyRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_structured_modify_rejection_emits_modify_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            modify: OrderCommandResponse::StructuredReject,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-modify-rejected-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .modify_order(modify_order_command(&order, VenueOrderId::from("F-MODIFY")))
+        .unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert!(event.reason.as_str().contains("notFound"));
+        }
+        other => panic!("Expected ModifyRejected event, was {other:?}"),
+    }
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_ambiguous_modify_failure_does_not_emit_modify_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            modify: OrderCommandResponse::AmbiguousFailure,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-modify-ambiguous-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .modify_order(modify_order_command(&order, VenueOrderId::from("F-MODIFY")))
+        .unwrap();
+    wait_for_count(&state.modify_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::ModifyRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_unknown_modify_status_does_not_emit_modify_rejected() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            modify: OrderCommandResponse::UnknownStatus,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new("futures-modify-unknown-001");
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .modify_order(modify_order_command(&order, VenueOrderId::from("F-MODIFY")))
+        .unwrap();
+    wait_for_count(&state.modify_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::ModifyRejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_whole_batch_submit_failure_does_not_reject_children() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            batch_submit: BatchSubmitResponse::WholeFailure,
+            ..Default::default()
+        })
+        .await;
+    let first_id = ClientOrderId::new("spot-batch-ambiguous-001");
+    let second_id = ClientOrderId::new("spot-batch-ambiguous-002");
+    let orders = vec![
+        add_spot_limit_order_to_cache(&cache, first_id),
+        add_spot_limit_order_to_cache(&cache, second_id),
+    ];
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "SPOT-BATCH-AMBIGUOUS",
+            test_spot_instrument_id(),
+            &orders,
+        ))
+        .unwrap();
+    wait_for_count(&state.batch_submit_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| matches!(event, OrderEventAny::Rejected(_)))
+        .await;
+    assert_eq!(state.batch_submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_mixed_batch_submit_rejects_only_affected_child() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses {
+            batch_submit: BatchSubmitResponse::Mixed,
+            ..Default::default()
+        })
+        .await;
+    let placed_id = ClientOrderId::new("spot-batch-placed-001");
+    let rejected_id = ClientOrderId::new("spot-batch-rejected-001");
+    let orders = vec![
+        add_spot_limit_order_to_cache(&cache, placed_id),
+        add_spot_limit_order_to_cache(&cache, rejected_id),
+    ];
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "SPOT-BATCH-MIXED",
+            test_spot_instrument_id(),
+            &orders,
+        ))
+        .unwrap();
+    wait_for_count(&state.batch_submit_request_count, 1).await;
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == rejected_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, rejected_id);
+            assert!(event.reason.as_str().contains("Insufficient funds"));
+        }
+        other => panic!("Expected OrderRejected event, was {other:?}"),
+    }
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::Rejected(event) if event.client_order_id == placed_id)
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_whole_batch_submit_failure_does_not_reject_children() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            batch_submit: BatchSubmitResponse::WholeFailure,
+            ..Default::default()
+        })
+        .await;
+    let first_id = ClientOrderId::new("futures-batch-ambiguous-001");
+    let second_id = ClientOrderId::new("futures-batch-ambiguous-002");
+    let orders = vec![
+        add_limit_order_to_cache(&cache, first_id),
+        add_limit_order_to_cache(&cache, second_id),
+    ];
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "FUTURES-BATCH-AMBIGUOUS",
+            test_instrument_id(),
+            &orders,
+        ))
+        .unwrap();
+    wait_for_count(&state.batch_submit_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| matches!(event, OrderEventAny::Rejected(_)))
+        .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_failed_batch_chunk_rejects_only_unsent_tail() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            batch_submit: BatchSubmitResponse::WholeFailure,
+            ..Default::default()
+        })
+        .await;
+    let mut orders = Vec::new();
+    let mut sent_ids = Vec::new();
+
+    for index in 0..10 {
+        let client_order_id = ClientOrderId::new(format!("futures-batch-sent-{index:02}"));
+        sent_ids.push(client_order_id);
+        orders.push(add_limit_order_to_cache(&cache, client_order_id));
+    }
+    let unsent_id = ClientOrderId::new("futures-batch-unsent-10");
+    orders.push(add_limit_order_to_cache(&cache, unsent_id));
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "FUTURES-BATCH-CHUNK-FAILURE",
+            test_instrument_id(),
+            &orders,
+        ))
+        .unwrap();
+    wait_for_count(&state.batch_submit_request_count, 1).await;
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == unsent_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, unsent_id);
+            assert!(
+                event
+                    .reason
+                    .as_str()
+                    .contains("not sent after an earlier chunk")
+            );
+        }
+        other => panic!("Expected OrderRejected event, was {other:?}"),
+    }
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::Rejected(event) if sent_ids.contains(&event.client_order_id))
+    })
+    .await;
+    assert_eq!(state.batch_submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_mixed_batch_submit_correlates_rejection_by_order_tag() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            batch_submit: BatchSubmitResponse::Mixed,
+            ..Default::default()
+        })
+        .await;
+    let placed_id = ClientOrderId::new("futures-batch-placed-001");
+    let rejected_id = ClientOrderId::new("futures-batch-rejected-001");
+    let orders = vec![
+        add_limit_order_to_cache(&cache, placed_id),
+        add_limit_order_to_cache(&cache, rejected_id),
+    ];
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "FUTURES-BATCH-MIXED",
+            test_instrument_id(),
+            &orders,
+        ))
+        .unwrap();
+    wait_for_count(&state.batch_submit_request_count, 1).await;
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == rejected_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, rejected_id);
+            assert!(event.reason.as_str().contains("insufficientAvailableFunds"));
+        }
+        other => panic!("Expected OrderRejected event, was {other:?}"),
+    }
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::Rejected(event) if event.client_order_id == placed_id)
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_unknown_batch_status_does_not_reject_children() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            batch_submit: BatchSubmitResponse::UnknownStatus,
+            ..Default::default()
+        })
+        .await;
+    let first_id = ClientOrderId::new("futures-batch-unknown-001");
+    let second_id = ClientOrderId::new("futures-batch-unknown-002");
+    let orders = vec![
+        add_limit_order_to_cache(&cache, first_id),
+        add_limit_order_to_cache(&cache, second_id),
+    ];
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "FUTURES-BATCH-UNKNOWN",
+            test_instrument_id(),
+            &orders,
+        ))
+        .unwrap();
+    wait_for_count(&state.batch_submit_request_count, 1).await;
+
+    assert_no_order_event_matching(&mut rx, |event| matches!(event, OrderEventAny::Rejected(_)))
+        .await;
+    assert_eq!(state.batch_submit_request_count.load(Ordering::Relaxed), 1);
 }
 
 #[rstest]

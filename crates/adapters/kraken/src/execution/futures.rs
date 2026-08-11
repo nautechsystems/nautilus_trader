@@ -56,7 +56,11 @@ use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use super::classify_cancel_http_failure;
+use super::{
+    command_failure_from_cancel_error, command_failure_from_futures_batch_error,
+    command_failure_from_futures_batch_item, command_failure_from_modify_error,
+    command_failure_from_submit_error,
+};
 use crate::{
     common::{
         consts::KRAKEN_VENUE,
@@ -261,25 +265,30 @@ impl KrakenFuturesExecutionClient {
                 .await;
 
             match result {
-                Ok(_report) => Ok(()),
-                Err(e) => {
-                    let ts_event = clock.get_time_ns();
-                    let error_msg = format!("{task_name} error: {e}");
-                    let due_post_only = error_msg.contains("POST_ONLY_REJECTED");
-                    // The order will never appear on the wire, so its
-                    // dispatch identity has to be cleaned up here.
-                    dispatch_state.cleanup_terminal(&client_order_id);
-                    emitter.emit_order_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        &error_msg,
-                        ts_event,
-                        due_post_only,
-                    );
-                    Ok(())
-                }
+                Ok(_) => {}
+                Err(e) => match command_failure_from_submit_error(&e) {
+                    CommandFailure::Ambiguous(reason) => {
+                        log::warn!(
+                            "{task_name} outcome is ambiguous for client_order_id={client_order_id}: {reason}"
+                        );
+                    }
+                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                        let ts_event = clock.get_time_ns();
+                        let error_msg = format!("{task_name} error: {reason}");
+                        let due_post_only = error_msg.contains("POST_ONLY_REJECTED");
+                        dispatch_state.cleanup_terminal(&client_order_id);
+                        emitter.emit_order_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            &error_msg,
+                            ts_event,
+                            due_post_only,
+                        );
+                    }
+                },
             }
+            Ok(())
         });
     }
 
@@ -488,7 +497,7 @@ impl KrakenFuturesExecutionClient {
         let clock = self.clock;
 
         self.spawn_task("modify_order", async move {
-            if let Err(e) = http
+            match http
                 .modify_order(
                     instrument_id,
                     Some(client_order_id),
@@ -499,16 +508,25 @@ impl KrakenFuturesExecutionClient {
                 )
                 .await
             {
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_modify_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    venue_order_id,
-                    &format!("modify-order error: {e}"),
-                    ts_event,
-                );
-                anyhow::bail!("Modify order failed: {e}");
+                Ok(_) => {}
+                Err(e) => match command_failure_from_modify_error(&e) {
+                    CommandFailure::Ambiguous(reason) => {
+                        log::warn!(
+                            "modify_order outcome is ambiguous for client_order_id={client_order_id}: {reason}"
+                        );
+                    }
+                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_modify_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            venue_order_id,
+                            &format!("modify-order error: {reason}"),
+                            ts_event,
+                        );
+                    }
+                },
             }
             Ok(())
         });
@@ -575,6 +593,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             return Ok(());
         }
 
+        self.http.cancel_all_requests();
         self.cancellation_token.cancel();
         self.core.set_stopped();
         self.core.set_disconnected();
@@ -586,6 +605,8 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         if self.core.is_connected() {
             return Ok(());
         }
+
+        self.http.reset_cancellation_token();
 
         if !self.core.instruments_initialized() {
             let instruments = self
@@ -653,6 +674,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             return Ok(());
         }
 
+        self.http.cancel_all_requests();
         self.cancellation_token.cancel();
 
         if let Some(handle) = self.ws_stream_handle.take() {
@@ -932,37 +954,29 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         let dispatch_state = self.ws_dispatch_state.clone();
 
         self.spawn_task("submit_order_list", async move {
-            match http.submit_orders_batch(order_tuples).await {
-                Ok(statuses) => {
-                    for (i, status) in statuses.iter().enumerate() {
-                        if status.status != "placed"
-                            && status.status != "filled"
-                            && let Some((strategy_id, instrument_id, client_order_id)) =
-                                order_meta.get(i)
-                        {
-                            let ts_event = clock.get_time_ns();
-                            let error_msg = format!(
-                                "submit_order_list batch item rejected: {}",
-                                status.status,
-                            );
-                            dispatch_state.cleanup_terminal(client_order_id);
-                            emitter.emit_order_rejected_event(
-                                *strategy_id,
-                                *instrument_id,
-                                *client_order_id,
-                                &error_msg,
-                                ts_event,
-                                status.status == "postWouldExecute",
-                            );
-                        }
-                    }
-                    Ok(())
-                }
-                Err(e) => {
-                    let ts_event = clock.get_time_ns();
+            let results = http.send_order_batches(order_tuples).await;
+            for (result, (strategy_id, instrument_id, client_order_id)) in
+                results.into_iter().zip(&order_meta)
+            {
+                let outcome = match result {
+                    Ok(item) => command_failure_from_futures_batch_item(item),
+                    Err(e) => Err(command_failure_from_futures_batch_error(&e)),
+                };
 
-                    for (strategy_id, instrument_id, client_order_id) in &order_meta {
-                        let error_msg = format!("submit_order_list batch error: {e}");
+                match outcome {
+                    Ok(()) => {}
+                    Err(CommandFailure::Ambiguous(reason)) => {
+                        log::warn!(
+                            "submit_order_list outcome is ambiguous for client_order_id={client_order_id}: {reason}"
+                        );
+                    }
+                    Err(
+                        CommandFailure::NotSent(reason)
+                        | CommandFailure::VenueRejected(reason),
+                    ) => {
+                        let ts_event = clock.get_time_ns();
+                        let error_msg =
+                            format!("submit_order_list batch item rejected: {reason}");
                         dispatch_state.cleanup_terminal(client_order_id);
                         emitter.emit_order_rejected_event(
                             *strategy_id,
@@ -970,12 +984,12 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                             *client_order_id,
                             &error_msg,
                             ts_event,
-                            false,
+                            reason == "postWouldExecute",
                         );
                     }
-                    Ok(())
                 }
             }
+            Ok(())
         });
 
         Ok(())
@@ -1012,7 +1026,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                             );
                         }
                     }
-                    Err(e) => match classify_cancel_http_failure(e) {
+                    Err(e) => match command_failure_from_cancel_error(e) {
                         CommandFailure::NotSent(reason) => {
                             log::warn!("Cancel-all failed local validation: {reason}");
                         }
@@ -1143,7 +1157,7 @@ async fn cancel_order_for_futures(
         .inner
         .cancel_order(order_id, cli_ord_id)
         .await
-        .map_err(classify_cancel_http_failure)?;
+        .map_err(command_failure_from_cancel_error)?;
 
     if response.result != KrakenApiResult::Success
         || response.cancel_status.status != KrakenSendStatus::Cancelled
@@ -1198,7 +1212,7 @@ async fn batch_cancel_orders_for_futures(
         {
             Ok(response) => response,
             Err(e) => {
-                match classify_cancel_http_failure(e) {
+                match command_failure_from_cancel_error(e) {
                     CommandFailure::NotSent(reason) => {
                         log::warn!("Batch cancel failed local validation: {reason}");
                     }

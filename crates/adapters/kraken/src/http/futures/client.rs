@@ -20,7 +20,7 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc,
+        Arc, RwLock,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -46,7 +46,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, Method, USER_AGENT},
+    http::{HttpClient, HttpResponse, Method, USER_AGENT},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -74,7 +74,10 @@ use crate::{
     },
     http::{
         apply_count_limit,
-        error::{KrakenHttpError, kraken_http_should_retry},
+        error::{
+            KrakenBatchOrderError, KrakenHttpError, KrakenModifyOrderError, KrakenSubmitOrderError,
+            kraken_http_should_retry,
+        },
         models::OhlcData,
     },
 };
@@ -99,7 +102,7 @@ pub struct KrakenFuturesRawHttpClient {
     client: HttpClient,
     credential: Option<KrakenCredential>,
     retry_manager: RetryManager<KrakenHttpError>,
-    cancellation_token: CancellationToken,
+    cancellation_token: RwLock<CancellationToken>,
     clock: &'static AtomicTime,
     /// Mutex to serialize authenticated requests, ensuring nonces arrive at Kraken in order
     auth_mutex: tokio::sync::Mutex<()>,
@@ -172,7 +175,7 @@ impl KrakenFuturesRawHttpClient {
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
             credential: None,
             retry_manager,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: RwLock::new(CancellationToken::new()),
             clock: get_atomic_clock_realtime(),
             auth_mutex: tokio::sync::Mutex::new(()),
         })
@@ -221,7 +224,7 @@ impl KrakenFuturesRawHttpClient {
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
             credential: Some(KrakenCredential::new(api_key, api_secret)),
             retry_manager,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: RwLock::new(CancellationToken::new()),
             clock: get_atomic_clock_realtime(),
             auth_mutex: tokio::sync::Mutex::new(()),
         })
@@ -247,12 +250,26 @@ impl KrakenFuturesRawHttpClient {
 
     /// Cancels all pending HTTP requests.
     pub fn cancel_all_requests(&self) {
-        self.cancellation_token.cancel();
+        self.cancellation_token
+            .read()
+            .expect("cancellation token lock poisoned")
+            .cancel();
     }
 
-    /// Returns the cancellation token for this client.
-    pub fn cancellation_token(&self) -> &CancellationToken {
-        &self.cancellation_token
+    /// Replaces the canceled token so requests can proceed after reconnect.
+    pub fn reset_cancellation_token(&self) {
+        *self
+            .cancellation_token
+            .write()
+            .expect("cancellation token lock poisoned") = CancellationToken::new();
+    }
+
+    /// Returns a clone of the current cancellation token.
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.cancellation_token
+            .read()
+            .expect("cancellation token lock poisoned")
+            .clone()
     }
 
     fn default_headers() -> HashMap<String, String> {
@@ -381,13 +398,15 @@ impl KrakenFuturesRawHttpClient {
         let should_retry = kraken_http_should_retry;
         let create_error = |error: RetryError| KrakenHttpError::NetworkError(error.to_string());
 
+        let cancellation_token = self.cancellation_token();
+
         self.retry_manager
             .execute_with_retry_with_cancel(
                 &endpoint,
                 operation,
                 should_retry,
                 create_error,
-                &self.cancellation_token,
+                &cancellation_token,
             )
             .await
     }
@@ -403,8 +422,9 @@ impl KrakenFuturesRawHttpClient {
         query_string: &str,
     ) -> anyhow::Result<T, KrakenHttpError> {
         let _guard = self.auth_mutex.lock().await;
+        let cancellation_token = self.cancellation_token();
 
-        if self.cancellation_token.is_cancelled() {
+        if cancellation_token.is_cancelled() {
             return Err(KrakenHttpError::NetworkError(
                 "Request cancelled".to_string(),
             ));
@@ -476,8 +496,9 @@ impl KrakenFuturesRawHttpClient {
         endpoint: &str,
         params: HashMap<String, String>,
     ) -> anyhow::Result<T, KrakenHttpError> {
-        let post_data = serde_urlencoded::to_string(&params)
-            .map_err(|e| KrakenHttpError::ParseError(format!("Failed to encode params: {e}")))?;
+        let post_data = serde_urlencoded::to_string(&params).map_err(|e| {
+            KrakenHttpError::RequestNotStarted(format!("Failed to encode params: {e}"))
+        })?;
         self.send_authenticated_post(endpoint, post_data).await
     }
 
@@ -487,8 +508,9 @@ impl KrakenFuturesRawHttpClient {
         endpoint: &str,
         params: &P,
     ) -> anyhow::Result<T, KrakenHttpError> {
-        let post_data = serde_urlencoded::to_string(params)
-            .map_err(|e| KrakenHttpError::ParseError(format!("Failed to encode params: {e}")))?;
+        let post_data = serde_urlencoded::to_string(params).map_err(|e| {
+            KrakenHttpError::RequestNotStarted(format!("Failed to encode params: {e}"))
+        })?;
         self.send_authenticated_post(endpoint, post_data).await
     }
 
@@ -498,24 +520,28 @@ impl KrakenFuturesRawHttpClient {
         endpoint: &str,
         post_data: String,
     ) -> anyhow::Result<T, KrakenHttpError> {
-        if self.cancellation_token.is_cancelled() {
-            return Err(KrakenHttpError::NetworkError(
+        let cancellation_token = self.cancellation_token();
+        if cancellation_token.is_cancelled() {
+            return Err(KrakenHttpError::RequestNotStarted(
                 "Request cancelled".to_string(),
             ));
         }
 
         // Serialize authenticated requests to ensure nonces arrive at Kraken in order
-        let _guard = self.auth_mutex.lock().await;
+        let _guard = tokio::select! {
+            biased;
+            () = cancellation_token.cancelled() => {
+                return Err(KrakenHttpError::RequestNotStarted(
+                    "Request cancelled".to_string(),
+                ));
+            }
+            guard = self.auth_mutex.lock() => guard,
+        };
 
-        if self.cancellation_token.is_cancelled() {
-            return Err(KrakenHttpError::NetworkError(
-                "Request cancelled".to_string(),
-            ));
-        }
-
-        let credential = self.credential.as_ref().ok_or_else(|| {
-            KrakenHttpError::AuthenticationError("Missing credentials".to_string())
-        })?;
+        let credential = self
+            .credential
+            .as_ref()
+            .ok_or(KrakenHttpError::MissingCredentials)?;
 
         let nonce = self.generate_nonce();
         log::debug!("Generated nonce {nonce} for {endpoint}");
@@ -523,7 +549,7 @@ impl KrakenFuturesRawHttpClient {
         let signature = credential
             .sign_futures(endpoint, &post_data, nonce)
             .map_err(|e| {
-                KrakenHttpError::AuthenticationError(format!("Failed to sign request: {e}"))
+                KrakenHttpError::RequestNotStarted(format!("Failed to sign request: {e}"))
             })?;
 
         let url = format!("{}{endpoint}", self.base_url);
@@ -539,18 +565,14 @@ impl KrakenFuturesRawHttpClient {
         let rate_limit_keys = Self::rate_limit_keys(endpoint);
 
         let response = self
-            .client
-            .request(
-                Method::POST,
+            .send_order_request(
                 url,
-                None,
-                Some(headers),
-                Some(post_data.into_bytes()),
-                None,
-                Some(rate_limit_keys),
+                headers,
+                post_data.into_bytes(),
+                rate_limit_keys,
+                &cancellation_token,
             )
-            .await
-            .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?;
+            .await?;
 
         if response.status.as_u16() >= 400 {
             let status = response.status.as_u16();
@@ -568,6 +590,55 @@ impl KrakenFuturesRawHttpClient {
             log::error!("Failed to parse response from {endpoint}: {response_text}");
             KrakenHttpError::ParseError(format!("Failed to deserialize response: {e}"))
         })
+    }
+
+    async fn send_order_request(
+        &self,
+        url: String,
+        headers: HashMap<String, String>,
+        body: Vec<u8>,
+        rate_limit_keys: Vec<String>,
+        cancellation_token: &CancellationToken,
+    ) -> anyhow::Result<HttpResponse, KrakenHttpError> {
+        if cancellation_token.is_cancelled() {
+            return Err(KrakenHttpError::RequestNotStarted(
+                "Request cancelled".to_string(),
+            ));
+        }
+
+        let request_started = AtomicBool::new(false);
+        let request = async {
+            request_started.store(true, Ordering::Relaxed);
+            self.client
+                .request(
+                    Method::POST,
+                    url,
+                    None,
+                    Some(headers),
+                    Some(body),
+                    None,
+                    Some(rate_limit_keys),
+                )
+                .await
+        };
+        tokio::pin!(request);
+
+        tokio::select! {
+            biased;
+            () = cancellation_token.cancelled() => {
+                if request_started.load(Ordering::Relaxed) {
+                    Err(KrakenHttpError::NetworkError(
+                        "Request cancelled after transport invocation".to_string(),
+                    ))
+                } else {
+                    Err(KrakenHttpError::RequestNotStarted(
+                        "Request cancelled".to_string(),
+                    ))
+                }
+            }
+            response = &mut request => response
+                .map_err(|e| KrakenHttpError::NetworkError(e.to_string())),
+        }
     }
 
     /// Requests tradable instruments from Kraken Futures.
@@ -814,9 +885,7 @@ impl KrakenFuturesRawHttpClient {
         params: &KrakenFuturesSendOrderParams,
     ) -> anyhow::Result<FuturesSendOrderResponse, KrakenHttpError> {
         if self.credential.is_none() {
-            return Err(KrakenHttpError::AuthenticationError(
-                "API credentials required for sending orders".to_string(),
-            ));
+            return Err(KrakenHttpError::MissingCredentials);
         }
 
         let endpoint = "/derivatives/api/v3/sendorder";
@@ -855,9 +924,7 @@ impl KrakenFuturesRawHttpClient {
         params: &KrakenFuturesEditOrderParams,
     ) -> anyhow::Result<FuturesEditOrderResponse, KrakenHttpError> {
         if self.credential.is_none() {
-            return Err(KrakenHttpError::AuthenticationError(
-                "API credentials required for editing orders".to_string(),
-            ));
+            return Err(KrakenHttpError::MissingCredentials);
         }
 
         let endpoint = "/derivatives/api/v3/editorder";
@@ -919,15 +986,13 @@ impl KrakenFuturesRawHttpClient {
         items: Vec<KrakenFuturesBatchSendItem>,
     ) -> anyhow::Result<FuturesBatchOrderResponse, KrakenHttpError> {
         if self.credential.is_none() {
-            return Err(KrakenHttpError::AuthenticationError(
-                "API credentials required for batch orders".to_string(),
-            ));
+            return Err(KrakenHttpError::MissingCredentials);
         }
 
         let params = KrakenFuturesBatchOrderParams::new(items);
-        let post_data = params
-            .to_body()
-            .map_err(|e| KrakenHttpError::ParseError(format!("Failed to serialize batch: {e}")))?;
+        let post_data = params.to_body().map_err(|e| {
+            KrakenHttpError::RequestNotStarted(format!("Failed to serialize batch: {e}"))
+        })?;
 
         let endpoint = "/derivatives/api/v3/batchorder";
         self.send_authenticated_post(endpoint, post_data).await
@@ -973,6 +1038,25 @@ impl KrakenFuturesRawHttpClient {
         let endpoint = "/derivatives/api/v3/cancelallorders";
         self.send_request_with_body(endpoint, params).await
     }
+}
+
+pub(crate) type FuturesBatchOrder = (
+    InstrumentId,
+    ClientOrderId,
+    OrderSide,
+    OrderType,
+    Quantity,
+    TimeInForce,
+    Option<Price>,
+    Option<Price>,
+    Option<TriggerType>,
+    bool,
+    bool,
+);
+
+pub(crate) struct FuturesBatchSubmitItem {
+    pub result: KrakenApiResult,
+    pub status: FuturesSendStatus,
 }
 
 /// High-level HTTP client for the Kraken Futures REST API.
@@ -1145,8 +1229,13 @@ impl KrakenFuturesHttpClient {
         self.inner.cancel_all_requests();
     }
 
-    /// Returns the cancellation token for this client.
-    pub fn cancellation_token(&self) -> &CancellationToken {
+    /// Replaces the canceled token so requests can proceed after reconnect.
+    pub fn reset_cancellation_token(&self) {
+        self.inner.reset_cancellation_token();
+    }
+
+    /// Returns a clone of the current cancellation token.
+    pub fn cancellation_token(&self) -> CancellationToken {
         self.inner.cancellation_token()
     }
 
@@ -2002,131 +2091,157 @@ impl KrakenFuturesHttpClient {
         let response = self.inner.send_order_params(&params).await?;
 
         if response.result != KrakenApiResult::Success {
-            let error_msg = response
-                .error
-                .unwrap_or_else(|| "Unknown error".to_string());
-            anyhow::bail!("Order submission failed: {error_msg}");
+            return Err(KrakenSubmitOrderError::Rejected {
+                reason: response
+                    .error
+                    .unwrap_or_else(|| "Unknown error".to_string()),
+            }
+            .into());
         }
 
         let send_status = response
             .send_status
-            .ok_or_else(|| anyhow::anyhow!("No send_status in successful response"))?;
+            .ok_or(KrakenSubmitOrderError::MissingStatus)?;
 
-        let status = &send_status.status;
+        match send_status.status.as_str() {
+            "placed" | "filled" => {}
+            "postWouldExecute" => {
+                let reason = send_status
+                    .order_events
+                    .as_ref()
+                    .and_then(|events| events.first())
+                    .and_then(|event| event.reason.clone())
+                    .unwrap_or_else(|| "Post-only order would have crossed".to_string());
+                return Err(KrakenSubmitOrderError::Rejected {
+                    reason: format!("POST_ONLY_REJECTED: {reason}"),
+                }
+                .into());
+            }
+            status if is_futures_submit_rejection(status) => {
+                return Err(KrakenSubmitOrderError::Rejected {
+                    reason: status.to_string(),
+                }
+                .into());
+            }
+            status => {
+                return Err(KrakenSubmitOrderError::UnknownStatus {
+                    status: status.to_string(),
+                }
+                .into());
+            }
+        }
 
-        // Check for post-only rejection (Kraken returns status="postWouldExecute")
-        if status == "postWouldExecute" {
-            let reason = send_status
+        let venue_order_id =
+            send_status
+                .order_id
+                .clone()
+                .ok_or_else(|| KrakenSubmitOrderError::MissingOrderId {
+                    detail: format!("send status was {}", send_status.status),
+                })?;
+
+        let report: anyhow::Result<OrderStatusReport> = async {
+            let ts_init = self.generate_ts_init();
+
+            let open_orders_response = self.inner.get_open_orders().await?;
+            if let Some(order) = open_orders_response
+                .open_orders
+                .iter()
+                .find(|o| o.order_id == venue_order_id)
+            {
+                return parse_futures_order_status_report(
+                    order,
+                    &instrument,
+                    account_id,
+                    Some(quantity.as_decimal()),
+                    ts_init,
+                );
+            }
+
+            // Order not in open orders - may have filled immediately (market order or aggressive limit)
+            // Try to use order_events from send_status first
+            if let Some(order_events) = &send_status.order_events
+                && let Some(send_event) = order_events.first()
+            {
+                // Handle regular orders, trigger orders, and execution events
+                let event = if let Some(order_data) = &send_event.order {
+                    FuturesOrderEvent {
+                        order_id: order_data.order_id.clone(),
+                        cli_ord_id: order_data.cli_ord_id.clone(),
+                        order_type: order_data.order_type,
+                        symbol: order_data.symbol.clone(),
+                        side: order_data.side,
+                        quantity: order_data.quantity,
+                        filled: order_data.filled,
+                        limit_price: order_data.limit_price,
+                        stop_price: order_data.stop_price,
+                        timestamp: order_data.timestamp.clone(),
+                        last_update_timestamp: order_data.last_update_timestamp.clone(),
+                        reduce_only: order_data.reduce_only,
+                    }
+                } else if let Some(trigger_data) = &send_event.order_trigger {
+                    FuturesOrderEvent {
+                        order_id: trigger_data.uid.clone(),
+                        cli_ord_id: trigger_data.client_id.clone(),
+                        order_type: trigger_data.order_type,
+                        symbol: trigger_data.symbol.clone(),
+                        side: trigger_data.side,
+                        quantity: trigger_data.quantity,
+                        filled: Decimal::ZERO,
+                        limit_price: trigger_data.limit_price,
+                        stop_price: Some(trigger_data.trigger_price),
+                        timestamp: trigger_data.timestamp.clone(),
+                        last_update_timestamp: trigger_data.last_update_timestamp.clone(),
+                        reduce_only: trigger_data.reduce_only,
+                    }
+                } else if let Some(prior_exec) = &send_event.order_prior_execution {
+                    // EXECUTION event - use orderPriorExecution data
+                    FuturesOrderEvent {
+                        order_id: prior_exec.order_id.clone(),
+                        cli_ord_id: prior_exec.cli_ord_id.clone(),
+                        order_type: prior_exec.order_type,
+                        symbol: prior_exec.symbol.clone(),
+                        side: prior_exec.side,
+                        quantity: prior_exec.quantity,
+                        filled: send_event.amount.unwrap_or(prior_exec.quantity), // Use execution amount
+                        limit_price: prior_exec.limit_price,
+                        stop_price: prior_exec.stop_price,
+                        timestamp: prior_exec.timestamp.clone(),
+                        last_update_timestamp: prior_exec.last_update_timestamp.clone(),
+                        reduce_only: prior_exec.reduce_only,
+                    }
+                } else {
+                    anyhow::bail!("No order, orderTrigger, or orderPriorExecution data in event");
+                };
+                return parse_futures_order_event_status_report(
+                    &event,
+                    Some(send_event.event_type),
+                    &instrument,
+                    account_id,
+                    ts_init,
+                );
+            }
+
+            // Fall back to querying order events
+            let events_response = self.inner.get_order_events(None, None, None).await?;
+            let event_wrapper = events_response
                 .order_events
-                .as_ref()
-                .and_then(|events| events.first())
-                .and_then(|e| e.reason.clone())
-                .unwrap_or_else(|| "Post-only order would have crossed".to_string());
-            anyhow::bail!("POST_ONLY_REJECTED: {reason}");
-        }
+                .iter()
+                .find(|e| e.order.order_id == venue_order_id)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Order not found in open orders or events: {venue_order_id}")
+                })?;
 
-        let venue_order_id = send_status
-            .order_id
-            .ok_or_else(|| anyhow::anyhow!("No order_id in send_status: {status}"))?;
-
-        let ts_init = self.generate_ts_init();
-
-        let open_orders_response = self.inner.get_open_orders().await?;
-        if let Some(order) = open_orders_response
-            .open_orders
-            .iter()
-            .find(|o| o.order_id == venue_order_id)
-        {
-            return parse_futures_order_status_report(
-                order,
-                &instrument,
-                account_id,
-                Some(quantity.as_decimal()),
-                ts_init,
-            );
-        }
-
-        // Order not in open orders - may have filled immediately (market order or aggressive limit)
-        // Try to use order_events from send_status first
-        if let Some(order_events) = &send_status.order_events
-            && let Some(send_event) = order_events.first()
-        {
-            // Handle regular orders, trigger orders, and execution events
-            let event = if let Some(order_data) = &send_event.order {
-                FuturesOrderEvent {
-                    order_id: order_data.order_id.clone(),
-                    cli_ord_id: order_data.cli_ord_id.clone(),
-                    order_type: order_data.order_type,
-                    symbol: order_data.symbol.clone(),
-                    side: order_data.side,
-                    quantity: order_data.quantity,
-                    filled: order_data.filled,
-                    limit_price: order_data.limit_price,
-                    stop_price: order_data.stop_price,
-                    timestamp: order_data.timestamp.clone(),
-                    last_update_timestamp: order_data.last_update_timestamp.clone(),
-                    reduce_only: order_data.reduce_only,
-                }
-            } else if let Some(trigger_data) = &send_event.order_trigger {
-                FuturesOrderEvent {
-                    order_id: trigger_data.uid.clone(),
-                    cli_ord_id: trigger_data.client_id.clone(),
-                    order_type: trigger_data.order_type,
-                    symbol: trigger_data.symbol.clone(),
-                    side: trigger_data.side,
-                    quantity: trigger_data.quantity,
-                    filled: Decimal::ZERO,
-                    limit_price: trigger_data.limit_price,
-                    stop_price: Some(trigger_data.trigger_price),
-                    timestamp: trigger_data.timestamp.clone(),
-                    last_update_timestamp: trigger_data.last_update_timestamp.clone(),
-                    reduce_only: trigger_data.reduce_only,
-                }
-            } else if let Some(prior_exec) = &send_event.order_prior_execution {
-                // EXECUTION event - use orderPriorExecution data
-                FuturesOrderEvent {
-                    order_id: prior_exec.order_id.clone(),
-                    cli_ord_id: prior_exec.cli_ord_id.clone(),
-                    order_type: prior_exec.order_type,
-                    symbol: prior_exec.symbol.clone(),
-                    side: prior_exec.side,
-                    quantity: prior_exec.quantity,
-                    filled: send_event.amount.unwrap_or(prior_exec.quantity), // Use execution amount
-                    limit_price: prior_exec.limit_price,
-                    stop_price: prior_exec.stop_price,
-                    timestamp: prior_exec.timestamp.clone(),
-                    last_update_timestamp: prior_exec.last_update_timestamp.clone(),
-                    reduce_only: prior_exec.reduce_only,
-                }
-            } else {
-                anyhow::bail!("No order, orderTrigger, or orderPriorExecution data in event");
-            };
-            return parse_futures_order_event_status_report(
-                &event,
-                Some(send_event.event_type),
+            parse_futures_order_event_status_report(
+                &event_wrapper.order,
+                Some(event_wrapper.event_type),
                 &instrument,
                 account_id,
                 ts_init,
-            );
+            )
         }
+        .await;
 
-        // Fall back to querying order events
-        let events_response = self.inner.get_order_events(None, None, None).await?;
-        let event_wrapper = events_response
-            .order_events
-            .iter()
-            .find(|e| e.order.order_id == venue_order_id)
-            .ok_or_else(|| {
-                anyhow::anyhow!("Order not found in open orders or events: {venue_order_id}")
-            })?;
-
-        parse_futures_order_event_status_report(
-            &event_wrapper.order,
-            Some(event_wrapper.event_type),
-            &instrument,
-            account_id,
-            ts_init,
-        )
+        report.map_err(|source| KrakenSubmitOrderError::PostSubmitLookup { source }.into())
     }
 
     /// Modifies an existing order on the Kraken Futures exchange.
@@ -2160,10 +2275,29 @@ impl KrakenFuturesHttpClient {
         let original_order_id = params.order_id.clone();
 
         let response = self.inner.edit_order(&params).await?;
+        let status = response.edit_status.status.as_str();
 
         if response.result != KrakenApiResult::Success {
-            let status = &response.edit_status.status;
-            anyhow::bail!("Order modification failed: {status}");
+            return Err(KrakenModifyOrderError::Rejected {
+                reason: status.to_string(),
+            }
+            .into());
+        }
+
+        match status {
+            "edited" => {}
+            status if is_futures_modify_rejection(status) => {
+                return Err(KrakenModifyOrderError::Rejected {
+                    reason: status.to_string(),
+                }
+                .into());
+            }
+            status => {
+                return Err(KrakenModifyOrderError::UnknownStatus {
+                    status: status.to_string(),
+                }
+                .into());
+            }
         }
 
         // Return the new order_id from the response, or fall back to the original
@@ -2171,7 +2305,7 @@ impl KrakenFuturesHttpClient {
             .edit_status
             .order_id
             .or(original_order_id)
-            .ok_or_else(|| anyhow::anyhow!("No order ID in edit order response"))?;
+            .ok_or(KrakenModifyOrderError::MissingOrderId)?;
 
         Ok(VenueOrderId::new(&new_venue_order_id))
     }
@@ -2283,16 +2417,47 @@ impl KrakenFuturesHttpClient {
             bool,
         )>,
     ) -> anyhow::Result<Vec<FuturesSendStatus>> {
+        Ok(self
+            .send_order_batches(orders)
+            .await
+            .into_iter()
+            .map(|result| match result {
+                Ok(item) if item.result == KrakenApiResult::Success => item.status,
+                Ok(mut item) => {
+                    item.status.status = format!("api_error: {}", item.status.status);
+                    item.status
+                }
+                Err(e) => FuturesSendStatus {
+                    order_id: None,
+                    order_tag: None,
+                    status: if matches!(
+                        e.downcast_ref::<KrakenBatchOrderError>(),
+                        Some(KrakenBatchOrderError::Validation { .. })
+                    ) {
+                        format!("validation_error: {e}")
+                    } else {
+                        format!("batch_error: {e}")
+                    },
+                    order_events: None,
+                    cli_ord_id: None,
+                    received_time: None,
+                },
+            })
+            .collect())
+    }
+
+    pub(crate) async fn send_order_batches(
+        &self,
+        orders: Vec<FuturesBatchOrder>,
+    ) -> Vec<anyhow::Result<FuturesBatchSubmitItem>> {
         let count = orders.len();
         if count == 0 {
-            return Ok(Vec::new());
+            return Vec::new();
         }
 
-        // Build params per-item, collecting validation errors individually
-        // so one invalid order does not block the valid ones
-        let mut all_statuses: Vec<Option<FuturesSendStatus>> = vec![None; count];
+        let mut results: Vec<Option<anyhow::Result<FuturesBatchSubmitItem>>> =
+            (0..count).map(|_| None).collect();
         let mut valid_items = Vec::with_capacity(count);
-        let mut valid_indices = Vec::with_capacity(count);
 
         for (
             idx,
@@ -2325,77 +2490,78 @@ impl KrakenFuturesHttpClient {
                 post_only,
             ) {
                 Ok(params) => {
-                    valid_items.push(KrakenFuturesBatchSendItem::from_params(
-                        params,
-                        idx.to_string(),
+                    valid_items.push((
+                        idx,
+                        KrakenFuturesBatchSendItem::from_params(params, idx.to_string()),
                     ));
-                    valid_indices.push(idx);
                 }
                 Err(e) => {
-                    all_statuses[idx] = Some(FuturesSendStatus {
-                        order_id: None,
-                        status: format!("validation_error: {e}"),
-                        order_events: None,
-                        cli_ord_id: None,
-                        received_time: None,
-                    });
+                    results[idx] = Some(Err(KrakenBatchOrderError::Validation {
+                        reason: e.to_string(),
+                    }
+                    .into()));
                 }
             }
         }
 
         if valid_items.is_empty() {
-            return Ok(all_statuses.into_iter().flatten().collect());
+            return results.into_iter().flatten().collect();
         }
 
-        let mut batch_statuses: Vec<FuturesSendStatus> = Vec::with_capacity(valid_items.len());
-
-        for chunk in valid_items.chunks(BATCH_ORDER_LIMIT) {
-            match self.inner.submit_orders_batch(chunk.to_vec()).await {
+        let chunks: Vec<_> = valid_items.chunks(BATCH_ORDER_LIMIT).collect();
+        for (chunk_index, chunk) in chunks.iter().enumerate() {
+            let items = chunk.iter().map(|(_, item)| item.clone()).collect();
+            match self.inner.submit_orders_batch(items).await {
                 Ok(response) => {
-                    if response.result == KrakenApiResult::Success {
-                        batch_statuses.extend(response.batch_status);
-                    } else {
-                        let error_msg = response
-                            .batch_status
-                            .first()
-                            .map_or("Unknown error", |s| s.status.as_str());
+                    let mut by_tag: HashMap<String, Option<FuturesSendStatus>> = HashMap::new();
+                    let response_result = response.result;
 
-                        for _ in 0..chunk.len() {
-                            batch_statuses.push(FuturesSendStatus {
-                                order_id: None,
-                                status: format!("api_error: {error_msg}"),
-                                order_events: None,
-                                cli_ord_id: None,
-                                received_time: None,
-                            });
+                    for status in response.batch_status {
+                        if let Some(tag) = status.order_tag.clone() {
+                            by_tag
+                                .entry(tag)
+                                .and_modify(|entry| *entry = None)
+                                .or_insert(Some(status));
                         }
+                    }
+
+                    for (idx, item) in *chunk {
+                        let result = match by_tag.remove(&item.order_tag) {
+                            Some(Some(status)) => Ok(FuturesBatchSubmitItem {
+                                result: response_result,
+                                status,
+                            }),
+                            Some(None) => Err(KrakenBatchOrderError::DuplicateResponse {
+                                key: format!("order_tag {}", item.order_tag),
+                            }
+                            .into()),
+                            None => Err(KrakenBatchOrderError::MissingResponse {
+                                key: format!("order_tag {}", item.order_tag),
+                            }
+                            .into()),
+                        };
+                        results[*idx] = Some(result);
                     }
                 }
                 Err(e) => {
-                    // Fill remaining valid items with error statuses
-                    let remaining = valid_items.len() - batch_statuses.len();
-                    for _ in 0..remaining {
-                        batch_statuses.push(FuturesSendStatus {
-                            order_id: None,
-                            status: format!("batch_error: {e}"),
-                            order_events: None,
-                            cli_ord_id: None,
-                            received_time: None,
-                        });
+                    for (idx, _) in *chunk {
+                        results[*idx] = Some(Err(anyhow::Error::new(e.clone())));
+                    }
+
+                    for later_chunk in &chunks[chunk_index + 1..] {
+                        for (idx, _) in *later_chunk {
+                            results[*idx] = Some(Err(KrakenBatchOrderError::NotAttempted.into()));
+                        }
                     }
                     break;
                 }
             }
         }
 
-        // Map batch statuses back to original order positions
-        for (batch_idx, &original_idx) in valid_indices.iter().enumerate() {
-            if let Some(status) = batch_statuses.get(batch_idx) {
-                all_statuses[original_idx] = Some(status.clone());
-            }
-        }
-
-        Ok(all_statuses.into_iter().flatten().collect())
+        results
+            .into_iter()
+            .map(|result| result.unwrap_or_else(|| Err(KrakenBatchOrderError::NotAttempted.into())))
+            .collect()
     }
 
     /// Modifies multiple orders in a single batch request.
@@ -2533,6 +2699,24 @@ impl KrakenFuturesHttpClient {
             .build()
             .map_err(|e| anyhow::anyhow!("Failed to build edit order params: {e}"))
     }
+}
+
+pub(crate) fn is_futures_submit_rejection(status: &str) -> bool {
+    matches!(
+        status.parse::<KrakenSendStatus>(),
+        Ok(KrakenSendStatus::InsufficientAvailableFunds
+            | KrakenSendStatus::InvalidOrderType
+            | KrakenSendStatus::InvalidSize
+            | KrakenSendStatus::WouldCauseLiquidation
+            | KrakenSendStatus::PostWouldExecute
+            | KrakenSendStatus::ReduceOnlyWouldIncreasePosition)
+    )
+}
+
+fn is_futures_modify_rejection(status: &str) -> bool {
+    status.parse::<KrakenSendStatus>().is_ok_and(|status| {
+        status == KrakenSendStatus::NotFound || is_futures_submit_rejection(status.as_ref())
+    })
 }
 
 fn map_futures_trigger_signal(
@@ -2692,6 +2876,8 @@ fn parse_cash_account_balances(account: &FuturesAccount, balances: &mut Vec<Acco
 
 #[cfg(test)]
 mod tests {
+    use std::{sync::Arc, time::Duration};
+
     use ahash::AHashMap;
     use nautilus_model::instruments::CryptoPerpetual;
     use rstest::rstest;
@@ -2722,6 +2908,39 @@ mod tests {
         )
         .unwrap();
         assert!(client.credential.is_some());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_order_request_cancellation_before_transport() {
+        let client = Arc::new(KrakenFuturesRawHttpClient::default());
+        let guard = client.auth_mutex.lock().await;
+        let waiting_client = Arc::clone(&client);
+        let waiting = tokio::spawn(async move {
+            waiting_client
+                .send_authenticated_post::<serde_json::Value>(
+                    "/derivatives/api/v3/sendorder",
+                    "orderType=lmt".to_string(),
+                )
+                .await
+        });
+
+        tokio::task::yield_now().await;
+        client.cancel_all_requests();
+        let waiting_result = tokio::time::timeout(Duration::from_secs(1), waiting)
+            .await
+            .expect("auth lock wait should stop on cancellation")
+            .expect("auth request task should complete");
+        drop(guard);
+        client.reset_cancellation_token();
+        let reset_token = client.cancellation_token();
+
+        assert!(matches!(
+            waiting_result,
+            Err(KrakenHttpError::RequestNotStarted(ref message))
+                if message == "Request cancelled"
+        ));
+        assert!(!reset_token.is_cancelled());
     }
 
     #[rstest]
