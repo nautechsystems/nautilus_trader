@@ -159,7 +159,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::testing::approx_equal;
+    use crate::testing::assert_approx_equal;
 
     #[rstest]
     fn test_name_returns_expected_string() {
@@ -219,7 +219,7 @@ mod tests {
     fn test_value_with_one_input() {
         let mut atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         atr.update_raw(1.00020, 1.0, 1.00010);
-        assert!(approx_equal(atr.value, 0.0002));
+        assert_approx_equal(atr.value, 0.0002);
     }
 
     #[rstest]
@@ -228,7 +228,7 @@ mod tests {
         atr.update_raw(1.00020, 1.0, 1.00010);
         atr.update_raw(1.00020, 1.0, 1.00010);
         atr.update_raw(1.00020, 1.0, 1.00010);
-        assert!(approx_equal(atr.value, 0.0002));
+        assert_approx_equal(atr.value, 0.0002);
     }
 
     #[rstest]
@@ -243,7 +243,7 @@ mod tests {
             let close = high;
             atr.update_raw(high, low, close);
         }
-        assert!(approx_equal(atr.value, 0.000_099_999_999_999_988_99));
+        assert_approx_equal(atr.value, 0.0001);
     }
 
     #[rstest]
@@ -258,7 +258,7 @@ mod tests {
             let close = low;
             atr.update_raw(high, low, close);
         }
-        assert!(approx_equal(atr.value, 0.000_099_999_999_999_988_99));
+        assert_approx_equal(atr.value, 0.0001);
     }
 
     #[rstest]
