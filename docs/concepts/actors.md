@@ -163,17 +163,112 @@ Actors have access to core system components:
 | `self.log`                                | Structured logging.                                  |
 | `publish_data()` / `subscribe_data()`     | Structured custom data messaging.                    |
 | `publish_signal()` / `subscribe_signal()` | Lightweight alerts and notifications.                |
+| `subscribe_queue_state()`                 | Live runner queue pressure state changes.            |
 | `subscribe_socket_state()`                | Live socket transport state changes.                 |
+| `unsubscribe_queue_state()`               | Stop receiving runner queue pressure state changes.  |
+| `unsubscribe_socket_state()`              | Stop receiving socket transport state changes.       |
+| `on_queue_state()`                        | Handle a runner queue pressure state change.         |
+| `on_socket_state()`                       | Handle a socket transport state change.              |
 
 The Python `DataActor` and `Strategy` APIs do not expose `self.msgbus`. Use custom data for
 structured payloads and signals for lightweight values.
 
+### Queue pressure state
+
+Actors can subscribe to runner queue pressure state changes:
+
+```rust tab="Rust"
+use nautilus_common::{
+    actor::DataActor,
+    messages::system::QueueStateChanged,
+};
+
+impl DataActor for MyActor {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_queue_state(Some(50));
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        self.unsubscribe_queue_state();
+        Ok(())
+    }
+
+    fn on_queue_state(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
+        log::warn!(
+            "Queue {:?} changed {:?} to {:?} at depth {}",
+            event.channel,
+            event.condition,
+            event.state,
+            event.queue_depth,
+        );
+        Ok(())
+    }
+}
+```
+
+```python tab="Python"
+from nautilus_trader.common import QueueStateChanged
+
+
+def on_start(self) -> None:
+    self.subscribe_queue_state(priority=50)
+
+
+def on_stop(self) -> None:
+    self.unsubscribe_queue_state()
+
+
+def on_queue_state(self, event: QueueStateChanged) -> None:
+    self.log.warning(
+        f"Queue {event.channel} changed {event.condition} to {event.state} "
+        f"at depth {event.queue_depth}",
+    )
+```
+
+The optional priority controls delivery order among matching subscribers. Higher values run first.
+Subscribing again does not change an existing priority; unsubscribe before subscribing with a new
+priority.
+
+`QueueStateChanged` includes the trader ID, runner channel, queue condition, condition state, queue
+depth, mean dispatch time, event ID, and timestamps. Delivery uses the typed in‑process message bus
+and has no external wire representation. See
+[Queue pressure monitoring](live.md#queue-pressure-monitoring) for the trigger and clear semantics.
+
 ### Socket transport state
 
-Python `DataActor`, `Strategy`, and `ExecutionAlgorithm` implementations can subscribe to socket
-state changes from live adapters that report them:
+Actors can subscribe to socket state changes from live adapters that report them:
 
-```python
+```rust tab="Rust"
+use nautilus_common::{
+    actor::DataActor,
+    messages::system::SocketStateChanged,
+};
+
+impl DataActor for MyActor {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_socket_state(Some(50));
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        self.unsubscribe_socket_state();
+        Ok(())
+    }
+
+    fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
+        log::info!(
+            "Socket {} for {} changed to {:?}",
+            event.endpoint,
+            event.client_id,
+            event.state,
+        );
+        Ok(())
+    }
+}
+```
+
+```python tab="Python"
 from nautilus_trader.common import SocketStateChanged
 
 

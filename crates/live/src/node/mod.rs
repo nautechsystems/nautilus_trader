@@ -3340,7 +3340,6 @@ fn render_client_statuses(rows: Vec<ClientStatus>) -> String {
 mod tests {
     use std::{
         cell::{Cell, RefCell},
-        collections::HashMap,
         fmt::Debug,
         rc::Rc,
         sync::{
@@ -3695,7 +3694,6 @@ mod tests {
                 queue_depth_clear: 0,
                 mean_dispatch_ns_trigger: 1,
                 mean_dispatch_ns_clear: 0,
-                overrides: HashMap::default(),
             }),
             exec_engine: crate::config::LiveExecEngineConfig {
                 reconciliation: false,

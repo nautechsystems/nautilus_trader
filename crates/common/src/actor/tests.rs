@@ -280,7 +280,7 @@ impl DataActor for TestDataActor {
         Ok(())
     }
 
-    fn on_queue_state_changed(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
+    fn on_queue_state(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
         self.received_queue_state_changes.push(event.clone());
         Ok(())
     }
@@ -4077,16 +4077,16 @@ fn test_unsubscribe_signal_panics_when_unregistered() {
 
 #[rstest]
 #[should_panic(expected = "Actor has not been registered")]
-fn test_subscribe_queue_state_changed_panics_when_unregistered() {
+fn test_subscribe_queue_state_panics_when_unregistered() {
     let mut actor = TestDataActor::new(DataActorConfig::default());
-    actor.subscribe_queue_state_changed(None);
+    actor.subscribe_queue_state(None);
 }
 
 #[rstest]
 #[should_panic(expected = "Actor has not been registered")]
-fn test_unsubscribe_queue_state_changed_panics_when_unregistered() {
+fn test_unsubscribe_queue_state_panics_when_unregistered() {
     let mut actor = TestDataActor::new(DataActorConfig::default());
-    actor.unsubscribe_queue_state_changed();
+    actor.unsubscribe_queue_state();
 }
 
 #[rstest]
@@ -4222,7 +4222,7 @@ fn test_queue_state_changed_reaches_typed_subscriber(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_queue_state_changed(None);
+    actor.subscribe_queue_state(None);
     drop(actor);
 
     let event = make_queue_state_changed(QueueState::Triggered, 71);
@@ -4380,7 +4380,7 @@ fn test_queue_state_changed_skips_delivery_when_not_running(
 ) {
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-    actor.subscribe_queue_state_changed(None);
+    actor.subscribe_queue_state(None);
     drop(actor);
 
     let event = make_queue_state_changed(QueueState::Triggered, 73);
@@ -4391,7 +4391,7 @@ fn test_queue_state_changed_skips_delivery_when_not_running(
 }
 
 #[rstest]
-fn test_unsubscribe_queue_state_changed_stops_delivery(
+fn test_unsubscribe_queue_state_stops_delivery(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
@@ -4399,7 +4399,7 @@ fn test_unsubscribe_queue_state_changed_stops_delivery(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_queue_state_changed(None);
+    actor.subscribe_queue_state(None);
     drop(actor);
 
     let triggered = make_queue_state_changed(QueueState::Triggered, 79);
@@ -4409,7 +4409,7 @@ fn test_unsubscribe_queue_state_changed_stops_delivery(
     );
 
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-    actor.unsubscribe_queue_state_changed();
+    actor.unsubscribe_queue_state();
     drop(actor);
 
     let cleared = make_queue_state_changed(QueueState::Cleared, 83);
@@ -4420,7 +4420,7 @@ fn test_unsubscribe_queue_state_changed_stops_delivery(
 }
 
 #[rstest]
-fn test_subscribe_queue_state_changed_dispatches_in_priority_order(
+fn test_subscribe_queue_state_dispatches_in_priority_order(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
@@ -4448,12 +4448,12 @@ fn test_subscribe_queue_state_changed_dispatches_in_priority_order(
 
     let mut high = get_actor_unchecked::<TestDataActor>(&high_id);
     high.start().unwrap();
-    high.subscribe_queue_state_changed(Some(100));
+    high.subscribe_queue_state(Some(100));
     drop(high);
 
     let mut low = get_actor_unchecked::<TestDataActor>(&low_id);
     low.start().unwrap();
-    low.subscribe_queue_state_changed(Some(10));
+    low.subscribe_queue_state(Some(10));
     drop(low);
 
     let topic = MessagingSwitchboard::queue_state_changed_topic();
@@ -4472,7 +4472,7 @@ fn test_subscribe_queue_state_changed_dispatches_in_priority_order(
 }
 
 #[rstest]
-fn test_subscribe_queue_state_changed_resubscribe_does_not_update_priority(
+fn test_subscribe_queue_state_resubscribe_does_not_update_priority(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
@@ -4480,8 +4480,8 @@ fn test_subscribe_queue_state_changed_resubscribe_does_not_update_priority(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_queue_state_changed(Some(10));
-    actor.subscribe_queue_state_changed(Some(100));
+    actor.subscribe_queue_state(Some(10));
+    actor.subscribe_queue_state(Some(100));
     drop(actor);
 
     let topic = MessagingSwitchboard::queue_state_changed_topic();

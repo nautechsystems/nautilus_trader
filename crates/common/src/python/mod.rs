@@ -68,6 +68,10 @@ pub fn config_error_to_pyvalue_err(e: ConfigError) -> PyErr {
 pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::custom::CustomData>()?;
     m.add_class::<crate::signal::Signal>()?;
+    m.add_class::<crate::runner::SystemChannel>()?;
+    m.add_class::<crate::messages::system::QueueCondition>()?;
+    m.add_class::<crate::messages::system::QueueState>()?;
+    m.add_class::<crate::messages::system::QueueStateChanged>()?;
     m.add_class::<crate::messages::system::SocketState>()?;
     m.add_class::<crate::messages::system::SocketStateChanged>()?;
     m.add_class::<crate::timer::TimeEvent>()?;

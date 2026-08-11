@@ -189,10 +189,13 @@ class InternalActorIdExecutionAlgorithm(ExecutionAlgorithm):
         ("modify_order_in_place", ["self", "order", "quantity", "price", "trigger_price"]),
         ("cancel_order", ["self", "order", "client_id"]),
         ("subscribe_signal", ["self", "name", "priority"]),
+        ("subscribe_queue_state", ["self", "priority"]),
         ("subscribe_socket_state", ["self", "priority"]),
         ("unsubscribe_signal", ["self", "name"]),
+        ("unsubscribe_queue_state", ["self"]),
         ("unsubscribe_socket_state", ["self"]),
         ("on_signal", ["self", "signal"]),
+        ("on_queue_state", ["self", "event"]),
         ("on_socket_state", ["self", "event"]),
         ("to_importable_config", ["self"]),
         ("is_ready", ["self"]),
@@ -214,6 +217,13 @@ def test_execution_algorithm_authoring_surface_parameters(method_name, parameter
     method = getattr(ExecutionAlgorithm, method_name)
 
     assert list(inspect.signature(method).parameters) == parameter_names
+
+
+@pytest.mark.parametrize("method_name", ["subscribe_queue_state", "subscribe_socket_state"])
+def test_execution_algorithm_state_subscription_priority_defaults_to_none(method_name):
+    signature = inspect.signature(getattr(ExecutionAlgorithm, method_name))
+
+    assert signature.parameters["priority"].default is None
 
 
 @pytest.mark.parametrize(

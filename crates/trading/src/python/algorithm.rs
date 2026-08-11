@@ -22,7 +22,7 @@ use nautilus_common::{
     actor::{DataActor, DataActorNative, data_actor::DataActorCore},
     component::Component,
     enums::ComponentState,
-    messages::system::SocketStateChanged,
+    messages::system::{QueueStateChanged, SocketStateChanged},
     python::{cache::PyCache, clock::PyClock, logging::PyLogger},
     signal::Signal,
     timer::TimeEvent,
@@ -205,6 +205,15 @@ impl PyExecutionAlgorithm {
         if let Some(ref py_self) = self.inner().py_self {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_signal", (signal.clone().into_py_any(py)?,))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_queue_state(&self, event: &QueueStateChanged) -> PyResult<()> {
+        if let Some(ref py_self) = self.inner().py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_queue_state", (event.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -561,6 +570,11 @@ impl DataActor for PyExecutionAlgorithm {
             .map_err(|e| anyhow::anyhow!("Python on_signal failed: {e}"))
     }
 
+    fn on_queue_state(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
+        self.dispatch_on_queue_state(event)
+            .map_err(|e| anyhow::anyhow!("Python on_queue_state failed: {e}"))
+    }
+
     fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
         self.dispatch_on_socket_state(event)
             .map_err(|e| anyhow::anyhow!("Python on_socket_state failed: {e}"))
@@ -832,6 +846,12 @@ impl PyExecutionAlgorithm {
         DataActor::subscribe_signal(self, name, priority);
     }
 
+    #[pyo3(name = "subscribe_queue_state")]
+    #[pyo3(signature = (priority=None))]
+    fn py_subscribe_queue_state(&mut self, priority: Option<u32>) {
+        DataActor::subscribe_queue_state(self, priority);
+    }
+
     #[pyo3(name = "subscribe_socket_state")]
     #[pyo3(signature = (priority=None))]
     fn py_subscribe_socket_state(&mut self, priority: Option<u32>) {
@@ -842,6 +862,11 @@ impl PyExecutionAlgorithm {
     #[pyo3(signature = (name=""))]
     fn py_unsubscribe_signal(&mut self, name: &str) {
         DataActor::unsubscribe_signal(self, name);
+    }
+
+    #[pyo3(name = "unsubscribe_queue_state")]
+    fn py_unsubscribe_queue_state(&mut self) {
+        DataActor::unsubscribe_queue_state(self);
     }
 
     #[pyo3(name = "unsubscribe_socket_state")]
@@ -877,6 +902,10 @@ impl PyExecutionAlgorithm {
     #[allow(unused_variables)]
     #[pyo3(name = "on_signal")]
     fn py_on_signal(&mut self, signal: &Signal) {}
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_queue_state")]
+    fn py_on_queue_state(&mut self, event: QueueStateChanged) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_socket_state")]
@@ -1376,8 +1405,11 @@ mod tests {
     use nautilus_common::{
         cache::Cache,
         clock::{Clock, TestClock},
-        messages::system::{SocketState, SocketStateChanged},
+        messages::system::{
+            QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged,
+        },
         msgbus::{MessageBus, MessagingSwitchboard, get_message_bus},
+        runner::SystemChannel,
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
@@ -1393,6 +1425,20 @@ mod tests {
 
     use super::*;
 
+    fn sample_queue_state_changed() -> QueueStateChanged {
+        QueueStateChanged::new(
+            TraderId::from("TRADER-001"),
+            SystemChannel::ExecCommands,
+            QueueCondition::Backlogged,
+            QueueState::Triggered,
+            17,
+            23,
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(1_700_000_000_000_000_001),
+            UnixNanos::from(1_700_000_000_000_000_002),
+        )
+    }
+
     fn sample_socket_state_changed() -> SocketStateChanged {
         SocketStateChanged::new(
             TraderId::from("TRADER-001"),
@@ -1404,6 +1450,50 @@ mod tests {
             UnixNanos::from(1_700_000_000_000_000_001),
             UnixNanos::from(1_700_000_000_000_000_002),
         )
+    }
+
+    #[rstest]
+    fn test_python_queue_state_dispatches_exact_event() {
+        Python::initialize();
+
+        let tracker = Python::attach(|py| {
+            py.run(
+                c_str!(
+                    r#"
+class QueueStateTracker:
+    def __init__(self):
+        self.event = None
+
+    def on_queue_state(self, event):
+        self.event = event
+"#
+                ),
+                None,
+                None,
+            )
+            .unwrap();
+            py.eval(c_str!("QueueStateTracker()"), None, None)
+                .unwrap()
+                .unbind()
+        });
+        let mut algorithm = PyExecutionAlgorithm::new(None);
+        algorithm.set_python_instance(tracker);
+        let event = sample_queue_state_changed();
+
+        DataActor::on_queue_state(&mut algorithm, &event).unwrap();
+
+        let received = Python::attach(|py| {
+            algorithm
+                .inner()
+                .py_self
+                .as_ref()
+                .unwrap()
+                .getattr(py, "event")
+                .unwrap()
+                .extract::<QueueStateChanged>(py)
+                .unwrap()
+        });
+        assert_eq!(received, event);
     }
 
     #[rstest]
@@ -1448,6 +1538,28 @@ class SocketStateTracker:
                 .unwrap()
         });
         assert_eq!(received, event);
+    }
+
+    #[rstest]
+    fn test_python_subscribe_and_unsubscribe_queue_state_update_msgbus() {
+        *get_message_bus().borrow_mut() = MessageBus::default();
+
+        let mut algorithm = PyExecutionAlgorithm::new(None);
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache).unwrap();
+
+        algorithm.py_subscribe_queue_state(Some(50));
+
+        let topic = MessagingSwitchboard::queue_state_changed_topic();
+        let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+        assert_eq!(subscriptions.len(), 1);
+        assert_eq!(subscriptions[0].priority, 50);
+
+        algorithm.py_unsubscribe_queue_state();
+
+        let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+        assert!(subscriptions.is_empty());
     }
 
     #[rstest]

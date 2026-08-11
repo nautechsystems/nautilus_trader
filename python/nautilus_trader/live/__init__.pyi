@@ -21,6 +21,7 @@ __all__ = [
     "LiveRiskEngineConfig",
     "PluginConfig",
     "PortfolioConfig",
+    "QueueMonitorConfig",
     "RoutingConfig",
 ]
 
@@ -346,6 +347,8 @@ class LiveNodeConfig:
     @property
     def portfolio(self) -> portfolio.PortfolioConfig | None: ...
     @property
+    def queue_monitor(self) -> QueueMonitorConfig | None: ...
+    @property
     def loop_debug(self) -> bool: ...
     @property
     def data_engine(self) -> LiveDataEngineConfig: ...
@@ -375,6 +378,7 @@ class LiveNodeConfig:
         cache: common.CacheConfig | None = None,
         msgbus: common.MessageBusConfig | None = None,
         portfolio: portfolio.PortfolioConfig | None = None,
+        queue_monitor: QueueMonitorConfig | None = None,
         loop_debug: bool | None = None,
         data_engine: LiveDataEngineConfig | None = None,
         risk_engine: LiveRiskEngineConfig | None = None,
@@ -421,6 +425,24 @@ class PluginConfig:
         config: typing.Mapping[str, typing.Any] | None = None,
         sha256: str | None = None,
     ) -> PluginConfig: ...
+
+@typing.final
+class QueueMonitorConfig:
+    @property
+    def queue_depth_trigger(self) -> int: ...
+    @property
+    def queue_depth_clear(self) -> int: ...
+    @property
+    def mean_dispatch_ns_trigger(self) -> int: ...
+    @property
+    def mean_dispatch_ns_clear(self) -> int: ...
+    def __new__(
+        cls,
+        queue_depth_trigger: int,
+        queue_depth_clear: int,
+        mean_dispatch_ns_trigger: int,
+        mean_dispatch_ns_clear: int,
+    ) -> QueueMonitorConfig: ...
 
 @typing.final
 class RoutingConfig:

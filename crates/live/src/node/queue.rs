@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, fmt::Display};
+use std::fmt::Display;
 
 use nautilus_common::{
-    config::{ConfigError, ConfigErrorCollector, ConfigResult, check_valid_value},
+    config::{ConfigErrorCollector, ConfigResult, check_valid_value},
     messages::system::{QueueCondition, QueueState},
     runner::SystemChannel,
 };
@@ -24,42 +24,25 @@ use serde::{Deserialize, Serialize};
 
 use super::metrics::{RunnerMetricsDelta, RunnerMetricsSnapshot};
 
-/// Queue pressure thresholds for one runner channel.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct QueueMonitorOverride {
-    /// Queue depth that triggers a backlogged state.
-    pub queue_depth_trigger: Option<usize>,
-    /// Queue depth at or below which a backlogged state clears.
-    pub queue_depth_clear: Option<usize>,
-    /// Mean dispatch time that triggers a slow state, in nanoseconds.
-    pub mean_dispatch_ns_trigger: Option<u64>,
-    /// Mean dispatch time at or below which a slow state clears, in nanoseconds.
-    pub mean_dispatch_ns_clear: Option<u64>,
-}
-
 /// Configuration for runner queue pressure monitoring.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
+)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
 pub struct QueueMonitorConfig {
-    /// Global queue depth that triggers a backlogged state.
+    /// Queue depth that triggers a backlogged state.
     pub queue_depth_trigger: usize,
-    /// Global queue depth at or below which a backlogged state clears.
+    /// Queue depth at or below which a backlogged state clears.
     pub queue_depth_clear: usize,
-    /// Global mean dispatch time that triggers a slow state, in nanoseconds.
+    /// Mean dispatch time that triggers a slow state, in nanoseconds.
     pub mean_dispatch_ns_trigger: u64,
-    /// Global mean dispatch time at or below which a slow state clears, in nanoseconds.
-    pub mean_dispatch_ns_clear: u64,
-    /// Optional threshold overrides keyed by runner channel name.
-    #[serde(default)]
-    pub overrides: HashMap<String, QueueMonitorOverride>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct QueueMonitorThresholds {
-    pub queue_depth_trigger: usize,
-    pub queue_depth_clear: usize,
-    pub mean_dispatch_ns_trigger: u64,
+    /// Mean dispatch time at or below which a slow state clears, in nanoseconds.
     pub mean_dispatch_ns_clear: u64,
 }
 
@@ -78,55 +61,7 @@ impl QueueMonitorConfig {
             self.mean_dispatch_ns_clear,
         ));
 
-        let mut override_names = self
-            .overrides
-            .keys()
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        override_names.sort_unstable();
-
-        for name in override_names {
-            let Some(channel) = system_channel_from_name(name) else {
-                collector.push(ConfigError::invalid_reference(
-                    format!("LiveNodeConfig.queue_monitor.overrides[{name}]"),
-                    "system channel",
-                    "expected time_events, exec_events, exec_commands, data_events, or data_commands",
-                ));
-                continue;
-            };
-            let thresholds = self.thresholds(channel);
-            collector.collect(validate_hysteresis(
-                format!("LiveNodeConfig.queue_monitor.overrides[{name}].queue_depth"),
-                thresholds.queue_depth_trigger,
-                thresholds.queue_depth_clear,
-            ));
-            collector.collect(validate_hysteresis(
-                format!("LiveNodeConfig.queue_monitor.overrides[{name}].mean_dispatch_ns"),
-                thresholds.mean_dispatch_ns_trigger,
-                thresholds.mean_dispatch_ns_clear,
-            ));
-        }
-
         collector.into_result()
-    }
-
-    pub(crate) fn thresholds(&self, channel: SystemChannel) -> QueueMonitorThresholds {
-        let override_config = self.overrides.get(system_channel_name(channel));
-
-        QueueMonitorThresholds {
-            queue_depth_trigger: override_config
-                .and_then(|config| config.queue_depth_trigger)
-                .unwrap_or(self.queue_depth_trigger),
-            queue_depth_clear: override_config
-                .and_then(|config| config.queue_depth_clear)
-                .unwrap_or(self.queue_depth_clear),
-            mean_dispatch_ns_trigger: override_config
-                .and_then(|config| config.mean_dispatch_ns_trigger)
-                .unwrap_or(self.mean_dispatch_ns_trigger),
-            mean_dispatch_ns_clear: override_config
-                .and_then(|config| config.mean_dispatch_ns_clear)
-                .unwrap_or(self.mean_dispatch_ns_clear),
-        }
     }
 }
 
@@ -141,24 +76,12 @@ where
     )
 }
 
-const fn system_channel_name(channel: SystemChannel) -> &'static str {
-    SYSTEM_CHANNEL_NAMES[system_channel_index(channel)]
-}
-
 pub(crate) const SYSTEM_CHANNELS: [SystemChannel; 5] = [
     SystemChannel::TimeEvents,
     SystemChannel::ExecEvents,
     SystemChannel::ExecCommands,
     SystemChannel::DataEvents,
     SystemChannel::DataCommands,
-];
-
-const SYSTEM_CHANNEL_NAMES: [&str; SYSTEM_CHANNELS.len()] = [
-    "time_events",
-    "exec_events",
-    "exec_commands",
-    "data_events",
-    "data_commands",
 ];
 
 pub(crate) const fn system_channel_index(channel: SystemChannel) -> usize {
@@ -169,13 +92,6 @@ pub(crate) const fn system_channel_index(channel: SystemChannel) -> usize {
         SystemChannel::DataEvents => 3,
         SystemChannel::DataCommands => 4,
     }
-}
-
-fn system_channel_from_name(name: &str) -> Option<SystemChannel> {
-    SYSTEM_CHANNEL_NAMES
-        .iter()
-        .position(|candidate| *candidate == name)
-        .map(|index| SYSTEM_CHANNELS[index])
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,7 +105,7 @@ pub(crate) struct QueueStateTransition {
 
 #[derive(Debug)]
 pub(crate) struct QueueMonitor {
-    thresholds: [QueueMonitorThresholds; SYSTEM_CHANNELS.len()],
+    config: QueueMonitorConfig,
     previous_snapshot: RunnerMetricsSnapshot,
     states: [QueueChannelState; SYSTEM_CHANNELS.len()],
 }
@@ -200,7 +116,7 @@ impl QueueMonitor {
         previous_snapshot: RunnerMetricsSnapshot,
     ) -> Self {
         Self {
-            thresholds: SYSTEM_CHANNELS.map(|channel| config.thresholds(channel)),
+            config: config.clone(),
             previous_snapshot,
             states: [QueueChannelState::default(); SYSTEM_CHANNELS.len()],
         }
@@ -215,7 +131,6 @@ impl QueueMonitor {
         let mut transitions = Vec::new();
 
         for channel in SYSTEM_CHANNELS {
-            let thresholds = self.thresholds[system_channel_index(channel)];
             let queue_depth = channel_queue_depth(snapshot, channel);
             let mean_dispatch_ns = delta.channel_mean_dispatch_ns(channel);
             let dispatched = channel_dispatched(delta, channel);
@@ -224,8 +139,8 @@ impl QueueMonitor {
             if let Some(queue_state) = condition_transition(
                 &mut state.backlogged,
                 &queue_depth,
-                &thresholds.queue_depth_trigger,
-                &thresholds.queue_depth_clear,
+                &self.config.queue_depth_trigger,
+                &self.config.queue_depth_clear,
             ) {
                 transitions.push(QueueStateTransition {
                     channel,
@@ -241,8 +156,8 @@ impl QueueMonitor {
                 && let Some(queue_state) = condition_transition(
                     &mut state.slow,
                     &mean_dispatch_ns,
-                    &thresholds.mean_dispatch_ns_trigger,
-                    &thresholds.mean_dispatch_ns_clear,
+                    &self.config.mean_dispatch_ns_trigger,
+                    &self.config.mean_dispatch_ns_clear,
                 )
             {
                 transitions.push(QueueStateTransition {

@@ -37,7 +37,7 @@ use nautilus_common::{
     clock::Clock,
     component::{Component, with_component_registry},
     enums::ComponentState,
-    messages::system::SocketStateChanged,
+    messages::system::{QueueStateChanged, SocketStateChanged},
     python::{
         cache::PyCache,
         clock::PyClock,
@@ -646,6 +646,15 @@ impl PyStrategyInner {
         Ok(())
     }
 
+    fn dispatch_on_queue_state(&mut self, event: &QueueStateChanged) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_queue_state", (event.clone().into_py_any(py)?,))
+            })?;
+        }
+        Ok(())
+    }
+
     fn dispatch_on_socket_state(&mut self, event: &SocketStateChanged) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
@@ -1095,6 +1104,11 @@ impl DataActor for PyStrategyInner {
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         self.dispatch_on_signal(signal)
             .map_err(|e| anyhow::anyhow!("Python on_signal failed: {e}"))
+    }
+
+    fn on_queue_state(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
+        self.dispatch_on_queue_state(event)
+            .map_err(|e| anyhow::anyhow!("Python on_queue_state failed: {e}"))
     }
 
     fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
@@ -2072,6 +2086,10 @@ impl PyStrategy {
     fn py_on_signal(&mut self, signal: &Signal) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_queue_state")]
+    fn py_on_queue_state(&mut self, event: QueueStateChanged) {}
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_socket_state")]
     fn py_on_socket_state(&mut self, event: SocketStateChanged) {}
 
@@ -2297,6 +2315,12 @@ impl PyStrategy {
     #[pyo3(signature = (name="", priority=None))]
     fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) {
         DataActor::subscribe_signal(self.inner_mut(), name, priority);
+    }
+
+    #[pyo3(name = "subscribe_queue_state")]
+    #[pyo3(signature = (priority=None))]
+    fn py_subscribe_queue_state(&mut self, priority: Option<u32>) {
+        DataActor::subscribe_queue_state(self.inner_mut(), priority);
     }
 
     #[pyo3(name = "subscribe_socket_state")]
@@ -2650,6 +2674,11 @@ impl PyStrategy {
     #[pyo3(name = "unsubscribe_signal")]
     fn py_unsubscribe_signal(&mut self, name: &str) {
         DataActor::unsubscribe_signal(self.inner_mut(), name);
+    }
+
+    #[pyo3(name = "unsubscribe_queue_state")]
+    fn py_unsubscribe_queue_state(&mut self) {
+        DataActor::unsubscribe_queue_state(self.inner_mut());
     }
 
     #[pyo3(name = "unsubscribe_socket_state")]
@@ -3291,13 +3320,16 @@ mod tests {
                 UnsubscribeCommand,
             },
             execution::TradingCommand,
-            system::{SocketState, SocketStateChanged},
+            system::{
+                QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged,
+            },
         },
         msgbus::{
             self, MessagingSwitchboard,
             stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
         },
         python::cache::PyCache,
+        runner::SystemChannel,
         signal::Signal,
         timer::TimeEvent,
     };
@@ -3362,6 +3394,7 @@ class TrackingStrategy:
         "on_time_event",
         "on_data",
         "on_signal",
+        "on_queue_state",
         "on_socket_state",
         "on_instrument",
         "on_quote",
@@ -3597,6 +3630,20 @@ class IndicatorEventStrategy:
             "1.0".to_string(),
             UnixNanos::default(),
             UnixNanos::default(),
+        )
+    }
+
+    fn sample_queue_state_changed() -> QueueStateChanged {
+        QueueStateChanged::new(
+            TraderId::from("TRADER-001"),
+            SystemChannel::ExecCommands,
+            QueueCondition::Backlogged,
+            QueueState::Triggered,
+            17,
+            23,
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(1_700_000_000_000_000_001),
+            UnixNanos::from(1_700_000_000_000_000_002),
         )
     }
 
@@ -4400,6 +4447,30 @@ class IndicatorEventStrategy:
     }
 
     #[rstest::rstest]
+    fn test_python_subscribe_and_unsubscribe_queue_state_update_msgbus() {
+        use nautilus_common::msgbus::{MessageBus, MessagingSwitchboard, get_message_bus};
+
+        *get_message_bus().borrow_mut() = MessageBus::default();
+
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
+
+            rust_strategy.py_subscribe_queue_state(Some(50));
+
+            let topic = MessagingSwitchboard::queue_state_changed_topic();
+            let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+            assert_eq!(subscriptions.len(), 1);
+            assert_eq!(subscriptions[0].priority, 50);
+
+            rust_strategy.py_unsubscribe_queue_state();
+
+            let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+            assert!(subscriptions.is_empty());
+        });
+    }
+
+    #[rstest::rstest]
     fn test_python_subscribe_and_unsubscribe_socket_state_update_msgbus() {
         use nautilus_common::msgbus::{MessageBus, MessagingSwitchboard, get_message_bus};
 
@@ -4777,6 +4848,7 @@ class IndicatorEventStrategy:
     #[case("on_time_event")]
     #[case("on_data")]
     #[case("on_signal")]
+    #[case("on_queue_state")]
     #[case("on_socket_state")]
     #[case("on_instrument")]
     #[case("on_quote")]
@@ -4816,6 +4888,10 @@ class IndicatorEventStrategy:
                 "on_signal" => {
                     let signal = sample_signal();
                     rust_strategy.inner_mut().on_signal(&signal)
+                }
+                "on_queue_state" => {
+                    let event = sample_queue_state_changed();
+                    rust_strategy.inner_mut().on_queue_state(&event)
                 }
                 "on_socket_state" => {
                     let event = sample_socket_state_changed();

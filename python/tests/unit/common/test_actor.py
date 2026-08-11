@@ -25,9 +25,13 @@ from nautilus_trader.common import ComponentState
 from nautilus_trader.common import CustomData
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import ImportableActorConfig
+from nautilus_trader.common import QueueCondition
+from nautilus_trader.common import QueueState
+from nautilus_trader.common import QueueStateChanged
 from nautilus_trader.common import Signal
 from nautilus_trader.common import SocketState
 from nautilus_trader.common import SocketStateChanged
+from nautilus_trader.common import SystemChannel
 from nautilus_trader.common import TimeEvent
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import ActorId
@@ -101,6 +105,7 @@ TYPED_CALLBACKS = [
     ("on_time_event", "time_event"),
     ("on_data", "custom_data"),
     ("on_signal", "signal"),
+    ("on_queue_state", "queue_state_changed"),
     ("on_socket_state", "socket_state_changed"),
     ("on_instrument", "instrument"),
     ("on_quote", "quote"),
@@ -135,6 +140,7 @@ HISTORICAL_CALLBACKS = [
 
 NO_PARAMETERS = ()
 STATE_PARAMETERS = ("state",)
+STATE_SUBSCRIPTION_PARAMETERS = ("priority",)
 
 LIFECYCLE_HOOK_SIGNATURES = [
     ("on_start", NO_PARAMETERS),
@@ -153,6 +159,7 @@ DATA_CALLBACK_SIGNATURES = [
     ("on_time_event", ("event",)),
     ("on_data", ("data",)),
     ("on_signal", ("signal",)),
+    ("on_queue_state", ("event",)),
     ("on_socket_state", ("event",)),
     ("on_instrument", ("instrument",)),
     ("on_quote", ("quote",)),
@@ -249,7 +256,8 @@ OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS = ("series_id", "client_id")
 
 REGISTRATION_REQUIRED_SIGNATURES = [
     ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
-    ("subscribe_socket_state", ("priority",)),
+    ("subscribe_queue_state", STATE_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_socket_state", STATE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
@@ -271,6 +279,7 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("subscribe_pool_fee_collects", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_pool_flash_events", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_queue_state", NO_PARAMETERS),
     ("unsubscribe_socket_state", NO_PARAMETERS),
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -340,6 +349,53 @@ def _create_recording_actor_type():
 RecordingActor = _create_recording_actor_type()
 
 
+def test_queue_state_changed_exposes_all_fields():
+    trader_id = TraderId("TRADER-001")
+    event_id = UUID4()
+
+    event = QueueStateChanged(
+        trader_id,
+        SystemChannel.EXEC_COMMANDS,
+        QueueCondition.BACKLOGGED,
+        QueueState.TRIGGERED,
+        17,
+        23,
+        event_id,
+        29,
+        31,
+    )
+
+    assert type(event) is QueueStateChanged
+    assert event.trader_id == trader_id
+    assert type(event.channel) is SystemChannel
+    assert event.channel == SystemChannel.EXEC_COMMANDS
+    assert type(event.condition) is QueueCondition
+    assert event.condition == QueueCondition.BACKLOGGED
+    assert type(event.state) is QueueState
+    assert event.state == QueueState.TRIGGERED
+    assert event.queue_depth == 17
+    assert event.mean_dispatch_ns == 23
+    assert event.event_id == event_id
+    assert event.ts_event == 29
+    assert event.ts_init == 31
+    assert event == QueueStateChanged(
+        trader_id,
+        SystemChannel.EXEC_COMMANDS,
+        QueueCondition.BACKLOGGED,
+        QueueState.TRIGGERED,
+        17,
+        23,
+        event_id,
+        29,
+        31,
+    )
+    assert repr(event) == (
+        f"QueueStateChanged(trader_id={trader_id}, channel=ExecCommands, "
+        "condition=Backlogged, state=Triggered, queue_depth=17, mean_dispatch_ns=23, "
+        f"event_id={event_id})"
+    )
+
+
 @pytest.mark.parametrize(
     ("venue", "state"),
     [
@@ -364,10 +420,12 @@ def test_socket_state_changed_exposes_all_fields(venue, state):
         13,
     )
 
+    assert type(event) is SocketStateChanged
     assert event.trader_id == trader_id
     assert event.client_id == client_id
     assert event.venue == venue
     assert event.endpoint == endpoint
+    assert type(event.state) is SocketState
     assert event.state == state
     assert event.event_id == event_id
     assert event.ts_event == 11
@@ -381,6 +439,12 @@ def test_socket_state_changed_exposes_all_fields(venue, state):
         event_id,
         11,
         13,
+    )
+    venue_repr = f'Some("{venue}")' if venue is not None else "None"
+    state_repr = "Connected" if state == SocketState.CONNECTED else "Disconnected"
+    assert repr(event) == (
+        f"SocketStateChanged(trader_id={trader_id}, client_id={client_id}, "
+        f"venue={venue_repr}, endpoint={endpoint}, state={state_repr}, event_id={event_id})"
     )
 
 
@@ -580,6 +644,12 @@ def test_data_actor_shutdown_system_requires_registration(actor):
         actor.shutdown_system("unit test shutdown")
 
 
+def test_queue_state_changed_subscription_priority_defaults_to_none(actor):
+    signature = inspect.signature(actor.subscribe_queue_state)
+
+    assert signature.parameters["priority"].default is None
+
+
 def test_socket_state_changed_subscription_priority_defaults_to_none(actor):
     signature = inspect.signature(actor.subscribe_socket_state)
 
@@ -700,6 +770,17 @@ def sample_objects():
     mark_price = MarkPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
     index_price = IndexPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
     funding_rate = FundingRateUpdate(instrument.id, Decimal("0.0001"), 1, 2, interval=480)
+    queue_state_changed = QueueStateChanged(
+        TraderId("TRADER-001"),
+        SystemChannel.EXEC_COMMANDS,
+        QueueCondition.BACKLOGGED,
+        QueueState.TRIGGERED,
+        17,
+        23,
+        UUID4(),
+        7,
+        8,
+    )
     socket_state_changed = SocketStateChanged(
         TraderId("TRADER-001"),
         ClientId("BINANCE"),
@@ -715,6 +796,7 @@ def sample_objects():
         "time_event": time_event,
         "custom_data": custom_data,
         "signal": Signal("sig", "value", 1, 2),
+        "queue_state_changed": queue_state_changed,
         "socket_state_changed": socket_state_changed,
         "instrument": instrument,
         "quote": quote,

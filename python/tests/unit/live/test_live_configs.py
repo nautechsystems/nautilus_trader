@@ -30,6 +30,7 @@ from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.live import PluginConfig
 from nautilus_trader.live import PortfolioConfig
+from nautilus_trader.live import QueueMonitorConfig
 from nautilus_trader.live import RoutingConfig
 from nautilus_trader.model import BarIntervalType
 from nautilus_trader.model import ClientId
@@ -103,6 +104,20 @@ def test_plugin_config_explicit():
         "strategy_config": {"strategy_id": "RuntimeSmokeStrategy-001"},
     }
     assert config.sha256 == "0" * 64
+
+
+def test_queue_monitor_config_explicit():
+    config = QueueMonitorConfig(
+        queue_depth_trigger=1_000,
+        queue_depth_clear=500,
+        mean_dispatch_ns_trigger=250_000,
+        mean_dispatch_ns_clear=150_000,
+    )
+
+    assert config.queue_depth_trigger == 1_000
+    assert config.queue_depth_clear == 500
+    assert config.mean_dispatch_ns_trigger == 250_000
+    assert config.mean_dispatch_ns_clear == 150_000
 
 
 def test_live_data_client_config_explicit():
@@ -336,6 +351,24 @@ def test_live_node_config_defaults():
     assert config.save_state is False
     assert config.shutdown_on_error is False
     assert config.timeout_connection_secs == 60.0
+    assert config.queue_monitor is None
+
+
+def test_live_node_config_accepts_queue_monitor_config_argument():
+    queue_monitor = QueueMonitorConfig(
+        queue_depth_trigger=1_000,
+        queue_depth_clear=500,
+        mean_dispatch_ns_trigger=250_000,
+        mean_dispatch_ns_clear=150_000,
+    )
+    config = LiveNodeConfig(queue_monitor=queue_monitor)
+
+    resolved = config.queue_monitor
+    assert isinstance(resolved, QueueMonitorConfig)
+    assert resolved.queue_depth_trigger == 1_000
+    assert resolved.queue_depth_clear == 500
+    assert resolved.mean_dispatch_ns_trigger == 250_000
+    assert resolved.mean_dispatch_ns_clear == 150_000
 
 
 def test_live_node_config_rejects_invalid_timeout_duration():

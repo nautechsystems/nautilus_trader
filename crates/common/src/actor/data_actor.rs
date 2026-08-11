@@ -403,7 +403,7 @@ pub trait DataActor: Component {
     ///
     /// Returns an error if handling the queue state change fails.
     #[allow(unused_variables)]
-    fn on_queue_state_changed(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
+    fn on_queue_state(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -856,7 +856,7 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received queue state change.
-    fn handle_queue_state_changed(&mut self, event: &QueueStateChanged) {
+    fn handle_queue_state(&mut self, event: &QueueStateChanged) {
         log_received(&event);
 
         if self.not_running() {
@@ -864,7 +864,7 @@ pub trait DataActor: Component {
             return;
         }
 
-        if let Err(e) = self.on_queue_state_changed(event) {
+        if let Err(e) = self.on_queue_state(event) {
             log_error(&e);
         }
     }
@@ -1391,8 +1391,8 @@ pub trait DataActor: Component {
     ///
     /// `priority` controls dispatch order when multiple actors subscribe to the event. Higher
     /// values receive the event first. Re-subscribing does not update an existing priority; call
-    /// [`unsubscribe_queue_state_changed`](Self::unsubscribe_queue_state_changed) first.
-    fn subscribe_queue_state_changed(&mut self, priority: Option<u32>)
+    /// [`unsubscribe_queue_state`](Self::unsubscribe_queue_state) first.
+    fn subscribe_queue_state(&mut self, priority: Option<u32>)
     where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
@@ -1400,13 +1400,13 @@ pub trait DataActor: Component {
         let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |event: &QueueStateChanged| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
-                actor.handle_queue_state_changed(event);
+                actor.handle_queue_state(event);
             } else {
                 log::error!("Actor {actor_id} not found for queue state change handling");
             }
         });
 
-        DataActorCore::subscribe_queue_state_changed(self.core_mut(), handler, priority);
+        DataActorCore::subscribe_queue_state(self.core_mut(), handler, priority);
     }
 
     /// Subscribes to [`SocketStateChanged`] events.
@@ -2074,12 +2074,12 @@ pub trait DataActor: Component {
     }
 
     /// Unsubscribes from [`QueueStateChanged`] events.
-    fn unsubscribe_queue_state_changed(&mut self)
+    fn unsubscribe_queue_state(&mut self)
     where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_queue_state_changed(self.core_mut());
+        DataActorCore::unsubscribe_queue_state(self.core_mut());
     }
 
     /// Unsubscribes from [`SocketStateChanged`] events.
@@ -3831,7 +3831,7 @@ impl DataActorCore {
     /// # Panics
     ///
     /// Panics if the actor is not registered with a trader.
-    pub fn subscribe_queue_state_changed(
+    pub fn subscribe_queue_state(
         &mut self,
         handler: ShareableMessageHandler,
         priority: Option<u32>,
@@ -4327,7 +4327,7 @@ impl DataActorCore {
     /// # Panics
     ///
     /// Panics if the actor is not registered with a trader.
-    pub fn unsubscribe_queue_state_changed(&mut self) {
+    pub fn unsubscribe_queue_state(&mut self) {
         self.check_registered();
 
         let topic = MessagingSwitchboard::queue_state_changed_topic();

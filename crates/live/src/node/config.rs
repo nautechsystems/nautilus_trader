@@ -54,7 +54,7 @@ use nautilus_trading::ImportableControllerConfig;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-pub use super::queue::{QueueMonitorConfig, QueueMonitorOverride};
+pub use super::queue::QueueMonitorConfig;
 use crate::execution::manager::ExecutionManagerConfig;
 
 /// The default rate limit string used for order submission and modification.
@@ -1152,11 +1152,10 @@ impl NautilusKernelConfig for LiveNodeConfig {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::runner::SystemChannel;
     use nautilus_system::config::RotationConfig;
     use rstest::rstest;
 
-    use super::{super::queue::QueueMonitorThresholds, *};
+    use super::*;
 
     #[rstest]
     fn test_trading_node_config_default() {
@@ -1177,7 +1176,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_live_node_queue_monitor_config_serde_roundtrip_with_channel_overrides() {
+    fn test_live_node_queue_monitor_config_serde_roundtrip() {
         let config: LiveNodeConfig = toml::from_str(
             "
 [queue_monitor]
@@ -1185,28 +1184,18 @@ queue_depth_trigger = 100
 queue_depth_clear = 60
 mean_dispatch_ns_trigger = 1000
 mean_dispatch_ns_clear = 700
-
-[queue_monitor.overrides.data_events]
-queue_depth_trigger = 200
-mean_dispatch_ns_clear = 500
 ",
         )
         .unwrap();
 
-        let expected = Some(QueueMonitorConfig {
-            queue_depth_trigger: 100,
-            queue_depth_clear: 60,
-            mean_dispatch_ns_trigger: 1_000,
-            mean_dispatch_ns_clear: 700,
-            overrides: HashMap::from([(
-                "data_events".to_string(),
-                QueueMonitorOverride {
-                    queue_depth_trigger: Some(200),
-                    mean_dispatch_ns_clear: Some(500),
-                    ..Default::default()
-                },
-            )]),
-        });
+        let expected = Some(
+            QueueMonitorConfig::builder()
+                .queue_depth_trigger(100)
+                .queue_depth_clear(60)
+                .mean_dispatch_ns_trigger(1_000)
+                .mean_dispatch_ns_clear(700)
+                .build(),
+        );
         let json = serde_json::to_string(&config).unwrap();
         let restored: LiveNodeConfig = serde_json::from_str(&json).unwrap();
 
@@ -1221,7 +1210,6 @@ mean_dispatch_ns_clear = 500
             queue_depth_clear: 10,
             mean_dispatch_ns_trigger: 100,
             mean_dispatch_ns_clear: 50,
-            overrides: HashMap::new(),
         },
         "invalid LiveNodeConfig.queue_monitor.queue_depth: clear threshold 10 must be lower than trigger threshold 10"
     )]
@@ -1229,32 +1217,12 @@ mean_dispatch_ns_clear = 500
         QueueMonitorConfig {
             queue_depth_trigger: 10,
             queue_depth_clear: 5,
-            mean_dispatch_ns_trigger: 100,
+            mean_dispatch_ns_trigger: 50,
             mean_dispatch_ns_clear: 50,
-            overrides: HashMap::from([(
-                "data_events".to_string(),
-                QueueMonitorOverride {
-                    mean_dispatch_ns_trigger: Some(40),
-                    ..Default::default()
-                },
-            )]),
         },
-        "invalid LiveNodeConfig.queue_monitor.overrides[data_events].mean_dispatch_ns: clear threshold 50 must be lower than trigger threshold 40"
+        "invalid LiveNodeConfig.queue_monitor.mean_dispatch_ns: clear threshold 50 must be lower than trigger threshold 50"
     )]
-    #[case(
-        QueueMonitorConfig {
-            queue_depth_trigger: 10,
-            queue_depth_clear: 5,
-            mean_dispatch_ns_trigger: 100,
-            mean_dispatch_ns_clear: 50,
-            overrides: HashMap::from([(
-                "unknown".to_string(),
-                QueueMonitorOverride::default(),
-            )]),
-        },
-        "invalid LiveNodeConfig.queue_monitor.overrides[unknown] reference system channel: expected time_events, exec_events, exec_commands, data_events, or data_commands"
-    )]
-    fn test_live_node_queue_monitor_config_validates_hysteresis_and_channel_names(
+    fn test_live_node_queue_monitor_config_validates_hysteresis(
         #[case] queue_monitor: QueueMonitorConfig,
         #[case] expected: &str,
     ) {
@@ -1266,43 +1234,6 @@ mean_dispatch_ns_clear = 500
         assert_eq!(
             config.validate_runtime_support().unwrap_err().to_string(),
             expected
-        );
-    }
-
-    #[rstest]
-    fn test_live_node_queue_monitor_config_resolves_partial_channel_override() {
-        let config = QueueMonitorConfig {
-            queue_depth_trigger: 100,
-            queue_depth_clear: 60,
-            mean_dispatch_ns_trigger: 1_000,
-            mean_dispatch_ns_clear: 700,
-            overrides: HashMap::from([(
-                "data_events".to_string(),
-                QueueMonitorOverride {
-                    queue_depth_trigger: Some(200),
-                    mean_dispatch_ns_clear: Some(500),
-                    ..Default::default()
-                },
-            )]),
-        };
-
-        assert_eq!(
-            config.thresholds(SystemChannel::DataEvents),
-            QueueMonitorThresholds {
-                queue_depth_trigger: 200,
-                queue_depth_clear: 60,
-                mean_dispatch_ns_trigger: 1_000,
-                mean_dispatch_ns_clear: 500,
-            }
-        );
-        assert_eq!(
-            config.thresholds(SystemChannel::ExecEvents),
-            QueueMonitorThresholds {
-                queue_depth_trigger: 100,
-                queue_depth_clear: 60,
-                mean_dispatch_ns_trigger: 1_000,
-                mean_dispatch_ns_clear: 700,
-            }
         );
     }
 

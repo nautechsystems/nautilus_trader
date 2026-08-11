@@ -23,9 +23,13 @@ from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.common import ComponentState
 from nautilus_trader.common import CustomData
+from nautilus_trader.common import QueueCondition
+from nautilus_trader.common import QueueState
+from nautilus_trader.common import QueueStateChanged
 from nautilus_trader.common import Signal
 from nautilus_trader.common import SocketState
 from nautilus_trader.common import SocketStateChanged
+from nautilus_trader.common import SystemChannel
 from nautilus_trader.common import TimeEvent
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountId
@@ -652,8 +656,8 @@ PUBLISH_DATA_PARAMETERS = ("data_type", "data")
 PUBLISH_SIGNAL_PARAMETERS = ("name", "value", "ts_event")
 SIGNAL_SUBSCRIPTION_PARAMETERS = ("name", "priority")
 SIGNAL_UNSUBSCRIBE_PARAMETERS = ("name",)
-SOCKET_STATE_SUBSCRIPTION_PARAMETERS = ("priority",)
-SOCKET_STATE_UNSUBSCRIBE_PARAMETERS = ()
+STATE_SUBSCRIPTION_PARAMETERS = ("priority",)
+STATE_UNSUBSCRIBE_PARAMETERS = ()
 SYNTHETIC_PARAMETERS = ("synthetic",)
 DATA_SURFACE_SIGNATURES = [
     ("publish_data", PUBLISH_DATA_PARAMETERS),
@@ -662,7 +666,8 @@ DATA_SURFACE_SIGNATURES = [
     ("update_synthetic", SYNTHETIC_PARAMETERS),
     ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("subscribe_signal", SIGNAL_SUBSCRIPTION_PARAMETERS),
-    ("subscribe_socket_state", SOCKET_STATE_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_queue_state", STATE_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_socket_state", STATE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
@@ -679,7 +684,8 @@ DATA_SURFACE_SIGNATURES = [
     ("subscribe_option_chain", OPTION_CHAIN_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_signal", SIGNAL_UNSUBSCRIBE_PARAMETERS),
-    ("unsubscribe_socket_state", SOCKET_STATE_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_queue_state", STATE_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_socket_state", STATE_UNSUBSCRIBE_PARAMETERS),
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -750,6 +756,7 @@ DATA_CALLBACK_SIGNATURES = [
     ("on_time_event", EVENT_PARAMETERS),
     ("on_data", ("data",)),
     ("on_signal", ("signal",)),
+    ("on_queue_state", EVENT_PARAMETERS),
     ("on_socket_state", EVENT_PARAMETERS),
     ("on_instrument", ("instrument",)),
     ("on_quote", ("quote",)),
@@ -832,6 +839,13 @@ def test_strategy_data_surface_methods_expose_expected_signatures(method_name, p
     signature = inspect.signature(getattr(strategy, method_name))
 
     assert tuple(signature.parameters) == parameter_names
+
+
+@pytest.mark.parametrize("method_name", ["subscribe_queue_state", "subscribe_socket_state"])
+def test_strategy_state_subscription_priority_defaults_to_none(method_name):
+    signature = inspect.signature(getattr(Strategy(), method_name))
+
+    assert signature.parameters["priority"].default is None
 
 
 def test_strategy_shutdown_system_exposes_actor_signature():
@@ -1040,6 +1054,7 @@ DATA_CALLBACKS = [
     ("on_time_event", "time_event"),
     ("on_data", "custom_data"),
     ("on_signal", "signal"),
+    ("on_queue_state", "queue_state_changed"),
     ("on_socket_state", "socket_state_changed"),
     ("on_instrument", "instrument"),
     ("on_quote", "quote"),
@@ -1135,6 +1150,17 @@ def strategy_sample_objects():
     time_event = TimeEvent("timer", UUID4(), 1, 2)
     custom_data = CustomData(DataType("X"), [1, 2], 3, 4)
     signal = Signal("sig", "value", 1, 2)
+    queue_state_changed = QueueStateChanged(
+        TraderId("TRADER-001"),
+        SystemChannel.EXEC_COMMANDS,
+        QueueCondition.BACKLOGGED,
+        QueueState.TRIGGERED,
+        17,
+        23,
+        UUID4(),
+        7,
+        8,
+    )
     socket_state_changed = SocketStateChanged(
         TraderId("TRADER-001"),
         ClientId("BINANCE"),
@@ -1163,6 +1189,7 @@ def strategy_sample_objects():
         "time_event": time_event,
         "custom_data": custom_data,
         "signal": signal,
+        "queue_state_changed": queue_state_changed,
         "socket_state_changed": socket_state_changed,
         "instrument": instrument,
         "quote": quote,

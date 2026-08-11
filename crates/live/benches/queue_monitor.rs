@@ -18,7 +18,7 @@
 //! The steady cases measure one five-channel maintenance-tick evaluation without crossings. The
 //! trigger case measures the worst-case evaluation that emits both transitions for every channel.
 
-use std::{collections::HashMap, hint::black_box};
+use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_live::node::{RunnerChannelMetricsSnapshot, RunnerMetricsSnapshot};
@@ -31,7 +31,7 @@ mod metrics {
 #[path = "../src/node/queue.rs"]
 mod queue;
 
-use queue::{QueueMonitor, QueueMonitorConfig, QueueMonitorOverride};
+use queue::{QueueMonitor, QueueMonitorConfig};
 
 const PROFILE_TICK_COUNT: u64 = 1_024;
 
@@ -41,20 +41,14 @@ fn bench_evaluate(c: &mut Criterion) {
 
     bench_case(
         &mut group,
-        "global_steady",
-        &global_config(1_000, 500, 1_000, 500),
-        snapshot(1, 100, 1),
-    );
-    bench_case(
-        &mut group,
-        "overrides_steady",
-        &override_config(),
+        "steady",
+        &config(1_000, 500, 1_000, 500),
         snapshot(1, 100, 1),
     );
     bench_case(
         &mut group,
         "all_channels_dual_trigger",
-        &global_config(10, 5, 100, 50),
+        &config(10, 5, 100, 50),
         snapshot(1, 100, 10),
     );
 
@@ -67,12 +61,12 @@ fn bench_evaluate_batch(c: &mut Criterion) {
         queue::SYSTEM_CHANNELS.len() as u64 * PROFILE_TICK_COUNT,
     ));
 
-    let config = override_config();
+    let config = config(1_000, 500, 1_000, 500);
     let snapshots = (1..=PROFILE_TICK_COUNT)
         .map(|tick| snapshot(tick, tick * 100, 1))
         .collect::<Vec<_>>();
 
-    group.bench_function("overrides_steady_1024_ticks", |b| {
+    group.bench_function("steady_1024_ticks", |b| {
         b.iter(|| {
             let mut monitor = QueueMonitor::new(&config, RunnerMetricsSnapshot::default());
 
@@ -100,7 +94,7 @@ fn bench_case(
     });
 }
 
-fn global_config(
+fn config(
     queue_depth_trigger: usize,
     queue_depth_clear: usize,
     mean_dispatch_ns_trigger: u64,
@@ -111,30 +105,6 @@ fn global_config(
         queue_depth_clear,
         mean_dispatch_ns_trigger,
         mean_dispatch_ns_clear,
-        overrides: HashMap::new(),
-    }
-}
-
-fn override_config() -> QueueMonitorConfig {
-    let thresholds = QueueMonitorOverride {
-        queue_depth_trigger: Some(1_000),
-        queue_depth_clear: Some(500),
-        mean_dispatch_ns_trigger: Some(1_000),
-        mean_dispatch_ns_clear: Some(500),
-    };
-
-    QueueMonitorConfig {
-        queue_depth_trigger: 2_000,
-        queue_depth_clear: 1_000,
-        mean_dispatch_ns_trigger: 2_000,
-        mean_dispatch_ns_clear: 1_000,
-        overrides: HashMap::from([
-            ("time_events".to_string(), thresholds),
-            ("exec_events".to_string(), thresholds),
-            ("exec_commands".to_string(), thresholds),
-            ("data_events".to_string(), thresholds),
-            ("data_commands".to_string(), thresholds),
-        ]),
     }
 }
 

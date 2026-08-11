@@ -71,7 +71,10 @@ use crate::{
     component::{Component, with_component_registry},
     enums::ComponentState,
     logging::{CMD, RECV},
-    messages::{execution::TradingCommand, system::SocketStateChanged},
+    messages::{
+        execution::TradingCommand,
+        system::{QueueStateChanged, SocketStateChanged},
+    },
     msgbus::{self, ShareableMessageHandler},
     python::{
         cache::PyCache,
@@ -410,6 +413,15 @@ impl PyDataActorInner {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_signal", (signal.clone().into_py_any(py)?,))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_queue_state(&mut self, event: &QueueStateChanged) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_queue_state", (event.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -1029,6 +1041,11 @@ impl DataActor for PyDataActorInner {
             .map_err(|e| anyhow::anyhow!("Python on_signal failed: {e}"))
     }
 
+    fn on_queue_state(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
+        self.dispatch_on_queue_state(event)
+            .map_err(|e| anyhow::anyhow!("Python on_queue_state failed: {e}"))
+    }
+
     fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
         self.dispatch_on_socket_state(event)
             .map_err(|e| anyhow::anyhow!("Python on_socket_state failed: {e}"))
@@ -1519,6 +1536,10 @@ impl PyDataActor {
     fn py_on_signal(&mut self, signal: &Signal) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_queue_state")]
+    fn py_on_queue_state(&mut self, event: QueueStateChanged) {}
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_socket_state")]
     fn py_on_socket_state(&mut self, event: SocketStateChanged) {}
 
@@ -1596,6 +1617,12 @@ impl PyDataActor {
     #[pyo3(signature = (name="", priority=None))]
     fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) {
         DataActor::subscribe_signal(self.inner_mut(), name, priority);
+    }
+
+    #[pyo3(name = "subscribe_queue_state")]
+    #[pyo3(signature = (priority=None))]
+    fn py_subscribe_queue_state(&mut self, priority: Option<u32>) {
+        DataActor::subscribe_queue_state(self.inner_mut(), priority);
     }
 
     #[pyo3(name = "subscribe_socket_state")]
@@ -1879,6 +1906,11 @@ impl PyDataActor {
     #[pyo3(signature = (name=""))]
     fn py_unsubscribe_signal(&mut self, name: &str) {
         DataActor::unsubscribe_signal(self.inner_mut(), name);
+    }
+
+    #[pyo3(name = "unsubscribe_queue_state")]
+    fn py_unsubscribe_queue_state(&mut self) {
+        DataActor::unsubscribe_queue_state(self.inner_mut());
     }
 
     #[pyo3(name = "unsubscribe_socket_state")]
@@ -2688,10 +2720,12 @@ mod tests {
         enums::ComponentState,
         messages::{
             data::{BarsResponse, CustomDataResponse, QuotesResponse, TradesResponse},
-            system::{SocketState, SocketStateChanged},
+            system::{
+                QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged,
+            },
         },
         msgbus::{self, MessageBus, MessagingSwitchboard, get_message_bus},
-        runner::{SyncDataCommandSender, set_data_cmd_sender},
+        runner::{SyncDataCommandSender, SystemChannel, set_data_cmd_sender},
         signal::Signal,
         timer::TimeEvent,
     };
@@ -3176,6 +3210,49 @@ mod tests {
     }
 
     #[rstest]
+    fn test_queue_state_changed_subscription_dispatches_and_unsubscribes(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        *get_message_bus().borrow_mut() = MessageBus::default();
+
+        pyo3::Python::initialize();
+
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+            rust_actor.register_in_global_registries();
+            rust_actor.py_start().unwrap();
+            rust_actor.py_subscribe_queue_state(Some(50));
+
+            let topic = MessagingSwitchboard::queue_state_changed_topic();
+            let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+            assert_eq!(subscriptions.len(), 1);
+            assert_eq!(subscriptions[0].priority, 50);
+
+            let triggered = sample_queue_state_changed(QueueState::Triggered);
+            msgbus::publish_any(topic, &triggered);
+
+            let (received,) = py_actor
+                .call_method1(py, "last_call_args", ("on_queue_state",))
+                .unwrap()
+                .extract::<(QueueStateChanged,)>(py)
+                .unwrap();
+            assert_eq!(received, triggered);
+
+            rust_actor.py_unsubscribe_queue_state();
+            let cleared = sample_queue_state_changed(QueueState::Cleared);
+            msgbus::publish_any(topic, &cleared);
+
+            assert_eq!(python_method_call_count(&py_actor, py, "on_queue_state"), 1);
+        });
+    }
+
+    #[rstest]
     fn test_socket_state_changed_subscription_dispatches_and_unsubscribes(
         clock: Rc<RefCell<TestClock>>,
         cache: Rc<RefCell<Cache>>,
@@ -3486,6 +3563,20 @@ class CapturingActor:
             "1.0".to_string(),
             UnixNanos::default(),
             UnixNanos::default(),
+        )
+    }
+
+    fn sample_queue_state_changed(state: QueueState) -> QueueStateChanged {
+        QueueStateChanged::new(
+            TraderId::from("TRADER-001"),
+            SystemChannel::ExecCommands,
+            QueueCondition::Backlogged,
+            state,
+            17,
+            23,
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(1_700_000_000_000_000_001),
+            UnixNanos::from(1_700_000_000_000_000_002),
         )
     }
 
@@ -3847,6 +3938,7 @@ class TrackingActor:
         "on_time_event",
         "on_data",
         "on_signal",
+        "on_queue_state",
         "on_socket_state",
         "on_instrument",
         "on_quote",
@@ -4511,6 +4603,7 @@ class IndicatorEventActor:
     #[case("on_time_event")]
     #[case("on_data")]
     #[case("on_signal")]
+    #[case("on_queue_state")]
     #[case("on_socket_state")]
     #[case("on_instrument")]
     #[case("on_quote")]
@@ -4548,6 +4641,10 @@ class IndicatorEventActor:
                     "on_signal" => {
                         let signal = sample_signal();
                         rust_actor.inner_mut().on_signal(&signal)
+                    }
+                    "on_queue_state" => {
+                        let event = sample_queue_state_changed(QueueState::Triggered);
+                        rust_actor.inner_mut().on_queue_state(&event)
                     }
                     "on_socket_state" => {
                         let event = sample_socket_state_changed(SocketState::Connected);

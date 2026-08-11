@@ -1689,8 +1689,13 @@ def test_live_stub_exposes_native_live_node_config_signature():
     live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
 
     assert "@typing.final\nclass LiveNodeConfig:" in live_stub
+    assert "@typing.final\nclass QueueMonitorConfig:" in live_stub
     assert re.search(
         r"portfolio:\s+(?:portfolio\.)?PortfolioConfig \| None = None",
+        live_stub,
+    )
+    assert re.search(
+        r"queue_monitor:\s+QueueMonitorConfig \| None = None",
         live_stub,
     )
     assert '"PortfolioConfig"' in live_stub

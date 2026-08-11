@@ -423,7 +423,7 @@ fn saturating_fetch_add(atomic: &AtomicU64, value: u64) {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, time::Duration};
+    use std::time::Duration;
 
     use nautilus_common::{
         messages::{
@@ -445,9 +445,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::{
-        super::queue::{
-            QueueMonitor, QueueMonitorConfig, QueueMonitorOverride, QueueStateTransition,
-        },
+        super::queue::{QueueMonitor, QueueMonitorConfig, QueueStateTransition},
         *,
     };
 
@@ -737,37 +735,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_queue_monitor_resolves_channel_overrides_at_creation() {
-        let config = QueueMonitorConfig {
-            queue_depth_trigger: 1_000,
-            queue_depth_clear: 500,
-            mean_dispatch_ns_trigger: 1_000,
-            mean_dispatch_ns_clear: 500,
-            overrides: HashMap::from([(
-                "data_events".to_string(),
-                QueueMonitorOverride {
-                    queue_depth_trigger: Some(10),
-                    queue_depth_clear: Some(5),
-                    ..Default::default()
-                },
-            )]),
-        };
-        let mut monitor = QueueMonitor::new(&config, RunnerMetricsSnapshot::default());
-        let snapshot = with_queue_depths(RunnerMetricsSnapshot::default(), [0, 0, 0, 10, 0]);
-
-        assert_eq!(
-            monitor.evaluate(snapshot),
-            vec![QueueStateTransition {
-                channel: SystemChannel::DataEvents,
-                condition: QueueCondition::Backlogged,
-                state: QueueState::Triggered,
-                queue_depth: 10,
-                mean_dispatch_ns: 0,
-            }]
-        );
-    }
-
-    #[rstest]
     fn test_runner_metrics_snapshot_reflects_dispatch_updates() {
         let metrics = RunnerMetrics::default();
 
@@ -980,7 +947,6 @@ mod tests {
             queue_depth_clear: 5,
             mean_dispatch_ns_trigger: 100,
             mean_dispatch_ns_clear: 50,
-            overrides: std::collections::HashMap::new(),
         }
     }
 

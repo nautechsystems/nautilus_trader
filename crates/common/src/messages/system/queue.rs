@@ -23,6 +23,21 @@ use crate::runner::SystemChannel;
 /// Represents a runner queue pressure condition.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.common",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.common")
+)]
 pub enum QueueCondition {
     /// The mean dispatch time crossed its configured threshold.
     Slow,
@@ -33,6 +48,21 @@ pub enum QueueCondition {
 /// Represents the state of a runner queue pressure condition.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.common",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.common")
+)]
 pub enum QueueState {
     /// The condition crossed its trigger threshold.
     Triggered,
@@ -43,6 +73,14 @@ pub enum QueueState {
 /// Represents an event where a runner queue pressure condition has changed.
 #[repr(C)]
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.common", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
+)]
 pub struct QueueStateChanged {
     /// The trader ID associated with the event.
     pub trader_id: TraderId,

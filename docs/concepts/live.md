@@ -124,42 +124,45 @@ snapshots with saturating deltas. Counters reset when `LiveNode::run` enters ste
 
 ## Queue pressure monitoring
 
-A Rust `LiveNode` can convert runner queue samples into typed state transitions. Set
-`LiveNodeConfig.queue_monitor` when Rust actors need an edge‑triggered signal for growing queues or
-slow dispatch. The monitor is disabled by default and publishes no queue‑state events while the
-field is unset.
+`LiveNode` converts runner queue samples into typed state transitions when
+`LiveNodeConfig.queue_monitor` is set. The monitor is disabled by default and publishes no
+queue‑state events while the field is unset.
 
 ### Configure thresholds
 
-The following example sets global thresholds and overrides the queue depth thresholds for the data
-event channel:
+The following example sets the thresholds applied to every monitored runner channel:
 
-```rust
-use std::collections::HashMap;
-
-use nautilus_live::config::{LiveNodeConfig, QueueMonitorConfig, QueueMonitorOverride};
+```rust tab="Rust"
+use nautilus_live::config::{LiveNodeConfig, QueueMonitorConfig};
 
 let config = LiveNodeConfig {
-    queue_monitor: Some(QueueMonitorConfig {
-        queue_depth_trigger: 1_000,
-        queue_depth_clear: 500,
-        mean_dispatch_ns_trigger: 250_000,
-        mean_dispatch_ns_clear: 150_000,
-        overrides: HashMap::from([(
-            "data_events".to_string(),
-            QueueMonitorOverride {
-                queue_depth_trigger: Some(2_000),
-                queue_depth_clear: Some(1_000),
-                ..Default::default()
-            },
-        )]),
-    }),
+    queue_monitor: Some(
+        QueueMonitorConfig::builder()
+            .queue_depth_trigger(1_000)
+            .queue_depth_clear(500)
+            .mean_dispatch_ns_trigger(250_000)
+            .mean_dispatch_ns_clear(150_000)
+            .build(),
+    ),
     ..Default::default()
 };
 ```
 
-The four global values apply to every runner channel. An override can replace any subset of those
-values for these channels:
+```python tab="Python"
+from nautilus_trader.live import LiveNodeConfig
+from nautilus_trader.live import QueueMonitorConfig
+
+config = LiveNodeConfig(
+    queue_monitor=QueueMonitorConfig(
+        queue_depth_trigger=1_000,
+        queue_depth_clear=500,
+        mean_dispatch_ns_trigger=250_000,
+        mean_dispatch_ns_clear=150_000,
+    ),
+)
+```
+
+The four values apply to each monitored runner channel:
 
 - `time_events`
 - `exec_events`
@@ -167,9 +170,8 @@ values for these channels:
 - `data_events`
 - `data_commands`
 
-Omitted override values inherit the global threshold. Each resolved clear threshold must be lower
-than its trigger threshold. Configuration validation rejects equal or inverted thresholds and
-unknown channel names.
+Each clear threshold must be lower than its trigger threshold. Configuration validation rejects
+equal or inverted thresholds.
 
 ### State transitions
 
@@ -195,17 +197,18 @@ Each transition publishes a fresh `QueueStateChanged` value on
 condition, and transition state. It also records the queue depth and mean dispatch time at the
 crossing, a fresh event ID, and event timestamps.
 
-Rust‑native `DataActor` implementations subscribe with `subscribe_queue_state_changed(...)` and
-receive events through `on_queue_state_changed(...)`. Publication stays on the in‑process typed
-message bus. Python configuration and actor handlers do not expose the monitor, and the event has no
-wire representation for external message‑bus streaming.
+Actors subscribe with `subscribe_queue_state(...)` and receive events through
+`on_queue_state(...)`. The Python API exposes `SystemChannel`, `QueueCondition`, `QueueState`, and
+`QueueStateChanged` from `nautilus_trader.common`. Publication stays on the in‑process typed message
+bus, and the event has no wire representation for external message‑bus streaming. See
+[Queue pressure state](actors.md#queue-pressure-state) for actor examples.
 
 ## Socket transport state
 
 ### Publication and routing
 
-Rust and Python actors can observe transport availability for adapters that opt into socket state
-reporting. Binance Futures and Polymarket provide reference implementations. `LiveNode` publishes
+Actors can observe transport availability for adapters that opt into socket state reporting.
+Binance Futures and Polymarket provide reference implementations. `LiveNode` publishes
 `SocketStateChanged` on `events.system.SocketStateChanged` with the trader ID, client ID, optional
 venue, stable endpoint label, state, fresh event ID, and event timestamps. It sets both timestamps
 from the kernel clock when it handles the transport's neutral state notification. Adapters send the
@@ -235,11 +238,10 @@ Adapter integrations construct a `SocketStateSink` and pass it through `connect_
 `connect_stream_with_state_sink`. Publication requires the `LiveNode` runner; the standalone
 `AsyncRunner` does not publish these events.
 
-Rust‑native and Python actor implementations subscribe with
-`subscribe_socket_state(...)` and receive events through
+Actors subscribe with `subscribe_socket_state(...)` and receive events through
 `on_socket_state(...)`. The Python API exposes `SocketState` and `SocketStateChanged` from
-`nautilus_trader.common`. Delivery stays on the typed in‑process bus; external message‑bus
-streaming and wire formats do not expose these events.
+`nautilus_trader.common`. Delivery stays on the typed in‑process bus; external message‑bus streaming
+and wire formats do not expose these events.
 
 ## Shutdown on error
 
