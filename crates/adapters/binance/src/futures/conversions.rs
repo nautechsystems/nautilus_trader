@@ -45,19 +45,21 @@ pub(crate) fn normalize_futures_asset<T: AsRef<str>>(
 /// Determines the Binance `positionSide` for hedge mode from the Nautilus order side.
 ///
 /// Returns `None` when not in hedge mode (one-way mode orders omit `positionSide`).
-/// In hedge mode, `reduce_only` flips the mapping so that Buy closes Short and
-/// Sell closes Long.
+/// In hedge mode, `is_closing` flips the mapping so that Buy closes Short and
+/// Sell closes Long. Close intent comes from the Nautilus `reduce_only` flag for
+/// explicit-quantity orders and from the `close_position` order parameter for
+/// whole-leg exits, which cannot carry `reduce_only`.
 #[must_use]
 pub(crate) fn determine_position_side(
     is_hedge_mode: bool,
     order_side: OrderSide,
-    reduce_only: bool,
+    is_closing: bool,
 ) -> Option<BinancePositionSide> {
     if !is_hedge_mode {
         return None;
     }
 
-    Some(if reduce_only {
+    Some(if is_closing {
         match order_side {
             OrderSide::Buy => BinancePositionSide::Short,
             OrderSide::Sell => BinancePositionSide::Long,
@@ -202,11 +204,11 @@ mod tests {
     fn test_determine_position_side(
         #[case] is_hedge_mode: bool,
         #[case] order_side: OrderSide,
-        #[case] reduce_only: bool,
+        #[case] is_closing: bool,
         #[case] expected: Option<BinancePositionSide>,
     ) {
         assert_eq!(
-            determine_position_side(is_hedge_mode, order_side, reduce_only),
+            determine_position_side(is_hedge_mode, order_side, is_closing),
             expected,
         );
     }
