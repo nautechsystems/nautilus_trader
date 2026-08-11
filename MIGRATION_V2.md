@@ -194,6 +194,32 @@ Several v1 inspection names have direct v2 replacements:
 used by the application when calendar-time inspection is needed. V1 `DirectionalMovement.value`
 never changed from zero, so v2 exposes the meaningful positive and negative outputs instead.
 
+`MarginAccount.margin()`, `MarginAccount.margins()`, and `MarginAccount.account_margins()` keep
+their v1 names. Other read‑only margin queries move the measure or scope qualifier to the front in
+v2: for example, `margin_init()` becomes `initial_margin()`, and `margin_init_for_currency()`
+becomes `account_initial_margin()`.
+
+| v1 name                       | v2 name                         |
+| ----------------------------- | ------------------------------- |
+| `margin_init()`               | `initial_margin()`              |
+| `margins_init()`              | `initial_margins()`             |
+| `margin_maint()`              | `maintenance_margin()`          |
+| `margins_maint()`             | `maintenance_margins()`         |
+| `margin_for_currency()`       | `account_margin()`              |
+| `margin_init_for_currency()`  | `account_initial_margin()`      |
+| `margin_maint_for_currency()` | `account_maintenance_margin()`  |
+| `account_margins_init()`      | `account_initial_margins()`     |
+| `account_margins_maint()`     | `account_maintenance_margins()` |
+| `total_margin_init()`         | `total_initial_margin()`        |
+| `total_margin_maint()`        | `total_maintenance_margin()`    |
+
+The v2 Python query surface exposes only the read‑only methods above. It does not bind the Rust
+engine mutation methods `update_margin`, `clear_margin`, `clear_account_margin`,
+`clear_initial_margin`, `clear_maintenance_margin`, or `set_margin_model`. This v2 boundary does
+not describe which command APIs were available in v1. Existing v2 Python methods, including
+`update_initial_margin`, `update_maintenance_margin`, `set_default_leverage`, and `set_leverage`,
+remain unchanged.
+
 The payload on `nautilus_trader.model.CustomData` remains available through `.data`. The separate
 `nautilus_trader.common.CustomData` byte container exposes `.value`; it is not the type accepted by
 `DataActor.publish_data()`.

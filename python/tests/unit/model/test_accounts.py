@@ -27,6 +27,7 @@ from nautilus_trader.model import BettingAccount
 from nautilus_trader.model import CashAccount
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LeveragedMarginModel
 from nautilus_trader.model import LiquiditySide
 from nautilus_trader.model import MarginAccount
@@ -550,9 +551,30 @@ def test_margin_account_leverage_operations():
     assert isinstance(account.leverages(), dict)
 
 
-def test_margin_account_initial_margins():
-    instrument = TestInstrumentProvider.audusd_sim()
+def test_margin_account_margin_queries():
+    audusd = TestInstrumentProvider.audusd_sim()
+    usdjpy = TestInstrumentProvider.usdjpy_sim()
     usd = Currency.from_str("USD")
+    jpy = Currency.from_str("JPY")
+    eur = Currency.from_str("EUR")
+    instrument_usd = MarginBalance(
+        initial=Money.from_str("101.00 USD"),
+        maintenance=Money.from_str("11.00 USD"),
+        instrument_id=audusd.id,
+    )
+    instrument_jpy = MarginBalance(
+        initial=Money.from_str("202 JPY"),
+        maintenance=Money.from_str("22 JPY"),
+        instrument_id=usdjpy.id,
+    )
+    account_usd = MarginBalance(
+        initial=Money.from_str("303.00 USD"),
+        maintenance=Money.from_str("33.00 USD"),
+    )
+    account_jpy = MarginBalance(
+        initial=Money.from_str("404 JPY"),
+        maintenance=Money.from_str("44 JPY"),
+    )
     state = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -562,23 +584,110 @@ def test_margin_account_initial_margins():
                 locked=Money.from_str("0.00 USD"),
                 free=Money.from_str("100000.00 USD"),
             ),
+            AccountBalance(
+                total=Money.from_str("100000 JPY"),
+                locked=Money.from_str("0 JPY"),
+                free=Money.from_str("100000 JPY"),
+            ),
         ],
+        margins=[instrument_usd, instrument_jpy, account_usd, account_jpy],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+        base_currency=None,
+    )
+
+    account = MarginAccount(state, calculate_account_state=True)
+
+    assert account.margin(audusd.id) == instrument_usd
+    assert account.margin(usdjpy.id) == instrument_jpy
+    assert account.margins() == {
+        audusd.id: instrument_usd,
+        usdjpy.id: instrument_jpy,
+    }
+    assert account.initial_margin(audusd.id) == instrument_usd.initial
+    assert account.initial_margin(usdjpy.id) == instrument_jpy.initial
+    assert account.initial_margins() == {
+        audusd.id: instrument_usd.initial,
+        usdjpy.id: instrument_jpy.initial,
+    }
+    assert account.maintenance_margin(audusd.id) == instrument_usd.maintenance
+    assert account.maintenance_margin(usdjpy.id) == instrument_jpy.maintenance
+    assert account.maintenance_margins() == {
+        audusd.id: instrument_usd.maintenance,
+        usdjpy.id: instrument_jpy.maintenance,
+    }
+
+    assert account.account_margin(usd) == account_usd
+    assert account.account_margin(jpy) == account_jpy
+    assert account.account_margins() == {
+        usd: account_usd,
+        jpy: account_jpy,
+    }
+    assert account.account_initial_margin(usd) == account_usd.initial
+    assert account.account_initial_margin(jpy) == account_jpy.initial
+    assert account.account_initial_margins() == {
+        usd: account_usd.initial,
+        jpy: account_jpy.initial,
+    }
+    assert account.account_maintenance_margin(usd) == account_usd.maintenance
+    assert account.account_maintenance_margin(jpy) == account_jpy.maintenance
+    assert account.account_maintenance_margins() == {
+        usd: account_usd.maintenance,
+        jpy: account_jpy.maintenance,
+    }
+
+    assert account.total_initial_margin(usd) == Money.from_str("404.00 USD")
+    assert account.total_initial_margin(jpy) == Money.from_str("606 JPY")
+    assert account.total_maintenance_margin(usd) == Money.from_str("44.00 USD")
+    assert account.total_maintenance_margin(jpy) == Money.from_str("66 JPY")
+
+    missing_instrument = InstrumentId.from_str("MISSING.SIM")
+    assert account.margin(missing_instrument) is None
+    assert account.initial_margin(missing_instrument) is None
+    assert account.maintenance_margin(missing_instrument) is None
+    assert account.account_margin(eur) is None
+    assert account.account_initial_margin(eur) is None
+    assert account.account_maintenance_margin(eur) is None
+    assert account.total_initial_margin(eur) == Money.from_str("0.00 EUR")
+    assert account.total_maintenance_margin(eur) == Money.from_str("0.00 EUR")
+
+
+def test_margin_account_margin_query_collections_empty():
+    state = AccountState(
+        account_id=AccountId("SIM-002"),
+        account_type=AccountType.MARGIN,
+        balances=[],
         margins=[],
         is_reported=True,
         event_id=UUID4(),
         ts_event=0,
         ts_init=0,
-        base_currency=usd,
+        base_currency=None,
     )
 
     account = MarginAccount(state, calculate_account_state=True)
-    account.update_initial_margin(instrument.id, Money.from_str("500.00 USD"))
-    account.update_maintenance_margin(instrument.id, Money.from_str("250.00 USD"))
 
-    assert account.initial_margin(instrument.id) == Money.from_str("500.00 USD")
-    assert account.maintenance_margin(instrument.id) == Money.from_str("250.00 USD")
-    assert isinstance(account.initial_margins(), dict)
-    assert isinstance(account.maintenance_margins(), dict)
+    assert account.margins() == {}
+    assert account.initial_margins() == {}
+    assert account.maintenance_margins() == {}
+    assert account.account_margins() == {}
+    assert account.account_initial_margins() == {}
+    assert account.account_maintenance_margins() == {}
+
+
+def test_margin_account_engine_margin_commands_are_not_exposed():
+    excluded = {
+        "update_margin",
+        "clear_margin",
+        "clear_account_margin",
+        "clear_initial_margin",
+        "clear_maintenance_margin",
+        "set_margin_model",
+    }
+
+    assert {name for name in excluded if hasattr(MarginAccount, name)} == set()
 
 
 def test_margin_account_calculate_initial_margin():

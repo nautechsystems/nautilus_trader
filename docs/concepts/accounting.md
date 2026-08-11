@@ -147,73 +147,67 @@ Use the query that matches the venue's reporting shape. If a venue reports
 per-instrument margins, ask by `InstrumentId`. If it reports account-wide
 margins, ask by `Currency`.
 
-| Scope of the value you want            | Use                                                                                             |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Per‑instrument margin (isolated)       | `margin(id)` / `margin_init(id)` / `margin_maint(id)`                                           |
-| Account‑wide margin for one collateral | `margin_for_currency(ccy)` / `margin_init_for_currency(ccy)` / `margin_maint_for_currency(ccy)` |
-| Combined total across both scopes      | `total_margin_init(ccy)` / `total_margin_maint(ccy)`                                            |
+| Scope          | Queries                                                                      |
+| -------------- | ---------------------------------------------------------------------------- |
+| Per‑instrument | `margin`, `initial_margin`, and `maintenance_margin`                         |
+| Account‑wide   | `account_margin`, `account_initial_margin`, and `account_maintenance_margin` |
+| Both scopes    | `total_initial_margin` and `total_maintenance_margin`                        |
 
-Point queries return `None` when the entry is absent; total queries always
-return a `Money` (zero for the currency if nothing matches).
-
-:::note
-The names below are the Python API on `MarginAccount`. Rust strategies
-using the `nautilus-model` crate call `account_margin(&currency)`,
-`account_initial_margin(&currency)`, `account_maintenance_margin(&currency)`,
-`total_initial_margin(currency)`, and `total_maintenance_margin(currency)`: the
-same split by `Option<InstrumentId>`, with different method names.
-:::
+The signatures below describe the Python bindings. Point queries return `None`
+when the entry is absent; total queries always return a `Money` (zero for the
+currency if nothing matches).
 
 ### Per-instrument queries (`MarginAccount`)
 
 - `margin(instrument_id) -> MarginBalance | None`
-- `margin_init(instrument_id) -> Money | None`
-- `margin_maint(instrument_id) -> Money | None`
+- `initial_margin(instrument_id) -> Money | None`
+- `maintenance_margin(instrument_id) -> Money | None`
 - `margins() -> dict[InstrumentId, MarginBalance]` (all per-instrument entries)
-- `margins_init() -> dict[InstrumentId, Money]`
-- `margins_maint() -> dict[InstrumentId, Money]`
+- `initial_margins() -> dict[InstrumentId, Money]`
+- `maintenance_margins() -> dict[InstrumentId, Money]`
 
 These methods only see the per-instrument store. On a cross-margin venue they
 return empty dicts or `None`. Use the account-wide queries below.
 
 ### Account-wide queries (`MarginAccount`)
 
-- `margin_for_currency(currency) -> MarginBalance | None`
-- `margin_init_for_currency(currency) -> Money | None`
-- `margin_maint_for_currency(currency) -> Money | None`
+- `account_margin(currency) -> MarginBalance | None`
+- `account_initial_margin(currency) -> Money | None`
+- `account_maintenance_margin(currency) -> Money | None`
 - `account_margins() -> dict[Currency, MarginBalance]` (all account-wide entries)
-- `account_margins_init() -> dict[Currency, Money]`
-- `account_margins_maint() -> dict[Currency, Money]`
+- `account_initial_margins() -> dict[Currency, Money]`
+- `account_maintenance_margins() -> dict[Currency, Money]`
 
 ### Totals (`MarginAccount`)
 
 These sum across per-instrument and account-wide entries for a given currency:
 
-- `total_margin_init(currency) -> Money`
-- `total_margin_maint(currency) -> Money`
+- `total_initial_margin(currency) -> Money`
+- `total_maintenance_margin(currency) -> Money`
 
 Useful when a strategy trades on a venue where both scopes may appear (for
 example, isolated positions alongside cross-margin collateral).
 
-### Clearing account-wide entries
+### Python binding boundary
 
-- `clear_account_margin(currency)` removes the account-wide entry for a given
-  collateral currency and triggers a balance recalculation. The counterpart for
-  per-instrument entries is `clear_margin(instrument_id)`.
-
-These are system methods; adapter code calls them implicitly via
-`MarginAccount.apply()`. Strategies should not need them directly.
+This query surface does not expose the internal Rust mutation methods
+`update_margin`, `clear_margin`, `clear_account_margin`, `clear_initial_margin`,
+`clear_maintenance_margin`, or `set_margin_model`. Existing Python methods,
+including `update_initial_margin`, `update_maintenance_margin`,
+`set_default_leverage`, and `set_leverage`, remain unchanged.
 
 ### Portfolio-level queries
 
 Margin queries:
 
-- `portfolio.margins_init(venue=..., account_id=...) -> dict[InstrumentId, Money]`
-- `portfolio.margins_maint(venue=..., account_id=...) -> dict[InstrumentId, Money]`
+- `portfolio.margins_init(venue=..., account_id=...) -> dict[InstrumentId, Money] | None`
+- `portfolio.margins_maint(venue=..., account_id=...) -> dict[InstrumentId, Money] | None`
 
-These mirror `MarginAccount.margins_init` / `margins_maint` and return only the
-per-instrument entries. For account-wide data on cross-margin venues, query the
-account directly via `portfolio.account(venue).margin_init_for_currency(ccy)`.
+When a margin account resolves, these return the same per-instrument money
+views as `MarginAccount.initial_margins` and
+`MarginAccount.maintenance_margins`; otherwise, they return `None`. For
+account-wide data on cross-margin venues, query the account directly via
+`portfolio.account(venue).account_initial_margin(ccy)`.
 
 PnL, exposure, mark-to-market, and equity queries all accept `venue` and an
 optional `account_id` to scope multi-account venues:
@@ -235,8 +229,8 @@ warn-once missing-price tracker.
 Single-collateral cross margin (one account-wide entry):
 
 ```python
-usdc_margin = margin_account.margin_init_for_currency(USDC)
-usdc_total = margin_account.total_margin_init(USDC)
+usdc_margin = margin_account.account_initial_margin(USDC)
+usdc_total = margin_account.total_initial_margin(USDC)
 ```
 
 Per-coin cross margin (one entry per collateral currency):
