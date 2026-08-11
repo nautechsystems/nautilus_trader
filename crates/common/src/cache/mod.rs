@@ -3876,6 +3876,7 @@ impl Cache {
         self.position_snapshots.clear();
         self.position_snapshot_revisions.clear();
         self.greeks.clear();
+        self.option_greeks.clear();
         self.yield_curves.clear();
 
         if self.config.drop_instruments_on_reset {

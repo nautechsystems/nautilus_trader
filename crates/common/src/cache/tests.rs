@@ -30,12 +30,13 @@ use nautilus_model::{
     accounts::AccountAny,
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, QuoteTick, TradeTick,
+        MarkPriceUpdate, QuoteTick, TradeTick, greeks::OptionGreekValues,
+        option_chain::OptionGreeks,
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BookType, ContingencyType,
-        InstrumentClass, LiquiditySide, MarketStatusAction, OmsType, OptionKind, OrderSide,
-        OrderStatus, OrderType, PositionSide, PriceType, TimeInForce, TriggerType,
+        GreeksConvention, InstrumentClass, LiquiditySide, MarketStatusAction, OmsType, OptionKind,
+        OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEmulated,
@@ -893,6 +894,46 @@ fn test_reset_clears_mark_xrate_even_when_instruments_retained(audusd_sim: Curre
             .get_mark_xrate(Currency::AUD(), Currency::USD())
             .is_none()
     );
+}
+
+#[rstest]
+fn test_reset_clears_option_greeks_even_when_instruments_retained(audusd_sim: CurrencyPair) {
+    let config = CacheConfig::builder()
+        .drop_instruments_on_reset(false)
+        .build()
+        .unwrap();
+    let mut cache = Cache::new(Some(config), None);
+
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+    let option_greeks = OptionGreeks {
+        instrument_id: audusd_sim.id,
+        convention: GreeksConvention::BlackScholes,
+        greeks: OptionGreekValues {
+            delta: 0.55,
+            gamma: 0.03,
+            vega: 0.12,
+            theta: -0.05,
+            rho: 0.01,
+        },
+        mark_iv: Some(0.25),
+        bid_iv: Some(0.24),
+        ask_iv: Some(0.26),
+        underlying_price: Some(1.00020),
+        open_interest: Some(1000.0),
+        ts_event: UnixNanos::from(9),
+        ts_init: UnixNanos::from(10),
+    };
+    cache.add_option_greeks(option_greeks);
+    assert_eq!(cache.option_greeks(&audusd_sim.id), Some(&option_greeks));
+
+    cache.reset();
+
+    // Instruments are retained, but option greeks are market-derived state
+    // and must not carry into the next run
+    assert!(cache.instrument(&audusd_sim.id).is_some());
+    assert!(cache.option_greeks(&audusd_sim.id).is_none());
 }
 
 #[rstest]
@@ -6126,7 +6167,7 @@ fn test_purge_closed_orders_does_not_purge_order_list_with_open_orders() {
     let ts_now = UnixNanos::from(1_000_000_000_000);
     cache.purge_closed_orders(ts_now, 0);
 
-    // Order1 purged, order2 and list remain (order2 still in cache)
+    // Order1 purged; order2 and list remain (order2 still in cache)
     assert!(!cache.order_exists(&order1.client_order_id()));
     assert!(cache.order_exists(&order2.client_order_id()));
     assert!(cache.order_list_exists(&order_list_id));
