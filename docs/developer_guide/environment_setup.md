@@ -271,18 +271,26 @@ project version locally.
 
 ## Builds
 
-After changing Rust bindings or Python package code, rebuild the extension with:
-
-```bash
-make build
-```
-
-If you're developing and iterating frequently, then compiling in debug mode is often sufficient and *significantly* faster than a fully optimized build.
-To compile in debug mode, use:
+After changing Rust bindings or Python package code, use a debug build for normal development. It
+skips release optimization and LTO, which reduces build time and peak memory use:
 
 ```bash
 make build-debug
 ```
+
+Use `make build` when you need an optimized build. The release profile uses fat LTO and one code
+generation unit, which increases peak memory use. Fat LTO can complete on a 16 GB machine when the
+build has access to the full memory allocation and sufficient swap. Check VM or container memory
+limits when applicable.
+
+If the linker runs out of memory, use ThinLTO for an optimized local build:
+
+```bash
+CARGO_PROFILE_RELEASE_LTO=thin make build
+```
+
+This override applies only to that command. Use the default fat LTO profile for performance
+measurements.
 
 ## Cap'n Proto
 
