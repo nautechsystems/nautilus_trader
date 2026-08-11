@@ -1,6 +1,6 @@
 # Architecture
 
-This guide covers the architectural principles and structure of NautilusTrader:
+This guide explains the architectural principles and structure of NautilusTrader:
 
 - Design philosophy and quality attributes.
 - Core components and how they interact.
@@ -8,25 +8,25 @@ This guide covers the architectural principles and structure of NautilusTrader:
 - Framework organization and code structure.
 
 :::note
-Throughout the documentation, the term *"Nautilus system boundary"* refers to operations within
-the runtime of a single Nautilus node (also known as a "trader instance").
+For this guide, the *Nautilus system boundary* means the runtime of one Nautilus node instance.
 :::
 
 ## Design philosophy
 
-The major architectural techniques and design patterns employed by NautilusTrader are:
+NautilusTrader uses these architectural techniques and design patterns:
 
-- [Domain driven design (DDD)](https://en.wikipedia.org/wiki/Domain-driven_design)
-- [Event-driven architecture](https://en.wikipedia.org/wiki/Event-driven_programming)
-- [Messaging patterns](https://en.wikipedia.org/wiki/Messaging_pattern) (Pub/Sub, Req/Rep, point-to-point)
+- [Domain‑driven design (DDD)](https://en.wikipedia.org/wiki/Domain-driven_design)
+- [Event‑driven architecture](https://en.wikipedia.org/wiki/Event-driven_programming)
+- [Messaging patterns](https://en.wikipedia.org/wiki/Messaging_pattern) (publish/subscribe,
+  request/response, and point‑to‑point)
 - [Ports and adapters](https://en.wikipedia.org/wiki/Hexagonal_architecture_(software))
-- [Crash-only design](#crash-only-design)
+- [Crash‑only design](#crash-only-design)
 
 These techniques help achieve certain architectural quality attributes.
 
 ### Quality attributes
 
-Architectural decisions are often a trade-off between competing priorities.
+Architectural decisions often trade one priority against another.
 The following quality attributes guide design and architectural decisions,
 roughly in order of weighting.
 
@@ -39,89 +39,103 @@ roughly in order of weighting.
 
 ### Assurance-driven engineering
 
-NautilusTrader is incrementally adopting a high-assurance mindset: critical code
-paths should carry executable invariants that verify behaviour matches the
-business requirements. Practically this means we:
+NautilusTrader incrementally applies high‑assurance practices to critical paths. Executable
+invariants verify that behavior matches the business requirements:
 
-- Identify the components whose failure has the highest blast radius (core
-  domain types, risk and execution flows) and write down their invariants in
-  plain language.
+- Identify high‑impact components, including core domain types and risk and execution flows, and
+  state their invariants in plain language.
 - Codify those invariants as executable checks (unit tests, property tests,
-  fuzzers, static assertions) that run in CI, keeping the feedback loop light.
-- Prefer zero-cost safety techniques built into Rust (ownership, `Result`
-  surfaces, `panic = abort`) and add targeted formal tools only where they pay
-  for themselves.
-- Track "assurance debt" alongside feature work so new integrations extend the
-  safety net rather than bypass it.
+  fuzzers, and static assertions) that run in CI.
+- Use Rust's ownership and type systems, explicit `Result` surfaces, and abort‑on‑panic release
+  behavior. Add formal tools where their assurance benefit justifies their cost.
+- Require integrations to preserve existing critical‑path invariants, and add executable coverage
+  for invariants they introduce or alter.
 
-This approach preserves the platform's delivery cadence while giving
-high-stakes flows the additional scrutiny they need.
+This approach gives high‑stakes flows additional scrutiny without applying the same assurance cost
+to every path.
 
 Further reading: [High Assurance Rust](https://highassurance.rs/).
 
 ### Crash-only design
 
-NautilusTrader draws inspiration from [crash-only design](https://en.wikipedia.org/wiki/Crash-only_software)
-principles, particularly for handling unrecoverable faults. The core insight is that systems which
-can recover cleanly from crashes are more robust than those with separate (and rarely tested)
-graceful shutdown paths.
+NautilusTrader draws on [crash‑only design](https://en.wikipedia.org/wiki/Crash-only_software) when
+handling unrecoverable faults. Repository release builds abort on panic, allowing an external
+supervisor to restart the process instead of letting it continue with potentially invalid state.
 
 Key principles:
 
-- **Unified recovery path** - Startup and crash recovery share the same code path, ensuring it is well-tested.
-- **Externalized state** - Critical state is meant to be persisted externally when configured, reducing data-loss risk; durability depends on the backing store.
-- **Fast restart** - The system is designed to restart quickly after a crash, minimizing downtime.
-- **Idempotent operations** - Operations are designed to be safely retried after restart.
-- **Fail-fast for unrecoverable errors** - Data corruption or invariant violations trigger immediate termination rather than attempting to continue in a compromised state.
+- **Startup recovery**: Configured cache and event‑store recovery run through normal startup rather
+  than through a separate crash‑only entry point. Ordinary startup and focused recovery tests
+  exercise the same initialization flow.
+- **External state**: Configured backing stores preserve selected state across process restarts,
+  reducing recovery work and the risk of losing state. Durability depends on the backing store and
+  its settings.
+- **Supervisor‑managed restart**: An external process supervisor owns restart policy after an
+  unrecoverable failure. Aborting skips graceful cleanup inside the failed process; actual downtime
+  depends on the supervisor, configured state, and backing store.
+- **Prompt recovery**: The design aims to minimize downtime by using normal startup recovery after
+  a supervisor restarts the process. Recovery time depends on the state to restore and its backing
+  store.
+- **Execution recovery**: Venue commands are not generally safe to retry blindly; execution
+  reconciliation handles that boundary.
+- **Fail fast**: Data corruption or invariant violations terminate the operation or process instead
+  of allowing invalid state to propagate.
 
 :::note
-The system does provide graceful shutdown flows (`stop`, `dispose`) for normal operation. These
-tear down clients, persist state, and flush writers. The crash-only philosophy applies specifically
-to *unrecoverable faults* where attempting graceful cleanup could cause further damage.
+Normal operation still uses graceful shutdown flows such as `stop` and `dispose`. They tear down
+clients and, when configured, save state and flush writers. Crash‑only behavior applies to
+unrecoverable faults, where continuing normal cleanup may be unsafe.
 :::
 
-This design complements the [fail-fast policy](#data-integrity-and-fail-fast-policy), where
-unrecoverable errors result in immediate process termination.
+This design complements the [fail‑fast policy](#data-integrity-and-fail-fast-policy): a panic caused
+by an unrecoverable invariant violation immediately terminates a process built with the repository
+release profile.
 
 **References:**
 
-- [Crash-Only Software](https://www.usenix.org/conference/hotos-ix/crash-only-software) - Candea & Fox, HotOS 2003 (original research paper)
-- [Microreboot: A technique for cheap recovery](https://www.usenix.org/events/osdi04/tech/candea.html) - Candea et al., OSDI 2004
-- [The properties of crash-only software](https://brooker.co.za/blog/2012/01/22/crash-only.html) - Marc Brooker's blog
-- [Crash-only software: More than meets the eye](https://lwn.net/Articles/191059/) - LWN.net article
-- [Recovery-Oriented Computing (ROC) Project](http://roc.cs.berkeley.edu/) - UC Berkeley/Stanford research
+- [Crash‑Only Software](https://www.usenix.org/conference/hotos-ix/crash-only-software): Candea and
+  Fox, HotOS 2003.
+- [Microreboot: A technique for cheap recovery](https://www.usenix.org/events/osdi04/tech/candea.html):
+  Candea et al., OSDI 2004.
+- [The properties of crash‑only software](https://brooker.co.za/blog/2012/01/22/crash-only.html):
+  Marc Brooker.
+- [Crash‑only software: More than meets the eye](https://lwn.net/Articles/191059/): LWN.net.
+- [Recovery‑Oriented Computing (ROC) Project](http://roc.cs.berkeley.edu/): UC Berkeley and
+  Stanford.
 
 ### Data integrity and fail-fast policy
 
-NautilusTrader prioritizes data integrity over availability for trading operations. The system employs
-a strict fail-fast policy for arithmetic operations and data handling to prevent silent data corruption
-that could lead to incorrect trading decisions.
+NautilusTrader prioritizes data integrity over availability for trading operations. Arithmetic and
+data‑handling boundaries return errors or panic rather than silently accepting invalid values that
+could affect trading decisions.
 
 #### Fail-fast principles
 
-The system will fail fast (panic or return an error) when encountering:
+The system fails fast, either by returning an error or panicking according to the API contract, for:
 
-- Arithmetic overflow or underflow in operations on timestamps, prices, or quantities that exceed valid ranges.
-- Invalid data during deserialization including NaN, Infinity, or out-of-range values in market data or configuration.
-- Type conversion failures such as negative values where only positive values are valid (timestamps, quantities).
+- Arithmetic overflow or underflow in operations on timestamps, prices, or quantities that exceed
+  valid ranges.
+- Invalid data during deserialization, including NaN, infinity, or out‑of‑range values in market
+  data or configuration.
+- Type conversion failures such as negative values where only positive values are valid
+  (timestamps, quantities).
 - Malformed input parsing for prices, timestamps, or precision values.
 
-Rationale:
-
-In trading systems, corrupt data is worse than no data. A single incorrect price, timestamp, or quantity
-can cascade through the system, resulting in:
+In a trading system, one incorrect price, timestamp, or quantity can propagate into:
 
 - Incorrect position sizing or risk calculations.
-- Orders placed at wrong prices.
+- Orders placed at incorrect prices.
 - Backtests producing misleading results.
 - Silent financial losses.
 
-By crashing immediately on invalid data, NautilusTrader aims to provide:
+Failing at the invalid operation provides:
 
-1. **No silent corruption** - The fail-fast policy is intended to prevent invalid data from propagating; this relies on checks covering the inputs.
-2. **Immediate feedback** - Issues are discovered during development and testing, not in production.
-3. **Audit trail** - Crash logs clearly identify the source of invalid data.
-4. **Deterministic behavior** - With deterministic ordering and configuration, the same invalid input should trigger the same failure; nondeterministic sources can vary outcomes.
+- **No silent corruption**: Checked inputs fail before the invalid value propagates.
+- **Immediate feedback**: The caller receives an error, or the process terminates, at the point of
+  the violated contract.
+- **Diagnostic context**: Errors and panic messages identify the rejected operation or value.
+- **Deterministic behavior**: With deterministic ordering and configuration, the same invalid input
+  produces the same failure; nondeterministic inputs can still vary the outcome.
 
 #### When fail-fast applies
 
@@ -131,87 +145,119 @@ Panics are used for:
 - Data that violates fundamental invariants (negative timestamps, NaN prices).
 - Arithmetic that would silently produce incorrect results.
 
-Results or Options are used for:
+APIs return `Result` or `Option` when callers, including downstream crates, can handle a failure or
+absence, including:
 
 - Expected runtime failures (network errors, file I/O).
 - Business logic validation (order constraints, risk limits).
 - User input validation.
-- Library APIs exposed to downstream crates where callers need explicit error handling without relying on panics for control flow.
 
 #### Example scenarios
 
 ```rust
-// CORRECT: Panics on overflow - prevents data corruption
-let total_ns = timestamp1 + timestamp2; // Panics if result > u64::MAX
+let total_ns = timestamp1 + timestamp2; // Panics on overflow.
 
-// CORRECT: Rejects NaN during deserialization
-let price = serde_json::from_str("NaN"); // Error: "must be finite"
+let price = Price::new_checked(f64::NAN, precision); // Returns Err.
 
-// CORRECT: Explicit overflow handling when needed
-let total_ns = timestamp1.checked_add(timestamp2)?; // Returns Option<UnixNanos>
+let total_ns = timestamp1.checked_add(timestamp2.as_u64()); // Returns None on overflow.
 ```
 
 This policy is implemented throughout the core types (`UnixNanos`, `Price`, `Quantity`, etc.)
 and helps NautilusTrader maintain strong data correctness for production trading.
 
-In production deployments, the system is typically configured with `panic = abort` in release builds,
-ensuring that any panic results in a clean process termination that can be handled by process supervisors
-or orchestration systems. This aligns with the [crash-only design](#crash-only-design) principle, where unrecoverable errors
-lead to immediate restart rather than attempting to continue in a potentially corrupted state.
+The repository release profile sets `panic = "abort"`, so a panic terminates the process for a
+supervisor or orchestration system to handle. Downstream Rust binaries control their own release
+profile.
 
 ## System architecture
 
-The NautilusTrader codebase is actually both a framework for composing trading
- systems, and a set of default system implementations which can operate in various
-[environment contexts](#environment-contexts).
+NautilusTrader provides both a framework for composing trading systems and default implementations
+for several [environment contexts](#environment-contexts).
 
-![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/assets/architecture-overview.png?raw=true "architecture")
+```mermaid
+flowchart LR
+    data_clients[Data clients]
+    exec_clients[Execution clients]
+    cache_backing[(Optional cache backing)]
+    bus_backing[(Optional message bus backing)]
+
+    subgraph kernel[NautilusKernel]
+        data[DataEngine]
+        risk[RiskEngine]
+        execution[ExecutionEngine]
+        portfolio[Portfolio]
+        trader[Trader: actors, strategies, algorithms]
+        bus[MessageBus]
+        cache[(Cache)]
+    end
+
+    data_clients -->|market data| data
+    data -->|store| cache
+    data -->|publish| bus
+    bus -->|callbacks| trader
+    trader -->|strategy portfolio access| portfolio
+    trader -->|trading commands| risk
+    risk -->|validated commands| execution
+    execution <--> exec_clients
+    execution -->|execution state| cache
+    execution -->|events| bus
+    bus -->|order and position events| risk
+    risk -->|read state| cache
+    risk -->|read portfolio state| portfolio
+    bus -->|account, order, position, and price events| portfolio
+    portfolio <-->|state| cache
+    cache <--> cache_backing
+    bus <--> bus_backing
+```
+
+The kernel owns the shared trading core; adapters exchange market data and execution messages
+through the engine boundaries.
 
 ### Core components
 
-Several core components work together to form the trading system:
-
 #### `NautilusKernel`
 
-The central orchestration component responsible for:
+The central orchestration component:
 
-- Initializing and managing all system components.
-- Configuring the messaging infrastructure.
-- Maintaining environment-specific behaviors.
-- Coordinating shared resources and lifecycle management.
-- Providing a unified entry point for system operations.
+- Initializes and manages the shared core components.
+- Configures the messaging infrastructure.
+- Selects environment‑specific clocks and behavior.
+- Coordinates shared resources and lifecycle management.
+- Provides one lifecycle boundary for system operations.
 
 #### `MessageBus`
 
-The backbone of inter-component communication, implementing:
+`MessageBus` centrally routes inter‑component communication:
 
-- **Publish/Subscribe patterns**: For broadcasting events and data to multiple consumers.
-- **Request/Response communication**: For operations requiring acknowledgment.
-- **Command/Event messaging**: For triggering actions and notifying state changes.
-- **Optional state persistence**: Using Redis for durability and restart capabilities.
+- **Publish/subscribe**: Broadcasts events and data to multiple consumers.
+- **Request/response**: Correlates requests with their responses.
+- **Command/event messaging**: Routes actions and state changes through typed endpoints.
+- **Optional external backing**: Sends selected publications and, for live nodes, receives
+  configured external streams through a backing such as Redis. These streams provide live
+  transport; durable state recovery belongs to the cache or event store.
 
 #### `Cache`
 
-High-performance in-memory storage system that:
+`Cache` keeps trading state in memory:
 
 - Stores instruments, accounts, orders, positions, and more.
-- Provides performant fetching capabilities for trading components.
-- Maintains consistent state across the system.
-- Supports both read and write operations with optimized access patterns.
+- Provides indexed reads for trading components.
+- Optionally persists configured state through a cache database backing.
 
 #### `DataEngine`
 
 Processes and routes market data throughout the system:
 
-- Handles multiple data types (quotes, trades, bars, order books, custom data, and more).
-- Routes data to appropriate consumers based on subscriptions.
+- Handles quotes, trades, bars, order books, custom data, and other supported types.
+- Manages subscriptions and correlated request/response flows through data clients.
+- Routes resulting data to consumers according to their subscriptions and requests.
 - Manages data flow from external sources to internal components.
 
 #### `ExecutionEngine`
 
 Manages order lifecycle and execution:
 
-- Routes trading commands to the appropriate adapter clients.
+- Routes trading commands to the appropriate execution clients.
 - Tracks order and position states.
 - Coordinates with risk management systems.
 - Handles execution reports and fills from venues.
@@ -221,41 +267,51 @@ Manages order lifecycle and execution:
 
 Provides risk management:
 
-- Pre-trade risk checks and validation.
-- Position and exposure monitoring.
-- Real-time risk calculations.
-- Configurable risk rules and limits.
+- Validates order fields, balances, quantities, notionals, reduce‑only behavior, and trading state.
+- Applies configurable submission and modification rate limits.
+- Monitors order and position events used by its controls.
+
+#### `Portfolio`
+
+Maintains derived account and position state:
+
+- Tracks balances, net positions, margin, realized and unrealized profit and loss (PnL), and
+  exposure.
+- Updates state and valuations from account, order, position, quote, bar, and mark‑price events.
+
+#### `Trader`
+
+Coordinates user trading components:
+
+- Registers actors, strategies, and execution algorithms.
+- Manages their lifecycle, clocks, and event subscriptions.
 
 ### Environment contexts
 
-An environment context in NautilusTrader defines the type of data and trading venue you work with.
-Understanding these contexts matters for backtesting, development, and live trading.
+An environment context defines the data source and execution setting for a node:
 
-Here are the available environments you can work with:
-
-- `Backtest`: Historical data with simulated venues.
-- `Sandbox`: Real-time data with simulated venues.
-- `Live`: Real-time data with live venues (paper trading or real accounts).
+- `Backtest`: Historical data with simulated execution.
+- `Sandbox`: Real‑time data with simulated execution.
+- `Live`: Real‑time data with live venue connections, including paper or real accounts.
 
 ### Common core
 
-The platform has been designed to share as much common code between backtest, sandbox, and live trading systems as possible.
-This is formalized in the `system` subpackage, where you will find the `NautilusKernel` class,
-providing a common core system 'kernel'.
+Backtest, sandbox, and live systems share the `NautilusKernel` struct from the `nautilus-system`
+crate. The kernel owns the common cache, portfolio, engines, trader, clock, and messaging
+infrastructure.
 
 The *ports and adapters* architectural style enables modular components to be integrated into the
-core system, providing various hooks for user-defined or custom component implementations.
+core through explicit client, backing‑store, and component interfaces, including custom
+implementations.
 
 ### Data and execution flow patterns
 
-Understanding how data and execution flow through the system helps when working with the platform.
-
 #### Data flow: life of a quote tick
 
-The following trace shows every step a `QuoteTick` takes from the network to your
-strategy. Trades and bars follow the same cache-then-publish path with different
+The following trace shows the path a `QuoteTick` takes from the network to a
+strategy. Trades and bars follow the same cache‑then‑publish path with different
 handler names. Order book deltas and depth snapshots take a different route (see
-the tip below the steps).
+the note below the steps).
 
 ```mermaid
 sequenceDiagram
@@ -274,37 +330,34 @@ sequenceDiagram
     MB->>Strategy: on_quote(quote)
 ```
 
-**Step by step:**
-
-1. **Adapter receives raw data.** A venue-specific `DataClient` (e.g. Binance, Bybit)
+1. **Adapter receives raw data.** A venue‑specific `DataClient`, such as Binance or Bybit,
    receives a WebSocket message, parses it, and constructs a `QuoteTick`.
-2. **Adapter sends a data event.** The adapter sends
+1. **Adapter sends a data event.** The adapter sends
    `DataEvent::Data(Data::Quote(quote))` through an MPSC channel. In live mode
    this is an async unbounded channel; in backtests the engine feeds data directly.
-3. **DataEngine processes the event.** The channel receiver routes the event to
+1. **`DataEngine` processes the event.** The channel receiver routes the event to
    `DataEngine::process_data`, which dispatches to `handle_quote`.
-4. **Cache stores the quote.** `handle_quote` writes the quote into the `Cache`
-   via `cache.add_quote(quote)`, making it available to any component through
-   `self.cache.quote(instrument_id)`.
-5. **MessageBus publishes.** The engine publishes the quote on a topic derived
-   from the instrument ID (e.g. `data.quotes.BINANCE.BTCUSDT-PERP`). The
+1. **`Cache` stores the quote.** `handle_quote` calls `cache.add_quote(quote)`. When the insertion
+   succeeds, components can read it through `self.cache.quote(instrument_id)`.
+1. **`MessageBus` publishes.** The engine publishes the quote on a topic derived
+   from the instrument ID, such as `data.quotes.BINANCE.BTCUSDT-PERP`. The
    `MessageBus` finds all handlers subscribed to that topic.
-6. **Strategy handler fires.** Each subscribed strategy's `on_quote(quote)`
-   runs on the single-threaded kernel. The quote is already in the cache before
-   the handler executes, so `self.cache.quote(instrument_id)` returns the
-   same quote.
+1. **Strategy handler runs.** Each subscribed strategy's `on_quote(quote)` runs on the
+   single‑threaded core. After a successful cache insertion,
+   `self.cache.quote(instrument_id)` returns the same quote.
 
-:::tip
-For quotes, trades, and bars the cache-then-publish order means your strategy
-handler can always read the latest value from the cache. Order book deltas and
-depth snapshots are published directly; book state is maintained separately
-through `BookUpdater` subscriptions.
+:::note
+For quotes, trades, and bars, the engine attempts cache insertion before publication. A synchronous
+persistence or enqueue error prevents the in‑memory insertion, but the engine logs the error and
+still publishes the value. Built‑in database backings perform the actual write asynchronously, so a
+later database error does not roll back the cache insertion. Order book deltas and depth snapshots
+are published directly, while `BookUpdater` subscriptions maintain book state separately.
 :::
 
 #### Execution flow: life of an order
 
-When a strategy submits an order, it flows through validation, routing, and back
-again as execution events:
+A submitted order flows through validation and routing, then returns to the strategy as execution
+events:
 
 ```mermaid
 sequenceDiagram
@@ -313,6 +366,7 @@ sequenceDiagram
     participant EE as ExecutionEngine
     participant EC as ExecutionClient
     participant Venue as Venue
+    participant MB as MessageBus
 
     Strategy->>RE: submit_order(command)
     RE->>RE: pre-trade risk checks
@@ -321,48 +375,56 @@ sequenceDiagram
     EC->>Venue: place order (REST/WS)
     Venue-->>EC: OrderAccepted
     EC->>EE: OrderAccepted event
-    EE->>Strategy: on_order_accepted(event)
+    EE->>MB: publish OrderAccepted
+    MB->>Strategy: on_order_accepted(event)
     Venue-->>EC: OrderFilled
     EC->>EE: OrderFilled event
-    EE->>Strategy: on_order_filled(event)
+    EE->>MB: publish OrderFilled
+    MB->>Strategy: on_order_filled(event)
 ```
 
 1. **Strategy creates a command.** The strategy calls `self.submit_order(order)`.
-2. **RiskEngine validates.** Pre-trade checks run (position limits, notional
-   limits, order rate). If a check fails the strategy receives `OrderDenied`
+1. **`RiskEngine` validates.** Configured order, balance, quantity, notional, trading‑state, and
+   rate checks run. If a check fails, the strategy receives `OrderDenied`,
    and the order never reaches the venue.
-3. **ExecutionEngine routes.** The command is routed to the `ExecutionClient`
+1. **`ExecutionEngine` routes.** The command is routed to the `ExecutionClient`
    for the target venue.
-4. **ExecutionClient submits.** The adapter sends the order to the venue over
+1. **`ExecutionClient` submits.** The adapter sends the order to the venue over
    REST or WebSocket.
-5. **Events flow back.** The venue responds with acknowledgments and fills.
-   Each event (Accepted, Filled, Canceled, Rejected, Expired) flows back through
+1. **Events flow back.** The venue responds with acknowledgments and fills.
+   Each event (`Accepted`, `Filled`, `Canceled`, `Rejected`, or `Expired`) flows through
    the `ExecutionEngine`, which updates order state in the `Cache` and delivers
    the event to the strategy's handler. Fill events also trigger position and
    portfolio updates.
 
 #### Component state management
 
-All components follow a finite state machine pattern. The `ComponentState` enum defines both stable states and transitional states:
+Types that implement the `Component` trait use a finite state machine. `ComponentState` defines
+stable and transitional states, while `ComponentTrigger` constrains valid transitions:
 
 ```mermaid
 stateDiagram-v2
     [*] --> PRE_INITIALIZED
 
-    PRE_INITIALIZED --> READY : register()
+    PRE_INITIALIZED --> READY : initialize()
 
     READY --> STARTING : start()
     STARTING --> RUNNING
+    STARTING --> STOPPING : stop()
+    STARTING --> FAULTING : fault()
 
     RUNNING --> STOPPING : stop()
     STOPPING --> STOPPED
+    STOPPING --> FAULTING : fault()
 
-    STOPPED --> STARTING : start()
     STOPPED --> RESETTING : reset()
     RESETTING --> READY
 
-    RUNNING --> RESUMING : resume()
+    STOPPED --> RESUMING : resume()
+    DEGRADED --> RESUMING : resume()
     RESUMING --> RUNNING
+    RESUMING --> STOPPING : stop()
+    RESUMING --> FAULTING : fault()
 
     RUNNING --> DEGRADING : degrade()
     DEGRADING --> DEGRADED
@@ -371,10 +433,12 @@ stateDiagram-v2
     DEGRADED --> FAULTING : fault()
 
     RUNNING --> FAULTING : fault()
+    STOPPED --> FAULTING : fault()
     FAULTING --> FAULTED
 
+    READY --> RESETTING : reset()
+    READY --> DISPOSING : dispose()
     STOPPED --> DISPOSING : dispose()
-    FAULTED --> DISPOSING : dispose()
     DISPOSING --> DISPOSED
 
     DISPOSED --> [*]
@@ -382,29 +446,30 @@ stateDiagram-v2
 
 **Stable states:**
 
-- **PRE_INITIALIZED**: Component is instantiated but not yet ready to fulfill its specification.
-- **READY**: Component is configured and able to be started.
-- **RUNNING**: Component is operating normally and can fulfill its specification.
-- **STOPPED**: Component has successfully stopped.
-- **DEGRADED**: Component has degraded and may not meet its full specification.
-- **FAULTED**: Component has shut down due to a detected fault.
-- **DISPOSED**: Component has shut down and released all of its resources.
+- **PRE_INITIALIZED**: The component exists but is not ready to fulfill its specification.
+- **READY**: The component is configured and can start.
+- **RUNNING**: The component operates normally and can fulfill its specification.
+- **STOPPED**: The component has stopped successfully.
+- **DEGRADED**: The component may not meet its full specification.
+- **FAULTED**: The component has shut down because of a detected fault.
+- **DISPOSED**: The component has shut down and released its resources.
 
 **Transitional states:**
 
-- **STARTING**: Component is executing its actions on `start`.
-- **STOPPING**: Component is executing its actions on `stop`.
-- **RESUMING**: Component is being started again after its initial start.
-- **RESETTING**: Component is executing its actions on `reset`.
-- **DISPOSING**: Component is executing its actions on `dispose`.
-- **DEGRADING**: Component is executing its actions on `degrade`.
-- **FAULTING**: Component is executing its actions on `fault`.
+- **STARTING**: The component is executing its `start` actions.
+- **STOPPING**: The component is executing its `stop` actions.
+- **RESUMING**: The component is executing its `resume` actions after a stop or degradation.
+- **RESETTING**: The component is executing its `reset` actions.
+- **DISPOSING**: The component is executing its `dispose` actions.
+- **DEGRADING**: The component is executing its `degrade` actions.
+- **FAULTING**: The component is executing its `fault` actions.
 
-Transitional states are brief intermediate states that occur during state transitions. Components should not remain in transitional states for extended periods.
+Transitional states cover the corresponding lifecycle callback and should remain brief. If a
+callback returns an error, the transition halts in its transitional state.
 
 #### Actor vs Component traits
 
-At the Rust implementation level, the system distinguishes between two complementary traits:
+The Rust implementation separates targeted message dispatch from lifecycle management:
 
 ```mermaid
 classDiagram
@@ -419,27 +484,30 @@ classDiagram
         +component_id() ComponentId
         +state() ComponentState
         +register()
+        +initialize()
         +start()
         +stop()
+        +resume()
         +reset()
         +dispose()
+        +degrade()
+        +fault()
     }
 
     class ActorRegistry {
         +insert(actor)
-        +get(id) ActorRef
+        +get(id) shared actor handle
     }
 
     class ComponentRegistry {
         +insert(component)
-        +get(id) ComponentRef
+        +get(id) shared component handle
     }
 
     Actor <|.. Throttler : implements
     Actor <|.. Strategy : implements
     Component <|.. Strategy : implements
-    Component <|.. DataEngine : implements
-    Component <|.. ExecutionEngine : implements
+    Component <|.. Trader : implements
 
     ActorRegistry --> Actor : manages
     ComponentRegistry --> Component : manages
@@ -452,111 +520,128 @@ classDiagram
         Actor + Component
     }
 
-    class DataEngine {
-        Component only
-    }
-
-    class ExecutionEngine {
+    class Trader {
         Component only
     }
 ```
 
-**`Actor` trait** - Message dispatch:
+**`Actor` trait: message dispatch**
 
 - Provides the `handle` method for receiving messages dispatched through the actor registry.
-- Enables type-safe lookup and message dispatch by actor ID.
-- Used by components that need to receive targeted messages (strategies, throttlers).
+- Supports lookup by actor ID; typed unchecked accessors check the concrete actor type at runtime
+  and return an `ActorRef` guard.
+- Used by types that receive targeted messages, such as strategies and throttlers.
 
-**`Component` trait** - Lifecycle management:
+**`Component` trait: lifecycle management**
 
-- Manages state transitions (`start`, `stop`, `reset`, `dispose`).
-- Provides registration with the system kernel (`register`).
+- Manages state transitions such as `start`, `stop`, `resume`, `reset`, and `dispose`.
+- Registers a component with the trader ID, clock, and cache.
 - Tracks component state via the finite state machine described above.
-- Used by all system components that need lifecycle management.
+- Used by actors, strategies, execution algorithms, and the `Trader` when they need managed
+  lifecycle behavior. The data, risk, and execution engines expose their own lifecycle methods but
+  do not implement this trait.
 
 :::note
-All components can publish and subscribe to messages via the `MessageBus` directly - this is independent of the `Actor` trait. The `Actor` trait specifically enables the registry-based message dispatch pattern where messages are routed to a specific actor by ID.
+Message bus access does not depend on the `Actor` trait. Code running on the node thread can use the
+thread‑local `MessageBus` APIs, while `Actor` specifically enables registry‑based dispatch to an
+actor ID.
 :::
 
 This separation allows:
 
-- **Actor-only**: Lightweight message handlers without lifecycle (e.g., `Throttler`).
-- **Component-only**: System infrastructure with lifecycle but using direct MessageBus pub/sub (e.g., `DataEngine`, `ExecutionEngine`).
-- **Both traits**: Trading strategies that need lifecycle management AND targeted message dispatch.
+- **Actor only**: Lightweight message handlers without lifecycle, such as `Throttler`.
+- **Component only**: Lifecycle‑managed types without targeted actor dispatch, such as `Trader`.
+- **Both traits**: Data actors, including strategies and execution algorithms, that need lifecycle
+  management and targeted dispatch.
 
-The traits are managed by separate registries to support their different access patterns - lifecycle methods are called sequentially, while message handlers may be invoked re-entrantly during callbacks.
+Separate thread‑local registries support these access patterns. Both registry `get` methods return
+shared `Rc<UnsafeCell<dyn ...>>` handles. Component lifecycle wrapper functions use a private borrow
+guard to reject overlapping lifecycle access; that protection does not apply to arbitrary access
+through a raw registry handle. Typed actor accessors return `ActorRef` guards, which do not prevent
+two simultaneous guards for the same actor. Creating overlapping mutable references is undefined
+behavior. Obtain, use, and drop an `ActorRef` within one synchronous scope. Never store one or hold
+it across an `.await` point. Same‑actor re‑entrant lookup is a constraint of the current dispatch
+model, not a safe aliasing guarantee.
 
 ### Messaging
 
-For modularity and loose coupling, an efficient `MessageBus` passes messages (data, commands, and events) between components.
+The `MessageBus` passes data, commands, and events between components without requiring direct
+component references.
 
 #### Threading model
 
-Within a node, the *kernel* consumes and dispatches messages on a single thread. The kernel encompasses:
+Within a node, the core consumes and dispatches messages on a single thread. This includes:
 
 - The `MessageBus` and actor callback dispatch.
 - Strategy logic and order management.
 - Risk engine checks and execution coordination.
 - Cache reads and writes.
 
-This single-threaded core provides deterministic event ordering and helps maintain backtest-live parity,
-though live inputs and latency can still cause behavioral differences. Components consume messages
-synchronously in a pattern *similar* to the [actor model](https://en.wikipedia.org/wiki/Actor_model).
+This single‑threaded core provides deterministic event ordering and helps maintain backtest‑live
+parity, though live inputs and latency can still cause behavioral differences. Components consume
+messages synchronously in a pattern *similar* to the
+[actor model](https://en.wikipedia.org/wiki/Actor_model).
 
 :::note
-Of interest is the LMAX exchange architecture, which achieves award winning performance running on
-a single thread. You can read about their *disruptor* pattern based architecture in [this interesting article](https://martinfowler.com/articles/lmax.html) by Martin Fowler.
+The [LMAX architecture](https://martinfowler.com/articles/lmax.html) is a related example of
+single‑threaded transaction processing.
 :::
 
-Background services use separate threads or async runtimes:
+Background services use separate threads or the process‑wide, multi‑threaded Tokio runtime. The
+runtime's worker count is configurable:
 
-- **Network I/O** - WebSocket connections, REST clients, and async data feeds.
-- **Persistence** - DataFusion queries and database operations via multi-threaded Tokio runtime.
-- **Adapters** - Async adapter operations via thread pool executors.
+- **Network and adapters**: WebSocket connections, REST clients, and data feeds run as async tasks.
+- **Logging**: A worker receives log events outside the synchronous core.
+- **Persistence**: Redis and PostgreSQL cache backings queue writes to async tasks. DataFusion runs
+  catalog query futures on a Tokio runtime.
 
-These services communicate results back to the kernel via the `MessageBus`. The bus itself is thread-local,
-so each thread has its own instance, with cross-thread communication occurring through channels that
-ultimately deliver events to the single-threaded core.
+Async producers send data and execution events through channels. The node runner receives them and
+uses the thread‑local `MessageBus` to dispatch them to engine endpoints on the core thread. Each
+thread has its own bus instance; channels bridge work from other threads or tasks.
 
 ## Framework organization
 
-The codebase organizes into layers of abstraction, grouped into logical subpackages
-of cohesive concepts. You can navigate to the documentation for each subpackage
-from the left nav menu.
+The Rust workspace groups related behavior into crates under `crates/`. The public package under
+`python/nautilus_trader/` provides Python facades and supporting utilities over the Rust
+implementation.
 
-### Core / low-level
+### Core and domain
 
-- `core`: Constants, functions, and low-level components used throughout the framework.
-- `common`: Common parts for assembling the frameworks various components.
-- `network`: Low-level base components for networking clients.
-- `serialization`: Serialization base components and serializer implementations.
-- `model`: Defines a rich trading domain model.
+- `core`: Low‑level time, string, serialization, and runtime primitives.
+- `model`: Trading domain types, including instruments, accounts, orders, positions, and market
+  data.
+- `common`: Shared runtime services, including the cache, message bus, clocks, actors, components,
+  and logging.
+- `serialization`: Schema and encoding support for model and event types.
 
-### Components
+### Trading and analysis
 
-- `accounting`: Different account types and account management machinery.
-- `adapters`: Integration adapters for the platform including brokers and exchanges.
-- `analysis`: Components relating to trading performance statistics and analysis.
-- `cache`: Provides common caching infrastructure.
-- `data`: The data stack and data tooling for the platform.
-- `execution`: The execution stack for the platform.
-- `indicators`: A set of efficient indicators and analyzers.
-- `persistence`: Data storage, cataloging, and retrieval, mainly to support backtesting.
-- `portfolio`: Portfolio management functionality.
-- `risk`: Risk specific components and tooling.
-- `trading`: Trading domain specific components and tooling.
+- `analysis`: Trading performance statistics and analysis.
+- `indicators`: Technical indicators.
+- `data`: Market‑data engines, aggregation, and data tooling.
+- `execution`: Order execution, emulation, and reconciliation primitives.
+- `portfolio`: Portfolio accounting and state.
+- `risk`: Pre‑trade controls, position sizing, and trading state.
+- `trading`: Strategies and execution algorithms.
 
-### System implementations
+### Infrastructure and runtimes
 
-- `backtest`: Backtesting componentry as well as a backtest engine and node implementations.
-- `live`: Live engine and client implementations as well as a node for live trading.
-- `system`: The core system kernel common between `backtest`, `sandbox`, `live` [environment contexts](#environment-contexts).
+- `network` and `cryptography`: Networking clients, transport support, signing, and cryptographic
+  providers.
+- `infrastructure`, `persistence`, and `event_store`: Database backings, data catalogs, object
+  storage, and event‑store integration.
+- `system`: The kernel shared by backtest, sandbox, and live
+  [environment contexts](#environment-contexts).
+- `backtest` and `live`: Environment‑specific engines and nodes.
+- `adapters/*`: Venue, broker, data, blockchain, and sandbox integrations.
+- `pyo3`: The Python extension aggregator.
+- `plugin`, `cli`, and `testkit`: Plugin interfaces, command‑line tools, and test support.
 
 ## Code structure
 
-The foundation of the codebase is the `crates/` directory, which contains the Rust implementation.
-The `python/nautilus_trader/` package provides the public Python surface. PyO3 collects the Rust
-bindings into the `_libnautilus` extension module used by that package.
+The `crates/` directory contains the Rust implementation. PyO3 collects its Python bindings into
+the `nautilus_trader._libnautilus` extension module, and `python/nautilus_trader/` exposes the public
+Python facades.
 
 The `nautilus-core` and `nautilus-model` crates retain an optional C FFI for native consumers. Other
 workspace crates use Rust APIs or PyO3 bindings.
@@ -580,37 +665,37 @@ flowchart TB
 
 ### Rust crates
 
-The `crates/` directory contains the Rust implementation organized into focused crates with clear dependency boundaries.
-Feature flags control optional functionality - for example, `streaming` enables persistence for catalog-based data streaming,
-and `cloud` enables cloud storage backends (S3, Azure, GCP).
+Rust crate manifests declare workspace dependencies and optional feature flags. Features enable
+optional functionality without adding it to minimal builds.
 
-Dependency flow (arrows point to dependencies):
+Selected direct workspace dependencies are shown below; arrows point to dependencies. The diagram
+omits edges that do not clarify the overall direction.
 
 ```mermaid
 flowchart BT
-    subgraph Foundation
+    subgraph Core["Core and domain"]
         core
         model
         common
-        system
-        trading
-    end
-
-    subgraph Infrastructure
         serialization
-        network
-        cryptography
-        persistence
     end
 
-    subgraph Engines
+    subgraph Trading
+        trading
         data
         execution
         portfolio
         risk
     end
 
+    subgraph Infrastructure
+        network
+        cryptography
+        persistence
+    end
+
     subgraph Runtime
+        system
         live
         backtest
     end
@@ -624,7 +709,6 @@ flowchart BT
     system --> common
     trading --> common
     serialization --> model
-    network --> common
     network --> cryptography
     persistence --> serialization
     data --> common
@@ -642,23 +726,23 @@ flowchart BT
 
 **Crate categories:**
 
-| Category       | Crates                                                    | Purpose                                                  |
-| -------------- | --------------------------------------------------------- | -------------------------------------------------------- |
-| Foundation     | `core`, `model`, `common`, `system`, `trading`            | Primitives, domain model, kernel, actor & strategy base. |
-| Engines        | `data`, `execution`, `portfolio`, `risk`                  | Core trading engine components.                          |
-| Infrastructure | `serialization`, `network`, `cryptography`, `persistence` | Encoding, networking, signing, storage.                  |
-| Runtime        | `live`, `backtest`                                        | Environment‑specific node implementations.               |
-| External       | `adapters/*`                                              | Venue and data integrations.                             |
-| Bindings       | `pyo3`                                                    | Python bindings.                                         |
+| Category         | Crates                                                                        | Purpose                                                 |
+| ---------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Core and domain  | `core`, `model`, `common`, `serialization`                                    | Primitives, domain types, shared runtime, and encoding. |
+| Trading          | `analysis`, `indicators`, `data`, `execution`, `portfolio`, `risk`, `trading` | Analysis, strategies, engines, and portfolio state.     |
+| Infrastructure   | `network`, `cryptography`, `infrastructure`, `persistence`, `event_store`     | Transport, signing, databases, catalogs, and events.    |
+| Runtime          | `system`, `live`, `backtest`                                                  | Kernel and environment‑specific nodes.                  |
+| Integrations     | `adapters/*`                                                                  | Venue, broker, data, blockchain, and sandbox clients.   |
+| Interfaces/tools | `pyo3`, `plugin`, `cli`, `testkit`                                            | Python bindings, plugins, CLI, and test support.        |
 
 **Feature flags:**
 
-| Feature     | Crates                    | Effect                                                     |
-| ----------- | ------------------------- | ---------------------------------------------------------- |
-| `streaming` | `data`, `system`, `live`  | Enables `persistence` dependency for catalog streaming.    |
-| `cloud`     | `persistence`             | Enables cloud storage backends (S3, Azure, GCP, HTTP).     |
-| `python`    | most crates               | Enables PyO3 bindings (auto‑enables `streaming`, `cloud`). |
-| `defi`      | `common`, `model`, `data` | Enables DeFi/blockchain data types.                        |
+| Feature     | Main crates                               | Effect                                                           |
+| ----------- | ----------------------------------------- | ---------------------------------------------------------------- |
+| `streaming` | `data`, `system`, `live`, `backtest`      | Adds persistence support for catalog streaming.                  |
+| `cloud`     | `persistence`                             | Adds AWS, Azure, GCP, and HTTP object‑store backends.            |
+| `python`    | Python‑facing crates                      | Adds PyO3 bindings and the transitive features each crate needs. |
+| `defi`      | Domain, data, runtime, and binding crates | Adds DeFi and blockchain types and runtime paths.                |
 
 :::note
 Source builds require Rust. Prebuilt Python wheels do not require a Rust toolchain at runtime.
@@ -666,12 +750,9 @@ Source builds require Rust. Prebuilt Python wheels do not require a Rust toolcha
 
 ### Type safety
 
-The platform design prioritizes software correctness and safety.
-
-The Rust codebase under `crates/` relies on the `rustc` compiler's guarantees for safe code.
-Any `unsafe` blocks are explicit opt-outs where we must uphold the required invariants ourselves
-(see the Rust section of the [Developer Guide](../developer_guide/rust.md)); overall memory and type safety
-depend on those invariants holding.
+The Rust codebase relies on the compiler's guarantees for safe code. Each `unsafe` block explicitly
+opts out of those guarantees, so memory and type safety depend on its documented invariants. See the
+Rust section of the [Developer Guide](../developer_guide/rust.md).
 
 PyO3 validates bound arguments and converts Rust errors into Python exceptions:
 
@@ -682,35 +763,40 @@ Rust method body runs.
 
 ### Errors and exceptions
 
-The documentation aims to cover all possible exceptions that NautilusTrader code
-can raise, and the conditions that trigger them.
+API documentation describes expected errors from NautilusTrader and the conditions that produce
+them.
 
 :::warning
-There may be other undocumented exceptions which can be raised by Python's standard
-library, or from third party library dependencies.
+Python's standard library and third‑party dependencies can also raise exceptions outside those
+documented contracts.
 :::
 
 ### Processes and threads
 
 :::warning[One node per process]
-Running multiple `LiveNode` or `BacktestNode` instances **concurrently** in the same process is not supported due to global singleton state:
+Running multiple `LiveNode` or `BacktestNode` instances **concurrently** in the same process is not
+supported because their runtime state is not isolated:
 
-- **Backtest force-stop flag** - The `_FORCE_STOP` global flag is shared across all engines in the process.
-- **Logger mode and timestamps** - The logging subsystem uses global state; backtests flip between static and real-time modes.
-- **Runtime singletons** - Global Tokio runtime, callback registries, and other `OnceLock` instances are process-wide.
+- **Logger mode and timestamps**: The logging subsystem uses global state; backtests switch the
+  logging clock between static and real‑time modes.
+- **Thread‑local runtime state**: A node installs its message bus, actor and component registries,
+  and channel senders for the thread that drives it.
+- **Process‑wide runtime state**: The Tokio runtime and logging worker are shared by the process.
 
-**Sequential execution** of multiple nodes (one after another with proper disposal between runs) is fully supported and used in the test suite.
+Sequential execution of multiple nodes is supported when each node is disposed before the next
+one starts. Focused tests exercise sequential node construction and cache‑backed state recovery
+across disposed nodes.
 
-For production deployments, add multiple strategies to a **single LiveNode** within a process.
+For production deployments, add multiple strategies to one `LiveNode` within a process.
 For parallel execution or workload isolation, run each node in its own separate process.
 :::
 
 ### Memory allocation
 
-The event-driven core allocates and frees small objects at high frequency: message bus dispatch,
+The event‑driven core allocates and frees small objects at high frequency: message bus dispatch,
 order event handling, and order book maintenance all exercise the heap on every event. Default
 system allocators handle this pattern poorly; profiling shows allocator overhead approaching half
-of hot-loop time on both the Windows CRT heap and glibc malloc under order-flow workloads.
+of hot‑loop time on both the Windows CRT heap and glibc malloc under order‑flow workloads.
 
 The `nautilus` CLI and Python wheels on Linux and Windows use
 [mimalloc](https://github.com/microsoft/mimalloc) for Rust allocations. macOS Python wheels use the
@@ -720,10 +806,10 @@ heavy paths gaining the most. The trade‑off is a modest increase in resident m
 mimalloc's segment caching.
 
 A Rust binary links exactly one global allocator, and libraries do not impose one, so the
-NautilusTrader crates remain allocator-neutral. When building directly against the crates,
+NautilusTrader crates remain allocator‑neutral. When building directly against the crates,
 opt in from your own binary (see the [Rust guide](rust.md#memory-allocator)).
 
 ## Related guides
 
-- [Overview](overview.md) - High-level introduction to NautilusTrader.
-- [Message Bus](message_bus.md) - Core messaging infrastructure.
+- [Overview](overview.md): High‑level introduction to NautilusTrader.
+- [Message Bus](message_bus.md): Core messaging infrastructure.
