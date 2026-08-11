@@ -46,6 +46,12 @@ def test_okx_factories_expose_python_names() -> None:
     assert exec_factory.name() == OKX
 
 
+def test_okx_data_config_preserves_positional_environment() -> None:
+    config = OKXDataClientConfig(None, OKXEnvironment.DEMO)
+
+    assert config.environment == OKXEnvironment.DEMO
+
+
 def test_live_node_builder_accepts_okx_data_factory() -> None:
     trader_id = TraderId.from_str("TESTER-001")
 
@@ -55,7 +61,8 @@ def test_live_node_builder_accepts_okx_data_factory() -> None:
             None,
             OKXDataClientFactory(),
             OKXDataClientConfig(
-                instrument_types=[OKXInstrumentType.SPOT],
+                instrument_types=[OKXInstrumentType.OPTION],
+                instrument_families=["BTC-USD"],
                 environment=OKXEnvironment.DEMO,
             ),
         )

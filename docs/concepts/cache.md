@@ -42,9 +42,7 @@ Within a strategy, access the shared `Cache` through `self.cache`:
 ```python
 def on_bar(self, bar: Bar) -> None:
     # Read recent bars from the cache.
-    last_bar = self.cache.bar(
-        self.bar_type, index=0
-    )  # Same bar after a successful cache write.
+    last_bar = self.cache.bar(self.bar_type, index=0)  # Same bar after a successful cache write.
     previous_bar = self.cache.bar(self.bar_type, index=1)
     third_last_bar = self.cache.bar(self.bar_type, index=2)
 
@@ -240,13 +238,9 @@ has_bars = self.cache.has_bars(bar_type)
 
 ```python
 # Get quotes.
-quotes = self.cache.quotes(
-    instrument_id
-)  # Returns list[QuoteTick] or None.
+quotes = self.cache.quotes(instrument_id)  # Returns list[QuoteTick] or None.
 latest_quote = self.cache.quote(instrument_id)  # Returns QuoteTick or None.
-second_last_quote = self.cache.quote(
-    instrument_id, index=1
-)  # Returns QuoteTick or None.
+second_last_quote = self.cache.quote(instrument_id, index=1)  # Returns QuoteTick or None.
 
 # Check quote availability.
 quote_count = self.cache.quote_count(instrument_id)
@@ -257,13 +251,9 @@ has_quotes = self.cache.has_quote_ticks(instrument_id)
 
 ```python
 # Get trades.
-trades = self.cache.trades(
-    instrument_id
-)  # Returns list[TradeTick] or None.
+trades = self.cache.trades(instrument_id)  # Returns list[TradeTick] or None.
 latest_trade = self.cache.trade(instrument_id)  # Returns TradeTick or None.
-second_last_trade = self.cache.trade(
-    instrument_id, index=1
-)  # Returns TradeTick or None.
+second_last_trade = self.cache.trade(instrument_id, index=1)  # Returns TradeTick or None.
 
 # Check trade availability.
 trade_count = self.cache.trade_count(instrument_id)
@@ -318,9 +308,7 @@ from nautilus_trader.trading import Strategy
 class MarketDataStrategy(Strategy):
     def on_start(self) -> None:
         # Subscribe to 1-minute bars.
-        self.bar_type = BarType.from_str(
-            f"{self.instrument_id}-1-MINUTE-LAST-EXTERNAL"
-        )
+        self.bar_type = BarType.from_str(f"{self.instrument_id}-1-MINUTE-LAST-EXTERNAL")
         self.subscribe_bars(self.bar_type)
 
     def on_bar(self, bar: Bar) -> None:

@@ -80,7 +80,7 @@ def parse_args() -> argparse.Namespace:
         description="Build or run the Databento Python data tester.",
     )
     parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--instrument", default="BTCUSDT.BINANCE")
+    parser.add_argument("--instrument", default="AAPL.EQUS")
     parser.add_argument("--api-key", default=SMOKE_API_KEY)
     parser.add_argument("--publishers-filepath", type=Path, default=publishers_filepath())
     parser.add_argument(

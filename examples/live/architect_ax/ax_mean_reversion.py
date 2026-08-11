@@ -13,94 +13,106 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Run a Bollinger Band mean reversion strategy on the Architect AX sandbox.
+
+This example has no claimed alpha and is not intended for production trading.
+
+"""
 
 from decimal import Decimal
 
+from strategies import BBMeanReversion
+from strategies import BBMeanReversionConfig
+
 from nautilus_trader.adapters.architect_ax import AX
 from nautilus_trader.adapters.architect_ax import AxDataClientConfig
+from nautilus_trader.adapters.architect_ax import AxDataClientFactory
 from nautilus_trader.adapters.architect_ax import AxEnvironment
 from nautilus_trader.adapters.architect_ax import AxExecClientConfig
-from nautilus_trader.adapters.architect_ax import AxLiveDataClientFactory
-from nautilus_trader.adapters.architect_ax import AxLiveExecClientFactory
-from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.adapters.architect_ax import AxExecutionClientFactory
+from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.bb_mean_reversion import BBMeanReversion
-from nautilus_trader.examples.strategies.bb_mean_reversion import BBMeanReversionConfig
-from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import AccountId
+from nautilus_trader.model import BarType
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import StrategyId
+from nautilus_trader.model import TraderId
 
 
-# *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
-# *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
+RUN_NODE = False
+TRADER_ID = TraderId.from_str("TESTER-001")
+ACCOUNT_ID = AccountId.from_str("AX-001")
+STRATEGY_ID = StrategyId.from_str("AX-MEAN-REVERSION-001")
+INSTRUMENT_ID = InstrumentId.from_str(f"EURUSD-PERP.{AX}")
+BAR_TYPE = BarType.from_str(f"{INSTRUMENT_ID}-1-MINUTE-MID-INTERNAL")
+TRADE_SIZE = Decimal(1)
+BB_PERIOD = 20
+BB_STD = 2.0
+RSI_PERIOD = 14
+RSI_BUY_THRESHOLD = 0.30
+RSI_SELL_THRESHOLD = 0.70
 
-instrument_id = InstrumentId.from_str(f"EURUSD-PERP.{AX}")
+SMOKE_API_KEY = "test_key"
+SMOKE_API_SECRET = "test_secret"
 
-config_node = TradingNodeConfig(
-    trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(
-        log_level="INFO",
-        use_pyo3=True,
-    ),
-    exec_engine=LiveExecEngineConfig(
-        reconciliation=True,
-        reconciliation_instrument_ids=[instrument_id],
-    ),
-    risk_engine=LiveRiskEngineConfig(bypass=True),
-    data_clients={
-        AX: AxDataClientConfig(
-            environment=AxEnvironment.SANDBOX,
-            instrument_provider=InstrumentProviderConfig(
-                load_all=False,
-                load_ids=frozenset([instrument_id]),
+
+def main() -> None:
+    node = (
+        LiveNode.builder("AX-MEAN-REVERSION-001", TRADER_ID, Environment.LIVE)
+        .with_exec_engine_config(
+            LiveExecEngineConfig(
+                reconciliation_instrument_ids=[str(INSTRUMENT_ID)],
+            ),
+        )
+        .with_reconciliation(RUN_NODE)
+        .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
+        .with_timeout_connection(20)
+        .with_timeout_reconciliation(10)
+        .with_timeout_portfolio(10)
+        .with_timeout_disconnection_secs(10)
+        .with_delay_post_stop_secs(5)
+        .add_data_client(
+            None,
+            AxDataClientFactory(),
+            AxDataClientConfig(environment=AxEnvironment.SANDBOX),
+        )
+        .add_exec_client(
+            None,
+            AxExecutionClientFactory(),
+            AxExecClientConfig(
+                trader_id=TRADER_ID,
+                account_id=ACCOUNT_ID,
+                api_key=None if RUN_NODE else SMOKE_API_KEY,
+                api_secret=None if RUN_NODE else SMOKE_API_SECRET,
+                environment=AxEnvironment.SANDBOX,
+            ),
+        )
+        .build()
+    )
+    node.add_strategy(
+        BBMeanReversion(
+            BBMeanReversionConfig(
+                instrument_id=INSTRUMENT_ID,
+                bar_type=BAR_TYPE,
+                trade_size=TRADE_SIZE,
+                bb_period=BB_PERIOD,
+                bb_std=BB_STD,
+                rsi_period=RSI_PERIOD,
+                rsi_buy_threshold=RSI_BUY_THRESHOLD,
+                rsi_sell_threshold=RSI_SELL_THRESHOLD,
+                strategy_id=STRATEGY_ID,
             ),
         ),
-    },
-    exec_clients={
-        AX: AxExecClientConfig(
-            environment=AxEnvironment.SANDBOX,
-            instrument_provider=InstrumentProviderConfig(
-                load_all=False,
-                load_ids=frozenset([instrument_id]),
-            ),
-        ),
-    },
-    timeout_connection=20.0,
-    timeout_reconciliation=10.0,
-    timeout_portfolio=10.0,
-    timeout_disconnection=10.0,
-    timeout_post_stop=5.0,
-)
+    )
 
-node = TradingNode(config=config_node)
+    if RUN_NODE:
+        node.run()
+    else:
+        print("Built Architect AX mean reversion node. Set RUN_NODE = True to connect.")
 
-bar_type = BarType.from_str(f"{instrument_id}-1-MINUTE-MID-INTERNAL")
-
-strategy = BBMeanReversion(
-    config=BBMeanReversionConfig(
-        instrument_id=instrument_id,
-        bar_type=bar_type,
-        trade_size=Decimal(1),
-        bb_period=20,
-        bb_std=2.0,
-        rsi_period=14,
-        rsi_buy_threshold=0.30,
-        rsi_sell_threshold=0.70,
-    ),
-)
-
-node.trader.add_strategy(strategy)
-
-node.add_data_client_factory(AX, AxLiveDataClientFactory)
-node.add_exec_client_factory(AX, AxLiveExecClientFactory)
-node.build()
 
 if __name__ == "__main__":
-    try:
-        node.run()
-    finally:
-        node.dispose()
+    main()

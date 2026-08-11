@@ -109,6 +109,7 @@ pub struct OKXDataClientConfig {
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(OKXDataClientConfig {
     instrument_types: Vec<OKXInstrumentType>,
+    instrument_families: Option<Vec<String>>,
     environment: OKXEnvironment,
     region: OKXRegion,
     base_url_http: Option<String>,

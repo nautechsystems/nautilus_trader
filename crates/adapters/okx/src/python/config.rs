@@ -51,6 +51,7 @@ impl OKXDataClientConfig {
         vip_level = None,
         load_spreads = false,
         transport_backend = None,
+        instrument_families = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -75,6 +76,7 @@ impl OKXDataClientConfig {
         vip_level: Option<OKXVipLevel>,
         load_spreads: bool,
         transport_backend: Option<TransportBackend>,
+        instrument_families: Option<Vec<String>>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -84,7 +86,7 @@ impl OKXDataClientConfig {
             instrument_types: instrument_types.unwrap_or(defaults.instrument_types),
             contract_types: None,
             load_spreads,
-            instrument_families: None,
+            instrument_families,
             base_url_http,
             base_url_ws_public,
             base_url_ws_business,
@@ -217,12 +219,36 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_data_config_py_new_load_spreads() {
+    fn test_data_config_py_new() {
         let config = OKXDataClientConfig::py_new(
-            None, None, None, None, None, None, None, None, None, None, None, None, None, None,
-            None, None, None, None, None, true, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            Some(vec!["BTC-USD".to_string()]),
         );
 
+        assert_eq!(
+            config.instrument_families,
+            Some(vec!["BTC-USD".to_string()]),
+        );
         assert!(config.load_spreads);
         assert_eq!(config.book_stale_check_interval_secs, 5);
         assert_eq!(config.book_stale_threshold_secs, 30);
