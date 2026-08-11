@@ -40,7 +40,7 @@ use nautilus_execution::trailing::{
     trailing_stop_calculate_with_bid_ask, trailing_stop_calculate_with_last,
 };
 use nautilus_model::{
-    accounts::{Account, AccountAny, CashAccount},
+    accounts::{Account, AccountAny},
     enums::{
         AggregationSource, OrderSide, OrderStatus, PositionSide, PriceType, TimeInForce,
         TradingState, TrailingOffsetType, TriggerType,
@@ -54,6 +54,16 @@ use nautilus_model::{
 use nautilus_portfolio::Portfolio;
 use rust_decimal::Decimal;
 use ustr::Ustr;
+
+// Returns cash and wallet accounts for sell-balance checks; margin and betting accounts
+// follow their own sell paths.
+fn cash_or_wallet_account(account: &AccountAny) -> Option<&dyn Account> {
+    match account {
+        AccountAny::Cash(cash) => Some(cash),
+        AccountAny::Wallet(wallet) => Some(wallet),
+        AccountAny::Margin(_) | AccountAny::Betting(_) => None,
+    }
+}
 
 fn format_rate_limit(rate_limit: &RateLimit) -> String {
     let interval_ns = rate_limit.interval_ns();
@@ -1074,14 +1084,20 @@ impl RiskEngine {
 
         let is_margin = matches!(account, AccountAny::Margin(_));
         let is_betting = matches!(account, AccountAny::Betting(_));
+        let is_wallet = matches!(account, AccountAny::Wallet(_));
         let free = match &account {
             AccountAny::Margin(margin) => margin.balance_free(Some(instrument.quote_currency())),
             AccountAny::Cash(cash) => cash.balance_free(Some(instrument.quote_currency())),
             AccountAny::Betting(betting) => betting.balance_free(Some(instrument.quote_currency())),
+            AccountAny::Wallet(wallet) => Some(
+                wallet
+                    .balance_free(Some(instrument.quote_currency()))
+                    .unwrap_or_else(|| Money::zero(instrument.quote_currency())),
+            ),
         };
         let allow_borrowing = match &account {
             AccountAny::Cash(cash) => cash.allow_borrowing,
-            AccountAny::Margin(_) | AccountAny::Betting(_) => false,
+            AccountAny::Margin(_) | AccountAny::Betting(_) | AccountAny::Wallet(_) => false,
         };
 
         if self.config.debug {
@@ -1178,19 +1194,21 @@ impl RiskEngine {
             let last_px = match order {
                 OrderAny::Market(_) | OrderAny::MarketToLimit(_) => {
                     let Some(price) = market_price else {
-                        let is_reducing = order.is_reduce_only()
-                            || (order.is_sell()
-                                && (cum_sell_qty_raw + order.quantity().raw)
-                                    <= available_long_qty_raw);
+                        let is_reducing = !is_wallet
+                            && (order.is_reduce_only()
+                                || (order.is_sell()
+                                    && (cum_sell_qty_raw + order.quantity().raw)
+                                        <= available_long_qty_raw));
 
                         if !order.is_quote_quantity()
                             && order.is_sell()
                             && !is_reducing
-                            && let AccountAny::Cash(cash) = &account
-                            && cash.base_currency.is_none()
+                            && let Some(unleveraged) = cash_or_wallet_account(&account)
+                            && unleveraged.base_currency().is_none()
                             && let Some(base_currency) = instrument.base_currency()
                             && !self.check_cash_sell_balance(
-                                cash,
+                                unleveraged,
+                                allow_borrowing,
                                 order,
                                 order.quantity(),
                                 base_currency,
@@ -1646,7 +1664,7 @@ impl RiskEngine {
                     false
                 };
 
-                if is_position_reducing {
+                if is_position_reducing && !is_wallet {
                     if self.config.debug {
                         log::debug!("Position-reducing order skips balance check");
                     }
@@ -1744,6 +1762,7 @@ impl RiskEngine {
                         AccountAny::Margin(_) => false,
                         AccountAny::Cash(cash) => cash.base_currency.is_some(),
                         AccountAny::Betting(betting) => betting.base_currency.is_some(),
+                        AccountAny::Wallet(wallet) => wallet.base_currency.is_some(),
                     };
 
                     if has_base_currency {
@@ -1778,12 +1797,13 @@ impl RiskEngine {
                             return false; // Denied
                         }
                     } else if let Some(base_currency) = base_currency {
-                        let AccountAny::Cash(cash) = &account else {
+                        let Some(unleveraged) = cash_or_wallet_account(&account) else {
                             unreachable!()
                         };
 
                         if !self.check_cash_sell_balance(
-                            cash,
+                            unleveraged,
+                            allow_borrowing,
                             order,
                             effective_quantity,
                             base_currency,
@@ -1845,7 +1865,8 @@ impl RiskEngine {
 
     fn check_cash_sell_balance(
         &self,
-        cash: &CashAccount,
+        account: &dyn Account,
+        allow_borrowing: bool,
         order: &OrderAny,
         quantity: Quantity,
         base_currency: Currency,
@@ -1866,14 +1887,14 @@ impl RiskEngine {
         };
 
         let cash_value = Money::from_raw(cash_value_raw, base_currency);
-        let base_free = cash
+        let base_free = account
             .balance_free(Some(base_currency))
             .unwrap_or_else(|| Money::zero(base_currency));
 
         if self.config.debug {
             log::debug!("Cash value: {cash_value:?}");
-            log::debug!("Total: {:?}", cash.balance_total(Some(base_currency)));
-            log::debug!("Locked: {:?}", cash.balance_locked(Some(base_currency)));
+            log::debug!("Total: {:?}", account.balance_total(Some(base_currency)));
+            log::debug!("Locked: {:?}", account.balance_locked(Some(base_currency)));
             log::debug!("Free: {base_free:?}");
         }
 
@@ -1886,7 +1907,7 @@ impl RiskEngine {
             log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
         }
 
-        if !cash.allow_borrowing
+        if !allow_borrowing
             && let Some(cum_notional_sell) = *cum_notional_sell
             && cum_notional_sell.raw > base_free.raw
         {

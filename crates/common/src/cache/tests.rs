@@ -4257,16 +4257,77 @@ fn test_update_account_state_grows_event_log_in_place(mut cache: Cache) {
 }
 
 #[rstest]
-#[should_panic(expected = "sole owner")]
-fn test_take_account_panics_when_cell_aliased(mut cache: Cache) {
+fn test_update_account_state_creates_wallet_account(mut cache: Cache) {
+    let account_id = AccountId::from("WALLET-001");
+    let event = AccountState::new(
+        account_id,
+        AccountType::Wallet,
+        vec![
+            AccountBalance::new(
+                Money::from("10 ETH"),
+                Money::from("0 ETH"),
+                Money::from("10 ETH"),
+            ),
+            AccountBalance::new(
+                Money::from("25000 USDC"),
+                Money::from("0 USDC"),
+                Money::from("25000 USDC"),
+            ),
+        ],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+
+    cache.update_account_state(&event).unwrap();
+
+    let cached = cache.account(&account_id).unwrap();
+    assert!(matches!(&*cached, AccountAny::Wallet(_)));
+    assert_eq!(cached.events(), vec![event]);
+
+    let balances = cached.balances();
+    assert_eq!(
+        balances.get(&Currency::ETH()).map(|b| b.total),
+        Some(Money::from("10 ETH"))
+    );
+    assert_eq!(
+        balances.get(&Currency::USDC()).map(|b| b.total),
+        Some(Money::from("25000 USDC"))
+    );
+}
+
+#[rstest]
+fn test_take_account_preserves_cell_when_aliased(mut cache: Cache) {
     let account = AccountAny::default();
     let account_id = account.id();
-    cache.add_account(account).unwrap();
+    cache.add_account(account.clone()).unwrap();
 
     // Manufacture an aliased SharedCell handle by cloning the inner Rc.
-    // This violates the sole-owner invariant; take_account must panic.
+    // This violates the sole-owner invariant; take_account must preserve the cache entry.
     let _alias = cache.accounts.get(&account_id).unwrap().clone();
-    let _ = cache.take_account(&account_id);
+    let result = cache.take_account(&account_id);
+
+    assert_eq!(result, None);
+    assert_eq!(*cache.account(&account_id).unwrap(), account);
+}
+
+#[rstest]
+fn test_take_account_preserves_cell_when_aliased_and_borrowed(mut cache: Cache) {
+    let account = AccountAny::default();
+    let account_id = account.id();
+    cache.add_account(account.clone()).unwrap();
+    let alias = cache.accounts.get(&account_id).unwrap().clone();
+    let borrow = alias.borrow_mut();
+
+    let result = cache.take_account(&account_id);
+
+    assert_eq!(cache.account_owned(&account_id), None);
+    drop(borrow);
+    assert_eq!(result, None);
+    assert_eq!(*cache.account(&account_id).unwrap(), account);
 }
 
 #[rstest]

@@ -741,6 +741,10 @@ impl LiveNode {
     async fn perform_startup_reconciliation(&mut self) -> anyhow::Result<()> {
         if !self.config.exec_engine.reconciliation {
             log::info!("Startup reconciliation disabled");
+            self.kernel
+                .portfolio
+                .borrow_mut()
+                .initialize_wallet_orders()?;
             return Ok(());
         }
 
@@ -846,6 +850,10 @@ impl LiveNode {
 
         self.kernel.portfolio.borrow_mut().initialize_orders();
         self.kernel.portfolio.borrow_mut().initialize_positions();
+        self.kernel
+            .portfolio
+            .borrow_mut()
+            .initialize_wallet_orders()?;
 
         let elapsed_secs = start.elapsed().as_secs_f64();
         log_info!(

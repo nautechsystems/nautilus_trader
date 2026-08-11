@@ -449,8 +449,8 @@ impl Portfolio {
             },
             |account| match &*account {
                 AccountAny::Margin(margin_account) => margin_account.initial_margins(),
-                AccountAny::Cash(_) | AccountAny::Betting(_) => {
-                    log::warn!("Initial margins not applicable for cash account");
+                AccountAny::Cash(_) | AccountAny::Betting(_) | AccountAny::Wallet(_) => {
+                    log::warn!("Initial margins not applicable for unleveraged account");
                     IndexMap::new()
                 }
             },
@@ -471,8 +471,8 @@ impl Portfolio {
             },
             |account| match &*account {
                 AccountAny::Margin(margin_account) => margin_account.maintenance_margins(),
-                AccountAny::Cash(_) | AccountAny::Betting(_) => {
-                    log::warn!("Maintenance margins not applicable for cash account");
+                AccountAny::Cash(_) | AccountAny::Betting(_) | AccountAny::Wallet(_) => {
+                    log::warn!("Maintenance margins not applicable for unleveraged account");
                     IndexMap::new()
                 }
             },
@@ -893,7 +893,7 @@ impl Portfolio {
                 .copied()
                 .chain(m.account_margins.values().copied())
                 .collect(),
-            AccountAny::Cash(_) | AccountAny::Betting(_) => Vec::new(),
+            AccountAny::Cash(_) | AccountAny::Betting(_) | AccountAny::Wallet(_) => Vec::new(),
         };
 
         // Collect venues the account has touched. `open_venues` drives the
@@ -957,7 +957,7 @@ impl Portfolio {
                     checked_add_money_map(&mut equity, *value, "snapshot equity")?;
                 }
             }
-            AccountAny::Cash(_) | AccountAny::Betting(_) => {
+            AccountAny::Cash(_) | AccountAny::Betting(_) | AccountAny::Wallet(_) => {
                 for venue in &open_venues {
                     for money in self
                         .mark_values_with_mode(*venue, Some(account_id), MarkValueMode::Equity)
@@ -1291,7 +1291,7 @@ impl Portfolio {
             let base_currency_is_credited = mode == MarkValueMode::Equity
                 && equity_account_id == Some(position.account_id)
                 && position_account.as_ref().is_some_and(|account| {
-                    matches!(&**account, AccountAny::Cash(_))
+                    matches!(&**account, AccountAny::Cash(_) | AccountAny::Wallet(_))
                         && account.base_currency().is_none()
                         && position.base_currency.is_some_and(|base| {
                             position.settlement_currency != base
@@ -1714,6 +1714,99 @@ impl Portfolio {
         );
 
         self.inner.borrow_mut().initialized = initialized;
+    }
+
+    /// Rebuilds Wallet account reservations from locally active orders.
+    ///
+    /// This runs independently of venue reconciliation because Wallet reservations are transient
+    /// and must be reconstructed after every cache restore.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an active Wallet order cannot be resolved to an instrument or its debit
+    /// reservation cannot be reconstructed exactly.
+    pub fn initialize_wallet_orders(&mut self) -> anyhow::Result<()> {
+        let grouped_orders = {
+            let cache = self.cache.borrow();
+            let mut client_order_ids = BTreeSet::new();
+            client_order_ids.extend(cache.iter_client_order_ids_open(None, None, None, None));
+            client_order_ids.extend(cache.iter_client_order_ids_inflight(None, None, None, None));
+
+            let mut grouped: IndexMap<(AccountId, InstrumentId), Vec<OrderAny>> = IndexMap::new();
+
+            for client_order_id in client_order_ids {
+                let Some(order) = cache.order(&client_order_id) else {
+                    continue;
+                };
+
+                if !wallet_order_reserves_balance(&order) {
+                    continue;
+                }
+
+                let Some(account) = resolve_account_for_instrument(
+                    &cache,
+                    &order.instrument_id(),
+                    order.account_id().as_ref(),
+                ) else {
+                    continue;
+                };
+
+                if !matches!(&*account, AccountAny::Wallet(_)) {
+                    continue;
+                }
+
+                if cache.instrument(&order.instrument_id()).is_none() {
+                    anyhow::bail!(
+                        "cannot rebuild Wallet reservations: no instrument found for {}",
+                        order.instrument_id()
+                    );
+                }
+
+                grouped
+                    .entry((account.id(), order.instrument_id()))
+                    .or_default()
+                    .push((*order).clone());
+            }
+            grouped
+        };
+
+        let total_orders = grouped_orders.values().map(Vec::len).sum::<usize>();
+        for ((account_id, instrument_id), orders) in grouped_orders {
+            let (account, instrument) = {
+                let cache = self.cache.borrow();
+                let account = cache.account_owned(&account_id).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "cannot rebuild Wallet reservations: account {account_id} not found"
+                    )
+                })?;
+                let instrument = cache.instrument(&instrument_id).cloned().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "cannot rebuild Wallet reservations: instrument {instrument_id} not found"
+                    )
+                })?;
+                (account, instrument)
+            };
+            let order_refs = orders.iter().collect::<Vec<_>>();
+            let Some((updated_account, _)) = self.inner.borrow().accounts.update_orders(
+                &account,
+                &instrument,
+                &order_refs,
+                self.clock.borrow().timestamp_ns(),
+            ) else {
+                anyhow::bail!(
+                    "cannot rebuild Wallet reservations for account {account_id} and instrument {instrument_id}"
+                );
+            };
+            self.cache.borrow_mut().update_account(&updated_account)?;
+        }
+
+        log::info!(
+            color = if total_orders > 0 { LogColor::Blue as u8 } else { LogColor::Normal as u8 };
+            "Initialized {} Wallet reservation{}",
+            total_orders,
+            if total_orders == 1 { "" } else { "s" }
+        );
+        Ok(())
     }
 
     /// Initializes account margin based on existing open positions.
@@ -3081,6 +3174,37 @@ fn resolve_account_for_instrument<'a>(
     }
 }
 
+fn wallet_order_reserves_balance(order: &OrderAny) -> bool {
+    order.is_open() || order.is_inflight()
+}
+
+fn wallet_reservation_orders(
+    cache: &Cache,
+    instrument_id: &InstrumentId,
+    account_id: AccountId,
+) -> Vec<OrderAny> {
+    let mut client_order_ids = BTreeSet::new();
+    client_order_ids.extend(cache.iter_client_order_ids_open(
+        None,
+        Some(instrument_id),
+        None,
+        Some(&account_id),
+    ));
+    client_order_ids.extend(cache.iter_client_order_ids_inflight(
+        None,
+        Some(instrument_id),
+        None,
+        Some(&account_id),
+    ));
+
+    client_order_ids
+        .into_iter()
+        .filter_map(|client_order_id| cache.order(&client_order_id))
+        .filter(|order| wallet_order_reserves_balance(order))
+        .map(|order| (*order).clone())
+        .collect()
+}
+
 fn update_instrument_id(
     cache: &Rc<RefCell<Cache>>,
     clock: &Rc<RefCell<dyn Clock>>,
@@ -3246,7 +3370,7 @@ fn update_order(
     };
 
     // Scoped borrow: must drop before calling AccountsManager (which borrows cache internally)
-    let (instrument, orders_open) = {
+    let (instrument, orders_open, calculate_account_state, is_wallet) = {
         let cache_ref = cache.borrow();
 
         let account = match cache_ref.try_account(&account_id) {
@@ -3257,29 +3381,34 @@ fn update_order(
             }
         };
 
-        match &*account {
+        let (calculate_account_state, is_wallet) = match &*account {
             AccountAny::Margin(margin_account) => {
-                if !margin_account.base.calculate_account_state {
-                    return;
-                }
+                (margin_account.base.calculate_account_state, false)
             }
-            AccountAny::Cash(cash_account) => {
-                if !cash_account.base.calculate_account_state {
-                    return;
-                }
-            }
+            AccountAny::Cash(cash_account) => (cash_account.base.calculate_account_state, false),
             AccountAny::Betting(betting_account) => {
-                if !betting_account.base.calculate_account_state {
-                    return;
-                }
+                (betting_account.base.calculate_account_state, false)
             }
+            AccountAny::Wallet(wallet_account) => {
+                (wallet_account.base.calculate_account_state, true)
+            }
+        };
+
+        if !calculate_account_state && !is_wallet {
+            return;
         }
 
         match event {
-            OrderEventAny::Accepted(_)
+            OrderEventAny::Submitted(_)
+            | OrderEventAny::Accepted(_)
             | OrderEventAny::Canceled(_)
             | OrderEventAny::Expired(_)
             | OrderEventAny::Rejected(_)
+            | OrderEventAny::Triggered(_)
+            | OrderEventAny::PendingUpdate(_)
+            | OrderEventAny::PendingCancel(_)
+            | OrderEventAny::ModifyRejected(_)
+            | OrderEventAny::CancelRejected(_)
             | OrderEventAny::Updated(_)
             | OrderEventAny::Filled(_)
             | OrderEventAny::FillVoided(_) => {}
@@ -3297,7 +3426,8 @@ fn update_order(
             return; // No Order Found
         }
 
-        if matches!(event, OrderEventAny::Rejected(_))
+        if !is_wallet
+            && matches!(event, OrderEventAny::Rejected(_))
             && order.is_some_and(|order| order.order_type() != OrderType::StopLimit)
         {
             return; // No change to account state
@@ -3313,23 +3443,27 @@ fn update_order(
             return;
         };
 
-        let orders_open: Vec<OrderAny> = cache_ref
-            .orders_open(
-                None,
-                Some(&event.instrument_id()),
-                None,
-                Some(&account_id),
-                None,
-            )
-            .iter()
-            .map(|o| (*o).clone())
-            .collect();
+        let orders_open = if is_wallet {
+            wallet_reservation_orders(&cache_ref, &event.instrument_id(), account_id)
+        } else {
+            cache_ref
+                .orders_open(
+                    None,
+                    Some(&event.instrument_id()),
+                    None,
+                    Some(&account_id),
+                    None,
+                )
+                .into_iter()
+                .map(|order| (*order).clone())
+                .collect()
+        };
 
-        (instrument, orders_open)
+        (instrument, orders_open, calculate_account_state, is_wallet)
     };
 
     // No cache borrow held: AccountsManager borrows cache internally for xrate lookups.
-    let mut working_account = match cache.borrow_mut().take_account(&account_id) {
+    let mut working_account = match take_or_clone_account(cache, account_id) {
         Some(account) => account,
         None => {
             log::error!(
@@ -3340,7 +3474,9 @@ fn update_order(
         }
     };
 
-    if let OrderEventAny::Filled(order_filled) = event {
+    if let OrderEventAny::Filled(order_filled) = event
+        && calculate_account_state
+    {
         if !instrument.is_spread() {
             let (post_balance, _state) =
                 inner
@@ -3379,11 +3515,16 @@ fn update_order(
             }
         }
 
-        working_account = cache
-            .borrow_mut()
-            .take_account(&account_id)
-            .expect("account restored before unrealized PnL calculation");
-    } else if let OrderEventAny::FillVoided(fill_voided) = event {
+        let Some(restored_account) = take_or_clone_account(cache, account_id) else {
+            log::error!(
+                "Cannot finish fill account update: account {account_id} could not be restored"
+            );
+            return;
+        };
+        working_account = restored_account;
+    } else if let OrderEventAny::FillVoided(fill_voided) = event
+        && calculate_account_state
+    {
         cache.borrow_mut().cache_account_owned(working_account);
 
         let portfolio = Portfolio {
@@ -3427,8 +3568,18 @@ fn update_order(
                 .shift_remove(&fill_voided.instrument_id);
         }
 
-        log::debug!("Updated {event}");
-        return;
+        if !is_wallet {
+            log::debug!("Updated {event}");
+            return;
+        }
+
+        let Some(restored_account) = take_or_clone_account(cache, account_id) else {
+            log::error!(
+                "Cannot recalculate Wallet reservations: account {account_id} was not restored after fill void"
+            );
+            return;
+        };
+        working_account = restored_account;
     }
 
     let orders_open_refs: Vec<&OrderAny> = orders_open.iter().collect();
@@ -3455,10 +3606,10 @@ fn update_order(
     let updated_account_id = working_account.id();
 
     if account_state.is_some() || matches!(event, OrderEventAny::Filled(_)) {
-        cache
-            .borrow_mut()
-            .update_account_owned(working_account)
-            .unwrap();
+        if let Err(e) = cache.borrow_mut().update_account_owned(working_account) {
+            log::error!("Cannot persist updated account {updated_account_id}: {e}");
+            return;
+        }
     } else {
         cache.borrow_mut().cache_account_owned(working_account);
     }
@@ -3483,6 +3634,12 @@ fn update_order(
     log::debug!("Updated {event}");
 }
 
+fn take_or_clone_account(cache: &Rc<RefCell<Cache>>, account_id: AccountId) -> Option<AccountAny> {
+    let account = cache.borrow_mut().take_account(&account_id);
+
+    account.or_else(|| cache.borrow().account_owned(&account_id))
+}
+
 fn on_order_event(
     cache: &Rc<RefCell<Cache>>,
     inner: &Rc<RefCell<PortfolioState>>,
@@ -3502,11 +3659,18 @@ fn on_order_event(
     };
 
     match event {
-        OrderEventAny::Accepted(_)
+        OrderEventAny::Submitted(_)
+        | OrderEventAny::Accepted(_)
         | OrderEventAny::Canceled(_)
         | OrderEventAny::Expired(_)
         | OrderEventAny::Rejected(_)
-        | OrderEventAny::Updated(_) => {}
+        | OrderEventAny::Triggered(_)
+        | OrderEventAny::PendingUpdate(_)
+        | OrderEventAny::PendingCancel(_)
+        | OrderEventAny::ModifyRejected(_)
+        | OrderEventAny::CancelRejected(_)
+        | OrderEventAny::Updated(_)
+        | OrderEventAny::FillVoided(_) => {}
         _ => return,
     }
 

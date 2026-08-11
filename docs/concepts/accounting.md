@@ -12,13 +12,16 @@ configuration (starting balances, margin-model selection per venue), see
 ## Account types
 
 When you attach a venue to the engine for either live trading or a backtest, you
-pick one of three accounting modes via `account_type`:
+pick one of three accounting modes via `account_type`: Cash, Margin, or Betting.
+A fourth account type, Wallet, models on‑chain wallet state. The Blockchain
+adapter selects it, and its execution client is still in development.
 
 | Account type | Typical use case                                | What the engine locks                                                     |
 | ------------ | ----------------------------------------------- | ------------------------------------------------------------------------- |
 | Cash         | Spot trading (e.g., BTC/USDT, stocks)           | Notional value for every position a pending order would open.             |
 | Margin       | Derivatives or any product that allows leverage | Initial margin for each order plus maintenance margin for open positions. |
 | Betting      | Sports betting, bookmaking                      | Stake required by the venue; no leverage.                                 |
+| Wallet       | Blockchain wallets (DeFi)                       | Amounts reserved locally for pending orders; no leverage or borrowing.    |
 
 ### Cash accounts
 
@@ -42,9 +45,10 @@ is tracked in two scopes; see [Margin scopes](#margin-scopes) below.
 - **Locked balance**: funds reserved as collateral, not available for new orders.
 
 :::note
-Reduce-only orders do not contribute to `balance_locked` on cash accounts and do
-not add to initial margin on margin accounts, since they can only decrease
-exposure.
+Reduce‑only orders do not contribute to `balance_locked` on cash accounts and
+do not add to initial margin on margin accounts, since they can only decrease
+exposure. Wallet orders still reserve the input asset because the on‑chain
+transaction spends that asset even when the order reduces a position.
 :::
 
 ### Betting accounts
@@ -52,6 +56,25 @@ exposure.
 Betting accounts are specialised for venues where you stake an amount to win or
 lose a fixed payout (prediction markets, sports books). The engine locks only
 the stake required by the venue; leverage and margin do not apply.
+
+### Wallet accounts
+
+Wallet accounts represent blockchain wallets: unleveraged, multi-currency
+holdings of native and ERC-20 token balances with no margin and no borrowing.
+For reported states, `total` is the observed on‑chain balance; `locked` tracks
+local pending‑order reservations, and `free = total - locked`. Account state
+events contribute totals only: the account ignores incoming `locked` and `free`
+values, retains its local reservations, and rederives `free`. It rebuilds
+transient reservations from submitted and open orders during live startup.
+While an amendment is pending, the account reserves the full observed balance
+of the debit currency because the pending event does not carry the requested
+terms. If the reserved amount exceeds the latest observed total, `locked` is
+capped at `total` and `free` remains zero until the balance or reservation
+changes.
+
+A balance with a negative total is rejected rather than applied. ERC‑20
+allowances are spender authorizations and are never represented as balances or
+locked funds.
 
 ## Balance model
 
@@ -381,3 +404,5 @@ are keyed by `currency`.
   conversion.
 - [Positions](positions.md): position lifecycle, aggregation, and PnL.
 - [Adapters](adapters.md): requirements and best practices for adapter authors.
+- [Blockchain](../integrations/blockchain.md): the adapter that selects wallet accounts, and its
+  execution status.

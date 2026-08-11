@@ -43,9 +43,11 @@ from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import VenueOrderId
+from nautilus_trader.model import WalletAccount
 from nautilus_trader.model import betting_account_from_account_events
 from nautilus_trader.model import cash_account_from_account_events
 from nautilus_trader.model import margin_account_from_account_events
+from nautilus_trader.model import wallet_account_from_account_events
 
 
 def test_cash_account_properties_and_balances():
@@ -306,6 +308,101 @@ def test_betting_account_from_account_events():
     assert account.balance_free() == Money.from_str("875.00 USD")
 
 
+def test_wallet_account():
+    state = AccountState(
+        account_id=AccountId("WALLET-001"),
+        account_type=AccountType.WALLET,
+        balances=[
+            AccountBalance(
+                total=Money.from_str("10.00000000 ETH"),
+                locked=Money.from_str("1.00000000 ETH"),
+                free=Money.from_str("9.00000000 ETH"),
+            ),
+            AccountBalance(
+                total=Money.from_str("25000.00000000 USDC"),
+                locked=Money.from_str("0.00000000 USDC"),
+                free=Money.from_str("25000.00000000 USDC"),
+            ),
+        ],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=1,
+        ts_init=2,
+        base_currency=None,
+    )
+
+    account = WalletAccount(state, calculate_account_state=True)
+
+    assert account.id == AccountId("WALLET-001")
+    assert account.account_type == AccountType.WALLET
+    assert account.base_currency is None
+    assert not account.is_cash_account()
+    assert not account.is_margin_account()
+    assert account.balance_total(Currency.from_str("ETH")) == Money.from_str(
+        "10.00000000 ETH",
+    )
+    assert account.balance_free(Currency.from_str("ETH")) == Money.from_str("10.00000000 ETH")
+    assert account.balance_locked(Currency.from_str("ETH")) == Money.from_str(
+        "0.00000000 ETH",
+    )
+    assert account.balance_total(Currency.from_str("USDC")) == Money.from_str(
+        "25000.00000000 USDC",
+    )
+
+
+def test_wallet_account_rejects_negative_total():
+    state = AccountState(
+        account_id=AccountId("WALLET-NEGATIVE"),
+        account_type=AccountType.WALLET,
+        balances=[
+            AccountBalance(
+                total=Money.from_str("-1.00000000 ETH"),
+                locked=Money.from_str("0.00000000 ETH"),
+                free=Money.from_str("-1.00000000 ETH"),
+            ),
+        ],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=1,
+        ts_init=2,
+        base_currency=None,
+    )
+
+    with pytest.raises(ValueError, match="Wallet account balance total was negative"):
+        WalletAccount(state, calculate_account_state=True)
+
+
+def test_wallet_account_from_account_events():
+    state = AccountState(
+        account_id=AccountId("WALLET-002"),
+        account_type=AccountType.WALLET,
+        balances=[
+            AccountBalance(
+                total=Money.from_str("10.00000000 ETH"),
+                locked=Money.from_str("0.00000000 ETH"),
+                free=Money.from_str("10.00000000 ETH"),
+            ),
+        ],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=1,
+        ts_init=2,
+        base_currency=None,
+    )
+
+    account = wallet_account_from_account_events(
+        [state.to_dict()],
+        calculate_account_state=True,
+    )
+
+    assert account.id == AccountId("WALLET-002")
+    assert account.account_type == AccountType.WALLET
+    assert account.balance_free(Currency.from_str("ETH")) == Money.from_str("10.00000000 ETH")
+
+
 def test_cash_account_multi_currency_balances():
     usd = Currency.from_str("USD")
     btc = Currency.from_str("BTC")
@@ -341,6 +438,48 @@ def test_cash_account_multi_currency_balances():
     assert len(account.balances_total()) == 2
     assert len(account.balances_free()) == 2
     assert len(account.balances_locked()) == 2
+
+
+def test_cash_account_multi_currency_from_account_events_round_trip():
+    usd = Currency.from_str("USD")
+    btc = Currency.from_str("BTC")
+    state = AccountState(
+        account_id=AccountId("BINANCE-002"),
+        account_type=AccountType.CASH,
+        balances=[
+            AccountBalance(
+                total=Money.from_str("10000.00 USD"),
+                locked=Money.from_str("2500.00 USD"),
+                free=Money.from_str("7500.00 USD"),
+            ),
+            AccountBalance(
+                total=Money.from_str("1.50000000 BTC"),
+                locked=Money.from_str("0.25000000 BTC"),
+                free=Money.from_str("1.25000000 BTC"),
+            ),
+        ],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=1,
+        ts_init=2,
+        base_currency=None,
+    )
+
+    account = cash_account_from_account_events(
+        [state.to_dict()],
+        calculate_account_state=True,
+        allow_borrowing=False,
+    )
+
+    assert account.id == AccountId("BINANCE-002")
+    assert account.base_currency is None
+    assert account.balance_total(usd) == Money.from_str("10000.00 USD")
+    assert account.balance_locked(usd) == Money.from_str("2500.00 USD")
+    assert account.balance_free(usd) == Money.from_str("7500.00 USD")
+    assert account.balance_total(btc) == Money.from_str("1.50000000 BTC")
+    assert account.balance_locked(btc) == Money.from_str("0.25000000 BTC")
+    assert account.balance_free(btc) == Money.from_str("1.25000000 BTC")
 
 
 def test_cash_account_calculate_balance_locked_buy():

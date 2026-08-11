@@ -68,8 +68,8 @@ use nautilus_core::{
 use nautilus_model::{
     accounts::Account,
     enums::{
-        ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
-        TrailingOffsetType,
+        AccountType, ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TrailingOffsetType,
     },
     events::{
         OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny, OrderFillVoided,
@@ -3236,6 +3236,12 @@ impl ExecutionEngine {
     }
 
     fn send_order_update_to_portfolio(&self, event: &OrderEventAny) {
+        let is_wallet = event.account_id().is_some_and(|account_id| {
+            self.cache
+                .borrow()
+                .account(&account_id)
+                .is_some_and(|account| account.account_type() == AccountType::Wallet)
+        });
         let send_to_portfolio = match event {
             OrderEventAny::Filled(fill) => self
                 .cache
@@ -3247,6 +3253,13 @@ impl ExecutionEngine {
             | OrderEventAny::Expired(_)
             | OrderEventAny::Rejected(_)
             | OrderEventAny::Updated(_) => true,
+            OrderEventAny::Submitted(_)
+            | OrderEventAny::Triggered(_)
+            | OrderEventAny::PendingUpdate(_)
+            | OrderEventAny::PendingCancel(_)
+            | OrderEventAny::ModifyRejected(_)
+            | OrderEventAny::CancelRejected(_)
+            | OrderEventAny::FillVoided(_) => is_wallet,
             _ => false,
         };
 

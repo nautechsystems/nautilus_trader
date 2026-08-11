@@ -1,0 +1,42 @@
+{
+  "Betting": {
+    "base": {
+      "id": "SIM-001",
+      "account_type": "BETTING",
+      "base_currency": "GBP",
+      "calculate_account_state": false,
+      "events": [
+        {
+          "account_id": "SIM-001",
+          "account_type": "BETTING",
+          "base_currency": "GBP",
+          "balances": [
+            {
+              "currency": "GBP",
+              "total": "1000.00 GBP",
+              "locked": "0.00 GBP",
+              "free": "1000.00 GBP"
+            }
+          ],
+          "margins": [],
+          "is_reported": true,
+          "event_id": "16578139-a945-4b65-b46c-bc131a15d8e7",
+          "ts_event": 0,
+          "ts_init": 0
+        }
+      ],
+      "commissions": {},
+      "balances": {
+        "GBP": {
+          "currency": "GBP",
+          "total": "1000.00 GBP",
+          "locked": "0.00 GBP",
+          "free": "1000.00 GBP"
+        }
+      },
+      "balances_starting": {
+        "GBP": "1000.00 GBP"
+      }
+    }
+  }
+}

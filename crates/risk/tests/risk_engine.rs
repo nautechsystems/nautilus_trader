@@ -44,7 +44,9 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
 use nautilus_model::{
-    accounts::{AccountAny, BettingAccount, CashAccount, MarginAccount, stubs::cash_account},
+    accounts::{
+        AccountAny, BettingAccount, CashAccount, MarginAccount, WalletAccount, stubs::cash_account,
+    },
     data::{
         Bar, BarSpecification, BarType, QuoteTick, TradeTick,
         stubs::{quote_audusd, quote_ethusdt_binance},
@@ -2660,6 +2662,353 @@ fn test_submit_market_order_without_price_checks_cash_asset_balance(
             &OrderDeniedReason::CumNotionalExceedsFreeBalance {
                 free: Money::from("0 ETH"),
                 cum_notional: Money::from("1 ETH"),
+            }
+            .to_string()
+        )
+    );
+    assert_eq!(execute_messages.len(), 0);
+}
+
+fn add_wallet_account(cache: &mut Cache, eth_total: &str) {
+    let eth = Currency::ETH();
+    let usdc = Currency::USDC();
+    let account_state = AccountState::new(
+        AccountId::from("BINANCE-001"),
+        AccountType::Wallet,
+        vec![
+            AccountBalance::new(
+                Money::from(eth_total),
+                Money::zero(eth),
+                Money::from(eth_total),
+            ),
+            AccountBalance::new(
+                Money::from("25000 USDC"),
+                Money::zero(usdc),
+                Money::from("25000 USDC"),
+            ),
+        ],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::from(0),
+        UnixNanos::from(0),
+        None,
+    );
+    cache
+        .add_account(AccountAny::Wallet(WalletAccount::new(account_state, true)))
+        .unwrap();
+}
+
+#[rstest]
+fn test_submit_market_order_wallet_sell_exceeds_free_balance_without_price_denies(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+    add_wallet_account(&mut simple_cache, "10 ETH");
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    submit_market_order(
+        &mut risk_engine,
+        instrument_eth_usdt.id(),
+        OrderType::Market,
+        OrderSide::Sell,
+        "11.000",
+        trader_id,
+        client_id_binance,
+        strategy_id_ema_cross,
+    );
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(process_messages.len(), 1);
+    assert_eq!(process_messages[0].event_type(), OrderEventType::Denied);
+    assert_eq!(
+        process_messages[0].message().unwrap(),
+        Ustr::from(
+            &OrderDeniedReason::CumNotionalExceedsFreeBalance {
+                free: Money::from("10 ETH"),
+                cum_notional: Money::from("11 ETH"),
+            }
+            .to_string()
+        )
+    );
+    assert_eq!(execute_messages.len(), 0);
+}
+
+#[rstest]
+fn test_submit_market_order_wallet_sell_within_balance_without_price_denies_no_market_price(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+    add_wallet_account(&mut simple_cache, "10 ETH");
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    submit_market_order(
+        &mut risk_engine,
+        instrument_eth_usdt.id(),
+        OrderType::Market,
+        OrderSide::Sell,
+        "1.000",
+        trader_id,
+        client_id_binance,
+        strategy_id_ema_cross,
+    );
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(process_messages.len(), 1);
+    assert_eq!(process_messages[0].event_type(), OrderEventType::Denied);
+    assert_eq!(
+        process_messages[0].message().unwrap(),
+        Ustr::from(&format!(
+            "Cannot check MARKET order risk: no prices for {}",
+            instrument_eth_usdt.id()
+        ))
+    );
+    assert_eq!(execute_messages.len(), 0);
+}
+
+#[rstest]
+fn test_submit_market_order_wallet_sell_exceeds_free_balance_with_price_denies(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+    simple_cache
+        .add_quote(QuoteTick::new(
+            instrument_eth_usdt.id(),
+            Price::from("3000.00"),
+            Price::from("3001.00"),
+            Quantity::from("1"),
+            Quantity::from("1"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+    add_wallet_account(&mut simple_cache, "10 ETH");
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    submit_market_order(
+        &mut risk_engine,
+        instrument_eth_usdt.id(),
+        OrderType::Market,
+        OrderSide::Sell,
+        "11.000",
+        trader_id,
+        client_id_binance,
+        strategy_id_ema_cross,
+    );
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(process_messages.len(), 1);
+    assert_eq!(process_messages[0].event_type(), OrderEventType::Denied);
+    assert_eq!(
+        process_messages[0].message().unwrap(),
+        Ustr::from(
+            &OrderDeniedReason::CumNotionalExceedsFreeBalance {
+                free: Money::from("10 ETH"),
+                cum_notional: Money::from("11 ETH"),
+            }
+            .to_string()
+        )
+    );
+    assert_eq!(execute_messages.len(), 0);
+}
+
+#[rstest]
+fn test_submit_market_order_wallet_sell_within_balance_with_price_passes(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+    simple_cache
+        .add_quote(QuoteTick::new(
+            instrument_eth_usdt.id(),
+            Price::from("3000.00"),
+            Price::from("3001.00"),
+            Quantity::from("1"),
+            Quantity::from("1"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+    add_wallet_account(&mut simple_cache, "10 ETH");
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    submit_market_order(
+        &mut risk_engine,
+        instrument_eth_usdt.id(),
+        OrderType::Market,
+        OrderSide::Sell,
+        "1.000",
+        trader_id,
+        client_id_binance,
+        strategy_id_ema_cross,
+    );
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(process_messages.len(), 0);
+    assert_eq!(execute_messages.len(), 1);
+}
+
+#[rstest]
+fn test_submit_market_order_wallet_buy_missing_quote_balance_denies(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+    simple_cache
+        .add_quote(QuoteTick::new(
+            instrument_eth_usdt.id(),
+            Price::from("3000.00"),
+            Price::from("3001.00"),
+            Quantity::from("1"),
+            Quantity::from("1"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+    add_wallet_account(&mut simple_cache, "10 ETH");
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    submit_market_order(
+        &mut risk_engine,
+        instrument_eth_usdt.id(),
+        OrderType::Market,
+        OrderSide::Buy,
+        "1.000",
+        trader_id,
+        client_id_binance,
+        strategy_id_ema_cross,
+    );
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(process_messages.len(), 1);
+    assert_eq!(process_messages[0].event_type(), OrderEventType::Denied);
+    assert_eq!(
+        process_messages[0].message().unwrap(),
+        Ustr::from(
+            &OrderDeniedReason::NotionalExceedsFreeBalance {
+                free: Money::from("0 USDT"),
+                notional: Money::from("3001 USDT"),
+            }
+            .to_string()
+        )
+    );
+    assert_eq!(execute_messages.len(), 0);
+}
+
+#[rstest]
+fn test_submit_reduce_only_wallet_sell_still_checks_asset_balance(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+    simple_cache
+        .add_quote(QuoteTick::new(
+            instrument_eth_usdt.id(),
+            Price::from("3000.00"),
+            Price::from("3001.00"),
+            Quantity::from("1"),
+            Quantity::from("1"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+    add_wallet_account(&mut simple_cache, "10 ETH");
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("11.000"))
+        .reduce_only(true)
+        .build();
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+    let command = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_eth_usdt.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(command));
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(process_messages.len(), 1);
+    assert_eq!(process_messages[0].event_type(), OrderEventType::Denied);
+    assert_eq!(
+        process_messages[0].message().unwrap(),
+        Ustr::from(
+            &OrderDeniedReason::CumNotionalExceedsFreeBalance {
+                free: Money::from("10 ETH"),
+                cum_notional: Money::from("11 ETH"),
             }
             .to_string()
         )

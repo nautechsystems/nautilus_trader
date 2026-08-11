@@ -43,7 +43,10 @@ mod serial_tests {
         enums::{OrderSide, OrderStatus, OrderType},
         events::{
             AccountState, OrderEventAny, OrderFilled, OrderSnapshot,
-            account::stubs::{cash_account_state_multi, cash_account_state_multi_changed_btc},
+            account::stubs::{
+                cash_account_state_multi, cash_account_state_multi_changed_btc,
+                wallet_account_state, wallet_account_state_changed,
+            },
             order::spec::OrderFillVoidedSpec,
             position::snapshot::PositionSnapshot,
         },
@@ -1314,6 +1317,59 @@ mod serial_tests {
         assert!(!order_loaded_after_flush);
 
         let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_and_update_wallet_account() {
+        let _guard = redis_test_mutex().lock().await;
+        let mut adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+
+        // Distinct account ID: the recovery test above shares this trader's keyspace
+        let mut init_state = wallet_account_state();
+        init_state.account_id = AccountId::from("WALLET-001");
+        let mut account = AccountAny::try_from_state(init_state).unwrap();
+        adapter.add_account(&account).unwrap();
+
+        wait_until_async(
+            || async { adapter.load_account(&account.id()).await.unwrap().is_some() },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let loaded = adapter.load_account(&account.id()).await.unwrap().unwrap();
+        assert!(matches!(loaded, AccountAny::Wallet(_)));
+        assert_eq!(
+            serde_json::to_string(&loaded).unwrap(),
+            serde_json::to_string(&account).unwrap()
+        );
+
+        let mut changed_state = wallet_account_state_changed();
+        changed_state.account_id = AccountId::from("WALLET-001");
+        account.apply(changed_state).unwrap();
+        adapter.update_account(&account).unwrap();
+
+        wait_until_async(
+            || async {
+                adapter
+                    .load_account(&account.id())
+                    .await
+                    .unwrap()
+                    .is_some_and(|loaded| loaded.events().len() >= 2)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let loaded = adapter.load_account(&account.id()).await.unwrap().unwrap();
+        assert!(matches!(loaded, AccountAny::Wallet(_)));
+        assert_eq!(
+            serde_json::to_string(&loaded).unwrap(),
+            serde_json::to_string(&account).unwrap()
+        );
+
         adapter.flush().unwrap();
     }
 

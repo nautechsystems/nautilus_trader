@@ -13,7 +13,7 @@ The `is_reported` flag distinguishes venue‑reported snapshots from system‑ca
 | Field           | Python type            | Required/default | Description                                                               |
 | --------------- | ---------------------- | ---------------- | ------------------------------------------------------------------------- |
 | `account_id`    | `AccountId`            | Required         | The account ID (with the venue).                                          |
-| `account_type`  | `AccountType`          | Required         | The account type (`CASH`, `MARGIN`, or `BETTING`).                        |
+| `account_type`  | `AccountType`          | Required         | The account type (`CASH`, `MARGIN`, `BETTING`, or `WALLET`).              |
 | `base_currency` | `Currency` or `None`   | `None`           | The account base currency (`None` for multi‑currency accounts).           |
 | `is_reported`   | `bool`                 | Required         | If the state is reported from the exchange (otherwise system‑calculated). |
 | `balances`      | `list[AccountBalance]` | Required         | The account balances (may be empty).                                      |

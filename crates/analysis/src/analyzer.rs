@@ -241,6 +241,7 @@ impl PortfolioAnalyzer {
                 AccountAny::Margin(margin) => margin,
                 AccountAny::Cash(cash) => cash,
                 AccountAny::Betting(betting) => betting,
+                AccountAny::Wallet(wallet) => wallet,
             };
             account_ids.push(account_ref.id());
 

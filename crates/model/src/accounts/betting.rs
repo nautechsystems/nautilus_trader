@@ -26,13 +26,16 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    accounts::{Account, base::BaseAccount},
+    accounts::{
+        Account,
+        base::{self, BaseAccount},
+    },
     enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     position::Position,
-    types::{AccountBalance, Currency, Money, Price, Quantity, money::MoneyRaw},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,29 +70,21 @@ impl BettingAccount {
     ///
     /// Panics if `locked` is negative.
     pub fn update_balance_locked(&mut self, instrument_id: InstrumentId, locked: Money) {
-        assert!(locked.raw >= 0, "locked balance was negative: {locked}");
-        let currency = locked.currency;
-        self.balances_locked
-            .insert((instrument_id, currency), locked);
-        self.recalculate_balance(currency);
+        base::update_balance_locked(
+            &mut self.base.balances,
+            &mut self.balances_locked,
+            instrument_id,
+            locked,
+        );
     }
 
     /// Clears all locked balances for the given instrument ID.
     pub fn clear_balance_locked(&mut self, instrument_id: InstrumentId) {
-        let currencies_to_recalc: Vec<Currency> = self
-            .balances_locked
-            .keys()
-            .filter(|(id, _)| *id == instrument_id)
-            .map(|(_, currency)| *currency)
-            .collect();
-
-        for currency in &currencies_to_recalc {
-            self.balances_locked.remove(&(instrument_id, *currency));
-        }
-
-        for currency in currencies_to_recalc {
-            self.recalculate_balance(currency);
-        }
+        base::clear_balance_locked(
+            &mut self.base.balances,
+            &mut self.balances_locked,
+            instrument_id,
+        );
     }
 
     /// Updates the account balances, rejecting negative totals.
@@ -145,34 +140,7 @@ impl BettingAccount {
 
     /// Recalculates the account balance for the specified currency based on per-instrument locks.
     pub fn recalculate_balance(&mut self, currency: Currency) {
-        let current_balance = if let Some(balance) = self.balances.get(&currency) {
-            *balance
-        } else {
-            log::debug!("Cannot recalculate balance when no current balance for {currency}");
-            return;
-        };
-
-        let total_locked_raw: MoneyRaw = self
-            .balances_locked
-            .values()
-            .filter(|locked| locked.currency == currency)
-            .map(|locked| locked.raw)
-            .fold(0, |acc, raw| acc.saturating_add(raw));
-
-        let total_raw = current_balance.total.raw;
-        let (locked_raw, free_raw) = if total_locked_raw > total_raw && total_raw >= 0 {
-            (total_raw, 0)
-        } else {
-            (total_locked_raw, total_raw - total_locked_raw)
-        };
-
-        let new_balance = AccountBalance::new(
-            current_balance.total,
-            Money::from_raw(locked_raw, currency),
-            Money::from_raw(free_raw, currency),
-        );
-
-        self.balances.insert(currency, new_balance);
+        base::recalculate_balance(&mut self.base.balances, &self.balances_locked, currency);
     }
 }
 

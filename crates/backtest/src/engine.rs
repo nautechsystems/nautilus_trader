@@ -1921,6 +1921,7 @@ impl BacktestEngine {
                     AccountAny::Margin(margin) => margin,
                     AccountAny::Cash(cash) => cash,
                     AccountAny::Betting(betting) => betting,
+                    AccountAny::Wallet(wallet) => wallet,
                 };
 
                 for balance in account_ref.starting_balances().values() {

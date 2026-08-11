@@ -20,6 +20,7 @@ use nautilus_core::{
     python::{
         IntoPyObjectNautilusExt,
         parsing::{get_required, get_required_list, get_required_parsed, get_required_string},
+        to_pyvalue_err,
     },
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
@@ -138,7 +139,15 @@ impl AccountState {
     pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
         let account_id = get_required_string(values, "account_id")?;
         let _account_type = get_required_string(values, "account_type")?;
-        let _base_currency = get_required_string(values, "base_currency")?;
+        let base_currency_str = get_required_string(values, "base_currency")?;
+        let base_currency = if base_currency_str == "None" {
+            None
+        } else {
+            Some(
+                Currency::from_str(&base_currency_str)
+                    .map_err(|e| to_pyvalue_err(format!("Failed to parse 'base_currency': {e}")))?,
+            )
+        };
         let balances_list = get_required_list(values, "balances")?;
         let balances: Vec<AccountBalance> = balances_list
             .iter()
@@ -170,9 +179,7 @@ impl AccountState {
             get_required_parsed(values, "event_id", |s| UUID4::from_str(&s))?,
             ts_event.into(),
             ts_init.into(),
-            Some(get_required_parsed(values, "base_currency", |s| {
-                Currency::from_str(&s).map_err(|e| e.to_string())
-            })?),
+            base_currency,
         );
         Ok(account)
     }

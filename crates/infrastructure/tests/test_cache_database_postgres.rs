@@ -41,7 +41,9 @@ mod serial_tests {
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
         events::{
             OrderEventAny, OrderFilled, OrderSnapshot, PositionSnapshot,
-            account::stubs::cash_account_state_million_usd,
+            account::stubs::{
+                cash_account_state_million_usd, wallet_account_state, wallet_account_state_changed,
+            },
         },
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId,
@@ -1044,6 +1046,55 @@ mod serial_tests {
         .await;
         let account_result = pg_cache.load_account(&account.id()).await.unwrap();
         assert_entirely_equal(account_result.unwrap(), account);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_and_update_wallet_account() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+
+        // Distinct account ID and flush: these tests share one database
+        pg_cache.flush().unwrap();
+
+        let mut init_state = wallet_account_state();
+        init_state.account_id = AccountId::from("WALLET-001");
+        let mut account = AccountAny::try_from_state(init_state).unwrap();
+        pg_cache.add_account(&account).unwrap();
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_account(&account.id())
+                    .await
+                    .unwrap()
+                    .is_some()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+        let account_result = pg_cache.load_account(&account.id()).await.unwrap();
+        let loaded = account_result.unwrap();
+        assert!(matches!(loaded, AccountAny::Wallet(_)));
+        assert_entirely_equal(loaded, account.clone());
+
+        // Update account
+        let mut changed_state = wallet_account_state_changed();
+        changed_state.account_id = AccountId::from("WALLET-001");
+        account.apply(changed_state).unwrap();
+        pg_cache.update_account(&account).unwrap();
+        wait_until_async(
+            || async {
+                let result = pg_cache.load_account(&account.id()).await.unwrap();
+                result.is_some() && result.unwrap().events().len() >= 2
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+        let account_result = pg_cache.load_account(&account.id()).await.unwrap();
+        let loaded = account_result.unwrap();
+        assert!(matches!(loaded, AccountAny::Wallet(_)));
+        assert_entirely_equal(loaded, account);
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -749,6 +749,199 @@ fn test_initialize_orders_splits_initial_margin_by_account_when_broker_routed(
     assert_eq!(margin(&account_b), expected);
 }
 
+#[rstest]
+fn test_wallet_submitted_market_sell_reserves_and_rebuilds_with_calculation_disabled(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("WALLET-001");
+    let aud = Currency::AUD();
+    let usd = Currency::USD();
+    let instrument_id = instrument_audusd.id();
+    simple_cache.add_instrument(instrument_audusd).unwrap();
+
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+    portfolio.update_account(&AccountState::new(
+        account_id,
+        AccountType::Wallet,
+        vec![
+            AccountBalance::new(
+                Money::from("10 AUD"),
+                Money::zero(aud),
+                Money::from("10 AUD"),
+            ),
+            AccountBalance::new(
+                Money::from("100 USD"),
+                Money::zero(usd),
+                Money::from("100 USD"),
+            ),
+        ],
+        vec![],
+        true,
+        uuid4(),
+        0.into(),
+        0.into(),
+        None,
+    ));
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("2"))
+        .build();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let submitted = order_submitted(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument_id,
+        order.client_order_id(),
+        account_id,
+        uuid4(),
+    );
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted))
+        .unwrap();
+
+    portfolio.update_order(&OrderEventAny::Submitted(submitted));
+
+    let account = portfolio
+        .cache()
+        .borrow()
+        .account_owned(&account_id)
+        .unwrap();
+    assert!(!account.calculated_account_state());
+    assert_eq!(
+        account.balance_total(Some(aud)),
+        Some(Money::from("10 AUD"))
+    );
+    assert_eq!(
+        account.balance_locked(Some(aud)),
+        Some(Money::from("2 AUD"))
+    );
+    assert_eq!(account.balance_free(Some(aud)), Some(Money::from("8 AUD")));
+
+    {
+        let cache = portfolio.cache();
+        let mut cache = cache.borrow_mut();
+        let mut account = cache.account_mut(&account_id).unwrap();
+        let AccountAny::Wallet(wallet) = &mut *account else {
+            panic!("Expected WalletAccount")
+        };
+        wallet.clear_balance_locked(instrument_id);
+    }
+
+    portfolio.initialize_wallet_orders().unwrap();
+
+    let account = portfolio
+        .cache()
+        .borrow()
+        .account_owned(&account_id)
+        .unwrap();
+    assert_eq!(
+        account.balance_total(Some(aud)),
+        Some(Money::from("10 AUD"))
+    );
+    assert_eq!(
+        account.balance_locked(Some(aud)),
+        Some(Money::from("2 AUD"))
+    );
+    assert_eq!(account.balance_free(Some(aud)), Some(Money::from("8 AUD")));
+}
+
+#[rstest]
+fn test_initialize_wallet_orders_fails_when_debit_balance_is_missing(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("WALLET-001");
+    let usd = Currency::USD();
+    let instrument_id = instrument_audusd.id();
+    simple_cache.add_instrument(instrument_audusd).unwrap();
+
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+    portfolio.update_account(&AccountState::new(
+        account_id,
+        AccountType::Wallet,
+        vec![AccountBalance::new(
+            Money::from("100 USD"),
+            Money::zero(usd),
+            Money::from("100 USD"),
+        )],
+        vec![],
+        true,
+        uuid4(),
+        0.into(),
+        0.into(),
+        None,
+    ));
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("2"))
+        .build();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let submitted = order_submitted(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument_id,
+        order.client_order_id(),
+        account_id,
+        uuid4(),
+    );
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted))
+        .unwrap();
+
+    let result = portfolio.initialize_wallet_orders();
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        format!(
+            "cannot rebuild Wallet reservations for account {account_id} and instrument {instrument_id}"
+        )
+    );
+    let account = portfolio
+        .cache()
+        .borrow()
+        .account_owned(&account_id)
+        .unwrap();
+    assert_eq!(
+        account.balance_total(Some(usd)),
+        Some(Money::from("100 USD"))
+    );
+    assert_eq!(
+        account.balance_locked(Some(usd)),
+        Some(Money::from("0 USD"))
+    );
+    assert_eq!(
+        account.balance_free(Some(usd)),
+        Some(Money::from("100 USD"))
+    );
+}
+
 const ORDERING_SYMBOLS: [&str; 6] = [
     "EUR/USD", "EUR/GBP", "EUR/CHF", "EUR/CAD", "EUR/AUD", "EUR/NZD",
 ];
@@ -6874,6 +7067,97 @@ fn test_equity_multi_currency_cash_fill_counts_credited_asset_once(
         .map(|money| (money.currency, money))
         .collect();
 
+    assert_eq!(balances[&aud].as_decimal(), expected_aud);
+    assert_eq!(balances[&usd].as_decimal(), expected_usd);
+    assert_eq!(mark_values[&usd].as_decimal(), expected_mark);
+    assert_eq!(equity[&aud].as_decimal(), expected_aud);
+    assert_eq!(equity[&usd].as_decimal(), expected_usd);
+    assert_eq!(snapshot_equity[&aud].as_decimal(), expected_aud);
+    assert_eq!(snapshot_equity[&usd].as_decimal(), expected_usd);
+}
+
+#[rstest]
+#[case(OrderSide::Buy, 0.0, dec!(1), dec!(900), dec!(100))]
+#[case(OrderSide::Sell, 2.0, dec!(1), dec!(1_100), dec!(-101))]
+fn test_equity_multi_currency_wallet_fill_counts_credited_asset_once(
+    #[case] side: OrderSide,
+    #[case] starting_aud: f64,
+    #[case] expected_aud: Decimal,
+    #[case] expected_usd: Decimal,
+    #[case] expected_mark: Decimal,
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("WALLET-001");
+    let aud = Currency::AUD();
+    let usd = Currency::USD();
+    let state = AccountState::new(
+        account_id,
+        AccountType::Wallet,
+        vec![
+            AccountBalance::new(
+                Money::new(starting_aud, aud),
+                Money::zero(aud),
+                Money::new(starting_aud, aud),
+            ),
+            AccountBalance::new(
+                Money::new(1_000.0, usd),
+                Money::zero(usd),
+                Money::new(1_000.0, usd),
+            ),
+        ],
+        vec![],
+        true,
+        uuid4(),
+        0.into(),
+        0.into(),
+        None,
+    );
+    portfolio.update_account(&state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    let quote = get_quote_tick(&instrument_audusd, 100.0, 101.0, 1.0, 1.0);
+    portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+    portfolio.update_quote_tick(&quote);
+
+    let fill = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        side,
+        Quantity::from("1"),
+        Price::new(100.0, 0),
+        PositionId::new(format!("P-MULTI-EQUITY-WALLET-{side}")),
+    );
+    let position = Position::new(&instrument_audusd, fill.clone());
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_order(&OrderEventAny::Filled(fill));
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+
+    let account = portfolio
+        .cache()
+        .borrow()
+        .account_owned(&account_id)
+        .unwrap();
+    let balances = account.balances_total();
+    let mark_values = portfolio.mark_values(&Venue::test_default(), Some(&account_id));
+    let equity = portfolio.equity(&Venue::test_default(), Some(&account_id));
+    let snapshot = portfolio.build_snapshot(&account_id).unwrap();
+    let snapshot_equity: IndexMap<Currency, Money> = snapshot
+        .total_equity
+        .into_iter()
+        .map(|money| (money.currency, money))
+        .collect();
+
+    assert!(matches!(account, AccountAny::Wallet(_)));
     assert_eq!(balances[&aud].as_decimal(), expected_aud);
     assert_eq!(balances[&usd].as_decimal(), expected_usd);
     assert_eq!(mark_values[&usd].as_decimal(), expected_mark);

@@ -193,7 +193,9 @@ impl PyPortfolio {
                 py,
                 account.initial_margins(),
             )?)),
-            Some(AccountAny::Cash(_) | AccountAny::Betting(_)) | None => Ok(None),
+            Some(AccountAny::Cash(_) | AccountAny::Betting(_) | AccountAny::Wallet(_)) | None => {
+                Ok(None)
+            }
         }
     }
 
@@ -209,7 +211,9 @@ impl PyPortfolio {
                 py,
                 account.maintenance_margins(),
             )?)),
-            Some(AccountAny::Cash(_) | AccountAny::Betting(_)) | None => Ok(None),
+            Some(AccountAny::Cash(_) | AccountAny::Betting(_) | AccountAny::Wallet(_)) | None => {
+                Ok(None)
+            }
         }
     }
 

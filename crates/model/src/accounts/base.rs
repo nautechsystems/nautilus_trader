@@ -22,7 +22,10 @@ use ahash::AHashMap;
 use indexmap::IndexMap;
 use nautilus_core::{
     UnixNanos,
-    correctness::{FAILED, check_equal},
+    correctness::{
+        CorrectnessError, CorrectnessResult, FAILED, check_equal, check_predicate_false,
+        check_predicate_true,
+    },
     datetime::secs_to_nanos_unchecked,
 };
 use serde::{Deserialize, Serialize};
@@ -30,10 +33,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
-    identifiers::AccountId,
+    identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     position::Position,
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity, money::MoneyRaw},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -375,6 +378,142 @@ impl BaseAccount {
             .ok_or_else(|| anyhow::anyhow!("commission calculation overflow"))?;
 
         Ok(Money::from_decimal(commission, notional.currency)?)
+    }
+}
+
+/// Updates the locked balance for the given instrument and currency, then recalculates the
+/// account balance for that currency from all per-(instrument, currency) locks.
+///
+/// # Panics
+///
+/// Panics if `locked` is negative.
+pub(crate) fn update_balance_locked(
+    balances: &mut IndexMap<Currency, AccountBalance>,
+    balances_locked: &mut AHashMap<(InstrumentId, Currency), Money>,
+    instrument_id: InstrumentId,
+    locked: Money,
+) {
+    assert!(locked.raw >= 0, "locked balance was negative: {locked}");
+    let currency = locked.currency;
+    balances_locked.insert((instrument_id, currency), locked);
+    recalculate_balance(balances, balances_locked, currency);
+}
+
+/// Clears all locked balances for the given instrument ID, recalculating each affected currency.
+pub(crate) fn clear_balance_locked(
+    balances: &mut IndexMap<Currency, AccountBalance>,
+    balances_locked: &mut AHashMap<(InstrumentId, Currency), Money>,
+    instrument_id: InstrumentId,
+) {
+    let currencies_to_recalc: Vec<Currency> = balances_locked
+        .keys()
+        .filter(|(id, _)| *id == instrument_id)
+        .map(|(_, currency)| *currency)
+        .collect();
+
+    for currency in &currencies_to_recalc {
+        balances_locked.remove(&(instrument_id, *currency));
+    }
+
+    for currency in currencies_to_recalc {
+        recalculate_balance(balances, balances_locked, currency);
+    }
+}
+
+/// Recalculates the account balance for the specified currency based on per-instrument locks.
+///
+/// Sums all per-instrument locked amounts for the currency and updates the balance.
+/// If the total locked exceeds the total balance, clamps to total (free = 0).
+pub(crate) fn recalculate_balance(
+    balances: &mut IndexMap<Currency, AccountBalance>,
+    balances_locked: &AHashMap<(InstrumentId, Currency), Money>,
+    currency: Currency,
+) {
+    let current_balance = if let Some(balance) = balances.get(&currency) {
+        *balance
+    } else {
+        log::debug!("Cannot recalculate balance when no current balance for {currency}");
+        return;
+    };
+
+    let new_balance = match balance_from_locks(current_balance, balances_locked) {
+        Ok(balance) => balance,
+        Err(e) => {
+            log::error!(
+                "Cannot recalculate {currency} balance from reservations: {e}; using a non-spendable balance"
+            );
+            non_spendable_balance(current_balance)
+        }
+    };
+
+    balances.insert(currency, new_balance);
+}
+
+/// Derives an account balance from its total and all local reservations for its currency.
+///
+/// # Errors
+///
+/// Returns an error if a reservation is negative, uses a different fixed precision, or the
+/// derived locked or free balance exceeds [`Money`] bounds.
+pub(crate) fn balance_from_locks(
+    current_balance: AccountBalance,
+    balances_locked: &AHashMap<(InstrumentId, Currency), Money>,
+) -> CorrectnessResult<AccountBalance> {
+    let currency = current_balance.currency;
+    let mut total_locked_raw: MoneyRaw = 0;
+
+    for locked in balances_locked
+        .values()
+        .filter(|locked| locked.currency == currency)
+    {
+        check_predicate_false(
+            locked.raw < 0,
+            &format!("locked balance was negative: {locked}"),
+        )?;
+        check_predicate_true(
+            locked.currency.precision == currency.precision,
+            &format!(
+                "locked balance precision {} differed from balance precision {} for {currency}",
+                locked.currency.precision, currency.precision
+            ),
+        )?;
+        total_locked_raw = total_locked_raw.saturating_add(locked.raw);
+    }
+
+    let total_raw = current_balance.total.raw;
+    let locked_raw = if total_raw >= 0 {
+        total_locked_raw.min(total_raw)
+    } else {
+        total_locked_raw
+    };
+    let free_raw =
+        total_raw
+            .checked_sub(locked_raw)
+            .ok_or_else(|| CorrectnessError::PredicateViolation {
+                message: format!(
+                    "derived free balance overflowed for total {} and locked raw {locked_raw}",
+                    current_balance.total
+                ),
+            })?;
+    let locked = Money::from_raw_checked(locked_raw, currency)?;
+    let free = Money::from_raw_checked(free_raw, currency)?;
+
+    AccountBalance::new_checked(current_balance.total, locked, free)
+}
+
+fn non_spendable_balance(current_balance: AccountBalance) -> AccountBalance {
+    let zero = Money::zero(current_balance.currency);
+    let (locked, free) = if current_balance.total.raw >= 0 {
+        (current_balance.total, zero)
+    } else {
+        (zero, current_balance.total)
+    };
+
+    AccountBalance {
+        currency: current_balance.currency,
+        total: current_balance.total,
+        locked,
+        free,
     }
 }
 

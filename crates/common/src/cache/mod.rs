@@ -4877,29 +4877,31 @@ impl Cache {
         Ok(())
     }
 
-    /// Removes the `account` from the cache and returns it.
+    /// Returns an owned `account`, removing its cache entry when ownership is exclusive.
     ///
     /// This supports hot paths which need owned account mutation without
     /// cloning the account event history. The cache is the sole owner of the
     /// account cell (the field is private and accessors only hand out
-    /// lifetime-scoped [`AccountRef`] borrows), so the value is moved out of
-    /// its cell rather than cloned.
+    /// lifetime-scoped [`AccountRef`] borrows). When the cache is the sole owner, the value is
+    /// moved out of its cell rather than cloned.
     ///
-    /// # Panics
-    ///
-    /// Panics if the cache no longer holds the only strong handle to the
-    /// account cell. This indicates an internal invariant violation: some
-    /// component cloned the underlying [`SharedCell`] and held it past the
-    /// scope of a single cache method.
+    /// If another strong handle exists, the canonical entry remains cached and this returns
+    /// `None`.
     #[must_use]
     pub fn take_account(&mut self, account_id: &AccountId) -> Option<AccountAny> {
-        self.accounts.remove(account_id).map(|cell| {
-            let rc: Rc<RefCell<AccountAny>> = cell.into();
-            Rc::try_unwrap(rc).map_or_else(
-                |_| panic!("take_account: cache must be sole owner of {account_id} cell"),
-                RefCell::into_inner,
-            )
-        })
+        let cell = self.accounts.remove(account_id)?;
+        let rc: Rc<RefCell<AccountAny>> = cell.into();
+
+        match Rc::try_unwrap(rc) {
+            Ok(cell) => Some(cell.into_inner()),
+            Err(rc) => {
+                log::error!(
+                    "Cannot move account {account_id} out of cache: account cell has an outstanding owner"
+                );
+                self.accounts.insert(*account_id, rc.into());
+                None
+            }
+        }
     }
 
     /// Caches the `account` in memory without updating the database.
@@ -8001,15 +8003,19 @@ impl Cache {
             .map(|account_cell| AccountRefMut::new(account_cell.borrow_mut()))
     }
 
-    /// Gets an owned snapshot of the account with the `account_id` (if found).
+    /// Gets an owned snapshot of the account with the `account_id` when present and not mutably
+    /// borrowed.
     ///
     /// Use when downstream needs an owned [`AccountAny`] that crosses a boundary. The snapshot
     /// will not reflect later cache mutations.
     #[must_use]
     pub fn account_owned(&self, account_id: &AccountId) -> Option<AccountAny> {
-        self.accounts
-            .get(account_id)
-            .map(|account_cell| account_cell.borrow().clone())
+        self.accounts.get(account_id).and_then(|account_cell| {
+            account_cell
+                .try_borrow()
+                .ok()
+                .map(|account| account.clone())
+        })
     }
 
     /// Returns a borrow of the account for the `venue` (if found).

@@ -1847,7 +1847,7 @@ impl SimulatedExchange {
                 AccountAny::Cash(cash_account) => {
                     cash_account.allow_borrowing = self.allow_cash_borrowing;
                 }
-                AccountAny::Betting(_) => {}
+                AccountAny::Betting(_) | AccountAny::Wallet(_) => {}
             }
 
             self.cache.borrow_mut().update_account(&account).unwrap();

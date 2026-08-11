@@ -6854,6 +6854,7 @@ name = "nautilus-portfolio"
 version = "0.62.0"
 dependencies = [
  "ahash 0.8.12",
+ "anyhow",
  "bon",
  "criterion",
  "indexmap 2.14.0",
