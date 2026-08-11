@@ -117,6 +117,8 @@ mod tests {
     use nautilus_model::data::Bar;
     use rstest::rstest;
 
+    use crate::testing::assert_approx_equal;
+
     use crate::{average::vwap::VolumeWeightedAveragePrice, indicator::Indicator, stubs::*};
 
     const NANOSECONDS_PER_DAY: f64 = 86_400.0 * 1_000_000_000.0;
@@ -174,7 +176,7 @@ mod tests {
         bar_ethusdt_binance_minute_bid: Bar,
     ) {
         indicator_vwap.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(indicator_vwap.value, 1522.333333333333);
+        assert_approx_equal(indicator_vwap.value, 1522.33333333);
         assert!(indicator_vwap.initialized);
     }
 

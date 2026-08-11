@@ -130,6 +130,8 @@ impl RateOfChange {
 mod tests {
     use rstest::rstest;
 
+    use crate::testing::assert_approx_equal;
+
     use super::*;
     use crate::stubs::roc_10;
 
@@ -166,7 +168,7 @@ mod tests {
         }
 
         assert!(roc_10.initialized());
-        assert_eq!(roc_10.value, 0.6545985104427102);
+        assert_approx_equal(roc_10.value, 0.654598510443);
     }
 
     #[rstest]

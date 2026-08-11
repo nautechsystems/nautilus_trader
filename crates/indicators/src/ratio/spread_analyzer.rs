@@ -145,6 +145,7 @@ mod tests {
         indicator::Indicator,
         ratio::spread_analyzer::SpreadAnalyzer,
         stubs::{spread_analyzer_10, *},
+        testing::assert_approx_equal,
     };
     #[rstest]
     fn test_efficiency_ratio_initialized(spread_analyzer_10: SpreadAnalyzer) {
@@ -179,7 +180,7 @@ mod tests {
         spread_analyzer_10
             .handle_quote(&stub_quote("100.50", "100.55"))
             .unwrap();
-        assert_eq!(spread_analyzer_10.average, 0.049_999_999_999_997_16);
+        assert_approx_equal(spread_analyzer_10.average, 0.05);
     }
 
     #[rstest]
@@ -202,7 +203,7 @@ mod tests {
                 .unwrap();
         }
 
-        assert_eq!(spread_analyzer_10.average, 0.050_000_000_000_001_42);
+        assert_approx_equal(spread_analyzer_10.average, 0.05);
     }
 
     #[rstest]

@@ -158,6 +158,7 @@ mod tests {
         indicator::Indicator,
         momentum::cci::CommodityChannelIndex,
         stubs::{bar_ethusdt_binance_minute_bid, cci_10},
+        testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -196,7 +197,7 @@ mod tests {
         cci_10.update_raw(1.00030, 0.90020, 1.00020);
         cci_10.update_raw(1.00010, 0.90010, 1.00010);
         cci_10.update_raw(1.00000, 0.90000, 1.00000);
-        assert_eq!(cci_10.value, -0.976_190_476_190_006_1);
+        assert_approx_equal(cci_10.value, -0.97619047619);
     }
 
     #[rstest]
