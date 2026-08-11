@@ -37,7 +37,6 @@ from nautilus_trader.execution import ThreeTierFillModel
 from nautilus_trader.execution import TieredNotionalOptionFeeModel
 from nautilus_trader.execution import TwoTierFillModel
 from nautilus_trader.execution import VolumeSensitiveFillModel
-from nautilus_trader.execution import calculate_reconciliation_price
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import MarketOrder
@@ -394,36 +393,3 @@ def test_static_latency_model_with_params():
     )
 
     assert model is not None
-
-
-def test_calculate_reconciliation_price_open_position():
-    result = calculate_reconciliation_price(
-        current_position_qty=Decimal(10),
-        current_position_avg_px=Decimal("100.50"),
-        target_position_qty=Decimal(15),
-        target_position_avg_px=Decimal("105.00"),
-    )
-
-    assert isinstance(result, Decimal)
-
-
-def test_calculate_reconciliation_price_flat_to_open():
-    result = calculate_reconciliation_price(
-        current_position_qty=Decimal(0),
-        current_position_avg_px=None,
-        target_position_qty=Decimal(10),
-        target_position_avg_px=Decimal("100.00"),
-    )
-
-    assert isinstance(result, Decimal)
-
-
-def test_calculate_reconciliation_price_close_position():
-    result = calculate_reconciliation_price(
-        current_position_qty=Decimal(10),
-        current_position_avg_px=Decimal("100.00"),
-        target_position_qty=Decimal(0),
-        target_position_avg_px=Decimal(0),
-    )
-
-    assert result is None or isinstance(result, Decimal)

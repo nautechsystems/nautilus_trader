@@ -28,10 +28,6 @@ __all__ = [
     "TieredNotionalOptionFeeModel",
     "TwoTierFillModel",
     "VolumeSensitiveFillModel",
-    "calculate_reconciliation_price",
-    "create_inferred_reconciliation_trade_id",
-    "create_position_reconciliation_venue_order_id",
-    "process_mass_status_for_reconciliation",
 ]
 
 @typing.final
@@ -290,37 +286,3 @@ class VolumeSensitiveFillModel:
     def __init__(
         self, prob_fill_on_limit: float, prob_slippage: float, random_seed: int | None = ...
     ) -> None: ...
-
-def calculate_reconciliation_price(
-    current_position_qty: decimal.Decimal,
-    current_position_avg_px: decimal.Decimal | None,
-    target_position_qty: decimal.Decimal,
-    target_position_avg_px: decimal.Decimal | None = ...,
-) -> decimal.Decimal | None: ...
-def create_inferred_reconciliation_trade_id(
-    account_id: model.AccountId,
-    instrument_id: model.InstrumentId,
-    client_order_id: model.ClientOrderId,
-    venue_order_id: model.VenueOrderId | None,
-    order_side: model.OrderSide,
-    order_type: model.OrderType,
-    filled_qty: model.Quantity,
-    last_qty: model.Quantity,
-    last_px: model.Price,
-    position_id: model.PositionId,
-    ts_last: int,
-) -> model.TradeId: ...
-def create_position_reconciliation_venue_order_id(
-    account_id: model.AccountId,
-    instrument_id: model.InstrumentId,
-    order_side: model.OrderSide,
-    order_type: model.OrderType,
-    quantity: model.Quantity,
-    price: model.Price | None = None,
-    venue_position_id: model.PositionId | None = None,
-    ts_last: int = 0,
-    tag: str | None = None,
-) -> model.VenueOrderId: ...
-def process_mass_status_for_reconciliation(
-    mass_status: typing.Any, instrument: typing.Any, tolerance: str | None = None
-) -> tuple: ...

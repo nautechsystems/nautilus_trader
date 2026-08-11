@@ -19,7 +19,6 @@ pub mod config;
 pub mod fee;
 pub mod fill;
 pub mod latency;
-pub mod reconciliation;
 
 use pyo3::prelude::*;
 
@@ -30,22 +29,6 @@ use pyo3::prelude::*;
 /// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn execution(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(
-        reconciliation::py_process_mass_status_for_reconciliation,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        reconciliation::py_calculate_reconciliation_price,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        reconciliation::py_create_inferred_reconciliation_trade_id,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        reconciliation::py_create_position_reconciliation_venue_order_id,
-        m
-    )?)?;
     m.add_class::<crate::engine::config::ExecutionEngineConfig>()?;
     m.add_class::<crate::order_emulator::config::OrderEmulatorConfig>()?;
     m.add_class::<fee::PyFeeModel>()?;
