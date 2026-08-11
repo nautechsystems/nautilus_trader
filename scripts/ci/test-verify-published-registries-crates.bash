@@ -636,4 +636,4 @@ if ! grep -q "Unused CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS entries" "$unused_excep
   fail "unused manual token publish exception did not report the unused entry."
 fi
 
-echo "verify published registries crates tests passed."
+echo "verify published registries crates tests passed"

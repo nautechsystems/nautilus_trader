@@ -139,6 +139,8 @@ Follow these requirements:
   string, and do not use `eval`.
 - Keep machine‑readable output on standard output and diagnostics on standard error when callers
   capture the result.
+- Do not end routine status output with a terminating period. Keep punctuation when the output is
+  a complete explanatory or diagnostic sentence.
 - Create temporary files with `mktemp`, register cleanup with `trap`, and constrain cleanup to the
   exact paths created by the script.
 - Bound retries, report the final failure, and return a nonzero status when the requested operation
@@ -203,12 +205,19 @@ runtime test.
 ## Test behavior
 
 Run the smallest test that exercises the changed branches and failure paths. For logic that can
-regress independently of a workflow, add a companion shell test that:
+regress independently of a workflow, add a companion shell test. This includes parsing,
+multi‑branch decisions, retries and cleanup, policy checks, and material external side effects. A
+domain‑level suite may cover cooperating scripts, and a thin wrapper does not need a one‑to‑one test
+when that suite invokes it and proves its behavior.
+
+Each companion test:
 
 - Creates isolated state under `mktemp -d` and removes it on exit.
 - Supplies fake external commands through a temporary `PATH` instead of changing production code.
 - Uses distinct inputs and exact output, exit status, and side‑effect assertions.
 - Covers success, invalid input, dependency failure, and cleanup when those paths exist.
+- Fails when a required test command is unavailable; a passing skip does not validate behavior.
+- Runs from `make test-scripts`, which is the script test inventory used by CI.
 
 When a script has callers on multiple operating systems, exercise platform‑sensitive changes on
 each caller's relevant CI matrix. A Linux test plus clean ShellCheck output does not prove macOS or

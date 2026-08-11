@@ -687,4 +687,4 @@ assert_contains "$crates_io_curl_log" \
   "https://crates.io/api/v1/crates/mock-existing-private/0.3.0" \
   "valid publish plan did not check the local dependency version on crates.io."
 
-echo "publish cargo crates check tests passed."
+echo "publish cargo crates check tests passed"

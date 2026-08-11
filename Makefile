@@ -791,11 +791,18 @@ check-jiff-features:  #-- Check jiff features
 .PHONY: test-scripts
 test-scripts:  #-- Run repository script tests
 	$(info $(M) Running script tests...)
+	$Q bash .pre-commit-hooks/test_check_cargo_conventions.sh
+	$Q bash .pre-commit-hooks/test_check_dst_conventions.sh
+	$Q bash .pre-commit-hooks/test_check_formatting_py.sh
 	$Q bash .pre-commit-hooks/test_check_formatting_rs.sh
+	$Q bash .pre-commit-hooks/test_check_jiff_features.sh
 	$Q bash .pre-commit-hooks/test_check_logging_conventions.sh
 	$Q bash .pre-commit-hooks/test_check_unicode_typography.sh
+	$Q bash scripts/ci/test-check-docker-toolchain-pins.bash
 	$Q bash scripts/ci/test-check-miri-toolchain.bash
+	$Q bash scripts/ci/test-check-workspace-test-coverage.bash
 	$Q bash scripts/ci/test-github-action-shas.bash
+	$Q bash scripts/ci/test-plan.bash
 	$Q bash scripts/ci/test-publish-cargo-crates-check.bash
 	$Q bash scripts/ci/test-publish-cli-r2-upload-installer.bash
 	$Q bash scripts/ci/test-publish-wheels.bash

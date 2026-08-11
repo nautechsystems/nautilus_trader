@@ -728,4 +728,4 @@ test_stable_retention_plan
 test_publication_transaction
 test_orphan_purge_index_order
 
-echo "Wheel publishing tests passed."
+echo "Wheel publishing tests passed"

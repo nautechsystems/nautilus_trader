@@ -222,7 +222,7 @@ while IFS=: read -r file line_num content; do
   check_rule1_hit "$file" "$line_num" "$content"
 done < <(rg -n --no-heading \
   'std::time::Instant::now\(\)|std::time::SystemTime::now\(\)' \
-  "${GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 # Bare `Instant::now()` counts only when the file imports std::time::Instant.
 while IFS=: read -r file line_num content; do
@@ -232,7 +232,7 @@ while IFS=: read -r file line_num content; do
   check_rule1_hit "$file" "$line_num" "$content"
 done < <(rg -n --no-heading \
   '\bInstant::now\(\)' \
-  "${GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 # Bare `SystemTime::now()` counts only when the file imports std::time::SystemTime.
 while IFS=: read -r file line_num content; do
@@ -242,14 +242,14 @@ while IFS=: read -r file line_num content; do
   check_rule1_hit "$file" "$line_num" "$content"
 done < <(rg -n --no-heading \
   '\bSystemTime::now\(\)' \
-  "${GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 # Fully-qualified Jiff wall-clock reads are always caught.
 while IFS=: read -r file line_num content; do
   check_rule1_hit "$file" "$line_num" "$content"
 done < <(rg -n --no-heading \
   'jiff::(Timestamp|Zoned)::now\(\)' \
-  "${GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 # Bare `Timestamp::now()` counts only when the file imports jiff::Timestamp.
 while IFS=: read -r file line_num content; do
@@ -258,7 +258,7 @@ while IFS=: read -r file line_num content; do
   check_rule1_hit "$file" "$line_num" "$content"
 done < <(rg -n --no-heading \
   '\bTimestamp::now\(\)' \
-  "${GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 # Bare `Zoned::now()` counts only when the file imports jiff::Zoned.
 while IFS=: read -r file line_num content; do
@@ -267,7 +267,7 @@ while IFS=: read -r file line_num content; do
   check_rule1_hit "$file" "$line_num" "$content"
 done < <(rg -n --no-heading \
   '\bZoned::now\(\)' \
-  "${GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 # Renamed Timestamp/Zoned imports must not bypass the bare-call checks above.
 while IFS= read -r file; do
@@ -277,7 +277,7 @@ while IFS= read -r file; do
       check_rule1_hit "$hit_file" "$line_num" "$content"
     done < <(rg -n --no-heading "\\b${alias}::now\\(\\)" "$file" 2> /dev/null || true)
   done < <(jiff_clock_aliases "$file")
-done < <(rg --files "${GLOBS[@]}" --type rust 2> /dev/null || true)
+done < <(rg --files "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 ################################################################################
 # Rule 2: raw RNG imports
@@ -298,7 +298,7 @@ while IFS=: read -r file line_num content; do
     "Route RNG through a seeded source; madsim::rand under cfg(madsim)"
 done < <(rg -n --no-heading \
   '(?:^|[^:])rand::thread_rng|(?:^|[^:])rand::rng\(\)|fastrand::|getrandom::|\bOsRng\b|\bUuid::new_v4\(\)' \
-  "${GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 ################################################################################
 # Rule 3: unbiased tokio::select!
@@ -323,7 +323,7 @@ while IFS=: read -r file line_num content; do
     "Add 'biased;' as the first token inside the select! block"
 done < <(rg -n --no-heading \
   'tokio::select!\s*\{' \
-  "${GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 ################################################################################
 # Rule 4: raw thread spawning outside cfg(test) and cfg(not(madsim))
@@ -344,7 +344,7 @@ while IFS=: read -r file line_num content; do
     "Wrap the spawn in #[cfg(not(all(feature = \"simulation\", madsim)))] or add '// dst-ok'"
 done < <(rg -n --no-heading \
   'std::thread::spawn\b|std::thread::Builder::new\(\)|tokio::task::spawn_blocking' \
-  "${GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 ################################################################################
 # Rule 5: AHashMap / AHashSet in reconciliation manager and matching engine
@@ -442,7 +442,7 @@ while IFS=: read -r file line_num content; do
   check_rule6_hit "$file" "$line_num" "$content"
 done < <(rg -n --no-heading \
   'tokio::net::TcpStream::connect\b|tokio::net::TcpListener::bind\b' \
-  "${GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 # Bare `TcpStream::connect` / `TcpListener::bind` count only when the file
 # pulls in the `tokio::net` module above the call site. The `use` line itself
@@ -454,7 +454,7 @@ while IFS=: read -r file line_num content; do
   check_rule6_hit "$file" "$line_num" "$content"
 done < <(rg -n --no-heading \
   '\bTcpStream::connect\b|\bTcpListener::bind\b' \
-  "${GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 echo "Checking raw Tokio facade bypasses..."
 
@@ -538,7 +538,7 @@ while IFS=: read -r file line_num content; do
     "Route time, task, runtime, and signal calls through nautilus_common::live::dst or cfg-gate the site"
 done < <(rg -n --no-heading \
   'tokio::(time|task|runtime|signal)::|\btokio::spawn\s*\(' \
-  "${RULE7_GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${RULE7_GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 for c in "${RULE7_CRATES[@]}"; do
   while IFS= read -r file; do

@@ -4,6 +4,7 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/ci/release-verification-retry.bash
+# shellcheck disable=SC1091
 source "${script_dir}/release-verification-retry.bash"
 
 work_dir="$(mktemp -d)"
@@ -429,4 +430,4 @@ if ! grep -q "non-retryable verification error" "$unknown_output"; then
   fail "unknown verifier error case did not report a non-retryable error."
 fi
 
-echo "release verification retry tests passed."
+echo "release verification retry tests passed"
