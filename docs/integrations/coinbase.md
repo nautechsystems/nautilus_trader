@@ -579,9 +579,10 @@ Nautilus order fields:
 On a successful HTTP create, an `OrderAccepted` is emitted carrying the
 venue order ID returned in `success_response.order_id`. On a `success=false`
 response, `OrderRejected` is emitted with the formatted venue failure reason.
-A transport error, timeout, decode failure, or HTTP 5xx carries no venue
-outcome and leaves the order in flight for the user channel or reconciliation
-to resolve.
+Because any submit attempt may have reached Coinbase, a transport error,
+timeout, rate‑limit response, decode failure, or HTTP 5xx does not prove
+rejection. The adapter leaves the order in flight and retains its submit
+metadata until the user channel or reconciliation resolves it.
 
 ### Order modification
 

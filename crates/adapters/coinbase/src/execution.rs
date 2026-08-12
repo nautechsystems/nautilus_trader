@@ -1091,47 +1091,15 @@ impl ExecutionClient for CoinbaseExecutionClient {
                     }
                 }
                 Err(e) => {
-                    if is_coinbase_local_submit_failure(&e) {
-                        order_contexts
-                            .lock()
-                            .expect(MUTEX_POISONED)
-                            .remove(client_order_id.as_str());
-                        let ts_event = clock.get_time_ns();
-                        emitter.emit_order_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            &format!("submit-order-error: {e}"),
-                            ts_event,
-                            false,
-                        );
-                    } else if is_coinbase_explicit_submit_rejection(&e) {
-                        order_contexts
-                            .lock()
-                            .expect(MUTEX_POISONED)
-                            .remove(client_order_id.as_str());
-                        let ts_event = clock.get_time_ns();
-                        emitter.emit_order_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            &format!("submit-order-rejected: {e}"),
-                            ts_event,
-                            false,
-                        );
-                    } else if is_coinbase_ambiguous_command_failure(&e) {
-                        log::warn!(
-                            "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {e}"
-                        );
-                    } else {
-                        order_contexts
-                            .lock()
-                            .expect(MUTEX_POISONED)
-                            .remove(client_order_id.as_str());
-                        log::warn!(
-                            "Submit command failed without venue-declared outcome for {client_order_id}: {e}"
-                        );
-                    }
+                    handle_coinbase_submit_failure(
+                        &e,
+                        &order_contexts,
+                        &emitter,
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        clock.get_time_ns(),
+                    );
                     return Err(e.context("submit order failed"));
                 }
             }
@@ -1503,6 +1471,56 @@ impl ExecutionClient for CoinbaseExecutionClient {
     }
 }
 
+fn handle_coinbase_submit_failure(
+    err: &anyhow::Error,
+    order_contexts: &Mutex<AHashMap<String, OrderContext>>,
+    emitter: &ExecutionEventEmitter,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    ts_event: UnixNanos,
+) {
+    if is_coinbase_local_submit_failure(err) {
+        order_contexts
+            .lock()
+            .expect(MUTEX_POISONED)
+            .remove(client_order_id.as_str());
+        emitter.emit_order_rejected_event(
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            &format!("submit-order-error: {err}"),
+            ts_event,
+            false,
+        );
+    } else if is_coinbase_explicit_submit_rejection(err) {
+        order_contexts
+            .lock()
+            .expect(MUTEX_POISONED)
+            .remove(client_order_id.as_str());
+        emitter.emit_order_rejected_event(
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            &format!("submit-order-rejected: {err}"),
+            ts_event,
+            false,
+        );
+    } else if is_coinbase_ambiguous_submit_failure(err) {
+        log::warn!(
+            "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {err}"
+        );
+    } else {
+        order_contexts
+            .lock()
+            .expect(MUTEX_POISONED)
+            .remove(client_order_id.as_str());
+        log::warn!(
+            "Submit command failed without venue-declared outcome for {client_order_id}: {err}"
+        );
+    }
+}
+
 fn is_coinbase_local_submit_failure(err: &anyhow::Error) -> bool {
     match coinbase_http_error(err) {
         None => true,
@@ -1516,9 +1534,15 @@ fn is_coinbase_explicit_submit_rejection(err: &anyhow::Error) -> bool {
         Some(CoinbaseHttpError::Auth(message) | CoinbaseHttpError::BadRequest(message)) => {
             message.starts_with("HTTP ")
         }
-        Some(CoinbaseHttpError::RateLimit { .. }) => true,
         _ => false,
     }
+}
+
+fn is_coinbase_ambiguous_submit_failure(err: &anyhow::Error) -> bool {
+    matches!(
+        coinbase_http_error(err),
+        Some(CoinbaseHttpError::RateLimit { .. })
+    ) || is_coinbase_ambiguous_command_failure(err)
 }
 
 fn is_coinbase_ambiguous_command_failure(err: &anyhow::Error) -> bool {
@@ -2001,6 +2025,7 @@ mod tests {
     use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
     use nautilus_model::{
         enums::AccountType,
+        events::OrderEventAny,
         identifiers::{Symbol, TraderId},
         instruments::CurrencyPair,
         types::Currency,
@@ -2052,9 +2077,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_submit_http_auth_failure_classification() {
-        let err = anyhow::Error::new(CoinbaseHttpError::auth("HTTP 401: authentication failed"))
-            .context("failed to submit order");
+    #[case(401)]
+    #[case(403)]
+    fn test_submit_http_auth_failure_classification(#[case] status: u16) {
+        let err = anyhow::Error::new(CoinbaseHttpError::auth(format!(
+            "HTTP {status}: authentication failed"
+        )))
+        .context("failed to submit order");
 
         assert!(!is_coinbase_local_submit_failure(&err));
         assert!(is_coinbase_explicit_submit_rejection(&err));
@@ -2067,8 +2096,153 @@ mod tests {
             .context("failed to submit order");
 
         assert!(!is_coinbase_local_submit_failure(&err));
-        assert!(is_coinbase_explicit_submit_rejection(&err));
+        assert!(!is_coinbase_explicit_submit_rejection(&err));
+        assert!(is_coinbase_ambiguous_submit_failure(&err));
         assert!(!is_coinbase_ambiguous_command_failure(&err));
+    }
+
+    #[tokio::test]
+    async fn test_rate_limited_submit_retains_context_until_user_update() {
+        let (emitter, mut rx) = make_emitter();
+        let (dedup, state) = make_dedup_state_pair();
+        let order_contexts = Arc::new(Mutex::new(AHashMap::new()));
+        let external_order_contexts = Arc::new(Mutex::new(AHashMap::new()));
+        let context = OrderContext {
+            price: Some(Price::from("100.00")),
+            trigger_price: Some(Price::from("99.00")),
+            trigger_type: Some(TriggerType::LastPrice),
+            post_only: true,
+            submitted_product_id: Some(Ustr::from("BTC-USDC")),
+        };
+        order_contexts
+            .lock()
+            .unwrap()
+            .insert("client-1".to_string(), context.clone());
+        let err = anyhow::Error::new(CoinbaseHttpError::rate_limit(Some(1_000)))
+            .context("failed to submit order");
+
+        handle_coinbase_submit_failure(
+            &err,
+            &order_contexts,
+            &emitter,
+            StrategyId::from("S-001"),
+            InstrumentId::from("BTC-USD.COINBASE"),
+            ClientOrderId::from("client-1"),
+            UnixNanos::default(),
+        );
+
+        assert!(rx.try_recv().is_err());
+        {
+            let map = order_contexts.lock().unwrap();
+            let retained = map.get("client-1").expect("submit context retained");
+            assert_eq!(retained.price, context.price);
+            assert_eq!(retained.trigger_price, context.trigger_price);
+            assert_eq!(retained.trigger_type, context.trigger_type);
+            assert_eq!(retained.post_only, context.post_only);
+            assert_eq!(retained.submitted_product_id, context.submitted_product_id);
+        }
+
+        let mut update = make_user_order_update("1.0", "0", "100.00", "0.05", CbStatus::Filled);
+        update.order_type = CbType::StopLimit;
+        handle_user_order_update(
+            make_carrier(update),
+            &emitter,
+            &dedup,
+            &state,
+            &order_contexts,
+            &external_order_contexts,
+            &CoinbaseHttpClient::default(),
+            AccountId::new("COINBASE-001"),
+        )
+        .await;
+
+        assert!(order_contexts.lock().unwrap().is_empty());
+        let (orders, fills) = drain_all_reports(&mut rx);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(
+            orders[0].client_order_id,
+            Some(ClientOrderId::from("client-1"))
+        );
+        assert_eq!(
+            orders[0].instrument_id,
+            InstrumentId::from("BTC-USDC.COINBASE")
+        );
+        assert_eq!(orders[0].order_type, OrderType::StopLimit);
+        assert_eq!(orders[0].order_status, OrderStatus::Filled);
+        assert_eq!(orders[0].price, Some(Price::from("100.00")));
+        assert_eq!(orders[0].trigger_price, Some(Price::from("99.00")));
+        assert_eq!(orders[0].trigger_type, Some(TriggerType::LastPrice));
+        assert!(orders[0].post_only);
+        assert_eq!(fills.len(), 1);
+        assert_eq!(
+            fills[0].client_order_id,
+            Some(ClientOrderId::from("client-1"))
+        );
+        assert_eq!(
+            fills[0].instrument_id,
+            InstrumentId::from("BTC-USDC.COINBASE")
+        );
+        assert_eq!(fills[0].liquidity_side, LiquiditySide::Maker);
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(400))]
+    #[case(Some(401))]
+    #[case(Some(403))]
+    fn test_definitive_submit_failure_rejects_and_removes_context(#[case] status: Option<u16>) {
+        let (emitter, mut rx) = make_emitter();
+        let order_contexts = Mutex::new(AHashMap::from_iter([(
+            "client-rejected".to_string(),
+            make_limit_context(),
+        )]));
+        let (err, reason) = match status {
+            None => (
+                anyhow::anyhow!("Unsupported Coinbase order configuration"),
+                "submit-order-error: Unsupported Coinbase order configuration".to_string(),
+            ),
+            Some(400) => (
+                anyhow::Error::new(CoinbaseHttpError::bad_request("HTTP 400: refused")),
+                "submit-order-rejected: bad request: HTTP 400: refused".to_string(),
+            ),
+            Some(status @ (401 | 403)) => (
+                anyhow::Error::new(CoinbaseHttpError::auth(format!("HTTP {status}: refused"))),
+                format!("submit-order-rejected: auth error: HTTP {status}: refused"),
+            ),
+            Some(status) => panic!("unsupported status {status}"),
+        };
+
+        handle_coinbase_submit_failure(
+            &err,
+            &order_contexts,
+            &emitter,
+            StrategyId::from("S-REJECT"),
+            InstrumentId::from("BTC-USD.COINBASE"),
+            ClientOrderId::from("client-rejected"),
+            UnixNanos::from(42_u64),
+        );
+
+        assert!(order_contexts.lock().unwrap().is_empty());
+        let event = rx.try_recv().expect("order rejection emitted");
+        let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event else {
+            panic!("expected OrderRejected event, was {event:?}");
+        };
+        assert_eq!(rejected.trader_id, TraderId::from("TRADER-001"));
+        assert_eq!(rejected.strategy_id, StrategyId::from("S-REJECT"));
+        assert_eq!(
+            rejected.instrument_id,
+            InstrumentId::from("BTC-USD.COINBASE")
+        );
+        assert_eq!(
+            rejected.client_order_id,
+            ClientOrderId::from("client-rejected")
+        );
+        assert_eq!(rejected.account_id, AccountId::from("COINBASE-001"));
+        assert_eq!(rejected.reason.as_str(), reason);
+        assert_eq!(rejected.ts_event, UnixNanos::from(42_u64));
+        assert!(!rejected.reconciliation);
+        assert!(!rejected.due_post_only);
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]

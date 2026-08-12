@@ -49,8 +49,7 @@ Reading the event in a strategy handler:
 ```python
 def on_order_initialized(self, event: OrderInitialized) -> None:
     self.log.info(
-        f"Initialized {event.order_type} {event.order_side} {event.quantity} "
-        f"{event.instrument_id}",
+        f"Initialized {event.order_type} {event.order_side} {event.quantity} {event.instrument_id}",
     )
 ```
 
