@@ -83,8 +83,6 @@ use nautilus_model::defi::{
 };
 #[cfg(feature = "defi")]
 use nautilus_model::enums::CurrencyType;
-#[cfg(feature = "streaming")]
-use nautilus_model::enums::{BookAction, OrderSide};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataType, FundingRateUpdate,
@@ -97,8 +95,8 @@ use nautilus_model::{
         },
     },
     enums::{
-        AggressorSide, AssetClass, BookType, GreeksConvention, InstrumentClass,
-        InstrumentCloseType, MarketStatusAction, OptionKind, PriceType, RecordFlag,
+        AggressorSide, AssetClass, BookAction, BookType, GreeksConvention, InstrumentClass,
+        InstrumentCloseType, MarketStatusAction, OptionKind, OrderSide, PriceType, RecordFlag,
     },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, TradeId, TraderId, Venue},
     instruments::{
@@ -21462,6 +21460,239 @@ fn test_book_deltas_response_publishes_frames_by_f_last(
 }
 
 #[rstest]
+fn test_book_deltas_response_partitions_interleaved_instruments_before_framing(
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let a = audusd_sim.id;
+    let b = gbpusd_sim.id;
+
+    let topic_a = switchboard::get_pipeline_book_deltas_topic(a);
+    let topic_b = switchboard::get_pipeline_book_deltas_topic(b);
+    let (handler_a, saver_a) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("partition-a")));
+    let (handler_b, saver_b) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("partition-b")));
+    msgbus::subscribe_book_deltas(topic_a.into(), handler_a, None);
+    msgbus::subscribe_book_deltas(topic_b.into(), handler_b, None);
+
+    data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
+        UUID4::new(),
+        client_id,
+        a,
+        vec![
+            delta_with_flag(a, 1_000, 0),
+            delta_with_flag(b, 2_000, 0),
+            delta_with_flag(a, 3_000, RecordFlag::F_LAST as u8),
+        ],
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    )));
+
+    let batches_a = saver_a.get_messages();
+    let batches_b = saver_b.get_messages();
+    assert_eq!(batches_a.len(), 1);
+    assert_eq!(batches_b.len(), 1);
+    assert_eq!(batches_a[0].instrument_id, a);
+    assert_eq!(batches_b[0].instrument_id, b);
+    assert_eq!(
+        batches_a[0]
+            .deltas
+            .iter()
+            .map(|delta| delta.ts_init.as_u64())
+            .collect::<Vec<_>>(),
+        vec![1_000, 3_000],
+    );
+    assert_eq!(batches_b[0].deltas, vec![delta_with_flag(b, 2_000, 0)]);
+}
+
+#[rstest]
+fn test_request_join_publishes_book_deltas_on_each_instrument_topic(
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let a = audusd_sim.id;
+    let b = gbpusd_sim.id;
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let join_id = UUID4::new();
+
+    let (handler_a, saver_a) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("join-deltas-a")));
+    let (handler_b, saver_b) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("join-deltas-b")));
+    msgbus::subscribe_book_deltas(
+        switchboard::get_pipeline_book_deltas_topic(a).into(),
+        handler_a,
+        None,
+    );
+    msgbus::subscribe_book_deltas(
+        switchboard::get_pipeline_book_deltas_topic(b).into(),
+        handler_b,
+        None,
+    );
+
+    data_engine
+        .execute_request(RequestCommand::Join(RequestJoin::new(
+            vec![leg_a, leg_b],
+            None,
+            None,
+            join_id,
+            UnixNanos::default(),
+            None,
+            None,
+        )))
+        .unwrap();
+
+    for (leg_id, instrument_id, ts) in [(leg_a, a, 1_000), (leg_b, b, 2_000)] {
+        data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
+            leg_id,
+            client_id,
+            instrument_id,
+            vec![delta_with_flag(instrument_id, ts, RecordFlag::F_LAST as u8)],
+            None,
+            None,
+            UnixNanos::default(),
+            None,
+        )));
+    }
+
+    assert_eq!(saver_a.get_messages().len(), 1);
+    assert_eq!(saver_b.get_messages().len(), 1);
+    assert_eq!(saver_a.get_messages()[0].deltas[0].instrument_id, a);
+    assert_eq!(saver_b.get_messages()[0].deltas[0].instrument_id, b);
+    assert_eq!(data_engine.pending_join_request_count(), 0);
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_book_deltas_response_routes_cache_by_partition_ownership(
+    #[case] owned_is_a: bool,
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let a = audusd_sim.id;
+    let b = gbpusd_sim.id;
+    let owned = if owned_is_a { a } else { b };
+
+    for instrument_id in [a, b] {
+        cache
+            .borrow_mut()
+            .add_order_book(OrderBook::new(instrument_id, BookType::L3_MBO))
+            .unwrap();
+    }
+
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+        SubscribeBookDeltas::new(
+            owned,
+            BookType::L3_MBO,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        ),
+    )));
+
+    let before_a = cache.borrow().order_book(&a).unwrap().update_count;
+    let before_b = cache.borrow().order_book(&b).unwrap().update_count;
+    data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
+        UUID4::new(),
+        client_id,
+        a,
+        vec![split_delta(a, 1_000), split_delta(b, 2_000)],
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    )));
+    let after_a = cache.borrow().order_book(&a).unwrap().update_count;
+    let after_b = cache.borrow().order_book(&b).unwrap().update_count;
+
+    if owned_is_a {
+        assert_eq!(after_a, before_a, "live-owned A must skip cache writes");
+        assert!(after_b > before_b, "unowned B must receive its cache write");
+    } else {
+        assert!(after_a > before_a, "unowned A must receive its cache write");
+        assert_eq!(after_b, before_b, "live-owned B must skip cache writes");
+    }
+}
+
+#[rstest]
+fn test_book_deltas_response_publishes_trailing_partitions_in_first_seen_order(
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    let a = audusd_sim.id;
+    let b = gbpusd_sim.id;
+    let (handler, saver) = get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from(
+        "trailing-partition-order",
+    )));
+    msgbus::subscribe_book_deltas(
+        switchboard::get_pipeline_book_deltas_topic(a).into(),
+        handler.clone(),
+        None,
+    );
+    msgbus::subscribe_book_deltas(
+        switchboard::get_pipeline_book_deltas_topic(b).into(),
+        handler,
+        None,
+    );
+
+    data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
+        UUID4::new(),
+        client_id,
+        a,
+        vec![delta_with_flag(b, 1_000, 0), delta_with_flag(a, 2_000, 0)],
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    )));
+
+    assert_eq!(
+        saver
+            .get_messages()
+            .iter()
+            .map(|batch| batch.instrument_id)
+            .collect::<Vec<_>>(),
+        vec![b, a],
+    );
+}
+
+#[rstest]
 fn test_book_deltas_response_applies_to_cache_when_no_subscription_but_book_exists(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
@@ -21508,7 +21739,6 @@ fn test_book_deltas_response_applies_to_cache_when_no_subscription_but_book_exis
     );
 }
 
-#[cfg(feature = "streaming")]
 fn book_replay_delta(
     instrument_id: InstrumentId,
     ts: u64,
@@ -21528,6 +21758,180 @@ fn book_replay_delta(
         .ts_event(UnixNanos::from(ts))
         .ts_init(UnixNanos::from(ts))
         .build()
+}
+
+fn run_heterogeneous_replay_join(
+    data_engine: &mut DataEngine,
+    client_id: ClientId,
+    a: InstrumentId,
+    b: InstrumentId,
+    a_deltas: Vec<OrderBookDelta>,
+    b_deltas: Vec<OrderBookDelta>,
+) -> Vec<OrderBookDelta> {
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let join_id = UUID4::new();
+    let (handler, saver) =
+        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("heterogeneous-replay-join")));
+    msgbus::register_response_handler(&join_id, handler);
+
+    data_engine
+        .execute_request(RequestCommand::Join(RequestJoin::new(
+            vec![leg_a, leg_b],
+            Some(UnixNanos::from(1_000).to_datetime_utc()),
+            Some(UnixNanos::from(3_000).to_datetime_utc()),
+            join_id,
+            UnixNanos::default(),
+            None,
+            None,
+        )))
+        .unwrap();
+
+    for (leg_id, instrument_id, deltas) in [(leg_a, a, a_deltas), (leg_b, b, b_deltas)] {
+        data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
+            leg_id,
+            client_id,
+            instrument_id,
+            deltas,
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(3_000)),
+            UnixNanos::default(),
+            None,
+        )));
+    }
+
+    let responses = saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert!(
+        responses[0]
+            .data
+            .iter()
+            .all(|delta| delta.ts_init >= UnixNanos::from(1_000)),
+        "parent-window trim must run after replay",
+    );
+    responses[0].data.clone()
+}
+
+#[rstest]
+fn test_request_join_replays_later_eligible_partition_when_first_is_ineligible(
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let a = audusd_sim.id;
+    let b = gbpusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(gbpusd_sim))
+        .unwrap();
+
+    let a_after = book_replay_delta(a, 1_500, RecordFlag::F_LAST as u8, "1.00020", 2);
+    let data = run_heterogeneous_replay_join(
+        &mut data_engine,
+        client_id,
+        a,
+        b,
+        vec![book_replay_delta(a, 0, 0, "1.00000", 1), a_after],
+        vec![
+            book_replay_delta(
+                b,
+                0,
+                RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+                "1.10000",
+                1,
+            ),
+            book_replay_delta(b, 1_500, RecordFlag::F_LAST as u8, "1.10020", 2),
+        ],
+    );
+
+    let a_data: Vec<_> = data
+        .iter()
+        .filter(|delta| delta.instrument_id == a)
+        .copied()
+        .collect();
+    let b_data: Vec<_> = data
+        .iter()
+        .filter(|delta| delta.instrument_id == b)
+        .copied()
+        .collect();
+    assert_eq!(a_data, vec![a_after], "ineligible A must remain unchanged");
+    assert_eq!(b_data[0].action, BookAction::Clear);
+    assert!(
+        b_data
+            .iter()
+            .all(|delta| delta.ts_init == UnixNanos::from(1_500))
+    );
+}
+
+#[rstest]
+fn test_request_join_replays_first_eligible_partition_when_later_is_ineligible(
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let a = audusd_sim.id;
+    let b = gbpusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(gbpusd_sim))
+        .unwrap();
+
+    let b_after = book_replay_delta(b, 1_600, RecordFlag::F_LAST as u8, "1.10020", 2);
+    let data = run_heterogeneous_replay_join(
+        &mut data_engine,
+        client_id,
+        a,
+        b,
+        vec![
+            book_replay_delta(
+                a,
+                0,
+                RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+                "1.00000",
+                1,
+            ),
+            book_replay_delta(a, 1_500, RecordFlag::F_LAST as u8, "1.00020", 2),
+        ],
+        vec![book_replay_delta(b, 0, 0, "1.10000", 1), b_after],
+    );
+
+    let a_data: Vec<_> = data
+        .iter()
+        .filter(|delta| delta.instrument_id == a)
+        .copied()
+        .collect();
+    let b_data: Vec<_> = data
+        .iter()
+        .filter(|delta| delta.instrument_id == b)
+        .copied()
+        .collect();
+    assert_eq!(a_data[0].action, BookAction::Clear);
+    assert!(
+        a_data
+            .iter()
+            .all(|delta| delta.ts_init == UnixNanos::from(1_500))
+    );
+    assert_eq!(b_data, vec![b_after], "ineligible B must remain unchanged");
 }
 
 #[cfg(feature = "streaming")]

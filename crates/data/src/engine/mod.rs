@@ -2048,43 +2048,13 @@ impl DataEngine {
         Some(rebuilt)
     }
 
-    // Replays a day-start snapshot forward to the request's original start: when the first delta
-    // is an F_SNAPSHOT on a UTC day boundary, rebuilds the book from the pre-start deltas and
-    // replaces them with one snapshot keyed at the original start, then forwards the rest.
+    // Replays each instrument's day-start snapshot forward to the request's original start when
+    // that partition's first delta is an F_SNAPSHOT on a UTC day boundary, replacing its
+    // pre-start deltas with one snapshot keyed at the original start before forwarding the rest.
     fn book_deltas_snapshot_replay(&self, resp: &mut BookDeltasResponse) {
         let Some(original_start_ns) = resp.start else {
             return;
         };
-
-        let Some(first) = resp.data.first().copied() else {
-            return;
-        };
-
-        if !RecordFlag::F_SNAPSHOT.matches(first.flags) {
-            return;
-        }
-
-        if first.ts_init.as_u64() % NANOSECONDS_IN_DAY != 0 {
-            return;
-        }
-
-        // Nothing to fast-forward when the request starts at or before the day-start snapshot
-        if original_start_ns <= first.ts_init {
-            return;
-        }
-
-        if self
-            .cache
-            .borrow()
-            .instrument(&resp.instrument_id)
-            .is_none()
-        {
-            log::warn!(
-                "Instrument {} not found in cache, skipping snapshot replay",
-                resp.instrument_id,
-            );
-            return;
-        }
 
         let book_type = resp
             .params
@@ -2093,13 +2063,80 @@ impl DataEngine {
             .and_then(|s| BookType::from_str(s).ok())
             .unwrap_or(BookType::L2_MBP);
 
-        let mut book = OrderBook::new(resp.instrument_id, book_type);
+        let Some(first_instrument_id) = resp.data.first().map(|delta| delta.instrument_id) else {
+            return;
+        };
+
+        if resp
+            .data
+            .iter()
+            .all(|delta| delta.instrument_id == first_instrument_id)
+        {
+            let deltas = std::mem::take(&mut resp.data);
+            resp.data = self.replay_book_deltas_partition(
+                first_instrument_id,
+                deltas,
+                original_start_ns,
+                book_type,
+            );
+            return;
+        }
+
+        let partitions = partition_deltas_by_instrument(&resp.data);
+        let mut merged = Vec::with_capacity(resp.data.len());
+
+        for (partition_index, (instrument_id, deltas)) in partitions.into_iter().enumerate() {
+            let transformed = self.replay_book_deltas_partition(
+                instrument_id,
+                deltas,
+                original_start_ns,
+                book_type,
+            );
+            merged.extend(
+                transformed
+                    .into_iter()
+                    .enumerate()
+                    .map(|(relative_index, delta)| (delta, partition_index, relative_index)),
+            );
+        }
+
+        // Equal timestamps retain first-seen instrument order, then partition-relative order
+        merged.sort_by_key(|(delta, partition_index, relative_index)| {
+            (delta.ts_init, *partition_index, *relative_index)
+        });
+        resp.data = merged.into_iter().map(|(delta, _, _)| delta).collect();
+    }
+
+    fn replay_book_deltas_partition(
+        &self,
+        instrument_id: InstrumentId,
+        deltas: Vec<OrderBookDelta>,
+        original_start_ns: UnixNanos,
+        book_type: BookType,
+    ) -> Vec<OrderBookDelta> {
+        let Some(first) = deltas.first().copied() else {
+            return deltas;
+        };
+
+        if !RecordFlag::F_SNAPSHOT.matches(first.flags)
+            || first.ts_init.as_u64() % NANOSECONDS_IN_DAY != 0
+            || original_start_ns <= first.ts_init
+        {
+            return deltas;
+        }
+
+        if self.cache.borrow().instrument(&instrument_id).is_none() {
+            log::warn!("Instrument {instrument_id} not found in cache, skipping snapshot replay");
+            return deltas;
+        }
+
+        let mut book = OrderBook::new(instrument_id, book_type);
         let mut before: Vec<OrderBookDelta> = Vec::new();
         let mut after: Vec<OrderBookDelta> = Vec::new();
         let mut last_applied_ts: Option<UnixNanos> = None;
         let mut crossed = false;
 
-        for delta in &resp.data {
+        for delta in &deltas {
             if crossed {
                 after.push(*delta);
             } else {
@@ -2116,24 +2153,21 @@ impl DataEngine {
                 last_applied_ts = before.last().map(|d| d.ts_init);
             }
 
-            let batch = OrderBookDeltas::new(resp.instrument_id, before);
+            let batch = OrderBookDeltas::new(instrument_id, before);
             if let Err(e) = book.apply_deltas(&batch) {
-                log::error!(
-                    "Failed to rebuild book for snapshot replay on {}: {e}",
-                    resp.instrument_id,
-                );
-                return;
+                log::error!("Failed to rebuild book for snapshot replay on {instrument_id}: {e}");
+                return deltas;
             }
         }
 
         let Some(last_ts) = last_applied_ts else {
-            return;
+            return deltas;
         };
 
         let snapshot_ts = last_ts.max(original_start_ns);
         let mut new_data = book.to_deltas(snapshot_ts, snapshot_ts).deltas;
         new_data.extend(after);
-        resp.data = new_data;
+        new_data
     }
 
     fn handle_request_join(&mut self, req: RequestJoin) -> anyhow::Result<()> {
@@ -4005,10 +4039,40 @@ impl DataEngine {
     }
 
     fn handle_book_deltas_response(&self, resp: &BookDeltasResponse) {
-        if !self.cache_is_owned_by_live_subscription(&resp.instrument_id) {
+        let Some(first_instrument_id) = resp.data.first().map(|delta| delta.instrument_id) else {
+            return;
+        };
+
+        if resp
+            .data
+            .iter()
+            .all(|delta| delta.instrument_id == first_instrument_id)
+        {
+            self.apply_book_deltas_partition_to_cache(first_instrument_id, &resp.data);
+            publish_book_delta_frames(first_instrument_id, resp.data.iter().copied());
+            return;
+        }
+
+        let partitions = partition_deltas_by_instrument(&resp.data);
+
+        for (instrument_id, deltas) in &partitions {
+            self.apply_book_deltas_partition_to_cache(*instrument_id, deltas);
+        }
+
+        for (instrument_id, deltas) in partitions {
+            publish_book_delta_frames(instrument_id, deltas);
+        }
+    }
+
+    fn apply_book_deltas_partition_to_cache(
+        &self,
+        instrument_id: InstrumentId,
+        deltas: &[OrderBookDelta],
+    ) {
+        if !self.cache_is_owned_by_live_subscription(&instrument_id) {
             let mut cache = self.cache.as_ref().borrow_mut();
-            if let Some(book) = cache.order_book_mut(&resp.instrument_id) {
-                for delta in &resp.data {
+            if let Some(book) = cache.order_book_mut(&instrument_id) {
+                for delta in deltas {
                     if let Err(e) = book.apply_delta(delta) {
                         log::error!("Failed to apply historical delta to cache: {e}");
                     }
@@ -4016,34 +4080,10 @@ impl DataEngine {
             } else {
                 log::debug!(
                     "Skipping cache write for {} historical deltas on {}: no cache book yet",
-                    resp.data.len(),
-                    resp.instrument_id,
+                    deltas.len(),
+                    instrument_id,
                 );
             }
-        }
-
-        // Group deltas by `F_LAST` so each published batch preserves the original event
-        // boundary and metadata (timestamps and sequence from the closing delta), matching
-        // the live `handle_delta` buffering semantic. Collapsing the whole response into
-        // one batch would surface a synthetic event with the trailing delta's flags only.
-        if resp.data.is_empty() {
-            return;
-        }
-
-        let topic = switchboard::get_pipeline_book_deltas_topic(resp.instrument_id);
-        let mut frame: Vec<OrderBookDelta> = Vec::new();
-
-        for delta in &resp.data {
-            frame.push(*delta);
-            if RecordFlag::F_LAST.matches(delta.flags) {
-                let batch = OrderBookDeltas::new(resp.instrument_id, std::mem::take(&mut frame));
-                msgbus::publish_deltas(topic, &batch);
-            }
-        }
-
-        if !frame.is_empty() {
-            let batch = OrderBookDeltas::new(resp.instrument_id, frame);
-            msgbus::publish_deltas(topic, &batch);
         }
     }
 
@@ -5647,6 +5687,51 @@ fn rebuild_pipeline_response(
             None
         }
     }
+}
+
+fn publish_book_delta_frames(
+    instrument_id: InstrumentId,
+    deltas: impl IntoIterator<Item = OrderBookDelta>,
+) {
+    let topic = switchboard::get_pipeline_book_deltas_topic(instrument_id);
+    let mut frame: Vec<OrderBookDelta> = Vec::new();
+
+    // Group each instrument's deltas by `F_LAST` so each published batch preserves the original
+    // event boundary and metadata (timestamps and sequence from the closing delta), matching live
+    // `handle_delta` buffering. Collapsing a partition into one batch would surface a synthetic
+    // event with the trailing delta's flags only.
+    for delta in deltas {
+        frame.push(delta);
+        if RecordFlag::F_LAST.matches(delta.flags) {
+            let batch = OrderBookDeltas::new(instrument_id, std::mem::take(&mut frame));
+            msgbus::publish_deltas(topic, &batch);
+        }
+    }
+
+    if !frame.is_empty() {
+        let batch = OrderBookDeltas::new(instrument_id, frame);
+        msgbus::publish_deltas(topic, &batch);
+    }
+}
+
+// Returns first-seen instrument partitions while preserving relative delta order within each one.
+fn partition_deltas_by_instrument(
+    deltas: &[OrderBookDelta],
+) -> Vec<(InstrumentId, Vec<OrderBookDelta>)> {
+    let mut partition_indexes = AHashMap::new();
+    let mut partitions: Vec<(InstrumentId, Vec<OrderBookDelta>)> = Vec::new();
+
+    for delta in deltas {
+        let index = *partition_indexes
+            .entry(delta.instrument_id)
+            .or_insert_with(|| {
+                partitions.push((delta.instrument_id, Vec::new()));
+                partitions.len() - 1
+            });
+        partitions[index].1.push(*delta);
+    }
+
+    partitions
 }
 
 fn custom_response_data(resp: &CustomDataResponse, parent_id: UUID4) -> Option<Vec<CustomData>> {
