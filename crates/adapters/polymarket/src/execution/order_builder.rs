@@ -29,7 +29,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::VenueOrderId,
@@ -50,6 +50,9 @@ use crate::{
 
 /// Zero `bytes32` used for the `metadata` field (reserved for future use).
 pub const ZERO_BYTES32: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+// Matches the official Polymarket SDK's minimum accepted GTD horizon.
+const GTD_EXPIRATION_BUFFER_SECS: u64 = 180;
 
 /// Builds signed Polymarket orders for submission to the CLOB V2 exchange.
 ///
@@ -223,18 +226,30 @@ impl PolymarketOrderBuilder {
             .price()
             .ok_or_else(|| "Limit orders require a price".to_string())?;
         let tick = tick_size.as_decimal();
-        let max_price = Decimal::ONE - tick;
         let price_decimal = price.as_decimal();
 
-        if price_decimal < tick || price_decimal > max_price {
-            return Err(format!(
-                "Limit order price {price} outside Polymarket range [{tick}, {max_price}]"
-            ));
+        validate_price(price_decimal, tick, "Limit order price", &price.to_string())
+    }
+
+    pub(crate) fn validate_limit_expiration(
+        order: &OrderAny,
+        ts_now: UnixNanos,
+    ) -> Result<(), String> {
+        if order.time_in_force() != TimeInForce::Gtd {
+            return Ok(());
         }
 
-        if price_decimal % tick != Decimal::ZERO {
+        let expire_time = order
+            .expire_time()
+            .filter(|expire_time| !expire_time.is_zero())
+            .ok_or_else(|| "Polymarket GTD orders require a non-zero expiry".to_string())?;
+        let now_secs = ts_now.as_seconds();
+        let expire_secs = expire_time.as_seconds();
+        let minimum_expire_secs = now_secs.saturating_add(GTD_EXPIRATION_BUFFER_SECS);
+
+        if expire_secs < minimum_expire_secs {
             return Err(format!(
-                "Limit order price {price} does not conform to Polymarket tick size {tick}"
+                "Polymarket GTD expiry must be at least {GTD_EXPIRATION_BUFFER_SECS} seconds in the future"
             ));
         }
 
@@ -288,6 +303,23 @@ impl PolymarketOrderBuilder {
         Ok(())
     }
 
+    pub(crate) fn normalize_market_price(
+        price: Decimal,
+        tick_size: Price,
+    ) -> Result<Decimal, String> {
+        let tick = tick_size.as_decimal();
+        let price = price.trunc_with_scale(u32::from(tick_size.precision));
+
+        validate_price(
+            price,
+            tick,
+            "Derived market price",
+            &price.normalize().to_string(),
+        )?;
+
+        Ok(price)
+    }
+
     fn build_and_sign(
         &self,
         token_id: &str,
@@ -331,6 +363,29 @@ impl PolymarketOrderBuilder {
             _ => self.signer_address.clone(),
         }
     }
+}
+
+fn validate_price(
+    price: Decimal,
+    tick: Decimal,
+    label: &str,
+    price_display: &str,
+) -> Result<(), String> {
+    let max_price = Decimal::ONE - tick;
+
+    if price < tick || price > max_price {
+        return Err(format!(
+            "{label} {price_display} outside Polymarket range [{tick}, {max_price}]"
+        ));
+    }
+
+    if price % tick != Decimal::ZERO {
+        return Err(format!(
+            "{label} {price_display} does not conform to Polymarket tick size {tick}"
+        ));
+    }
+
+    Ok(())
 }
 
 fn to_fixed_decimal(d: Decimal) -> Decimal {
@@ -442,7 +497,7 @@ pub fn generate_salt() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::UUID4;
     use nautilus_model::{
         enums::{OrderSide, TimeInForce},
         identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
@@ -514,6 +569,14 @@ mod tests {
             UUID4::new(),
             UnixNanos::default(),
         ))
+    }
+
+    fn with_expire_time(mut order: OrderAny, expire_time: Option<UnixNanos>) -> OrderAny {
+        let OrderAny::Limit(limit) = &mut order else {
+            unreachable!("test order is limit")
+        };
+        limit.expire_time = expire_time;
+        order
     }
 
     fn make_market(side: OrderSide, quote_quantity: bool) -> OrderAny {
@@ -616,6 +679,100 @@ mod tests {
                 "Limit order price {price} does not conform to Polymarket tick size {tick_size}"
             )
         );
+    }
+
+    #[rstest]
+    #[case::half_cent("0.5059", "0.005", dec!(0.505))]
+    #[case::quarter_cent("0.50259", "0.0025", dec!(0.5025))]
+    fn test_normalize_market_price(
+        #[case] price: &str,
+        #[case] tick_size: &str,
+        #[case] expected: Decimal,
+    ) {
+        let normalized = PolymarketOrderBuilder::normalize_market_price(
+            price.parse::<Decimal>().unwrap(),
+            Price::from(tick_size),
+        )
+        .unwrap();
+
+        assert_eq!(normalized, expected);
+    }
+
+    #[rstest]
+    #[case::below_range(
+        "0.0049",
+        "0.005",
+        "Derived market price 0.004 outside Polymarket range [0.005, 0.995]"
+    )]
+    #[case::above_range(
+        "1.0000",
+        "0.0025",
+        "Derived market price 1 outside Polymarket range [0.0025, 0.9975]"
+    )]
+    #[case::off_half_cent(
+        "0.5019",
+        "0.005",
+        "Derived market price 0.501 does not conform to Polymarket tick size 0.005"
+    )]
+    #[case::off_quarter_cent(
+        "0.50129",
+        "0.0025",
+        "Derived market price 0.5012 does not conform to Polymarket tick size 0.0025"
+    )]
+    fn test_normalize_market_price_denied(
+        #[case] price: &str,
+        #[case] tick_size: &str,
+        #[case] expected: &str,
+    ) {
+        let error = PolymarketOrderBuilder::normalize_market_price(
+            price.parse().unwrap(),
+            Price::from(tick_size),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, expected);
+    }
+
+    #[rstest]
+    #[case::below(
+        1_700_000_179_999_999_999,
+        Some("Polymarket GTD expiry must be at least 180 seconds in the future")
+    )]
+    #[case::equal(1_700_000_180_000_000_000, None)]
+    #[case::above(1_700_000_181_000_000_000, None)]
+    fn test_validate_limit_expiration_boundary(
+        #[case] expire_ns: u64,
+        #[case] expected_error: Option<&str>,
+    ) {
+        let order = with_expire_time(
+            make_limit(false, false, false, TimeInForce::Gtd),
+            Some(UnixNanos::from(expire_ns)),
+        );
+        let ts_now = UnixNanos::from(1_700_000_000_900_000_000u64);
+
+        let result = PolymarketOrderBuilder::validate_limit_expiration(&order, ts_now);
+
+        assert_eq!(result.err().as_deref(), expected_error);
+    }
+
+    #[rstest]
+    #[case::missing(None)]
+    #[case::zero(Some(UnixNanos::default()))]
+    fn test_validate_limit_expiration_requires_non_zero_expiry(
+        #[case] expire_time: Option<UnixNanos>,
+    ) {
+        let order = with_expire_time(
+            make_limit(false, false, false, TimeInForce::Gtd),
+            expire_time,
+        );
+
+        let error = PolymarketOrderBuilder::validate_limit_expiration(
+            &order,
+            UnixNanos::from(1_700_000_000_900_000_000u64),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "Polymarket GTD orders require a non-zero expiry");
     }
 
     #[rstest]

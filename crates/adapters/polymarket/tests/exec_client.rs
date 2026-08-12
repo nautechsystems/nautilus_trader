@@ -56,7 +56,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, cash::CashAccount},
@@ -88,6 +88,7 @@ use nautilus_polymarket::{
     signing::eip712::order_hash,
 };
 use rstest::rstest;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 
@@ -2423,6 +2424,23 @@ fn make_market_order_with_time_in_force(
         .build()
 }
 
+fn make_market_order_with_quantity(
+    client_order_id: &str,
+    instrument_id: InstrumentId,
+    quantity: Quantity,
+) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(OrderSide::Buy)
+        .quantity(quantity)
+        .time_in_force(TimeInForce::Ioc)
+        .quote_quantity(true)
+        .build()
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_submit_market_order_denied_unsupported_time_in_force() {
@@ -2621,6 +2639,165 @@ async fn test_submit_market_order_buy_quote_to_base_conversion() {
         .unwrap()
         .unwrap();
     assert_order_event(event, "Accepted");
+}
+
+#[rstest]
+#[case::buy(OrderSide::Buy, true, "0.005", "0.5059", "10000000", "19801980")]
+#[case::sell(OrderSide::Sell, false, "0.0025", "0.50259", "10000000", "5025000")]
+#[tokio::test]
+async fn test_submit_market_order_normalizes_crossing_price_before_signing(
+    #[case] side: OrderSide,
+    #[case] quote_quantity: bool,
+    #[case] tick_size: &str,
+    #[case] crossing_price: &str,
+    #[case] expected_maker_amount: &str,
+    #[case] expected_taker_amount: &str,
+) {
+    let state = TestServerState::default();
+    *state.order_response.lock().await = Some(constructed_order_response("live"));
+    *state.book_response.lock().await = Some(json!({
+        "bids": [{"price": crossing_price, "size": "100.00"}],
+        "asks": [{"price": crossing_price, "size": "100.00"}]
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN-NORMALIZE.POLYMARKET");
+    add_instrument_to_cache_with_tick(&cache, instrument_id, tick_size, 2);
+    let order = make_market_order("O-MKT-NORMALIZE", instrument_id, side, quote_quantity);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    if side == OrderSide::Buy {
+        assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+    }
+    assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
+
+    assert_eq!(*state.order_post_count.lock().await, 1);
+    let body = state.last_body.lock().await.clone().unwrap();
+    let signed_order = body.get("order").unwrap();
+    assert_eq!(
+        signed_order.get("makerAmount").and_then(Value::as_str),
+        Some(expected_maker_amount),
+    );
+    assert_eq!(
+        signed_order.get("takerAmount").and_then(Value::as_str),
+        Some(expected_taker_amount),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_market_buy_uses_normalized_price_for_fee_adjustment() {
+    let state = TestServerState::default();
+    *state.order_response.lock().await = Some(constructed_order_response("live"));
+    *state.book_response.lock().await = Some(json!({
+        "bids": [{"price": "0.48", "size": "100.00"}],
+        "asks": [{"price": "0.5059", "size": "100.00"}]
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN-FEE-NORMALIZE.POLYMARKET");
+    add_instrument_to_cache_with_tick_and_taker_fee(&cache, instrument_id, "0.005", 2, dec!(0.1));
+    let order =
+        make_market_order_with_quantity("O-MKT-FEE-NORMALIZE", instrument_id, Quantity::from("40"));
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+    assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
+
+    let body = state.last_body.lock().await.clone().unwrap();
+    let signed_order = body.get("order").unwrap();
+    assert_eq!(
+        signed_order.get("makerAmount").and_then(Value::as_str),
+        Some("35730000"),
+    );
+    assert_eq!(
+        signed_order.get("takerAmount").and_then(Value::as_str),
+        Some("70752470"),
+    );
+}
+
+#[rstest]
+#[case::buy_below_range(
+    OrderSide::Buy,
+    true,
+    "0.005",
+    "0.0049",
+    "Derived market price 0.004 outside Polymarket range [0.005, 0.995]"
+)]
+#[case::sell_above_range(
+    OrderSide::Sell,
+    false,
+    "0.0025",
+    "1.0000",
+    "Derived market price 1 outside Polymarket range [0.0025, 0.9975]"
+)]
+#[case::buy_off_half_cent(
+    OrderSide::Buy,
+    true,
+    "0.005",
+    "0.5019",
+    "Derived market price 0.501 does not conform to Polymarket tick size 0.005"
+)]
+#[case::sell_off_quarter_cent(
+    OrderSide::Sell,
+    false,
+    "0.0025",
+    "0.50129",
+    "Derived market price 0.5012 does not conform to Polymarket tick size 0.0025"
+)]
+#[tokio::test]
+async fn test_submit_market_order_denies_invalid_derived_price_before_post(
+    #[case] side: OrderSide,
+    #[case] quote_quantity: bool,
+    #[case] tick_size: &str,
+    #[case] crossing_price: &str,
+    #[case] expected_reason: &str,
+) {
+    let state = TestServerState::default();
+    *state.book_response.lock().await = Some(json!({
+        "bids": [{"price": crossing_price, "size": "100.00"}],
+        "asks": [{"price": crossing_price, "size": "100.00"}]
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN-INVALID-PRICE.POLYMARKET");
+    add_instrument_to_cache_with_tick(&cache, instrument_id, tick_size, 2);
+    let order = make_market_order("O-MKT-INVALID-PRICE", instrument_id, side, quote_quantity);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    let denied = assert_order_event(recv_execution_event(&mut rx).await, "Denied");
+    assert_eq!(order_event_reason(&denied), expected_reason);
+    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_no_execution_event(&mut rx).await;
 }
 
 #[rstest]
@@ -3354,6 +3531,26 @@ fn make_limit_order_at_price_and_quantity(
     builder.build()
 }
 
+fn make_gtd_limit_order_expiring_at(
+    client_order_id: &str,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    expire_time: UnixNanos,
+) -> OrderAny {
+    let mut builder = OrderTestBuilder::new(OrderType::Limit);
+    builder
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(side)
+        .quantity(Quantity::new(10.0, 0))
+        .price(Price::new(0.50, 4))
+        .time_in_force(TimeInForce::Gtd)
+        .expire_time(expire_time);
+    builder.build()
+}
+
 fn make_submit_cmd(order: &OrderAny, instrument_id: InstrumentId) -> SubmitOrder {
     SubmitOrder::new(
         TraderId::from("TESTER-001"),
@@ -3433,6 +3630,22 @@ fn add_instrument_to_cache_with_tick(
     tick_size: &str,
     size_precision: u8,
 ) {
+    add_instrument_to_cache_with_tick_and_taker_fee(
+        cache,
+        instrument_id,
+        tick_size,
+        size_precision,
+        Decimal::ZERO,
+    );
+}
+
+fn add_instrument_to_cache_with_tick_and_taker_fee(
+    cache: &Rc<RefCell<Cache>>,
+    instrument_id: InstrumentId,
+    tick_size: &str,
+    size_precision: u8,
+    taker_fee: Decimal,
+) {
     let symbol = "71321045679252212594626385532706912750332728571942532289631379312455583992563";
     let price_increment = Price::from(tick_size);
     let size_increment = if size_precision == 0 {
@@ -3467,7 +3680,7 @@ fn add_instrument_to_cache_with_tick(
         None, // margin_init
         None, // margin_maint
         None, // maker_fee
-        None, // taker_fee
+        Some(taker_fee),
         None, // tick_scheme
         None, // info
         UnixNanos::default(),
@@ -3527,6 +3740,160 @@ async fn assert_no_execution_event(rx: &mut tokio::sync::mpsc::UnboundedReceiver
         Ok(Some(event)) => panic!("Expected no execution event, was {event:?}"),
         Ok(None) => panic!("Execution event channel closed"),
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_gtd_order_denied_below_expiry_buffer_before_post() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN-GTD.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let expire_time = get_atomic_clock_realtime()
+        .get_time_ns()
+        .saturating_add_ns(179_000_000_000u64);
+    let order = make_gtd_limit_order_expiring_at(
+        "O-GTD-BELOW-BUFFER",
+        instrument_id,
+        OrderSide::Buy,
+        expire_time,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
+    assert_eq!(
+        order_event_reason(&denied),
+        "Polymarket GTD expiry must be at least 180 seconds in the future",
+    );
+    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_eq!(*state.batch_order_post_count.lock().await, 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_gtd_order_list_denies_invalid_legs_before_batch_post() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN-GTD-LIST-INVALID.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let expire_time = get_atomic_clock_realtime()
+        .get_time_ns()
+        .saturating_add_ns(179_000_000_000u64);
+    let orders = [
+        make_gtd_limit_order_expiring_at(
+            "O-GTD-LIST-INVALID-1",
+            instrument_id,
+            OrderSide::Buy,
+            expire_time,
+        ),
+        make_gtd_limit_order_expiring_at(
+            "O-GTD-LIST-INVALID-2",
+            instrument_id,
+            OrderSide::Sell,
+            expire_time,
+        ),
+    ];
+
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    client
+        .submit_order_list(make_submit_order_list_cmd(instrument_id, &orders))
+        .unwrap();
+
+    for _ in &orders {
+        let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
+        assert_eq!(
+            order_event_reason(&denied),
+            "Polymarket GTD expiry must be at least 180 seconds in the future",
+        );
+    }
+    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_eq!(*state.batch_order_post_count.lock().await, 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_gtd_order_list_preserves_valid_legs() {
+    let state = TestServerState::default();
+    *state.batch_order_response.lock().await = Some(json!([
+        {"success": true, "orderID": "0xgtd-valid-1", "errorMsg": ""},
+        {"success": true, "orderID": "0xgtd-valid-2", "errorMsg": ""}
+    ]));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN-GTD-LIST-MIXED.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let ts_now = get_atomic_clock_realtime().get_time_ns();
+    let invalid_expire_time = ts_now.saturating_add_ns(179_000_000_000u64);
+    let valid_expire_time = ts_now.saturating_add_ns(181_000_000_000u64);
+    let orders = [
+        make_gtd_limit_order_expiring_at(
+            "O-GTD-LIST-BELOW-BUFFER",
+            instrument_id,
+            OrderSide::Buy,
+            invalid_expire_time,
+        ),
+        make_gtd_limit_order_expiring_at(
+            "O-GTD-LIST-VALID-1",
+            instrument_id,
+            OrderSide::Buy,
+            valid_expire_time,
+        ),
+        make_gtd_limit_order_expiring_at(
+            "O-GTD-LIST-VALID-2",
+            instrument_id,
+            OrderSide::Sell,
+            valid_expire_time,
+        ),
+    ];
+
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    client
+        .submit_order_list(make_submit_order_list_cmd(instrument_id, &orders))
+        .unwrap();
+
+    let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
+    assert_eq!(
+        order_event_reason(&denied),
+        "Polymarket GTD expiry must be at least 180 seconds in the future",
+    );
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
+    assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
+
+    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_eq!(*state.batch_order_post_count.lock().await, 1);
+    let body = state.last_body.lock().await.clone().unwrap();
+    assert_eq!(body.as_array().unwrap().len(), 2);
 }
 
 #[rstest]
@@ -3733,7 +4100,7 @@ async fn test_submit_order_accepts_price_at_tick_relative_bound(#[case] price: &
 
     // A price at the tick-relative bound (tick=0.0001 -> range [0.0001, 0.9999], the value a
     // consumer clamps to) is not locally denied; the single-submit path emits Submitted.
-    assert_order_event(rx.try_recv().unwrap(), "Submitted");
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
 }
 
 #[rstest]
@@ -3960,7 +4327,7 @@ async fn test_submit_order_allows_tick_relative_price_boundary(#[case] price: &s
         .submit_order(make_submit_cmd(&order, instrument_id))
         .unwrap();
 
-    assert_order_event(rx.try_recv().unwrap(), "Submitted");
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
 }
 
 #[rstest]
@@ -4030,7 +4397,7 @@ async fn test_submit_order_post_only_with_gtc_allowed() {
     client.submit_order(cmd).unwrap();
 
     // First event should be Submitted (not Denied)
-    let event = rx.try_recv().unwrap();
+    let event = recv_execution_event(&mut rx).await;
     assert_order_event(event, "Submitted");
 }
 
@@ -4064,7 +4431,7 @@ async fn test_submit_order_accepted_on_http_success() {
     client.submit_order(cmd).unwrap();
 
     // Submitted event
-    let event = rx.try_recv().unwrap();
+    let event = recv_execution_event(&mut rx).await;
     assert_order_event(event, "Submitted");
 
     // Accepted event (async, need to wait)
@@ -4105,7 +4472,7 @@ async fn test_submit_order_rejected_on_http_failure_response() {
     client.submit_order(cmd).unwrap();
 
     // Submitted
-    let event = rx.try_recv().unwrap();
+    let event = recv_execution_event(&mut rx).await;
     assert_order_event(event, "Submitted");
 
     // Rejected (async)
@@ -4147,7 +4514,7 @@ async fn test_submit_order_http_5xx_submit_outcome_unknown() {
     client.submit_order(cmd).unwrap();
 
     // Submitted
-    let event = rx.try_recv().unwrap();
+    let event = recv_execution_event(&mut rx).await;
     assert_order_event(event, "Submitted");
 
     wait_until_async(
@@ -4194,8 +4561,8 @@ async fn test_submit_order_retries_5xx_and_accepts_when_recovered() {
 
     client.submit_order(cmd).unwrap();
 
-    // Submitted (synchronous before the HTTP roundtrip).
-    let event = rx.try_recv().unwrap();
+    // Submitted before the HTTP roundtrip.
+    let event = recv_execution_event(&mut rx).await;
     assert_order_event(event, "Submitted");
 
     // Accepted after the retries succeed.
@@ -4239,7 +4606,7 @@ async fn test_submit_order_ambiguous_retry_then_bad_request_remains_unknown() {
     client
         .submit_order(make_submit_cmd(&order, instrument_id))
         .unwrap();
-    assert_order_event(rx.try_recv().unwrap(), "Submitted");
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
 
     wait_until_async(
         || {
@@ -4283,7 +4650,7 @@ async fn test_submit_order_5xx_exhausts_retries_submit_outcome_unknown() {
 
     client.submit_order(cmd).unwrap();
 
-    let event = rx.try_recv().unwrap();
+    let event = recv_execution_event(&mut rx).await;
     assert_order_event(event, "Submitted");
 
     wait_until_async(
@@ -6346,8 +6713,7 @@ async fn test_cancel_order_deferred_when_no_venue_order_id() {
     let submit_cmd = make_submit_cmd(&order, instrument_id);
     client.submit_order(submit_cmd).unwrap();
 
-    // Submitted event (sync)
-    let event = rx.try_recv().unwrap();
+    let event = recv_execution_event(&mut rx).await;
     assert_order_event(event, "Submitted");
 
     // Accepted event (async, from HTTP response)
@@ -6822,7 +7188,7 @@ async fn test_cancel_order_deferred_with_already_done_response() {
     client.submit_order(submit_cmd).unwrap();
 
     // Submitted
-    let event = rx.try_recv().unwrap();
+    let event = recv_execution_event(&mut rx).await;
     assert_order_event(event, "Submitted");
 
     // Accepted
@@ -6884,7 +7250,7 @@ async fn test_cancel_order_deferred_ambiguous_http_failure_does_not_emit_cancel_
     let submit_cmd = make_submit_cmd(&order, instrument_id);
     client.submit_order(submit_cmd).unwrap();
 
-    let event = rx.try_recv().unwrap();
+    let event = recv_execution_event(&mut rx).await;
     assert_order_event(event, "Submitted");
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
@@ -6951,7 +7317,7 @@ async fn test_cancel_order_deferred_explicit_structured_rejection_emits_cancel_r
     client.submit_order(submit_cmd).unwrap();
 
     // Submitted
-    let event = rx.try_recv().unwrap();
+    let event = recv_execution_event(&mut rx).await;
     assert_order_event(event, "Submitted");
 
     // Accepted
@@ -7159,10 +7525,7 @@ async fn test_order_queries_use_registered_identity_after_delayed_submit() {
     client
         .submit_order(make_submit_cmd(&order, instrument_id))
         .unwrap();
-    assert_order_event(
-        rx.try_recv().expect("expected submitted event"),
-        "Submitted",
-    );
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
     wait_until_async(
         || {
             let state = state.clone();

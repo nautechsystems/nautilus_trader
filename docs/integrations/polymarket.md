@@ -297,9 +297,9 @@ shares.
 :::
 
 :::note
-Set `GTD` expiry at least three minutes after submission. Polymarket applies an expiration buffer of
-roughly one minute, so the order rests for about a minute less than the requested duration. The venue
-reports expiry as an `OrderCanceled` event, not `OrderExpired`.
+Set `GTD` expiry at least three minutes after submission. The adapter denies shorter expiries before
+signing, using whole Unix seconds, and accepts the exact three‑minute boundary. The venue reports expiry
+as an `OrderCanceled` event, not `OrderExpired`.
 :::
 
 ### Advanced order features

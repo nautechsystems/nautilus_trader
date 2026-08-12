@@ -21,23 +21,20 @@
 //! Uses [`RetryManager`] from `nautilus-network` with exponential backoff for
 //! transient HTTP failures (timeouts, 5xx, rate limits).
 
-use std::{
-    error::Error as StdError,
-    fmt::Display,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
     identifiers::VenueOrderId,
-    types::Quantity,
+    types::{Price, Quantity},
 };
 use nautilus_network::retry::{RetryConfig, RetryManager};
 use rust_decimal::Decimal;
+use thiserror::Error;
 
 use super::{
     order_builder::PolymarketOrderBuilder,
@@ -75,7 +72,7 @@ pub(crate) struct MarketOrderSubmitRequest {
     pub(crate) amount: Quantity,
     pub(crate) time_in_force: TimeInForce,
     pub(crate) neg_risk: bool,
-    pub(crate) tick_decimals: u32,
+    pub(crate) tick_size: Price,
     pub(crate) fee_context: Option<MarketBuyFeeContext>,
 }
 
@@ -86,24 +83,17 @@ pub(crate) struct MarketOrderSubmitResult {
     pub expected_venue_order_id: VenueOrderId,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
+#[error("submit outcome unknown for {expected_venue_order_id}: {reason}")]
 pub(crate) struct UnknownSubmitError {
     pub reason: String,
     pub expected_venue_order_id: VenueOrderId,
     pub expected_base_qty: Option<Decimal>,
 }
 
-impl Display for UnknownSubmitError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "submit outcome unknown for {}: {}",
-            self.expected_venue_order_id, self.reason
-        )
-    }
-}
-
-impl StdError for UnknownSubmitError {}
+#[derive(Debug, Error)]
+#[error("{0}")]
+pub(crate) struct InvalidMarketPriceError(String);
 
 /// HTTP order submission and cancellation facade.
 ///
@@ -158,7 +148,7 @@ impl OrderSubmitter {
             amount,
             time_in_force,
             neg_risk,
-            tick_decimals,
+            tick_size,
             fee_context,
         } = request;
         let poly_side = PolymarketOrderSide::try_from(side)
@@ -180,6 +170,9 @@ impl OrderSubmitter {
 
         let result = calculate_market_price(levels, amount_dec, poly_side)
             .map_err(|e| anyhow::anyhow!("Market price calculation failed: {e}"))?;
+        let price =
+            PolymarketOrderBuilder::normalize_market_price(result.crossing_price, tick_size)
+                .map_err(InvalidMarketPriceError)?;
 
         // Fee-aware sizing applies to BUY only and only when a context is
         // provided. Run before signing so the on-chain `taker_amount` and
@@ -188,7 +181,7 @@ impl OrderSubmitter {
             (PolymarketOrderSide::Buy, Some(ctx)) => adjust_market_buy_amount(
                 amount_dec,
                 ctx.user_pusd_balance,
-                result.crossing_price,
+                price,
                 ctx.fee_rate,
                 ctx.fee_exponent,
                 ctx.builder_taker_fee_rate,
@@ -201,10 +194,10 @@ impl OrderSubmitter {
             .build_market_order(
                 &token_id,
                 poly_side,
-                result.crossing_price,
+                price,
                 signed_amount,
                 neg_risk,
-                tick_decimals,
+                u32::from(tick_size.precision),
             )
             .map_err(|e| anyhow::anyhow!("Failed to build market order: {e}"))?;
 
@@ -494,7 +487,7 @@ fn signed_base_quantity(
 // Polymarket API. Returns `"0"` when there is no expiration.
 fn limit_order_expiration(expire_time: Option<UnixNanos>) -> String {
     match expire_time {
-        Some(ns) if ns.as_u64() > 0 => (ns.as_u64() / 1_000_000_000).to_string(),
+        Some(ns) if !ns.is_zero() => ns.as_seconds().to_string(),
         _ => "0".to_string(),
     }
 }

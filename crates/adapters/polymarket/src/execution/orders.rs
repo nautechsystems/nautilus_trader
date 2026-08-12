@@ -37,7 +37,9 @@ use super::{
         handle_batch_order_responses, handle_order_response, handle_single_order_response,
         handle_unknown_submit_result, reject_submit_order,
     },
-    submitter::{MarketBuyFeeContext, MarketOrderSubmitRequest, UnknownSubmitError},
+    submitter::{
+        InvalidMarketPriceError, MarketBuyFeeContext, MarketOrderSubmitRequest, UnknownSubmitError,
+    },
     types::{BatchLimitOrderContext, LimitOrderSubmitRequest},
 };
 use crate::common::consts::BATCH_ORDER_LIMIT;
@@ -45,6 +47,13 @@ use crate::common::consts::BATCH_ORDER_LIMIT;
 impl PolymarketExecutionClient {
     pub(super) fn submit_limit_order(&self, order: OrderAny) {
         if let Err(reason) = PolymarketOrderBuilder::validate_limit_order(&order) {
+            self.emitter.emit_order_denied(&order, &reason);
+            return;
+        }
+
+        if let Err(reason) =
+            PolymarketOrderBuilder::validate_limit_expiration(&order, self.clock.get_time_ns())
+        {
             self.emitter.emit_order_denied(&order, &reason);
             return;
         }
@@ -82,8 +91,6 @@ impl PolymarketExecutionClient {
             tick_decimals,
         };
 
-        self.emitter.emit_order_submitted(&order);
-
         let submitter = self.submitter.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -96,6 +103,15 @@ impl PolymarketExecutionClient {
         let price_precision = instrument.price_precision();
 
         self.spawn_task("submit_limit_order", async move {
+            if let Err(reason) =
+                PolymarketOrderBuilder::validate_limit_expiration(&order, clock.get_time_ns())
+            {
+                emitter.emit_order_denied(&order, &reason);
+                return Ok(());
+            }
+
+            emitter.emit_order_submitted(&order);
+
             let submission = match submitter.prepare_limit_order_submission(&request).await {
                 Ok(submission) => submission,
                 Err(e) => {
@@ -197,7 +213,7 @@ impl PolymarketExecutionClient {
 
         let neg_risk = self.get_neg_risk(&order.instrument_id());
         let token_id = instrument.raw_symbol().to_string();
-        let tick_decimals = instrument.price_precision() as u32;
+        let tick_size = instrument.price_increment();
         let side = order.order_side();
         let amount = order.quantity();
         let time_in_force = order.time_in_force();
@@ -256,7 +272,7 @@ impl PolymarketExecutionClient {
                     amount,
                     time_in_force,
                     neg_risk,
-                    tick_decimals,
+                    tick_size,
                     fee_context,
                 })
                 .await
@@ -379,6 +395,9 @@ impl PolymarketExecutionClient {
                             )
                             .await;
                         }
+                    } else if let Some(invalid_price) = e.downcast_ref::<InvalidMarketPriceError>()
+                    {
+                        emitter.emit_order_denied(&order, &invalid_price.to_string());
                     } else {
                         let ts_now = clock.get_time_ns();
                         emitter.emit_order_rejected(&order, &format!("{e}"), ts_now, false);
@@ -435,6 +454,7 @@ impl PolymarketExecutionClient {
     pub(super) fn submit_order_list_command(&self, cmd: &SubmitOrderList) {
         let mut batch_orders = Vec::with_capacity(cmd.order_inits.len());
         let neg_risk_index = self.neg_risk_index.load();
+        let ts_now = self.clock.get_time_ns();
 
         for order_init in &cmd.order_inits {
             let Some(order) = self
@@ -471,6 +491,11 @@ impl PolymarketExecutionClient {
             }
 
             if let Err(reason) = PolymarketOrderBuilder::validate_limit_order(&order) {
+                self.emitter.emit_order_denied(&order, &reason);
+                continue;
+            }
+
+            if let Err(reason) = PolymarketOrderBuilder::validate_limit_expiration(&order, ts_now) {
                 self.emitter.emit_order_denied(&order, &reason);
                 continue;
             }
@@ -532,6 +557,22 @@ impl PolymarketExecutionClient {
         let account_id = self.core.account_id;
 
         self.spawn_task("submit_order_list", async move {
+            let ts_now = clock.get_time_ns();
+            batch_orders.retain(|batch_order| {
+                match PolymarketOrderBuilder::validate_limit_expiration(&batch_order.order, ts_now)
+                {
+                    Ok(()) => true,
+                    Err(reason) => {
+                        emitter.emit_order_denied(&batch_order.order, &reason);
+                        false
+                    }
+                }
+            });
+
+            if batch_orders.is_empty() {
+                return Ok(());
+            }
+
             for batch_order in &batch_orders {
                 emitter.emit_order_submitted(&batch_order.order);
             }
