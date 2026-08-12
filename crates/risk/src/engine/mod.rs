@@ -1914,7 +1914,15 @@ impl RiskEngine {
         );
     }
 
-    fn check_price(instrument: &InstrumentAny, price: Option<Price>) -> Option<String> {
+    /// Checks `price` against `instrument`, returning a reason when it is invalid.
+    ///
+    /// Returns `None` when `price` is absent or passes these checks, or a human-readable
+    /// reason when it does not. A `None` result is not a statement that the order is
+    /// valid: only decimal precision against the instrument's `price_precision`, and a
+    /// non-positive price where the instrument disallows one, are checked here. Venue
+    /// increment rules, notional bounds, and account state are not.
+    #[must_use]
+    pub fn check_price(instrument: &InstrumentAny, price: Option<Price>) -> Option<String> {
         let price_val = price?;
 
         if price_val.precision > instrument.price_precision() {
@@ -1950,7 +1958,8 @@ impl RiskEngine {
             ));
         }
 
-        // Skip min/max checks for quote quantities (they will be checked in check_orders_risk using effective_quantity)
+        // Base-quantity bounds do not apply to quote-denominated orders and are not
+        // re-checked later. Applicable notional limits are checked during account risk.
         if is_quote_quantity {
             return None;
         }

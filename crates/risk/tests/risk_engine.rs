@@ -8377,3 +8377,32 @@ fn test_submit_sell_cash_account_with_long_position_reduces_then_passes(
         get_execute_order_event_handler_messages(&execute_order_event_handler);
     assert_eq!(saved_execute_messages.len(), 1);
 }
+
+#[rstest]
+fn test_check_price_accepts_a_valid_price(instrument_audusd: InstrumentAny) {
+    assert_eq!(
+        RiskEngine::check_price(&instrument_audusd, Some(Price::from("0.75000"))),
+        None
+    );
+}
+
+#[rstest]
+fn test_check_price_accepts_no_price(instrument_audusd: InstrumentAny) {
+    assert_eq!(RiskEngine::check_price(&instrument_audusd, None), None);
+}
+
+#[rstest]
+fn test_check_price_rejects_excess_precision(instrument_audusd: InstrumentAny) {
+    let reason = RiskEngine::check_price(&instrument_audusd, Some(Price::from("0.750000")))
+        .expect("a price with more precision than the instrument must be rejected");
+
+    assert!(reason.contains("precision 6 > 5"), "{reason}");
+}
+
+#[rstest]
+fn test_check_price_rejects_non_positive_price(instrument_audusd: InstrumentAny) {
+    let reason = RiskEngine::check_price(&instrument_audusd, Some(Price::from("0.00000")))
+        .expect("a non-positive price must be rejected where the instrument disallows one");
+
+    assert!(reason.contains("<= 0"), "{reason}");
+}
