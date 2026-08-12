@@ -74,22 +74,16 @@ flowchart TB
 ## Configuration
 
 Logging can be configured by importing the `LoggerConfig` object.
-By default, log events with an 'INFO' `LogLevel` and higher are written to stdout/stderr.
-
-Log level (`LogLevel`) values include the following (matching standard log level conventions).
+By default, log events with an `INFO` `LogLevel` and higher are written to stdout/stderr.
 
 The following log levels are supported:
 
 - `OFF` - Disable logging.
-- `TRACE` - Most verbose; only emitted by Rust components (cannot be generated from Python).
+- `TRACE` - Most verbose level.
 - `DEBUG` - Detailed diagnostic information.
 - `INFO` - General operational messages.
 - `WARNING` - Potential issues that don't prevent operation.
 - `ERROR` - Errors that may affect functionality.
-
-:::tip
-You can set `TRACE` as a filter level to capture trace logs from Rust components, even though Python code cannot emit them directly.
-:::
 
 See the `LoggerConfig` [API Reference](/docs/python-api-latest/common.html#nautilus_trader.common.LoggerConfig) for further details.
 
@@ -139,10 +133,10 @@ Rotation behavior depends on both the presence of a size limit and whether a cus
     logging continues to that file, which may briefly exceed the configured maximum size.
 - **Date-based rotation (default naming only)**:
   - Applies when `file_rotate` and `file_name` are both unset.
-  - At each UTC date change (midnight), the current log file is closed and a new one is started, creating one file per UTC day.
+  - On the first write after each UTC date change (midnight), the current log file is closed and a new one is started, creating one file per UTC day.
 - **No rotation**:
   - When `file_name` is set without `file_rotate`, logs continue to append to the same file.
-  - Note: Size-based rotation takes precedence - if both a custom name and size limit are provided, rotation still occurs.
+  - Note: Size-based rotation takes precedence: if both a custom name and size limit are provided, rotation still occurs.
 - **Backup file management**:
   - The second value in `file_rotate` limits the total number of rotated files kept.
   - When this limit is exceeded, the oldest backup files are automatically removed.
@@ -227,10 +221,11 @@ export NAUTILUS_LOG="stdout=Info;fileout=Debug;RiskEngine=Error;is_colored"
 | `<Component>`         | Log level | Component‑specific level (exact match).          |
 | `<module::path>`      | Log level | Module‑specific level (prefix match, Rust only). |
 
-Flags are enabled by their presence in the spec string (no value needed). Log levels are case-insensitive: `Off`, `Trace`, `Debug`, `Info`, `Warning` (or `Warn`), `Error`.
+Flags are enabled by their presence in the spec string (no value needed). Log levels are case-insensitive: `Off`, `Trace`, `Debug`, `Info`, `Warn`, `Error`.
 
 :::note
-For Rust-only binaries, setting `NAUTILUS_LOG` enables lazy initialization of the logging subsystem on first use, without requiring explicit `init_logging()` calls.
+For Rust-only binaries, the logging subsystem initializes lazily on first use. Setting
+`NAUTILUS_LOG` configures it without requiring explicit `init_logging()` calls.
 :::
 
 ### Components-only logging
@@ -263,8 +258,8 @@ export NAUTILUS_LOG="stdout=Info;log_components_only;RiskEngine=Debug;Portfolio=
 When using the `NAUTILUS_LOG` environment variable, you can filter by Rust module paths in addition to component names. Keys containing `::` are treated as module path filters with prefix matching, while keys without `::` are component filters with exact matching.
 
 ```bash
-# Filter all adapters to Warn, but allow Debug for OKX specifically
-export NAUTILUS_LOG="stdout=Info;nautilus_okx=Warn;nautilus_okx::websocket=Debug"
+# Filter all OKX adapter modules to Warn, but allow Debug for the websocket modules
+export NAUTILUS_LOG="stdout=Info;nautilus_okx::=Warn;nautilus_okx::websocket=Debug"
 ```
 
 The longest matching prefix takes precedence. In the example above, `nautilus_okx::websocket::handler` would use the `Debug` level (longer prefix), while `nautilus_okx::data` would use `Warn`.
@@ -290,9 +285,7 @@ ANSI color codes improve log readability in terminals.
 In environments that do not support ANSI color rendering (such as some cloud environments or text editors),
 these color codes may not be appropriate as they can appear as raw text.
 
-Set `LoggerConfig.is_colored=False` for these environments. Disabling colors prevents ANSI color
-codes from being added to log messages,
-which avoids raw escape codes in environments without color support.
+Set `LoggerConfig.is_colored=False` for these environments.
 
 ## Using a logger directly
 
@@ -335,7 +328,7 @@ The logging system uses reference counting to track active `LogGuard` instances:
 - **Counter decrements**: When a `LogGuard` is dropped, the counter is decremented.
 - **Last guard**: When the counter reaches zero, pending file logs are flushed and synced. The
   process‑global logging thread stays available for later guards.
-- **Maximum guards**: The system supports up to 255 concurrent `LogGuard` instances. Attempting to create more raises a `RuntimeError`.
+- **Maximum guards**: The system supports up to 255 concurrent `LogGuard` instances. Attempting to create more raises a `ValueError` from `init_logging`, or a `RuntimeError` from engine or node creation.
 
 Abrupt termination can still lose buffered logs. Dispose engines and nodes normally, and retain the
 guard returned by direct `init_logging` calls until the application no longer needs logging.
@@ -404,13 +397,9 @@ raises an error.
 ### Windows shutdown behavior
 
 On Windows, non-deterministic garbage collection during interpreter shutdown can occasionally
-prevent the logging thread from joining properly. When the last `LogGuard` is dropped, the
-logging subsystem signals the background thread to close and joins it to ensure all pending
-messages are written. If Python's garbage collector delays dropping the guard until after
-interpreter shutdown has begun, this join may not complete, resulting in truncated logs.
-
-This issue is tracked in GitHub [issue #3027](https://github.com/nautechsystems/nautilus_trader/issues/3027).
-A more deterministic shutdown mechanism is under consideration.
+delay the final `LogGuard` drop until after interpreter teardown has begun. Dropping the last
+guard is what flushes and syncs pending file logs, so a delayed drop can result in truncated
+logs.
 
 ## Related guides
 
