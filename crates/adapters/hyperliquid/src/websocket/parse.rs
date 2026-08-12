@@ -652,8 +652,8 @@ mod tests {
             },
         },
         websocket::messages::{
-            FillLiquidationData, PerpsAssetCtx, SharedAssetCtx, SpotAssetCtx, WsBasicOrderData,
-            WsBookData, WsLevelData,
+            CandleData, FillLiquidationData, PerpsAssetCtx, SharedAssetCtx, SpotAssetCtx,
+            WsBasicOrderData, WsBookData, WsLevelData,
         },
     };
 
@@ -688,6 +688,30 @@ mod tests {
             UnixNanos::default(),
             UnixNanos::default(),
         ))
+    }
+
+    #[rstest]
+    fn test_parse_ws_candle_preserves_open_event_and_receipt_initialization_timestamps() {
+        let instrument = create_test_instrument();
+        let bar_type = BarType::from("BTC-PERP.HYPERLIQUID-1-MINUTE-LAST-EXTERNAL");
+        let candle = CandleData {
+            t: 1_700_000_000_000,
+            close_time: 1_700_000_059_999,
+            s: Ustr::from("BTC"),
+            i: Ustr::from("1m"),
+            o: dec!(100.0),
+            c: dec!(100.5),
+            h: dec!(101.0),
+            l: dec!(99.0),
+            v: dec!(10.0),
+            n: 42,
+        };
+        let receipt_timestamp = UnixNanos::from(1_700_000_060_123_000_000);
+
+        let bar = parse_ws_candle(&candle, &instrument, &bar_type, receipt_timestamp).unwrap();
+
+        assert_eq!(bar.ts_event, millis_to_nanos(candle.t).unwrap());
+        assert_eq!(bar.ts_init, receipt_timestamp);
     }
 
     #[rstest]
