@@ -26,11 +26,15 @@ use nautilus_model::{
     data::{Bar, BarType, MarkPriceUpdate, QuoteTick},
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType, PositionSide},
     events::{
-        AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted, PortfolioSnapshot,
-        PositionChanged, PositionClosed, PositionEvent, PositionOpened,
+        AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderPendingCancel,
+        OrderPendingUpdate, OrderSubmitted, PortfolioSnapshot, PositionChanged, PositionClosed,
+        PositionEvent, PositionOpened,
         account::stubs::cash_account_state,
         order::{
-            spec::{OrderFillVoidedSpec, OrderFilledSpec},
+            spec::{
+                OrderCancelRejectedSpec, OrderFillVoidedSpec, OrderFilledSpec,
+                OrderModifyRejectedSpec, OrderTriggeredSpec,
+            },
             stubs::{
                 order_accepted, order_filled, order_rejected_insufficient_margin, order_submitted,
             },
@@ -1492,6 +1496,104 @@ fn test_order_topic_republishes_last_account_state_without_order_update(
     assert_eq!(captured[0].account_id, cash_account_state.account_id);
     assert_eq!(captured[0].event_id, cash_account_state.event_id);
     assert_eq!(captured[0].ts_event, cash_account_state.ts_event);
+}
+
+#[rstest]
+#[case(OrderEventAny::Submitted(OrderSubmitted::default()))]
+#[case(OrderEventAny::Triggered(OrderTriggeredSpec::builder().account_id(AccountId::test_default()).build()))]
+#[case(OrderEventAny::PendingUpdate(OrderPendingUpdate::default()))]
+#[case(OrderEventAny::PendingCancel(OrderPendingCancel::default()))]
+#[case(OrderEventAny::ModifyRejected(OrderModifyRejectedSpec::builder().account_id(AccountId::test_default()).build()))]
+#[case(OrderEventAny::CancelRejected(OrderCancelRejectedSpec::builder().account_id(AccountId::test_default()).build()))]
+#[case(OrderEventAny::FillVoided(OrderFillVoidedSpec::builder().build()))]
+fn test_wallet_only_order_topic_does_not_republish_cash_account_state(
+    simple_cache: Cache,
+    clock: TestClock,
+    cash_account_state: AccountState,
+    #[case] event: OrderEventAny,
+) {
+    use nautilus_common::msgbus::{MessageBus, TypedHandler, switchboard};
+
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+    portfolio.update_account(&cash_account_state);
+    assert_eq!(event.account_id(), Some(cash_account_state.account_id));
+
+    let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
+    let handler = TypedHandler::from({
+        let captured = captured.clone();
+        move |event: &AccountState| {
+            captured.borrow_mut().push(event.clone());
+        }
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler, Some(10));
+
+    let topic = switchboard::get_event_order_topic(event.strategy_id());
+    msgbus::publish_order_event(topic, &event);
+
+    assert!(captured.borrow().is_empty());
+}
+
+#[rstest]
+#[case(OrderEventAny::Submitted(OrderSubmitted::default()))]
+#[case(OrderEventAny::Triggered(OrderTriggeredSpec::builder().account_id(AccountId::test_default()).build()))]
+#[case(OrderEventAny::PendingUpdate(OrderPendingUpdate::default()))]
+#[case(OrderEventAny::PendingCancel(OrderPendingCancel::default()))]
+#[case(OrderEventAny::ModifyRejected(OrderModifyRejectedSpec::builder().account_id(AccountId::test_default()).build()))]
+#[case(OrderEventAny::CancelRejected(OrderCancelRejectedSpec::builder().account_id(AccountId::test_default()).build()))]
+#[case(OrderEventAny::FillVoided(OrderFillVoidedSpec::builder().build()))]
+fn test_wallet_order_topic_republishes_last_account_state(
+    simple_cache: Cache,
+    clock: TestClock,
+    #[case] event: OrderEventAny,
+) {
+    use nautilus_common::msgbus::{MessageBus, TypedHandler, switchboard};
+
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let account_id = AccountId::test_default();
+    let usd = Currency::USD();
+    let account_state = AccountState::new(
+        account_id,
+        AccountType::Wallet,
+        vec![AccountBalance::new(
+            Money::from("100 USD"),
+            Money::zero(usd),
+            Money::from("100 USD"),
+        )],
+        vec![],
+        true,
+        uuid4(),
+        0.into(),
+        0.into(),
+        None,
+    );
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+    portfolio.update_account(&account_state);
+
+    let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
+    let handler = TypedHandler::from({
+        let captured = captured.clone();
+        move |event: &AccountState| {
+            captured.borrow_mut().push(event.clone());
+        }
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler, Some(10));
+
+    assert_eq!(event.account_id(), Some(account_id));
+    let topic = switchboard::get_event_order_topic(event.strategy_id());
+    msgbus::publish_order_event(topic, &event);
+
+    assert_eq!(*captured.borrow(), vec![account_state]);
 }
 
 #[rstest]

@@ -3658,19 +3658,25 @@ fn on_order_event(
         None => return,
     };
 
+    let is_wallet = cache
+        .borrow()
+        .account(&account_id)
+        .is_some_and(|account| matches!(&*account, AccountAny::Wallet(_)));
+
     match event {
-        OrderEventAny::Submitted(_)
-        | OrderEventAny::Accepted(_)
+        OrderEventAny::Accepted(_)
         | OrderEventAny::Canceled(_)
         | OrderEventAny::Expired(_)
         | OrderEventAny::Rejected(_)
+        | OrderEventAny::Updated(_) => {}
+        OrderEventAny::Submitted(_)
         | OrderEventAny::Triggered(_)
         | OrderEventAny::PendingUpdate(_)
         | OrderEventAny::PendingCancel(_)
         | OrderEventAny::ModifyRejected(_)
         | OrderEventAny::CancelRejected(_)
-        | OrderEventAny::Updated(_)
-        | OrderEventAny::FillVoided(_) => {}
+        | OrderEventAny::FillVoided(_)
+            if is_wallet => {}
         _ => return,
     }
 

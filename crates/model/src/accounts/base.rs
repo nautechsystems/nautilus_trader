@@ -395,6 +395,17 @@ pub(crate) fn update_balance_locked(
 ) {
     assert!(locked.raw >= 0, "locked balance was negative: {locked}");
     let currency = locked.currency;
+    if let Some(balance) = balances.get(&currency)
+        && balance.currency.precision != currency.precision
+    {
+        log::error!(
+            "Cannot update {currency} reservation: precision {} differed from balance precision {}",
+            currency.precision,
+            balance.currency.precision
+        );
+        return;
+    }
+
     balances_locked.insert((instrument_id, currency), locked);
     recalculate_balance(balances, balances_locked, currency);
 }

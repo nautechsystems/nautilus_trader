@@ -83,6 +83,7 @@ impl CashAccount {
     }
 
     /// Updates the locked balance for the given instrument and currency.
+    /// Leaves the existing balance and reservations unchanged if their precision differs.
     ///
     /// # Panics
     ///
@@ -339,10 +340,11 @@ mod tests {
     use ahash::AHashSet;
     use indexmap::IndexMap;
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use crate::{
         accounts::{Account, CashAccount, stubs::*},
-        enums::{AccountType, LiquiditySide, OrderSide, OrderType},
+        enums::{AccountType, CurrencyType, LiquiditySide, OrderSide, OrderType},
         events::{AccountState, account::stubs::*},
         identifiers::{AccountId, InstrumentId, position_id::PositionId, stubs::uuid4},
         instruments::{
@@ -900,6 +902,25 @@ mod tests {
         assert_eq!(balance.total, Money::from("10 BTC"));
         assert_eq!(balance.locked, Money::from("5 BTC"));
         assert_eq!(balance.free, Money::from("5 BTC"));
+    }
+
+    #[rstest]
+    fn test_update_balance_locked_precision_mismatch_preserves_state(
+        mut cash_account_multi: CashAccount,
+    ) {
+        let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+        let btc = Currency::BTC();
+        cash_account_multi.update_balance_locked(instrument_id, Money::from("3 BTC"));
+        let balance_before = *cash_account_multi.balance(Some(btc)).unwrap();
+        let locks_before = cash_account_multi.balances_locked.clone();
+        let mismatched_btc =
+            Currency::new("BTC", btc.precision - 1, 0, "Bitcoin", CurrencyType::Crypto);
+        let locked = Money::from_decimal(Decimal::from(2), mismatched_btc).unwrap();
+
+        cash_account_multi.update_balance_locked(instrument_id, locked);
+
+        assert_eq!(cash_account_multi.balance(Some(btc)), Some(&balance_before));
+        assert_eq!(cash_account_multi.balances_locked, locks_before);
     }
 
     #[rstest]

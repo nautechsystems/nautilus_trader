@@ -148,7 +148,7 @@ impl AccountAny {
             anyhow::bail!("No account events provided to create `AccountAny`");
         };
 
-        let mut account = Self::try_from_state(init_event.clone())?;
+        let mut account = Self::from_state_checked(init_event.clone())?;
 
         for event in remaining_events {
             account.apply(event.clone())?;
@@ -234,7 +234,11 @@ impl AccountAny {
     /// # Errors
     ///
     /// Returns an error if a wallet account state is invalid.
-    pub fn try_from_state(event: AccountState) -> CorrectnessResult<Self> {
+    pub fn try_from_state(event: AccountState) -> Result<Self, &'static str> {
+        Self::from_state_checked(event).map_err(|_| "Invalid wallet account state")
+    }
+
+    fn from_state_checked(event: AccountState) -> CorrectnessResult<Self> {
         match event.account_type {
             AccountType::Margin => Ok(Self::Margin(MarginAccount::new(event, false))),
             AccountType::Cash => Ok(Self::Cash(CashAccount::new(event, false, false))),
@@ -252,7 +256,7 @@ impl From<AccountState> for AccountAny {
     /// Panics if a wallet account state is invalid.
     /// Use [`AccountAny::try_from_state`] for fallible conversion.
     fn from(event: AccountState) -> Self {
-        Self::try_from_state(event).expect_display(FAILED)
+        Self::from_state_checked(event).expect_display(FAILED)
     }
 }
 
@@ -312,7 +316,8 @@ mod tests {
 
     #[rstest]
     fn test_try_from_state_cash(cash_account_state: AccountState) {
-        let result = AccountAny::try_from_state(cash_account_state);
+        let result: Result<AccountAny, &'static str> =
+            AccountAny::try_from_state(cash_account_state);
         assert!(result.is_ok());
         assert!(matches!(result.unwrap(), AccountAny::Cash(_)));
     }
@@ -339,6 +344,14 @@ mod tests {
     }
 
     #[rstest]
+    fn test_try_from_state_invalid_wallet_returns_static_error() {
+        let result: Result<AccountAny, &'static str> =
+            AccountAny::try_from_state(invalid_wallet_state());
+
+        assert_eq!(result.unwrap_err(), "Invalid wallet account state");
+    }
+
+    #[rstest]
     fn test_from_events_wallet_applies_sequence(
         wallet_account_state: AccountState,
         wallet_account_state_changed: AccountState,
@@ -352,23 +365,7 @@ mod tests {
 
     #[rstest]
     fn test_from_events_wallet_rejects_negative_initial_balance() {
-        let event = AccountState::new(
-            crate::identifiers::AccountId::from("WALLET-001"),
-            crate::enums::AccountType::Wallet,
-            vec![crate::types::AccountBalance::new(
-                crate::types::Money::from("-1 ETH"),
-                crate::types::Money::from("0 ETH"),
-                crate::types::Money::from("-1 ETH"),
-            )],
-            vec![],
-            true,
-            crate::identifiers::stubs::uuid4(),
-            0.into(),
-            0.into(),
-            None,
-        );
-
-        let result = AccountAny::from_events(&[event]);
+        let result = AccountAny::from_events(&[invalid_wallet_state()]);
 
         assert!(result.is_err());
         assert_eq!(
@@ -413,5 +410,23 @@ mod tests {
         };
         assert_eq!(variant, expected_variant);
         assert_eq!(account.event_count(), 1);
+    }
+
+    fn invalid_wallet_state() -> AccountState {
+        AccountState::new(
+            AccountId::from("WALLET-001"),
+            crate::enums::AccountType::Wallet,
+            vec![crate::types::AccountBalance::new(
+                crate::types::Money::from("-1 ETH"),
+                crate::types::Money::from("0 ETH"),
+                crate::types::Money::from("-1 ETH"),
+            )],
+            vec![],
+            true,
+            crate::identifiers::stubs::uuid4(),
+            0.into(),
+            0.into(),
+            None,
+        )
     }
 }

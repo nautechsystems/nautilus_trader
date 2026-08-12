@@ -65,6 +65,7 @@ impl BettingAccount {
     }
 
     /// Updates the locked balance for the given instrument and currency.
+    /// Leaves the existing balance and reservations unchanged if their precision differs.
     ///
     /// # Panics
     ///
@@ -391,12 +392,13 @@ impl Display for BettingAccount {
 mod tests {
     use indexmap::IndexMap;
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use crate::{
         accounts::{Account, BettingAccount, stubs::*},
-        enums::{AccountType, LiquiditySide, OrderSide},
+        enums::{AccountType, CurrencyType, LiquiditySide, OrderSide},
         events::{AccountState, account::stubs::*},
-        identifiers::AccountId,
+        identifiers::{AccountId, InstrumentId},
         instruments::{Instrument, stubs::betting},
         orders::stubs::TestOrderEventStubs,
         position::Position,
@@ -680,6 +682,30 @@ mod tests {
         assert_eq!(balance.locked, Money::from("1000 GBP"));
         assert_eq!(balance.free, Money::from("0 GBP"));
         assert_eq!(balance.total, Money::from("1000 GBP"));
+    }
+
+    #[rstest]
+    fn test_update_balance_locked_precision_mismatch_preserves_state(
+        mut betting_account: BettingAccount,
+    ) {
+        let instrument_id = InstrumentId::from("BETFAIR-1.2345678-12345678-0.0.NONE");
+        let gbp = Currency::GBP();
+        betting_account.update_balance_locked(instrument_id, Money::from("100 GBP"));
+        let balance_before = *betting_account.balance(Some(gbp)).unwrap();
+        let locks_before = betting_account.balances_locked.clone();
+        let mismatched_gbp = Currency::new(
+            "GBP",
+            gbp.precision + 1,
+            826,
+            "Pound Sterling",
+            CurrencyType::Fiat,
+        );
+        let locked = Money::from_decimal(Decimal::from(50), mismatched_gbp).unwrap();
+
+        betting_account.update_balance_locked(instrument_id, locked);
+
+        assert_eq!(betting_account.balance(Some(gbp)), Some(&balance_before));
+        assert_eq!(betting_account.balances_locked, locks_before);
     }
 
     #[rstest]
