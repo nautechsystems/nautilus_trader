@@ -381,8 +381,8 @@ mod tests {
         events::{AccountState, account::stubs::*},
         identifiers::{AccountId, InstrumentId, position_id::PositionId, stubs::uuid4},
         instruments::{
-            CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, Instrument, InstrumentAny,
-            stubs::*,
+            Commodity, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, Instrument,
+            InstrumentAny, stubs::*,
         },
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
@@ -395,6 +395,53 @@ mod tests {
             format!("{cash_account}"),
             "CashAccount(id=SIM-001, type=CASH, base=USD)"
         );
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_buy_at_negative_price_reserves_nothing(
+        mut cash_account: CashAccount,
+        commodity_gold: Commodity,
+    ) {
+        let instrument = InstrumentAny::Commodity(commodity_gold);
+        assert!(
+            instrument.allows_negative_price(),
+            "fixture must admit a negative price for this case to arise"
+        );
+
+        let locked = cash_account
+            .calculate_balance_locked(
+                &instrument,
+                OrderSide::Buy,
+                Quantity::from("1"),
+                Price::from("-10.00"),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(locked, Money::from("0.00 USD"));
+
+        // Storing it must not trip the non-negative invariant in `update_balance_locked`.
+        cash_account.update_balance_locked(instrument.id(), locked);
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_buy_at_positive_price_reserves_the_notional(
+        mut cash_account: CashAccount,
+        commodity_gold: Commodity,
+    ) {
+        let instrument = InstrumentAny::Commodity(commodity_gold);
+
+        let locked = cash_account
+            .calculate_balance_locked(
+                &instrument,
+                OrderSide::Buy,
+                Quantity::from("1"),
+                Price::from("10.00"),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(locked, Money::from("10.00 USD"));
     }
 
     #[rstest]
