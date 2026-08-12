@@ -1,0 +1,51 @@
+{
+  "channel": "userTwapHistory",
+  "data": {
+    "isSnapshot": true,
+    "user": "0xe746435d136c4714383a64ee28e35c8bdb8d5cb1",
+    "history": [
+      {
+        "time": 1785848057,
+        "state": {
+          "coin": "xyz:HOOD",
+          "user": "0xe746435d136c4714383a64ee28e35c8bdb8d5cb1",
+          "side": "B",
+          "sz": "100.0",
+          "executedSz": "100.0",
+          "executedNtl": "9122.799854",
+          "minutes": 240,
+          "reduceOnly": false,
+          "randomize": false,
+          "timestamp": 1785833655711,
+          "trigger": null,
+          "stopPx": null
+        },
+        "status": {
+          "status": "finished"
+        },
+        "twapId": 2081397
+      },
+      {
+        "time": 1785860221,
+        "state": {
+          "coin": "HYPE",
+          "user": "0xe746435d136c4714383a64ee28e35c8bdb8d5cb1",
+          "side": "B",
+          "sz": "200.0",
+          "executedSz": "0.0",
+          "executedNtl": "0.0",
+          "minutes": 90,
+          "reduceOnly": false,
+          "randomize": false,
+          "timestamp": 1785860221159,
+          "trigger": null,
+          "stopPx": null
+        },
+        "status": {
+          "status": "activated"
+        },
+        "twapId": 2082408
+      }
+    ]
+  }
+}

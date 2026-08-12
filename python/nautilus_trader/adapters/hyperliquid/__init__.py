@@ -32,6 +32,8 @@ __all__ = [
     "HyperliquidOpenInterest",
     "HyperliquidProductType",
     "HyperliquidPublicTrade",
+    "HyperliquidTwapHistory",
+    "HyperliquidTwapSliceFill",
 ]
 
 fixup_module_names(globals(), __name__)

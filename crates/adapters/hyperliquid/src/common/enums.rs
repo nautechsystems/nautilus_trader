@@ -1249,6 +1249,10 @@ mod tests {
             serde_json::from_str::<HyperliquidTwapStatus>("\"paused\"").unwrap(),
             HyperliquidTwapStatus::Unknown,
         );
+        assert_eq!(
+            serde_json::from_str::<HyperliquidTwapStatus>("\"waitingForTrigger\"").unwrap(),
+            HyperliquidTwapStatus::Unknown,
+        );
     }
 
     #[rstest]

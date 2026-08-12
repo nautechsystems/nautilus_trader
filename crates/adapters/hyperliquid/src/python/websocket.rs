@@ -648,6 +648,82 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to TWAP history for a user address (`userTwapHistory`).
+    ///
+    /// Opt-in custom data. The address need not be the adapter trading account.
+    #[pyo3(name = "subscribe_user_twap_history")]
+    fn py_subscribe_user_twap_history<'py>(
+        &self,
+        py: Python<'py>,
+        user: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_user_twap_history(&user)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Unsubscribe from TWAP history for a user address.
+    #[pyo3(name = "unsubscribe_user_twap_history")]
+    fn py_unsubscribe_user_twap_history<'py>(
+        &self,
+        py: Python<'py>,
+        user: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_user_twap_history(&user)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Subscribe to TWAP slice fills for a user address (`userTwapSliceFills`).
+    ///
+    /// Opt-in custom data. The address need not be the adapter trading account.
+    #[pyo3(name = "subscribe_user_twap_slice_fills")]
+    fn py_subscribe_user_twap_slice_fills<'py>(
+        &self,
+        py: Python<'py>,
+        user: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_user_twap_slice_fills(&user)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Unsubscribe from TWAP slice fills for a user address.
+    #[pyo3(name = "unsubscribe_user_twap_slice_fills")]
+    fn py_unsubscribe_user_twap_slice_fills<'py>(
+        &self,
+        py: Python<'py>,
+        user: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_user_twap_slice_fills(&user)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
     /// Subscribe to all mid prices across markets.
     #[pyo3(name = "subscribe_all_mids")]
     fn py_subscribe_all_mids<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

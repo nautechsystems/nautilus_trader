@@ -35,7 +35,8 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use super::messages::{
-    CandleData, WsActiveAssetCtxData, WsBboData, WsBookData, WsFillData, WsOrderData, WsTradeData,
+    CandleData, TwapStateData, WsActiveAssetCtxData, WsBboData, WsBookData, WsFillData,
+    WsOrderData, WsTradeData, WsTwapHistoryData, WsTwapSliceFillData,
 };
 use crate::{
     common::{
@@ -45,7 +46,10 @@ use crate::{
             parse_trigger_order_type,
         },
     },
-    data_types::{HyperliquidOpenInterest, HyperliquidPublicTrade},
+    data_types::{
+        HyperliquidOpenInterest, HyperliquidPublicTrade, HyperliquidTwapHistory,
+        HyperliquidTwapSliceFill,
+    },
 };
 
 fn parse_price(
@@ -532,6 +536,94 @@ pub fn parse_ws_open_interest(
         instrument.id(),
         open_interest,
         ts_init,
+        ts_init,
+    ))
+}
+
+/// Converts Hyperliquid TWAP times to nanos.
+///
+/// History row `time` is seconds; `state.timestamp` and fill `time` are milliseconds.
+fn venue_time_to_nanos(value: u64) -> anyhow::Result<UnixNanos> {
+    if value < 100_000_000_000 {
+        Ok(UnixNanos::from(value.checked_mul(1_000_000_000).context(
+            "venue time seconds overflow converting to nanos",
+        )?))
+    } else {
+        millis_to_nanos(value)
+    }
+}
+
+/// Parses one `userTwapHistory` row into custom data.
+///
+/// Unknown coins leave `instrument_id` unset and do not fail the parse.
+pub fn parse_ws_twap_history_row(
+    row: &WsTwapHistoryData,
+    user: &str,
+    is_snapshot: bool,
+    instrument: Option<&InstrumentAny>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<HyperliquidTwapHistory> {
+    let state: &TwapStateData = &row.state;
+    let ts_event = venue_time_to_nanos(row.time)?;
+    let state_timestamp = venue_time_to_nanos(state.timestamp)?;
+    let envelope_user = if user.is_empty() {
+        state.user.as_str()
+    } else {
+        user
+    };
+
+    Ok(HyperliquidTwapHistory::new(
+        envelope_user.to_string(),
+        row.twap_id,
+        state.coin.to_string(),
+        instrument.map(Instrument::id),
+        OrderSide::from(state.side),
+        state.sz,
+        state.executed_sz,
+        state.executed_ntl,
+        state.minutes,
+        state.reduce_only,
+        state.randomize,
+        row.status.status,
+        row.status.description.clone(),
+        state_timestamp,
+        is_snapshot,
+        ts_event,
+        ts_init,
+    ))
+}
+
+/// Parses one `userTwapSliceFills` item into custom data.
+///
+/// Unknown coins leave `instrument_id` unset and do not fail the parse.
+pub fn parse_ws_twap_slice_fill(
+    item: &WsTwapSliceFillData,
+    user: &str,
+    is_snapshot: bool,
+    instrument: Option<&InstrumentAny>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<HyperliquidTwapSliceFill> {
+    let fill = &item.fill;
+    let ts_event = millis_to_nanos(fill.time)?;
+
+    Ok(HyperliquidTwapSliceFill::new(
+        user.to_string(),
+        item.twap_id,
+        fill.coin.to_string(),
+        instrument.map(Instrument::id),
+        fill.px,
+        fill.sz,
+        OrderSide::from(fill.side),
+        fill.hash.clone(),
+        fill.oid,
+        fill.tid,
+        fill.crossed,
+        fill.fee,
+        fill.fee_token.to_string(),
+        fill.dir.to_string(),
+        fill.closed_pnl,
+        is_snapshot,
+        ts_event,
         ts_init,
     ))
 }
@@ -1121,5 +1213,76 @@ mod tests {
         .unwrap();
 
         assert_eq!(open_interest.open_interest, expected);
+    }
+
+    #[rstest]
+    fn test_parse_ws_twap_history_row_from_live_mainnet_fixture() {
+        let fixture = include_str!("../../test_data/ws_user_twap_history.json");
+        let msg: crate::websocket::messages::HyperliquidWsMessage =
+            serde_json::from_str(fixture).expect("fixture should deserialize");
+        let crate::websocket::messages::HyperliquidWsMessage::UserTwapHistory { data } = msg else {
+            panic!("expected UserTwapHistory");
+        };
+        let ts_init = UnixNanos::from(99);
+        let is_snapshot = data.is_snapshot.unwrap_or(false);
+
+        let row =
+            parse_ws_twap_history_row(&data.history[0], &data.user, is_snapshot, None, ts_init)
+                .unwrap();
+
+        assert!(row.is_snapshot);
+        assert_eq!(row.user, data.user);
+        assert_eq!(row.coin, "xyz:HOOD");
+        assert_eq!(row.twap_id, Some(2081397));
+        assert!(row.instrument_id.is_none());
+        assert_eq!(row.side, OrderSide::Buy);
+        assert_eq!(row.size.to_string(), "100.0");
+        assert_eq!(row.executed_size.to_string(), "100.0");
+        assert_eq!(row.minutes, 240);
+        assert!(!row.randomize);
+        assert!(!row.reduce_only);
+        assert_eq!(
+            row.status,
+            crate::common::enums::HyperliquidTwapStatus::Finished
+        );
+        assert!(row.status_description.is_empty());
+        // Live mainnet history.time is seconds (not milliseconds).
+        assert_eq!(row.ts_event, UnixNanos::from(1_785_848_057_000_000_000));
+        assert_eq!(row.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_ws_twap_slice_fill_from_live_mainnet_fixture() {
+        let fixture = include_str!("../../test_data/ws_user_twap_slice_fills.json");
+        let msg: crate::websocket::messages::HyperliquidWsMessage =
+            serde_json::from_str(fixture).expect("fixture should deserialize");
+        let crate::websocket::messages::HyperliquidWsMessage::UserTwapSliceFills { data } = msg
+        else {
+            panic!("expected UserTwapSliceFills");
+        };
+        let instrument = create_test_instrument();
+        let ts_init = UnixNanos::from(99);
+        let is_snapshot = data.is_snapshot.unwrap_or(false);
+
+        let fill = parse_ws_twap_slice_fill(
+            &data.twap_slice_fills[0],
+            &data.user,
+            is_snapshot,
+            Some(&instrument),
+            ts_init,
+        )
+        .unwrap();
+
+        assert!(fill.is_snapshot);
+        assert_eq!(fill.twap_id, 2_087_225);
+        assert_eq!(
+            fill.hash,
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(fill.coin, "BTC");
+        assert_eq!(fill.instrument_id, Some(instrument.id()));
+        assert_eq!(fill.side, OrderSide::Buy);
+        assert_eq!(fill.price.to_string(), "64597.0");
+        assert!(fill.crossed);
     }
 }
