@@ -1845,7 +1845,7 @@ fn update_quote_from_price_tick(
     ts_init: UnixNanos,
 ) -> Option<QuoteTick> {
     match price.tick_type {
-        TickType::Bid => cache.update_bid_price(
+        TickType::Bid | TickType::DelayedBid => cache.update_bid_price(
             instrument_id,
             price.price,
             price_precision,
@@ -1853,7 +1853,7 @@ fn update_quote_from_price_tick(
             ts_event,
             ts_init,
         ),
-        TickType::Ask => cache.update_ask_price(
+        TickType::Ask | TickType::DelayedAsk => cache.update_ask_price(
             instrument_id,
             price.price,
             price_precision,
@@ -1861,7 +1861,7 @@ fn update_quote_from_price_tick(
             ts_event,
             ts_init,
         ),
-        TickType::Last => None,
+        TickType::Last | TickType::DelayedLast => None,
         _ => None,
     }
 }
@@ -1878,7 +1878,7 @@ fn update_quote_from_size_tick(
     ignore_size_updates: bool,
 ) -> Option<QuoteTick> {
     match size.tick_type {
-        TickType::BidSize => cache.update_bid_size_with_filter(
+        TickType::BidSize | TickType::DelayedBidSize => cache.update_bid_size_with_filter(
             instrument_id,
             size.size,
             price_precision,
@@ -1887,7 +1887,7 @@ fn update_quote_from_size_tick(
             ts_init,
             ignore_size_updates,
         ),
-        TickType::AskSize => cache.update_ask_size_with_filter(
+        TickType::AskSize | TickType::DelayedAskSize => cache.update_ask_size_with_filter(
             instrument_id,
             size.size,
             price_precision,
@@ -1911,7 +1911,7 @@ fn update_quote_from_price_size_tick(
     ts_init: UnixNanos,
 ) -> Option<QuoteTick> {
     let quote = match price_size.price_tick_type {
-        TickType::Bid => cache.update_bid_price(
+        TickType::Bid | TickType::DelayedBid => cache.update_bid_price(
             instrument_id,
             price_size.price,
             price_precision,
@@ -1919,7 +1919,7 @@ fn update_quote_from_price_size_tick(
             ts_event,
             ts_init,
         ),
-        TickType::Ask => cache.update_ask_price(
+        TickType::Ask | TickType::DelayedAsk => cache.update_ask_price(
             instrument_id,
             price_size.price,
             price_precision,
@@ -1927,7 +1927,7 @@ fn update_quote_from_price_size_tick(
             ts_event,
             ts_init,
         ),
-        TickType::Last => None,
+        TickType::Last | TickType::DelayedLast => None,
         _ => None,
     };
 
@@ -1936,7 +1936,7 @@ fn update_quote_from_price_size_tick(
     }
 
     match price_size.price_tick_type {
-        TickType::Bid => cache.update_bid_size(
+        TickType::Bid | TickType::DelayedBid => cache.update_bid_size(
             instrument_id,
             price_size.size,
             price_precision,
@@ -1944,7 +1944,7 @@ fn update_quote_from_price_size_tick(
             ts_event,
             ts_init,
         ),
-        TickType::Ask => cache.update_ask_size(
+        TickType::Ask | TickType::DelayedAsk => cache.update_ask_size(
             instrument_id,
             price_size.size,
             price_precision,
@@ -2039,6 +2039,7 @@ mod tests {
         identifiers::{InstrumentId, Symbol, Venue},
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use tokio_util::sync::CancellationToken;
 
     use super::{
@@ -2575,6 +2576,163 @@ mod tests {
             DataEvent::Data(Data::Quote(quote)) => {
                 assert_eq!(quote.bid_price.as_f64(), 100.0);
                 assert_eq!(quote.ask_price.as_f64(), 101.0);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_quote_tick_result_emits_quote_from_delayed_price_ticks() {
+        let instrument_id = instrument_id();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let clock = get_atomic_clock_realtime();
+        let quote_cache = Arc::new(tokio::sync::Mutex::new(QuoteCache::new()));
+
+        let bid_action = process_quote_tick_result(
+            Ok::<_, &'static str>(TickTypes::Price(TickPrice {
+                tick_type: TickType::DelayedBid,
+                price: 312.44,
+                attributes: TickAttribute::default(),
+            })),
+            instrument_id,
+            2,
+            0,
+            &sender,
+            &quote_cache,
+            clock,
+            false,
+        )
+        .await
+        .unwrap();
+        let ask_action = process_quote_tick_result(
+            Ok::<_, &'static str>(TickTypes::Price(TickPrice {
+                tick_type: TickType::DelayedAsk,
+                price: 312.45,
+                attributes: TickAttribute::default(),
+            })),
+            instrument_id,
+            2,
+            0,
+            &sender,
+            &quote_cache,
+            clock,
+            false,
+        )
+        .await
+        .unwrap();
+
+        assert!(matches!(bid_action, StreamAction::Continue));
+        assert!(matches!(ask_action, StreamAction::Continue));
+
+        match receiver.recv().await.unwrap() {
+            DataEvent::Data(Data::Quote(quote)) => {
+                assert_eq!(quote.bid_price.as_decimal(), dec!(312.44));
+                assert_eq!(quote.ask_price.as_decimal(), dec!(312.45));
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_quote_tick_result_emits_quote_from_delayed_size_ticks() {
+        let instrument_id = instrument_id();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let clock = get_atomic_clock_realtime();
+        let quote_cache = Arc::new(tokio::sync::Mutex::new(QuoteCache::new()));
+
+        for tick in [
+            TickTypes::Price(TickPrice {
+                tick_type: TickType::DelayedBid,
+                price: 10.0,
+                attributes: TickAttribute::default(),
+            }),
+            TickTypes::Price(TickPrice {
+                tick_type: TickType::DelayedAsk,
+                price: 11.0,
+                attributes: TickAttribute::default(),
+            }),
+            TickTypes::Size(TickSize {
+                tick_type: TickType::DelayedBidSize,
+                size: 3.0,
+            }),
+            TickTypes::Size(TickSize {
+                tick_type: TickType::DelayedAskSize,
+                size: 4.0,
+            }),
+        ] {
+            process_quote_tick_result(
+                Ok::<_, &'static str>(tick),
+                instrument_id,
+                2,
+                0,
+                &sender,
+                &quote_cache,
+                clock,
+                false,
+            )
+            .await
+            .unwrap();
+        }
+
+        let mut last_quote = None;
+
+        while let Ok(event) = receiver.try_recv() {
+            if let DataEvent::Data(Data::Quote(quote)) = event {
+                last_quote = Some(quote);
+            }
+        }
+        let quote = last_quote.expect("expected at least one quote from delayed ticks");
+        assert_eq!(quote.bid_price.as_decimal(), dec!(10));
+        assert_eq!(quote.ask_price.as_decimal(), dec!(11));
+        assert_eq!(quote.bid_size.as_decimal(), dec!(3));
+        assert_eq!(quote.ask_size.as_decimal(), dec!(4));
+    }
+
+    #[tokio::test]
+    async fn test_process_quote_tick_result_emits_quote_from_delayed_price_size_ticks() {
+        let instrument_id = instrument_id();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let clock = get_atomic_clock_realtime();
+        let quote_cache = Arc::new(tokio::sync::Mutex::new(QuoteCache::new()));
+
+        for tick in [
+            TickPriceSize {
+                price_tick_type: TickType::DelayedBid,
+                price: 99.5,
+                attributes: TickAttribute::default(),
+                size_tick_type: TickType::DelayedBidSize,
+                size: 7.0,
+            },
+            TickPriceSize {
+                price_tick_type: TickType::DelayedAsk,
+                price: 100.5,
+                attributes: TickAttribute::default(),
+                size_tick_type: TickType::DelayedAskSize,
+                size: 9.0,
+            },
+        ] {
+            let action = process_quote_tick_result(
+                Ok::<_, &'static str>(TickTypes::PriceSize(tick)),
+                instrument_id,
+                2,
+                0,
+                &sender,
+                &quote_cache,
+                clock,
+                false,
+            )
+            .await
+            .unwrap();
+
+            assert!(matches!(action, StreamAction::Continue));
+        }
+
+        match receiver.recv().await.unwrap() {
+            DataEvent::Data(Data::Quote(quote)) => {
+                assert_eq!(quote.bid_price.as_decimal(), dec!(99.5));
+                assert_eq!(quote.bid_size.as_decimal(), dec!(7));
+                assert_eq!(quote.ask_price.as_decimal(), dec!(100.5));
+                assert_eq!(quote.ask_size.as_decimal(), dec!(9));
             }
             other => panic!("unexpected event: {other:?}"),
         }
