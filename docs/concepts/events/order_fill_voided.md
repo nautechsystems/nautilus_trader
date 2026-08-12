@@ -1,13 +1,14 @@
 # OrderFillVoided
 
 `OrderFillVoided` records that all or part of a previously reported fill no longer has economic
-effect. The `ExecutionEngine` applies the correction to the order and positions, then refreshes
-portfolio position and PnL caches before publishing it on the `MessageBus`. Venue adapters refresh
-account balances from their authoritative account endpoints.
+effect. The `ExecutionEngine` applies every successful correction to the order. When the referenced
+fill exists locally, it also rebuilds each affected position and refreshes portfolio position and
+PnL caches before publishing the correction. Venue adapters refresh account balances from their
+authoritative account endpoints.
 
-The correction updates cached position aggregates in place. It does not synthesize
-`PositionChanged` or `PositionClosed`; strategies receive `OrderFillVoided` after the corrected
-cache state is available.
+Strategies receive `OrderFillVoided` after the corrected cache state is available. When a cached
+position changes, the engine then publishes `PositionChanged` if it remains open or `PositionClosed`
+if it is closed. A successful order‑only correction does not produce a position event.
 
 A correction is not an opposite-side fill. It retains the original trade identity so replay,
 reconciliation, and strategy audit history describe the venue action directly.
@@ -69,11 +70,13 @@ recognize the new values, so upgrade consumers before they read corrected stream
 
 ## Fields
 
-Beyond the [common order event fields](index.md#common-order-event-fields), `OrderFillVoided`
+Beyond the [common Python order event fields](index.md#common-python-order-event-fields), `OrderFillVoided`
 carries:
 
 | Field               | Python type                | Required/default | Description                                             |
 | ------------------- | -------------------------- | ---------------- | ------------------------------------------------------- |
+| `venue_order_id`    | `VenueOrderId`             | Required         | Venue‑assigned order identifier.                        |
+| `account_id`        | `AccountId`                | Required         | Account associated with the original fill.              |
 | `correction_id`     | `str`                      | Required         | Identity for this correction revision.                  |
 | `trade_id`          | `TradeId`                  | Required         | Original venue trade ID.                                |
 | `voided_qty`        | `Quantity`                 | Required         | Cumulative ineffective quantity for the trade.          |
@@ -87,6 +90,8 @@ carries:
 | `reason`            | `str` or `None`            | `None`           | Venue or reconciliation reason for the correction.      |
 | `info`              | `dict[str, str]` or `None` | `None`           | Additional venue correction metadata.                   |
 | `is_reopened`       | `bool`                     | `False`          | Whether the venue proves the order is executable again. |
+| `causation_id`      | `UUID4` or `None`          | `None`           | Source event or report that caused this correction.     |
+| `reconciliation`    | `bool`                     | Required         | If generated during reconciliation.                     |
 
 ## Example
 

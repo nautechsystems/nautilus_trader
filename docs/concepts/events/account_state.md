@@ -1,12 +1,12 @@
 # AccountState
 
-`AccountState` carries a snapshot of an account's balances and margins. It fires when the
-venue reports an account update (via the execution client), or when the `Portfolio`
+`AccountState` carries a snapshot of an account's balances and margins. The system publishes it when
+the venue reports an account update through the execution client, or when the `Portfolio`
 recalculates account state after a position update (for margin accounts with
 `calculate_account_state` enabled). The `Portfolio` subscribes to these events internally
 to maintain exposure and balance tracking.
 
-The `is_reported` flag distinguishes venue-reported snapshots from system-calculated ones.
+The `is_reported` flag distinguishes venue‑reported snapshots from system‑calculated ones.
 
 ## Fields
 
@@ -14,11 +14,10 @@ The `is_reported` flag distinguishes venue-reported snapshots from system-calcul
 | --------------- | ---------------------- | ---------------- | ------------------------------------------------------------------------- |
 | `account_id`    | `AccountId`            | Required         | The account ID (with the venue).                                          |
 | `account_type`  | `AccountType`          | Required         | The account type (`CASH`, `MARGIN`, or `BETTING`).                        |
-| `base_currency` | `Currency` or `None`   | Required         | The account base currency (`None` for multi‑currency accounts).           |
+| `base_currency` | `Currency` or `None`   | `None`           | The account base currency (`None` for multi‑currency accounts).           |
 | `is_reported`   | `bool`                 | Required         | If the state is reported from the exchange (otherwise system‑calculated). |
 | `balances`      | `list[AccountBalance]` | Required         | The account balances (may be empty).                                      |
 | `margins`       | `list[MarginBalance]`  | Required         | The margin balances (may be empty).                                       |
-| `info`          | `dict[str, object]`    | Required         | Additional implementation‑specific account information.                   |
 | `event_id`      | `UUID4`                | Required         | The event ID.                                                             |
 | `ts_event`      | `int`                  | Required         | UNIX timestamp (nanoseconds) when the event occurred.                     |
 | `ts_init`       | `int`                  | Required         | UNIX timestamp (nanoseconds) when the object was initialized.             |

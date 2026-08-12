@@ -1,23 +1,24 @@
 # PositionChanged
 
-`PositionChanged` represents a position having changed. The `ExecutionEngine` emits it
-when a subsequent fill changes an open position's quantity or side (see [From fill to position](index.md#from-fill-to-position-the-causal-chain)). Handler:
-`on_position_changed`.
+`PositionChanged` records an update that leaves a position open. The `ExecutionEngine` emits it when
+a fill changes an open position without closing it, or when a fill correction leaves the corrected
+position open. See [From fill to position](index.md#from-fill-to-position-the-causal-chain).
+Handler: `on_position_changed`.
 
 ## Fields
 
-`PositionChanged` shares the position event field set. See [Position event fields](index.md#position-event-fields) for the full matrix across
-the three events. The fields that distinguish `PositionChanged`:
+See [Position event fields](index.md#position-event-fields) for the complete field matrix. In addition
+to the opening snapshot fields, `PositionChanged` exposes:
 
-| Field             | Python type | Description                                            |
-| ----------------- | ----------- | ------------------------------------------------------ |
-| `peak_qty`        | `Quantity`  | The peak directional quantity reached by the position. |
-| `avg_px_close`    | `float`     | The average close price so far.                        |
-| `realized_return` | `float`     | The realized return for the position.                  |
-| `realized_pnl`    | `Money`     | The realized PnL for the position.                     |
-| `unrealized_pnl`  | `Money`     | The unrealized PnL for the position.                   |
-
-While the position remains open, `closing_order_id` is still `None`.
+| Field             | Python type       | Description                                                  |
+| ----------------- | ----------------- | ------------------------------------------------------------ |
+| `peak_quantity`   | `Quantity`        | The largest directional quantity reached by the position.    |
+| `peak_qty`        | `Quantity`        | Compatibility alias for `peak_quantity`.                     |
+| `avg_px_close`    | `float` or `None` | The average close price so far, if any quantity has closed.  |
+| `realized_return` | `float`           | The realized return for the position.                        |
+| `realized_pnl`    | `Money` or `None` | The realized PnL, if available.                              |
+| `unrealized_pnl`  | `Money`           | Set to zero by the engine, not a mark‑to‑market calculation. |
+| `ts_opened`       | `int`             | UNIX timestamp (nanoseconds) when the position opened.       |
 
 ## Example
 
@@ -32,6 +33,6 @@ def on_position_changed(self, event: PositionChanged) -> None:
 
 ## Related guides
 
-- [Events](index.md) - Event categories, dispatch, and the fill-to-position chain.
+- [Events](index.md) - Event categories, dispatch, and the fill‑to‑position chain.
 - [Positions](../positions.md) - Position lifecycle, aggregation, and PnL.
 - [Orders](../orders/) - Orders whose fills open and close positions.

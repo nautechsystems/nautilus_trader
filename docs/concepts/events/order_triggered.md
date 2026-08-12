@@ -1,16 +1,22 @@
 # OrderTriggered
 
-`OrderTriggered` represents an order having been triggered at the trading venue. The
-`ExecutionEngine` applies it to the order, updates the `Cache`, and publishes it on the
-`MessageBus`. It fires when a trigger condition is met for a limit-style conditional order
-(`StopLimit`, `LimitIfTouched`, or `TrailingStopLimit`).
+`OrderTriggered` records that a limit‑style conditional order has triggered. The execution pipeline
+applies it to the order, updates the `Cache`, and publishes it on the `MessageBus`. A trading venue,
+simulated matching engine, or reconciliation can report the trigger for a `StopLimit`,
+`LimitIfTouched`, or `TrailingStopLimit` order.
 
-Transition: `ACCEPTED` -> `TRIGGERED`. Handler: `on_order_triggered`.
+Typical transition: `ACCEPTED` -> `TRIGGERED`. Handler: `on_order_triggered`.
 
 ## Fields
 
-`OrderTriggered` carries only the [common order event fields](index.md#common-order-event-fields). On this event, `venue_order_id` and `account_id`
-are usually populated but may be `None`, and `reconciliation` carries a real value.
+Beyond the [common Python order event fields](index.md#common-python-order-event-fields),
+`OrderTriggered` carries:
+
+| Field            | Python type              | Required/default | Description                                      |
+| ---------------- | ------------------------ | ---------------- | ------------------------------------------------ |
+| `venue_order_id` | `VenueOrderId` or `None` | `None`           | The venue‑assigned order identifier, if known.   |
+| `account_id`     | `AccountId` or `None`    | `None`           | The account associated with the order, if known. |
+| `reconciliation` | `bool`                   | Required         | If generated during reconciliation.              |
 
 ## Example
 
