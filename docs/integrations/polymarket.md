@@ -350,7 +350,7 @@ requested order once after every chunk succeeds. If a later chunk exhausts its r
 chunks may already have changed venue state, but the adapter emits no partial per‑order results;
 reconciliation resolves the unknown overall outcome.
 
-### Submit error handling
+### Submit response handling
 
 Polymarket's public documentation describes successful
 [`POST /order`](https://docs.polymarket.com/api-reference/trade/post-a-new-order) responses
@@ -358,32 +358,74 @@ with `success`, `orderID`, `status`, and `errorMsg`, and documents
 [API errors](https://docs.polymarket.com/resources/error-codes) as structured error responses.
 It does not document statusless client exceptions or transport failures as venue rejections.
 
-The adapter rejects only when the response proves the order was not accepted, such as
-`success=false`, a documented order processing error, or another non‑retryable client/API error.
-Transport failures, timeouts, ambiguous retry exhaustion, response serialization or decode
-failures, local I/O failures, and server‑side failures keep the order submitted. The batch endpoint
-reports a rejected leg as `success=true` with an empty `orderID` and the reason in `errorMsg` (for
-example a naked sell the venue cannot accept): the adapter rejects that leg with the venue reason.
-A leg with no `orderID` and no reason stays submitted for reconciliation.
+#### Successful responses
 
-Once any single-order submit attempt has an ambiguous outcome, a later retry error cannot prove
-that the first attempt failed. The adapter therefore keeps the order submitted even if a later
-attempt returns a client error such as an already-existing order.
+For a successful response with a non‑empty `orderID`, the adapter uses `status` to choose the
+initial Nautilus state and whether an order with `FOK` time‑in‑force needs the five‑second REST
+check. The venue meanings follow Polymarket's
+[order lifecycle](https://docs.polymarket.com/concepts/order-lifecycle).
 
-Failures before the adapter sends `POST /order` emit `OrderDenied`, not `OrderRejected`. This
-includes a failed pUSD balance lookup needed to adjust a market BUY for fees.
+| Submit `status` | Venue meaning                                | Initial Nautilus state                                         | `FOK` REST check |
+| --------------- | -------------------------------------------- | -------------------------------------------------------------- | ---------------- |
+| `live`          | Resting on the book                          | `Accepted`                                                     | Kept             |
+| `matched`       | Matched immediately                          | `Accepted`                                                     | Skipped          |
+| `delayed`       | Matching delay in progress                   | `Submitted` until WebSocket or REST activity proves acceptance | Kept             |
+| `unmatched`     | Delay completed without a match; now resting | `Accepted`                                                     | Kept             |
+| Absent or empty | No status supplied                           | `Accepted` for compatibility                                   | Kept             |
 
-When a rejection reason reports a post-only order crossing the book, the `OrderRejected` event
+These meanings apply to the submit response. The adapter treats `delayed` as a submit outcome, not
+as a market configuration signal. A `matched` response skips the REST check because the submit
+already confirms an immediate match. An absent or empty status emits `OrderAccepted` for
+compatibility and keeps the REST check.
+
+#### Delayed responses
+
+A `delayed` response:
+
+- Registers the venue order identity and fill tracking immediately. Later order queries, WebSocket
+  events, and reconciliation reports can then resolve the local `ClientOrderId`.
+- Leaves the order `Submitted` until a fill, order update, or REST result proves acceptance.
+- Emits `OrderAccepted` before any fill, cancellation, expiry, or filled status that proves
+  acceptance.
+- Resolves an unfilled `FOK` directly as `OrderRejected` when REST returns `UNMATCHED`.
+
+#### Definitive and ambiguous outcomes
+
+Ambiguous failures include:
+
+- Transport failures and timeouts.
+- Retry exhaustion after an attempt with an unknown outcome.
+- Response serialization or decoding failures.
+- Local I/O failures.
+- Server‑side failures.
+
+| Outcome                                                                                   | Nautilus result             | Reason                                    |
+| ----------------------------------------------------------------------------------------- | --------------------------- | ----------------------------------------- |
+| `success=false`, a documented processing error, or another non‑retryable client/API error | `OrderRejected`             | The response proves rejection.            |
+| Batch `FOK`: `success=true`, non‑empty `orderID`, no status, and the unfilled error       | Immediate `OrderRejected`   | The venue proves it killed the order.     |
+| Batch leg: `success=true`, empty `orderID`, and a populated `errorMsg`                    | `OrderRejected` with reason | The venue proves it rejected that leg.    |
+| No `orderID` and no reason                                                                | Remains `Submitted`         | The response does not prove rejection.    |
+| Any ambiguous failure                                                                     | Remains `Submitted`         | The adapter cannot determine the outcome. |
+| Definitive retry error after an earlier ambiguous attempt                                 | Remains `Submitted`         | The earlier attempt may have succeeded.   |
+| Failure before `POST /order`, such as a failed pUSD balance lookup                        | `OrderDenied`               | The adapter did not submit the order.     |
+
+The proven unfilled batch `FOK` response skips the REST check. A later single‑order retry can
+return a client error such as an already‑existing order without proving that the first attempt
+failed.
+
+When a rejection reason reports a post‑only order crossing the book, the `OrderRejected` event
 sets `due_post_only=true` so strategies can distinguish it from other venue rejections.
 
-For unknown outcomes, the adapter derives the expected Polymarket order hash from the signed
-EIP-712 order when possible and caches it as the `VenueOrderId`. Later WebSocket order events
-(or reconciliation reports) then attach to the local `ClientOrderId` instead of becoming external
-orders.
+#### Unknown-outcome reconciliation
 
-Quote-quantity market BUY orders still apply the signed quote-to-base quantity update on the
-unknown path. Cancels requested while submit outcome is unknown are deferred until the expected
-venue order ID is known, and fill tracking is registered under that ID.
+For an unknown outcome, the adapter:
+
+- Derives the expected Polymarket order hash from the signed EIP‑712 order when possible and caches
+  it as the `VenueOrderId`. Later WebSocket events and reconciliation reports attach to the local
+  `ClientOrderId` instead of becoming external orders.
+- Applies the signed quote‑to‑base quantity update for a quote‑quantity market BUY.
+- Defers a pending cancel until the expected venue order ID is known.
+- Registers fill tracking under that venue order ID.
 
 ### Position management
 

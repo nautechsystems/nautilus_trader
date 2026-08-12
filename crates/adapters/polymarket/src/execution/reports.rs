@@ -248,13 +248,16 @@ impl PolymarketExecutionClient {
     pub(super) fn query_order_command(&self, cmd: &QueryOrder) {
         log::debug!("Querying order: client_order_id={}", cmd.client_order_id);
 
-        let venue_order_id = match &cmd.venue_order_id {
-            Some(id) => id.to_string(),
-            None => {
-                log::warn!("query_order requires venue_order_id for Polymarket");
-                return;
-            }
+        let Some(venue_order_id) =
+            self.resolve_venue_order_id(cmd.venue_order_id, Some(cmd.client_order_id))
+        else {
+            log::warn!(
+                "query_order requires a venue_order_id for Polymarket: {}",
+                cmd.client_order_id
+            );
+            return;
         };
+        let venue_order_id = venue_order_id.to_string();
 
         let instrument_id = cmd.instrument_id;
         let client_order_id = cmd.client_order_id;
@@ -352,12 +355,11 @@ impl PolymarketExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        let venue_order_id = match cmd.venue_order_id {
-            Some(id) => id,
-            None => {
-                log::warn!("generate_order_status_report requires venue_order_id");
-                return Ok(None);
-            }
+        let Some(venue_order_id) =
+            self.resolve_venue_order_id(cmd.venue_order_id, cmd.client_order_id)
+        else {
+            log::warn!("generate_order_status_report requires venue_order_id");
+            return Ok(None);
         };
 
         let instrument_id = match cmd.instrument_id {
@@ -440,6 +442,15 @@ impl PolymarketExecutionClient {
             size_prec,
         )
         .await
+    }
+
+    fn resolve_venue_order_id(
+        &self,
+        venue_order_id: Option<VenueOrderId>,
+        client_order_id: Option<ClientOrderId>,
+    ) -> Option<VenueOrderId> {
+        venue_order_id
+            .or_else(|| client_order_id.and_then(|id| self.order_identities.venue_order_id(&id)))
     }
 
     pub(super) async fn generate_order_status_reports_impl(

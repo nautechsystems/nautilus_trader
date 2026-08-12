@@ -38,7 +38,7 @@ use super::{
     submitter::OrderSubmitter,
     types::BatchLimitOrderContext,
 };
-use crate::http::query::OrderResponse;
+use crate::http::query::{OrderResponse, OrderResponseStatus};
 
 #[expect(clippy::too_many_arguments)]
 pub(super) async fn handle_batch_order_responses(
@@ -49,7 +49,7 @@ pub(super) async fn handle_batch_order_responses(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
-    order_identities: &OrderIdentityRegistry,
+    order_identities: &Arc<OrderIdentityRegistry>,
     pending_submits: &PendingSubmitTracker,
     pending_cancels: &PendingCancelTracker,
     pending_tasks: &Arc<TaskHandles>,
@@ -64,10 +64,11 @@ pub(super) async fn handle_batch_order_responses(
         );
     }
 
-    let mut deferred = Vec::new();
+    let mut follow_ups = Vec::new();
 
     for (batch_order, response) in batch_orders.iter().zip(responses) {
-        if let Some((order_id_str, venue_order_id)) = handle_order_response(
+        let fok_order_id = fok_check_order_id(&response, batch_order.order.time_in_force());
+        let deferred_cancel = handle_order_response(
             Ok(response),
             &batch_order.order,
             emitter,
@@ -78,47 +79,51 @@ pub(super) async fn handle_batch_order_responses(
             account_id,
             batch_order.size_precision,
             batch_order.price_precision,
-        ) {
-            deferred.push((batch_order.order.clone(), order_id_str, venue_order_id));
+        );
+
+        if deferred_cancel.is_some() || fok_order_id.is_some() {
+            follow_ups.push((batch_order.clone(), deferred_cancel, fok_order_id));
         }
     }
 
-    if order_len > response_len {
-        for (batch_order, expected_venue_order_id) in batch_orders
-            .iter()
-            .zip(expected_venue_order_ids)
-            .skip(response_len)
-        {
-            if let Some((order_id_str, venue_order_id)) = handle_unknown_submit_result(
-                &batch_order.order,
-                expected_venue_order_id,
-                "batch response omitted order",
-                None,
-                emitter,
-                clock,
-                fill_tracker,
-                order_identities,
-                pending_submits,
-                pending_cancels,
-                account_id,
-                batch_order.size_precision,
-                batch_order.price_precision,
-            ) {
-                deferred.push((batch_order.order.clone(), order_id_str, venue_order_id));
-            }
+    for (batch_order, expected_venue_order_id) in batch_orders
+        .iter()
+        .zip(expected_venue_order_ids)
+        .skip(response_len)
+    {
+        let deferred_cancel = handle_unknown_submit_result(
+            &batch_order.order,
+            expected_venue_order_id,
+            "batch response omitted order",
+            None,
+            emitter,
+            clock,
+            fill_tracker,
+            order_identities,
+            pending_submits,
+            pending_cancels,
+            account_id,
+            batch_order.size_precision,
+            batch_order.price_precision,
+        );
+
+        if deferred_cancel.is_some() {
+            follow_ups.push((batch_order.clone(), deferred_cancel, None));
         }
     }
 
-    if !deferred.is_empty() {
-        for (order, order_id_str, venue_order_id) in deferred {
-            let submitter = submitter.clone();
-            let emitter = emitter.clone();
-            let pending_cancels = pending_cancels.clone();
+    for (batch_order, deferred_cancel, fok_order_id) in follow_ups {
+        let submitter = submitter.clone();
+        let emitter = emitter.clone();
+        let fill_tracker = fill_tracker.clone();
+        let order_identities = order_identities.clone();
+        let pending_cancels = pending_cancels.clone();
 
-            let handle = get_runtime().spawn(async move {
+        let handle = get_runtime().spawn(async move {
+            if let Some((order_id_str, venue_order_id)) = deferred_cancel {
                 execute_deferred_cancel(
                     &submitter,
-                    &order,
+                    &batch_order.order,
                     &order_id_str,
                     venue_order_id,
                     &emitter,
@@ -126,9 +131,25 @@ pub(super) async fn handle_batch_order_responses(
                     clock,
                 )
                 .await;
-            });
-            pending_tasks.push(handle);
-        }
+            }
+
+            if let Some(order_id) = fok_order_id {
+                check_fok_status(
+                    &submitter,
+                    &order_id,
+                    &batch_order.order,
+                    &fill_tracker,
+                    &order_identities,
+                    &emitter,
+                    account_id,
+                    batch_order.size_precision,
+                    batch_order.price_precision,
+                    clock,
+                )
+                .await;
+            }
+        });
+        pending_tasks.push(handle);
     }
 }
 
@@ -219,6 +240,7 @@ pub(super) async fn handle_single_order_response(
 ) {
     match result {
         Ok(response) => {
+            let fok_order_id = fok_check_order_id(&response, batch_order.order.time_in_force());
             if let Some((order_id_str, venue_order_id)) = handle_order_response(
                 Ok(response),
                 &batch_order.order,
@@ -238,6 +260,22 @@ pub(super) async fn handle_single_order_response(
                     venue_order_id,
                     emitter,
                     pending_cancels,
+                    clock,
+                )
+                .await;
+            }
+
+            if let Some(order_id) = fok_order_id {
+                check_fok_status(
+                    submitter,
+                    &order_id,
+                    &batch_order.order,
+                    fill_tracker,
+                    order_identities,
+                    emitter,
+                    account_id,
+                    batch_order.size_precision,
+                    batch_order.price_precision,
                     clock,
                 )
                 .await;
@@ -461,14 +499,20 @@ pub(super) fn handle_order_response(
 ) -> Option<(String, VenueOrderId)> {
     match result {
         Ok(response) => {
+            if let Some(reason) = fok_rejection_reason(&response, order.time_in_force()) {
+                reject_submit_order(order, reason, emitter, clock, pending_cancels);
+                return None;
+            }
+
             if response.success {
                 // VenueOrderId panics on an empty string
                 if let Some(order_id) = response.order_id.filter(|s| !s.is_empty()) {
+                    let decision = order_response_decision(response.status);
                     let venue_order_id = VenueOrderId::from(order_id.as_str());
                     let ts_now = clock.get_time_ns();
                     order_identities
                         .register_order_identity(venue_order_id, OrderIdentity::from_order(order));
-                    if order_identities.mark_accepted(venue_order_id) {
+                    if decision.emit_accepted && order_identities.mark_accepted(venue_order_id) {
                         emitter.emit_order_accepted(order, venue_order_id, ts_now);
                     }
 
@@ -481,6 +525,31 @@ pub(super) fn handle_order_response(
 
                     // The register above precedes this drain, so a racing report can't be orphaned
                     let buffered = fill_tracker.take_pending_reports(&venue_order_id);
+                    let activity_proves_accepted = !fills.is_empty()
+                        || buffered.iter().any(|report| {
+                            matches!(
+                                report.order_status,
+                                OrderStatus::Accepted
+                                    | OrderStatus::PartiallyFilled
+                                    | OrderStatus::Filled
+                                    | OrderStatus::Canceled
+                                    | OrderStatus::Expired
+                            )
+                        });
+
+                    if !decision.emit_accepted
+                        && activity_proves_accepted
+                        && order_identities.mark_accepted(venue_order_id)
+                    {
+                        let ts_accepted = fills
+                            .iter()
+                            .map(|fill| fill.report.ts_event)
+                            .chain(buffered.iter().map(|report| report.ts_last))
+                            .min()
+                            .unwrap_or(ts_now);
+                        emitter.emit_order_accepted(order, venue_order_id, ts_accepted);
+                    }
+
                     emit_drained_activity(
                         order,
                         venue_order_id,
@@ -526,6 +595,64 @@ pub(super) fn handle_order_response(
         }
     }
     None
+}
+
+struct OrderResponseDecision {
+    emit_accepted: bool,
+    poll_fok: bool,
+}
+
+fn order_response_decision(status: Option<OrderResponseStatus>) -> OrderResponseDecision {
+    match status {
+        Some(OrderResponseStatus::Matched) => OrderResponseDecision {
+            emit_accepted: true,
+            poll_fok: false,
+        },
+        Some(OrderResponseStatus::Delayed) => OrderResponseDecision {
+            emit_accepted: false,
+            poll_fok: true,
+        },
+        Some(OrderResponseStatus::Live | OrderResponseStatus::Unmatched) | None => {
+            OrderResponseDecision {
+                emit_accepted: true,
+                poll_fok: true,
+            }
+        }
+    }
+}
+
+pub(super) fn fok_check_order_id(
+    response: &OrderResponse,
+    time_in_force: TimeInForce,
+) -> Option<String> {
+    let decision = order_response_decision(response.status);
+    response
+        .order_id
+        .as_ref()
+        .filter(|order_id| {
+            response.success
+                && !order_id.is_empty()
+                && time_in_force == TimeInForce::Fok
+                && decision.poll_fok
+                && fok_rejection_reason(response, time_in_force).is_none()
+        })
+        .cloned()
+}
+
+fn fok_rejection_reason(response: &OrderResponse, time_in_force: TimeInForce) -> Option<&str> {
+    if !response.success || response.status.is_some() || time_in_force != TimeInForce::Fok {
+        return None;
+    }
+
+    response
+        .error_msg
+        .as_deref()
+        .filter(|reason| is_fok_unfilled(reason))
+}
+
+fn is_fok_unfilled(reason: &str) -> bool {
+    reason.contains("couldn't be fully filled")
+        && reason.contains("FOK orders are fully filled or killed")
 }
 
 // Require both terms so only a post-only crossing matches, not any post-only reason
@@ -736,6 +863,7 @@ pub(super) async fn check_fok_status(
     order_id: &str,
     order: &OrderAny,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    order_identities: &OrderIdentityRegistry,
     emitter: &ExecutionEventEmitter,
     account_id: AccountId,
     size_precision: u8,
@@ -765,8 +893,24 @@ pub(super) async fn check_fok_status(
         }
     };
 
+    if fill_tracker.has_fills_or_settled(&venue_order_id) {
+        return;
+    }
+
     let order_status = OrderStatus::from(venue_order.status);
     let ts_now = clock.get_time_ns();
+
+    if matches!(
+        order_status,
+        OrderStatus::Accepted
+            | OrderStatus::PartiallyFilled
+            | OrderStatus::Filled
+            | OrderStatus::Canceled
+            | OrderStatus::Expired
+    ) && order_identities.mark_accepted(venue_order_id)
+    {
+        emitter.emit_order_accepted(order, venue_order_id, ts_now);
+    }
 
     match order_status {
         OrderStatus::Rejected => {
@@ -816,6 +960,7 @@ pub(super) async fn check_fok_status(
             );
             emitter.send_order_status_report(report);
         }
+        OrderStatus::Accepted | OrderStatus::PartiallyFilled => {}
         _ => {}
     }
 }
@@ -932,6 +1077,257 @@ mod tests {
         ))
     }
 
+    fn successful_order_response(
+        venue_order_id: VenueOrderId,
+        status: Option<OrderResponseStatus>,
+    ) -> OrderResponse {
+        OrderResponse {
+            success: true,
+            order_id: Some(venue_order_id.to_string()),
+            status,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
+            error_msg: None,
+        }
+    }
+
+    #[rstest]
+    #[case::constructed_live(Some(OrderResponseStatus::Live), true, true)]
+    #[case::constructed_matched(Some(OrderResponseStatus::Matched), true, false)]
+    #[case::delayed(Some(OrderResponseStatus::Delayed), false, true)]
+    #[case::constructed_unmatched(Some(OrderResponseStatus::Unmatched), true, true)]
+    #[case::constructed_absent(None, true, true)]
+    fn test_order_response_decision(
+        #[case] status: Option<OrderResponseStatus>,
+        #[case] expected_accept: bool,
+        #[case] expected_check_fok: bool,
+    ) {
+        let decision = order_response_decision(status);
+
+        assert_eq!(decision.emit_accepted, expected_accept);
+        assert_eq!(decision.poll_fok, expected_check_fok);
+    }
+
+    #[rstest]
+    #[case::absent_status(true, Some("0xfok"), None, TimeInForce::Fok, Some("0xfok"))]
+    #[case::matched(
+        true,
+        Some("0xfok"),
+        Some(OrderResponseStatus::Matched),
+        TimeInForce::Fok,
+        None
+    )]
+    #[case::failed(false, Some("0xfok"), None, TimeInForce::Fok, None)]
+    #[case::empty_id(true, Some(""), None, TimeInForce::Fok, None)]
+    #[case::non_fok(true, Some("0xgtc"), None, TimeInForce::Gtc, None)]
+    fn test_fok_check_order_id(
+        #[case] success: bool,
+        #[case] order_id: Option<&str>,
+        #[case] status: Option<OrderResponseStatus>,
+        #[case] time_in_force: TimeInForce,
+        #[case] expected: Option<&str>,
+    ) {
+        let mut response = successful_order_response(VenueOrderId::from("0xunused"), status);
+        response.success = success;
+        response.order_id = order_id.map(ToString::to_string);
+
+        assert_eq!(
+            fok_check_order_id(&response, time_in_force).as_deref(),
+            expected,
+        );
+    }
+
+    #[rstest]
+    fn test_fok_unfilled_error_skips_check() {
+        let mut response = successful_order_response(VenueOrderId::from("0xfok"), None);
+        response.error_msg = Some(
+            "order couldn't be fully filled. FOK orders are fully filled or killed.".to_string(),
+        );
+
+        assert_eq!(fok_check_order_id(&response, TimeInForce::Fok), None);
+    }
+
+    #[rstest]
+    #[case::constructed_live(Some(OrderResponseStatus::Live))]
+    #[case::constructed_matched(Some(OrderResponseStatus::Matched))]
+    #[case::constructed_unmatched(Some(OrderResponseStatus::Unmatched))]
+    #[case::constructed_absent(None)]
+    fn test_accepting_order_response_status_emits_accepted(
+        #[case] status: Option<OrderResponseStatus>,
+    ) {
+        let instrument = test_instrument();
+        let mut order = test_limit_order("O-CONFIRMED", instrument.id());
+        order
+            .apply(TestOrderEventStubs::submitted(
+                &order,
+                AccountId::from("POLY-001"),
+            ))
+            .unwrap();
+        let venue_order_id = VenueOrderId::from("0xconfirmed");
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let order_identities = OrderIdentityRegistry::default();
+        let pending_cancels = PendingCancelTracker::default();
+
+        let deferred = handle_order_response(
+            Ok(successful_order_response(venue_order_id, status)),
+            &order,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &fill_tracker,
+            &order_identities,
+            &pending_cancels,
+            AccountId::from("POLY-001"),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+
+        let accepted = match receiver.try_recv().expect("expected accepted event") {
+            ExecutionEvent::Order(event @ OrderEventAny::Accepted(_)) => {
+                let OrderEventAny::Accepted(accepted) = &event else {
+                    unreachable!()
+                };
+                assert_eq!(accepted.client_order_id, order.client_order_id());
+                assert_eq!(accepted.venue_order_id, venue_order_id);
+                event
+            }
+            other => panic!("expected accepted event, was {other:?}"),
+        };
+        order.apply(accepted).unwrap();
+
+        assert!(deferred.is_none());
+        assert!(order_identities.get(&venue_order_id).is_some());
+        assert!(fill_tracker.contains(&venue_order_id));
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_captured_delayed_response_stays_submitted_and_registers_tracking() {
+        let instrument = test_instrument();
+        let mut order = test_limit_order("O-DELAYED", instrument.id());
+        order
+            .apply(TestOrderEventStubs::submitted(
+                &order,
+                AccountId::from("POLY-001"),
+            ))
+            .unwrap();
+        let response: OrderResponse = load("http_order_response_ok.json");
+        let venue_order_id = VenueOrderId::from(
+            response
+                .order_id
+                .as_deref()
+                .expect("captured response should include order ID"),
+        );
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let order_identities = OrderIdentityRegistry::default();
+        let pending_cancels = PendingCancelTracker::default();
+
+        let deferred = handle_order_response(
+            Ok(response),
+            &order,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &fill_tracker,
+            &order_identities,
+            &pending_cancels,
+            AccountId::from("POLY-001"),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+
+        assert!(deferred.is_none());
+        assert!(order_identities.get(&venue_order_id).is_some());
+        assert!(fill_tracker.contains(&venue_order_id));
+        assert_eq!(order.status(), OrderStatus::Submitted);
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_captured_delayed_response_preserves_deferred_cancel() {
+        let instrument = test_instrument();
+        let order = test_limit_order("O-DELAYED-CANCEL", instrument.id());
+        let response: OrderResponse = load("http_order_response_ok.json");
+        let venue_order_id = VenueOrderId::from(
+            response
+                .order_id
+                .as_deref()
+                .expect("captured response should include order ID"),
+        );
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let order_identities = OrderIdentityRegistry::default();
+        let pending_cancels = PendingCancelTracker::default();
+        pending_cancels.insert(order.client_order_id());
+
+        let deferred = handle_order_response(
+            Ok(response),
+            &order,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &fill_tracker,
+            &order_identities,
+            &pending_cancels,
+            AccountId::from("POLY-001"),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+
+        assert_eq!(deferred, Some((venue_order_id.to_string(), venue_order_id)));
+        assert!(order_identities.get(&venue_order_id).is_some());
+        assert!(fill_tracker.contains(&venue_order_id));
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_captured_batch_delayed_responses_register_each_leg_without_accepting() {
+        let instrument = test_instrument();
+        let responses: Vec<OrderResponse> = load("http_batch_order_response.json");
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let order_identities = OrderIdentityRegistry::default();
+        let pending_cancels = PendingCancelTracker::default();
+
+        for (index, response) in responses.into_iter().enumerate() {
+            let mut order = test_limit_order(&format!("O-BATCH-{index}"), instrument.id());
+            order
+                .apply(TestOrderEventStubs::submitted(
+                    &order,
+                    AccountId::from("POLY-001"),
+                ))
+                .unwrap();
+            let venue_order_id = VenueOrderId::from(
+                response
+                    .order_id
+                    .as_deref()
+                    .expect("captured batch leg should include order ID"),
+            );
+
+            let deferred = handle_order_response(
+                Ok(response),
+                &order,
+                &emitter,
+                nautilus_core::time::get_atomic_clock_realtime(),
+                &fill_tracker,
+                &order_identities,
+                &pending_cancels,
+                AccountId::from("POLY-001"),
+                instrument.size_precision(),
+                instrument.price_precision(),
+            );
+
+            assert!(deferred.is_none());
+            assert!(order_identities.get(&venue_order_id).is_some());
+            assert!(fill_tracker.contains(&venue_order_id));
+            assert_eq!(order.status(), OrderStatus::Submitted);
+        }
+
+        assert!(receiver.try_recv().is_err());
+    }
+
     #[rstest]
     fn test_market_sell_submission_uses_signed_wire_quantity() {
         let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
@@ -973,16 +1369,7 @@ mod tests {
             &emitter,
             nautilus_core::time::get_atomic_clock_realtime(),
         );
-        let response = OrderResponse {
-            success: true,
-            order_id: Some(venue_order_id.to_string()),
-            status: None,
-            making_amount: None,
-            taking_amount: None,
-            transaction_hashes: None,
-            trade_ids: None,
-            error_msg: None,
-        };
+        let response = successful_order_response(venue_order_id, None);
         let deferred_cancel = handle_order_response(
             Ok(response),
             &order,
@@ -1832,16 +2219,9 @@ mod tests {
         );
 
         // Step 2: the submit response arrives, registers the order, and drains the buffered fill
-        let response = OrderResponse {
-            success: true,
-            order_id: Some(venue_order_id.to_string()),
-            status: None,
-            making_amount: None,
-            taking_amount: None,
-            transaction_hashes: None,
-            trade_ids: None,
-            error_msg: None,
-        };
+        // Reuse the captured delayed response shape with the race-specific order ID
+        let mut response: OrderResponse = load("http_order_response_ok.json");
+        response.order_id = Some(venue_order_id.to_string());
         assert!(
             handle_order_response(
                 Ok(response),
