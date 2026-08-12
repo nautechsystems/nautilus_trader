@@ -30,7 +30,8 @@ macro_rules! identifier_for_python {
                 let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
                 let bindings = py_tuple.get_item(0)?;
                 let value = bindings.cast::<PyString>()?.extract::<&str>()?;
-                self.set_inner(value);
+                let validated = <$ty>::new_checked(value).map_err(to_pyvalue_err)?;
+                self.set_inner(validated.as_str());
                 Ok(())
             }
 
@@ -48,7 +49,7 @@ macro_rules! identifier_for_python {
 
             #[staticmethod]
             fn _safe_constructor() -> PyResult<Self> {
-                Ok(<$ty>::from("NULL")) // Safe default
+                <$ty>::new_checked("NULL-NULL").map_err(to_pyvalue_err)
             }
 
             // Note: Cannot use into_py_any_unwrap from IntoPyObjectNautilusExt
@@ -91,8 +92,8 @@ macro_rules! identifier_for_python {
 
             #[staticmethod]
             #[pyo3(name = "from_str")]
-            fn py_from_str(value: &str) -> Self {
-                Self::from(value)
+            fn py_from_str(value: &str) -> PyResult<Self> {
+                <$ty>::new_checked(value).map_err(to_pyvalue_err)
             }
         }
     };

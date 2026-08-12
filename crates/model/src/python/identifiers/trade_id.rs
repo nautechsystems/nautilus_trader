@@ -48,7 +48,7 @@ impl TradeId {
         let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
         let binding = py_tuple.get_item(0)?;
         let value_str = binding.cast::<PyString>()?.extract::<&str>()?;
-        *self = Self::new(value_str);
+        *self = Self::new_checked(value_str).map_err(to_pyvalue_err)?;
         Ok(())
     }
 
