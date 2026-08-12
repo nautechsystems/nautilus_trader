@@ -70,7 +70,7 @@ use nautilus_core::{
     UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::ExecutionClientCore;
+use nautilus_live::{ExecutionClientCore, execution::failure::CommandFailure};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
@@ -2163,6 +2163,22 @@ impl InteractiveBrokersExecutionClient {
             error,
             ibapi::Error::InvalidArgument(_) | ibapi::Error::ServerVersion(_, _, _)
         )
+    }
+
+    fn classify_order_submit_error(error: &ibapi::Error) -> CommandFailure {
+        let reason = error.to_string();
+
+        if Self::is_definitive_order_submit_error(error) {
+            CommandFailure::not_sent(reason)
+        } else if matches!(
+            error,
+            ibapi::Error::Notice(notice)
+                if notice.category() == ibapi::NoticeCategory::OrderRejection
+        ) {
+            CommandFailure::venue_rejected(reason)
+        } else {
+            CommandFailure::ambiguous(reason)
+        }
     }
 
     async fn handle_cancel_all_orders_async(

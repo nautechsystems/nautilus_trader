@@ -22,7 +22,7 @@ use ibapi::{
     subscriptions::Subscription,
 };
 use nautilus_common::{cache::Cache, live::runner::replace_exec_event_sender};
-use nautilus_live::ExecutionClientCore;
+use nautilus_live::{ExecutionClientCore, execution::failure::CommandFailure};
 use nautilus_model::{
     enums::{AccountType, AssetClass, LiquiditySide, OmsType, OrderSide, OrderType},
     events::OrderInitialized,
@@ -119,6 +119,177 @@ fn create_tracked_order_context(
     }
 }
 
+struct SubmitTrackingState {
+    order_id_map: Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
+    venue_order_id_map: Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
+    instrument_id_map: Arc<Mutex<AHashMap<i32, InstrumentId>>>,
+    trader_id_map: Arc<Mutex<AHashMap<i32, TraderId>>>,
+    strategy_id_map: Arc<Mutex<AHashMap<i32, StrategyId>>>,
+    active_order_contexts: Arc<Mutex<AHashMap<i32, TrackedOrderContext>>>,
+    terminal_order_contexts: Arc<Mutex<FifoCacheMap<i32, TrackedOrderContext, 10_000>>>,
+}
+
+impl SubmitTrackingState {
+    fn new() -> Self {
+        Self {
+            order_id_map: Arc::new(Mutex::new(AHashMap::new())),
+            venue_order_id_map: Arc::new(Mutex::new(AHashMap::new())),
+            instrument_id_map: Arc::new(Mutex::new(AHashMap::new())),
+            trader_id_map: Arc::new(Mutex::new(AHashMap::new())),
+            strategy_id_map: Arc::new(Mutex::new(AHashMap::new())),
+            active_order_contexts: Arc::new(Mutex::new(AHashMap::new())),
+            terminal_order_contexts: Arc::new(Mutex::new(FifoCacheMap::new())),
+        }
+    }
+
+    fn cache(
+        &self,
+        order_id: i32,
+        client_order_id: ClientOrderId,
+        instrument_id: InstrumentId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+    ) {
+        InteractiveBrokersExecutionClient::cache_order_tracking(
+            order_id,
+            client_order_id,
+            instrument_id,
+            trader_id,
+            strategy_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            &self.order_id_map,
+            &self.venue_order_id_map,
+            &self.instrument_id_map,
+            &self.trader_id_map,
+            &self.strategy_id_map,
+            &self.active_order_contexts,
+            &self.terminal_order_contexts,
+        )
+        .unwrap();
+    }
+
+    fn assert_active(
+        &self,
+        order_id: i32,
+        client_order_id: ClientOrderId,
+        instrument_id: InstrumentId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        accepted: bool,
+    ) {
+        assert_eq!(
+            self.order_id_map.lock().unwrap().get(&client_order_id),
+            Some(&order_id)
+        );
+        assert_eq!(
+            self.venue_order_id_map.lock().unwrap().get(&order_id),
+            Some(&client_order_id)
+        );
+        assert_eq!(
+            self.instrument_id_map.lock().unwrap().get(&order_id),
+            Some(&instrument_id)
+        );
+        assert_eq!(
+            self.trader_id_map.lock().unwrap().get(&order_id),
+            Some(&trader_id)
+        );
+        assert_eq!(
+            self.strategy_id_map.lock().unwrap().get(&order_id),
+            Some(&strategy_id)
+        );
+
+        let contexts = self.active_order_contexts.lock().unwrap();
+        let context = contexts.get(&order_id).unwrap();
+        assert_eq!(context.client_order_id, client_order_id);
+        assert_eq!(context.instrument_id, instrument_id);
+        assert_eq!(context.trader_id, trader_id);
+        assert_eq!(context.strategy_id, strategy_id);
+        assert_eq!(context.order_side, OrderSide::Buy);
+        assert_eq!(context.order_type, OrderType::Limit);
+        assert_eq!(context.accepted, accepted);
+        assert_eq!(context.avg_px, None);
+        assert!(
+            self.terminal_order_contexts
+                .lock()
+                .unwrap()
+                .get(&order_id)
+                .is_none()
+        );
+    }
+
+    fn emit_accepted(
+        &self,
+        order_id: i32,
+        account_id: AccountId,
+        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+    ) -> bool {
+        InteractiveBrokersExecutionClient::emit_order_accepted_if_needed(
+            order_id,
+            VenueOrderId::from(order_id.to_string()),
+            account_id,
+            UnixNanos::new(29),
+            &self.active_order_contexts,
+            exec_sender,
+        )
+        .unwrap()
+    }
+
+    fn assert_absent(&self, order_id: i32, client_order_id: ClientOrderId) {
+        assert_eq!(
+            self.order_id_map.lock().unwrap().get(&client_order_id),
+            None
+        );
+        assert_eq!(self.venue_order_id_map.lock().unwrap().get(&order_id), None);
+        assert_eq!(self.instrument_id_map.lock().unwrap().get(&order_id), None);
+        assert_eq!(self.trader_id_map.lock().unwrap().get(&order_id), None);
+        assert_eq!(self.strategy_id_map.lock().unwrap().get(&order_id), None);
+        assert!(
+            self.active_order_contexts
+                .lock()
+                .unwrap()
+                .get(&order_id)
+                .is_none()
+        );
+        assert!(
+            self.terminal_order_contexts
+                .lock()
+                .unwrap()
+                .get(&order_id)
+                .is_none()
+        );
+    }
+}
+
+async fn process_submitted_status(
+    order_id: i32,
+    state: &SubmitTrackingState,
+    exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+) {
+    InteractiveBrokersExecutionClient::handle_order_status(
+        &create_test_order_status(order_id, "Submitted"),
+        &state.order_id_map,
+        &state.venue_order_id_map,
+        &create_test_instrument_provider(),
+        exec_sender,
+        UnixNanos::new(27),
+        AccountId::from("IB-001"),
+        &state.instrument_id_map,
+        &state.trader_id_map,
+        &state.strategy_id_map,
+        &state.active_order_contexts,
+        &state.terminal_order_contexts,
+        &Arc::new(Mutex::new(AHashMap::new())),
+        &Arc::new(Mutex::new(AHashMap::new())),
+        &Arc::new(Mutex::new(AHashMap::new())),
+        &Arc::new(Mutex::new(AHashMap::new())),
+        &Arc::new(Mutex::new(ahash::AHashSet::new())),
+        &Arc::new(Mutex::new(AHashMap::new())),
+    )
+    .await
+    .unwrap();
+}
+
 fn next_order_event(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
 ) -> OrderEventAny {
@@ -200,14 +371,391 @@ fn active_open_order_excludes_deactivated_records(
 }
 
 #[rstest]
-fn order_submit_error_classifies_only_known_pre_send_failures_as_definitive() {
+fn order_submit_error_classifies_by_delivery_evidence() {
     let invalid = ibapi::Error::InvalidArgument("invalid quantity".to_string());
     let unsupported = ibapi::Error::ServerVersion(100, 99, "feature".to_string());
-    let ambiguous = ibapi::Error::ConnectionReset;
+    let rejection = ibapi::Error::Notice(ibapi::Notice {
+        code: 201,
+        message: "Order rejected".to_string(),
+        error_time: None,
+        advanced_order_reject_json: String::new(),
+    });
+    let cancellation = ibapi::Error::Notice(ibapi::Notice {
+        code: 202,
+        message: "Order cancelled".to_string(),
+        error_time: None,
+        advanced_order_reject_json: String::new(),
+    });
+
+    assert_eq!(
+        InteractiveBrokersExecutionClient::classify_order_submit_error(&invalid),
+        CommandFailure::not_sent(invalid.to_string())
+    );
+    assert_eq!(
+        InteractiveBrokersExecutionClient::classify_order_submit_error(&unsupported),
+        CommandFailure::not_sent(unsupported.to_string())
+    );
+    assert_eq!(
+        InteractiveBrokersExecutionClient::classify_order_submit_error(&rejection),
+        CommandFailure::venue_rejected(rejection.to_string())
+    );
+    assert_eq!(
+        InteractiveBrokersExecutionClient::classify_order_submit_error(&cancellation),
+        CommandFailure::ambiguous(cancellation.to_string())
+    );
+
+    for ambiguous in [
+        ibapi::Error::ConnectionReset,
+        ibapi::Error::EndOfStream,
+        ibapi::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::BrokenPipe,
+            "partial write",
+        )),
+        ibapi::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "write timed out",
+        )),
+    ] {
+        assert_eq!(
+            InteractiveBrokersExecutionClient::classify_order_submit_error(&ambiguous),
+            CommandFailure::ambiguous(ambiguous.to_string())
+        );
+    }
 
     assert!(InteractiveBrokersExecutionClient::is_definitive_order_submit_error(&invalid));
     assert!(InteractiveBrokersExecutionClient::is_definitive_order_submit_error(&unsupported));
-    assert!(!InteractiveBrokersExecutionClient::is_definitive_order_submit_error(&ambiguous));
+    assert!(
+        !InteractiveBrokersExecutionClient::is_definitive_order_submit_error(
+            &ibapi::Error::ConnectionReset
+        )
+    );
+}
+
+#[rstest]
+fn single_submit_definitive_failure_rejects_and_removes_tracking() {
+    let state = SubmitTrackingState::new();
+    let order_id = 7101;
+    let client_order_id = ClientOrderId::from("O-SINGLE-NOT-SENT");
+    let instrument_id = InstrumentId::new(Symbol::from("MSFT"), Venue::from("SMART"));
+    let trader_id = TraderId::from("TRADER-SINGLE-001");
+    let strategy_id = StrategyId::from("STRATEGY-SINGLE-001");
+    let account_id = AccountId::from("IB-SINGLE-001");
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    state.cache(
+        order_id,
+        client_order_id,
+        instrument_id,
+        trader_id,
+        strategy_id,
+    );
+
+    let result = InteractiveBrokersExecutionClient::handle_order_submit_failure(
+        &ibapi::Error::InvalidArgument("quantity must be positive".to_string()),
+        "Failed to submit order",
+        order_id,
+        account_id,
+        UnixNanos::new(19),
+        &state.order_id_map,
+        &state.venue_order_id_map,
+        &state.instrument_id_map,
+        &state.trader_id_map,
+        &state.strategy_id_map,
+        &state.active_order_contexts,
+        &state.terminal_order_contexts,
+        &exec_sender,
+        nautilus_core::time::get_atomic_clock_realtime(),
+    );
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Failed to submit order: InvalidArgument: quantity must be positive"
+    );
+    state.assert_absent(order_id, client_order_id);
+
+    match exec_receiver.try_recv().unwrap() {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.trader_id, trader_id);
+            assert_eq!(event.strategy_id, strategy_id);
+            assert_eq!(event.instrument_id, instrument_id);
+            assert_eq!(event.client_order_id, client_order_id);
+            assert_eq!(event.account_id, account_id);
+            assert_eq!(
+                event.reason.as_str(),
+                "Failed to submit order: InvalidArgument: quantity must be positive"
+            );
+            assert_eq!(event.ts_event, UnixNanos::new(19));
+            assert!(!event.reconciliation);
+            assert!(!event.due_post_only);
+        }
+        event => panic!("Expected rejected order event, was {event:?}"),
+    }
+    assert!(exec_receiver.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn single_submit_ambiguous_failure_retains_tracking_for_status_resolution() {
+    let state = SubmitTrackingState::new();
+    let order_id = 7102;
+    let client_order_id = ClientOrderId::from("O-SINGLE-AMBIGUOUS");
+    let instrument_id = InstrumentId::new(Symbol::from("NVDA"), Venue::from("SMART"));
+    let trader_id = TraderId::from("TRADER-SINGLE-002");
+    let strategy_id = StrategyId::from("STRATEGY-SINGLE-002");
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    state.cache(
+        order_id,
+        client_order_id,
+        instrument_id,
+        trader_id,
+        strategy_id,
+    );
+
+    let result = InteractiveBrokersExecutionClient::handle_order_submit_failure(
+        &ibapi::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "socket write timed out",
+        )),
+        "Failed to submit order",
+        order_id,
+        AccountId::from("IB-001"),
+        UnixNanos::new(23),
+        &state.order_id_map,
+        &state.venue_order_id_map,
+        &state.instrument_id_map,
+        &state.trader_id_map,
+        &state.strategy_id_map,
+        &state.active_order_contexts,
+        &state.terminal_order_contexts,
+        &exec_sender,
+        nautilus_core::time::get_atomic_clock_realtime(),
+    );
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Failed to submit order; outcome is unknown after possible transmission: socket write timed out"
+    );
+    assert!(exec_receiver.try_recv().is_err());
+    state.assert_active(
+        order_id,
+        client_order_id,
+        instrument_id,
+        trader_id,
+        strategy_id,
+        false,
+    );
+
+    process_submitted_status(order_id, &state, &exec_sender).await;
+
+    match exec_receiver.try_recv().unwrap() {
+        ExecutionEvent::Order(OrderEventAny::Accepted(event)) => {
+            assert_eq!(event.trader_id, trader_id);
+            assert_eq!(event.strategy_id, strategy_id);
+            assert_eq!(event.instrument_id, instrument_id);
+            assert_eq!(event.client_order_id, client_order_id);
+            assert_eq!(
+                event.venue_order_id,
+                VenueOrderId::from(order_id.to_string())
+            );
+            assert_eq!(event.account_id, AccountId::from("IB-001"));
+            assert_eq!(event.ts_event, UnixNanos::new(27));
+        }
+        event => panic!("Expected accepted order event, was {event:?}"),
+    }
+    assert!(exec_receiver.try_recv().is_err());
+    state.assert_active(
+        order_id,
+        client_order_id,
+        instrument_id,
+        trader_id,
+        strategy_id,
+        true,
+    );
+}
+
+#[rstest]
+fn list_submit_definitive_partial_failure_preserves_prefix_and_omits_tail() {
+    let state = SubmitTrackingState::new();
+    let prior_id = 7201;
+    let current_id = 7202;
+    let tail_id = 7203;
+    let prior_client_id = ClientOrderId::from("O-LIST-PRIOR");
+    let current_client_id = ClientOrderId::from("O-LIST-NOT-SENT");
+    let tail_client_id = ClientOrderId::from("O-LIST-TAIL");
+    let prior_instrument_id = InstrumentId::new(Symbol::from("AMD"), Venue::from("SMART"));
+    let current_instrument_id = InstrumentId::new(Symbol::from("INTC"), Venue::from("SMART"));
+    let trader_id = TraderId::from("TRADER-LIST-001");
+    let strategy_id = StrategyId::from("STRATEGY-LIST-001");
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    state.cache(
+        prior_id,
+        prior_client_id,
+        prior_instrument_id,
+        trader_id,
+        strategy_id,
+    );
+    state.cache(
+        current_id,
+        current_client_id,
+        current_instrument_id,
+        trader_id,
+        strategy_id,
+    );
+    assert!(state.emit_accepted(prior_id, AccountId::from("IB-LIST-001"), &exec_sender));
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Accepted(event))
+            if event.client_order_id == prior_client_id
+                && event.venue_order_id == VenueOrderId::from(prior_id.to_string())
+    ));
+
+    let error = ibapi::Error::ServerVersion(170, 169, "order feature".to_string());
+    let result = InteractiveBrokersExecutionClient::handle_order_submit_failure(
+        &error,
+        "Failed to submit order from list",
+        current_id,
+        AccountId::from("IB-LIST-001"),
+        UnixNanos::new(31),
+        &state.order_id_map,
+        &state.venue_order_id_map,
+        &state.instrument_id_map,
+        &state.trader_id_map,
+        &state.strategy_id_map,
+        &state.active_order_contexts,
+        &state.terminal_order_contexts,
+        &exec_sender,
+        nautilus_core::time::get_atomic_clock_realtime(),
+    );
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        format!("Failed to submit order from list: {error}")
+    );
+    state.assert_active(
+        prior_id,
+        prior_client_id,
+        prior_instrument_id,
+        trader_id,
+        strategy_id,
+        true,
+    );
+    state.assert_absent(current_id, current_client_id);
+    state.assert_absent(tail_id, tail_client_id);
+
+    match exec_receiver.try_recv().unwrap() {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, current_client_id);
+            assert_eq!(event.instrument_id, current_instrument_id);
+            assert_eq!(event.ts_event, UnixNanos::new(31));
+        }
+        event => panic!("Expected rejected order event, was {event:?}"),
+    }
+    assert!(exec_receiver.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn list_submit_ambiguous_partial_failure_retains_attempted_children_only() {
+    let state = SubmitTrackingState::new();
+    let prior_id = 7301;
+    let current_id = 7302;
+    let tail_id = 7303;
+    let prior_client_id = ClientOrderId::from("O-LIST-AMBIGUOUS-PRIOR");
+    let current_client_id = ClientOrderId::from("O-LIST-AMBIGUOUS-CURRENT");
+    let tail_client_id = ClientOrderId::from("O-LIST-AMBIGUOUS-TAIL");
+    let prior_instrument_id = InstrumentId::new(Symbol::from("META"), Venue::from("SMART"));
+    let current_instrument_id = InstrumentId::new(Symbol::from("GOOG"), Venue::from("SMART"));
+    let trader_id = TraderId::from("TRADER-LIST-002");
+    let strategy_id = StrategyId::from("STRATEGY-LIST-002");
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    state.cache(
+        prior_id,
+        prior_client_id,
+        prior_instrument_id,
+        trader_id,
+        strategy_id,
+    );
+    state.cache(
+        current_id,
+        current_client_id,
+        current_instrument_id,
+        trader_id,
+        strategy_id,
+    );
+    assert!(state.emit_accepted(prior_id, AccountId::from("IB-001"), &exec_sender));
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Accepted(event))
+            if event.client_order_id == prior_client_id
+                && event.venue_order_id == VenueOrderId::from(prior_id.to_string())
+    ));
+
+    let result = InteractiveBrokersExecutionClient::handle_order_submit_failure(
+        &ibapi::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::BrokenPipe,
+            "socket closed after partial write",
+        )),
+        "Failed to submit order from list",
+        current_id,
+        AccountId::from("IB-001"),
+        UnixNanos::new(37),
+        &state.order_id_map,
+        &state.venue_order_id_map,
+        &state.instrument_id_map,
+        &state.trader_id_map,
+        &state.strategy_id_map,
+        &state.active_order_contexts,
+        &state.terminal_order_contexts,
+        &exec_sender,
+        nautilus_core::time::get_atomic_clock_realtime(),
+    );
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Failed to submit order from list; outcome is unknown after possible transmission: socket closed after partial write"
+    );
+    assert!(exec_receiver.try_recv().is_err());
+    state.assert_active(
+        prior_id,
+        prior_client_id,
+        prior_instrument_id,
+        trader_id,
+        strategy_id,
+        true,
+    );
+    state.assert_active(
+        current_id,
+        current_client_id,
+        current_instrument_id,
+        trader_id,
+        strategy_id,
+        false,
+    );
+    state.assert_absent(tail_id, tail_client_id);
+
+    process_submitted_status(current_id, &state, &exec_sender).await;
+
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Accepted(event))
+            if event.client_order_id == current_client_id
+                && event.venue_order_id == VenueOrderId::from(current_id.to_string())
+    ));
+    assert!(exec_receiver.try_recv().is_err());
+    state.assert_active(
+        prior_id,
+        prior_client_id,
+        prior_instrument_id,
+        trader_id,
+        strategy_id,
+        true,
+    );
+    state.assert_active(
+        current_id,
+        current_client_id,
+        current_instrument_id,
+        trader_id,
+        strategy_id,
+        true,
+    );
+    state.assert_absent(tail_id, tail_client_id);
 }
 
 #[rstest]
