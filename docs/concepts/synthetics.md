@@ -96,9 +96,11 @@ produce a clear error at construction time.
 | --------------- | ----- | -------------------------------------------------------------- |
 | Stack depth     | 32    | Maximum number of intermediate values on the evaluation stack. |
 | Local variables | 16    | Maximum number of distinct local variable names.               |
+| Nesting depth   | 128   | Maximum syntax nesting and expression tree depth; the top‑level expression counts as one level. |
 
-These limits are generous for any realistic pricing formula. A weighted sum of 8 components
-uses a peak stack depth of 3 and zero locals.
+A weighted sum of 8 components uses a peak stack depth of 3 and zero locals. A weighted sum of
+N components builds a tree of depth N + 1, so the nesting depth limit caps a weighted sum at
+127 components.
 
 ### Examples
 

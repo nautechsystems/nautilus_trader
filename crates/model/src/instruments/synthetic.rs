@@ -544,6 +544,32 @@ mod tests {
     }
 
     #[rstest]
+    fn test_new_checked_rejects_excessive_expression_depth() {
+        let formula = std::iter::repeat_n("1", 129)
+            .collect::<Vec<_>>()
+            .join(" + ");
+
+        let error = SyntheticInstrument::new_checked(
+            Symbol::from("DEEP"),
+            2,
+            Vec::new(),
+            &formula,
+            0.into(),
+            0.into(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            &error,
+            SyntheticInstrumentError::Expression { .. }
+        ));
+        assert_eq!(
+            error.to_string(),
+            "Expression nesting depth 129 exceeds maximum 128 (the top-level expression counts as one level)"
+        );
+    }
+
+    #[rstest]
     fn test_new_checked_rejects_invalid_precision_with_validation_error() {
         let components = vec![
             InstrumentId::from_str("BTC.BINANCE").unwrap(),
