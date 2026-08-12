@@ -21,6 +21,8 @@ use nautilus_model::{
 };
 use nautilus_trading::StrategyConfig;
 
+use crate::config::GridMarketMakerTomlConfig;
+
 // use crate::strategy::StrategyConfig;
 
 /// Configuration for the grid market making strategy.
@@ -71,4 +73,22 @@ pub struct GridMarketMakerConfig {
     /// orders are canceled by the protocol after expiry.
     #[builder(default = false)]
     pub on_cancel_resubmit: bool,
+}
+
+impl TryFrom<&GridMarketMakerTomlConfig> for GridMarketMakerConfig {
+    type Error = anyhow::Error;
+
+    fn try_from(cfg: &GridMarketMakerTomlConfig) -> Result<Self, Self::Error> {
+        Ok(Self::builder()
+            .instrument_id(InstrumentId::from(cfg.instrument_id.as_str()))
+            .max_position(Quantity::from(cfg.max_position.as_str()))
+            .trade_size(Quantity::from(cfg.trade_size.as_str()))
+            .num_levels(cfg.num_levels)
+            .grid_step_bps(cfg.grid_step_bps)
+            .skew_factor(cfg.skew_factor)
+            .requote_threshold_bps(cfg.requote_threshold_bps)
+            .maybe_expire_time_secs(cfg.expire_time_secs)
+            .on_cancel_resubmit(cfg.on_cancel_resubmit)
+            .build())
+    }
 }

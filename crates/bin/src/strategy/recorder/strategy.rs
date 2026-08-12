@@ -28,7 +28,13 @@ impl Recorder {
             core: StrategyCore::new(config.base.clone()),
             instrument_id: config.instrument_id.clone(),
             instrument_precision: HashMap::new(),
-            data_catalog: ParquetDataCatalog::new(Path::new(&config.catalog_path), None, None, None, None),
+            data_catalog: ParquetDataCatalog::new(
+                Path::new(&config.catalog_path),
+                None,
+                None,
+                None,
+                None,
+            ),
             buffer: HashMap::new(),
             is_first_timer: true,
             book_depth: config.book_depth,
@@ -102,7 +108,8 @@ impl DataActor for Recorder {
                 InstrumentAny::TokenizedAsset(_tokenized_asset) => todo!(),
             }
 
-            self.buffer.insert(*instrument_id, Vec::with_capacity(100_000));
+            self.buffer
+                .insert(*instrument_id, Vec::with_capacity(100_000));
         });
         Ok(())
     }
@@ -149,11 +156,7 @@ impl DataActor for Recorder {
                 .write_data_enum(value, None, None, None)
                 .unwrap();
 
-            log::info!(
-                "{} data wrote to catalog. lines -> {}",
-                key,
-                value.len()
-            );
+            log::info!("{} data wrote to catalog. lines -> {}", key, value.len());
 
             value.clear();
         });

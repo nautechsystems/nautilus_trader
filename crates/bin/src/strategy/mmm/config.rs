@@ -5,6 +5,8 @@ use nautilus_model::{
 use nautilus_trading::StrategyConfig;
 use rust_decimal::Decimal;
 
+use crate::config::MattiasMarketMakerTomlConfig;
+
 #[allow(non_snake_case)]
 #[derive(Debug, Clone, bon::Builder)]
 pub struct MattiasMarketMakerConfig {
@@ -23,4 +25,21 @@ pub struct MattiasMarketMakerConfig {
     pub Δ_0: Decimal,
     pub Δ_μ: Decimal,
     pub β: Decimal,
+}
+
+impl TryFrom<&MattiasMarketMakerTomlConfig> for MattiasMarketMakerConfig {
+    type Error = anyhow::Error;
+
+    fn try_from(cfg: &MattiasMarketMakerTomlConfig) -> Result<Self, Self::Error> {
+        Ok(Self::builder()
+            .instrument_id(InstrumentId::from(cfg.instrument_id.as_str()))
+            .catalog_path(cfg.path.clone())
+            .Φ_n(cfg.Φ_n)
+            .Φ_0(cfg.Φ_0)
+            .Q_max(cfg.Q_max)
+            .Δ_0(cfg.Δ_0)
+            .Δ_μ(cfg.Δ_μ)
+            .β(cfg.β)
+            .build())
+    }
 }

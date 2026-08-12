@@ -1,3 +1,13 @@
+[runner]
+# Strategy to run. Switch between registered strategies by editing this value,
+# no recompilation needed. Registered: "grid_mm", "mmm"
+strategy = "grid_mm"
+venue = "BYBIT"
+account_id = "BYBIT-001"
+run_id = "grid-mm-backtest"
+start_date = "2026-08-01T00:00:00Z"
+end_date = "2026-08-08T00:00:00Z"
+
 [grid_mm]
 execution_environment = "live" # backtest, live, sandbox
 exchange = "bybit"

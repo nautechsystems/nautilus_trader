@@ -53,6 +53,7 @@ summary = "nautilus trader binaries and services"
 license = "MIT"
 
 assets = [
+    {source = "../../target/release/strategy_runner", dest = "/usr/bin/nautilus-strategy-runner", mode="755" },
     {source = "../../target/release/recorder", dest = "/usr/bin/nautilus-recorder", mode="755" },
     {source = "service/recorder.service", dest = "/usr/lib/systemd/system/nautilus-recorder.service", mode="644" },
     {source = "service/nautilus-trader-sysusers.conf", dest = "/usr/lib/sysusers.d/nautilus-trader.conf", mode = "644" },

@@ -14,10 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use nautilus_common::enums::Environment;
 use nautilus_model::types::Quantity;
 use rust_decimal::Decimal;
-use serde::{de, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de};
 use std::path::Path;
 use std::str::FromStr;
 
@@ -53,9 +54,8 @@ pub struct RecorderTomlConfig {
     #[serde(default = "default_recorder_path")]
     pub catalog_path: String,
     pub book_depth: usize,
-    pub interval_parquet_dump_seconds: u64
+    pub interval_parquet_dump_seconds: u64,
 }
-
 
 #[allow(non_snake_case)]
 #[derive(Debug, Deserialize)]
@@ -71,19 +71,42 @@ pub struct MattiasMarketMakerTomlConfig {
     pub Δ_0: Decimal,
     pub Δ_μ: Decimal,
     pub β: Decimal,
-    
+
     /// execution environment. possible values are live and backtest
     #[serde(deserialize_with = "deserialize_environment")]
-    pub execution_environment: Environment
+    pub execution_environment: Environment,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct RunnerTomlConfig {
+    /// Name of the strategy to run. Must match a registered strategy
+    /// (e.g. `"grid_mm"`, `"mmm"`). Switching strategies only requires
+    /// editing this value, no recompilation.
+    pub strategy: String,
+    /// Backtest venue name.
+    #[serde(default = "default_venue")]
+    pub venue: String,
+    /// Account id used for backtest snapshot reporting.
+    #[serde(default = "default_account_id")]
+    pub account_id: String,
+    /// Backtest run id. Defaults to `{strategy}-backtest`.
+    #[serde(default)]
+    pub run_id: Option<String>,
+    /// Backtest start date (RFC 3339). Required for backtesting.
+    #[serde(default)]
+    pub start_date: Option<DateTime<Utc>>,
+    /// Backtest end date (RFC 3339). Required for backtesting.
+    #[serde(default)]
+    pub end_date: Option<DateTime<Utc>>,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
     #[serde(rename = "grid_mm")]
     pub grid_mm: Option<GridMarketMakerTomlConfig>,
     pub recorder: Option<RecorderTomlConfig>,
-    pub mmm: Option<MattiasMarketMakerTomlConfig>
+    pub mmm: Option<MattiasMarketMakerTomlConfig>,
+    pub runner: Option<RunnerTomlConfig>,
 }
 
 impl Config {
@@ -100,13 +123,23 @@ impl Config {
 }
 
 fn deserialize_environment<'de, D>(deserializer: D) -> Result<Environment, D::Error>
-where D: Deserializer<'de> {
+where
+    D: Deserializer<'de>,
+{
     let s = String::deserialize(deserializer)?;
     Environment::from_str(&s).map_err(de::Error::custom)
 }
 
 fn default_num_levels() -> usize {
     3
+}
+
+fn default_venue() -> String {
+    "BYBIT".into()
+}
+
+fn default_account_id() -> String {
+    "BYBIT-001".into()
 }
 
 fn default_grid_step_bps() -> u32 {

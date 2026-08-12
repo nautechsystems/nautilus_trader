@@ -13,12 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! `strategy_runner` - runs any registered strategy selected in `[runner]` of
+//! the config file, without recompilation.
+
 use clap::Parser;
 use nautilus_bin::cli::Args;
-use nautilus_bin::config::{Config, RecorderTomlConfig};
-use nautilus_bin::exchange::Exchange;
-use nautilus_bin::strategy::recorder::{config::RecorderConfig, strategy::Recorder};
-use nautilus_model::identifiers::{InstrumentId, TraderId};
+use nautilus_bin::config::Config;
+use nautilus_bin::runner;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -27,27 +28,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let cfg: RecorderTomlConfig = Config::load(args.config_path)?.recorder.unwrap();
+    let config = Config::load(args.config_path)?;
+    let runner_cfg = config
+        .runner
+        .clone()
+        .expect("config.toml missing [runner] section");
 
-    let exchange: Exchange = cfg.exchange.parse()?;
-    let trader_id = TraderId::from(cfg.trader_id.as_str());
-
-    let mut node = exchange.build_node(trader_id)?;
-
-    let instrument_id: Vec<InstrumentId> =
-        cfg.instrument_id.iter().map(InstrumentId::from).collect();
-
-    let config = RecorderConfig::builder()
-        .catalog_path(cfg.catalog_path)
-        .instrument_id(instrument_id)
-        .interval_parquet_dump_seconds(cfg.interval_parquet_dump_seconds)
-        .book_depth(cfg.book_depth)
-        .build();
-
-    let strategy = Recorder::new(&config);
-
-    node.add_strategy(strategy)?;
-    node.run().await?;
+    runner::run(&config, &runner_cfg).await?;
 
     Ok(())
 }

@@ -6,26 +6,42 @@ Live trading binaries for the Nautilus Trader ecosystem. Configuration is manage
 
 | Binary | Description |
 |--------|-------------|
-| `grid_mm` | Grid market-making strategy for perpetual futures |
+| `strategy_runner` | Runs any registered strategy selected in `[runner]` of the config file |
 | `recorder` | Market data recorder that writes live data to disk |
 
 ## Usage
 
 ```bash
-# Run the grid market maker
-cargo run --bin grid_mm
+# Run the strategy selected in [runner] of config.toml
+cargo run --bin strategy_runner
 
 # Run the market data recorder
 cargo run --bin recorder
 ```
 
-Both binaries load their configuration from `config.toml` in the crate root. Set `exchange` to `"bybit"` or `"dydx"` and configure exchange-specific credentials via environment variables.
+Both binaries load their configuration from `config.toml` in the crate root (override with `--config-path`). Set `exchange` to `"bybit"` or `"dydx"` and configure exchange-specific credentials via environment variables.
+
+## Runtime strategy switching
+
+The `strategy_runner` binary runs the strategy named in the `[runner]` section of `config.toml`. Switching strategies only requires editing the config file, no recompilation:
+
+```toml
+[runner]
+strategy = "grid_mm"  # or "mmm"
+```
+
+Registered strategies:
+
+| Name | Strategy |
+|------|----------|
+| `grid_mm` | Grid market-making strategy for perpetual futures |
+| `mmm` | Mattia's market maker |
 
 Release binaries can be built and run with:
 
 ```bash
 cargo build --release
-./target/release/grid_mm
+./target/release/strategy_runner
 ./target/release/recorder
 ```
 

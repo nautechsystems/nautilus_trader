@@ -230,11 +230,12 @@ impl DataActor for GridMarketMaker {
             anyhow::anyhow!("Cannot requote grid: price_precision is not resolved")
         })?;
 
-        let order_book = self
-            .cache()
-            .order_book(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Cannot requote grid: order book not found for {instrument_id}"))?;
-        let (Some(bid_price), Some(ask_price)) = (order_book.best_bid_price(), order_book.best_ask_price()) else {
+        let order_book = self.cache().order_book(&instrument_id).ok_or_else(|| {
+            anyhow::anyhow!("Cannot requote grid: order book not found for {instrument_id}")
+        })?;
+        let (Some(bid_price), Some(ask_price)) =
+            (order_book.best_bid_price(), order_book.best_ask_price())
+        else {
             return Ok(());
         };
         let mid_f64 = f64::midpoint(bid_price.as_f64(), ask_price.as_f64());

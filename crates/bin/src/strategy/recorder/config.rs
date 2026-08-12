@@ -1,7 +1,6 @@
 use nautilus_model::identifiers::{InstrumentId, StrategyId};
 use nautilus_trading::StrategyConfig;
 
-
 #[derive(Debug, Clone, bon::Builder)]
 pub struct RecorderConfig {
     #[builder(default = StrategyConfig {
@@ -13,5 +12,5 @@ pub struct RecorderConfig {
     pub instrument_id: Vec<InstrumentId>,
     pub catalog_path: String,
     pub book_depth: usize,
-    pub interval_parquet_dump_seconds: u64
+    pub interval_parquet_dump_seconds: u64,
 }

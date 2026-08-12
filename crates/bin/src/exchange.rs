@@ -36,18 +36,13 @@ impl FromStr for Exchange {
         match s.trim().to_lowercase().as_str() {
             "dydx" => Ok(Self::Dydx),
             "bybit" => Ok(Self::Bybit),
-            other => {
-                Err(format!("Unknown exchange '{other}'. Expected 'dydx' or 'bybit'").into())
-            }
+            other => Err(format!("Unknown exchange '{other}'. Expected 'dydx' or 'bybit'").into()),
         }
     }
 }
 
 impl Exchange {
-    pub fn build_node(
-        self,
-        trader_id: TraderId,
-    ) -> Result<LiveNode, Box<dyn std::error::Error>> {
+    pub fn build_node(self, trader_id: TraderId) -> Result<LiveNode, Box<dyn std::error::Error>> {
         match self {
             Self::Dydx => {
                 let node = dydx::build_node(trader_id)?;
