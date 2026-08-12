@@ -264,9 +264,9 @@ fn bench_unrealized_pnls(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("margin", n), &n, |b, &n| {
             let mut portfolio = build_portfolio(AccountType::Margin, n);
             let venue = venue();
-            let _ = portfolio.unrealized_pnls(&venue, None);
+            let _ = portfolio.unrealized_pnls(&venue, None, None);
             b.iter(|| {
-                black_box(portfolio.unrealized_pnls(black_box(&venue), None));
+                black_box(portfolio.unrealized_pnls(black_box(&venue), None, None));
             });
         });
     }
@@ -281,7 +281,7 @@ fn bench_realized_pnls(c: &mut Criterion) {
             let mut portfolio = build_portfolio(AccountType::Margin, n);
             let venue = venue();
             b.iter(|| {
-                black_box(portfolio.realized_pnls(black_box(&venue), None));
+                black_box(portfolio.realized_pnls(black_box(&venue), None, None));
             });
         });
     }
@@ -296,7 +296,7 @@ fn bench_net_exposures(c: &mut Criterion) {
             let portfolio = build_portfolio(AccountType::Cash, n);
             let venue = venue();
             b.iter(|| {
-                black_box(portfolio.net_exposures(black_box(&venue), None));
+                black_box(portfolio.net_exposures(black_box(&venue), None, None));
             });
         });
     }

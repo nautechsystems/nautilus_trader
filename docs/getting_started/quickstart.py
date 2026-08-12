@@ -77,13 +77,13 @@ class EMACross(Strategy):
             return
 
         if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.config.instrument_id):
+            if self.portfolio.is_net_flat(self.config.instrument_id):
                 self.buy()
             elif self.portfolio.is_net_short(self.config.instrument_id):
                 self.close_all_positions(self.config.instrument_id)
                 self.buy()
         elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.config.instrument_id):
+            if self.portfolio.is_net_flat(self.config.instrument_id):
                 self.sell()
             elif self.portfolio.is_net_long(self.config.instrument_id):
                 self.close_all_positions(self.config.instrument_id)

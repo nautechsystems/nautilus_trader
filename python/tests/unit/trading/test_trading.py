@@ -110,6 +110,8 @@ from tests.unit.common.actor import OrderFactoryConfigProbeStrategy
 from tests.unit.common.actor import OrderFactoryProbeStrategy
 from tests.unit.common.actor import OrderListCacheProbeStrategy
 from tests.unit.common.actor import PortfolioHedgedProbeStrategy
+from tests.unit.common.actor import PortfolioMultiVenueProbeStrategy
+from tests.unit.common.actor import PortfolioPositionProbeStrategy
 from tests.unit.common.actor import PortfolioProbeStrategy
 from tests.unit.common.actor import TestStrategy
 
@@ -443,14 +445,101 @@ def test_strategy_portfolio_returns_registered_kernel_portfolio():
 
         assert portfolio.account(account_id=account.id).id == account.id
         assert portfolio.mark_values(account_id=account.id) == {}
+        assert portfolio.net_exposures() == {}
         assert portfolio.net_exposures(account_id=account.id) == {}
+        assert portfolio.equity(account_id=AccountId("OTHER-001")) == {}
+
+        recorded_snapshots = portfolio.snapshots(account.id)
+        assert portfolio.build_snapshot(account.id) is not None
+        assert portfolio.snapshots(account.id) == recorded_snapshots
+
+        detached = portfolio.account(account_id=account.id)
+        instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+        detached.set_leverage(instrument_id, Decimal(7))
+        assert detached.leverage(instrument_id) == Decimal(7)
+        assert portfolio.account(account_id=account.id).leverage(instrument_id) != Decimal(
+            7,
+        )
+
+        for command in (
+            "initialize_orders",
+            "initialize_positions",
+            "reset",
+            "update_account",
+            "update_order",
+            "update_position",
+        ):
+            assert not hasattr(portfolio, command)
+
+        for old_name in (
+            "account_snapshot",
+            "is_completely_flat",
+            "is_flat",
+            "margins_init",
+            "margins_maint",
+            "recorded_realized_pnls",
+        ):
+            assert not hasattr(portfolio, old_name)
+
+        mismatched_venue = Venue("OTHER")
+        mismatched_queries = (
+            lambda: portfolio.account(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.balances_locked(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.instrument_initial_margins(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.instrument_maintenance_margins(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.realized_pnls(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.unrealized_pnls(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.total_pnls(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.net_exposures(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.mark_values(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.equity(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.missing_price_instruments(
+                mismatched_venue,
+                account_id=account.id,
+            ),
+        )
+
+        for query in mismatched_queries:
+            with pytest.raises(ValueError, match="do not resolve to the same account"):
+                query()
+
         with pytest.raises(ValueError, match="venue or account_id must be provided"):
             portfolio.account()
     finally:
         engine.dispose()
 
 
-def test_strategy_portfolio_rejects_unsupported_query_arguments():
+def test_strategy_portfolio_accepts_price_and_target_currency_queries():
     usd = Currency.from_str("USD")
     venue = Venue("SIM")
     PortfolioProbeStrategy.observed_portfolio = None
@@ -482,14 +571,35 @@ def test_strategy_portfolio_rejects_unsupported_query_arguments():
         instrument_id = InstrumentId.from_str("AUD/USD.SIM")
         assert portfolio is not None
 
-        with pytest.raises(NotImplementedError, match="target_currency conversion"):
-            portfolio.realized_pnls(venue=venue, target_currency=usd)
-        with pytest.raises(NotImplementedError, match="target_currency conversion"):
-            portfolio.realized_pnl(instrument_id, target_currency=usd)
-        with pytest.raises(NotImplementedError, match="price override"):
-            portfolio.unrealized_pnl(instrument_id, price=Price.from_str("1.00000"))
-        with pytest.raises(NotImplementedError, match="price override"):
-            portfolio.total_pnl(instrument_id, price=Price.from_str("1.00000"))
+        assert portfolio.realized_pnls(venue=venue, target_currency=usd) == {}
+        assert portfolio.unrealized_pnls(venue=venue, target_currency=usd) == {}
+        assert portfolio.total_pnls(venue=venue, target_currency=usd) == {}
+        assert portfolio.net_exposures(venue=venue, target_currency=usd) == {}
+        assert portfolio.realized_pnl(instrument_id, target_currency=usd) is None
+        assert (
+            portfolio.unrealized_pnl(
+                instrument_id,
+                price=Price.from_str("1.00000"),
+                target_currency=usd,
+            )
+            is None
+        )
+        assert (
+            portfolio.total_pnl(
+                instrument_id,
+                price=Price.from_str("1.00000"),
+                target_currency=usd,
+            )
+            is None
+        )
+        assert (
+            portfolio.net_exposure(
+                instrument_id,
+                price=Price.from_str("1.00000"),
+                target_currency=usd,
+            )
+            is None
+        )
     finally:
         engine.dispose()
 
@@ -553,12 +663,388 @@ def test_strategy_portfolio_flat_methods_net_hedged_positions():
         assert result.total_positions == 2
         assert portfolio.net_position(instrument.id) == Decimal(0)
         assert portfolio.net_position(instrument.id, account_id=account.id) == Decimal(0)
-        assert portfolio.is_flat(instrument.id) is True
-        assert portfolio.is_flat(instrument.id, account_id=account.id) is True
-        assert portfolio.is_completely_flat() is True
-        assert portfolio.is_completely_flat(account_id=account.id) is True
+        assert portfolio.is_net_flat(instrument.id) is True
+        assert portfolio.is_net_flat(instrument.id, account_id=account.id) is True
+        assert portfolio.is_completely_net_flat() is True
+        assert portfolio.is_completely_net_flat(account_id=account.id) is True
         assert portfolio.is_net_long(instrument.id) is False
         assert portfolio.is_net_short(instrument.id) is False
+    finally:
+        engine.dispose()
+
+
+def test_strategy_portfolio_price_overrides_and_currency_conversion_are_fresh():
+    usd = Currency.from_str("USD")
+    eur = Currency.from_str("EUR")
+    jpy = Currency.from_str("JPY")
+    venue = Venue("SIM")
+    other_venue = Venue("OTHER")
+    instrument = TestInstrumentProvider.audusd_sim()
+    conversion_instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+    PortfolioPositionProbeStrategy.observed_portfolio = None
+    PortfolioPositionProbeStrategy.observed_account = None
+    PortfolioPositionProbeStrategy.observed_initial_account = None
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, usd)],
+        base_currency=usd,
+    )
+    engine.add_venue(
+        venue=other_venue,
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(500_000.0, eur)],
+        base_currency=eur,
+    )
+    engine.add_instrument(instrument)
+    engine.add_instrument(conversion_instrument)
+    engine.add_data(
+        [
+            QuoteTick(
+                instrument_id=conversion_instrument.id,
+                bid_price=Price.from_str("1.25000"),
+                ask_price=Price.from_str("1.25000"),
+                bid_size=Quantity.from_str("1000000"),
+                ask_size=Quantity.from_str("1000000"),
+                ts_event=1,
+                ts_init=1,
+            ),
+            QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str("0.90000"),
+                ask_price=Price.from_str("0.90002"),
+                bid_size=Quantity.from_str("1000000"),
+                ask_size=Quantity.from_str("1000000"),
+                ts_event=2,
+                ts_init=2,
+            ),
+            QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str("1.00000"),
+                ask_price=Price.from_str("1.00002"),
+                bid_size=Quantity.from_str("1000000"),
+                ask_size=Quantity.from_str("1000000"),
+                ts_event=3,
+                ts_init=3,
+            ),
+        ],
+    )
+
+    try:
+        engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:PortfolioPositionProbeStrategy",
+                config_path="nautilus_trader.trading:StrategyConfig",
+                config={},
+            ),
+        )
+        engine.run()
+
+        portfolio = PortfolioPositionProbeStrategy.observed_portfolio
+        account = PortfolioPositionProbeStrategy.observed_account
+        initial_account = PortfolioPositionProbeStrategy.observed_initial_account
+        assert portfolio is not None
+        assert account is not None
+        assert initial_account is not None
+        assert engine.get_result().total_positions == 1
+
+        instrument_id = instrument.id
+        account_id = account.id
+        expected_initial_margin = {instrument_id: Money.from_str("0.00 USD")}
+        expected_maintenance_margin = {instrument_id: Money.from_str("270.01 USD")}
+        assert initial_account.initial_margins() == {}
+        assert initial_account.maintenance_margins() == {}
+        assert account.initial_margins() == expected_initial_margin
+        assert account.maintenance_margins() == expected_maintenance_margin
+        assert (
+            portfolio.instrument_initial_margins(
+                venue=venue,
+                account_id=account_id,
+            )
+            == expected_initial_margin
+        )
+        assert (
+            portfolio.instrument_maintenance_margins(
+                venue=venue,
+                account_id=account_id,
+            )
+            == expected_maintenance_margin
+        )
+        assert portfolio.missing_price_instruments(venue, account_id=account_id) == []
+        assert portfolio.net_position(instrument_id, account_id=account_id) == Decimal(100000)
+        assert portfolio.is_net_long(instrument_id, account_id=account_id) is True
+        assert portfolio.is_net_short(instrument_id, account_id=account_id) is False
+        assert portfolio.is_net_flat(instrument_id, account_id=account_id) is False
+        assert portfolio.is_completely_net_flat(account_id=account_id) is False
+
+        realized = portfolio.realized_pnl(
+            instrument_id,
+            account_id=account_id,
+            target_currency=eur,
+        )
+        unrealized = portfolio.unrealized_pnl(
+            instrument_id,
+            account_id=account_id,
+            target_currency=eur,
+        )
+        total = portfolio.total_pnl(
+            instrument_id,
+            account_id=account_id,
+            target_currency=eur,
+        )
+        exposure = portfolio.net_exposure(
+            instrument_id,
+            account_id=account_id,
+            target_currency=eur,
+        )
+
+        assert realized == Money.from_str("-1.44 EUR")
+        assert unrealized == Money.from_str("7998.40 EUR")
+        assert total == Money.from_str("7996.96 EUR")
+        assert exposure == Money.from_str("80000.00 EUR")
+        assert portfolio.realized_pnls(
+            venue=venue,
+            account_id=account_id,
+            target_currency=eur,
+        ) == {eur: realized}
+        assert portfolio.unrealized_pnls(
+            venue=venue,
+            account_id=account_id,
+            target_currency=eur,
+        ) == {eur: unrealized}
+        assert portfolio.total_pnls(
+            venue=venue,
+            account_id=account_id,
+            target_currency=eur,
+        ) == {eur: total}
+        assert portfolio.net_exposures(
+            venue=venue,
+            account_id=account_id,
+            target_currency=eur,
+        ) == {eur: exposure}
+
+        cached_unrealized = portfolio.unrealized_pnl(instrument_id, account_id=account_id)
+        cached_total = portfolio.total_pnl(instrument_id, account_id=account_id)
+        override_price = Price.from_str("1.20000")
+        assert portfolio.unrealized_pnl(
+            instrument_id,
+            price=override_price,
+            account_id=account_id,
+            target_currency=eur,
+        ) == Money.from_str("23998.40 EUR")
+        assert portfolio.total_pnl(
+            instrument_id,
+            price=override_price,
+            account_id=account_id,
+            target_currency=eur,
+        ) == Money.from_str("23996.96 EUR")
+        assert portfolio.net_exposure(
+            instrument_id,
+            price=override_price,
+            account_id=account_id,
+            target_currency=eur,
+        ) == Money.from_str("96000.00 EUR")
+        assert portfolio.unrealized_pnl(instrument_id, account_id=account_id) == cached_unrealized
+        assert portfolio.total_pnl(instrument_id, account_id=account_id) == cached_total
+        assert portfolio.net_exposure(
+            instrument_id,
+            account_id=account_id,
+        ) == Money.from_str("100000.00 USD")
+        assert initial_account.initial_margins() == {}
+        assert initial_account.maintenance_margins() == {}
+
+        current_account = portfolio.account(account_id=account_id)
+        assert current_account.initial_margins() == expected_initial_margin
+        assert current_account.maintenance_margins() == expected_maintenance_margin
+
+        assert (
+            portfolio.realized_pnl(
+                instrument_id,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+            is None
+        )
+        assert (
+            portfolio.unrealized_pnl(
+                instrument_id,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+            is None
+        )
+        assert (
+            portfolio.total_pnl(
+                instrument_id,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+            is None
+        )
+        assert (
+            portfolio.net_exposure(
+                instrument_id,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+            is None
+        )
+        with pytest.raises(RuntimeError, match="failed to calculate realized PnLs"):
+            portfolio.realized_pnls(
+                venue=venue,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+        with pytest.raises(RuntimeError, match="failed to calculate unrealized PnLs"):
+            portfolio.unrealized_pnls(
+                venue=venue,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+        with pytest.raises(RuntimeError, match="failed to calculate total PnLs"):
+            portfolio.total_pnls(
+                venue=venue,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+        assert (
+            portfolio.net_exposures(
+                venue=venue,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+            is None
+        )
+
+        other_account_id = AccountId("OTHER-001")
+        assert portfolio.realized_pnls(account_id=other_account_id) == {}
+        assert portfolio.unrealized_pnls(account_id=other_account_id) == {}
+        assert portfolio.total_pnls(account_id=other_account_id) == {}
+        assert portfolio.net_exposures(account_id=other_account_id) == {}
+    finally:
+        engine.dispose()
+
+
+def test_strategy_portfolio_aggregates_multiple_venues_atomically():
+    usd = Currency.from_str("USD")
+    eur = Currency.from_str("EUR")
+    jpy = Currency.from_str("JPY")
+    venues = (Venue("SIM"), Venue("OTHER"), Venue("CLOSED"))
+    instruments = (
+        TestInstrumentProvider.default_fx_ccy("AUD/USD", venues[0]),
+        TestInstrumentProvider.default_fx_ccy("GBP/USD", venues[1]),
+        TestInstrumentProvider.default_fx_ccy("NZD/USD", venues[2]),
+    )
+
+    eurusd = tuple(TestInstrumentProvider.default_fx_ccy("EUR/USD", venue) for venue in venues)
+    usdjpy_sim = TestInstrumentProvider.default_fx_ccy("USD/JPY", venues[0])
+    PortfolioMultiVenueProbeStrategy.observed_portfolio = None
+    PortfolioMultiVenueProbeStrategy.observed_accounts = None
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
+    for venue, oms_type in zip(
+        venues,
+        (OmsType.HEDGING, OmsType.HEDGING, OmsType.NETTING),
+        strict=True,
+    ):
+        engine.add_venue(
+            venue=venue,
+            oms_type=oms_type,
+            account_type=AccountType.MARGIN,
+            starting_balances=[Money(1_000_000.0, usd)],
+            base_currency=usd,
+        )
+
+    for instrument in (*instruments, *eurusd, usdjpy_sim):
+        engine.add_instrument(instrument)
+
+    quote_data = (
+        (eurusd[0], "1.25000", "1.25000", 1),
+        (eurusd[1], "1.25000", "1.25000", 2),
+        (eurusd[2], "1.25000", "1.25000", 3),
+        (usdjpy_sim, "150.000", "150.000", 4),
+        (instruments[0], "0.90000", "0.90002", 10),
+        (instruments[1], "1.20000", "1.20002", 11),
+        (instruments[2], "0.70000", "0.70002", 12),
+        (instruments[0], "1.00000", "1.00002", 20),
+        (instruments[1], "1.10000", "1.10002", 21),
+        (instruments[2], "0.80000", "0.80002", 22),
+    )
+    quotes = [
+        QuoteTick(
+            instrument_id=instrument.id,
+            bid_price=Price.from_str(bid),
+            ask_price=Price.from_str(ask),
+            bid_size=Quantity.from_str("1000000"),
+            ask_size=Quantity.from_str("1000000"),
+            ts_event=ts_event,
+            ts_init=ts_event,
+        )
+        for instrument, bid, ask, ts_event in quote_data
+    ]
+    engine.add_data(quotes)
+
+    try:
+        engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:PortfolioMultiVenueProbeStrategy",
+                config_path="nautilus_trader.trading:StrategyConfig",
+                config={},
+            ),
+        )
+        engine.run()
+
+        portfolio = PortfolioMultiVenueProbeStrategy.observed_portfolio
+        accounts = PortfolioMultiVenueProbeStrategy.observed_accounts
+        assert portfolio is not None
+        assert accounts is not None
+        assert engine.get_result().total_positions == 3
+
+        expected_realized = Money.from_str("7992.64 EUR")
+        expected_unrealized = Money.from_str("15996.80 EUR")
+        expected_total = Money.from_str("23989.44 EUR")
+        expected_exposure = Money.from_str("168001.60 EUR")
+        assert portfolio.realized_pnls(target_currency=eur) == {eur: expected_realized}
+        assert portfolio.unrealized_pnls(target_currency=eur) == {eur: expected_unrealized}
+        assert portfolio.total_pnls(target_currency=eur) == {eur: expected_total}
+        assert portfolio.net_exposures(target_currency=eur) == {eur: expected_exposure}
+        assert portfolio.realized_pnls(venue=venues[2], target_currency=eur) == {
+            eur: Money.from_str("7996.00 EUR"),
+        }
+        assert portfolio.unrealized_pnls(venue=venues[2], target_currency=eur) == {}
+        assert portfolio.total_pnls(venue=venues[2], target_currency=eur) == {
+            eur: Money.from_str("7996.00 EUR"),
+        }
+
+        other_account_id = accounts[venues[1]].id
+        assert portfolio.net_position(
+            instruments[1].id,
+            account_id=other_account_id,
+        ) == Decimal(-100000)
+        assert portfolio.is_net_long(instruments[1].id, account_id=other_account_id) is False
+        assert portfolio.is_net_short(instruments[1].id, account_id=other_account_id) is True
+        assert portfolio.is_net_flat(instruments[1].id, account_id=other_account_id) is False
+        assert portfolio.is_completely_net_flat(account_id=other_account_id) is False
+        assert (
+            portfolio.missing_price_instruments(
+                venues[1],
+                account_id=other_account_id,
+            )
+            == []
+        )
+
+        with pytest.raises(RuntimeError, match="failed to calculate portfolio query"):
+            portfolio.realized_pnls(target_currency=jpy)
+        with pytest.raises(RuntimeError, match="failed to calculate portfolio query"):
+            portfolio.unrealized_pnls(target_currency=jpy)
+        with pytest.raises(RuntimeError, match="failed to calculate portfolio query"):
+            portfolio.total_pnls(target_currency=jpy)
+        assert portfolio.net_exposures(target_currency=jpy) is None
     finally:
         engine.dispose()
 

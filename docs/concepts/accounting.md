@@ -200,25 +200,30 @@ including `update_initial_margin`, `update_maintenance_margin`,
 
 Margin queries:
 
-- `portfolio.margins_init(venue=..., account_id=...) -> dict[InstrumentId, Money] | None`
-- `portfolio.margins_maint(venue=..., account_id=...) -> dict[InstrumentId, Money] | None`
+- `portfolio.instrument_initial_margins(venue=..., account_id=...) -> dict[InstrumentId, Money] | None`
+- `portfolio.instrument_maintenance_margins(venue=..., account_id=...) -> dict[InstrumentId, Money] | None`
 
 When a margin account resolves, these return the same per-instrument money
 views as `MarginAccount.initial_margins` and
 `MarginAccount.maintenance_margins`; otherwise, they return `None`. For
 account-wide data on cross-margin venues, query the account directly via
-`portfolio.account(venue).account_initial_margin(ccy)`.
+`portfolio.account(venue=venue).account_initial_margin(ccy)`. The returned account is
+a detached snapshot and cannot mutate Portfolio state.
 
 PnL, exposure, mark-to-market, and equity queries all accept `venue` and an
 optional `account_id` to scope multi-account venues:
 
-- `portfolio.unrealized_pnls(venue=..., account_id=...) -> dict[Currency, Money]`
-- `portfolio.realized_pnls(venue=..., account_id=...) -> dict[Currency, Money]`
-- `portfolio.total_pnls(venue=..., account_id=...) -> dict[Currency, Money]`
-- `portfolio.net_exposures(venue=..., account_id=...) -> dict[Currency, Money]`
+- `portfolio.unrealized_pnls(venue=..., account_id=..., target_currency=...) -> dict[Currency, Money]`
+- `portfolio.realized_pnls(venue=..., account_id=..., target_currency=...) -> dict[Currency, Money]`
+- `portfolio.total_pnls(venue=..., account_id=..., target_currency=...) -> dict[Currency, Money]`
+- `portfolio.net_exposures(venue=..., account_id=..., target_currency=...) -> dict[Currency, Money] | None`
 - `portfolio.mark_values(venue=..., account_id=...) -> dict[Currency, Money]`
 - `portfolio.equity(venue=..., account_id=...) -> dict[Currency, Money]`
-- `portfolio.missing_price_instruments(venue) -> list[InstrumentId]`
+- `portfolio.missing_price_instruments(venue, account_id=...) -> list[InstrumentId]`
+
+If both scope arguments are present, they must identify the same account. A missing price, failed
+target‑currency conversion, or arithmetic overflow invalidates the whole affected collection: a
+query never returns partial or mixed‑currency totals.
 
 See the [Portfolio guide](portfolio.md#equity-and-mark-to-market) for the equity
 formula, price fallback chain, base-currency conversion behavior, and the

@@ -114,6 +114,27 @@ Collection and lifecycle inspection also changes shape:
 | `Component.is_degraded`        | `is_degraded()`                                               |
 | `Component.is_faulted`         | `is_faulted()`                                                |
 
+Portfolio query names also change without compatibility aliases:
+
+| v1 name                | v2 name                            |
+| ---------------------- | ---------------------------------- |
+| `margins_init()`       | `instrument_initial_margins()`     |
+| `margins_maint()`      | `instrument_maintenance_margins()` |
+| `is_flat()`            | `is_net_flat()`                    |
+| `is_completely_flat()` | `is_completely_net_flat()`         |
+
+`unrealized_pnl()`, `total_pnl()`, and `net_exposure()` implement the retained optional `price`
+parameter as a fresh calculation that does not replace cached values. `realized_pnl()`,
+`realized_pnls()`, `unrealized_pnl()`, `unrealized_pnls()`, `total_pnl()`, `total_pnls()`,
+`net_exposure()`, and `net_exposures()` accept `target_currency` and fail closed when a required
+price or conversion is unavailable or exact arithmetic overflows. Collection queries never return
+partial results. When a query accepts both `venue` and `account_id`, those scopes must identify the
+same account.
+
+`account()` returns a detached account value. `build_snapshot()` returns an on‑demand
+sample without recording it, and the Python Portfolio does not expose engine mutation commands or
+the internal recorded realized‑PnL cache.
+
 V1 `is_initialized` means that a component has advanced beyond `PRE_INITIALIZED`. V2 `is_ready()`
 means exactly `READY`, so it is not an equivalent replacement while a component is running,
 stopped, degraded, disposed, or faulted. Inspect `state()` on `DataActor` and `Strategy`, or the

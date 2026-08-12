@@ -31,9 +31,12 @@ Account state is normally consumed through the `Portfolio` rather than a dedicat
 from nautilus_trader.model import Venue
 
 # Account state is tracked by the portfolio; query it by venue
-account = self.portfolio.account(Venue("BINANCE"))
+account = self.portfolio.account(venue=Venue("BINANCE"))
 self.log.info(f"Account state: {account}")
 ```
+
+The result is detached from the Portfolio. Mutating the returned account does not change the
+authoritative account held by the engine.
 
 ## Related guides
 

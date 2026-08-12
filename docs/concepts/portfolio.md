@@ -14,13 +14,14 @@ accounts with different base currencies.
 
 Currency conversion is available for the following portfolio queries:
 
-- `realized_pnl()` / `realized_pnls()` - Convert realized PnL to target currency.
-- `unrealized_pnl()` / `unrealized_pnls()` - Convert unrealized PnL to target currency.
-- `total_pnl()` / `total_pnls()` - Convert total PnL to target currency.
-- `net_exposure()` / `net_exposures()` - Convert net exposure to target currency.
+- `realized_pnl()` and `realized_pnls()` convert realized PnL.
+- `unrealized_pnl()` and `unrealized_pnls()` convert unrealized PnL.
+- `total_pnl()` and `total_pnls()` convert total PnL.
+- `net_exposure()` and `net_exposures()` convert net exposure.
 
 All methods accept an optional `target_currency` parameter to specify the desired output
-currency.
+currency. A successful targeted query contains only that currency. The Portfolio converts
+each native value directly to the target, even when an account has a different base currency.
 
 ### Single account behavior
 
@@ -61,15 +62,20 @@ exposures = portfolio.net_exposures(venue=BINANCE, target_currency=USD)
 # Returns {USD: Money(...)}
 ```
 
-### Conversion failures
+### Calculation failures
 
-When `target_currency` is provided and currency conversion fails, behavior depends on
-the method type:
+PnL and exposure queries fail closed when any required price, xrate, or exact arithmetic operation
+is unavailable. Their Python behavior depends on the method type:
 
-- **Single-value methods** (`realized_pnl`, `unrealized_pnl`, `total_pnl`, `net_exposure`):
-  Return `None` and log an error to prevent incorrect values.
-- **Dict-returning methods** (`realized_pnls`, `unrealized_pnls`, `total_pnls`, `net_exposures`):
-  Omit instruments that fail conversion but return results for successful conversions.
+- Single‑value methods (`realized_pnl`, `unrealized_pnl`, `total_pnl`, and `net_exposure`)
+  return `None`.
+- `realized_pnls`, `unrealized_pnls`, and `total_pnls` raise `RuntimeError`.
+- `net_exposures` returns `None`.
+
+Collection queries fail as one unit. They never return a partial result or combine target and
+source currencies. For example, one unpriced instrument invalidates the whole `unrealized_pnls`
+or `total_pnls` result. A valid all‑scope `net_exposures()` query returns `{}` when the portfolio
+is flat.
 
 :::warning
 Exchange rate data must be available when using `target_currency` for cross-currency
@@ -78,19 +84,17 @@ aggregation.
 
 ### Conversion price types
 
-When converting exposures to a target currency, the Portfolio uses different price types
-depending on the position composition:
+Position valuation uses `BID` for a long position and `ASK` for a short position. Currency
+conversion then uses a current `MID` xrate from the cache. If `use_mark_xrates` is enabled,
+a current `MARK` xrate takes precedence and `MID` remains the fallback. Explicit target‑currency
+queries do not reuse a carried stale xrate.
 
-- **All long positions**: Uses `BID` prices (conservative for long exposure).
-- **All short positions**: Uses `ASK` prices (conservative for short exposure).
-- **Mixed positions**: Uses `MID` prices (neutral when both long and short exist).
+### Price overrides
 
-This ensures conversions reflect realistic market conditions where you would liquidate
-long positions at bid and cover short positions at ask. For mixed positions, mid-pricing
-provides a neutral valuation.
-
-If `use_mark_xrates` is enabled in the portfolio configuration, `MARK` prices replace
-`MID` prices for mixed positions and general conversions.
+`unrealized_pnl`, `total_pnl`, and `net_exposure` accept an optional `price`. When supplied, the
+Portfolio values the selected instrument at that price instead of reading a cached market price.
+The calculation is fresh: it does not replace the cached PnL, exposure, or market price used by
+later queries.
 
 ## Equity and mark-to-market
 
@@ -98,16 +102,20 @@ The Portfolio exposes pull-style queries for continuous portfolio valuation and
 recorded snapshots. Per-currency results use the relevant account base currency
 or native cost currency.
 
-| Method                             | Returns                                                |
-| ---------------------------------- | ------------------------------------------------------ |
-| `mark_values(venue, account_id)`   | Signed MTM totals for open positions.                  |
-| `equity(venue, account_id)`        | Total equity combining balance and position valuation. |
-| `build_snapshot(account_id)`       | Account‑wide MTM totals and valuation metadata.        |
-| `snapshots(account_id)`            | Recorded account snapshots in emission order.          |
-| `missing_price_instruments(venue)` | Instruments currently flagged as unpriceable.          |
+| Method                                         | Returns                                                |
+| ---------------------------------------------- | ------------------------------------------------------ |
+| `mark_values(venue, account_id)`               | Signed MTM totals for open positions.                  |
+| `equity(venue, account_id)`                    | Total equity combining balance and position valuation. |
+| `build_snapshot(account_id)`                   | Account‑wide MTM totals and valuation metadata.        |
+| `snapshots(account_id)`                        | Recorded account snapshots in emission order.          |
+| `missing_price_instruments(venue, account_id)` | Instruments currently flagged as unpriceable.          |
 
 Longs contribute positive notional, shorts contribute negative notional. Flat
 positions are skipped.
+
+An account‑scoped `equity()` query returns `{}` for an unknown account. For a known account, it
+raises `RuntimeError` if exact snapshot valuation fails instead of presenting the failure as empty
+equity.
 
 ### Equity formula
 
@@ -179,7 +187,8 @@ the cause:
 
 Call `build_snapshot(account_id)` for an on-demand sample. Call `snapshots(account_id)`
 to read the bounded recorded sequence. The methods are available from the Rust
-Portfolio and Strategy API and from the Python Portfolio binding.
+Portfolio and Strategy API and from the Python Portfolio binding. Building a snapshot does
+not add it to the recorded sequence; only the configured lifecycle emission records snapshots.
 
 ### Automatic equity curve
 
@@ -196,9 +205,9 @@ fine-grained snapshots only while the account has an open position.
 
 The tracker keeps the latest missing set for each account-filtered query scope
 and the unfiltered venue scope. `missing_price_instruments(venue)` returns their
-venue-wide union. Each observation remains authoritative until the same scope
-runs again; a filtered result does not declare an earlier unfiltered result
-resolved. It has two observable behaviors:
+venue-wide union. Pass `account_id` to return only that account's current set. Each observation
+remains authoritative until the same scope runs again; a filtered result does not declare an
+earlier unfiltered result resolved. It has two observable behaviors:
 
 - A warning log fires once per instrument on the transition from no scope reporting
   it to at least one scope reporting it, not on every subsequent call. Once every
@@ -216,12 +225,20 @@ is the most common cause of silent gaps.
 
 ### Venue and account scope
 
-`mark_values` and `equity` accept an optional `account_id` to scope the
-aggregation to a single account. With `account_id=None`, results aggregate
-across every account on the venue.
+Multi‑account collection queries accept optional `venue` and `account_id` scopes. If both are
+provided, they must resolve to the same account or the query raises `ValueError`. With
+`account_id=None`, a venue query aggregates across every account on that venue.
 
 An account-filtered valuation reconciles only that account's observation, so
 flags raised by other accounts on the same venue survive.
+
+### Python query boundary
+
+The Python Portfolio is a read‑only query facade. It does not expose initialization, reset, or
+update commands; the Rust engine remains responsible for authoritative mutation. It also does not
+expose the internal recorded realized‑PnL cache. `account()` returns a detached, point‑in‑time copy.
+The copy does not reflect later account updates, and changing it does not affect the Portfolio.
+Call `account()` again to obtain the latest account state.
 
 ## Portfolio statistics
 

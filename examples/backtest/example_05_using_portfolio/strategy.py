@@ -114,7 +114,7 @@ class DemoStrategy(Strategy):
 
         # POSITION information
         self.log.info("Portfolio -> Position information:", color=LogColor.BLUE)
-        is_flat = self.portfolio.is_flat(self.config.instrument.id)
+        is_flat = self.portfolio.is_net_flat(self.config.instrument.id)
         self.log.info(f"Is flat: {is_flat}", color=LogColor.BLUE)
 
         net_position = self.portfolio.net_position(self.config.instrument.id)
@@ -137,11 +137,13 @@ class DemoStrategy(Strategy):
         # -----------------------------------------------------
 
         self.log.info("Portfolio -> Account information:", color=LogColor.CYAN)
-        margins_init = self.portfolio.margins_init(self.config.instrument.venue)
-        self.log.info(f"Initial margin: {margins_init}", color=LogColor.CYAN)
+        initial_margins = self.portfolio.instrument_initial_margins(self.config.instrument.venue)
+        self.log.info(f"Initial margin: {initial_margins}", color=LogColor.CYAN)
 
-        margins_maint = self.portfolio.margins_maint(self.config.instrument.venue)
-        self.log.info(f"Maintenance margin: {margins_maint}", color=LogColor.CYAN)
+        maintenance_margins = self.portfolio.instrument_maintenance_margins(
+            self.config.instrument.venue,
+        )
+        self.log.info(f"Maintenance margin: {maintenance_margins}", color=LogColor.CYAN)
 
         balances_locked = self.portfolio.balances_locked(self.config.instrument.venue)
         self.log.info(f"Locked balance: {balances_locked}", color=LogColor.CYAN)

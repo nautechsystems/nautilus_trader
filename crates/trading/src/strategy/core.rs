@@ -884,8 +884,8 @@ mod tests {
 
         let is_initialized = portfolio.is_initialized();
         let balances_locked = portfolio.balances_locked(&venue);
-        let margins_init = portfolio.margins_init(&venue);
-        let margins_maint = portfolio.margins_maint(&venue);
+        let initial_margins = portfolio.instrument_initial_margins(&venue);
+        let maintenance_margins = portfolio.instrument_maintenance_margins(&venue);
         let unrealized_pnls = portfolio.unrealized_pnls(&venue, None);
         let realized_pnls = portfolio.realized_pnls(&venue, None);
         let net_exposures = portfolio.net_exposures(&venue, None);
@@ -896,7 +896,7 @@ mod tests {
         let mark_values = portfolio.mark_values(&venue, None);
         let equity = portfolio.equity(&venue, None);
         let net_exposure = portfolio.net_exposure(&instrument_id, None);
-        let is_flat = portfolio.is_flat(&instrument_id);
+        let is_flat = portfolio.is_net_flat(&instrument_id);
         let net_position = portfolio.net_position(&instrument_id);
         let missing_prices = portfolio.missing_price_instruments(&venue);
         let snapshots = portfolio.snapshots(&account_id);
@@ -905,15 +905,15 @@ mod tests {
 
         assert!(!is_initialized);
         assert!(balances_locked.is_empty());
-        assert!(margins_init.is_empty());
-        assert!(margins_maint.is_empty());
-        assert!(unrealized_pnls.is_empty());
-        assert!(realized_pnls.is_empty());
+        assert!(initial_margins.is_empty());
+        assert!(maintenance_margins.is_empty());
+        assert!(unrealized_pnls.is_some_and(|values| values.is_empty()));
+        assert!(realized_pnls.is_some_and(|values| values.is_empty()));
         assert_eq!(net_exposures, None);
         assert_eq!(unrealized_pnl, None);
         assert_eq!(realized_pnl, None);
         assert_eq!(total_pnl, None);
-        assert!(total_pnls.is_empty());
+        assert!(total_pnls.is_some_and(|values| values.is_empty()));
         assert!(mark_values.is_empty());
         assert!(equity.is_empty());
         assert_eq!(net_exposure, None);

@@ -431,6 +431,81 @@ class PortfolioHedgedProbeStrategy(Strategy):
         type(self).observed_account = account
 
 
+class PortfolioPositionProbeStrategy(Strategy):
+    observed_portfolio = None
+    observed_account = None
+    observed_initial_account = None
+
+    def on_start(self):
+        self._instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+        self._submitted = False
+        type(self).observed_initial_account = self.portfolio.account(venue=Venue("SIM"))
+        self.subscribe_quotes(self._instrument_id)
+
+    def on_quote(self, tick):
+        if self._submitted:
+            return
+
+        self._submitted = True
+        self.submit_order(
+            _market_order(
+                self,
+                self._instrument_id,
+                OrderSide.BUY,
+                Quantity.from_str("100000"),
+            ),
+        )
+
+    def on_stop(self):
+        portfolio = self.portfolio
+        account = portfolio.account(venue=Venue("SIM"))
+
+        type(self).observed_portfolio = portfolio
+        type(self).observed_account = account
+
+
+class PortfolioMultiVenueProbeStrategy(Strategy):
+    observed_portfolio = None
+    observed_accounts = None
+
+    def on_start(self):
+        self._sides = {
+            InstrumentId.from_str("AUD/USD.SIM"): [OrderSide.BUY],
+            InstrumentId.from_str("GBP/USD.OTHER"): [OrderSide.SELL],
+            InstrumentId.from_str("NZD/USD.CLOSED"): [OrderSide.BUY, OrderSide.SELL],
+        }
+        self._quote_counts = dict.fromkeys(self._sides, 0)
+
+        for instrument_id in self._sides:
+            self.subscribe_quotes(instrument_id)
+
+    def on_quote(self, tick):
+        sides = self._sides.get(tick.instrument_id)
+        if sides is None:
+            return
+
+        quote_count = self._quote_counts[tick.instrument_id]
+        if quote_count < len(sides):
+            self.submit_order(
+                _market_order(
+                    self,
+                    tick.instrument_id,
+                    sides[quote_count],
+                    Quantity.from_str("100000"),
+                ),
+            )
+        self._quote_counts[tick.instrument_id] += 1
+
+    def on_stop(self):
+        portfolio = self.portfolio
+
+        type(self).observed_portfolio = portfolio
+        type(self).observed_accounts = {
+            venue: portfolio.account(venue=venue)
+            for venue in (Venue("SIM"), Venue("OTHER"), Venue("CLOSED"))
+        }
+
+
 class TestExecAlgorithmConfig(DataActorConfig):
     pass
 

@@ -35,6 +35,10 @@ Released on TBD (UTC).
 - Removed Rust `from_pyobject` constructors from `nautilus_model` data types; use `Bound::extract` for the target type
 - Removed `Cache.actor_ids()`, which always returned an empty set because no data flowing through the cache carries an actor ID; the Rust `Trader::actor_ids()` still lists registered actors
 - Replaced Rust `nautilus_model::python::data::data_to_pycapsule` with `data_to_pyobject`
+- Renamed `Portfolio.margins_init` to `instrument_initial_margins`
+- Renamed `Portfolio.margins_maint` to `instrument_maintenance_margins`
+- Renamed `Portfolio.is_flat` to `is_net_flat`
+- Renamed `Portfolio.is_completely_flat` to `is_completely_net_flat`
 - Changed Rust `OrderMatchingEngine` import to `nautilus_execution::matching_engine::OrderMatchingEngine`
 - Changed Rust `QueryResult` and `DataQueryResult` to iterate `Result` items carrying a new `QueryError`; collect with `collect::<Result<Vec<_>, _>>()` to surface query failures
 - Changed `DataQueryResult` iteration to return Python object lists instead of `DataFFI` capsules

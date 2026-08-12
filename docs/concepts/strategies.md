@@ -346,32 +346,102 @@ The following shows a general outline of available methods.
 
 ```python
 import decimal
+import typing
 
-from nautilus_trader.accounting.accounts.base import Account
-from nautilus_trader.model import Venue
+from nautilus_trader.model import AccountId
 from nautilus_trader.model import Currency
-from nautilus_trader.model import Money
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Money
+from nautilus_trader.model import Price
+from nautilus_trader.model import Venue
 
-def account(self, venue: Venue) -> Account
+def account(
+    self,
+    venue: Venue | None = None,
+    account_id: AccountId | None = None,
+) -> typing.Any | None
 
-def balances_locked(self, venue: Venue) -> dict[Currency, Money]
-def margins_init(self, venue: Venue) -> dict[Currency, Money]
-def margins_maint(self, venue: Venue) -> dict[Currency, Money]
-def unrealized_pnls(self, venue: Venue) -> dict[Currency, Money]
-def realized_pnls(self, venue: Venue) -> dict[Currency, Money]
-def net_exposures(self, venue: Venue) -> dict[Currency, Money]
+def balances_locked(
+    self,
+    venue: Venue | None = None,
+    account_id: AccountId | None = None,
+) -> dict[Currency, Money] | None
+def instrument_initial_margins(
+    self,
+    venue: Venue | None = None,
+    account_id: AccountId | None = None,
+) -> dict[InstrumentId, Money] | None
+def instrument_maintenance_margins(
+    self,
+    venue: Venue | None = None,
+    account_id: AccountId | None = None,
+) -> dict[InstrumentId, Money] | None
+def unrealized_pnls(
+    self,
+    venue: Venue | None = None,
+    account_id: AccountId | None = None,
+    target_currency: Currency | None = None,
+) -> dict[Currency, Money]
+def realized_pnls(
+    self,
+    venue: Venue | None = None,
+    account_id: AccountId | None = None,
+    target_currency: Currency | None = None,
+) -> dict[Currency, Money]
+def total_pnls(
+    self,
+    venue: Venue | None = None,
+    account_id: AccountId | None = None,
+    target_currency: Currency | None = None,
+) -> dict[Currency, Money]
+def net_exposures(
+    self,
+    venue: Venue | None = None,
+    account_id: AccountId | None = None,
+    target_currency: Currency | None = None,
+) -> dict[Currency, Money] | None
 
-def unrealized_pnl(self, instrument_id: InstrumentId) -> Money
-def realized_pnl(self, instrument_id: InstrumentId) -> Money
-def net_exposure(self, instrument_id: InstrumentId) -> Money
-def net_position(self, instrument_id: InstrumentId) -> decimal.Decimal
+def unrealized_pnl(
+    self,
+    instrument_id: InstrumentId,
+    price: Price | None = None,
+    account_id: AccountId | None = None,
+    target_currency: Currency | None = None,
+) -> Money | None
+def realized_pnl(
+    self,
+    instrument_id: InstrumentId,
+    account_id: AccountId | None = None,
+    target_currency: Currency | None = None,
+) -> Money | None
+def total_pnl(
+    self,
+    instrument_id: InstrumentId,
+    price: Price | None = None,
+    account_id: AccountId | None = None,
+    target_currency: Currency | None = None,
+) -> Money | None
+def net_exposure(
+    self,
+    instrument_id: InstrumentId,
+    price: Price | None = None,
+    account_id: AccountId | None = None,
+    target_currency: Currency | None = None,
+) -> Money | None
+def net_position(
+    self,
+    instrument_id: InstrumentId,
+    account_id: AccountId | None = None,
+) -> decimal.Decimal
 
-def is_net_long(self, instrument_id: InstrumentId) -> bool
-def is_net_short(self, instrument_id: InstrumentId) -> bool
-def is_flat(self, instrument_id: InstrumentId) -> bool
-def is_completely_flat(self) -> bool
+def is_net_long(self, instrument_id: InstrumentId, account_id: AccountId | None = None) -> bool
+def is_net_short(self, instrument_id: InstrumentId, account_id: AccountId | None = None) -> bool
+def is_net_flat(self, instrument_id: InstrumentId, account_id: AccountId | None = None) -> bool
+def is_completely_net_flat(self, account_id: AccountId | None = None) -> bool
 ```
+
+If both `venue` and `account_id` are supplied, they must resolve to the same account. The Portfolio
+exposes queries to strategies; engine commands remain internal to the Rust runtime.
 
 See the [`Portfolio` API Reference](/docs/python-api-latest/portfolio.html) for all available methods.
 
