@@ -92,10 +92,10 @@ statement the value you want the synthetic to produce.
 The expression engine enforces the following compile-time limits. Formulas that exceed them
 produce a clear error at construction time.
 
-| Limit           | Value | Description                                                    |
-| --------------- | ----- | -------------------------------------------------------------- |
-| Stack depth     | 32    | Maximum number of intermediate values on the evaluation stack. |
-| Local variables | 16    | Maximum number of distinct local variable names.               |
+| Limit           | Value | Description                                                                                     |
+| --------------- | ----- | ----------------------------------------------------------------------------------------------- |
+| Stack depth     | 32    | Maximum number of intermediate values on the evaluation stack.                                  |
+| Local variables | 16    | Maximum number of distinct local variable names.                                                |
 | Nesting depth   | 128   | Maximum syntax nesting and expression tree depth; the top‑level expression counts as one level. |
 
 A weighted sum of 8 components uses a peak stack depth of 3 and zero locals. A weighted sum of
