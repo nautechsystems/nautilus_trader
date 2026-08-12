@@ -24,7 +24,6 @@ pub mod config;
 pub mod enums;
 pub mod factories;
 pub mod http;
-pub mod urls;
 pub mod websocket;
 
 #[cfg(feature = "arrow")]
@@ -40,10 +39,7 @@ use crate::{
     account::resolve_execution_account_address,
     common::{
         builder_fee::{approve_from_env, revoke_from_env},
-        consts::{
-            HYPERLIQUID, HYPERLIQUID_CLIENT_ID, HYPERLIQUID_POST_ONLY_WOULD_MATCH,
-            HYPERLIQUID_VENUE,
-        },
+        consts::{HYPERLIQUID, HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE},
         enums::{
             HyperliquidConditionalOrderType, HyperliquidEnvironment, HyperliquidProductType,
             HyperliquidTpSl, HyperliquidTrailingOffsetType,
@@ -220,10 +216,6 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(HYPERLIQUID), HYPERLIQUID)?;
     m.add(stringify!(HYPERLIQUID_CLIENT_ID), *HYPERLIQUID_CLIENT_ID)?;
     m.add(stringify!(HYPERLIQUID_VENUE), *HYPERLIQUID_VENUE)?;
-    m.add(
-        "HYPERLIQUID_POST_ONLY_WOULD_MATCH",
-        HYPERLIQUID_POST_ONLY_WOULD_MATCH,
-    )?;
     m.add_class::<HyperliquidHttpClient>()?;
     m.add_class::<HyperliquidWebSocketClient>()?;
     m.add_class::<HyperliquidProductType>()?;
@@ -231,8 +223,6 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<HyperliquidConditionalOrderType>()?;
     m.add_class::<HyperliquidTrailingOffsetType>()?;
     m.add_class::<HyperliquidEnvironment>()?;
-    m.add_function(wrap_pyfunction!(urls::py_get_hyperliquid_http_base_url, m)?)?;
-    m.add_function(wrap_pyfunction!(urls::py_get_hyperliquid_ws_url, m)?)?;
     m.add_function(wrap_pyfunction!(
         py_hyperliquid_product_type_from_symbol,
         m

@@ -137,7 +137,6 @@ pub fn okx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::OKXVipLevel>()?;
     m.add_class::<crate::common::enums::OKXEnvironment>()?;
     m.add_class::<crate::common::enums::OKXRegion>()?;
-    m.add_class::<crate::common::urls::OKXEndpointType>()?;
     m.add_class::<OKXDataClientConfig>()?;
     m.add_class::<OKXExecClientConfig>()?;
     m.add_class::<OKXDataClientFactory>()?;
@@ -146,8 +145,6 @@ pub fn okx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(urls::get_okx_ws_url_public, m)?)?;
     m.add_function(wrap_pyfunction!(urls::get_okx_ws_url_private, m)?)?;
     m.add_function(wrap_pyfunction!(urls::get_okx_ws_url_business, m)?)?;
-    m.add_function(wrap_pyfunction!(urls::derive_okx_ws_url, m)?)?;
-    m.add_function(wrap_pyfunction!(urls::okx_requires_authentication, m)?)?;
 
     let registry = get_global_pyo3_registry();
 
