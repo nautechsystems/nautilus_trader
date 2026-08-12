@@ -40,6 +40,7 @@ Examples include `EUR/USD.SIM`, `BTCUSDT.BINANCE`, and `ETH/USD.KRAKEN`.
 ## Behavior
 
 - `CurrencyPair` has instrument class `Spot`.
+- Its asset class is `Cryptocurrency` when either currency has crypto type; otherwise, it is `FX`.
 - It has no expiration, strike price, option kind, or derivative underlying field.
 - It is never inverse. The settlement currency and cost currency are the quote currency.
 - Use this type for both fiat FX pairs and crypto spot pairs.

@@ -22,8 +22,8 @@ Examples include equity options, index options, and futures options.
 | `currency`        | `Currency`         | `Currency`         | Required         | Premium quote and settlement currency.   |
 | `price_precision` | `u8`               | `int`              | Required         | Decimal places allowed for prices.       |
 | `price_increment` | `Price`            | `Price`            | Required         | Smallest valid price step.               |
-| `size_precision`  | `u8`               | `int`              | `0`              | Options trade in whole contracts.        |
-| `size_increment`  | `Quantity`         | `Quantity`         | `1`              | Minimum contract size step.              |
+| `size_precision`  | `u8`               | `int`              | Fixed `0`        | Options trade in whole contracts.        |
+| `size_increment`  | `Quantity`         | `Quantity`         | Fixed `1`        | Minimum contract size step.              |
 | `multiplier`      | `Quantity`         | `Quantity`         | Required         | Contract multiplier.                     |
 | `lot_size`        | `Quantity`         | `Quantity`         | Required         | Rounded lot or contract lot size.        |
 | `margin_init`     | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |

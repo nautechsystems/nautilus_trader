@@ -48,8 +48,7 @@ Examples include Betfair match-odds selections and handicap market selections.
 | `ts_event`           | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`            | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python builds the instrument ID and raw symbol from the venue, market, selection,
-and handicap fields. Rust receives them as `instrument_id` and `raw_symbol`.*
+*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
 
 ## Behavior
 
@@ -75,8 +74,8 @@ let event_open: Timestamp = "2022-02-07T23:30:00Z".parse().unwrap();
 let market_start: Timestamp = "2022-02-07T23:30:00Z".parse().unwrap();
 
 let selection = BettingInstrument::builder()
-    .instrument_id(InstrumentId::from("1-123456789.BETFAIR"))
-    .raw_symbol(Symbol::from("1-123456789"))
+    .instrument_id(InstrumentId::from("1-123456789-50214.BETFAIR"))
+    .raw_symbol(Symbol::from("1-123456789-50214"))
     .event_type_id(6423)
     .event_type_name(Ustr::from("American Football"))
     .competition_id(12_282_733)

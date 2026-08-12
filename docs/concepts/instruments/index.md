@@ -5,7 +5,7 @@ synthetic market. Market data, orders, positions, accounting, portfolio calculat
 and adapter symbology all refer back to an `InstrumentId` and its instrument definition.
 
 NautilusTrader exposes the same instrument model to Rust and Python users. Rust
-examples use `nautilus_model`; Python examples use `nautilus_trader.model.instruments`.
+examples use `nautilus_model`; Python examples use `nautilus_trader.model`.
 
 ## Instrument types
 
@@ -17,7 +17,7 @@ examples use `nautilus_model`; Python examples use `nautilus_trader.model.instru
 | [`Cfd`](cfd.md)                                   | Contract for diff. | Contract for difference tracking an underlying.      | Interactive Brokers.            |
 | [`IndexInstrument`](index_instrument.md)          | Spot reference     | Reference index, not directly tradable.              | Interactive Brokers.            |
 | [`TokenizedAsset`](tokenized_asset.md)            | Tokenized spot     | Tokenized asset on a crypto venue.                   | Kraken.                         |
-| [`FuturesContract`](futures_contract.md)          | Future             | Deliverable futures contract.                        | Databento, Interactive Brokers. |
+| [`FuturesContract`](futures_contract.md)          | Future             | Dated futures contract.                              | Databento, Interactive Brokers. |
 | [`FuturesSpread`](futures_spread.md)              | Futures spread     | Exchange defined futures strategy with several legs. | Databento, Interactive Brokers. |
 | [`CryptoFuture`](crypto_future.md)                | Crypto future      | Dated crypto futures contract.                       | BitMEX, Bybit, Deribit, OKX.    |
 | [`CryptoFuturesSpread`](crypto_futures_spread.md) | Crypto spread      | Exchange defined crypto futures spread.              | Deribit, OKX.                   |
@@ -80,8 +80,8 @@ complete constructor and struct fields for that type.
 | ----------------- | ------------------------------------------------------------------- |
 | `id`              | Nautilus `InstrumentId`, formed from a symbol and venue.            |
 | `raw_symbol`      | Native venue symbol before Nautilus normalization.                  |
-| `price_precision` | Number of decimal places allowed for prices.                        |
-| `size_precision`  | Number of decimal places allowed for quantities.                    |
+| `price_precision` | Configured number of decimal places for price values.               |
+| `size_precision`  | Configured number of decimal places for quantity values.            |
 | `price_increment` | Smallest valid price step.                                          |
 | `size_increment`  | Smallest valid quantity step.                                       |
 | `multiplier`      | Contract multiplier used in notional and PnL calculations.          |
@@ -103,16 +103,16 @@ complete constructor and struct fields for that type.
 
 ## Symbology
 
-Every instrument has a unique `InstrumentId` made from the native symbol and venue,
-separated by a period. For example, Binance Futures represents the Ethereum perpetual
-contract as:
+Every instrument has a unique `InstrumentId` made from a Nautilus symbol and venue,
+separated by a period. The separate `raw_symbol` field preserves the venue's native
+symbol. For example, Binance Futures represents the Ethereum perpetual contract as:
 
 ```text
 ETHUSDT-PERP.BINANCE
 ```
 
 Native symbols should be unique for a venue, but this is not guaranteed by every
-exchange. The `{symbol}.{venue}` pair must be unique inside a Nautilus system.
+exchange. The Nautilus `{symbol}.{venue}` pair must be unique inside a system.
 
 :::warning
 The instrument definition must match the market data and venue order semantics. An
@@ -149,8 +149,8 @@ audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 Live integration adapters expose `InstrumentProvider` objects that cache instrument
 definitions. Use `InstrumentProviderConfig(load_all=True)` where the integration
-supports it, or `load_ids` to load a known set of instruments.
-Subscriptions and order methods expect matching instruments to already exist in the cache.
+supports it, or `load_ids` to load a known set of instruments. Order submission requires
+the matching instrument definition to exist in the central cache.
 
 ## Finding instruments
 
@@ -182,20 +182,20 @@ When the `DataEngine` receives an instrument update, it passes the object to the
 
 ## Precision
 
-Precision defines the canonical number of decimal places for prices and quantities on an
-instrument. NautilusTrader enforces the resulting price and size grids strictly because
-trading venues validate the same constraints, and backtests should not fill orders at
-prices or sizes that cannot exist in production.
+For order validation, `price_precision` and `size_precision` set the maximum number of
+decimal places that the `RiskEngine` accepts. `price_increment` and `size_increment`
+record the corresponding minimum steps.
 
 | Field             | Constrains                           | Example           |
 | ----------------- | ------------------------------------ | ----------------- |
 | `price_precision` | Order prices, trigger prices, fills. | `2` -> `50000.01` |
 | `size_precision`  | Order quantities and fill sizes.     | `5` -> `1.00001`  |
 
-The increment precision must match the declared precision. For example,
-`price_precision=2` pairs with `price_increment=Price(0.01, 2)`.
+The price increment precision must match `price_precision`, and the size increment
+precision must match `size_precision`. For example, `price_precision=2` pairs with
+`price_increment=Price(0.01, 2)`.
 
-Use the instrument factory methods when producing order prices and sizes:
+Use the instrument factory methods to round values to the configured precision:
 
 ```python
 instrument = self.cache.instrument(instrument_id)
@@ -204,10 +204,16 @@ price = instrument.make_price(0.90500)
 quantity = instrument.make_qty(150)
 ```
 
+These methods round to the corresponding increment precision, which instrument
+construction requires to match the declared precision. They do not ensure that the
+result is a multiple of an increment such as `0.25`.
+
 :::warning
 The `RiskEngine` does not round values automatically. If you create a `Price` with
 5 decimal places for an instrument that supports 2, the order is denied. Use
-`instrument.make_price()` and `instrument.make_qty()` to round explicitly.
+`instrument.make_price()` and `instrument.make_qty()` to round explicitly. The
+`RiskEngine` also does not validate increment multiples, so ensure that prices and
+quantities match the venue steps before submission.
 :::
 
 ## Limits, margins, and fees
@@ -218,9 +224,9 @@ Venue and adapter definitions can include optional limits:
 - `max_notional` and `min_notional`.
 - `max_price` and `min_price`.
 
-The `MarginAccount` uses `margin_init`, `margin_maint`, and the taker fee when it
-calculates initial and maintenance margin. Nautilus uses one fee-rate convention across
-adapters and backtesting:
+Margin models use `margin_init` and `margin_maint` to calculate initial and maintenance
+margin. Maker and taker fee rates apply to commission calculations. Nautilus uses one
+fee‑rate convention across adapters and backtesting:
 
 - Positive fee rates represent commissions.
 - Negative fee rates represent rebates.

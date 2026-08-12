@@ -1,4 +1,4 @@
-# Cfd
+# CFD
 
 `Cfd` represents a contract for difference that tracks an underlying asset without
 transferring ownership of the underlying. The venue defines the quote currency,
