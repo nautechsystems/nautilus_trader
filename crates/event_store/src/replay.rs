@@ -1462,7 +1462,10 @@ fn apply_orderless_flip_fill(
         return Ok(false);
     };
 
-    if !position.is_opposite_side(fill.order_side) || fill.last_qty.raw <= position.quantity.raw {
+    if position.is_closed()
+        || !position.is_opposite_side(fill.order_side)
+        || fill.last_qty.raw <= position.quantity.raw
+    {
         return Ok(false);
     }
 
@@ -3737,6 +3740,85 @@ mod tests {
         assert_eq!(position.last_event(), Some(filled.clone()));
         assert_eq!(position.trade_ids(), vec![filled.trade_id]);
         assert_eq!(position.commissions(), vec![Money::from("1 USD")]);
+        assert!(cache.check_integrity());
+    }
+
+    #[rstest]
+    fn orderless_netting_reopen_replay_does_not_treat_closed_position_as_flip() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let client_order_id = ClientOrderId::from("SPREAD-LEG-AUDUSD");
+        let position_id = PositionId::from("P-ORDERLESS-NETTING");
+        let opening_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-1"))
+            .trade_id(TradeId::from("T-SPREAD-LEG-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(1))
+            .position_id(position_id)
+            .build();
+        let closing_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-2"))
+            .trade_id(TradeId::from("T-SPREAD-LEG-2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(1))
+            .position_id(position_id)
+            .build();
+        let mut closed_position = Position::new(&instrument, opening_fill);
+        closed_position.apply(&closing_fill);
+        assert!(closed_position.is_closed());
+
+        let reopening_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-3"))
+            .trade_id(TradeId::from("T-SPREAD-LEG-3"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(1))
+            .position_id(position_id)
+            .build();
+        let mut reopened_position = closed_position.clone();
+        reopened_position.apply(&reopening_fill);
+        let reopened = PositionOpened::create(
+            &reopened_position,
+            &reopening_fill,
+            UUID4::new(),
+            reopening_fill.ts_init,
+        );
+        let reader = reader_with_entries(
+            "run-orderless-netting-reopen-replay",
+            &[
+                append_order_event(1, &OrderEventAny::Filled(reopening_fill.clone())),
+                append_position_event(2, &PositionEvent::PositionOpened(reopened)),
+            ],
+        );
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument).expect("add instrument");
+        cache
+            .add_position_without_order(&closed_position, OmsType::Netting)
+            .expect("seed closed orderless position");
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).expect("replay");
+        let position = cache
+            .position_owned(&position_id)
+            .expect("netting position reopened");
+
+        assert_eq!(report.applied_entries, 2);
+        assert_eq!(report.ignored_entries, 0);
+        assert!(position.is_open());
+        assert_eq!(position.side, PositionSide::Short);
+        assert_eq!(position.entry, OrderSide::Sell);
+        assert_eq!(position.quantity, Quantity::from(1));
+        assert_eq!(position.opening_order_id, client_order_id);
+        assert_eq!(position.closing_order_id, None);
+        assert_eq!(position.event_count(), 1);
+        assert_eq!(position.trade_ids(), vec![reopening_fill.trade_id]);
+        assert_eq!(position.last_event(), Some(reopening_fill));
+        assert_eq!(cache.oms_type(&position_id), Some(OmsType::Netting));
+        assert!(cache.orders_for_position(&position_id).is_empty());
+        assert_eq!(cache.position_id(&client_order_id), None);
         assert!(cache.check_integrity());
     }
 
