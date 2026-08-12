@@ -126,14 +126,14 @@ use crate::{
         },
         models::OKXInstrument,
         parse::{
-            extract_inst_family, is_okx_spread_symbol, okx_instrument_type,
-            okx_instrument_type_from_symbol, parse_account_state, parse_base_quote_from_symbol,
-            parse_candlestick, parse_fill_report, parse_funding_rate, parse_index_price_update,
-            parse_instrument_any, parse_instrument_id, parse_mark_price_update,
-            parse_order_status_report, parse_position_status_report, parse_price, parse_quantity,
-            parse_spot_margin_position_from_balance, parse_spread_fill_report,
-            parse_spread_instrument, parse_spread_order_status_report, parse_trade_tick,
-            prefer_rpi_response_fields,
+            extract_inst_family, is_okx_spread_symbol, is_order_status_report_more_advanced,
+            okx_instrument_type, okx_instrument_type_from_symbol, parse_account_state,
+            parse_base_quote_from_symbol, parse_candlestick, parse_fill_report, parse_funding_rate,
+            parse_index_price_update, parse_instrument_any, parse_instrument_id,
+            parse_mark_price_update, parse_order_status_report, parse_position_status_report,
+            parse_price, parse_quantity, parse_spot_margin_position_from_balance,
+            parse_spread_fill_report, parse_spread_instrument, parse_spread_order_status_report,
+            parse_trade_tick, prefer_rpi_response_fields,
         },
     },
     http::{
@@ -6175,7 +6175,7 @@ impl OKXHttpClient {
 
         let ts_init = self.generate_ts_init();
         let mut reports = Vec::new();
-        let mut seen: AHashSet<(String, String)> = AHashSet::new();
+        let mut seen: AHashMap<(String, String), usize> = AHashMap::new();
 
         if has_specific_lookup {
             let mut params_builder = GetAlgoOrderParamsBuilder::default();
@@ -6219,17 +6219,22 @@ impl OKXHttpClient {
                 state,
                 Some(OKXAlgoOrderStatus::Live | OKXAlgoOrderStatus::Pause)
             );
-        let history_state = match state {
-            None | Some(OKXAlgoOrderStatus::Live | OKXAlgoOrderStatus::Pause) => None,
+        let history_states: &[OKXAlgoOrderStatus] = match state {
+            None => &[
+                OKXAlgoOrderStatus::Effective,
+                OKXAlgoOrderStatus::Canceled,
+                OKXAlgoOrderStatus::OrderFailed,
+            ],
+            Some(OKXAlgoOrderStatus::Live | OKXAlgoOrderStatus::Pause) => &[],
             Some(
                 OKXAlgoOrderStatus::Effective
                 | OKXAlgoOrderStatus::OrderPlaced
                 | OKXAlgoOrderStatus::PartiallyEffective
                 | OKXAlgoOrderStatus::Filled,
-            ) => Some(OKXAlgoOrderStatus::Effective),
-            Some(OKXAlgoOrderStatus::Canceled) => Some(OKXAlgoOrderStatus::Canceled),
+            ) => &[OKXAlgoOrderStatus::Effective],
+            Some(OKXAlgoOrderStatus::Canceled) => &[OKXAlgoOrderStatus::Canceled],
             Some(OKXAlgoOrderStatus::OrderFailed | OKXAlgoOrderStatus::PartiallyFailed) => {
-                Some(OKXAlgoOrderStatus::OrderFailed)
+                &[OKXAlgoOrderStatus::OrderFailed]
             }
         };
 
@@ -6277,8 +6282,8 @@ impl OKXHttpClient {
                 }
             }
 
-            if let Some(history_state) = history_state {
-                params.state = Some(history_state);
+            for history_state in history_states {
+                params.state = Some(*history_state);
                 let remaining = limit.map(|l| (l as usize).saturating_sub(reports.len()));
                 let mut history = self.paginate_algo_history(&params, remaining).await?;
 
@@ -6345,14 +6350,11 @@ impl OKXHttpClient {
         orders: &[OKXOrderAlgo],
         instruments_cache: &mut AHashMap<Ustr, InstrumentAny>,
         ts_init: UnixNanos,
-        seen: &mut AHashSet<(String, String)>,
+        seen: &mut AHashMap<(String, String), usize>,
         reports: &mut Vec<OrderStatusReport>,
     ) -> anyhow::Result<()> {
         for order in orders {
             let key = (order.algo_id.clone(), order.algo_cl_ord_id.clone());
-            if !seen.insert(key) {
-                continue;
-            }
 
             let instrument = if let Some(instrument) = instruments_cache.get(&order.inst_id) {
                 instrument.clone()
@@ -6369,7 +6371,16 @@ impl OKXHttpClient {
             };
 
             match parse_http_algo_order(order, account_id, &instrument, ts_init) {
-                Ok(report) => reports.push(report),
+                Ok(report) => {
+                    if let Some(index) = seen.get(&key).copied() {
+                        if is_order_status_report_more_advanced(&report, &reports[index]) {
+                            reports[index] = report;
+                        }
+                    } else {
+                        seen.insert(key, reports.len());
+                        reports.push(report);
+                    }
+                }
                 Err(e) => {
                     log::error!("Failed to parse algo order report: {e}");
                 }

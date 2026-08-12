@@ -68,7 +68,10 @@ use crate::{
             resolve_instrument_families, should_retry_error_code, validate_okx_client_order_id,
         },
         enums::{OKXInstrumentType, OKXMarginMode, OKXTradeMode, is_advance_algo_order},
-        parse::{is_okx_spread_symbol, nanos_to_datetime, okx_instrument_type_from_symbol},
+        parse::{
+            is_okx_spread_symbol, is_order_status_report_more_advanced, nanos_to_datetime,
+            okx_instrument_type_from_symbol,
+        },
     },
     config::OKXExecClientConfig,
     http::{client::OKXHttpClient, error::OKXHttpError, models::OKXCancelAlgoOrderRequest},
@@ -1292,7 +1295,7 @@ impl ExecutionClient for OKXExecutionClient {
                     )
                     .await
                 {
-                    Ok(mut algo) => reports.append(&mut algo),
+                    Ok(algo) => merge_order_status_reports(&mut reports, algo),
                     Err(e) => {
                         log::warn!("OKX query_order algo lookup failed for {instrument_id}: {e}");
                     }
@@ -1492,7 +1495,7 @@ impl ExecutionClient for OKXExecutionClient {
                 )
                 .await
             {
-                Ok(mut algo_reports) => reports.append(&mut algo_reports),
+                Ok(algo_reports) => merge_order_status_reports(&mut reports, algo_reports),
                 Err(e) => {
                     log::warn!(
                         "Failed to fetch algo order status reports for {instrument_id}: {e}"
@@ -1556,7 +1559,7 @@ impl ExecutionClient for OKXExecutionClient {
                     )
                     .await
                 {
-                    Ok(mut algo) => reports.append(&mut algo),
+                    Ok(algo) => merge_order_status_reports(&mut reports, algo),
                     Err(e) => {
                         log::warn!(
                             "Failed to fetch algo order status reports for {instrument_id}: {e}"
@@ -1594,7 +1597,7 @@ impl ExecutionClient for OKXExecutionClient {
                         )
                         .await
                     {
-                        Ok(mut algo) => reports.append(&mut algo),
+                        Ok(algo) => merge_order_status_reports(&mut reports, algo),
                         Err(e) => log::warn!(
                             "Failed to fetch algo order status reports for {inst_type:?}: {e}"
                         ),
@@ -2461,6 +2464,28 @@ fn is_spread_instrument(instrument_id: InstrumentId) -> bool {
     is_okx_spread_symbol(instrument_id.symbol.as_str())
 }
 
+fn merge_order_status_reports(
+    reports: &mut Vec<OrderStatusReport>,
+    incoming: Vec<OrderStatusReport>,
+) {
+    let mut indexes: AHashMap<VenueOrderId, usize> = reports
+        .iter()
+        .enumerate()
+        .map(|(index, report)| (report.venue_order_id, index))
+        .collect();
+
+    for report in incoming {
+        if let Some(index) = indexes.get(&report.venue_order_id).copied() {
+            if is_order_status_report_more_advanced(&report, &reports[index]) {
+                reports[index] = report;
+            }
+        } else {
+            indexes.insert(report.venue_order_id, reports.len());
+            reports.push(report);
+        }
+    }
+}
+
 // Picks the report that best answers the query. Tiered so a strong signal
 // wins over a weak one regardless of ordering in the merged result set:
 //   1. Exact `client_order_id` match.
@@ -2762,6 +2787,47 @@ mod tests {
     fn with_linked(mut report: OrderStatusReport, linked: &[&str]) -> OrderStatusReport {
         report.linked_order_ids = Some(linked.iter().map(|s| ClientOrderId::from(*s)).collect());
         report
+    }
+
+    #[rstest]
+    fn test_merge_order_status_reports_keeps_filled_regular_child() {
+        let mut filled = make_query_order_report(Some("O-PARENT"), "V-CHILD");
+        filled.order_status = OrderStatus::Filled;
+        filled.filled_qty = Quantity::new(1.0, 0);
+        filled.ts_last = UnixNanos::from(100);
+
+        let mut triggered = make_query_order_report(Some("O-PARENT"), "V-CHILD");
+        triggered.order_status = OrderStatus::Triggered;
+        triggered.filled_qty = Quantity::new(1.0, 0);
+        triggered.ts_last = UnixNanos::from(200);
+
+        let mut reports = vec![filled];
+        merge_order_status_reports(&mut reports, vec![triggered]);
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].order_status, OrderStatus::Filled);
+        assert_eq!(
+            reports[0].client_order_id,
+            Some(ClientOrderId::from("O-PARENT"))
+        );
+        assert_eq!(reports[0].venue_order_id, VenueOrderId::from("V-CHILD"));
+    }
+
+    #[rstest]
+    fn test_merge_order_status_reports_replaces_pending_parent_with_triggered_child() {
+        let mut accepted = make_query_order_report(Some("O-PARENT"), "V-CHILD");
+        accepted.ts_last = UnixNanos::from(100);
+
+        let mut triggered = make_query_order_report(Some("O-PARENT"), "V-CHILD");
+        triggered.order_status = OrderStatus::Triggered;
+        triggered.ts_last = UnixNanos::from(200);
+
+        let mut reports = vec![accepted];
+        merge_order_status_reports(&mut reports, vec![triggered]);
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].order_status, OrderStatus::Triggered);
+        assert_eq!(reports[0].ts_last, UnixNanos::from(200));
     }
 
     #[rstest]

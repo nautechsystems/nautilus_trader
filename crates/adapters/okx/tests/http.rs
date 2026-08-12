@@ -42,7 +42,7 @@ use nautilus_model::{
         LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
         TriggerType,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
@@ -100,6 +100,8 @@ struct TestServerState {
     algo_details_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     algo_pending_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     algo_history_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    algo_pending_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    algo_history_responses: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
     last_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_cancel_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     cancel_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -914,6 +916,10 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                             .into_response();
                         }
 
+                        if let Some(response) = state.algo_pending_response.lock().await.clone() {
+                            return Json(response).into_response();
+                        }
+
                         let fixture = if params.get("algoClOrdId").map(String::as_str)
                             == Some("O-close-frac-status")
                         {
@@ -977,6 +983,17 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                                 "data": [],
                             }))
                             .into_response();
+                        }
+
+                        if let Some(requested_state) = params.get("state")
+                            && let Some(response) = state
+                                .algo_history_responses
+                                .lock()
+                                .await
+                                .get(requested_state)
+                                .cloned()
+                        {
+                            return Json(response).into_response();
                         }
 
                         let mut response = load_test_data("http_get_orders_algo_history.json");
@@ -3918,6 +3935,137 @@ async fn test_http_request_algo_order_status_reports_routes_live_state_to_pendin
 
 #[rstest]
 #[tokio::test]
+async fn test_http_request_algo_order_status_reports_queries_all_states_without_filter() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let reports = client
+        .request_algo_order_status_reports(
+            AccountId::new("OKX-001"),
+            Some(OKXInstrumentType::Swap),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let pending_queries = state.algo_pending_queries.lock().await.clone();
+    let history_queries = state.algo_history_queries.lock().await.clone();
+    let mut actual_history: Vec<_> = history_queries
+        .iter()
+        .map(|query| {
+            (
+                query.get("ordType").unwrap().clone(),
+                query.get("state").unwrap().clone(),
+            )
+        })
+        .collect();
+    actual_history.sort();
+
+    let mut expected_history = Vec::new();
+
+    for ord_type in ["conditional", "move_order_stop", "oco", "trigger"] {
+        for state in ["canceled", "effective", "order_failed"] {
+            expected_history.push((ord_type.to_string(), state.to_string()));
+        }
+    }
+    expected_history.sort();
+
+    assert_eq!(reports.len(), 2);
+    assert_eq!(pending_queries.len(), 4);
+    assert!(
+        pending_queries
+            .iter()
+            .all(|query| !query.contains_key("state"))
+    );
+    assert_eq!(actual_history, expected_history);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_algo_order_status_reports_prefers_triggered_child_over_pending_parent() {
+    let state = Arc::new(TestServerState::default());
+    let mut pending = load_test_data("http_get_orders_algo_pending.json");
+    pending["data"][0]["algoId"] = json!("987654321");
+    pending["data"][0]["algoClOrdId"] = json!("client_algo_2");
+    pending["data"][0]["instId"] = json!("ETH-USDT-SWAP");
+    pending["data"][0]["uTime"] = json!("1622559930237");
+    *state.algo_pending_response.lock().await = Some(pending);
+
+    let empty = json!({"code": "0", "msg": "", "data": []});
+    state.algo_history_responses.lock().await.extend([
+        (
+            "effective".to_string(),
+            load_test_data("http_get_orders_algo_history.json"),
+        ),
+        ("canceled".to_string(), empty.clone()),
+        ("order_failed".to_string(), empty),
+    ]);
+
+    let addr = start_test_server(state).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let reports = client
+        .request_algo_order_status_reports(
+            AccountId::new("OKX-001"),
+            Some(OKXInstrumentType::Swap),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].order_status, OrderStatus::Triggered);
+    assert_eq!(
+        reports[0].client_order_id,
+        Some(ClientOrderId::from("client_algo_2"))
+    );
+    assert_eq!(reports[0].venue_order_id, VenueOrderId::from("ord_456"));
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_http_request_algo_order_status_reports_routes_canceled_state_to_history() {
     let state = Arc::new(TestServerState::default());
     let addr = start_test_server(state.clone()).await;
@@ -4012,7 +4160,7 @@ async fn test_http_request_algo_order_status_reports_uses_details_for_exact_look
     assert_eq!(reports[0].venue_order_id.as_str(), "ord_456");
     assert_eq!(
         reports[0].client_order_id,
-        Some(ClientOrderId::from("cl_ord_123"))
+        Some(ClientOrderId::from("client_algo_2"))
     );
     assert_eq!(reports[0].order_status, OrderStatus::Triggered);
     assert_eq!(details_queries.len(), 1);

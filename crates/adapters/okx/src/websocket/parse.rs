@@ -55,16 +55,16 @@ use crate::{
     common::{
         consts::{OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE},
         enums::{
-            OKXAlgoOrderType, OKXBookAction, OKXCandleConfirm, OKXGreeksType, OKXInstrumentStatus,
-            OKXInstrumentType, OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXSide,
-            OKXTargetCurrency, OKXTriggerType,
+            OKXAlgoOrderStatus, OKXAlgoOrderType, OKXBookAction, OKXCandleConfirm, OKXGreeksType,
+            OKXInstrumentStatus, OKXInstrumentType, OKXOrderCategory, OKXOrderStatus, OKXOrderType,
+            OKXSide, OKXTargetCurrency, OKXTriggerType,
         },
         models::OKXInstrument,
         parse::{
             determine_order_type_with_alt, is_market_price, okx_channel_to_bar_spec,
             okx_status_to_market_action, parse_client_order_id, parse_fee, parse_fee_currency,
             parse_funding_rate_msg, parse_instrument_any, parse_instrument_id, parse_message_vec,
-            parse_millisecond_timestamp, parse_price, parse_quantity,
+            parse_millisecond_timestamp, parse_parent_client_order_id, parse_price, parse_quantity,
             parse_spread_order_status_report as parse_common_spread_order_status_report,
         },
     },
@@ -1502,12 +1502,7 @@ pub fn parse_algo_order_status_report(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
-    // For algo orders, use algo_cl_ord_id if cl_ord_id is empty
-    let client_order_id = if msg.cl_ord_id.is_empty() {
-        parse_client_order_id(&msg.algo_cl_ord_id)
-    } else {
-        parse_client_order_id(&msg.cl_ord_id)
-    };
+    let client_order_id = parse_parent_client_order_id(Some(&msg.algo_cl_ord_id), &msg.cl_ord_id);
 
     // For algo orders that haven't triggered, ord_id will be empty, use algo_id instead
     let venue_order_id = if msg.ord_id.is_empty() {
@@ -1524,11 +1519,13 @@ pub fn parse_algo_order_status_report(
 
     let quantity = parse_algo_order_quantity(msg, instrument)?;
 
-    // For algo orders, actual_sz represents filled quantity (if any)
-    let filled_qty = if msg.actual_sz.is_empty() || msg.actual_sz == "0" {
-        Quantity::zero(instrument.size_precision())
-    } else {
+    let filled_qty = if msg.state == OKXAlgoOrderStatus::Filled
+        && !msg.actual_sz.is_empty()
+        && msg.actual_sz != "0"
+    {
         parse_quantity(msg.actual_sz.as_str(), instrument.size_precision())?
+    } else {
+        Quantity::zero(instrument.size_precision())
     };
 
     // Parse limit price if it exists (not -1)
@@ -1703,14 +1700,8 @@ pub fn parse_order_status_report(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
-    // For triggered algo child orders, OKX assigns a new cl_ord_id and keeps
-    // the parent's ID in algo_cl_ord_id. Prefer the parent ID so the report
-    // matches the tracked order in Nautilus.
-    let client_order_id = msg
-        .algo_cl_ord_id
-        .as_deref()
-        .and_then(parse_client_order_id)
-        .or_else(|| parse_client_order_id(&msg.cl_ord_id));
+    let client_order_id =
+        parse_parent_client_order_id(msg.algo_cl_ord_id.as_deref(), &msg.cl_ord_id);
     let venue_order_id = VenueOrderId::new(msg.ord_id);
     let order_side: OrderSide = msg.side.into();
 
@@ -2086,12 +2077,8 @@ pub fn parse_fill_report(
     previous_filled_qty: Option<Quantity>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<FillReport>> {
-    // For triggered algo child orders, prefer the parent algo_cl_ord_id
-    let client_order_id = msg
-        .algo_cl_ord_id
-        .as_deref()
-        .and_then(parse_client_order_id)
-        .or_else(|| parse_client_order_id(&msg.cl_ord_id));
+    let client_order_id =
+        parse_parent_client_order_id(msg.algo_cl_ord_id.as_deref(), &msg.cl_ord_id);
     let venue_order_id = VenueOrderId::new(msg.ord_id);
 
     // OKX may not provide a `trade_id` (some algo trigger payloads, manual
@@ -4618,6 +4605,78 @@ mod tests {
         } else {
             panic!("Expected Order report");
         }
+    }
+
+    #[rstest]
+    fn test_parse_triggered_algo_order_preserves_parent_identity() {
+        let json_data = load_test_json("ws_orders_algo.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXAlgoOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+        let msg = &data[2];
+
+        assert_eq!(msg.state, OKXAlgoOrderStatus::OrderPlaced);
+        assert_eq!(msg.algo_cl_ord_id, "STOP003BTCUSDT20250120");
+        assert_eq!(msg.cl_ord_id, "706620792746729474_0");
+        assert_eq!(msg.actual_sz, "0.01");
+
+        let account_id = AccountId::new("OKX-001");
+        let instrument = create_stub_instrument();
+        let mut instruments = AHashMap::new();
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+
+        let report = parse_algo_order_msg(msg, account_id, &instruments, UnixNanos::default())
+            .unwrap()
+            .unwrap();
+        let ExecutionReport::Order(report) = report else {
+            panic!("Expected Order report");
+        };
+
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::from("STOP003BTCUSDT20250120"))
+        );
+        assert_eq!(
+            report.venue_order_id,
+            VenueOrderId::from("706620792746729999")
+        );
+        assert_eq!(report.order_status, OrderStatus::Triggered);
+        assert_eq!(report.filled_qty, Quantity::from("0.00000000"));
+    }
+
+    #[rstest]
+    fn test_parse_filled_algo_order_uses_actual_quantity() {
+        let json_data = load_test_json("ws_orders_algo.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXAlgoOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+        let msg = &data[4];
+
+        assert_eq!(msg.state, OKXAlgoOrderStatus::Filled);
+        assert_eq!(msg.actual_sz, "0.005");
+
+        let instrument = create_stub_instrument();
+        let mut instruments = AHashMap::new();
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+
+        let report = parse_algo_order_msg(
+            msg,
+            AccountId::new("OKX-001"),
+            &instruments,
+            UnixNanos::default(),
+        )
+        .unwrap()
+        .unwrap();
+        let ExecutionReport::Order(report) = report else {
+            panic!("Expected Order report");
+        };
+
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.filled_qty, Quantity::from("0.00500000"));
     }
 
     #[rstest]
