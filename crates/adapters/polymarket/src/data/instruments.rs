@@ -245,11 +245,13 @@ pub(super) async fn refresh_expired_market_closure(
     }
 
     for instrument in &updated {
-        if let Err(e) = sender.send(DataEvent::Instrument(instrument.clone())) {
-            log::warn!(
-                "Failed to publish market closure update for {}: {e}",
-                instrument.id()
-            );
+        let instrument_id = instrument.id();
+
+        // Retirement wins if the instrument was removed after the cache update
+        if let Some(latest) = cache.get_cloned(&instrument_id)
+            && let Err(e) = sender.send(DataEvent::Instrument(latest))
+        {
+            log::warn!("Failed to publish market closure update for {instrument_id}: {e}");
         }
     }
 
@@ -653,7 +655,7 @@ mod tests {
         let instrument = InstrumentAny::BinaryOption(past_end_open_instrument());
         let instruments = Arc::new(AtomicMap::new());
         instruments.insert(instrument.id(), instrument.clone());
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let addr = market_closure_server(closed, fail).await;
         let client = PolymarketGammaHttpClient::new(
             Some(format!("http://{addr}")),
@@ -668,6 +670,7 @@ mod tests {
 
         if fail {
             assert!(result.is_err());
+            assert!(rx.try_recv().is_err());
             return;
         }
 
@@ -677,6 +680,19 @@ mod tests {
         assert_eq!(market_closed(cached), Some(closed));
         // Gamma reports a 0.01 tick size; the cached definition keeps its own 0.001.
         assert_eq!(cached.price_increment(), Price::from("0.001"));
+
+        if closed {
+            let event = rx.try_recv().expect("closure instrument event");
+            let DataEvent::Instrument(published) = event else {
+                panic!("Expected instrument event, was {event:?}");
+            };
+            assert_eq!(published.id(), instrument.id());
+            assert_eq!(market_closed(&published), Some(true));
+            assert_eq!(published.price_increment(), Price::from("0.001"));
+            assert!(rx.try_recv().is_err());
+        } else {
+            assert!(rx.try_recv().is_err());
+        }
     }
 
     // Serves the first request only, echoing every requested condition ID back as closed.

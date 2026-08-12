@@ -535,10 +535,13 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
 
             if let Some(e) = rebuild_error {
                 log::error!("Failed to rebuild instrument for tick size change: {e}");
-            } else if let Some(rebuilt) = rebuilt
-                && let Err(e) = ctx.data_sender.send(DataEvent::Instrument(rebuilt))
-            {
-                log::error!("Failed to emit rebuilt instrument: {e}");
+            } else if let Some(rebuilt) = rebuilt {
+                // Retirement wins if the instrument was removed after the cache update
+                if let Some(latest) = ctx.instruments.get_cloned(&rebuilt.id())
+                    && let Err(e) = ctx.data_sender.send(DataEvent::Instrument(latest))
+                {
+                    log::error!("Failed to emit rebuilt instrument: {e}");
+                }
             }
 
             // Book epoch transition; see module docs.
@@ -3607,7 +3610,7 @@ mod tests {
         let asset_id_str = "0xTOKEN_CLOSURE";
         let market = "0xMARKET";
 
-        let (ctx, _data_rx) = make_ws_ctx();
+        let (ctx, mut data_rx) = make_ws_ctx();
         let inst = seed_instrument_with_context(
             &ctx,
             asset_id_str,
@@ -3634,6 +3637,15 @@ mod tests {
 
         assert_eq!(rebuilt.price_increment(), Price::from("0.01"));
         assert_eq!(crate::filters::market_closed(&rebuilt), Some(closed));
+
+        let event = data_rx.try_recv().expect("tick size instrument event");
+        let DataEvent::Instrument(published) = event else {
+            panic!("Expected instrument event, was {event:?}");
+        };
+        assert_eq!(published.id(), instrument_id);
+        assert_eq!(published.price_increment(), Price::from("0.01"));
+        assert_eq!(crate::filters::market_closed(&published), Some(closed));
+        assert!(data_rx.try_recv().is_err());
     }
 
     #[rstest]
