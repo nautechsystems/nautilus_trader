@@ -2077,6 +2077,10 @@ mod tests {
             &calculate_portfolio_greeks(&calculator, None).unwrap(),
             &expected,
         );
+        assert_portfolio_greeks_eq(
+            &calculate_portfolio_greeks(&calculator, Some(PositionSide::Flat)).unwrap(),
+            &PortfolioGreeks::new(now_ns, now_ns, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        );
     }
 
     #[rstest]
