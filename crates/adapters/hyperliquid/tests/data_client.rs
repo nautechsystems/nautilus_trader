@@ -743,6 +743,13 @@ fn twap_slice_fill_data_type(user: &str) -> DataType {
     )
 }
 
+fn twap_fixture_user(filename: &str) -> String {
+    load_json(filename)["data"]["user"]
+        .as_str()
+        .expect("TWAP fixture missing user")
+        .to_string()
+}
+
 async fn drain_initial_events(rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>) {
     wait_until_async(
         || {
@@ -785,6 +792,38 @@ async fn wait_for_public_trade_event(
             let found = rx
                 .try_recv()
                 .is_ok_and(|event| is_public_trade_event(event, instrument_id, &data_type));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+async fn wait_for_twap_history_event(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    data_type: DataType,
+) {
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|event| is_twap_history_event(event, &data_type));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+async fn wait_for_twap_slice_fill_event(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    data_type: DataType,
+) {
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|event| is_twap_slice_fill_event(event, &data_type));
             async move { found }
         },
         Duration::from_secs(5),
@@ -864,6 +903,38 @@ fn is_public_trade_event(
         .is_some_and(|trade| {
             trade.instrument_id == instrument_id
                 && trade.trade_id == "100001"
+                && custom.data_type == *data_type
+        })
+}
+
+fn is_twap_history_event(event: DataEvent, data_type: &DataType) -> bool {
+    let DataEvent::Data(Data::Custom(custom)) = event else {
+        return false;
+    };
+
+    custom
+        .data
+        .as_any()
+        .downcast_ref::<HyperliquidTwapHistory>()
+        .is_some_and(|history| {
+            history.user == data_type.identifier().unwrap_or_default()
+                && history.is_snapshot
+                && custom.data_type == *data_type
+        })
+}
+
+fn is_twap_slice_fill_event(event: DataEvent, data_type: &DataType) -> bool {
+    let DataEvent::Data(Data::Custom(custom)) = event else {
+        return false;
+    };
+
+    custom
+        .data
+        .as_any()
+        .downcast_ref::<HyperliquidTwapSliceFill>()
+        .is_some_and(|fill| {
+            fill.user == data_type.identifier().unwrap_or_default()
+                && fill.twap_id > 0
                 && custom.data_type == *data_type
         })
 }
@@ -1442,6 +1513,42 @@ async fn test_data_client_subscribe_twap_history_requires_user_metadata() {
 
 #[rstest]
 #[tokio::test]
+async fn test_data_client_subscribe_twap_history_rejects_non_canonical_user_metadata() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    drain_initial_events(&mut rx).await;
+
+    let user = twap_fixture_user("ws_user_twap_history.json");
+    let data_type = twap_history_data_type(&format!(" {user} "));
+    let err = client
+        .subscribe(SubscribeCustomData::new(
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+            data_type,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect_err("non-canonical user metadata must fail");
+
+    assert_eq!(
+        err.to_string(),
+        "metadata['user'] must not contain surrounding whitespace",
+    );
+    assert!(state.subscriptions.lock().await.is_empty());
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_data_client_subscribe_unsubscribe_twap_history() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
@@ -1453,8 +1560,8 @@ async fn test_data_client_subscribe_unsubscribe_twap_history() {
     client.connect().await.unwrap();
     drain_initial_events(&mut rx).await;
 
-    let user = "0x1234567890123456789012345678901234567890";
-    let data_type = twap_history_data_type(user);
+    let user = twap_fixture_user("ws_user_twap_history.json");
+    let data_type = twap_history_data_type(&user);
     client
         .subscribe(SubscribeCustomData::new(
             Some(*HYPERLIQUID_CLIENT_ID),
@@ -1470,11 +1577,13 @@ async fn test_data_client_subscribe_unsubscribe_twap_history() {
     wait_until_async(
         || {
             let state = state.clone();
+            let user = user.clone();
             async move {
                 state.subscriptions.lock().await.iter().any(|subscription| {
                     subscription.get("type").and_then(|value| value.as_str())
                         == Some("userTwapHistory")
-                        && subscription.get("user").and_then(|value| value.as_str()) == Some(user)
+                        && subscription.get("user").and_then(|value| value.as_str())
+                            == Some(user.as_str())
                 })
             }
         },
@@ -1482,21 +1591,7 @@ async fn test_data_client_subscribe_unsubscribe_twap_history() {
     )
     .await;
 
-    wait_until_async(
-        || {
-            let found = rx.try_recv().is_ok_and(|event| match event {
-                DataEvent::Data(Data::Custom(custom)) => custom
-                    .data
-                    .as_any()
-                    .downcast_ref::<HyperliquidTwapHistory>()
-                    .is_some_and(|history| !history.user.is_empty() && history.is_snapshot),
-                _ => false,
-            });
-            async move { found }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_twap_history_event(&mut rx, data_type.clone()).await;
 
     client
         .unsubscribe(&UnsubscribeCustomData::new(
@@ -1545,8 +1640,8 @@ async fn test_data_client_subscribe_unsubscribe_twap_slice_fills() {
     client.connect().await.unwrap();
     drain_initial_events(&mut rx).await;
 
-    let user = "0x1234567890123456789012345678901234567890";
-    let data_type = twap_slice_fill_data_type(user);
+    let user = twap_fixture_user("ws_user_twap_slice_fills.json");
+    let data_type = twap_slice_fill_data_type(&user);
     client
         .subscribe(SubscribeCustomData::new(
             Some(*HYPERLIQUID_CLIENT_ID),
@@ -1562,11 +1657,13 @@ async fn test_data_client_subscribe_unsubscribe_twap_slice_fills() {
     wait_until_async(
         || {
             let state = state.clone();
+            let user = user.clone();
             async move {
                 state.subscriptions.lock().await.iter().any(|subscription| {
                     subscription.get("type").and_then(|value| value.as_str())
                         == Some("userTwapSliceFills")
-                        && subscription.get("user").and_then(|value| value.as_str()) == Some(user)
+                        && subscription.get("user").and_then(|value| value.as_str())
+                            == Some(user.as_str())
                 })
             }
         },
@@ -1574,21 +1671,7 @@ async fn test_data_client_subscribe_unsubscribe_twap_slice_fills() {
     )
     .await;
 
-    wait_until_async(
-        || {
-            let found = rx.try_recv().is_ok_and(|event| match event {
-                DataEvent::Data(Data::Custom(custom)) => custom
-                    .data
-                    .as_any()
-                    .downcast_ref::<HyperliquidTwapSliceFill>()
-                    .is_some_and(|fill| !fill.user.is_empty() && fill.twap_id > 0),
-                _ => false,
-            });
-            async move { found }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_twap_slice_fill_event(&mut rx, data_type.clone()).await;
 
     client
         .unsubscribe(&UnsubscribeCustomData::new(
