@@ -12,9 +12,10 @@ from pathlib import Path
 import pytest
 
 
-def _load_generate_stubs_module():
-    module_path = Path(__file__).resolve().parents[2] / "generate_stubs.py"
-    module_name = "generate_stubs_module"
+WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _load_module(module_path: Path, module_name: str):
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     assert spec is not None
@@ -24,7 +25,14 @@ def _load_generate_stubs_module():
     return module
 
 
-generate_stubs = _load_generate_stubs_module()
+generate_stubs = _load_module(
+    WORKSPACE_ROOT / "python" / "generate_stubs.py",
+    "generate_stubs_module",
+)
+check_pyo3_names = _load_module(
+    WORKSPACE_ROOT / ".pre-commit-hooks" / "check_pyo3_names.py",
+    "check_pyo3_names_module",
+)
 
 
 @pytest.mark.parametrize(
@@ -1518,7 +1526,6 @@ class Client:
     assert "environment: BitmexEnvironment = BitmexEnvironment.MAINNET" in updated
 
 
-WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 STUB_ROOT = WORKSPACE_ROOT / "python" / "nautilus_trader"
 
 STUB_ENUM_CLASS_RE = re.compile(r"^class\s+(\w+)\s*\(\s*(?:enum\.)?Enum\s*\)\s*:")
@@ -1579,6 +1586,8 @@ WRITABLE_CONFIG_PROPERTIES = {
         "InteractiveBrokersInstrumentProviderConfig",
     ): {"cache_path"},
 }
+
+PUBLIC_MEMBER_AFFIX_ALLOWLIST = check_pyo3_names.PUBLIC_SUFFIX_NAMES
 
 # Generated stubs intentionally omit every public property on these wire-schema,
 # acknowledgement, and error DTOs. They are confirmed non-contract runtime members
@@ -1790,11 +1799,12 @@ def test_stub_constructor_matches_runtime(module_name, class_name):
     assert stub_defaults == runtime_defaults
 
 
-def test_stub_members_match_runtime_names():
+def test_stub_members_match_runtime_names():  # noqa: C901
     forward_missing = []
     reverse_missing = []
     kind_mismatches = []
-    raw_runtime_names = []
+    affixed_names = set()
+    runtime_name_mismatches = []
 
     for stub_path in sorted(STUB_ROOT.rglob("__init__.pyi")):
         relative_package = stub_path.relative_to(STUB_ROOT).parent
@@ -1814,15 +1824,28 @@ def test_stub_members_match_runtime_names():
             f"{module_name}.{name}"
             for name in sorted(_stub_names_missing_at_runtime(stub_names, runtime_names))
         )
-        raw_runtime_names.extend(
-            f"{module_name}.{name}" for name in sorted(runtime_names) if name.startswith("py_")
+        affixed_names.update(
+            f"{module_name}.{name}" for name in runtime_names | stub_names if _has_rust_affix(name)
         )
 
+        for name in stub_names:
+            if name not in runtime_names:
+                continue
+            runtime_name = getattr(getattr(module, name), "__name__", name)
+            if runtime_name != name or _has_rust_affix(runtime_name):
+                runtime_name_mismatches.append(f"{module_name}.{name} -> {runtime_name}")
+
         for stub_class in (node for node in stub_module.body if isinstance(node, ast.ClassDef)):
+            if _has_rust_affix(stub_class.name):
+                affixed_names.add(f"{module_name}.{stub_class.name}")
             runtime_class = getattr(module, stub_class.name, None)
             if not isinstance(runtime_class, type):
                 forward_missing.append(f"{module_name}.{stub_class.name}")
                 continue
+            if runtime_class.__name__ != stub_class.name:
+                runtime_name_mismatches.append(
+                    f"{module_name}.{stub_class.name} -> {runtime_class.__name__}",
+                )
 
             class_key = (module_name, stub_class.name)
             runtime_names = set(dir(runtime_class))
@@ -1832,11 +1855,23 @@ def test_stub_members_match_runtime_names():
                 f"{module_name}.{stub_class.name}.{name}"
                 for name in sorted(_stub_names_missing_at_runtime(stub_names, runtime_names))
             )
-            raw_runtime_names.extend(
+            affixed_names.update(
                 f"{module_name}.{stub_class.name}.{name}"
-                for name in sorted(runtime_names)
-                if name.startswith("py_")
+                for name in runtime_names | stub_names
+                if _has_rust_affix(name, PUBLIC_MEMBER_AFFIX_ALLOWLIST)
             )
+
+            for name, obj in runtime_class.__dict__.items():
+                if name.startswith("_") or not callable(obj):
+                    continue
+                runtime_name = getattr(obj, "__name__", name)
+                if runtime_name != name or _has_rust_affix(
+                    runtime_name,
+                    PUBLIC_MEMBER_AFFIX_ALLOWLIST,
+                ):
+                    runtime_name_mismatches.append(
+                        f"{module_name}.{stub_class.name}.{name} -> {runtime_name}",
+                    )
             _collect_reverse_member_drift(
                 class_key,
                 runtime_class,
@@ -1860,8 +1895,19 @@ def test_stub_members_match_runtime_names():
             kind_mismatches,
         )
     )
-    assert not raw_runtime_names, "Raw Rust names exposed at runtime:\n" + "\n".join(
-        raw_runtime_names,
+    assert not affixed_names, "Rust affixes exposed at runtime or in stubs:\n" + "\n".join(
+        sorted(affixed_names),
+    )
+    assert not runtime_name_mismatches, "Runtime __name__ values differ from public names:\n" + (
+        "\n".join(runtime_name_mismatches)
+    )
+
+
+def _has_rust_affix(name, allowed_names=frozenset()):
+    return name not in allowed_names and (
+        name.startswith("py_")
+        or name.endswith("_py")
+        or (name.startswith("Py") and len(name) > 2 and name[2].isupper())
     )
 
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Enforces PyO3 conventions:
 # - Functions with #[pyo3(name = "...")] must have Rust names prefixed with py_
+# - Python wrapper functions and classes must expose names without Rust affixes
 # - Adapter stub metadata must use the public adapter package path
 # - Standard Python exceptions must use error helper functions
 
@@ -31,7 +32,6 @@ while IFS=: read -r file line_num match; do
   if [[ "$match" =~ fn[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*) ]]; then
     fn_name="${BASH_REMATCH[1]}"
 
-    # Skip if already has py_ prefix
     [[ "$fn_name" =~ ^py_ ]] && continue
 
     echo -e "${RED}Error:${NC} PyO3 function missing py_ prefix in $file:$line_num"
@@ -52,6 +52,8 @@ if [ $VIOLATIONS -gt 0 ]; then
 fi
 
 echo "✓ All PyO3 naming conventions are valid"
+
+python3 -B "$(dirname "$0")/check_pyo3_names.py"
 
 # Check adapter module naming.
 echo "Checking adapter module paths..."
