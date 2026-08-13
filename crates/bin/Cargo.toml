@@ -43,6 +43,9 @@ clap.workspace = true
 chrono.workspace = true
 rand.workspace = true 
 
+[dev-dependencies]
+rstest.workspace = true
+
 
 [package.metadata.generate-rpm]
 name = "nautilus-trader"

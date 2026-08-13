@@ -1,7 +1,7 @@
 [runner]
 # Strategy to run. Switch between registered strategies by editing this value,
-# no recompilation needed. Registered: "grid_mm", "mmm"
-strategy = "grid_mm"
+# no recompilation needed. Registered: "grid_mm", "mmm", "obi_momentum"
+strategy = "obi_momentum"
 venue = "BYBIT"
 account_id = "BYBIT-001"
 run_id = "grid-mm-backtest"
@@ -160,6 +160,26 @@ vpin_spread_alpha = 2.0
 vpin_pull_threshold = 0.7
 bucket_target_volume = 1000.0
 timer_interval_secs = 5
+
+[obi_momentum]
+execution_environment = "backtest" # backtest, live, sandbox
+exchange = "bybit"
+trader_id = "TESTER-001"
+instrument_id = "OPUSDT-LINEAR.BYBIT"
+path = "/var/lib/nautilus-trader/"
+num_levels = 5
+weighted = false
+zscore_window = 50
+entry_threshold = 2.0
+reduce_threshold = 0.5
+close_threshold = 0.25
+trade_size = "10"
+max_position = "30"
+min_update_interval_ms = 0
+max_holding_secs = 300
+regime_filter_enabled = true
+regime_vol_window = 50
+regime_history_window = 500
 
 [avellaneda_stoikov]
 execution_environment = "backtest"

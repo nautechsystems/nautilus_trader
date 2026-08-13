@@ -7090,6 +7090,7 @@ dependencies = [
  "nautilus-persistence",
  "nautilus-trading",
  "rand 0.10.2",
+ "rstest",
  "rust_decimal",
  "rustls",
  "serde",

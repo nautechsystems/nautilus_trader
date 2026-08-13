@@ -29,12 +29,18 @@ use nautilus_model::{
 };
 use nautilus_trading::{Strategy, StrategyNative};
 
-use crate::config::{
-    Config, GridMarketMakerTomlConfig, MattiasMarketMakerTomlConfig, RunnerTomlConfig,
+use crate::{
+    config::{
+        Config, GridMarketMakerTomlConfig, MattiasMarketMakerTomlConfig, ObiMomentumTomlConfig,
+        RunnerTomlConfig,
+    },
+    exchange::Exchange,
+    strategy::{
+        grid_mm::{config::GridMarketMakerConfig, strategy::GridMarketMaker},
+        mmm::{config::MattiasMarketMakerConfig, strategy::MattiasMarketMaker},
+        obi_momentum::{config::ObiMomentumConfig, strategy::ObiMomentum},
+    },
 };
-use crate::exchange::Exchange;
-use crate::strategy::grid_mm::{config::GridMarketMakerConfig, strategy::GridMarketMaker};
-use crate::strategy::mmm::{config::MattiasMarketMakerConfig, strategy::MattiasMarketMaker};
 
 fn from_box_err(e: &dyn std::error::Error) -> anyhow::Error {
     anyhow::Error::msg(e.to_string())
@@ -93,6 +99,28 @@ impl StrategyToml for MattiasMarketMakerTomlConfig {
     }
 }
 
+impl StrategyToml for ObiMomentumTomlConfig {
+    fn exchange(&self) -> &str {
+        &self.exchange
+    }
+
+    fn trader_id(&self) -> &str {
+        &self.trader_id
+    }
+
+    fn instrument_id(&self) -> &str {
+        &self.instrument_id
+    }
+
+    fn path(&self) -> &str {
+        &self.path
+    }
+
+    fn execution_environment(&self) -> Environment {
+        self.execution_environment
+    }
+}
+
 /// Runs the strategy selected in `[runner]` of the given config.
 ///
 /// The strategy is chosen at runtime by name, so switching strategies
@@ -115,7 +143,17 @@ pub async fn run(config: &Config, runner: &RunnerTomlConfig) -> Result<()> {
             let strategy = MattiasMarketMaker::new(&MattiasMarketMakerConfig::try_from(toml)?);
             run_strategy(toml, runner, strategy).await
         }
-        other => bail!("unknown strategy '{other}'. Registered strategies: 'grid_mm', 'mmm'"),
+        "obi_momentum" => {
+            let toml = config
+                .obi_momentum
+                .as_ref()
+                .context("[runner] strategy 'obi_momentum' requires a [obi_momentum] section")?;
+            let strategy = ObiMomentum::new(ObiMomentumConfig::try_from(toml)?);
+            run_strategy(toml, runner, strategy).await
+        }
+        other => bail!(
+            "unknown strategy '{other}'. Registered strategies: 'grid_mm', 'mmm', 'obi_momentum'"
+        ),
     }
 }
 

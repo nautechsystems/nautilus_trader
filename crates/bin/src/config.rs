@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::{path::Path, str::FromStr};
+
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use nautilus_common::enums::Environment;
 use nautilus_model::types::Quantity;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, de};
-use std::path::Path;
-use std::str::FromStr;
 
 #[derive(Debug, Deserialize)]
 pub struct GridMarketMakerTomlConfig {
@@ -40,6 +40,40 @@ pub struct GridMarketMakerTomlConfig {
     pub expire_time_secs: Option<u64>,
     #[serde(default)]
     pub on_cancel_resubmit: bool,
+    #[serde(default = "default_recorder_path")]
+    pub path: String,
+    #[serde(deserialize_with = "deserialize_environment")]
+    pub execution_environment: Environment,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ObiMomentumTomlConfig {
+    pub exchange: String,
+    pub trader_id: String,
+    pub instrument_id: String,
+    #[serde(default = "default_num_levels")]
+    pub num_levels: usize,
+    #[serde(default)]
+    pub weighted: bool,
+    #[serde(default = "default_zscore_window")]
+    pub zscore_window: usize,
+    #[serde(default = "default_entry_threshold")]
+    pub entry_threshold: f64,
+    #[serde(default = "default_reduce_threshold")]
+    pub reduce_threshold: f64,
+    #[serde(default = "default_close_threshold")]
+    pub close_threshold: f64,
+    pub max_position: String,
+    pub trade_size: Option<String>,
+    #[serde(default)]
+    pub min_update_interval_ms: u64,
+    pub max_holding_secs: Option<u64>,
+    #[serde(default)]
+    pub regime_filter_enabled: bool,
+    #[serde(default = "default_regime_vol_window")]
+    pub regime_vol_window: usize,
+    #[serde(default = "default_regime_history_window")]
+    pub regime_history_window: usize,
     #[serde(default = "default_recorder_path")]
     pub path: String,
     #[serde(deserialize_with = "deserialize_environment")]
@@ -106,6 +140,7 @@ pub struct Config {
     pub grid_mm: Option<GridMarketMakerTomlConfig>,
     pub recorder: Option<RecorderTomlConfig>,
     pub mmm: Option<MattiasMarketMakerTomlConfig>,
+    pub obi_momentum: Option<ObiMomentumTomlConfig>,
     pub runner: Option<RunnerTomlConfig>,
 }
 
@@ -132,6 +167,30 @@ where
 
 fn default_num_levels() -> usize {
     3
+}
+
+fn default_zscore_window() -> usize {
+    50
+}
+
+fn default_entry_threshold() -> f64 {
+    2.0
+}
+
+fn default_reduce_threshold() -> f64 {
+    0.5
+}
+
+fn default_close_threshold() -> f64 {
+    0.25
+}
+
+fn default_regime_vol_window() -> usize {
+    50
+}
+
+fn default_regime_history_window() -> usize {
+    500
 }
 
 fn default_venue() -> String {
