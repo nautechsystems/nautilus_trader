@@ -801,6 +801,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash .pre-commit-hooks/test_check_unicode_typography.sh
 	$Q bash scripts/ci/test-check-docker-toolchain-pins.bash
 	$Q bash scripts/ci/test-check-miri-toolchain.bash
+	$Q bash scripts/ci/test-check-nightly-merge-status.bash
 	$Q bash scripts/ci/test-check-workspace-test-coverage.bash
 	$Q bash scripts/ci/test-github-action-shas.bash
 	$Q bash scripts/ci/test-plan.bash
