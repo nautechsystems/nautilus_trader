@@ -27,7 +27,10 @@ slow-timeout = { period = "300s" }
 filter = 'binary(grid_mm_itch) | binary(backtest_node_itch) | binary(orderbook_integration) | binary(large_data) | binary(test_pinned_data_direct_session)'
 test-group = 'large-data-tests'
 
-# Websocket and data client tests can be flaky due to timing on low-spec runners
+# Execution client, websocket, and data client tests spawn order and stream
+# tasks on the global tokio runtime, separate from the #[tokio::test] runtime.
+# Under heavy parallelism the global runtime's worker threads can be starved,
+# causing internal wait-for-request timeouts (e.g. wait_for_command_requests).
 [[profile.default.overrides]]
-filter = 'binary(websocket) | binary(data_client)'
+filter = 'binary(websocket) | binary(data_client) | test(exec_client)'
 retries = 3
