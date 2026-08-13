@@ -35,6 +35,7 @@
 
 use std::{
     cell::RefCell,
+    collections::VecDeque,
     net::SocketAddr,
     path::PathBuf,
     rc::Rc,
@@ -168,9 +169,14 @@ struct TestServerState {
     maker_only_api_key_indexes: Arc<tokio::sync::Mutex<Vec<i64>>>,
     maker_only_authorizations: Arc<tokio::sync::Mutex<Vec<String>>>,
     active_orders_calls: Arc<AtomicUsize>,
+    tx_calls: Arc<AtomicUsize>,
     inactive_orders_calls: Arc<AtomicUsize>,
     trades_calls: Arc<AtomicUsize>,
     active_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    active_orders_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
+    tx_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
+    tx_response_blocked: Arc<AtomicBool>,
+    tx_response_release: Arc<tokio::sync::Notify>,
     inactive_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     trades_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     next_rest_send_tx_response: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -199,9 +205,14 @@ impl Default for TestServerState {
             maker_only_api_key_indexes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             maker_only_authorizations: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             active_orders_calls: Arc::new(AtomicUsize::new(0)),
+            tx_calls: Arc::new(AtomicUsize::new(0)),
             inactive_orders_calls: Arc::new(AtomicUsize::new(0)),
             trades_calls: Arc::new(AtomicUsize::new(0)),
             active_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
+            active_orders_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+            tx_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+            tx_response_blocked: Arc::new(AtomicBool::new(false)),
+            tx_response_release: Arc::new(tokio::sync::Notify::new()),
             inactive_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             trades_response: Arc::new(tokio::sync::Mutex::new(None)),
             next_rest_send_tx_response: Arc::new(tokio::sync::Mutex::new(None)),
@@ -303,10 +314,61 @@ async fn account_active_orders(
     Query(_query): Query<std::collections::HashMap<String, String>>,
 ) -> Response {
     state.active_orders_calls.fetch_add(1, Ordering::Relaxed);
+    if let Some(body) = state.active_orders_responses.lock().await.pop_front() {
+        return (StatusCode::OK, body.to_string()).into_response();
+    }
+
     if let Some(body) = state.active_orders_response.lock().await.clone() {
         return (StatusCode::OK, body.to_string()).into_response();
     }
     (StatusCode::OK, json!({"code":200,"orders":[]}).to_string()).into_response()
+}
+
+async fn tx(
+    State(state): State<Arc<TestServerState>>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    state.tx_calls.fetch_add(1, Ordering::Relaxed);
+    if state.tx_response_blocked.load(Ordering::Acquire) {
+        state.tx_response_release.notified().await;
+    }
+    let Some(mut body) = state.tx_responses.lock().await.pop_front() else {
+        return (
+            StatusCode::BAD_REQUEST,
+            json!({"code":21500,"message":"transaction not found"}).to_string(),
+        )
+            .into_response();
+    };
+    let Some(tx_hash) = query
+        .get("value")
+        .filter(|_| query.get("by").map(String::as_str) == Some("hash"))
+    else {
+        return (
+            StatusCode::BAD_REQUEST,
+            json!({"code":20001,"message":"unexpected transaction query"}).to_string(),
+        )
+            .into_response();
+    };
+    let frames = state.send_txs.lock().await;
+    let Some(frame) = frames.last() else {
+        return (
+            StatusCode::BAD_REQUEST,
+            json!({"code":21500,"message":"transaction not found"}).to_string(),
+        )
+            .into_response();
+    };
+    let info = send_tx_info(frame);
+    let object = body
+        .as_object_mut()
+        .expect("transaction fixture must be an object");
+    object.insert("code".to_string(), json!(200));
+    object.insert("hash".to_string(), json!(tx_hash));
+    object.insert("type".to_string(), json!(14));
+    object.insert("info".to_string(), json!(info.to_string()));
+    object.insert("account_index".to_string(), info["AccountIndex"].clone());
+    object.insert("api_key_index".to_string(), info["ApiKeyIndex"].clone());
+    object.insert("nonce".to_string(), info["Nonce"].clone());
+    (StatusCode::OK, body.to_string()).into_response()
 }
 
 async fn account_inactive_orders(
@@ -552,6 +614,7 @@ fn build_router(state: Arc<TestServerState>) -> Router {
             get(account_inactive_orders),
         )
         .route("/api/v1/trades", get(trades))
+        .route("/api/v1/tx", get(tx))
         .route("/api/v1/sendTx", post(send_tx_post_stub))
         .route("/api/v1/sendTxBatch", post(send_tx_batch_post_stub))
         .route("/stream", get(handle_ws_upgrade))
@@ -877,6 +940,17 @@ async fn await_send_tx_count(state: &TestServerState, target: usize) {
             async move { state.send_txs.lock().await.len() >= target }
         },
         Duration::from_secs(5),
+    )
+    .await;
+}
+
+async fn await_tx_calls(state: &TestServerState, target: usize) {
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.tx_calls.load(Ordering::Relaxed) >= target }
+        },
+        Duration::from_secs(8),
     )
     .await;
 }
@@ -2185,6 +2259,361 @@ async fn test_submit_order_venue_rejection_emits_order_rejected() {
         }
         other => panic!("expected OrderRejected, was {other:?}"),
     }
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_acknowledged_create_failed_by_sequencer_emits_order_rejected() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    state.tx_responses.lock().await.push_back(json!({
+        "status": 0,
+        "event_info": json!({"ae":"reduce only increases position"}).to_string(),
+    }));
+
+    let order = make_limit_order(
+        "O-ACK-CREATE-REJECT",
+        OrderSide::Sell,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        true,
+    );
+    cache_order(&cache, order.clone());
+    client.submit_order(submit_command(&order)).expect("submit");
+    await_send_tx_count(&state, 1).await;
+    let first_info = send_tx_info(&state.send_txs().await[0]);
+
+    assert!(matches!(
+        next_order_event(&mut rx, Duration::from_secs(2)).await,
+        Some(OrderEventAny::Submitted(_)),
+    ));
+    let rejected = next_order_event(&mut rx, Duration::from_secs(4))
+        .await
+        .expect("acknowledged create rejection");
+
+    match rejected {
+        OrderEventAny::Rejected(event) => {
+            assert_eq!(event.client_order_id, order.client_order_id());
+            assert!(
+                event.reason.as_str().contains("sequencer rejected"),
+                "unexpected rejection reason: {}",
+                event.reason,
+            );
+            assert!(
+                event
+                    .reason
+                    .as_str()
+                    .contains("reduce only increases position"),
+                "unexpected rejection reason: {}",
+                event.reason,
+            );
+        }
+        other => panic!("expected OrderRejected, was {other:?}"),
+    }
+    assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.tx_calls.load(Ordering::Relaxed), 1);
+
+    client
+        .submit_order(submit_command(&order))
+        .expect("resubmit");
+    await_send_tx_count(&state, 2).await;
+    let second_info = send_tx_info(&state.send_txs().await[1]);
+    assert_eq!(
+        second_info["ClientOrderIndex"],
+        first_info["ClientOrderIndex"],
+    );
+    assert_eq!(
+        second_info["Nonce"].as_i64(),
+        first_info["Nonce"].as_i64().map(|nonce| nonce + 1),
+    );
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_acknowledged_create_allows_delayed_active_order() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.expect("connect");
+
+    let order = make_limit_order(
+        "O-ACK-CREATE-DELAYED",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    cache_order(&cache, order.clone());
+    client.submit_order(submit_command(&order)).expect("submit");
+    await_send_tx_count(&state, 1).await;
+    let info = send_tx_info(&state.send_txs().await[0]);
+    let client_order_index = info["ClientOrderIndex"].as_i64().unwrap();
+    let nonce = info["Nonce"].as_i64().unwrap();
+    let mut active_order = http_order_fixture(
+        "281476929510500",
+        &client_order_index.to_string(),
+        "open",
+        "0.0000",
+    );
+    active_order["nonce"] = json!(nonce);
+    let mut stale_order = active_order.clone();
+    stale_order["order_index"] = json!("281476929510499");
+    stale_order["nonce"] = json!(nonce - 1);
+    state.active_orders_responses.lock().await.extend([
+        http_orders_payload(&[stale_order], None),
+        http_orders_payload(&[active_order], None),
+    ]);
+    state.tx_responses.lock().await.push_back(json!({
+        "status": 1,
+        "event_info": json!({"ae":""}).to_string(),
+    }));
+
+    let report = next_event_matching(&mut rx, Duration::from_secs(7), |event| {
+        matches!(event, ExecutionEvent::Report(ExecutionReport::Order(_)))
+    })
+    .await
+    .expect("delayed order status report");
+    match report {
+        ExecutionEvent::Report(ExecutionReport::Order(report)) => {
+            assert_eq!(report.client_order_id, Some(order.client_order_id()));
+            assert_eq!(report.venue_order_id, VenueOrderId::from("281476929510500"));
+            assert_eq!(report.order_status, OrderStatus::Accepted);
+        }
+        other => panic!("expected OrderStatusReport, was {other:?}"),
+    }
+    assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(state.tx_calls.load(Ordering::Relaxed), 1);
+    assert!(
+        !matches!(
+            next_order_event(&mut rx, Duration::from_millis(500)).await,
+            Some(OrderEventAny::Rejected(_)),
+        ),
+        "delayed valid create must not be rejected",
+    );
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_order_event_wins_create_probe_race() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    state.tx_response_blocked.store(true, Ordering::Release);
+    state.tx_responses.lock().await.push_back(json!({
+        "status": 0,
+        "event_info": json!({"ae":"reduce only increases position"}).to_string(),
+    }));
+
+    let order = make_limit_order(
+        "O-ACK-CREATE-RACE",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    cache_order(&cache, order.clone());
+    client.submit_order(submit_command(&order)).expect("submit");
+    await_send_tx_count(&state, 1).await;
+    let info = send_tx_info(&state.send_txs().await[0]);
+    let client_order_index = info["ClientOrderIndex"].as_i64().unwrap();
+    let nonce = info["Nonce"].as_i64().unwrap();
+    assert!(matches!(
+        next_order_event(&mut rx, Duration::from_secs(2)).await,
+        Some(OrderEventAny::Submitted(_)),
+    ));
+
+    await_tx_calls(&state, 1).await;
+    state.push_frame(&json!({
+        "type": "update/account_all_orders",
+        "channel": format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),
+        "orders": {
+            "0": [account_all_orders_open_entry(
+                client_order_index,
+                "281476929510501",
+                &client_order_index.to_string(),
+                nonce,
+            )]
+        }
+    }));
+    assert!(matches!(
+        next_order_event(&mut rx, Duration::from_secs(2)).await,
+        Some(OrderEventAny::Accepted(_)),
+    ));
+    state.tx_response_release.notify_one();
+    assert!(
+        !matches!(
+            next_order_event(&mut rx, Duration::from_millis(2500)).await,
+            Some(OrderEventAny::Rejected(_)),
+        ),
+        "account order event must prevent a probe rejection",
+    );
+    assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.tx_calls.load(Ordering::Relaxed), 1);
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_during_create_probe_preserves_identity() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    state.tx_response_blocked.store(true, Ordering::Release);
+    state.tx_responses.lock().await.push_back(json!({
+        "status": 0,
+        "event_info": json!({"ae":"reduce only increases position"}).to_string(),
+    }));
+
+    let order = make_limit_order(
+        "O-ACK-CREATE-RECONNECT",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    cache_order(&cache, order.clone());
+    client.submit_order(submit_command(&order)).expect("submit");
+    await_send_tx_count(&state, 1).await;
+    let info = send_tx_info(&state.send_txs().await[0]);
+    let client_order_index = info["ClientOrderIndex"].as_i64().unwrap();
+    let nonce = info["Nonce"].as_i64().unwrap();
+    assert!(matches!(
+        next_order_event(&mut rx, Duration::from_secs(2)).await,
+        Some(OrderEventAny::Submitted(_)),
+    ));
+    await_tx_calls(&state, 1).await;
+
+    let subscribe_count = state.subscribes().await.len();
+    state.close_after_next_frame.store(true, Ordering::Release);
+    let tickle = make_limit_order(
+        "O-ACK-CREATE-RECONNECT-TICKLE",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    let tickle_id = tickle.client_order_id();
+    cache_order(&cache, tickle);
+    client
+        .cancel_order(CancelOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            tickle_id,
+            Some(VenueOrderId::from("1")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("reconnect tickle");
+    await_subscribe_count(&state, subscribe_count + 4).await;
+    state.tx_response_release.notify_one();
+
+    assert!(
+        !matches!(
+            next_order_event(&mut rx, Duration::from_millis(500)).await,
+            Some(OrderEventAny::Rejected(_)),
+        ),
+        "a stale-epoch transaction response must not reject the create",
+    );
+    state.push_frame(&json!({
+        "type": "update/account_all_orders",
+        "channel": format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),
+        "orders": {
+            "0": [account_all_orders_open_entry(
+                client_order_index,
+                "281476929510503",
+                &client_order_index.to_string(),
+                nonce,
+            )]
+        }
+    }));
+    assert!(matches!(
+        next_order_event(&mut rx, Duration::from_secs(2)).await,
+        Some(OrderEventAny::Accepted(_)),
+    ));
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_acknowledged_create_pending_final_remains_reconcilable() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    state.tx_responses.lock().await.extend((0..3).map(|_| {
+        json!({
+            "status": 3,
+            "event_info": json!({"ae":""}).to_string(),
+        })
+    }));
+
+    let order = make_limit_order(
+        "O-ACK-CREATE-PENDING-FINAL",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    cache_order(&cache, order.clone());
+    client.submit_order(submit_command(&order)).expect("submit");
+    await_send_tx_count(&state, 1).await;
+    let info = send_tx_info(&state.send_txs().await[0]);
+    let client_order_index = info["ClientOrderIndex"].as_i64().unwrap();
+    let nonce = info["Nonce"].as_i64().unwrap();
+    assert!(matches!(
+        next_order_event(&mut rx, Duration::from_secs(2)).await,
+        Some(OrderEventAny::Submitted(_)),
+    ));
+
+    await_tx_calls(&state, 3).await;
+    assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 3);
+    assert!(
+        !matches!(
+            next_order_event(&mut rx, Duration::from_millis(200)).await,
+            Some(OrderEventAny::Rejected(_)),
+        ),
+        "pending-final transaction status must remain unresolved",
+    );
+
+    state.push_frame(&json!({
+        "type": "update/account_all_orders",
+        "channel": format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),
+        "orders": {
+            "0": [account_all_orders_open_entry(
+                client_order_index,
+                "281476929510502",
+                &client_order_index.to_string(),
+                nonce,
+            )]
+        }
+    }));
+    assert!(matches!(
+        next_order_event(&mut rx, Duration::from_secs(2)).await,
+        Some(OrderEventAny::Accepted(_)),
+    ));
 
     client.disconnect().await.expect("disconnect");
 }

@@ -68,6 +68,7 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Quantity},
 };
 use rust_decimal::Decimal;
+use serde::Deserialize;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -78,7 +79,10 @@ use crate::{
             LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE,
         },
         credential::{Credential, scrub_auth},
-        enums::{LighterAccountTier, LighterPositionMarginMode, LighterProductType, LighterTxType},
+        enums::{
+            LighterAccountTier, LighterPositionMarginMode, LighterProductType, LighterTxStatus,
+            LighterTxType,
+        },
         rate_limit::{LighterTxRateLimiter, await_tx_quota, build_tx_rate_limiter, resolve_quota},
         symbol::{MarketRegistry, product_type_from_instrument_id},
         urls::lighter_chain_id,
@@ -108,9 +112,9 @@ use crate::{
             LIGHTER_INSTRUMENT_CACHE, MAX_RECONCILIATION_PAGES, OrderIdentity, PendingOrderAction,
             PendingSendTx, PendingSendTxKind, TradeDedupSource, WsDispatchState,
             cache_instruments_for_reports, derive_market_order_price_ticks,
-            evict_terminal_mappings, lookup_order_status_report, nautilus_to_lighter_order_type,
-            nautilus_to_lighter_tif, order_expiry_for, parse_http_order_to_report, price_to_ticks,
-            quantity_to_ticks, unwrap_reports_or_warn,
+            evict_terminal_mappings, lookup_create_order_status_report, lookup_order_status_report,
+            nautilus_to_lighter_order_type, nautilus_to_lighter_tif, order_expiry_for,
+            parse_http_order_to_report, price_to_ticks, quantity_to_ticks, unwrap_reports_or_warn,
         },
         messages::{
             AccountStream, ExecutionReport, LighterWsChannel, NautilusWsMessage,
@@ -128,9 +132,9 @@ use crate::{
 /// supply its own GTD expiry: 5 minutes from wall-clock at submission time.
 const DEFAULT_TX_EXPIRY_MS: i64 = 5 * 60 * 1_000;
 
-/// Delay before probing an acked cancel/modify to distinguish venue no-ops
-/// from account stream lag.
+/// Delay between venue lookups for an acknowledged order.
 const ACKED_ORDER_LOOKUP_DELAY: Duration = Duration::from_secs(2);
+const ACKED_CREATE_PROBE_ATTEMPTS: usize = 3;
 
 /// Refresh the auth token this far before its issuance deadline. The
 /// [`crate::signing::auth_token::DEFAULT_AUTH_TOKEN_TTL_SECS`] is 7 hours;
@@ -960,6 +964,8 @@ impl LighterExecutionClient {
                                             dispatch: dispatch.clone(),
                                             account_id: account_id_for_loop,
                                             clock: clock_for_loop,
+                                            emitter: emitter.clone(),
+                                            connection_epoch: ws_client.connection_epoch_atomic(),
                                             cancellation_token: cancellation_token.clone(),
                                         },
                                     );
@@ -2441,18 +2447,7 @@ impl FanoutDispatchContext {
 
     fn sign_create_order(&self, plan: CreateOrderPlan) -> anyhow::Result<PreparedCreateOrder> {
         let cloid = plan.order.client_order_id();
-        let initial_index = self.dispatch.derive_client_order_index(&cloid);
-        let client_order_index = self.dispatch.register_cloid(initial_index, cloid)?;
-        self.dispatch.register_order_identity(
-            cloid,
-            OrderIdentity::new(
-                plan.order.instrument_id(),
-                plan.order.strategy_id(),
-                plan.order.order_side(),
-                plan.order.order_type(),
-                client_order_index,
-            ),
-        );
+        let client_order_index = self.dispatch.register_create_identity(&plan.order)?;
 
         let ReservedTxContext {
             context,
@@ -2836,7 +2831,7 @@ fn spawn_acked_order_probe(pending: &PendingSendTx, context: AckedOrderProbeCont
         }
 
         if let Err(e) = probe_acked_order(probe, &context).await {
-            log::warn!("Lighter acked order no-op probe failed: {e:?}");
+            log::warn!("Lighter acknowledged order probe failed: {e:?}");
         }
     });
 }
@@ -2849,6 +2844,8 @@ struct AckedOrderProbeContext {
     dispatch: WsDispatchState,
     account_id: AccountId,
     clock: &'static AtomicTime,
+    emitter: ExecutionEventEmitter,
+    connection_epoch: Arc<AtomicU64>,
     cancellation_token: CancellationToken,
 }
 
@@ -2856,6 +2853,10 @@ async fn probe_acked_order(
     probe: AckedOrderProbe,
     context: &AckedOrderProbeContext,
 ) -> anyhow::Result<()> {
+    if matches!(&probe, AckedOrderProbe::Create { .. }) {
+        return probe_acked_create(probe, context).await;
+    }
+
     let report = lookup_order_status_report(
         &context.http_client,
         &context.registry,
@@ -2877,12 +2878,213 @@ async fn probe_acked_order(
     Ok(())
 }
 
+async fn probe_acked_create(
+    probe: AckedOrderProbe,
+    context: &AckedOrderProbeContext,
+) -> anyhow::Result<()> {
+    let AckedOrderProbe::Create {
+        order,
+        client_order_index,
+        connection_epoch,
+        nonce,
+        api_key_index,
+        tx_hash,
+    } = probe
+    else {
+        unreachable!("create probe called with non-create transaction")
+    };
+    let client_order_id = order.client_order_id();
+    let mut transaction_executed = false;
+
+    for attempt in 1..=ACKED_CREATE_PROBE_ATTEMPTS {
+        if context.connection_epoch.load(Ordering::Acquire) != connection_epoch {
+            log::warn!(
+                "Lighter acknowledged create outcome unresolved after reconnect for {client_order_id}; retaining identity for reconciliation",
+            );
+            return Ok(());
+        }
+
+        if !context.dispatch.create_submission_is_pending(
+            &client_order_id,
+            client_order_index,
+            nonce,
+        ) {
+            return Ok(());
+        }
+
+        let report = match lookup_create_order_status_report(
+            &context.http_client,
+            &context.registry,
+            &context.credential,
+            context.account_id,
+            order.instrument_id(),
+            client_order_id,
+            client_order_index,
+            nonce,
+            &context.dispatch,
+            context.clock,
+        )
+        .await
+        {
+            Ok(report) => report,
+            Err(e) => {
+                log::warn!(
+                    "Lighter acknowledged create order lookup failed for {client_order_id} on attempt {attempt}: {e:?}",
+                );
+                None
+            }
+        };
+
+        if let Some(report) = report {
+            if context.dispatch.observe_create_submission(
+                &client_order_id,
+                client_order_index,
+                nonce,
+                report.venue_order_id,
+            ) {
+                context.dispatch.seed_accepted_from_report(&report);
+                context.emitter.send_order_status_report(report);
+            }
+            return Ok(());
+        }
+
+        match context.http_client.get_tx(tx_hash.clone()).await {
+            Ok(tx) => {
+                validate_acked_create_tx(
+                    &tx,
+                    context.credential.account_index(),
+                    api_key_index,
+                    client_order_index,
+                    nonce,
+                    &tx_hash,
+                )?;
+                let event = parse_acked_create_event(&tx.event_info).unwrap_or_else(|e| {
+                    log::warn!(
+                        "Lighter create transaction carried invalid event_info for {client_order_id}: {e}",
+                    );
+                    AckedCreateEvent::default()
+                });
+
+                if tx.status == LighterTxStatus::Failed || !event.app_error.is_empty() {
+                    let detail = if event.app_error.is_empty() {
+                        "transaction failed without an application error".to_string()
+                    } else {
+                        event.app_error
+                    };
+                    let reason = format!(
+                        "Lighter sequencer rejected acknowledged create transaction {tx_hash}: {detail}",
+                    );
+                    reject_create_order(
+                        &context.dispatch,
+                        &context.emitter,
+                        &order,
+                        client_order_index,
+                        nonce,
+                        &reason,
+                        context.clock.get_time_ns(),
+                        lighter_reason_indicates_post_only_rejection(&detail),
+                        Some((&context.connection_epoch, connection_epoch)),
+                    );
+                    return Ok(());
+                }
+                transaction_executed |= tx.status == LighterTxStatus::Executed;
+            }
+            Err(LighterHttpError::Venue { code: 21500, .. }) => {}
+            Err(e) => {
+                log::warn!(
+                    "Lighter acknowledged create transaction lookup failed for {client_order_id} on attempt {attempt}: {e}",
+                );
+            }
+        }
+
+        if attempt < ACKED_CREATE_PROBE_ATTEMPTS {
+            tokio::select! {
+                () = context.cancellation_token.cancelled() => return Ok(()),
+                () = tokio::time::sleep(ACKED_ORDER_LOOKUP_DELAY) => {}
+            }
+        }
+    }
+
+    if transaction_executed {
+        let _ =
+            context
+                .dispatch
+                .confirm_create_submission(&client_order_id, client_order_index, nonce);
+        log::warn!(
+            "Lighter acknowledged create transaction executed without a queryable order for {client_order_id}; retaining identity for reconciliation",
+        );
+    } else {
+        log::warn!(
+            "Lighter acknowledged create outcome unresolved after {ACKED_CREATE_PROBE_ATTEMPTS} transaction lookups for {client_order_id}; retaining identity for reconciliation",
+        );
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct AckedCreateTxInfo {
+    #[serde(rename = "ClientOrderIndex")]
+    client_order_index: i64,
+}
+
+#[derive(Default, Deserialize)]
+struct AckedCreateEvent {
+    #[serde(default, rename = "ae")]
+    app_error: String,
+}
+
+fn validate_acked_create_tx(
+    tx: &crate::http::models::LighterTx,
+    account_index: i64,
+    api_key_index: u8,
+    client_order_index: i64,
+    nonce: i64,
+    tx_hash: &str,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        tx_hash_matches(&tx.hash, tx_hash)
+            && tx.tx_type == LighterTxType::CreateOrder as u8
+            && tx.account_index == account_index
+            && tx.api_key_index == api_key_index
+            && tx.nonce == nonce,
+        "Lighter transaction lookup did not match acknowledged create identity",
+    );
+    let info: AckedCreateTxInfo = serde_json::from_str(&tx.info)
+        .context("failed to parse Lighter create transaction info")?;
+    anyhow::ensure!(
+        info.client_order_index == client_order_index,
+        "Lighter transaction lookup returned client_order_index {} for acknowledged create {client_order_index}",
+        info.client_order_index,
+    );
+    Ok(())
+}
+
+fn tx_hash_matches(left: &str, right: &str) -> bool {
+    let left = left
+        .strip_prefix("0x")
+        .or_else(|| left.strip_prefix("0X"))
+        .unwrap_or(left);
+    let right = right
+        .strip_prefix("0x")
+        .or_else(|| right.strip_prefix("0X"))
+        .unwrap_or(right);
+    left.eq_ignore_ascii_case(right)
+}
+
+fn parse_acked_create_event(event_info: &str) -> anyhow::Result<AckedCreateEvent> {
+    if event_info.trim().is_empty() {
+        return Ok(AckedCreateEvent::default());
+    }
+    serde_json::from_str(event_info).context("failed to parse Lighter create transaction event")
+}
+
 fn warn_if_acked_order_missing(probe: &AckedOrderProbe, order_found: bool) {
     if order_found {
         return;
     }
 
     match probe {
+        AckedOrderProbe::Create { .. } => {}
         AckedOrderProbe::Cancel {
             client_order_id, ..
         } => {
@@ -2902,6 +3104,14 @@ fn warn_if_acked_order_missing(probe: &AckedOrderProbe, order_found: bool) {
 
 #[derive(Debug, Clone)]
 enum AckedOrderProbe {
+    Create {
+        order: Box<OrderAny>,
+        client_order_index: i64,
+        connection_epoch: u64,
+        nonce: i64,
+        api_key_index: u8,
+        tx_hash: String,
+    },
     Cancel {
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
@@ -2917,6 +3127,17 @@ enum AckedOrderProbe {
 impl AckedOrderProbe {
     fn from_pending(pending: &PendingSendTx) -> Option<Self> {
         match &pending.kind {
+            PendingSendTxKind::Create {
+                order,
+                client_order_index,
+            } => Some(Self::Create {
+                order: order.clone(),
+                client_order_index: *client_order_index,
+                connection_epoch: pending.connection_epoch,
+                nonce: pending.nonce,
+                api_key_index: pending.api_key_index,
+                tx_hash: pending.tx_hash.clone(),
+            }),
             PendingSendTxKind::Cancel {
                 instrument_id,
                 client_order_id,
@@ -2937,12 +3158,13 @@ impl AckedOrderProbe {
                 client_order_id: *client_order_id,
                 venue_order_id: *venue_order_id,
             }),
-            PendingSendTxKind::Create { .. } | PendingSendTxKind::Other => None,
+            PendingSendTxKind::Other => None,
         }
     }
 
     fn instrument_id(&self) -> InstrumentId {
         match self {
+            Self::Create { order, .. } => order.instrument_id(),
             Self::Cancel { instrument_id, .. } | Self::Modify { instrument_id, .. } => {
                 *instrument_id
             }
@@ -2951,6 +3173,7 @@ impl AckedOrderProbe {
 
     fn client_order_id(&self) -> ClientOrderId {
         match self {
+            Self::Create { order, .. } => order.client_order_id(),
             Self::Cancel {
                 client_order_id, ..
             }
@@ -2962,6 +3185,7 @@ impl AckedOrderProbe {
 
     fn venue_order_id(&self) -> Option<VenueOrderId> {
         match self {
+            Self::Create { .. } => None,
             Self::Cancel { venue_order_id, .. } | Self::Modify { venue_order_id, .. } => {
                 *venue_order_id
             }
@@ -2977,6 +3201,32 @@ impl AckedOrderProbe {
 // the latest issuance.
 // Returns true on an invalid-nonce code: the sequential stream is wedged and
 // needs a hard refresh.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "shared terminal create transition keeps cleanup and event attribution together"
+)]
+fn reject_create_order(
+    dispatch: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+    order: &OrderAny,
+    client_order_index: i64,
+    nonce: i64,
+    reason: &str,
+    now: UnixNanos,
+    due_post_only: bool,
+    connection_epoch: Option<(&AtomicU64, u64)>,
+) -> bool {
+    let cloid = order.client_order_id();
+    if !dispatch.reject_create_submission(&cloid, client_order_index, nonce, connection_epoch) {
+        log::warn!(
+            "Ignored stale Lighter create rejection for cloid={cloid} client_order_index={client_order_index} nonce={nonce}",
+        );
+        return false;
+    }
+    emitter.emit_order_rejected(order, reason, now, due_post_only);
+    true
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "consumer-loop sink that flattens one SendTxRejected message without a wrapper struct"
@@ -3036,13 +3286,16 @@ fn handle_send_tx_rejection_for_connection(
                     pending.nonce,
                 );
             }
-            dispatch.forget_cloid(*client_order_index);
-            dispatch.forget_order_identity(&cloid);
-            emitter.emit_order_rejected(
+            reject_create_order(
+                dispatch,
+                emitter,
                 order,
+                *client_order_index,
+                pending.nonce,
                 &reason,
                 now,
                 lighter_reason_indicates_post_only_rejection(message),
+                None,
             );
         }
         PendingSendTxKind::Cancel {
@@ -5091,7 +5344,7 @@ mod tests {
     use super::*;
     use crate::{
         common::enums::{LighterEnvironment, LighterProductType},
-        http::models::LighterNextNonce,
+        http::models::{LighterNextNonce, LighterTx},
         signing::tx::TX_HASH_BYTES,
     };
 
@@ -6072,6 +6325,26 @@ mod tests {
         );
         assert!(client.dispatch.cloid_map.contains_key(&client_order_index));
         assert_eq!(client.dispatch.pending_sendtx_len(), 1);
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .last_issued(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX),
+            Some(TEST_NEXT_NONCE),
+        );
+
+        let stale = client.dispatch.drain_pending_sendtx(0);
+        assert_eq!(stale.len(), 1);
+        assert!(matches!(stale[0].kind, PendingSendTxKind::Create { .. }));
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert!(client.dispatch.cloid_map.contains_key(&client_order_index));
+        assert!(
+            client
+                .dispatch
+                .order_identity(&order.client_order_id())
+                .is_some(),
+            "reconnect draining must retain identity for reconciliation",
+        );
         assert_eq!(
             client
                 .dispatch
@@ -9868,9 +10141,15 @@ mod tests {
             Some("hash0b"),
         );
 
+        let acked = acked.expect("create ack");
+        assert!(matches!(acked.kind, PendingSendTxKind::Create { .. }));
         assert!(matches!(
-            acked.map(|pending| pending.kind),
-            Some(PendingSendTxKind::Create { .. }),
+            AckedOrderProbe::from_pending(&acked),
+            Some(AckedOrderProbe::Create {
+                nonce: 11,
+                connection_epoch: 0,
+                ..
+            }),
         ));
         assert_eq!(client.dispatch.pending_sendtx_len(), 1, "only B pops");
         let head = client.dispatch.pop_pending_sendtx_head().unwrap();
@@ -9885,6 +10164,90 @@ mod tests {
                 .await
                 .is_err(),
             "ack must not emit an event",
+        );
+    }
+
+    #[rstest]
+    fn acknowledged_create_tx_validation_requires_exact_identity() {
+        let tx = LighterTx {
+            code: 200,
+            message: None,
+            hash: "ABCDEF".to_string(),
+            tx_type: LighterTxType::CreateOrder as u8,
+            info: serde_json::json!({"ClientOrderIndex": 42}).to_string(),
+            event_info: serde_json::json!({"ae": ""}).to_string(),
+            status: LighterTxStatus::Failed,
+            account_index: TEST_ACCOUNT_INDEX_I64,
+            nonce: 10,
+            api_key_index: TEST_API_KEY_INDEX,
+        };
+        assert!(
+            validate_acked_create_tx(
+                &tx,
+                TEST_ACCOUNT_INDEX_I64,
+                TEST_API_KEY_INDEX,
+                42,
+                10,
+                "0xabcdef",
+            )
+            .is_ok(),
+        );
+
+        let mismatches = [
+            LighterTx {
+                hash: "different".to_string(),
+                ..tx.clone()
+            },
+            LighterTx {
+                tx_type: LighterTxType::CancelOrder as u8,
+                ..tx.clone()
+            },
+            LighterTx {
+                account_index: TEST_ACCOUNT_INDEX_I64 + 1,
+                ..tx.clone()
+            },
+            LighterTx {
+                nonce: 11,
+                ..tx.clone()
+            },
+            LighterTx {
+                api_key_index: TEST_API_KEY_INDEX + 1,
+                ..tx.clone()
+            },
+        ];
+
+        for mismatch in mismatches {
+            let error = validate_acked_create_tx(
+                &mismatch,
+                TEST_ACCOUNT_INDEX_I64,
+                TEST_API_KEY_INDEX,
+                42,
+                10,
+                "abcdef",
+            )
+            .expect_err("mismatched transaction identity must fail");
+            assert_eq!(
+                error.to_string(),
+                "Lighter transaction lookup did not match acknowledged create identity",
+            );
+        }
+
+        let wrong_index = LighterTx {
+            info: serde_json::json!({"ClientOrderIndex": 43}).to_string(),
+            ..tx
+        };
+        let error = validate_acked_create_tx(
+            &wrong_index,
+            TEST_ACCOUNT_INDEX_I64,
+            TEST_API_KEY_INDEX,
+            42,
+            10,
+            "abcdef",
+        )
+        .expect_err("mismatched client order index must fail");
+        assert_eq!(
+            error.to_string(),
+            "Lighter transaction lookup returned client_order_index 43 for acknowledged create 42",
         );
     }
 
@@ -10228,13 +10591,7 @@ mod tests {
             .nonce_manager
             .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
             .unwrap();
-        let client_order_index = client
-            .dispatch
-            .derive_client_order_index(&order.client_order_id());
-        client
-            .dispatch
-            .register_cloid(client_order_index, order.client_order_id())
-            .unwrap();
+        let client_order_index = client.dispatch.register_create_identity(&order).unwrap();
         client.dispatch.enqueue_pending_sendtx(PendingSendTx {
             connection_epoch: 0,
             kind: PendingSendTxKind::Create {
@@ -10310,13 +10667,7 @@ mod tests {
             .nonce_manager
             .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
             .unwrap();
-        let client_order_index = client
-            .dispatch
-            .derive_client_order_index(&order.client_order_id());
-        client
-            .dispatch
-            .register_cloid(client_order_index, order.client_order_id())
-            .unwrap();
+        let client_order_index = client.dispatch.register_create_identity(&order).unwrap();
         client.dispatch.enqueue_pending_sendtx(PendingSendTx {
             connection_epoch: 0,
             kind: PendingSendTxKind::Create {

@@ -56,7 +56,7 @@ use crate::{
             LighterFundings, LighterMakerOnlyApiKeys, LighterNextNonce, LighterOrderBookDetails,
             LighterOrderBookOrders, LighterOrderBooks, LighterOrders, LighterResultCode,
             LighterSendTxBatchRequest, LighterSendTxBatchResponse, LighterSendTxRequest,
-            LighterSendTxResponse, LighterTrade, LighterTrades,
+            LighterSendTxResponse, LighterTrade, LighterTrades, LighterTx,
         },
         parse::{
             parse_candle_bar, parse_funding_rate_update,
@@ -68,7 +68,7 @@ use crate::{
             LighterAccountLookup, LighterAccountQuery, LighterCandlesQuery, LighterFundingsQuery,
             LighterMakerOnlyApiKeysQuery, LighterNextNonceQuery, LighterOrderBookDetailsQuery,
             LighterOrderBookOrdersQuery, LighterOrderBooksQuery, LighterRecentTradesQuery,
-            LighterTradesQuery,
+            LighterTradesQuery, LighterTxLookup, LighterTxQuery,
         },
     },
 };
@@ -88,6 +88,7 @@ const ENDPOINT_RECENT_TRADES: &str = "/api/v1/recentTrades";
 const ENDPOINT_SEND_TX: &str = "/api/v1/sendTx";
 const ENDPOINT_SEND_TX_BATCH: &str = "/api/v1/sendTxBatch";
 const ENDPOINT_TRADES: &str = "/api/v1/trades";
+const ENDPOINT_TX: &str = "/api/v1/tx";
 const HEADER_AUTHORIZATION: &str = "authorization";
 const MULTIPART_BOUNDARY: &str = "nautilus-lighter-form-boundary";
 
@@ -141,6 +142,7 @@ impl_lighter_response_check!(
     LighterSendTxBatchResponse,
     LighterSendTxResponse,
     LighterTrades,
+    LighterTx,
 );
 
 /// Raw HTTP client for Lighter REST API operations.
@@ -384,6 +386,15 @@ impl LighterRawHttpClient {
     ) -> LighterHttpResult<LighterNextNonce> {
         self.send_get_request(ENDPOINT_NEXT_NONCE, Some(query))
             .await
+    }
+
+    /// Calls `GET /api/v1/tx`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
+    pub async fn get_tx(&self, query: &LighterTxQuery) -> LighterHttpResult<LighterTx> {
+        self.send_get_request(ENDPOINT_TX, Some(query)).await
     }
 
     /// Calls `GET /api/v1/getMakerOnlyApiKeys`.
@@ -875,6 +886,20 @@ impl LighterHttpClient {
             api_key_index,
         };
         self.inner.get_next_nonce(&query).await
+    }
+
+    /// Calls `GET /api/v1/tx` for `tx_hash`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
+    pub async fn get_tx(&self, tx_hash: impl Into<String>) -> LighterHttpResult<LighterTx> {
+        self.inner
+            .get_tx(&LighterTxQuery {
+                by: LighterTxLookup::Hash,
+                value: tx_hash.into(),
+            })
+            .await
     }
 
     /// Calls `GET /api/v1/getMakerOnlyApiKeys` for `account_index`.

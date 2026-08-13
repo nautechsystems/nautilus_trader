@@ -347,6 +347,16 @@ pub enum LighterMarketStatus {
     Active,
 }
 
+/// Numeric transaction status returned by Lighter transaction queries.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize_repr, Deserialize_repr)]
+#[repr(i64)]
+pub enum LighterTxStatus {
+    Failed = 0,
+    Pending = 1,
+    Executed = 2,
+    PendingFinal = 3,
+}
+
 /// String order type used by REST and WebSocket order payloads.
 #[derive(
     Copy,
