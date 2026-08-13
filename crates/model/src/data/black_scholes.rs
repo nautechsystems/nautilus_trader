@@ -105,30 +105,12 @@ impl BlackScholesReal for f32 {
         // See: J.-M. Muller et al., "Handbook of Floating-Point Arithmetic", 2018, Section 10.2
         //      A. J. Salgado & S. M. Wise, "Classical Numerical Analysis", 2023, Chapter 10
         let bits = self.to_bits();
-        let magnitude = bits & 0x7fff_ffff;
-        if magnitude == 0 {
-            return Self::NEG_INFINITY;
-        }
 
-        let exponent_bits = magnitude & 0x7f80_0000;
-        let fraction_bits = magnitude & 0x007f_ffff;
-        if exponent_bits == 0x7f80_0000 && fraction_bits != 0 {
-            return Self::NAN;
-        }
-
-        if bits & 0x8000_0000 != 0 {
-            return Self::NAN;
-        }
-
-        if exponent_bits == 0x7f80_0000 {
-            return Self::INFINITY;
-        }
-
-        if exponent_bits == 0 {
-            // Scaling by 2^23 is exact and carries every positive subnormal into the
-            // normal range, so this recurses exactly once.
-            return <Self as BlackScholesReal>::ln(self * 8_388_608.0)
-                - 23.0 * std::f32::consts::LN_2;
+        // Positive normal bit patterns occupy one contiguous interval, so the ordinary
+        // path reaches the polynomial through a single range test. Everything else -
+        // zeros, negatives, subnormals, infinity, NaN - is handled out of line.
+        if !(0x0080_0000..0x7f80_0000).contains(&bits) {
+            return ln_f32_outside_normal_range(self);
         }
 
         let exponent = ((bits >> 23) as i32 - 127) as Self;
@@ -411,6 +393,39 @@ pub fn compute_iv_and_greeks<T: BlackScholesReal>(
     g_final.vol = vol;
 
     g_final
+}
+
+/// Returns `ln(value)` for the inputs outside the positive normal range: zeros, negatives,
+/// subnormals, infinity, and NaN.
+///
+/// Kept out of line because `<f32 as BlackScholesReal>::ln` is `#[inline(always)]`, so any
+/// classification left in its body is duplicated at every call site on the pricing path.
+#[cold]
+#[inline(never)]
+fn ln_f32_outside_normal_range(value: f32) -> f32 {
+    let bits = value.to_bits();
+    let magnitude = bits & 0x7fff_ffff;
+    if magnitude == 0 {
+        return f32::NEG_INFINITY;
+    }
+
+    let exponent_bits = magnitude & 0x7f80_0000;
+    let fraction_bits = magnitude & 0x007f_ffff;
+    if exponent_bits == 0x7f80_0000 && fraction_bits != 0 {
+        return f32::NAN;
+    }
+
+    if bits & 0x8000_0000 != 0 {
+        return f32::NAN;
+    }
+
+    if exponent_bits == 0x7f80_0000 {
+        return f32::INFINITY;
+    }
+
+    // Only positive subnormals remain. Scaling by 2^23 is exact and carries every one of
+    // them into the normal range, so this re-enters the ordinary path exactly once.
+    <f32 as BlackScholesReal>::ln(value * 8_388_608.0) - 23.0 * std::f32::consts::LN_2
 }
 
 // 4. UNIT TESTS
