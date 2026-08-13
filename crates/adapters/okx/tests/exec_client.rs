@@ -65,7 +65,10 @@ use nautilus_model::{
     },
     instruments::{
         CryptoFuturesSpread, InstrumentAny,
-        stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt, currency_pair_btcusdt},
+        stubs::{
+            crypto_option_btc_deribit, crypto_perpetual_ethusdt, currency_pair_btcusdt,
+            currency_pair_ethusdt,
+        },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     reports::{FillReport, OrderStatusReport},
@@ -77,7 +80,7 @@ use nautilus_okx::{
         consts::{
             OKX_CLIENT_ID, OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_VENUE,
         },
-        enums::{OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXSide},
+        enums::{OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXSide, OKXTradeMode},
     },
     config::OKXExecClientConfig,
     execution::OKXExecutionClient,
@@ -88,7 +91,7 @@ use nautilus_okx::{
             emit_algo_cancel_rejections, emit_batch_cancel_failure,
         },
         enums::{OKXWsChannel, OKXWsOperation},
-        messages::{ExecutionReport, OKXOrderMsg, OKXWsFrame, OKXWsMessage},
+        messages::{ExecutionReport, OKXOrderMsg, OKXWebSocketArg, OKXWsFrame, OKXWsMessage},
         parse::OrderStateSnapshot,
     },
 };
@@ -194,6 +197,19 @@ fn spread_instruments_cache() -> AtomicMap<Ustr, InstrumentAny> {
         make_spread_instrument(),
     );
     instruments
+}
+
+fn load_order_messages(fixture: &str) -> (OKXWebSocketArg, Vec<OKXOrderMsg>) {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_data")
+        .join(fixture);
+    let content = std::fs::read_to_string(path).unwrap();
+    let frame: OKXWsFrame = serde_json::from_str(&content).unwrap();
+    let OKXWsFrame::Data { arg, data } = frame else {
+        panic!("Expected private order data frame");
+    };
+    let order_msgs = serde_json::from_value(data).unwrap();
+    (arg, order_msgs)
 }
 
 fn make_spread_order_msg(
@@ -792,6 +808,19 @@ fn test_dispatch_order_accepted_passes_through() {
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
     assert!(matches!(events[0], ExecutionEvent::Report(_)));
+    assert!(state.contains_accepted(&ClientOrderId::new("O-001")));
+
+    dispatch_execution_reports(
+        vec![ExecutionReport::Order(make_order_status_report(
+            "O-001",
+            OrderStatus::Accepted,
+        ))],
+        &emitter,
+        &state,
+    );
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    assert!(matches!(events[0], ExecutionEvent::Report(_)));
 }
 
 #[rstest]
@@ -1285,6 +1314,215 @@ fn test_dispatch_spread_order_fill_synthesizes_accepted_and_dedups_replay() {
 
     let replay_events = drain_events(&mut rx);
     assert_eq!(replay_events.len(), 0);
+}
+
+#[rstest]
+#[case::live_then_filled(true)]
+#[case::filled_only(false)]
+fn test_dispatch_tracked_algo_child_fill_with_empty_client_order_id(#[case] send_live: bool) {
+    // OKX reports cross-margin child orders as SPOT with the parent algo client ID,
+    // while the child client ID may be empty
+    let (arg, order_msgs) = load_order_messages("ws_orders_algo_child_filled_empty_cl_ord_id.json");
+    assert_eq!(order_msgs.len(), 1);
+    let message = &order_msgs[0];
+    let client_order_id = ClientOrderId::new("OEEADEMOSTOPLIMIT001");
+    let instrument_id = InstrumentId::from("ETH-USDT.OKX");
+    let venue_order_id = VenueOrderId::new("2497956918703120501");
+
+    assert_eq!(arg.channel, OKXWsChannel::Orders);
+    assert_eq!(arg.inst_type, Some(OKXInstrumentType::Spot));
+    assert_eq!(message.inst_id, Ustr::from("ETH-USDT"));
+    assert_eq!(message.inst_type, OKXInstrumentType::Spot);
+    assert_eq!(message.td_mode, OKXTradeMode::Cross);
+    assert_eq!(message.state, OKXOrderStatus::Filled);
+    assert_eq!(message.cl_ord_id, "");
+    assert_eq!(
+        message.algo_cl_ord_id.as_deref(),
+        Some(client_order_id.as_str())
+    );
+    assert_eq!(message.fill_sz, "0.003");
+    assert_eq!(message.fill_px, "1886.00");
+    assert_eq!(message.trade_id, "1518905600");
+    assert_eq!(message.fee.as_deref(), Some("-0.000006"));
+    assert_eq!(message.fee_ccy, Ustr::from("ETH"));
+
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    state.order_identities.insert(
+        client_order_id,
+        OrderIdentity {
+            client_order_id,
+            instrument_id,
+            strategy_id: StrategyId::from("STRATEGY-001"),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::StopLimit,
+        },
+    );
+    state.insert_accepted(client_order_id, VenueOrderId::new("2497956918703120500"));
+    state.insert_triggered(client_order_id);
+
+    let mut instrument = currency_pair_ethusdt();
+    instrument.id = instrument_id;
+    instrument.raw_symbol = Symbol::from("ETH-USDT");
+    let instruments = AtomicMap::new();
+    instruments.insert(
+        Ustr::from("ETH-USDT"),
+        InstrumentAny::CurrencyPair(instrument),
+    );
+    let mut fee_cache = AHashMap::new();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+
+    let assert_venue_order_id_update = |event: &ExecutionEvent| match event {
+        ExecutionEvent::Order(OrderEventAny::Updated(updated)) => {
+            assert_eq!(updated.client_order_id, client_order_id);
+            assert_eq!(updated.venue_order_id, Some(venue_order_id));
+            assert_eq!(updated.quantity, Quantity::from("0.003"));
+            assert_eq!(updated.price, Some(Price::from("1886.00")));
+            assert_eq!(updated.trigger_price, None);
+            assert_eq!(updated.account_id, Some(AccountId::from("OKX-001")));
+        }
+        other => panic!("Expected child venue order ID update, was {other:?}"),
+    };
+
+    if send_live {
+        let mut live = order_msgs[0].clone();
+        live.state = OKXOrderStatus::Live;
+        live.acc_fill_sz = Some("0".to_string());
+        live.fill_sz.clear();
+        live.fill_px.clear();
+        live.trade_id.clear();
+        live.fee = None;
+        live.fill_fee = None;
+
+        dispatch_ws_message(
+            OKXWsMessage::Orders(vec![live]),
+            &emitter,
+            &state,
+            AccountId::from("OKX-001"),
+            &instruments,
+            &mut fee_cache,
+            &mut filled_qty_cache,
+            &mut order_state_cache,
+            get_atomic_clock_realtime(),
+        );
+
+        let updated = drain_events(&mut rx);
+        assert_eq!(updated.len(), 1);
+        assert_venue_order_id_update(&updated[0]);
+    }
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(order_msgs.clone()),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), if send_live { 1 } else { 2 });
+    let filled_index = usize::from(!send_live);
+    if !send_live {
+        assert_venue_order_id_update(&events[0]);
+    }
+
+    match &events[filled_index] {
+        ExecutionEvent::Order(OrderEventAny::Filled(filled)) => {
+            assert_eq!(filled.trader_id, TraderId::from("TESTER-001"));
+            assert_eq!(filled.strategy_id, StrategyId::from("STRATEGY-001"));
+            assert_eq!(filled.instrument_id, instrument_id);
+            assert_eq!(filled.client_order_id, client_order_id);
+            assert_eq!(filled.venue_order_id, venue_order_id);
+            assert_eq!(filled.account_id, AccountId::from("OKX-001"));
+            assert_eq!(filled.trade_id, TradeId::new("1518905600"));
+            assert_eq!(filled.order_side, OrderSide::Buy);
+            assert_eq!(filled.order_type, OrderType::StopLimit);
+            assert_eq!(filled.last_qty, Quantity::from("0.003"));
+            assert_eq!(filled.last_px, Price::from("1886.00"));
+            assert_eq!(filled.currency, Currency::USDT());
+            assert_eq!(filled.liquidity_side, LiquiditySide::Taker);
+            assert_eq!(filled.commission, Some(Money::from("0.000006 ETH")));
+            assert!(!filled.reconciliation);
+        }
+        other => panic!("Expected tracked OrderFilled, was {other:?}"),
+    }
+    assert!(state.order_identities.get(&client_order_id).is_none());
+    assert!(state.contains_filled(&client_order_id));
+    assert!(state.contains_terminal(&client_order_id));
+    assert!(!state.contains_triggered(&client_order_id));
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(order_msgs),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
+}
+
+#[rstest]
+fn test_dispatch_untracked_algo_child_fill_with_empty_client_order_id_as_report() {
+    let (_, order_msgs) = load_order_messages("ws_orders_algo_child_filled_empty_cl_ord_id.json");
+    let client_order_id = ClientOrderId::new("OEEADEMOSTOPLIMIT001");
+    let instrument_id = InstrumentId::from("ETH-USDT.OKX");
+    let venue_order_id = VenueOrderId::new("2497956918703120501");
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let mut instrument = currency_pair_ethusdt();
+    instrument.id = instrument_id;
+    instrument.raw_symbol = Symbol::from("ETH-USDT");
+    let instruments = AtomicMap::new();
+    instruments.insert(
+        Ustr::from("ETH-USDT"),
+        InstrumentAny::CurrencyPair(instrument),
+    );
+    let mut fee_cache = AHashMap::new();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(order_msgs),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        ExecutionEvent::Report(CommonExecutionReport::Fill(report)) => {
+            assert_eq!(report.account_id, AccountId::from("OKX-001"));
+            assert_eq!(report.instrument_id, instrument_id);
+            assert_eq!(report.client_order_id, Some(client_order_id));
+            assert_eq!(report.venue_order_id, venue_order_id);
+            assert_eq!(report.trade_id, TradeId::new("1518905600"));
+            assert_eq!(report.order_side, OrderSide::Buy);
+            assert_eq!(report.last_qty, Quantity::from("0.003"));
+            assert_eq!(report.last_px, Price::from("1886.00"));
+            assert_eq!(report.commission, Money::from("0.000006 ETH"));
+            assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+            assert_eq!(report.venue_position_id, None);
+        }
+        other => panic!("Expected untracked child fill report, was {other:?}"),
+    }
+    assert!(state.order_identities.is_empty());
+    assert!(state.contains_filled(&client_order_id));
 }
 
 #[rstest]

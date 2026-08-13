@@ -28,12 +28,12 @@ use std::{
 
 use ahash::AHashMap;
 use dashmap::DashMap;
-use nautilus_common::cache::fifo::FifoCache;
+use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::{AtomicMap, MUTEX_POISONED, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_live::{ExecutionEventEmitter, execution::context::OrderIdentity};
 use nautilus_model::{
     enums::OrderStatus,
-    events::{OrderAccepted, OrderEventAny, OrderFilled, OrderRejected},
+    events::{OrderAccepted, OrderEventAny, OrderFilled, OrderRejected, OrderUpdated},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
     },
@@ -112,7 +112,7 @@ pub struct WsDispatchState {
     pub(crate) pending_orders: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_cancels: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_amends: Arc<DashMap<String, PendingOrderInfo>>,
-    emitted_accepted: DedupCache<ClientOrderId>,
+    accepted_venue_order_ids: Mutex<FifoCacheMap<ClientOrderId, VenueOrderId, DEDUP_CAPACITY>>,
     triggered_orders: DedupCache<ClientOrderId>,
     filled_orders: DedupCache<ClientOrderId>,
     terminal_orders: DedupCache<ClientOrderId>,
@@ -127,7 +127,7 @@ impl Default for WsDispatchState {
             pending_orders: Arc::new(DashMap::new()),
             pending_cancels: Arc::new(DashMap::new()),
             pending_amends: Arc::new(DashMap::new()),
-            emitted_accepted: DedupCache::new(),
+            accepted_venue_order_ids: Mutex::new(FifoCacheMap::new()),
             triggered_orders: DedupCache::new(),
             filled_orders: DedupCache::new(),
             terminal_orders: DedupCache::new(),
@@ -157,13 +157,29 @@ impl WsDispatchState {
 impl WsDispatchState {
     /// Returns whether acceptance was already emitted for the order.
     #[must_use]
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn contains_accepted(&self, cid: &ClientOrderId) -> bool {
-        self.emitted_accepted.contains(cid)
+        self.accepted_venue_order_ids
+            .lock()
+            .expect(MUTEX_POISONED)
+            .contains_key(cid)
     }
 
     /// Records that acceptance was emitted for the order.
-    pub fn insert_accepted(&self, cid: ClientOrderId) {
-        let _ = self.emitted_accepted.insert(cid);
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    pub fn insert_accepted(&self, cid: ClientOrderId, venue_order_id: VenueOrderId) {
+        self.accepted_venue_order_ids
+            .lock()
+            .expect(MUTEX_POISONED)
+            .insert(cid, venue_order_id);
+    }
+
+    fn accepted_venue_order_id(&self, cid: &ClientOrderId) -> Option<VenueOrderId> {
+        self.accepted_venue_order_ids
+            .lock()
+            .expect(MUTEX_POISONED)
+            .get(cid)
+            .copied()
     }
 
     /// Returns whether the order was already triggered.
@@ -206,7 +222,10 @@ impl WsDispatchState {
     }
 
     fn remove_accepted(&self, cid: &ClientOrderId) {
-        self.emitted_accepted.remove(cid);
+        self.accepted_venue_order_ids
+            .lock()
+            .expect(MUTEX_POISONED)
+            .remove(cid);
     }
 
     fn remove_triggered(&self, cid: &ClientOrderId) {
@@ -544,9 +563,32 @@ fn dispatch_order_messages(
             continue;
         };
 
-        let Some(client_order_id) = parse_client_order_id(&msg.cl_ord_id) else {
+        let direct_client_order_id = parse_client_order_id(&msg.cl_ord_id);
+        let parent_client_order_id = msg
+            .algo_cl_ord_id
+            .as_deref()
+            .and_then(parse_client_order_id);
+
+        // Triggered child orders may have a generated or empty cl_ord_id.
+        // Resolve the tracked parent before falling back to a report.
+        let resolved = [direct_client_order_id, parent_client_order_id]
+            .into_iter()
+            .flatten()
+            .find_map(|client_order_id| {
+                state
+                    .order_identities
+                    .get(&client_order_id)
+                    .map(|identity| (client_order_id, Some(*identity)))
+            })
+            .or_else(|| {
+                direct_client_order_id
+                    .or(parent_client_order_id)
+                    .map(|client_order_id| (client_order_id, None))
+            });
+
+        let Some((client_order_id, identity)) = resolved else {
             log::debug!(
-                "Order without client_order_id (ord_id={}), sending as report",
+                "Order without client or algo client order ID (ord_id={}), sending as report",
                 msg.ord_id
             );
             dispatch_order_msg_as_report(
@@ -561,32 +603,6 @@ fn dispatch_order_messages(
             );
             continue;
         };
-
-        // Resolve identity: check direct match first, then fall back to the
-        // parent algo order ID for triggered child orders. OKX assigns a new
-        // cl_ord_id to child orders when an algo/stop triggers, preserving the
-        // parent's client order ID in algo_cl_ord_id.
-        let (client_order_id, identity) =
-            match state.order_identities.get(&client_order_id).map(|r| *r) {
-                Some(ident) => (client_order_id, Some(ident)),
-                None => {
-                    if let Some(parent_id) = msg
-                        .algo_cl_ord_id
-                        .as_deref()
-                        .and_then(parse_client_order_id)
-                    {
-                        let parent_ident = state.order_identities.get(&parent_id).map(|r| *r);
-
-                        if parent_ident.is_some() {
-                            (parent_id, parent_ident)
-                        } else {
-                            (client_order_id, None)
-                        }
-                    } else {
-                        (client_order_id, None)
-                    }
-                }
-            };
 
         if let Some(ident) = identity {
             let is_post_only_cancel = is_post_only_auto_cancel(msg);
@@ -839,15 +855,33 @@ fn dispatch_parsed_order_event(
 
     match event {
         ParsedOrderEvent::Accepted(e) => {
-            if state.contains_accepted(&client_order_id)
-                || state.contains_filled(&client_order_id)
-                || state.contains_triggered(&client_order_id)
-                || state.contains_terminal(&client_order_id)
+            if state.contains_filled(&client_order_id) || state.contains_terminal(&client_order_id)
             {
                 log::debug!("Skipping duplicate Accepted for {client_order_id}");
                 return;
             }
-            state.insert_accepted(client_order_id);
+
+            if state.contains_accepted(&client_order_id) {
+                emit_venue_order_id_update_if_changed(
+                    client_order_id,
+                    account_id,
+                    venue_order_id,
+                    identity,
+                    e.ts_event,
+                    emitter,
+                    state,
+                    order_state_cache,
+                    ts_init,
+                );
+                return;
+            }
+
+            if state.contains_triggered(&client_order_id) {
+                log::debug!("Skipping duplicate Accepted for {client_order_id}");
+                return;
+            }
+
+            state.insert_accepted(client_order_id, venue_order_id);
             is_terminal = false;
             emitter.send_order_event(OrderEventAny::Accepted(e));
         }
@@ -932,6 +966,17 @@ fn dispatch_parsed_order_event(
                     fill_report.trade_id
                 );
             } else {
+                emit_venue_order_id_update_if_changed(
+                    client_order_id,
+                    account_id,
+                    venue_order_id,
+                    identity,
+                    fill_report.ts_event,
+                    emitter,
+                    state,
+                    order_state_cache,
+                    ts_init,
+                );
                 ensure_accepted_emitted(
                     client_order_id,
                     account_id,
@@ -987,7 +1032,7 @@ fn ensure_accepted_emitted(
     if state.contains_accepted(&client_order_id) {
         return;
     }
-    state.insert_accepted(client_order_id);
+    state.insert_accepted(client_order_id, venue_order_id);
     let accepted = OrderAccepted::new(
         emitter.trader_id(),
         identity.strategy_id,
@@ -1001,6 +1046,50 @@ fn ensure_accepted_emitted(
         false,
     );
     emitter.send_order_event(OrderEventAny::Accepted(accepted));
+}
+
+#[expect(clippy::too_many_arguments)]
+fn emit_venue_order_id_update_if_changed(
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    venue_order_id: VenueOrderId,
+    identity: &OrderIdentity,
+    ts_event: UnixNanos,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+    order_state_cache: &AHashMap<ClientOrderId, OrderStateSnapshot>,
+    ts_init: UnixNanos,
+) {
+    let Some(accepted_venue_order_id) = state.accepted_venue_order_id(&client_order_id) else {
+        return;
+    };
+
+    if accepted_venue_order_id == venue_order_id {
+        return;
+    }
+    let Some(snapshot) = order_state_cache.get(&client_order_id) else {
+        return;
+    };
+
+    state.insert_accepted(client_order_id, venue_order_id);
+    let updated = OrderUpdated::new(
+        emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        client_order_id,
+        snapshot.quantity,
+        UUID4::new(),
+        ts_event,
+        ts_init,
+        false,
+        Some(venue_order_id),
+        Some(account_id),
+        snapshot.price,
+        None,
+        None,
+        false,
+    );
+    emitter.send_order_event(OrderEventAny::Updated(updated));
 }
 
 /// Converts a [`FillReport`] into an [`OrderFilled`] event using tracked identity.
@@ -1184,6 +1273,10 @@ pub fn dispatch_execution_reports(
                                      for {cid} (order already terminal)"
                                 );
                                 continue;
+                            }
+
+                            if !state.contains_accepted(&cid) {
+                                state.insert_accepted(cid, order_report.venue_order_id);
                             }
                         }
                         OrderStatus::Triggered => {
