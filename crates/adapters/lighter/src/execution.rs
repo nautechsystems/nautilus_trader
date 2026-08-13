@@ -4190,8 +4190,7 @@ impl ExecutionClient for LighterExecutionClient {
             return Ok(Vec::new());
         }
 
-        let mut active_reports: Vec<OrderStatusReport> = Vec::new();
-        let mut inactive_reports: Vec<OrderStatusReport> = Vec::new();
+        let mut reports: Vec<OrderStatusReport> = Vec::new();
 
         // Active orders are by definition still open. Returning them
         // unconditionally even when `cmd.start` is set: an open order's
@@ -4221,13 +4220,18 @@ impl ExecutionClient for LighterExecutionClient {
 
             for order in &active.orders {
                 self.dispatch.note_active_market(order.market_index);
-                restore_reconciled_order(&self.core, &self.dispatch, order);
 
                 if let Some(report) =
                     parse_http_order_to_report(order, &self.registry, self.core.account_id, ts_init)
                 {
+                    restore_reconciled_order(
+                        &self.core,
+                        &self.dispatch,
+                        order,
+                        report.order_status.is_closed(),
+                    );
                     let report = self.dispatch.translate_order_cloid(report);
-                    active_reports.push(self.dispatch.preserve_pending_order_status(report));
+                    reports.push(self.dispatch.preserve_pending_order_status(report));
                 }
             }
         }
@@ -4279,19 +4283,30 @@ impl ExecutionClient for LighterExecutionClient {
                     {
                         Ok(inactive) => {
                             for order in &inactive.orders {
-                                self.dispatch.note_active_market(order.market_index);
-                                restore_reconciled_order(&self.core, &self.dispatch, order);
-
-                                if let Some(report) = parse_http_order_to_report(
+                                let Some(report) = parse_http_order_to_report(
                                     order,
                                     &self.registry,
                                     self.core.account_id,
                                     ts_init,
-                                ) {
-                                    let report = self.dispatch.translate_order_cloid(report);
-                                    inactive_reports
-                                        .push(self.dispatch.preserve_pending_order_status(report));
+                                ) else {
+                                    continue;
+                                };
+
+                                if cmd.start.is_some_and(|start| report.ts_last < start)
+                                    || cmd.end.is_some_and(|end| report.ts_last > end)
+                                {
+                                    continue;
                                 }
+
+                                self.dispatch.note_active_market(order.market_index);
+                                restore_reconciled_order(
+                                    &self.core,
+                                    &self.dispatch,
+                                    order,
+                                    report.order_status.is_closed(),
+                                );
+                                let report = self.dispatch.translate_order_cloid(report);
+                                reports.push(self.dispatch.preserve_pending_order_status(report));
                             }
 
                             match inactive.next_cursor {
@@ -4316,27 +4331,6 @@ impl ExecutionClient for LighterExecutionClient {
                 }
             }
         }
-
-        // Apply start/end only to inactive reports. Active reports are
-        // always current and the engine needs them regardless of lookback.
-        let inactive_reports: Vec<OrderStatusReport> = match (cmd.start, cmd.end) {
-            (Some(start), Some(end)) => inactive_reports
-                .into_iter()
-                .filter(|r| r.ts_last >= start && r.ts_last <= end)
-                .collect(),
-            (Some(start), None) => inactive_reports
-                .into_iter()
-                .filter(|r| r.ts_last >= start)
-                .collect(),
-            (None, Some(end)) => inactive_reports
-                .into_iter()
-                .filter(|r| r.ts_last <= end)
-                .collect(),
-            (None, None) => inactive_reports,
-        };
-
-        let mut reports = active_reports;
-        reports.extend(inactive_reports);
 
         for report in &reports {
             self.dispatch.seed_accepted_from_report(report);
@@ -4426,14 +4420,15 @@ impl ExecutionClient for LighterExecutionClient {
                     ts_init,
                 ) {
                     Ok(Some(report)) => {
-                        self.dispatch.note_active_market(trade.market_id);
+                        if cmd.start.is_some_and(|start| report.ts_event < start)
+                            || cmd.end.is_some_and(|end| report.ts_event > end)
+                        {
+                            continue;
+                        }
 
                         // Mass-status reconciliation must surface the original
                         // Nautilus cloid, not the venue's numeric echo.
                         let report = self.dispatch.translate_fill_cloid(report);
-                        if cmd.end.is_some_and(|end| report.ts_event > end) {
-                            continue;
-                        }
 
                         if !seen_in_call.insert(report.trade_id) {
                             log::debug!(
@@ -4454,6 +4449,7 @@ impl ExecutionClient for LighterExecutionClient {
                             continue;
                         }
 
+                        self.dispatch.note_active_market(trade.market_id);
                         reports.push(report);
                     }
                     Ok(None) => {}
@@ -4536,12 +4532,56 @@ impl ExecutionClient for LighterExecutionClient {
             GeneratePositionStatusReports::new(UUID4::new(), ts_init, None, None, None, None, None);
 
         // Each sub-call degrades independently; see `unwrap_reports_or_warn`.
-        let order_reports = unwrap_reports_or_warn(
+        let mut order_reports = unwrap_reports_or_warn(
             "order",
             self.generate_order_status_reports(&order_cmd).await,
         );
-        let fill_reports =
+        let mut fill_reports =
             unwrap_reports_or_warn("fill", self.generate_fill_reports(fill_cmd).await);
+
+        let reported_orders: AHashSet<VenueOrderId> = order_reports
+            .iter()
+            .map(|report| report.venue_order_id)
+            .collect();
+        let mut fill_markets: Vec<i16> = fill_reports
+            .iter()
+            .filter(|report| !reported_orders.contains(&report.venue_order_id))
+            .filter_map(|report| self.registry.market_index(&report.instrument_id))
+            .collect::<AHashSet<_>>()
+            .into_iter()
+            .collect();
+        fill_markets.sort_unstable();
+
+        for market_index in fill_markets {
+            let Some(instrument_id) = self.registry.instrument_id(market_index) else {
+                continue;
+            };
+            let order_cmd = GenerateOrderStatusReports::new(
+                UUID4::new(),
+                ts_init,
+                false,
+                Some(instrument_id),
+                lookback_start,
+                None,
+                None,
+                None,
+            );
+            order_reports.extend(unwrap_reports_or_warn(
+                "order",
+                self.generate_order_status_reports(&order_cmd).await,
+            ));
+        }
+
+        for fill_report in &mut fill_reports {
+            if let Some(client_order_id) = order_reports
+                .iter()
+                .find(|order_report| order_report.venue_order_id == fill_report.venue_order_id)
+                .and_then(|order_report| order_report.client_order_id)
+            {
+                fill_report.client_order_id = Some(client_order_id);
+            }
+        }
+
         let position_reports = unwrap_reports_or_warn(
             "position",
             self.generate_position_status_reports(&position_cmd).await,
@@ -4573,6 +4613,7 @@ fn restore_reconciled_order(
     core: &ExecutionClientCore,
     dispatch: &WsDispatchState,
     raw: &crate::http::models::LighterOrder,
+    terminal: bool,
 ) {
     let venue_order_id = VenueOrderId::new(raw.order_id.as_str());
     let cached_order = {
@@ -4599,9 +4640,12 @@ fn restore_reconciled_order(
         return;
     }
 
-    if let Err(e) =
-        dispatch.restore_reconciled_order(&cached_order, raw.client_order_index, venue_order_id)
-    {
+    if let Err(e) = dispatch.restore_reconciled_order(
+        &cached_order,
+        raw.client_order_index,
+        venue_order_id,
+        terminal,
+    ) {
         log::warn!(
             "Ignoring conflicting Lighter reconciliation identity: cloid={}, venue_order_id={venue_order_id}, client_order_index={}, error={e}",
             cached_order.client_order_id(),
@@ -9604,7 +9648,7 @@ mod tests {
         let raw =
             reconciliation_raw_order(client_order_index, venue_order_id, LighterOrderStatus::Open);
 
-        restore_reconciled_order(&client.core, &client.dispatch, &raw);
+        restore_reconciled_order(&client.core, &client.dispatch, &raw, false);
         let report =
             parse_http_order_to_report(&raw, &client.registry, account_id(), UnixNanos::from(1))
                 .unwrap();
@@ -9663,6 +9707,42 @@ mod tests {
     }
 
     #[rstest]
+    fn reconciliation_retires_stale_active_cache_from_terminal_report() {
+        let (client, cache, _rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "O-RECON-FILLED");
+        let cloid = order.client_order_id();
+        let venue_order_id = VenueOrderId::from("281476929510119");
+        cache_accepted_order(&cache, order, venue_order_id, None);
+        let (_, client_order_index) = forced_probed_index(cloid);
+        let raw = reconciliation_raw_order(
+            client_order_index,
+            venue_order_id,
+            LighterOrderStatus::Filled,
+        );
+
+        restore_reconciled_order(&client.core, &client.dispatch, &raw, true);
+        let fill = client
+            .dispatch
+            .translate_fill_cloid(reconciliation_fill_report(
+                instrument_id,
+                client_order_index,
+                venue_order_id,
+                "19209006919",
+            ));
+
+        assert!(!client.dispatch.cloid_map.contains_key(&client_order_index));
+        assert!(!client.dispatch.order_identities.contains_key(&cloid));
+        assert_eq!(
+            client.dispatch.client_order_index(&cloid),
+            Some(client_order_index),
+        );
+        assert_eq!(fill.client_order_id, Some(cloid));
+        assert_eq!(fill.venue_order_id, venue_order_id);
+    }
+
+    #[rstest]
     fn reconciliation_restores_reused_retired_index_for_fill_translation() {
         let (client, cache, _rx) = create_execution_client();
         let instrument_id = register_test_instrument(&client, &cache);
@@ -9687,8 +9767,8 @@ mod tests {
             LighterOrderStatus::Canceled,
         );
 
-        restore_reconciled_order(&client.core, &client.dispatch, &first_raw);
-        restore_reconciled_order(&client.core, &client.dispatch, &second_raw);
+        restore_reconciled_order(&client.core, &client.dispatch, &first_raw, true);
+        restore_reconciled_order(&client.core, &client.dispatch, &second_raw, true);
         let first_fill = client
             .dispatch
             .translate_fill_cloid(reconciliation_fill_report(
@@ -9786,7 +9866,7 @@ mod tests {
         let raw =
             reconciliation_raw_order(client_order_index, venue_order_id, LighterOrderStatus::Open);
 
-        restore_reconciled_order(&client.core, &client.dispatch, &raw);
+        restore_reconciled_order(&client.core, &client.dispatch, &raw, false);
 
         assert!(client.dispatch.order_identities.contains_key(&cloid));
         assert!(client.dispatch.accepted_was_emitted(&cloid));
@@ -9824,8 +9904,8 @@ mod tests {
         );
         let raw_client_id = client_order_index.to_string();
 
-        restore_reconciled_order(&client.core, &client.dispatch, &active_raw);
-        restore_reconciled_order(&client.core, &client.dispatch, &retired_raw);
+        restore_reconciled_order(&client.core, &client.dispatch, &active_raw, false);
+        restore_reconciled_order(&client.core, &client.dispatch, &retired_raw, true);
 
         assert_eq!(
             client
@@ -9866,7 +9946,7 @@ mod tests {
         let raw =
             reconciliation_raw_order(client_order_index, venue_order_id, LighterOrderStatus::Open);
 
-        restore_reconciled_order(&client.core, &client.dispatch, &raw);
+        restore_reconciled_order(&client.core, &client.dispatch, &raw, false);
         let report =
             parse_http_order_to_report(&raw, &client.registry, account_id(), UnixNanos::from(1))
                 .unwrap();

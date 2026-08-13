@@ -1290,6 +1290,9 @@ impl WsDispatchState {
 
     /// Restore an exact order identity observed during reconciliation.
     ///
+    /// `terminal` reflects the current venue report because the cached order can be stale after a
+    /// restart.
+    ///
     /// # Errors
     ///
     /// Returns an error when the cached order does not carry the same venue order ID, the client
@@ -1299,9 +1302,9 @@ impl WsDispatchState {
         order: &OrderAny,
         client_order_index: i64,
         venue_order_id: VenueOrderId,
+        terminal: bool,
     ) -> anyhow::Result<()> {
         let cloid = order.client_order_id();
-        let terminal = order.is_closed();
         anyhow::ensure!(
             order.venue_order_id() == Some(venue_order_id),
             "cached Lighter order {cloid} does not match venue order ID {venue_order_id}",
