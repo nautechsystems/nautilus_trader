@@ -469,7 +469,7 @@ pub struct HyperliquidCandle {
     /// Candle start timestamp in milliseconds.
     #[serde(rename = "t")]
     pub timestamp: u64,
-    /// Candle end timestamp in milliseconds.
+    /// Candle end timestamp in milliseconds, inclusive.
     #[serde(rename = "T")]
     pub end_timestamp: u64,
     /// Open price.

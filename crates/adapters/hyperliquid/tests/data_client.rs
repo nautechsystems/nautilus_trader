@@ -46,10 +46,10 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            RequestBookSnapshot, RequestCustomData, RequestFundingRates, RequestInstrument,
-            RequestInstruments, RequestTrades, SubscribeBookDeltas, SubscribeCustomData,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeCustomData,
-            UnsubscribeMarkPrices,
+            RequestBars, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
+            RequestInstrument, RequestInstruments, RequestTrades, SubscribeBookDeltas,
+            SubscribeCustomData, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+            UnsubscribeCustomData, UnsubscribeMarkPrices,
         },
     },
     testing::wait_until_async,
@@ -72,7 +72,7 @@ use nautilus_hyperliquid::{
     },
 };
 use nautilus_model::{
-    data::{CustomData, Data, DataType},
+    data::{BarType, CustomData, Data, DataType},
     enums::BookType,
     identifiers::InstrumentId,
     instruments::Instrument,
@@ -254,18 +254,32 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             }
             Json(load_json("http_recent_trades_btc.json")).into_response()
         }
-        "candleSnapshot" => Json(json!([{
-            "t": 1703875200000u64,
-            "T": 1703875260000u64,
-            "s": "BTC",
-            "i": "1m",
-            "o": "98450.00",
-            "c": "98460.00",
-            "h": "98470.00",
-            "l": "98440.00",
-            "v": "100.5",
-            "n": 50
-        }]))
+        "candleSnapshot" => Json(json!([
+            {
+                "t": 1703875200000u64,
+                "T": 1703875259999u64,
+                "s": "BTC",
+                "i": "1m",
+                "o": "98450.00",
+                "c": "98460.00",
+                "h": "98470.00",
+                "l": "98440.00",
+                "v": "100.5",
+                "n": 50
+            },
+            {
+                "t": 4_102_444_800_000u64,
+                "T": 4_102_444_859_999u64,
+                "s": "BTC",
+                "i": "1m",
+                "o": "98460.00",
+                "c": "98470.00",
+                "h": "98480.00",
+                "l": "98450.00",
+                "v": "200.5",
+                "n": 60
+            }
+        ]))
         .into_response(),
         "clearinghouseState" => Json(json!({
             "marginSummary": {
@@ -2406,6 +2420,55 @@ async fn test_data_client_request_trades() {
             );
         }
         other => panic!("Expected Trades response, was: {other:?}"),
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_request_bars_filters_unfinished_candle() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let bar_type = BarType::from("BTC-USD-PERP.HYPERLIQUID-1-MINUTE-LAST-EXTERNAL");
+    let request = RequestBars::new(
+        bar_type,
+        None,
+        None,
+        None,
+        Some(*HYPERLIQUID_CLIENT_ID),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.request_bars(request).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for bars response")
+        .expect("channel closed");
+
+    match event {
+        DataEvent::Response(DataResponse::Bars(bars_response)) => {
+            assert_eq!(bars_response.bar_type, bar_type);
+            assert_eq!(bars_response.data.len(), 1);
+
+            let bar = bars_response.data[0];
+            assert_eq!(bar.ts_event, UnixNanos::from(1_703_875_200_000_000_000));
+            assert_eq!(bar.ts_init, UnixNanos::from(1_703_875_260_000_000_000));
+        }
+        other => panic!("Expected Bars response, was: {other:?}"),
     }
 
     client.disconnect().await.unwrap();
