@@ -25,6 +25,10 @@ use nautilus_core::python::{
 use pyo3::{IntoPyObjectExt, basic::CompareOp, prelude::*, types::PyFloat};
 use rust_decimal::{Decimal, RoundingStrategy};
 
+use super::fixed::{
+    ArithmeticError, ArithmeticOperation, FloatArithmetic, check_raw_scales,
+    extract_arithmetic_decimal,
+};
 use crate::types::{Currency, Money, fixed::raw_scale, money::MoneyRaw};
 
 #[pymethods]
@@ -81,17 +85,20 @@ impl Money {
     fn __add__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract::<f64>()?;
-            (self.as_f64() + other_float).into_py_any(py)
+            ArithmeticOperation::Add
+                .checked_f64(self.as_f64_checked()?, other_float)?
+                .into_py_any(py)
         } else if let Ok(other_money) = other.extract::<Self>() {
-            if self.currency != other_money.currency {
-                return Err(to_pyvalue_err(format!(
-                    "Currency mismatch: cannot add {} to {}",
-                    other_money.currency.code, self.currency.code
-                )));
-            }
-            (*self + other_money).into_py_any(py)
-        } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            (self.as_decimal() + other_dec).into_py_any(py)
+            check_money_currency(self, &other_money)?;
+            check_raw_scales(self.currency.precision, other_money.currency.precision)?;
+            (*self)
+                .checked_add(other_money)
+                .ok_or(ArithmeticError::Overflow)?
+                .into_py_any(py)
+        } else if let Some(other_dec) = extract_arithmetic_decimal(other) {
+            ArithmeticOperation::Add
+                .checked_decimal(self.as_decimal(), other_dec)?
+                .into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -103,17 +110,20 @@ impl Money {
     fn __radd__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            (other_float + self.as_f64()).into_py_any(py)
+            ArithmeticOperation::Add
+                .checked_f64(other_float, self.as_f64_checked()?)?
+                .into_py_any(py)
         } else if let Ok(other_money) = other.extract::<Self>() {
-            if self.currency != other_money.currency {
-                return Err(to_pyvalue_err(format!(
-                    "Currency mismatch: cannot add {} to {}",
-                    self.currency.code, other_money.currency.code
-                )));
-            }
-            (other_money + *self).into_py_any(py)
-        } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            (other_dec + self.as_decimal()).into_py_any(py)
+            check_money_currency(&other_money, self)?;
+            check_raw_scales(other_money.currency.precision, self.currency.precision)?;
+            other_money
+                .checked_add(*self)
+                .ok_or(ArithmeticError::Overflow)?
+                .into_py_any(py)
+        } else if let Some(other_dec) = extract_arithmetic_decimal(other) {
+            ArithmeticOperation::Add
+                .checked_decimal(other_dec, self.as_decimal())?
+                .into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -125,17 +135,20 @@ impl Money {
     fn __sub__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            (self.as_f64() - other_float).into_py_any(py)
+            ArithmeticOperation::Sub
+                .checked_f64(self.as_f64_checked()?, other_float)?
+                .into_py_any(py)
         } else if let Ok(other_money) = other.extract::<Self>() {
-            if self.currency != other_money.currency {
-                return Err(to_pyvalue_err(format!(
-                    "Currency mismatch: cannot subtract {} from {}",
-                    other_money.currency.code, self.currency.code
-                )));
-            }
-            (*self - other_money).into_py_any(py)
-        } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            (self.as_decimal() - other_dec).into_py_any(py)
+            check_money_currency(self, &other_money)?;
+            check_raw_scales(self.currency.precision, other_money.currency.precision)?;
+            (*self)
+                .checked_sub(other_money)
+                .ok_or(ArithmeticError::Overflow)?
+                .into_py_any(py)
+        } else if let Some(other_dec) = extract_arithmetic_decimal(other) {
+            ArithmeticOperation::Sub
+                .checked_decimal(self.as_decimal(), other_dec)?
+                .into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -147,17 +160,20 @@ impl Money {
     fn __rsub__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            (other_float - self.as_f64()).into_py_any(py)
+            ArithmeticOperation::Sub
+                .checked_f64(other_float, self.as_f64_checked()?)?
+                .into_py_any(py)
         } else if let Ok(other_money) = other.extract::<Self>() {
-            if self.currency != other_money.currency {
-                return Err(to_pyvalue_err(format!(
-                    "Currency mismatch: cannot subtract {} from {}",
-                    self.currency.code, other_money.currency.code
-                )));
-            }
-            (other_money - *self).into_py_any(py)
-        } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            (other_dec - self.as_decimal()).into_py_any(py)
+            check_money_currency(&other_money, self)?;
+            check_raw_scales(other_money.currency.precision, self.currency.precision)?;
+            other_money
+                .checked_sub(*self)
+                .ok_or(ArithmeticError::Overflow)?
+                .into_py_any(py)
+        } else if let Some(other_dec) = extract_arithmetic_decimal(other) {
+            ArithmeticOperation::Sub
+                .checked_decimal(other_dec, self.as_decimal())?
+                .into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -169,11 +185,18 @@ impl Money {
     fn __mul__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            (self.as_f64() * other_float).into_py_any(py)
-        } else if let Ok(other_qty) = other.extract::<Self>() {
-            (self.as_decimal() * other_qty.as_decimal()).into_py_any(py)
-        } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            (self.as_decimal() * other_dec).into_py_any(py)
+            ArithmeticOperation::Mul
+                .checked_f64(self.as_f64_checked()?, other_float)?
+                .into_py_any(py)
+        } else if let Ok(other_money) = other.extract::<Self>() {
+            check_money_currency(self, &other_money)?;
+            ArithmeticOperation::Mul
+                .checked_decimal(self.as_decimal(), other_money.as_decimal())?
+                .into_py_any(py)
+        } else if let Some(other_dec) = extract_arithmetic_decimal(other) {
+            ArithmeticOperation::Mul
+                .checked_decimal(self.as_decimal(), other_dec)?
+                .into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -185,11 +208,18 @@ impl Money {
     fn __rmul__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            (other_float * self.as_f64()).into_py_any(py)
-        } else if let Ok(other_qty) = other.extract::<Self>() {
-            (other_qty.as_decimal() * self.as_decimal()).into_py_any(py)
-        } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            (other_dec * self.as_decimal()).into_py_any(py)
+            ArithmeticOperation::Mul
+                .checked_f64(other_float, self.as_f64_checked()?)?
+                .into_py_any(py)
+        } else if let Ok(other_money) = other.extract::<Self>() {
+            check_money_currency(&other_money, self)?;
+            ArithmeticOperation::Mul
+                .checked_decimal(other_money.as_decimal(), self.as_decimal())?
+                .into_py_any(py)
+        } else if let Some(other_dec) = extract_arithmetic_decimal(other) {
+            ArithmeticOperation::Mul
+                .checked_decimal(other_dec, self.as_decimal())?
+                .into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -201,11 +231,18 @@ impl Money {
     fn __truediv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            (self.as_f64() / other_float).into_py_any(py)
-        } else if let Ok(other_qty) = other.extract::<Self>() {
-            (self.as_decimal() / other_qty.as_decimal()).into_py_any(py)
-        } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            (self.as_decimal() / other_dec).into_py_any(py)
+            ArithmeticOperation::Div
+                .checked_f64(self.as_f64_checked()?, other_float)?
+                .into_py_any(py)
+        } else if let Ok(other_money) = other.extract::<Self>() {
+            check_money_currency(self, &other_money)?;
+            ArithmeticOperation::Div
+                .checked_decimal(self.as_decimal(), other_money.as_decimal())?
+                .into_py_any(py)
+        } else if let Some(other_dec) = extract_arithmetic_decimal(other) {
+            ArithmeticOperation::Div
+                .checked_decimal(self.as_decimal(), other_dec)?
+                .into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -217,11 +254,18 @@ impl Money {
     fn __rtruediv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            (other_float / self.as_f64()).into_py_any(py)
-        } else if let Ok(other_qty) = other.extract::<Self>() {
-            (other_qty.as_decimal() / self.as_decimal()).into_py_any(py)
-        } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            (other_dec / self.as_decimal()).into_py_any(py)
+            ArithmeticOperation::Div
+                .checked_f64(other_float, self.as_f64_checked()?)?
+                .into_py_any(py)
+        } else if let Ok(other_money) = other.extract::<Self>() {
+            check_money_currency(&other_money, self)?;
+            ArithmeticOperation::Div
+                .checked_decimal(other_money.as_decimal(), self.as_decimal())?
+                .into_py_any(py)
+        } else if let Some(other_dec) = extract_arithmetic_decimal(other) {
+            ArithmeticOperation::Div
+                .checked_decimal(other_dec, self.as_decimal())?
+                .into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -233,13 +277,21 @@ impl Money {
     fn __floordiv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            (self.as_f64() / other_float).floor().into_py_any(py)
-        } else if let Ok(other_qty) = other.extract::<Self>() {
-            (self.as_decimal() / other_qty.as_decimal())
+            ArithmeticOperation::Div
+                .checked_f64(self.as_f64_checked()?, other_float)?
                 .floor()
                 .into_py_any(py)
-        } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            (self.as_decimal() / other_dec).floor().into_py_any(py)
+        } else if let Ok(other_money) = other.extract::<Self>() {
+            check_money_currency(self, &other_money)?;
+            ArithmeticOperation::Div
+                .checked_decimal(self.as_decimal(), other_money.as_decimal())?
+                .floor()
+                .into_py_any(py)
+        } else if let Some(other_dec) = extract_arithmetic_decimal(other) {
+            ArithmeticOperation::Div
+                .checked_decimal(self.as_decimal(), other_dec)?
+                .floor()
+                .into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -251,13 +303,21 @@ impl Money {
     fn __rfloordiv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            (other_float / self.as_f64()).floor().into_py_any(py)
-        } else if let Ok(other_qty) = other.extract::<Self>() {
-            (other_qty.as_decimal() / self.as_decimal())
+            ArithmeticOperation::Div
+                .checked_f64(other_float, self.as_f64_checked()?)?
                 .floor()
                 .into_py_any(py)
-        } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            (other_dec / self.as_decimal()).floor().into_py_any(py)
+        } else if let Ok(other_money) = other.extract::<Self>() {
+            check_money_currency(&other_money, self)?;
+            ArithmeticOperation::Div
+                .checked_decimal(other_money.as_decimal(), self.as_decimal())?
+                .floor()
+                .into_py_any(py)
+        } else if let Some(other_dec) = extract_arithmetic_decimal(other) {
+            ArithmeticOperation::Div
+                .checked_decimal(other_dec, self.as_decimal())?
+                .floor()
+                .into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -269,11 +329,18 @@ impl Money {
     fn __mod__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            (self.as_f64() % other_float).into_py_any(py)
-        } else if let Ok(other_qty) = other.extract::<Self>() {
-            (self.as_decimal() % other_qty.as_decimal()).into_py_any(py)
-        } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            (self.as_decimal() % other_dec).into_py_any(py)
+            ArithmeticOperation::Rem
+                .checked_f64(self.as_f64_checked()?, other_float)?
+                .into_py_any(py)
+        } else if let Ok(other_money) = other.extract::<Self>() {
+            check_money_currency(self, &other_money)?;
+            ArithmeticOperation::Rem
+                .checked_decimal(self.as_decimal(), other_money.as_decimal())?
+                .into_py_any(py)
+        } else if let Some(other_dec) = extract_arithmetic_decimal(other) {
+            ArithmeticOperation::Rem
+                .checked_decimal(self.as_decimal(), other_dec)?
+                .into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -285,11 +352,18 @@ impl Money {
     fn __rmod__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<Py<PyAny>> {
         if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
-            (other_float % self.as_f64()).into_py_any(py)
-        } else if let Ok(other_qty) = other.extract::<Self>() {
-            (other_qty.as_decimal() % self.as_decimal()).into_py_any(py)
-        } else if let Ok(other_dec) = other.extract::<Decimal>() {
-            (other_dec % self.as_decimal()).into_py_any(py)
+            ArithmeticOperation::Rem
+                .checked_f64(other_float, self.as_f64_checked()?)?
+                .into_py_any(py)
+        } else if let Ok(other_money) = other.extract::<Self>() {
+            check_money_currency(&other_money, self)?;
+            ArithmeticOperation::Rem
+                .checked_decimal(other_money.as_decimal(), self.as_decimal())?
+                .into_py_any(py)
+        } else if let Some(other_dec) = extract_arithmetic_decimal(other) {
+            ArithmeticOperation::Rem
+                .checked_decimal(other_dec, self.as_decimal())?
+                .into_py_any(py)
         } else {
             let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
@@ -437,6 +511,16 @@ impl Money {
         }
         Ok(self.checked_sub(other))
     }
+}
+
+fn check_money_currency(lhs: &Money, rhs: &Money) -> PyResult<()> {
+    if lhs.currency != rhs.currency {
+        return Err(to_pyvalue_err(format!(
+            "Currency mismatch: {} vs {}",
+            lhs.currency.code, rhs.currency.code
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
