@@ -3803,6 +3803,50 @@ mod tests {
     }
 
     #[rstest]
+    fn incomplete_snapshot_hash_preimage_resumes_book() {
+        let mut snapshot: PolymarketBookSnapshot = serde_json::from_str(include_str!(
+            "../../test_data/ws_book_snapshot_captured.json"
+        ))
+        .expect("captured snapshot should deserialize");
+        snapshot.tick_size = None;
+        snapshot.last_trade_price = None;
+
+        let asset_id = snapshot.asset_id.as_str();
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let instrument = seed_instrument_with_context(
+            &ctx,
+            asset_id,
+            Price::from("0.01"),
+            Quantity::from("0.000001"),
+            SeedInstrumentContext {
+                min_order_size: Some("5"),
+                neg_risk: Some(false),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let instrument_id = instrument.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.active_quote_subs.insert(instrument_id);
+        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+
+        handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
+
+        assert!(
+            !ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        assert!(ctx.order_books.contains_key(&instrument_id));
+        assert!(ctx.last_quotes.contains_key(&instrument_id));
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert_eq!(events.len(), 2);
+        assert!(matches!(
+            events[0],
+            DataEvent::Data(NautilusData::Deltas(_))
+        ));
+        assert!(matches!(events[1], DataEvent::Data(NautilusData::Quote(_))));
+    }
+
+    #[rstest]
     fn price_change_emits_delta_when_not_pending() {
         let asset_id_str = "0xTOKEN10";
         let market = "0xMARKET";

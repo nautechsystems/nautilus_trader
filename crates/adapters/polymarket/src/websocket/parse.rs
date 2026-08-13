@@ -70,11 +70,14 @@ pub(crate) fn verify_book_snapshot_hash(
     snap: &PolymarketBookSnapshot,
     min_order_size: Option<&str>,
     neg_risk: Option<bool>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     let Some(expected) = snap.hash.as_deref() else {
-        return Ok(());
+        return Ok(false);
     };
-    let computed = book_snapshot_hash(snap, min_order_size, neg_risk)?;
+
+    let Some(computed) = book_snapshot_hash(snap, min_order_size, neg_risk)? else {
+        return Ok(false);
+    };
 
     if computed != expected {
         anyhow::bail!(
@@ -83,42 +86,29 @@ pub(crate) fn verify_book_snapshot_hash(
         );
     }
 
-    Ok(())
+    Ok(true)
 }
 
 fn book_snapshot_hash(
     snap: &PolymarketBookSnapshot,
     min_order_size: Option<&str>,
     neg_risk: Option<bool>,
-) -> anyhow::Result<String> {
-    let min_order_size = snap
-        .min_order_size
-        .as_deref()
-        .or(min_order_size)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Book snapshot hash preimage missing min_order_size for {}",
-                snap.asset_id
-            )
-        })?;
-    let tick_size = snap.tick_size.as_deref().ok_or_else(|| {
-        anyhow::anyhow!(
-            "Book snapshot hash preimage missing tick_size for {}",
-            snap.asset_id
-        )
-    })?;
-    let neg_risk = snap.neg_risk.or(neg_risk).ok_or_else(|| {
-        anyhow::anyhow!(
-            "Book snapshot hash preimage missing neg_risk for {}",
-            snap.asset_id
-        )
-    })?;
-    let last_trade_price = snap.last_trade_price.as_deref().ok_or_else(|| {
-        anyhow::anyhow!(
-            "Book snapshot hash preimage missing last_trade_price for {}",
-            snap.asset_id
-        )
-    })?;
+) -> anyhow::Result<Option<String>> {
+    let Some(min_order_size) = snap.min_order_size.as_deref().or(min_order_size) else {
+        return Ok(None);
+    };
+
+    let Some(tick_size) = snap.tick_size.as_deref() else {
+        return Ok(None);
+    };
+
+    let Some(neg_risk) = snap.neg_risk.or(neg_risk) else {
+        return Ok(None);
+    };
+
+    let Some(last_trade_price) = snap.last_trade_price.as_deref() else {
+        return Ok(None);
+    };
 
     // Keep field order aligned with the server-compatible payload in the official SDK:
     // Polymarket/py-clob-client-v2@215fc63a8fd6ec3a10c7edb73997c9772d8686d3:utilities.py
@@ -134,9 +124,11 @@ fn book_snapshot_hash(
         neg_risk,
         last_trade_price,
     };
+
     let serialized = serde_json::to_vec(&preimage)?;
     let hash = digest(&SHA1_FOR_LEGACY_USE_ONLY, &serialized);
-    Ok(hex::encode(hash))
+
+    Ok(Some(hex::encode(hash)))
 }
 
 #[derive(Serialize)]
@@ -542,9 +534,9 @@ mod tests {
         assert_eq!(snap.last_trade_price.as_deref(), Some("0.920"));
         assert_eq!(
             book_snapshot_hash(&snap, Some("5"), Some(false)).unwrap(),
-            "ed47eb91f3c7985fac1cb18cb7c19535eddd3c0a"
+            Some("ed47eb91f3c7985fac1cb18cb7c19535eddd3c0a".to_string())
         );
-        verify_book_snapshot_hash(&snap, Some("5"), Some(false)).unwrap();
+        assert!(verify_book_snapshot_hash(&snap, Some("5"), Some(false)).unwrap());
     }
 
     #[rstest]
@@ -569,7 +561,16 @@ mod tests {
     fn test_book_snapshot_hash_allows_missing_hash() {
         let snap: PolymarketBookSnapshot = load("ws_book_snapshot_missing_hash.json");
 
-        verify_book_snapshot_hash(&snap, None, None).unwrap();
+        assert!(!verify_book_snapshot_hash(&snap, None, None).unwrap());
+    }
+
+    #[rstest]
+    fn test_book_snapshot_hash_allows_incomplete_preimage() {
+        let mut snap: PolymarketBookSnapshot = load("ws_book_snapshot_captured.json");
+        snap.tick_size = None;
+        snap.last_trade_price = None;
+
+        assert!(!verify_book_snapshot_hash(&snap, Some("5"), Some(false)).unwrap());
     }
 
     #[rstest]

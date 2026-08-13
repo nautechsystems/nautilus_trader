@@ -769,9 +769,13 @@ A single `price_change` payload can contain interleaved updates for several asse
 groups updates by instrument and publishes one atomic order book delta batch per instrument, while
 quote processing remains in the venue payload order.
 
-When a `book` snapshot includes a hash, the adapter reproduces it from the exact wire values and
-level order. It logs and rejects a mismatch before the snapshot can update local book state, emit
-snapshot‑derived deltas or quotes, or resume gated book deltas. Snapshots without a hash remain
+When a `book` snapshot includes a hash and its full preimage, the adapter reproduces it from the
+exact wire values and level order. It logs and rejects a mismatch before the snapshot can update
+local book state, emit snapshot‑derived deltas or quotes, or resume gated book deltas.
+
+Polymarket also sends hashed book updates that omit fields included in the server's hash preimage,
+such as `tick_size` and `last_trade_price`. The adapter accepts these updates without hash
+verification because their exact hash preimage is unavailable. Snapshots without a hash remain
 compatible.
 
 #### Effective deltas
