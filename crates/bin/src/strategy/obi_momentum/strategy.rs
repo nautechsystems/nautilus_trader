@@ -15,12 +15,11 @@
 
 //! Multi-level order book imbalance (OBI) momentum strategy implementation.
 
-use std::{collections::VecDeque, fmt::Debug, num::NonZeroUsize};
+use std::{collections::VecDeque, fmt::Debug, num::NonZeroUsize, time::Duration};
 
 use ahash::AHashSet;
-use nautilus_common::actor::DataActor;
+use nautilus_common::{actor::DataActor, timer::TimeEvent};
 use nautilus_model::{
-    data::OrderBookDeltas,
     enums::{BookType::L2_MBP, OrderSide, PositionSide, TimeInForce::Ioc},
     events::{
         OrderCanceled, OrderDenied, OrderExpired, OrderFilled, OrderRejected, PositionClosed,
@@ -34,6 +33,9 @@ use nautilus_model::{
 use nautilus_trading::{Strategy, StrategyCore, nautilus_strategy};
 
 use crate::strategy::obi_momentum::config::ObiMomentumConfig;
+
+/// Name of the timer driving indicator evaluation.
+const TIMER_NAME: &str = "OBI_MOM_TIMER";
 
 /// Pushes a value into a bounded ring buffer, evicting the oldest element.
 pub(super) fn push_bounded(values: &mut VecDeque<f64>, capacity: usize, value: f64) {
@@ -127,9 +129,9 @@ pub(super) fn median(values: &VecDeque<f64>) -> Option<f64> {
 ///
 /// Computes the imbalance between bid and ask volume across the top
 /// `num_levels` book levels, standardizes it into a z-score over a rolling
-/// window of book updates, and trades the resulting momentum: entering long
-/// above `+entry_threshold`, short below `-entry_threshold`, reducing on
-/// signal decay below `reduce_threshold`, and flattening below
+/// window of timer-driven evaluations, and trades the resulting momentum:
+/// entering long above `+entry_threshold`, short below `-entry_threshold`,
+/// reducing on signal decay below `reduce_threshold`, and flattening below
 /// `close_threshold` or on a sign flip. An optional realized-volatility
 /// regime filter blocks new entries during low-volatility environments.
 pub struct ObiMomentum {
@@ -360,6 +362,68 @@ impl ObiMomentum {
         }
         self.exit_order_ids.remove(&client_order_id);
     }
+
+    /// Evaluates the indicator from the cached order book and trades on it.
+    fn evaluate(&mut self, now_ns: u64) -> anyhow::Result<()> {
+        let order_book = match self.cache().order_book(&self.config.instrument_id) {
+            Some(book) => book,
+            None => return Ok(()),
+        };
+        let (Some(bid_price), Some(ask_price)) =
+            (order_book.best_bid_price(), order_book.best_ask_price())
+        else {
+            return Ok(());
+        };
+        let mid = f64::midpoint(bid_price.as_f64(), ask_price.as_f64());
+
+        if let Some(last_mid) = self.last_mid
+            && last_mid > 0.0
+        {
+            push_bounded(
+                &mut self.returns,
+                self.config.regime_vol_window,
+                (mid - last_mid) / last_mid,
+            );
+        }
+        self.last_mid = Some(mid);
+        self.last_update_ns = Some(now_ns);
+
+        let depth = Some(self.config.num_levels);
+        let bids: Vec<(f64, f64)> = order_book
+            .bids(depth)
+            .map(|level| (level.price.value.as_f64(), level.size_decimal().as_f64()))
+            .collect();
+        let asks: Vec<(f64, f64)> = order_book
+            .asks(depth)
+            .map(|level| (level.price.value.as_f64(), level.size_decimal().as_f64()))
+            .collect();
+
+        let Some(imbalance_value) = imbalance(&bids, &asks, mid, self.config.weighted) else {
+            return Ok(());
+        };
+        push_bounded(
+            &mut self.imbalance_samples,
+            self.config.zscore_window,
+            imbalance_value,
+        );
+
+        if let Some(vol) = realized_vol(&self.returns) {
+            push_bounded(
+                &mut self.vol_samples,
+                self.config.regime_history_window,
+                vol,
+            );
+        }
+
+        if !self.signal_ready() {
+            return Ok(());
+        }
+        let Some(signal) = z_score(&self.imbalance_samples) else {
+            return Ok(());
+        };
+
+        self.handle_signal(signal)
+    }
 }
 
 nautilus_strategy!(ObiMomentum, {
@@ -461,94 +525,41 @@ impl DataActor for ObiMomentum {
             None,
         );
 
+        self.clock().set_timer(
+            TIMER_NAME,
+            Duration::from_millis(self.config.timer_interval_ms),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
+
         log::info!(
             "OBI momentum started: instrument={instrument_id}, levels={}, weighted={}, \
-             zscore_window={}, entry={}, reduce={}, close={}, trade_size={trade_size}",
+             zscore_window={}, entry={}, reduce={}, close={}, trade_size={trade_size}, \
+             timer_interval_ms={}",
             self.config.num_levels,
             self.config.weighted,
             self.config.zscore_window,
             self.config.entry_threshold,
             self.config.reduce_threshold,
             self.config.close_threshold,
+            self.config.timer_interval_ms,
         );
 
         Ok(())
     }
 
-    fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
-        if deltas.instrument_id != self.config.instrument_id {
+    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+        if event.name != TIMER_NAME {
             return Ok(());
         }
-
-        // Throttle signal evaluation to the configured minimum interval
-        if let Some(last_update_ns) = self.last_update_ns
-            && deltas.ts_event.as_u64().saturating_sub(last_update_ns)
-                < self.config.min_update_interval_ms * 1_000_000
-        {
-            return Ok(());
-        }
-
-        let order_book = match self.cache().order_book(&self.config.instrument_id) {
-            Some(book) => book,
-            None => return Ok(()),
-        };
-        let (Some(bid_price), Some(ask_price)) =
-            (order_book.best_bid_price(), order_book.best_ask_price())
-        else {
-            return Ok(());
-        };
-        let mid = f64::midpoint(bid_price.as_f64(), ask_price.as_f64());
-
-        if let Some(last_mid) = self.last_mid
-            && last_mid > 0.0
-        {
-            push_bounded(
-                &mut self.returns,
-                self.config.regime_vol_window,
-                (mid - last_mid) / last_mid,
-            );
-        }
-        self.last_mid = Some(mid);
-        self.last_update_ns = Some(deltas.ts_event.as_u64());
-
-        let depth = Some(self.config.num_levels);
-        let bids: Vec<(f64, f64)> = order_book
-            .bids(depth)
-            .map(|level| (level.price.value.as_f64(), level.size_decimal().as_f64()))
-            .collect();
-        let asks: Vec<(f64, f64)> = order_book
-            .asks(depth)
-            .map(|level| (level.price.value.as_f64(), level.size_decimal().as_f64()))
-            .collect();
-
-        let Some(imbalance_value) = imbalance(&bids, &asks, mid, self.config.weighted) else {
-            return Ok(());
-        };
-        push_bounded(
-            &mut self.imbalance_samples,
-            self.config.zscore_window,
-            imbalance_value,
-        );
-
-        if let Some(vol) = realized_vol(&self.returns) {
-            push_bounded(
-                &mut self.vol_samples,
-                self.config.regime_history_window,
-                vol,
-            );
-        }
-
-        if !self.signal_ready() {
-            return Ok(());
-        }
-        let Some(signal) = z_score(&self.imbalance_samples) else {
-            return Ok(());
-        };
-
-        self.handle_signal(signal)
+        self.evaluate(event.ts_event.as_u64())
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
+        self.clock().cancel_timer(TIMER_NAME);
         let instrument_id = self.config.instrument_id;
         self.cancel_all_orders(instrument_id, None, None, None)?;
         self.close_all_positions(instrument_id, None, None, None, None, None, None, None)?;

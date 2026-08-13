@@ -65,8 +65,8 @@ pub struct ObiMomentumTomlConfig {
     pub close_threshold: f64,
     pub max_position: String,
     pub trade_size: Option<String>,
-    #[serde(default)]
-    pub min_update_interval_ms: u64,
+    #[serde(default = "default_timer_interval_ms")]
+    pub timer_interval_ms: u64,
     pub max_holding_secs: Option<u64>,
     #[serde(default)]
     pub regime_filter_enabled: bool,
@@ -183,6 +183,10 @@ fn default_reduce_threshold() -> f64 {
 
 fn default_close_threshold() -> f64 {
     0.25
+}
+
+fn default_timer_interval_ms() -> u64 {
+    1000
 }
 
 fn default_regime_vol_window() -> usize {

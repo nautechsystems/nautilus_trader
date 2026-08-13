@@ -42,7 +42,7 @@ pub struct ObiMomentumConfig {
     /// (volume-weighted imbalance), otherwise use the plain top-N imbalance.
     #[builder(default = false)]
     pub weighted: bool,
-    /// Rolling window (in book updates) for the z-score mean/stddev.
+    /// Rolling window (in timer evaluations) for the z-score mean/stddev.
     #[builder(default = 50)]
     pub zscore_window: usize,
     /// Z-score threshold above which a long (`> +`) or short (`< -`) position
@@ -60,20 +60,20 @@ pub struct ObiMomentumConfig {
     pub trade_size: Option<Quantity>,
     /// Hard cap on net exposure (long or short).
     pub max_position: Quantity,
-    /// Minimum time between signal evaluations in milliseconds (throttling).
-    #[builder(default = 0)]
-    pub min_update_interval_ms: u64,
+    /// Indicator evaluation cadence in milliseconds (timer-driven).
+    #[builder(default = 1000)]
+    pub timer_interval_ms: u64,
     /// Optional holding timeout in seconds after which open positions are closed.
     pub max_holding_secs: Option<u64>,
     /// When `true`, new entries are blocked while realized volatility is below
     /// its rolling median (low-vol regime).
     #[builder(default = false)]
     pub regime_filter_enabled: bool,
-    /// Window (in book updates) for the realized-volatility estimate.
+    /// Window (in timer evaluations) for the realized-volatility estimate.
     #[builder(default = 50)]
     pub regime_vol_window: usize,
-    /// Window (in book updates) over which the realized-volatility median is
-    /// estimated.
+    /// Window (in timer evaluations) over which the realized-volatility median
+    /// is estimated.
     #[builder(default = 500)]
     pub regime_history_window: usize,
 }
@@ -92,7 +92,7 @@ impl TryFrom<&ObiMomentumTomlConfig> for ObiMomentumConfig {
             .close_threshold(cfg.close_threshold)
             .maybe_trade_size(cfg.trade_size.as_ref().map(|s| Quantity::from(s.as_str())))
             .max_position(Quantity::from(cfg.max_position.as_str()))
-            .min_update_interval_ms(cfg.min_update_interval_ms)
+            .timer_interval_ms(cfg.timer_interval_ms)
             .maybe_max_holding_secs(cfg.max_holding_secs)
             .regime_filter_enabled(cfg.regime_filter_enabled)
             .regime_vol_window(cfg.regime_vol_window)
