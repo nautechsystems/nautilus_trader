@@ -403,7 +403,7 @@ Authenticated execution clients subscribe to these private streams:
 
 - `account_all_orders`: order status reports.
 - `account_all_trades`: fill reports.
-- `account_all_positions`: position snapshots.
+- `account_all_positions`: initial position snapshot and live updates.
 - `account_all_assets`: per-asset balance snapshots (spot balance plus perp collateral).
 - `user_stats`: perp-account margin rollup (collateral and available balance).
 
@@ -415,15 +415,19 @@ nonce refresh are mandatory. A client can be constructed without credentials, bu
 will not connect until `private_key`, `account_index`, and `api_key_index` resolve.
 
 Perpetual positions use netting mode with one position per market; spot balances use account asset
-state. Each `account_all_positions` frame is a snapshot: cached markets omitted from the frame, or
-present with a zero `position` value, flatten. An empty `positions` map flattens all cached
-positions. Unmapped or unparsable rows with a non‑zero position remain keyed by market ID so they do
-not cause false flat reports.
+state. A `subscribed/account_all_positions` frame is an authoritative snapshot: omitted markets and
+rows with a zero `position` value flatten cached positions, and an empty `positions` map flattens the
+entire cache. Cached positions for rows the adapter cannot map or parse are retained, so they do not
+cause false flat reports.
+
+An `update/account_all_positions` frame is incremental. Non‑zero rows replace the cached position for
+their market, explicit zero rows flatten that market, and omitted markets remain cached. An empty
+update retains all cached positions.
 
 | Feature                 | Perpetuals | Spot | Notes                                                        |
 | ----------------------- | ---------- | ---- | ------------------------------------------------------------ |
 | Account balances        | ✓          | ✓    | Merged assets + `user_stats`, replayed from cache on query.  |
-| Position snapshots      | ✓          | -    | Perp only; `account_all_positions` stream.                   |
+| Position state          | ✓          | -    | Perp only; initial snapshot plus live updates.               |
 | Netting positions       | ✓          | -    | One Nautilus position per perpetual market.                  |
 | Cross margin            | ✓          | -    | Passed through `LighterPositionMarginMode::Cross`.           |
 | Isolated margin         | ✓          | -    | Passed through `LighterPositionMarginMode::Isolated`.        |
@@ -581,11 +585,14 @@ and order identity for WebSocket or reconciliation recovery.
 
 `LighterExecutionClient::connect()` waits up to 30 seconds for every account stream
 (`account_all_orders`, `account_all_trades`, `account_all_positions`, `account_all_assets`,
-`user_stats`) to deliver its first frame. The adapter does not use REST account payloads as a
-fallback, so `connect()` blocks on these streams as its ground truth. Each attempt clears old
-position and account caches before awaiting the session's frames. Transparent WebSocket reconnects
-do not re‑enter `connect()`: they retain cached positions until the next `account_all_positions`
-frame applies the snapshot replacement rules.
+`user_stats`) to satisfy its readiness condition. For positions, only the
+`subscribed/account_all_positions` snapshot satisfies this wait; a live update does not. The adapter
+does not use REST account payloads as a fallback, so `connect()` blocks on these streams as its ground
+truth. Each attempt clears old position and account caches before awaiting the session's frames.
+Transparent WebSocket reconnects and auth‑token rotations do not re‑enter `connect()`. Both retain
+cached positions until the next `subscribed/account_all_positions` frame applies the snapshot
+replacement rules. Live update frames merge into the retained cache without evicting omitted
+markets.
 
 ## API credentials
 

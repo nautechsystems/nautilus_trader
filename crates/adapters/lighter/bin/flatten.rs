@@ -57,7 +57,7 @@ use nautilus_lighter::{
 };
 use nautilus_model::{
     enums::PositionSideSpecified,
-    identifiers::{AccountId, TraderId},
+    identifiers::{AccountId, InstrumentId, TraderId},
     instruments::Instrument,
     reports::PositionStatusReport,
 };
@@ -185,7 +185,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Cancel pass complete; submitted {cancelled} cancel(s)");
 
     log::info!("Waiting up to {POSITION_WAIT:?} for account_all_positions snapshot...");
-    let positions = collect_positions(&mut ws, POSITION_WAIT).await;
+    let positions = collect_positions(&mut ws, &registry, POSITION_WAIT).await;
     if positions.is_empty() {
         log::info!("No open positions");
         return Ok(());
@@ -397,6 +397,7 @@ fn fresh_client_order_index() -> i64 {
 
 async fn collect_positions(
     ws: &mut LighterWebSocketClient,
+    registry: &MarketRegistry,
     timeout: Duration,
 ) -> Vec<PositionStatusReport> {
     let deadline = tokio::time::Instant::now() + timeout;
@@ -405,16 +406,37 @@ async fn collect_positions(
     while tokio::time::Instant::now() < deadline {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
 
-        if let Ok(Some(NautilusWsMessage::PositionSnapshot {
-            reports,
-            skipped_market_ids,
-        })) =
+        if let Ok(Some(message)) =
             tokio::time::timeout(remaining.min(Duration::from_millis(500)), ws.next_event()).await
         {
-            apply_position_snapshot(&mut latest, reports, &skipped_market_ids);
+            apply_position_message(&mut latest, registry, message);
         }
     }
     latest
+}
+
+fn apply_position_message(
+    latest: &mut Vec<PositionStatusReport>,
+    registry: &MarketRegistry,
+    message: NautilusWsMessage,
+) {
+    match message {
+        NautilusWsMessage::PositionSnapshot {
+            reports,
+            skipped_market_ids,
+        } => apply_position_snapshot(latest, reports, &skipped_market_ids),
+        NautilusWsMessage::PositionUpdate {
+            reports,
+            closed_market_ids,
+        } => {
+            let closed: Vec<_> = closed_market_ids
+                .iter()
+                .filter_map(|market_id| registry.instrument_id(*market_id))
+                .collect();
+            apply_position_update(latest, reports, &closed);
+        }
+        _ => {}
+    }
 }
 
 fn apply_position_snapshot(
@@ -433,9 +455,22 @@ fn apply_position_snapshot(
     }
 }
 
+fn apply_position_update(
+    latest: &mut Vec<PositionStatusReport>,
+    reports: Vec<PositionStatusReport>,
+    closed: &[InstrumentId],
+) {
+    latest.retain(|report| !closed.contains(&report.instrument_id));
+    for report in reports {
+        latest.retain(|prior| prior.instrument_id != report.instrument_id);
+        latest.push(report);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
+    use nautilus_lighter::common::enums::LighterProductType;
     use nautilus_model::{identifiers::InstrumentId, types::Quantity};
     use rstest::rstest;
 
@@ -475,6 +510,70 @@ mod tests {
             .map(|(instrument_id, quantity)| (instrument_id.to_string(), quantity.to_string()))
             .collect();
         assert_eq!(summarize_positions(latest), expected);
+    }
+
+    #[rstest]
+    #[case::empty_update_retains_latest(
+        vec![("ETH-PERP.LIGHTER", "1.0"), ("BTC-PERP.LIGHTER", "2.0")],
+        vec![],
+        vec![],
+        vec![("BTC-PERP.LIGHTER", "2.0"), ("ETH-PERP.LIGHTER", "1.0")],
+    )]
+    #[case::partial_update_merges_and_closes(
+        vec![("ETH-PERP.LIGHTER", "1.0"), ("BTC-PERP.LIGHTER", "2.0")],
+        vec![("ETH-PERP.LIGHTER", "3.0")],
+        vec!["BTC-PERP.LIGHTER"],
+        vec![("ETH-PERP.LIGHTER", "3.0")],
+    )]
+    fn apply_position_update_matrix(
+        #[case] prior: Vec<(&str, &str)>,
+        #[case] reports: Vec<(&str, &str)>,
+        #[case] closed: Vec<&str>,
+        #[case] expected: Vec<(&str, &str)>,
+    ) {
+        let mut latest = position_reports(prior);
+        let closed: Vec<_> = closed.into_iter().map(InstrumentId::from).collect();
+
+        apply_position_update(&mut latest, position_reports(reports), &closed);
+
+        let expected: Vec<(String, String)> = expected
+            .into_iter()
+            .map(|(instrument_id, quantity)| (instrument_id.to_string(), quantity.to_string()))
+            .collect();
+        assert_eq!(summarize_positions(latest), expected);
+    }
+
+    #[rstest]
+    fn apply_position_message_routes_snapshot_and_update() {
+        let registry = MarketRegistry::new();
+        let btc = registry.insert(0, "BTC", LighterProductType::Perp);
+        let mut latest = Vec::new();
+
+        apply_position_message(
+            &mut latest,
+            &registry,
+            NautilusWsMessage::PositionSnapshot {
+                reports: position_reports(vec![
+                    ("ETH-PERP.LIGHTER", "1.0"),
+                    ("BTC-PERP.LIGHTER", "2.0"),
+                ]),
+                skipped_market_ids: Vec::new(),
+            },
+        );
+        apply_position_message(
+            &mut latest,
+            &registry,
+            NautilusWsMessage::PositionUpdate {
+                reports: position_reports(vec![("ETH-PERP.LIGHTER", "3.0")]),
+                closed_market_ids: vec![0],
+            },
+        );
+
+        assert_eq!(btc, InstrumentId::from("BTC-PERP.LIGHTER"));
+        assert_eq!(
+            summarize_positions(latest),
+            vec![("ETH-PERP.LIGHTER".to_string(), "3.0".to_string())],
+        );
     }
 
     fn position_reports(rows: Vec<(&str, &str)>) -> Vec<PositionStatusReport> {

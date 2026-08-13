@@ -3769,6 +3769,91 @@ async fn test_order_status_reports_stop_repeated_active_market_seed_cursor() {
 }
 
 #[rstest]
+#[case::long(1, PositionSideSpecified::Long)]
+#[case::short(-1, PositionSideSpecified::Short)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_all_positions_empty_update_retains_cached_position(
+    #[case] sign: i8,
+    #[case] expected_side: PositionSideSpecified,
+) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    await_subscribe_count(&state, 4).await;
+
+    let mut snapshot = load_json("ws_account_all_positions_update.json");
+    snapshot["type"] = json!("subscribed/account_all_positions");
+    snapshot["positions"]["0"]["sign"] = json!(sign);
+    state.push_frame(&snapshot);
+
+    next_event_matching(&mut rx, Duration::from_secs(2), |e| {
+        matches!(
+            e,
+            ExecutionEvent::Report(ExecutionReport::Position(report))
+                if report.instrument_id == eth_perp_id()
+                    && report.position_side == expected_side
+                    && report.quantity == Quantity::from("1.5000")
+        )
+    })
+    .await
+    .expect("initial position report");
+
+    state.push_frame(&json!({
+        "type": "update/account_all_positions",
+        "channel": format!("account_all_positions:{TEST_ACCOUNT_INDEX}"),
+        "positions": {},
+        "shares": [],
+        "last_funding_round": null,
+        "last_funding_discount": null,
+    }));
+
+    let unexpected_close = next_event_matching(&mut rx, Duration::from_millis(250), |e| {
+        matches!(
+            e,
+            ExecutionEvent::Report(ExecutionReport::Position(report))
+                if report.instrument_id == eth_perp_id()
+                    && report.position_side == PositionSideSpecified::Flat
+                    && report.quantity.is_zero()
+        ) || matches!(e, ExecutionEvent::Order(OrderEventAny::Filled(_)))
+    })
+    .await;
+    assert!(
+        unexpected_close.is_none(),
+        "incomplete position update must not emit a flat report or synthetic close: \
+         {unexpected_close:?}",
+    );
+
+    let positions = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("position reports");
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].account_id, account_id());
+    assert_eq!(positions[0].instrument_id, eth_perp_id());
+    assert_eq!(positions[0].position_side, expected_side);
+    assert_eq!(positions[0].quantity, Quantity::from("1.5000"));
+    assert_eq!(
+        positions[0].signed_decimal_qty,
+        rust_decimal::Decimal::new(i64::from(sign) * 15, 1),
+    );
+    assert_eq!(
+        positions[0].avg_px_open,
+        Some(rust_decimal::Decimal::new(235010, 2)),
+    );
+    assert_eq!(positions[0].venue_position_id, None);
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
 #[case::empty_map(false)]
 #[case::zero_position_row(true)]
 #[tokio::test(flavor = "multi_thread")]
@@ -3812,7 +3897,7 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
         snapshot
     } else {
         json!({
-            "type": "update/account_all_positions",
+            "type": "subscribed/account_all_positions",
             "channel": format!("account_all_positions:{TEST_ACCOUNT_INDEX}"),
             "positions": {},
             "shares": [],
@@ -4008,7 +4093,7 @@ async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prio
     await_subscribe_count(&state, subs_before_reconnect + 4).await;
 
     state.push_frame(&json!({
-        "type": "update/account_all_positions",
+        "type": "subscribed/account_all_positions",
         "channel": format!("account_all_positions:{TEST_ACCOUNT_INDEX}"),
         "positions": {},
         "shares": [],

@@ -792,39 +792,46 @@ impl LighterExecutionClient {
                                     skipped_market_ids.len(),
                                     removed.len(),
                                 );
-
-                                for r in reports {
-                                    log::debug!(
-                                        "Lighter PositionStatusReport: instrument={} side={:?} qty={}",
-                                        r.instrument_id,
-                                        r.position_side,
-                                        r.quantity,
-                                    );
-                                    emitter.send_position_report(r);
+                                emit_lighter_position_reports(
+                                    reports,
+                                    removed,
+                                    &emitter,
+                                    account_id_for_loop,
+                                    clock_for_loop.get_time_ns(),
+                                );
+                            }
+                            Some(NautilusWsMessage::PositionUpdate {
+                                reports,
+                                closed_market_ids,
+                            }) => {
+                                for report in &reports {
+                                    if let Some(market_id) =
+                                        registry_for_loop.market_index(&report.instrument_id)
+                                    {
+                                        dispatch.note_active_market(market_id);
+                                    }
                                 }
-
-                                // Emit a flat report for any instrument the
-                                // venue dropped from this snapshot so the
-                                // engine sees the close. Without this, an
-                                // externally-closed position lingers in the
-                                // engine cache even though the dispatch
-                                // cache cleared it.
-                                let now = clock_for_loop.get_time_ns();
-
-                                for instrument_id in removed {
-                                    let flat = PositionStatusReport::new(
-                                        account_id_for_loop,
-                                        instrument_id,
-                                        PositionSideSpecified::Flat,
-                                        Quantity::zero(0),
-                                        now,
-                                        now,
-                                        Some(UUID4::new()),
-                                        None,
-                                        None,
-                                    );
-                                    emitter.send_position_report(flat);
-                                }
+                                let position_count = reports.len();
+                                let closed_positions: Vec<InstrumentId> = closed_market_ids
+                                    .iter()
+                                    .filter_map(|market_id| {
+                                        registry_for_loop.instrument_id(*market_id)
+                                    })
+                                    .collect();
+                                let removed =
+                                    dispatch.update_positions(&reports, &closed_positions);
+                                log::debug!(
+                                    "Lighter position update: positions={position_count}, closed_markets={}, removed={}",
+                                    closed_market_ids.len(),
+                                    removed.len(),
+                                );
+                                emit_lighter_position_reports(
+                                    reports,
+                                    removed,
+                                    &emitter,
+                                    account_id_for_loop,
+                                    clock_for_loop.get_time_ns(),
+                                );
                             }
                             Some(NautilusWsMessage::AccountState(state)) => {
                                 log::debug!(
@@ -1854,6 +1861,40 @@ impl LighterExecutionClient {
         });
 
         Ok(())
+    }
+}
+
+fn emit_lighter_position_reports(
+    reports: Vec<PositionStatusReport>,
+    removed: Vec<InstrumentId>,
+    emitter: &ExecutionEventEmitter,
+    account_id: AccountId,
+    now: UnixNanos,
+) {
+    for report in reports {
+        log::debug!(
+            "Lighter PositionStatusReport: instrument={} side={:?} qty={}",
+            report.instrument_id,
+            report.position_side,
+            report.quantity,
+        );
+        emitter.send_position_report(report);
+    }
+
+    // Emit Flat so the engine observes positions the venue reports as closed
+    for instrument_id in removed {
+        let flat = PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSideSpecified::Flat,
+            Quantity::zero(0),
+            now,
+            now,
+            Some(UUID4::new()),
+            None,
+            None,
+        );
+        emitter.send_position_report(flat);
     }
 }
 
@@ -4187,7 +4228,7 @@ impl ExecutionClient for LighterExecutionClient {
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
         // No REST source; replay the WS-driven cache populated by the
-        // consumption loop's `PositionSnapshot` arm.
+        // consumption loop's position frame arms.
         let reports = self.dispatch.snapshot_positions(cmd.instrument_id);
         log::debug!(
             "Lighter generate_position_status_reports: returning {} cached position reports",

@@ -1388,6 +1388,24 @@ impl WsDispatchState {
         removed
     }
 
+    /// Apply live position updates without evicting instruments omitted from the frame.
+    pub(crate) fn update_positions(
+        &self,
+        updates: &[PositionStatusReport],
+        closed: &[InstrumentId],
+    ) -> Vec<InstrumentId> {
+        let mut guard = self.last_positions.lock().expect(MUTEX_POISONED);
+        let removed = closed
+            .iter()
+            .filter_map(|instrument_id| guard.remove(instrument_id).map(|_| *instrument_id))
+            .collect();
+
+        for report in updates {
+            guard.insert(report.instrument_id, report.clone());
+        }
+        removed
+    }
+
     /// Snapshot the cached positions, optionally filtered by instrument.
     pub(crate) fn snapshot_positions(
         &self,
@@ -2083,6 +2101,51 @@ mod tests {
                 ("ETH-PERP.LIGHTER".to_string(), "3.0".to_string()),
             ],
         );
+    }
+
+    #[rstest]
+    fn update_positions_merges_rows_and_removes_only_explicit_closures() {
+        let state = WsDispatchState::new();
+        state.replace_positions(&[
+            stub_position_report("ETH-PERP.LIGHTER", "1.0"),
+            stub_position_report("BTC-PERP.LIGHTER", "2.0"),
+        ]);
+
+        let removed = state.update_positions(
+            &[stub_position_report("ETH-PERP.LIGHTER", "3.0")],
+            &[InstrumentId::from("DOGE-PERP.LIGHTER")],
+        );
+
+        assert!(removed.is_empty());
+        let mut actual: Vec<(String, String)> = state
+            .snapshot_positions(None)
+            .into_iter()
+            .map(|report| {
+                (
+                    report.instrument_id.to_string(),
+                    report.quantity.to_string(),
+                )
+            })
+            .collect();
+        actual.sort();
+        assert_eq!(
+            actual,
+            vec![
+                ("BTC-PERP.LIGHTER".to_string(), "2.0".to_string()),
+                ("ETH-PERP.LIGHTER".to_string(), "3.0".to_string()),
+            ],
+        );
+
+        let removed = state.update_positions(&[], &[InstrumentId::from("BTC-PERP.LIGHTER")]);
+
+        assert_eq!(removed, vec![InstrumentId::from("BTC-PERP.LIGHTER")]);
+        let positions = state.snapshot_positions(None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(
+            positions[0].instrument_id,
+            InstrumentId::from("ETH-PERP.LIGHTER")
+        );
+        assert_eq!(positions[0].quantity, Quantity::from("3.0"));
     }
 
     #[rstest]

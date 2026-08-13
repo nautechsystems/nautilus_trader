@@ -412,6 +412,7 @@ impl LighterDataClient {
                             Some(
                                 NautilusWsMessage::ExecutionReports(_)
                                 | NautilusWsMessage::PositionSnapshot { .. }
+                                | NautilusWsMessage::PositionUpdate { .. }
                                 | NautilusWsMessage::AccountState(_)
                                 | NautilusWsMessage::SendTxAck { .. }
                                 | NautilusWsMessage::SendTxRejected { .. }

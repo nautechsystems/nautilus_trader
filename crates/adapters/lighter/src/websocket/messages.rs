@@ -65,6 +65,10 @@ pub enum NautilusWsMessage {
         reports: Vec<PositionStatusReport>,
         skipped_market_ids: Vec<i16>,
     },
+    PositionUpdate {
+        reports: Vec<PositionStatusReport>,
+        closed_market_ids: Vec<i16>,
+    },
     AccountState(Box<AccountState>),
     SendTxAck {
         connection_epoch: u64,
@@ -530,10 +534,16 @@ pub enum LighterWsFrame {
         channel: Ustr,
         trades: AHashMap<Ustr, Vec<LighterTrade>>,
     },
-    #[serde(
-        rename = "update/account_all_positions",
-        alias = "subscribed/account_all_positions"
-    )]
+    #[serde(rename = "subscribed/account_all_positions")]
+    AccountAllPositionsSnapshot {
+        channel: Ustr,
+        positions: AHashMap<Ustr, LighterPosition>,
+        #[serde(default)]
+        shares: Vec<LighterPoolShares>,
+        last_funding_round: Option<AHashMap<Ustr, Decimal>>,
+        last_funding_discount: Option<AHashMap<Ustr, Decimal>>,
+    },
+    #[serde(rename = "update/account_all_positions")]
     AccountAllPositions {
         channel: Ustr,
         positions: AHashMap<Ustr, LighterPosition>,
@@ -1509,6 +1519,27 @@ mod tests {
                 assert_eq!(position.sign, 1);
             }
             _ => panic!("expected account all positions frame, was {frame:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_account_all_positions_snapshot_frame_deserializes() {
+        let mut value: serde_json::Value =
+            serde_json::from_str(WS_ACCOUNT_ALL_POSITIONS_UPDATE).unwrap();
+        value["type"] = serde_json::json!("subscribed/account_all_positions");
+        let frame: LighterWsFrame = serde_json::from_value(value).unwrap();
+
+        match frame {
+            LighterWsFrame::AccountAllPositionsSnapshot {
+                channel, positions, ..
+            } => {
+                assert_eq!(channel, Ustr::from("account_all_positions:1234"));
+                let position = positions.get(&Ustr::from("0")).unwrap();
+                assert_eq!(position.market_id, 0);
+                assert_eq!(position.position, Decimal::from_str("1.5000").unwrap());
+                assert_eq!(position.sign, 1);
+            }
+            _ => panic!("expected account all positions snapshot, was {frame:?}"),
         }
     }
 
