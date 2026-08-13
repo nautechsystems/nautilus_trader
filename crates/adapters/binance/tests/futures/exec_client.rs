@@ -1893,7 +1893,7 @@ async fn test_submit_algo_order_in_hedge_mode_omits_reduce_only() {
 /// Binance retires a whole hedge leg with `closePosition=true` submitted on the
 /// side that closes that leg: `SELL`+`positionSide=LONG` for the long leg and
 /// `BUY`+`positionSide=SHORT` for the short leg. `positionSide` must therefore
-/// follow close intent, which `close_position` expresses on its own — the wire
+/// follow close intent, which `close_position` expresses on its own - the wire
 /// `reduceOnly` field is forbidden alongside `positionSide`, and the internal
 /// `reduce_only` flag cannot be combined with `close_position` at all.
 #[rstest]
