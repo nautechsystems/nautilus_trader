@@ -3704,12 +3704,20 @@ impl OrderMatchingEngine {
         // where `process_trade_tick` overrides both sides to the trade
         // price; without it the override is undone here.
         if aggressor_side == AggressorSide::NoAggressor && self.last_trade_size.is_none() {
-            if let Some(bid) = self.book.best_bid_price() {
-                self.core.set_bid_raw(bid);
-            }
+            if self.book_type == BookType::L1_MBP {
+                if let Some(bid) = self.book.best_bid_price() {
+                    self.core.set_bid_raw(bid);
+                }
 
-            if let Some(ask) = self.book.best_ask_price() {
-                self.core.set_ask_raw(ask);
+                if let Some(ask) = self.book.best_ask_price() {
+                    self.core.set_ask_raw(ask);
+                }
+            } else {
+                // L2/L3 books are authoritative. Assigning the complete options
+                // propagates an empty side before matching and prevents fills
+                // or triggers from a stale touch.
+                self.core.bid = self.book.best_bid_price();
+                self.core.ask = self.book.best_ask_price();
             }
         }
 
