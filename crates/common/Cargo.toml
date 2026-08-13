@@ -106,6 +106,9 @@ tokio = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 
+[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+libc = { workspace = true }
+
 [dev-dependencies]
 criterion = { workspace = true }
 futures = { workspace = true, features = ["executor"] }
@@ -117,6 +120,9 @@ rstest = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tempfile = { workspace = true }
+toml = { workspace = true }
+
+[build-dependencies]
 toml = { workspace = true }
 
 [[bench]]

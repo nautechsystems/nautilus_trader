@@ -5983,6 +5983,7 @@ dependencies = [
  "indexmap 2.14.0",
  "itoa",
  "jiff",
+ "libc",
  "log",
  "madsim",
  "nautilus-core",

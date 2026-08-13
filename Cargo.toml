@@ -183,6 +183,7 @@ jiff = { version = "0.2.35", default-features = false, features = [
   "tz-fat",
   "tzdb-bundle-always",
 ] }
+libc = "0.2.189"
 libfuzzer-sys = "0.4.13"
 log = { version = "0.4.33", features = [
   "std",

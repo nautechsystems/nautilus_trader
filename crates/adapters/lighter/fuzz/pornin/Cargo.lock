@@ -1348,6 +1348,7 @@ dependencies = [
  "indexmap",
  "itoa",
  "jiff",
+ "libc",
  "log",
  "nautilus-core",
  "nautilus-model",
@@ -1361,6 +1362,7 @@ dependencies = [
  "sysinfo",
  "thiserror",
  "tokio",
+ "toml",
  "ustr",
 ]
 
