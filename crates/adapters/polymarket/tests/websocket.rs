@@ -383,14 +383,21 @@ async fn test_subscribe_market_sends_assets_ids() {
 }
 
 #[rstest]
+#[case::custom_features_enabled(true)]
+#[case::custom_features_disabled(false)]
 #[tokio::test]
-async fn test_subscribe_unsubscribe_subscribe_uses_initial_then_incremental_market_messages() {
+async fn test_subscribe_unsubscribe_subscribe_uses_exact_market_messages(
+    #[case] custom_features_enabled: bool,
+) {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws/market");
 
-    let mut client =
-        PolymarketWebSocketClient::new_market(Some(ws_url), true, TransportBackend::default());
+    let mut client = PolymarketWebSocketClient::new_market(
+        Some(ws_url),
+        custom_features_enabled,
+        TransportBackend::default(),
+    );
     client.connect().await.expect("connect failed");
     wait_until_active(&client, 2.0).await;
 
@@ -418,13 +425,24 @@ async fn test_subscribe_unsubscribe_subscribe_uses_initial_then_incremental_mark
         "expected initial subscribe, unsubscribe, and incremental subscribe payloads"
     );
 
+    let mut expected_initial = json!({
+        "assets_ids": [TEST_ASSET_ID],
+        "type": "market",
+        "initial_dump": true,
+    });
+    let mut expected_incremental = json!({
+        "assets_ids": [TEST_ASSET_ID_2],
+        "operation": "subscribe",
+        "initial_dump": true,
+    });
+
+    if custom_features_enabled {
+        expected_initial["custom_feature_enabled"] = json!(true);
+        expected_incremental["custom_feature_enabled"] = json!(true);
+    }
+
     assert_eq!(
-        payloads[0],
-        json!({
-            "assets_ids": [TEST_ASSET_ID],
-            "type": "market",
-            "custom_feature_enabled": true,
-        }),
+        payloads[0], expected_initial,
         "first market subscribe should use MarketInitialSubscribeRequest"
     );
     assert_eq!(
@@ -436,12 +454,7 @@ async fn test_subscribe_unsubscribe_subscribe_uses_initial_then_incremental_mark
         "unsubscribe should use MarketUnsubscribeRequest"
     );
     assert_eq!(
-        payloads[2],
-        json!({
-            "assets_ids": [TEST_ASSET_ID_2],
-            "operation": "subscribe",
-            "custom_feature_enabled": true,
-        }),
+        payloads[2], expected_incremental,
         "second market subscribe should use MarketSubscribeRequest"
     );
 
@@ -829,6 +842,23 @@ async fn test_reconnect_resubscribes_all_market_assets() {
         assets.contains(&TEST_ASSET_ID_2.to_string()),
         "asset_id_2 must be resubscribed after reconnect"
     );
+    let payloads = state.received_market_payloads.lock().await;
+    let mut replay = payloads.last().cloned().expect("reconnect replay payload");
+    drop(payloads);
+    replay["assets_ids"]
+        .as_array_mut()
+        .expect("replay assets_ids array")
+        .sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+    assert_eq!(
+        replay,
+        json!({
+            "assets_ids": [TEST_ASSET_ID_2, TEST_ASSET_ID],
+            "type": "market",
+            "initial_dump": true,
+            "custom_feature_enabled": true,
+        }),
+        "reconnect should replay an exact initial market subscribe payload"
+    );
     wait_until_async(
         || async { socket_states.lock().unwrap().len() == 3 },
         Duration::from_secs(5),
@@ -895,6 +925,7 @@ async fn test_disconnect_connect_replays_discovery_without_assets() {
     let expected = json!({
         "assets_ids": [],
         "type": "market",
+        "initial_dump": true,
         "custom_feature_enabled": true,
     });
     assert_eq!(discovery_payloads, vec![expected.clone(), expected]);
@@ -1370,6 +1401,7 @@ async fn pool_primary_reconnect_replays_discovery_without_assets() {
     let expected = json!({
         "assets_ids": [],
         "type": "market",
+        "initial_dump": true,
         "custom_feature_enabled": true,
     });
     assert_eq!(discovery_payloads, vec![expected.clone(), expected],);
@@ -1463,6 +1495,7 @@ async fn pool_primary_reconnect_replays_assets_and_discovery_together() {
         &json!({
             "assets_ids": ["a", "b", "c"],
             "type": "market",
+            "initial_dump": true,
             "custom_feature_enabled": true,
         }),
     );

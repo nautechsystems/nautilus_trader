@@ -38,6 +38,8 @@ use super::{
 };
 use crate::{common::credential::Credential, http::error::sanitize_error_text};
 
+const INITIAL_DUMP: bool = true;
+
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
 pub enum HandlerCommand {
@@ -135,12 +137,14 @@ impl FeedHandler {
             serde_json::to_string(&MarketSubscribeRequest {
                 assets_ids: asset_ids.to_vec(),
                 operation: "subscribe",
+                initial_dump: INITIAL_DUMP,
                 custom_feature_enabled: self.subscribe_new_markets,
             })
         } else {
             serde_json::to_string(&MarketInitialSubscribeRequest {
                 assets_ids: asset_ids.to_vec(),
                 msg_type: "market",
+                initial_dump: INITIAL_DUMP,
                 custom_feature_enabled: self.subscribe_new_markets,
             })
         };
@@ -547,6 +551,7 @@ mod tests {
                 json!({
                     "assets_ids": [],
                     "type": "market",
+                    "initial_dump": true,
                     "custom_feature_enabled": true,
                 }),
             );

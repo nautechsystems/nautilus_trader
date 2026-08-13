@@ -609,25 +609,27 @@ pub struct PolymarketWsAuth {
 
 /// Initial market-channel subscribe request sent for a fresh WebSocket session.
 ///
-/// Wire format: `{"assets_ids": [...], "type": "market"}`
+/// Wire format: `{"assets_ids": [...], "type": "market", "initial_dump": true}`
 /// When `custom_feature_enabled` is true, enables new market and market resolved events.
 #[derive(Debug, Serialize)]
 pub struct MarketInitialSubscribeRequest {
     pub assets_ids: Vec<String>,
     #[serde(rename = "type")]
     pub msg_type: &'static str,
+    pub initial_dump: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub custom_feature_enabled: bool,
 }
 
 /// Incremental market-channel subscribe request sent after the initial session subscribe.
 ///
-/// Wire format: `{"assets_ids": [...], "operation": "subscribe"}`
+/// Wire format: `{"assets_ids": [...], "operation": "subscribe", "initial_dump": true}`
 /// When `custom_feature_enabled` is true, enables new market and market resolved events.
 #[derive(Debug, Serialize)]
 pub struct MarketSubscribeRequest {
     pub assets_ids: Vec<String>,
     pub operation: &'static str,
+    pub initial_dump: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub custom_feature_enabled: bool,
 }

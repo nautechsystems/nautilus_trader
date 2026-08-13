@@ -3216,6 +3216,7 @@ mod tests {
             vec![serde_json::json!({
                 "assets_ids": [TEST_TOKEN_ID_YES],
                 "type": "market",
+                "initial_dump": true,
             })],
         );
     }
