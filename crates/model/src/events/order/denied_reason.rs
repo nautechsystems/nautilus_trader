@@ -29,8 +29,18 @@ use thiserror::Error;
 use crate::{
     enums::{OrderSide, OrderType, TimeInForce, TrailingOffsetType},
     identifiers::{ClientId, InstrumentId, OrderListId, PositionId, Venue},
-    types::{Money, Quantity},
+    types::{Money, Price, Quantity},
 };
+
+/// The order price field being validated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum OrderPriceType {
+    /// The order's execution price.
+    Order,
+    /// The order's trigger price.
+    Trigger,
+}
 
 /// A standardized reason an order was denied locally by the Nautilus system.
 ///
@@ -43,6 +53,40 @@ use crate::{
     strum(serialize_all = "SCREAMING_SNAKE_CASE")
 )]
 pub enum OrderDeniedReason {
+    /// The price precision exceeds the instrument maximum.
+    #[error(
+        "PRICE_PRECISION_EXCEEDS_MAXIMUM: price_type={price_type}, price={price}, price_precision={price_precision}, max_precision={max_precision}"
+    )]
+    PricePrecisionExceedsMaximum {
+        /// The price field being validated.
+        price_type: OrderPriceType,
+        /// The submitted price.
+        price: Price,
+        /// The submitted price precision.
+        price_precision: u8,
+        /// The instrument's maximum price precision.
+        max_precision: u8,
+    },
+    /// The price is not positive for an instrument that disallows negative prices.
+    #[error("PRICE_NOT_POSITIVE: price_type={price_type}, price={price}")]
+    PriceNotPositive {
+        /// The price field being validated.
+        price_type: OrderPriceType,
+        /// The submitted price.
+        price: Price,
+    },
+    /// The quantity precision exceeds the instrument maximum.
+    #[error(
+        "QUANTITY_PRECISION_EXCEEDS_MAXIMUM: quantity={quantity}, quantity_precision={quantity_precision}, max_precision={max_precision}"
+    )]
+    QuantityPrecisionExceedsMaximum {
+        /// The submitted quantity.
+        quantity: Quantity,
+        /// The submitted quantity precision.
+        quantity_precision: u8,
+        /// The instrument's maximum quantity precision.
+        max_precision: u8,
+    },
     /// The effective order quantity exceeds the instrument maximum.
     #[error(
         "QUANTITY_EXCEEDS_MAXIMUM: effective_quantity={effective_quantity}, max_quantity={max_quantity}"
@@ -169,6 +213,38 @@ pub enum OrderDeniedReason {
         /// The underlying conversion error.
         detail: String,
     },
+    /// The order notional value could not be calculated.
+    #[error("NOTIONAL_CALCULATION_FAILED: detail={detail}")]
+    NotionalCalculationFailed {
+        /// The underlying calculation error.
+        detail: String,
+    },
+    /// The order initial margin could not be calculated.
+    #[error("INITIAL_MARGIN_CALCULATION_FAILED: detail={detail}")]
+    InitialMarginCalculationFailed {
+        /// The underlying calculation error.
+        detail: String,
+    },
+    /// The cumulative initial margin could not be calculated.
+    #[error("CUMULATIVE_MARGIN_CALCULATION_FAILED: detail={detail}")]
+    CumulativeMarginCalculationFailed {
+        /// The underlying calculation error.
+        detail: String,
+    },
+    /// The betting balance locked amount could not be calculated.
+    #[error("BETTING_BALANCE_CALCULATION_FAILED: detail={detail}")]
+    BettingBalanceCalculationFailed {
+        /// The underlying calculation error.
+        detail: String,
+    },
+    /// No market price is available for the order risk check.
+    #[error("MARKET_PRICE_UNAVAILABLE: order_type={order_type}, instrument_id={instrument_id}")]
+    MarketPriceUnavailable {
+        /// The order type requiring a market price.
+        order_type: OrderType,
+        /// The instrument with no available market price.
+        instrument_id: InstrumentId,
+    },
     /// The instrument was not found in the cache.
     #[error("INSTRUMENT_NOT_FOUND: instrument_id={instrument_id}")]
     InstrumentNotFound {
@@ -292,6 +368,13 @@ impl OrderDeniedCode {
     #[must_use]
     pub fn description(&self) -> &'static str {
         match self {
+            Self::PricePrecisionExceedsMaximum => {
+                "The price precision exceeds the instrument maximum."
+            }
+            Self::PriceNotPositive => "The price is not positive.",
+            Self::QuantityPrecisionExceedsMaximum => {
+                "The quantity precision exceeds the instrument maximum."
+            }
             Self::QuantityExceedsMaximum => {
                 "The effective order quantity exceeds the instrument maximum."
             }
@@ -334,6 +417,19 @@ impl OrderDeniedCode {
             }
             Self::QuantityConversionFailed => {
                 "The order quantity could not be converted for risk checks."
+            }
+            Self::NotionalCalculationFailed => "The order notional value could not be calculated.",
+            Self::InitialMarginCalculationFailed => {
+                "The order initial margin could not be calculated."
+            }
+            Self::CumulativeMarginCalculationFailed => {
+                "The cumulative initial margin could not be calculated."
+            }
+            Self::BettingBalanceCalculationFailed => {
+                "The betting balance locked amount could not be calculated."
+            }
+            Self::MarketPriceUnavailable => {
+                "No market price is available for the order risk check."
             }
             Self::InstrumentNotFound => "The instrument was not found in the cache.",
             Self::PositionNotFound => "The position for a reduce‑only order was not found.",
@@ -534,6 +630,21 @@ mod tests {
     fn message_prefix_matches_code() {
         let usd = || Money::from("100.00 USD");
         let samples = [
+            OrderDeniedReason::PricePrecisionExceedsMaximum {
+                price_type: OrderPriceType::Order,
+                price: Price::from("1.00"),
+                price_precision: 2,
+                max_precision: 1,
+            },
+            OrderDeniedReason::PriceNotPositive {
+                price_type: OrderPriceType::Trigger,
+                price: Price::from("0.00"),
+            },
+            OrderDeniedReason::QuantityPrecisionExceedsMaximum {
+                quantity: Quantity::from("1.00"),
+                quantity_precision: 2,
+                max_precision: 1,
+            },
             OrderDeniedReason::QuantityExceedsMaximum {
                 effective_quantity: Quantity::from("15"),
                 max_quantity: Quantity::from("10"),
@@ -592,6 +703,22 @@ mod tests {
             },
             OrderDeniedReason::QuantityConversionFailed {
                 detail: "boom".to_string(),
+            },
+            OrderDeniedReason::NotionalCalculationFailed {
+                detail: "boom".to_string(),
+            },
+            OrderDeniedReason::InitialMarginCalculationFailed {
+                detail: "boom".to_string(),
+            },
+            OrderDeniedReason::CumulativeMarginCalculationFailed {
+                detail: "boom".to_string(),
+            },
+            OrderDeniedReason::BettingBalanceCalculationFailed {
+                detail: "boom".to_string(),
+            },
+            OrderDeniedReason::MarketPriceUnavailable {
+                order_type: OrderType::Market,
+                instrument_id: InstrumentId::from("AUD/USD.SIM"),
             },
             OrderDeniedReason::InstrumentNotFound {
                 instrument_id: InstrumentId::from("AUD/USD.SIM"),

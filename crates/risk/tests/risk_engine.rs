@@ -80,7 +80,7 @@ use nautilus_model::{
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     position::Position,
-    types::{AccountBalance, Currency, Money, Price, Quantity, fixed::FIXED_PRECISION},
+    types::{AccountBalance, Currency, MONEY_MAX, Money, Price, Quantity, fixed::FIXED_PRECISION},
 };
 use nautilus_portfolio::Portfolio;
 use rstest::{fixture, rstest};
@@ -1774,7 +1774,7 @@ fn test_submit_order_when_invalid_price_precision_then_denies(
             .unwrap()
             .message()
             .unwrap()
-            .contains(&format!("invalid (precision {FIXED_PRECISION} > 5)"))
+            .starts_with("PRICE_PRECISION_EXCEEDS_MAXIMUM:")
     );
 }
 
@@ -1842,7 +1842,7 @@ fn test_submit_order_when_invalid_negative_price_and_not_option_then_denies(
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from("price -0.1 invalid (<= 0)")
+        Ustr::from("PRICE_NOT_POSITIVE: price_type=ORDER, price=-0.1")
     );
 }
 
@@ -2149,12 +2149,14 @@ fn test_submit_order_when_invalid_trigger_price_then_denies(
         saved_process_messages.first().unwrap().event_type(),
         OrderEventType::Denied
     );
-    // assert!(saved_process_messages
-    //     .first()
-    //     .unwrap()
-    //     .message()
-    //     .unwrap()
-    //     .contains(&format!("invalid (precision {PRECISION})")));
+    assert!(
+        saved_process_messages
+            .first()
+            .unwrap()
+            .message()
+            .unwrap()
+            .starts_with("PRICE_PRECISION_EXCEEDS_MAXIMUM: price_type=TRIGGER")
+    );
 }
 
 #[rstest]
@@ -2220,7 +2222,9 @@ fn test_submit_order_when_invalid_quantity_precision_then_denies(
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from("quantity 0.1 invalid (precision 1 > 0)")
+        Ustr::from(
+            "QUANTITY_PRECISION_EXCEEDS_MAXIMUM: quantity=0.1, quantity_precision=1, max_precision=0",
+        )
     );
 }
 
@@ -2287,7 +2291,7 @@ fn test_submit_order_when_invalid_quantity_exceeds_maximum_then_denies(
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from("quantity 100000000 invalid (> maximum trade size of 1000000)")
+        Ustr::from("QUANTITY_EXCEEDS_MAXIMUM: effective_quantity=100000000, max_quantity=1000000",)
     );
 }
 
@@ -2354,18 +2358,18 @@ fn test_submit_order_when_invalid_quantity_less_than_minimum_then_denies(
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from("quantity 1 invalid (< minimum trade size of 100)")
+        Ustr::from("QUANTITY_BELOW_MINIMUM: effective_quantity=1, min_quantity=100")
     );
 }
 
 #[rstest]
 #[case::market(
     OrderType::Market,
-    "Cannot check MARKET order risk: no prices for AUD/USD.SIM"
+    "MARKET_PRICE_UNAVAILABLE: order_type=MARKET, instrument_id=AUD/USD.SIM"
 )]
 #[case::market_to_limit(
     OrderType::MarketToLimit,
-    "Cannot check MARKET_TO_LIMIT order risk: no prices for AUD/USD.SIM"
+    "MARKET_PRICE_UNAVAILABLE: order_type=MARKET_TO_LIMIT, instrument_id=AUD/USD.SIM"
 )]
 fn test_submit_market_order_without_price_then_denies(
     #[case] order_type: OrderType,
@@ -2780,7 +2784,7 @@ fn test_submit_market_order_wallet_sell_within_balance_without_price_denies_no_m
     assert_eq!(
         process_messages[0].message().unwrap(),
         Ustr::from(&format!(
-            "Cannot check MARKET order risk: no prices for {}",
+            "MARKET_PRICE_UNAVAILABLE: order_type=MARKET, instrument_id={}",
             instrument_eth_usdt.id()
         ))
     );
@@ -3649,7 +3653,7 @@ fn test_submit_order_when_notional_is_unrepresentable_then_denies(
             .message()
             .unwrap()
             .as_str()
-            .starts_with("Cannot calculate notional value:")
+            .starts_with("NOTIONAL_CALCULATION_FAILED:")
     );
 }
 
@@ -5790,6 +5794,84 @@ fn test_submit_order_when_betting_back_order_liability_exceeds_free_balance_then
 }
 
 #[rstest]
+fn test_submit_order_when_betting_balance_calculation_fails_then_denies(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    mut simple_cache: Cache,
+) {
+    let gbp = Currency::GBP();
+    let instrument = InstrumentAny::Betting(betting());
+    let account_state = AccountState::new(
+        AccountId::new("BETFAIR-003"),
+        AccountType::Betting,
+        vec![AccountBalance::new(
+            Money::new(1_000.0, gbp),
+            Money::zero(gbp),
+            Money::new(1_000.0, gbp),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(gbp),
+    );
+
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+    simple_cache
+        .add_account(AccountAny::Betting(BettingAccount::new(
+            account_state,
+            true,
+        )))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::NoOrderSide)
+        .price(Price::from("2.00"))
+        .quantity(Quantity::from("100"))
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let saved = get_process_order_event_handler_messages(&process_order_event_handler);
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].event_type(), OrderEventType::Denied);
+    assert!(
+        saved[0]
+            .message()
+            .unwrap()
+            .as_str()
+            .starts_with("BETTING_BALANCE_CALCULATION_FAILED:")
+    );
+}
+
+#[rstest]
 fn test_submit_order_when_betting_sell_reduces_long_position_then_accepts(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
@@ -7252,6 +7334,85 @@ fn test_submit_order_margin_account_buy_exceeds_free_balance(
 }
 
 #[rstest]
+fn test_submit_order_when_initial_margin_is_unrepresentable_then_denies(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    mut instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    mut simple_cache: Cache,
+) {
+    let InstrumentAny::CryptoPerpetual(instrument) = &mut instrument_eth_usdt else {
+        unreachable!();
+    };
+    instrument.margin_init = Decimal::MAX;
+
+    simple_cache
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+    simple_cache
+        .add_account(AccountAny::Margin(margin_account_with_usdt_balance(
+            "100000 USDT",
+            "0 USDT",
+            "100000 USDT",
+        )))
+        .unwrap();
+    simple_cache
+        .add_quote(QuoteTick::new(
+            instrument_eth_usdt.id(),
+            Price::from("3000.00"),
+            Price::from("3000.01"),
+            Quantity::from("100"),
+            Quantity::from("100"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_eth_usdt.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let saved = get_process_order_event_handler_messages(&process_order_event_handler);
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].event_type(), OrderEventType::Denied);
+    assert!(
+        saved[0]
+            .message()
+            .unwrap()
+            .as_str()
+            .starts_with("INITIAL_MARGIN_CALCULATION_FAILED:")
+    );
+}
+
+#[rstest]
 fn test_submit_order_margin_account_sell_short_exceeds_free_balance(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
@@ -7620,6 +7781,109 @@ fn test_submit_order_list_margin_account_cum_margin_exceeds_free_balance(
     for event in &saved_process_messages {
         assert_eq!(event.event_type(), OrderEventType::Denied);
     }
+}
+
+#[rstest]
+fn test_submit_order_list_when_cumulative_margin_is_unrepresentable_then_denies(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    mut instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    mut simple_cache: Cache,
+) {
+    let InstrumentAny::CryptoPerpetual(instrument) = &mut instrument_eth_usdt else {
+        unreachable!();
+    };
+    instrument.margin_init = Decimal::ONE;
+    instrument.max_quantity = None;
+    instrument.max_notional = None;
+
+    simple_cache
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+    let max_balance = format!("{MONEY_MAX:.0} USDT");
+    simple_cache
+        .add_account(AccountAny::Margin(margin_account_with_usdt_balance(
+            &max_balance,
+            "0 USDT",
+            &max_balance,
+        )))
+        .unwrap();
+    simple_cache
+        .add_quote(QuoteTick::new(
+            instrument_eth_usdt.id(),
+            Price::from("1.00"),
+            Price::from("1.00"),
+            Quantity::from("100"),
+            Quantity::from("100"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let quantity = Quantity::new(MONEY_MAX * 0.75, 3);
+    let orders = [
+        OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_eth_usdt.id())
+            .client_order_id(ClientOrderId::from("O-001"))
+            .side(OrderSide::Buy)
+            .quantity(quantity)
+            .build(),
+        OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_eth_usdt.id())
+            .client_order_id(ClientOrderId::from("O-002"))
+            .side(OrderSide::Buy)
+            .quantity(quantity)
+            .build(),
+    ];
+
+    for order in &orders {
+        risk_engine
+            .cache()
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id_binance), true)
+            .unwrap();
+    }
+
+    let order_list = OrderList::new(
+        OrderListId::new("OL-001"),
+        instrument_eth_usdt.id(),
+        strategy_id_ema_cross,
+        orders.iter().map(Order::client_order_id).collect(),
+        risk_engine.clock().borrow().timestamp_ns(),
+    );
+    let submit = SubmitOrderList::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        order_list,
+        orders
+            .iter()
+            .map(|order| order.init_event().clone())
+            .collect(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrderList(submit));
+
+    let saved = get_process_order_event_handler_messages(&process_order_event_handler);
+    assert_eq!(saved.len(), 3);
+    assert_eq!(saved[0].event_type(), OrderEventType::Denied);
+    assert!(
+        saved[0]
+            .message()
+            .unwrap()
+            .as_str()
+            .starts_with("CUMULATIVE_MARGIN_CALCULATION_FAILED:")
+    );
 }
 
 #[rstest]
@@ -8373,7 +8637,7 @@ fn test_submit_order_with_zero_price_on_non_spread_instrument_then_denies(
         saved_process_messages[0]
             .message()
             .unwrap()
-            .contains("<= 0")
+            .starts_with("PRICE_NOT_POSITIVE:")
     );
 }
 
@@ -8542,7 +8806,7 @@ fn test_modify_order_with_invalid_price_precision_then_rejects(
         saved_process_messages[0]
             .message()
             .unwrap()
-            .contains("precision")
+            .starts_with("PRICE_PRECISION_EXCEEDS_MAXIMUM:")
     );
 }
 
@@ -8623,7 +8887,7 @@ fn test_modify_order_with_invalid_quantity_precision_then_rejects(
         saved_process_messages[0]
             .message()
             .unwrap()
-            .contains("precision")
+            .starts_with("QUANTITY_PRECISION_EXCEEDS_MAXIMUM:")
     );
 }
 
