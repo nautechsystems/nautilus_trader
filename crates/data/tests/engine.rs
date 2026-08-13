@@ -18513,6 +18513,168 @@ fn test_request_join_single_leg_fires_immediately(
     }
 }
 
+fn leg_book_deltas_response(
+    request_id: UUID4,
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+    deltas: Vec<OrderBookDelta>,
+) -> DataResponse {
+    DataResponse::BookDeltas(BookDeltasResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        deltas,
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    ))
+}
+
+#[rstest]
+fn test_request_join_rebuilds_same_instrument_book_deltas_legs(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    // Past the leg ts_init values, so the join's bound-date clamping does not
+    // collapse the parent window to 0.
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let join_id = UUID4::new();
+
+    data_engine
+        .execute_request(RequestCommand::Join(RequestJoin::new(
+            vec![leg_a, leg_b],
+            None,
+            None,
+            join_id,
+            UnixNanos::default(),
+            None,
+            None,
+        )))
+        .unwrap();
+
+    let (parent_handler, parent_saver) = get_any_saving_handler::<BookDeltasResponse>(Some(
+        Ustr::from("same-instrument-deltas-parent"),
+    ));
+    msgbus::register_response_handler(&join_id, parent_handler);
+
+    data_engine.response(leg_book_deltas_response(
+        leg_a,
+        instrument_id,
+        client_id,
+        vec![delta_with_flag(
+            instrument_id,
+            1_000,
+            RecordFlag::F_LAST as u8,
+        )],
+    ));
+    data_engine.response(leg_book_deltas_response(
+        leg_b,
+        instrument_id,
+        client_id,
+        vec![delta_with_flag(
+            instrument_id,
+            2_000,
+            RecordFlag::F_LAST as u8,
+        )],
+    ));
+
+    let responses = parent_saver.get_messages();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].instrument_id, instrument_id);
+    assert_eq!(
+        responses[0]
+            .data
+            .iter()
+            .map(|delta| delta.ts_init.as_u64())
+            .collect::<Vec<_>>(),
+        vec![1_000, 2_000],
+    );
+    assert_eq!(data_engine.pending_join_request_count(), 0);
+}
+
+#[rstest]
+fn test_request_join_mixed_instrument_book_deltas_cleans_up_join_staging(
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    // Past the leg ts_init values, so the deltas survive the parent-window trim and
+    // reach the response handler when the rebuild is not refused.
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let leg_a = UUID4::new();
+    let leg_b = UUID4::new();
+    let join_id = UUID4::new();
+
+    data_engine
+        .execute_request(RequestCommand::Join(RequestJoin::new(
+            vec![leg_a, leg_b],
+            None,
+            None,
+            join_id,
+            UnixNanos::default(),
+            None,
+            None,
+        )))
+        .unwrap();
+
+    let (parent_handler, parent_saver) = get_any_saving_handler::<BookDeltasResponse>(Some(
+        Ustr::from("mixed-instrument-deltas-parent"),
+    ));
+    msgbus::register_response_handler(&join_id, parent_handler);
+
+    data_engine.response(leg_book_deltas_response(
+        leg_a,
+        audusd_sim.id,
+        client_id,
+        vec![delta_with_flag(
+            audusd_sim.id,
+            1_000,
+            RecordFlag::F_LAST as u8,
+        )],
+    ));
+    data_engine.response(leg_book_deltas_response(
+        leg_b,
+        gbpusd_sim.id,
+        client_id,
+        vec![delta_with_flag(
+            gbpusd_sim.id,
+            2_000,
+            RecordFlag::F_LAST as u8,
+        )],
+    ));
+
+    assert!(
+        parent_saver.get_messages().is_empty(),
+        "mixed-instrument rebuild must not emit a parent response",
+    );
+    assert_eq!(
+        data_engine.request_pipeline_count(),
+        0,
+        "pipeline state must be cleared after a failed rebuild",
+    );
+    assert_eq!(
+        data_engine.pending_join_request_count(),
+        0,
+        "pending join must be cleared after a failed rebuild to prevent leaks",
+    );
+}
+
 #[rstest]
 fn test_request_join_mixed_variants_cleans_up_join_staging(
     audusd_sim: CurrencyPair,

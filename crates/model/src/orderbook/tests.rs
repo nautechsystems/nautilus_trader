@@ -7918,6 +7918,90 @@ fn test_apply_delta_error_when_order_not_found_for_side_resolution() {
 }
 
 #[rstest]
+fn test_apply_deltas_does_not_validate_children_constructed_literally() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let other_id = InstrumentId::from("MSFT.XNAS");
+    let good_delta = OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from("10"),
+            1,
+        ),
+        0,
+        1,
+        1.into(),
+        1.into(),
+    );
+    let foreign_delta = OrderBookDelta::new(
+        other_id,
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("101.00"),
+            Quantity::from("5"),
+            2,
+        ),
+        0,
+        2,
+        2.into(),
+        2.into(),
+    );
+    let deltas = OrderBookDeltas {
+        instrument_id,
+        deltas: vec![good_delta, foreign_delta],
+        flags: 0,
+        sequence: 2,
+        ts_event: 2.into(),
+        ts_init: 2.into(),
+    };
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    // A literal struct bypasses `new_checked`, so the foreign child still reaches
+    // the book: `apply_deltas` validates the wrapper only.
+    let result = book.apply_deltas(&deltas);
+
+    assert!(result.is_ok());
+    assert_eq!(book.best_bid_price(), Some(Price::from("100.00")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("101.00")));
+    assert_eq!(book.update_count, 2);
+
+    // Priced inside the resting ask so it becomes the best, making its arrival
+    // observable rather than hidden behind the level from the first batch.
+    let mismatched_delta = OrderBookDelta::new(
+        other_id,
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("100.50"),
+            Quantity::from("7"),
+            3,
+        ),
+        0,
+        3,
+        3.into(),
+        3.into(),
+    );
+    // The unchecked form is a documented FFI accommodation; pin that it still
+    // accepts a foreign child rather than preserving that by omission.
+    let mismatched_deltas = OrderBookDeltas {
+        instrument_id,
+        deltas: vec![mismatched_delta],
+        flags: 0,
+        sequence: 3,
+        ts_event: 3.into(),
+        ts_init: 3.into(),
+    };
+
+    book.apply_deltas_unchecked(&mismatched_deltas).unwrap();
+
+    assert_eq!(book.best_ask_price(), Some(Price::from("100.50")));
+    assert_eq!(book.update_count, 3);
+}
+
+#[rstest]
 fn test_apply_delta_skips_update_delete_when_order_not_found() {
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);

@@ -2014,8 +2014,9 @@ impl DataEngine {
         let (parent_start, parent_end) = parent_request_window(parent.as_ref());
         let rebuilt = rebuild_pipeline_response(parent_id, parent.as_ref(), legs);
 
-        // If the rebuild failed (mixed-variant or unsupported-variant legs), drop the
-        // associated `RequestJoin` so its staging maps do not leak. Without this the
+        // If the rebuild failed (mixed-variant, unsupported-variant, or mixed-instrument
+        // `BookDeltas` legs), drop the associated `RequestJoin` so its staging maps do not
+        // leak. Without this the
         // original join request stays in `pending_join_requests` and its
         // `parent_join_request_id` mapping stays live, neither of which will ever
         // resolve through normal flow.
@@ -5470,8 +5471,10 @@ fn log_if_empty_response<T, I: Display>(data: &[T], id: &I, correlation_id: &UUI
 /// Concatenates same-variant leg payloads into a single rebuilt response keyed by `parent_id`.
 ///
 /// Returns `None` when legs are mixed-variant or empty; pipelines only group legs of the same
-/// variant. The rebuilt response inherits `start` and `end` from the parent request when the
-/// parent is a `RequestJoin`; otherwise leg bounds are preserved on the first leg.
+/// variant. `BookDeltas` legs additionally return `None` when their wrapper instruments differ,
+/// since a book-delta batch is keyed by one instrument and cannot carry another's children.
+/// The rebuilt response inherits `start` and `end` from the parent request when the parent is a
+/// `RequestJoin`; otherwise leg bounds are preserved on the first leg.
 fn rebuild_pipeline_response(
     parent_id: UUID4,
     parent: Option<&RequestCommand>,
@@ -5603,6 +5606,24 @@ fn rebuild_pipeline_response(
                     log::error!("Mixed-variant legs in pipeline {parent_id}");
                     return None;
                 };
+
+                // A book-delta batch is keyed by one instrument, so legs for different
+                // instruments cannot be concatenated into a single response. Matched by
+                // value as well as identity, mirroring `OrderBookDeltas::new_checked`,
+                // since legs crossing the FFI boundary do not share an intern pool.
+                let same_instrument = other.instrument_id == acc.instrument_id
+                    || (other.instrument_id.symbol.as_str() == acc.instrument_id.symbol.as_str()
+                        && other.instrument_id.venue.as_str() == acc.instrument_id.venue.as_str());
+
+                if !same_instrument {
+                    log::error!(
+                        "Mixed-instrument BookDeltas legs in pipeline {parent_id}: {} and {}",
+                        acc.instrument_id,
+                        other.instrument_id,
+                    );
+                    return None;
+                }
+
                 acc.data.extend(other.data);
             }
             acc.data.sort_by_key(|d| d.ts_init);
