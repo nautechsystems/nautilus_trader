@@ -66,7 +66,7 @@ These methods publish custom data and signals without exposing the raw message b
 
 ## Direct access
 
-The current Python `DataActor` and `Strategy` APIs do not expose `self.msgbus`. Use custom data or
+The Python `DataActor` and `Strategy` APIs do not expose `self.msgbus`. Use custom data or
 signals for supported Python component messaging. Rust components can use the typed message-bus
 facade directly.
 
@@ -83,15 +83,15 @@ This guide explains the three primary messaging patterns available in NautilusTr
 | **Signal publish/subscribe**          | Lightweight notifications            | Simple alerts, flags, and status updates              |
 | **Rust MessageBus publish/subscribe** | Low‑level, typed topic communication | Native runtime components                             |
 
-Each approach serves different purposes. This section helps you decide which pattern to use.
+Each approach serves different purposes. Use this guide to decide which pattern to use.
 
 ### Rust MessageBus publish/subscribe to topics
 
 #### Concept
 
 The `MessageBus` is the central hub for all messages in NautilusTrader. Rust components can publish
-typed messages to named topics and subscribe handlers to those topics. This low-level interface is
-not part of the current Python actor or strategy surface.
+typed messages to named topics and subscribe handlers to those topics. This low‑level interface is
+not part of the Python actor or strategy surface.
 
 #### Key benefits and use cases
 
@@ -100,7 +100,7 @@ Direct message-bus access is for native components that need:
 - **Cross-component communication** within the system.
 - **Flexibility** to define typed topics and payloads.
 - **Decoupling** between publishers and subscribers who don't need to know about each other.
-- **Global Reach** where messages can be received by multiple subscribers.
+- **Global reach** where messages can be received by multiple subscribers.
 - Working with events that do not fit the data actor model.
 - Advanced scenarios requiring full control over messaging.
 
@@ -184,15 +184,16 @@ The Signal messaging approach works well when you need:
 
 - **Simple, lightweight notifications/alerts** like "RiskThresholdExceeded" or "TrendUp".
 - **Quick, on-the-fly messaging** without defining custom classes.
-- **Broadcasting alerts or flags** as primitive data (`int`, `float`, or `str`).
+- **Broadcasting alerts or flags** as simple primitive values.
 - **Easy API integration** with straightforward methods (`publish_signal`, `subscribe_signal`).
 - **Multiple subscriber communication** where all subscribers receive signals when published.
 - **Minimal setup overhead** with no class definitions required.
 
 #### Considerations
 
-- Each signal can contain only **single value** of type: `int`, `float`, and `str`. That means no support for complex data structures or other Python types.
-- In the `on_signal` handler, you can only differentiate between signals using `signal.value`, as the signal name is not accessible in the handler.
+- Each signal carries a single value. The value is converted to a string on publish, so handlers
+  always receive `signal.value` as a `str`; complex data structures are not preserved.
+- Differentiate between signals in the `on_signal` handler with `signal.name`.
 
 #### Quick overview code
 
@@ -219,10 +220,9 @@ self.publish_signal(
 )
 
 
-# Handler (this is static callback function with fixed name)
+# Handler (fixed callback name)
 def on_signal(self, signal):
-    # IMPORTANT: We match against signal.value, not signal.name
-    match signal.value:
+    match signal.name:
         case signals.NEW_HIGHEST_PRICE:
             self.log.info(
                 f"New highest price was reached. | "
@@ -241,8 +241,6 @@ def on_signal(self, signal):
 
 ### Summary and decision guide
 
-Here's a quick reference to help you decide which messaging style to use:
-
 #### Decision guide: Which style to choose?
 
 | **Use case**                           | **Recommended approach**            | **Setup required**                        |
@@ -259,9 +257,8 @@ external egress and ingress sides of the external bus. Rust-native live nodes us
 depend on Redis, a broker, shared-memory implementation, or socket protocol.
 
 :::info
-Redis is currently supported as one external backing for serializable messages. The minimum
-supported Redis version is 6.2, required for
-[streams](https://redis.io/docs/latest/develop/data-types/streams/) functionality.
+Redis is the built‑in external backing for serializable messages. The minimum supported Redis
+version is 6.2, required for the `MINID` stream trimming used by autotrim.
 :::
 
 When external egress is configured, outgoing publish messages are first dispatched to in-process
@@ -331,40 +328,20 @@ required. See [Custom data](custom_data.md#registration-architecture) for the cl
 For Redis, messages are transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a
 separate Rust task. That task writes the message to Redis streams.
 
-Offloading I/O to a separate thread keeps the main thread unblocked.
+Offloading I/O to a separate task keeps the publishing thread unblocked.
 
 With MessagePack or JSON, Rust-native external egress forwards serializable typed publications. This
 includes instruments, quotes, trades, bars, book deltas, depth-10 snapshots, mark/index/funding
-updates, option greeks, account state, portfolio snapshots, order events, position events, and
-custom data. With the `defi` feature this also includes DeFi blocks, pools, liquidity updates, fee
-collects, and flash events. Full order book snapshots, greeks data, option chain slices, and DeFi
-pool swaps are not forwarded because those types do not implement Serde serialization.
+updates, option greeks (`OptionGreeks`), account state, portfolio snapshots, order events, position
+events, and custom data. With the `defi` feature this also includes DeFi blocks, pools, liquidity
+updates, fee collects, and flash events. Full order book snapshots, `GreeksData` records, option
+chain slices, and DeFi pool swaps are not forwarded because those types do not implement Serde
+serialization.
 
 With SBE or Cap'n Proto, Rust-native external egress forwards the built-in market data payloads with
 schema codecs: quotes, trades, bars, book deltas, depth-10 snapshots, mark price updates, index
 price updates, funding rate updates, and option greeks. Other payload types are dropped with a
 debug log when those schema encodings are selected.
-
-### Serialization
-
-Nautilus supports serialization for:
-
-- All Nautilus built-in types (serialized as dictionaries `dict[str, Any]` containing serializable primitives).
-- Python primitive types (`str`, `int`, `float`, `bool`, `bytes`).
-
-You can add serialization support for custom types by registering them through the `serialization` subpackage.
-
-```python
-def register_serializable_type(
-    cls,
-    to_dict: Callable[[Any], dict[str, Any]],
-    from_dict: Callable[[dict[str, Any]], Any],
-): ...
-```
-
-- `cls`: The type to register.
-- `to_dict`: The delegate to instantiate a dict of primitive types from the object.
-- `from_dict`: The delegate to instantiate the object from a dict of primitive types.
 
 ## Configuration
 
@@ -408,9 +385,10 @@ setup on the local loopback you can pass `RedisMessageBusConfig::default()`.
 Redis selection is explicit in the Rust type. The config does not use a user-facing selector such
 as `type = "redis"` or `backing_type = "redis"`.
 
-Rust-native callers that inject `MessageBusExternalEgress` pass concrete connection details when
-they construct that egress surface. The core message bus does not require a `RedisMessageBusConfig`
-for injected egress.
+Rust-native callers that inject `MessageBusExternalEgress` with
+`LiveNodeBuilder::with_external_msgbus_egress` pass concrete connection details when they construct
+that egress surface. The core message bus does not require a `RedisMessageBusConfig` for injected
+egress.
 
 The Rust live runtime accepts `external_streams` in `MessageBusConfig`, and consumes inbound
 `BusMessage`s when callers inject a `MessageBusExternalIngress` with
@@ -463,16 +441,21 @@ Use `msgpack` when payload size and serialization performance are a primary conc
 ### Timestamp formatting
 
 By default timestamps are formatted as UNIX epoch nanosecond integers. Alternatively you can
-configure ISO 8601 string formatting by setting the `timestamps_as_iso8601` to `true`.
+configure ISO 8601 string formatting by setting `timestamps_as_iso8601` to `true`.
 
 ### Message stream keys
 
-Message stream keys are essential for identifying individual trader nodes and organizing messages within streams.
-They can be tailored to meet your specific requirements and use cases. In the context of message bus streams, a trader key is typically structured as follows:
+Message stream keys identify individual trader nodes and organize messages within streams. The
+`trader-` prefix, trader ID, and instance ID segments are optional and controlled by the options
+below; the streams prefix is always included. With every segment enabled, a trader key has the
+following structure:
 
 ```
-trader:{trader_id}:{instance_id}:{streams_prefix}
+trader-{trader_id}:{instance_id}:{streams_prefix}
 ```
+
+With the default options (`use_trader_prefix` and `use_trader_id` enabled, `use_instance_id`
+disabled) the base stream key is `trader-{trader_id}:{streams_prefix}`.
 
 These options control Redis stream keys. They do not rewrite the `topic` passed to an injected
 `MessageBusExternalEgress`; that topic remains the internal message bus publish topic. When
@@ -483,7 +466,7 @@ The following options are available for configuring message stream keys:
 
 #### Trader prefix
 
-If the key should begin with the `trader` string.
+If the key should begin with the `trader-` prefix.
 
 #### Trader ID
 
@@ -491,7 +474,7 @@ If the key should include the trader ID for the node.
 
 #### Instance ID
 
-Each trader node is assigned a unique 'instance ID,' which is a UUIDv4. This instance ID helps distinguish individual traders when messages
+Each trader node is assigned a unique instance ID, which is a UUIDv4. This instance ID helps distinguish individual traders when messages
 are distributed across multiple streams. You can include the instance ID in the trader key by setting the `use_instance_id` configuration option to `True`.
 This is particularly useful when you need to track and identify traders across various streams in a multi-node trading system.
 
@@ -517,21 +500,17 @@ When messages are published on the message bus, they are serialized and written 
 for the message bus is configured and enabled. To prevent flooding the stream with data like high-frequency
 quotes, you may filter out certain types of messages from external publication.
 
-To enable this filtering mechanism, pass a list of `type` objects to the `types_filter` parameter in the message bus configuration,
-specifying which types of messages should be excluded from external publication.
+To enable this filtering mechanism, pass a list of payload type names to the `types_filter`
+parameter in the message bus configuration. Listed types are excluded from external publication.
 
 ```python
 from nautilus_trader.config import MessageBusConfig
-from nautilus_trader.model import QuoteTick
-from nautilus_trader.model import TradeTick
 
 # Create a MessageBusConfig instance with types filtering
-message_bus = MessageBusConfig(types_filter=[QuoteTick, TradeTick])
+message_bus = MessageBusConfig(types_filter=["QuoteTick", "TradeTick"])
 ```
 
 ### Stream auto-trimming
-
-The `autotrim_maxlen` option is available on `MessageBusConfig`.
 
 Use `autotrim_mins` to set a lookback window in minutes and `autotrim_maxlen` to set an
 approximate maximum number of entries for each Redis stream. You can configure either policy or
@@ -542,8 +521,8 @@ Redis applies `autotrim_maxlen` with approximate trimming for better write perfo
 may contain slightly more entries than the configured threshold.
 
 :::info
-The current Redis implementation will maintain the `autotrim_mins` as a maximum width (plus roughly a minute, as streams are trimmed no more than once per minute).
-Rather than a maximum lookback window based on the current wall clock time.
+The Redis implementation trims each stream at most once per minute, so entries can remain up to
+roughly a minute longer than the `autotrim_mins` window.
 :::
 
 ## External streams
