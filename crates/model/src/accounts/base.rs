@@ -28,6 +28,7 @@ use nautilus_core::{
     },
     datetime::secs_to_nanos_unchecked,
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -274,9 +275,13 @@ impl BaseAccount {
             .unwrap_or(instrument.quote_currency());
         let quote_currency = instrument.quote_currency();
         let amount = match side {
+            // A buy at a negative price settles as a credit rather than a debit, so it
+            // reserves nothing. Clamping per order rather than after aggregation keeps a
+            // negative-price buy from financing a positive-price one before either fills.
             OrderSide::Buy => instrument
                 .try_calculate_notional_value(quantity, price, use_quote_for_inverse)?
-                .as_decimal(),
+                .as_decimal()
+                .max(Decimal::ZERO),
             OrderSide::Sell => quantity.as_decimal(),
             OrderSide::NoOrderSide => {
                 anyhow::bail!("Invalid `OrderSide` in `base_calculate_balance_locked`: {side}")
