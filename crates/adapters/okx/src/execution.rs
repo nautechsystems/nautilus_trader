@@ -1165,9 +1165,9 @@ impl ExecutionClient for OKXExecutionClient {
             self.ws_business_stream_handle = Some(handle);
         }
 
-        let order_subscription_types = order_subscription_instrument_types(&instrument_types);
+        let order_routing_types = order_routing_instrument_types(&instrument_types);
 
-        for inst_type in &order_subscription_types {
+        for inst_type in &order_routing_types {
             log::debug!("Subscribing to orders channel for {inst_type:?}");
             self.ws_private.subscribe_orders(*inst_type).await?;
 
@@ -1187,7 +1187,7 @@ impl ExecutionClient for OKXExecutionClient {
         }
 
         // Subscribe to algo orders on business WebSocket (OKX requires this endpoint)
-        for inst_type in &order_subscription_types {
+        for inst_type in &order_routing_types {
             if supports_algo_orders(*inst_type) {
                 self.ws_business.subscribe_orders_algo(*inst_type).await?;
                 self.ws_business.subscribe_algo_advance(*inst_type).await?;
@@ -1571,7 +1571,9 @@ impl ExecutionClient for OKXExecutionClient {
                 }
             }
         } else {
-            for inst_type in self.instrument_types() {
+            let instrument_types = self.instrument_types();
+
+            for inst_type in order_routing_instrument_types(&instrument_types) {
                 let mut fetched = self
                     .http_client
                     .request_order_status_reports(
@@ -1665,7 +1667,9 @@ impl ExecutionClient for OKXExecutionClient {
                 .await?;
             reports.append(&mut fetched);
         } else {
-            for inst_type in self.instrument_types() {
+            let instrument_types = self.instrument_types();
+
+            for inst_type in order_routing_instrument_types(&instrument_types) {
                 let mut fetched = self
                     .http_client
                     .request_fill_reports(
@@ -2463,20 +2467,20 @@ fn supports_algo_orders(instrument_type: OKXInstrumentType) -> bool {
     )
 }
 
-fn order_subscription_instrument_types(
+fn order_routing_instrument_types(
     instrument_types: &[OKXInstrumentType],
 ) -> Vec<OKXInstrumentType> {
-    let mut subscription_types = instrument_types.to_vec();
+    let mut routing_types = instrument_types.to_vec();
 
-    // OKX reports cross-margin spot orders as SPOT in Multi-currency margin mode.
-    if subscription_types.contains(&OKXInstrumentType::Margin)
-        && !subscription_types.contains(&OKXInstrumentType::Spot)
-        && !subscription_types.contains(&OKXInstrumentType::Any)
+    // OKX reports cross-margin spot orders as SPOT on order channels and report endpoints
+    if routing_types.contains(&OKXInstrumentType::Margin)
+        && !routing_types.contains(&OKXInstrumentType::Spot)
+        && !routing_types.contains(&OKXInstrumentType::Any)
     {
-        subscription_types.push(OKXInstrumentType::Spot);
+        routing_types.push(OKXInstrumentType::Spot);
     }
 
-    subscription_types
+    routing_types
 }
 
 fn is_spread_instrument(instrument_id: InstrumentId) -> bool {
@@ -2593,14 +2597,11 @@ mod tests {
         vec![OKXInstrumentType::Swap],
         vec![OKXInstrumentType::Swap]
     )]
-    fn test_order_subscription_instrument_types(
+    fn test_order_routing_instrument_types(
         #[case] instrument_types: Vec<OKXInstrumentType>,
         #[case] expected: Vec<OKXInstrumentType>,
     ) {
-        assert_eq!(
-            order_subscription_instrument_types(&instrument_types),
-            expected
-        );
+        assert_eq!(order_routing_instrument_types(&instrument_types), expected);
     }
 
     #[rstest]
