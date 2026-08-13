@@ -117,9 +117,10 @@ mod tests {
     use nautilus_model::data::Bar;
     use rstest::rstest;
 
-    use crate::testing::assert_approx_equal;
-
-    use crate::{average::vwap::VolumeWeightedAveragePrice, indicator::Indicator, stubs::*};
+    use crate::{
+        average::vwap::VolumeWeightedAveragePrice, indicator::Indicator, stubs::*,
+        testing::assert_approx_equal,
+    };
 
     const NANOSECONDS_PER_DAY: f64 = 86_400.0 * 1_000_000_000.0;
     const DAY0: f64 = 10.0 * 1_000_000_000.0;

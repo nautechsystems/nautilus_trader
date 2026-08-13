@@ -136,10 +136,8 @@ impl KeltnerChannel {
 mod tests {
     use rstest::rstest;
 
-    use crate::testing::assert_approx_equal;
-
     use super::*;
-    use crate::stubs::kc_10;
+    use crate::{stubs::kc_10, testing::assert_approx_equal};
 
     #[rstest]
     fn test_name_returns_expected_string(kc_10: KeltnerChannel) {

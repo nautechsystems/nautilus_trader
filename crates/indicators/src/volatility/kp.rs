@@ -141,10 +141,8 @@ impl KeltnerPosition {
 mod tests {
     use rstest::rstest;
 
-    use crate::testing::assert_approx_equal;
-
     use super::*;
-    use crate::stubs::kp_10;
+    use crate::{stubs::kp_10, testing::assert_approx_equal};
 
     #[rstest]
     fn test_name_returns_expected_string(kp_10: KeltnerPosition) {

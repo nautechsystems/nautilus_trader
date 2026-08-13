@@ -136,9 +136,10 @@ mod tests {
 
     use rstest::rstest;
 
-    use crate::testing::assert_approx_equal;
-
-    use crate::{indicator::Indicator, ratio::efficiency_ratio::EfficiencyRatio, stubs::*};
+    use crate::{
+        indicator::Indicator, ratio::efficiency_ratio::EfficiencyRatio, stubs::*,
+        testing::assert_approx_equal,
+    };
 
     #[rstest]
     fn test_efficiency_ratio_initialized(efficiency_ratio_10: EfficiencyRatio) {

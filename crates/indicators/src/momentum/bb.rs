@@ -188,10 +188,8 @@ where
 mod tests {
     use rstest::rstest;
 
-    use crate::testing::assert_approx_equal;
-
     use super::*;
-    use crate::stubs::bb_10;
+    use crate::{stubs::bb_10, testing::assert_approx_equal};
 
     #[rstest]
     fn test_name_returns_expected_string(bb_10: BollingerBands) {

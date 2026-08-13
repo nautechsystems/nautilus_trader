@@ -146,10 +146,11 @@ impl Pressure {
 mod tests {
     use rstest::rstest;
 
-    use crate::testing::assert_approx_equal;
-
     use super::*;
-    use crate::stubs::{bar_ethusdt_binance_minute_bid, pressure_10};
+    use crate::{
+        stubs::{bar_ethusdt_binance_minute_bid, pressure_10},
+        testing::assert_approx_equal,
+    };
 
     #[rstest]
     fn test_name_returns_expected_string(pressure_10: Pressure) {
