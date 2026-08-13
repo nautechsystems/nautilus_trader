@@ -21,7 +21,7 @@ use crate::{
     events::OrderFilled,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
     position::Position,
-    types::{Currency, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 /// Represents an event where a position has been opened.
@@ -64,6 +64,8 @@ pub struct PositionOpened {
     pub currency: Currency,
     /// The average open price.
     pub avg_px_open: f64,
+    /// The realized PnL for the current position cycle, denominated in cost currency.
+    pub realized_pnl: Option<Money>,
     /// The unique identifier for the event.
     pub event_id: UUID4,
     /// UNIX timestamp (nanoseconds) when the event occurred.
@@ -95,6 +97,7 @@ impl PositionOpened {
             last_px: fill.last_px,
             currency: position.quote_currency,
             avg_px_open: position.avg_px_open,
+            realized_pnl: position.realized_pnl,
             event_id,
             ts_event: fill.ts_event,
             ts_init,
@@ -115,7 +118,10 @@ mod tests {
             AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
             VenueOrderId,
         },
-        instruments::{InstrumentAny, stubs::audusd_sim},
+        instruments::{
+            Instrument, InstrumentAny,
+            stubs::{audusd_sim, xbtusd_bitmex},
+        },
         position::Position,
         types::{Currency, Money, Price, Quantity},
     };
@@ -136,6 +142,7 @@ mod tests {
             last_px: Price::from("1.0500"),
             currency: Currency::USD(),
             avg_px_open: 1.0500,
+            realized_pnl: Some(Money::new(-2.0, Currency::USD())),
             event_id: UUID4::default(),
             ts_event: UnixNanos::from(1_000_000_000),
             ts_init: UnixNanos::from(2_000_000_000),
@@ -182,6 +189,7 @@ mod tests {
         assert_eq!(position_opened.last_px, fill.last_px);
         assert_eq!(position_opened.currency, position.quote_currency);
         assert_eq!(position_opened.avg_px_open, position.avg_px_open);
+        assert_eq!(position_opened.realized_pnl, position.realized_pnl);
         assert_eq!(position_opened.event_id, event_id);
         assert_eq!(position_opened.ts_event, fill.ts_event);
         assert_eq!(position_opened.ts_init, ts_init);
@@ -206,5 +214,25 @@ mod tests {
         assert_eq!(short_position.side, PositionSide::Short);
         assert_eq!(short_position.entry, OrderSide::Sell);
         assert_eq!(short_position.signed_qty, -100.0);
+    }
+
+    #[rstest]
+    fn test_position_opened_realized_pnl_uses_settlement_currency() {
+        let instrument = InstrumentAny::CryptoPerpetual(xbtusd_bitmex());
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-001"))
+            .last_qty(Quantity::from("100000"))
+            .last_px(Price::from("10500.0"))
+            .currency(Currency::USD())
+            .commission(Money::from("0.01 BTC"))
+            .build();
+        let position = Position::new(&instrument, fill.clone());
+
+        let event =
+            PositionOpened::create(&position, &fill, UUID4::default(), UnixNanos::default());
+
+        assert_eq!(event.currency, Currency::USD());
+        assert_eq!(event.realized_pnl, Some(Money::from("-0.01 BTC")));
     }
 }

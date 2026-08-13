@@ -1653,10 +1653,10 @@ fn test_process_filled_order_publishes_fill_order_position_topics_in_order(
     assert_eq!(received[0].client_order_id(), order.client_order_id());
     assert_eq!(received[0].instrument_id(), instrument.id());
     assert_eq!(received_positions.len(), 1);
-    assert!(matches!(
-        received_positions[0],
-        PositionEvent::PositionOpened(_)
-    ));
+    let PositionEvent::PositionOpened(opened) = &received_positions[0] else {
+        panic!("position event should be PositionOpened");
+    };
+    assert_eq!(opened.realized_pnl, Some(Money::from("-2 USD")));
     assert_eq!(topics.borrow().as_slice(), ["fills", "orders", "positions"]);
 }
 

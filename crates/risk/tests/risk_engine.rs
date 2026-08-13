@@ -989,6 +989,7 @@ fn position_opened(order: &OrderAny) -> PositionOpened {
         last_px: Price::from("1.0"),
         currency: Currency::USD(),
         avg_px_open: 1.0,
+        realized_pnl: None,
         event_id: UUID4::new(),
         ts_event: UnixNanos::from(1),
         ts_init: UnixNanos::from(1),

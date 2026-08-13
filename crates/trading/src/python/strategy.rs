@@ -3912,6 +3912,7 @@ class IndicatorEventStrategy:
             last_px: Price::from("1.00000"),
             currency: Currency::from("USD"),
             avg_px_open: 1.0,
+            realized_pnl: None,
             event_id: UUID4::new(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),

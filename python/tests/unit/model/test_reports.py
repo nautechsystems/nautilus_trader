@@ -212,6 +212,7 @@ def test_position_snapshot_from_dict_returns_snapshot_instance():
 def test_position_event_classes_expose_create_surface():
     assert hasattr(PositionOpened, "position_id")
     assert hasattr(PositionOpened, "quantity")
+    assert hasattr(PositionOpened, "realized_pnl")
     assert hasattr(PositionChanged, "peak_quantity")
     assert hasattr(PositionChanged, "peak_qty")
     assert hasattr(PositionChanged, "realized_pnl")

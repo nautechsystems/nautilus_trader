@@ -2265,6 +2265,12 @@ def test_position_change_and_close_events_expose_peak_qty():
     assert events["position_closed"].peak_qty == Quantity.from_int(150_000)
 
 
+def test_position_opened_exposes_realized_pnl():
+    events = _make_position_events(TestInstrumentProvider.audusd_sim())
+
+    assert events["position_opened"].realized_pnl == Money.from_str("-2.00 USD")
+
+
 def _make_order_filled_event(
     instrument,
     client_order_id,

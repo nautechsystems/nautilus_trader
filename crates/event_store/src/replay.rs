@@ -1849,6 +1849,7 @@ fn apply_position_opened(
     position.avg_px_open = opened.avg_px_open;
     position.avg_px_close = None;
     position.realized_return = 0.0;
+    position.realized_pnl = opened.realized_pnl;
 
     apply_result(entry, cache.update_position(&position))?;
     Ok(true)
@@ -4287,6 +4288,50 @@ mod tests {
         assert_eq!(replayed.duration_ns, closed.duration);
         assert!(replayed.is_closed());
         assert!(cache.is_position_closed(&position_id));
+    }
+
+    #[rstest]
+    fn position_opened_replay_replaces_realized_pnl() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let position_id = PositionId::from("P-001");
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(position_id)
+            .commission(Money::from("1 USD"))
+            .build();
+        let position = Position::new(&instrument, fill.clone());
+        let mut opened =
+            PositionOpened::create(&position, &fill, UUID4::new(), UnixNanos::from(10));
+        assert_eq!(opened.realized_pnl, Some(Money::from("-1 USD")));
+
+        let mut stale_position = position;
+        stale_position.realized_pnl = Some(Money::from("9 USD"));
+        let mut cache = Cache::default();
+        cache
+            .add_position(&stale_position, OmsType::Unspecified)
+            .expect("seed stale position");
+        let entry = append_position_event(1, &PositionEvent::PositionOpened(opened.clone())).entry;
+
+        assert!(apply_cache_replay_entry(&mut cache, &entry).expect("apply opened"));
+        assert_eq!(
+            cache
+                .position_owned(&position_id)
+                .expect("position after opened")
+                .realized_pnl,
+            Some(Money::from("-1 USD")),
+        );
+
+        opened.realized_pnl = None;
+        let entry = append_position_event(2, &PositionEvent::PositionOpened(opened)).entry;
+
+        assert!(apply_cache_replay_entry(&mut cache, &entry).expect("apply opened without PnL"));
+        assert_eq!(
+            cache
+                .position_owned(&position_id)
+                .expect("position after opened without PnL")
+                .realized_pnl,
+            None,
+        );
     }
 
     #[rstest]

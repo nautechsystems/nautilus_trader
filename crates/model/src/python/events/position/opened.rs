@@ -21,7 +21,7 @@ use crate::{
     events::{OrderFilled, PositionOpened},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
     position::Position,
-    types::{Currency, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[pymethods]
@@ -127,6 +127,12 @@ impl PositionOpened {
     #[pyo3(name = "avg_px_open")]
     fn py_avg_px_open(&self) -> f64 {
         self.avg_px_open
+    }
+
+    #[getter]
+    #[pyo3(name = "realized_pnl")]
+    fn py_realized_pnl(&self) -> Option<Money> {
+        self.realized_pnl
     }
 
     #[getter]

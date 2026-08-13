@@ -369,6 +369,7 @@ fn get_open_position(position: &Position) -> PositionOpened {
         last_px: Price::new(position.avg_px_open, 0),
         currency: position.settlement_currency,
         avg_px_open: position.avg_px_open,
+        realized_pnl: position.realized_pnl,
         event_id: UUID4::new(),
         ts_event: 0.into(),
         ts_init: 0.into(),

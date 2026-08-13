@@ -168,35 +168,35 @@ The three position lifecycle event classes share a core field set and expose add
 the position develops. A check mark means the Python class exposes the field; a dash means the field
 is absent from that class.
 
-| Field              | Opened | Changed | Closed | Description                              |
-| ------------------ | ------ | ------- | ------ | ---------------------------------------- |
-| `trader_id`        | ✓      | ✓       | ✓      | Trader instance identifier.              |
-| `strategy_id`      | ✓      | ✓       | ✓      | Strategy that owns the position.         |
-| `instrument_id`    | ✓      | ✓       | ✓      | Instrument for the position.             |
-| `position_id`      | ✓      | ✓       | ✓      | Unique position identifier.              |
-| `account_id`       | ✓      | ✓       | ✓      | Account the position belongs to.         |
-| `opening_order_id` | ✓      | ✓       | ✓      | Order that opened the position.          |
-| `closing_order_id` | -      | -       | ✓      | Order that closed the position.          |
-| `entry`            | ✓      | ✓       | ✓      | Side of the opening fill.                |
-| `side`             | ✓      | ✓       | ✓      | Current position side.                   |
-| `signed_qty`       | ✓      | ✓       | ✓      | Signed quantity (negative=short).        |
-| `quantity`         | ✓      | ✓       | ✓      | Unsigned position quantity.              |
-| `peak_quantity`    | -      | ✓       | ✓      | Largest quantity held.                   |
-| `peak_qty`         | -      | ✓       | ✓      | Compatibility alias for `peak_quantity`. |
-| `last_qty`         | ✓      | ✓       | ✓      | Quantity of the fill or correction.      |
-| `last_px`          | ✓      | ✓       | ✓      | Price of the fill or correction.         |
-| `currency`         | ✓      | ✓       | ✓      | Position quote currency.                 |
-| `avg_px_open`      | ✓      | ✓       | ✓      | Average entry price.                     |
-| `avg_px_close`     | -      | ✓       | ✓      | Average exit price, if available.        |
-| `realized_return`  | -      | ✓       | ✓      | Realized return as a ratio.              |
-| `realized_pnl`     | -      | ✓       | ✓      | Realized PnL, if available.              |
-| `unrealized_pnl`   | -      | ✓       | ✓      | Set to zero by the engine.               |
-| `duration`         | -      | -       | ✓      | Time held in nanoseconds.                |
-| `ts_opened`        | -      | ✓       | ✓      | Timestamp when position opened.          |
-| `ts_closed`        | -      | -       | ✓      | Timestamp when position closed.          |
-| `event_id`         | ✓      | ✓       | ✓      | Unique event identifier.                 |
-| `ts_event`         | ✓      | ✓       | ✓      | Timestamp of the triggering event.       |
-| `ts_init`          | ✓      | ✓       | ✓      | Timestamp when event was created.        |
+| Field              | Opened | Changed | Closed | Description                                  |
+| ------------------ | ------ | ------- | ------ | -------------------------------------------- |
+| `trader_id`        | ✓      | ✓       | ✓      | Trader instance identifier.                  |
+| `strategy_id`      | ✓      | ✓       | ✓      | Strategy that owns the position.             |
+| `instrument_id`    | ✓      | ✓       | ✓      | Instrument for the position.                 |
+| `position_id`      | ✓      | ✓       | ✓      | Unique position identifier.                  |
+| `account_id`       | ✓      | ✓       | ✓      | Account the position belongs to.             |
+| `opening_order_id` | ✓      | ✓       | ✓      | Order that opened the position.              |
+| `closing_order_id` | -      | -       | ✓      | Order that closed the position.              |
+| `entry`            | ✓      | ✓       | ✓      | Side of the opening fill.                    |
+| `side`             | ✓      | ✓       | ✓      | Current position side.                       |
+| `signed_qty`       | ✓      | ✓       | ✓      | Signed quantity (negative=short).            |
+| `quantity`         | ✓      | ✓       | ✓      | Unsigned position quantity.                  |
+| `peak_quantity`    | -      | ✓       | ✓      | Largest quantity held.                       |
+| `peak_qty`         | -      | ✓       | ✓      | Compatibility alias for `peak_quantity`.     |
+| `last_qty`         | ✓      | ✓       | ✓      | Quantity of the fill or correction.          |
+| `last_px`          | ✓      | ✓       | ✓      | Price of the fill or correction.             |
+| `currency`         | ✓      | ✓       | ✓      | Position quote currency.                     |
+| `avg_px_open`      | ✓      | ✓       | ✓      | Average entry price.                         |
+| `avg_px_close`     | -      | ✓       | ✓      | Average exit price, if available.            |
+| `realized_return`  | -      | ✓       | ✓      | Realized return as a ratio.                  |
+| `realized_pnl`     | ✓      | ✓       | ✓      | Current‑cycle realized PnL in cost currency. |
+| `unrealized_pnl`   | -      | ✓       | ✓      | Set to zero by the engine.                   |
+| `duration`         | -      | -       | ✓      | Time held in nanoseconds.                    |
+| `ts_opened`        | -      | ✓       | ✓      | Timestamp when position opened.              |
+| `ts_closed`        | -      | -       | ✓      | Timestamp when position closed.              |
+| `event_id`         | ✓      | ✓       | ✓      | Unique event identifier.                     |
+| `ts_event`         | ✓      | ✓       | ✓      | Timestamp of the triggering event.           |
+| `ts_init`          | ✓      | ✓       | ✓      | Timestamp when event was created.            |
 
 ### Tracing orders to positions
 
