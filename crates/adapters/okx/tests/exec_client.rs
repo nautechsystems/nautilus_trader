@@ -80,7 +80,9 @@ use nautilus_okx::{
         consts::{
             OKX_CLIENT_ID, OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_VENUE,
         },
-        enums::{OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXSide, OKXTradeMode},
+        enums::{
+            OKXInstrumentType, OKXMarginMode, OKXOrderStatus, OKXOrderType, OKXSide, OKXTradeMode,
+        },
     },
     config::OKXExecClientConfig,
     execution::OKXExecutionClient,
@@ -98,6 +100,11 @@ use nautilus_okx::{
 use rstest::rstest;
 use serde_json::json;
 use ustr::Ustr;
+
+const MARGIN_SPOT_PARENT_CLIENT_ORDER_ID: &str = "OEEADEMOSTOPLIMIT001";
+const MARGIN_SPOT_PARENT_VENUE_ORDER_ID: &str = "2497956918703120500";
+const MARGIN_SPOT_CHILD_VENUE_ORDER_ID: &str = "2497956918703120501";
+const MARGIN_SPOT_TRADE_ID: &str = "1518905600";
 
 fn test_emitter() -> (
     ExecutionEventEmitter,
@@ -2304,6 +2311,8 @@ fn create_exec_test_router() -> Router {
 struct ReportRouteState {
     regular_order_pending_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     regular_order_history_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+    algo_order_pending_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+    algo_order_history_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     spread_order_pending_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     spread_order_history_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     regular_fill_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
@@ -2405,6 +2414,8 @@ async fn start_exec_report_test_server(state: Arc<ReportRouteState>) -> SocketAd
 fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
     let regular_pending_state = Arc::clone(&state);
     let regular_history_state = Arc::clone(&state);
+    let algo_pending_state = Arc::clone(&state);
+    let algo_history_state = Arc::clone(&state);
     let spread_pending_state = Arc::clone(&state);
     let spread_history_state = Arc::clone(&state);
     let regular_fill_state = Arc::clone(&state);
@@ -2431,12 +2442,72 @@ fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
             get(move |Query(params): Query<HashMap<String, String>>| {
                 let state = Arc::clone(&regular_history_state);
                 async move {
+                    let is_spot = params.get("instType").is_some_and(|value| value == "SPOT");
                     state
                         .regular_order_history_queries
                         .lock()
                         .await
                         .push(params);
+
+                    if !is_spot {
+                        return Json(json!({"code": "0", "msg": "", "data": []})).into_response();
+                    }
+
+                    let mut response =
+                        load_test_data("ws_orders_algo_child_filled_empty_cl_ord_id.json");
+                    response["code"] = json!("0");
+                    response["msg"] = json!("");
+                    Json(response).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&algo_pending_state);
+                async move {
+                    state.algo_order_pending_queries.lock().await.push(params);
                     Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-history",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&algo_history_state);
+                async move {
+                    let returns_parent =
+                        params.get("instType").is_some_and(|value| value == "SPOT")
+                            && params
+                                .get("ordType")
+                                .is_some_and(|value| value == "trigger")
+                            && params
+                                .get("state")
+                                .is_some_and(|value| value == "effective");
+                    state.algo_order_history_queries.lock().await.push(params);
+
+                    if !returns_parent {
+                        return Json(json!({"code": "0", "msg": "", "data": []})).into_response();
+                    }
+
+                    let mut response = load_test_data("http_get_orders_algo_history.json");
+                    let order = &mut response["data"][0];
+                    order["actualPx"] = json!("1886.00");
+                    order["actualSide"] = json!("buy");
+                    order["actualSz"] = json!("0.003");
+                    order["algoClOrdId"] = json!(MARGIN_SPOT_PARENT_CLIENT_ORDER_ID);
+                    order["algoId"] = json!(MARGIN_SPOT_PARENT_VENUE_ORDER_ID);
+                    order["clOrdId"] = json!("");
+                    order["instId"] = json!("ETH-USDT");
+                    order["instType"] = json!("SPOT");
+                    order["ordId"] = json!(MARGIN_SPOT_CHILD_VENUE_ORDER_ID);
+                    order["ordPx"] = json!("1886.00");
+                    order["posSide"] = json!("net");
+                    order["side"] = json!("buy");
+                    order["sz"] = json!("0.003");
+                    order["tdMode"] = json!("cross");
+                    order["triggerPx"] = json!("1887.00");
+                    Json(response).into_response()
                 }
             }),
         )
@@ -2465,8 +2536,20 @@ fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
             get(move |Query(params): Query<HashMap<String, String>>| {
                 let state = Arc::clone(&regular_fill_state);
                 async move {
+                    let is_spot = params.get("instType").is_some_and(|value| value == "SPOT");
                     state.regular_fill_queries.lock().await.push(params);
-                    Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+
+                    if !is_spot {
+                        return Json(json!({"code": "0", "msg": "", "data": []})).into_response();
+                    }
+
+                    let mut response =
+                        load_test_data("ws_orders_algo_child_filled_empty_cl_ord_id.json");
+                    response["code"] = json!("0");
+                    response["msg"] = json!("");
+                    response["data"][0]["billId"] = json!("bill-margin-spot-1");
+                    response["data"][0]["ts"] = json!("1786550400100");
+                    Json(response).into_response()
                 }
             }),
         )
@@ -2538,6 +2621,28 @@ fn create_test_execution_client_configured(
     (client, rx, cache)
 }
 
+fn make_margin_spot_report_instrument() -> InstrumentAny {
+    let mut instrument = currency_pair_ethusdt();
+    instrument.id = InstrumentId::from("ETH-USDT.OKX");
+    instrument.raw_symbol = Symbol::from("ETH-USDT");
+    InstrumentAny::CurrencyPair(instrument)
+}
+
+fn assert_margin_spot_queries(queries: &[HashMap<String, String>]) {
+    let margin_count = queries
+        .iter()
+        .filter(|query| query.get("instType").is_some_and(|value| value == "MARGIN"))
+        .count();
+    let spot_count = queries
+        .iter()
+        .filter(|query| query.get("instType").is_some_and(|value| value == "SPOT"))
+        .count();
+
+    assert!(margin_count > 0);
+    assert_eq!(margin_count, spot_count);
+    assert_eq!(queries.len(), margin_count + spot_count);
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_query_account_does_not_block_within_runtime() {
@@ -2571,6 +2676,94 @@ async fn test_query_account_does_not_block_within_runtime() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_margin_only_restart_recovers_spot_order_status_reports() {
+    let state = Arc::new(ReportRouteState::default());
+    let addr = start_exec_report_test_server(Arc::clone(&state)).await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Margin];
+        config.margin_mode = Some(OKXMarginMode::Cross);
+        config.use_spot_margin = true;
+    });
+    client.on_instrument(make_margin_spot_report_instrument());
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    let regular_pending_queries = state.regular_order_pending_queries.lock().await;
+    let regular_history_queries = state.regular_order_history_queries.lock().await;
+    let algo_pending_queries = state.algo_order_pending_queries.lock().await;
+    let algo_history_queries = state.algo_order_history_queries.lock().await;
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].instrument_id, InstrumentId::from("ETH-USDT.OKX"));
+    assert_eq!(
+        reports[0].client_order_id,
+        Some(ClientOrderId::from(MARGIN_SPOT_PARENT_CLIENT_ORDER_ID))
+    );
+    assert_eq!(
+        reports[0].venue_order_id,
+        VenueOrderId::from(MARGIN_SPOT_CHILD_VENUE_ORDER_ID)
+    );
+    assert_eq!(reports[0].order_status, OrderStatus::Filled);
+    assert_eq!(reports[0].filled_qty, Quantity::from("0.003"));
+    assert_margin_spot_queries(&regular_pending_queries);
+    assert_margin_spot_queries(&regular_history_queries);
+    assert_margin_spot_queries(&algo_pending_queries);
+    assert_margin_spot_queries(&algo_history_queries);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_margin_only_restart_recovers_spot_fill_reports() {
+    let state = Arc::new(ReportRouteState::default());
+    let addr = start_exec_report_test_server(Arc::clone(&state)).await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Margin];
+        config.margin_mode = Some(OKXMarginMode::Cross);
+        config.use_spot_margin = true;
+    });
+    client.on_instrument(make_margin_spot_report_instrument());
+
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_fill_reports(cmd).await.unwrap();
+    let regular_fill_queries = state.regular_fill_queries.lock().await;
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].instrument_id, InstrumentId::from("ETH-USDT.OKX"));
+    assert_eq!(reports[0].client_order_id, None);
+    assert_eq!(
+        reports[0].venue_order_id,
+        VenueOrderId::from(MARGIN_SPOT_CHILD_VENUE_ORDER_ID)
+    );
+    assert_eq!(reports[0].trade_id, TradeId::new(MARGIN_SPOT_TRADE_ID));
+    assert_eq!(reports[0].last_qty, Quantity::from("0.003"));
+    assert_eq!(reports[0].last_px, Price::from("1886.00"));
+    assert_margin_spot_queries(&regular_fill_queries);
 }
 
 #[rstest]
