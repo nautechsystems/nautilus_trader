@@ -123,6 +123,24 @@ impl ExecutionEventEmitter {
         ts_event: UnixNanos,
         info: Option<Params>,
     ) {
+        if let Err(e) = self.try_emit_account_state(balances, margins, reported, ts_event, info) {
+            log::warn!("{e}");
+        }
+    }
+
+    /// Generates and emits an account state event, reporting dispatch failures.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sender is uninitialized or its receiver is closed.
+    pub fn try_emit_account_state(
+        &self,
+        balances: Vec<AccountBalance>,
+        margins: Vec<MarginBalance>,
+        reported: bool,
+        ts_event: UnixNanos,
+        info: Option<Params>,
+    ) -> anyhow::Result<()> {
         let state = self.factory.generate_account_state(
             balances,
             margins,
@@ -131,7 +149,7 @@ impl ExecutionEventEmitter {
             self.ts_init(),
             info,
         );
-        self.send_account_state(state);
+        self.try_send_account_state(state)
     }
 
     /// Generates and emits an order denied event.
@@ -434,13 +452,19 @@ impl ExecutionEventEmitter {
 
     /// Emits an account state event.
     pub fn send_account_state(&self, state: AccountState) {
-        if let Some(sender) = &self.sender {
-            if let Err(e) = sender.send(ExecutionEvent::Account(state)) {
-                log::warn!("Failed to send account state: {e}");
-            }
-        } else {
-            log::warn!("Cannot send account state: sender not initialized");
+        if let Err(e) = self.try_send_account_state(state) {
+            log::warn!("{e}");
         }
+    }
+
+    fn try_send_account_state(&self, state: AccountState) -> anyhow::Result<()> {
+        let sender = self
+            .sender
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Cannot send account state: sender not initialized"))?;
+        sender
+            .send(ExecutionEvent::Account(state))
+            .map_err(|e| anyhow::anyhow!("Failed to send account state: {e}"))
     }
 
     /// Emits an execution report.

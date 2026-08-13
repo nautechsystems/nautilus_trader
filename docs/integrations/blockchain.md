@@ -443,9 +443,21 @@ shared EIP-1559 transaction path are implemented; order submission, swaps, and r
 planned and described here before they land.
 :::
 
-The `BlockchainExecutionClient` implements `connect`/`disconnect` with a wallet balance refresh at
-connect (native currency and, when a token universe is configured, ERC-20 tokens), RPC chain ID
-verification against configuration, and signer initialization from `signer_private_key_env` (see
+On connect, the `BlockchainExecutionClient` verifies the RPC chain ID and signer address, then reads
+the native balance and every ERC‑20 balance configured in `tokens`. A successful connection installs
+the complete snapshot and publishes one wallet `AccountState` under the configured account ID. If
+any balance read or exact conversion fails, connect fails, the client remains disconnected, the
+prior complete snapshot stays installed, and no state is published. Token symbols define currency
+identity, so duplicate symbols also reject the snapshot.
+
+The published event carries `total = free` and `locked = 0` for each balance. The wallet account
+retains local reservations and rederives its effective free and locked values as described in
+[Wallet accounts](../concepts/accounting.md#wallet-accounts). After the client starts and has a
+complete snapshot, `QueryAccount` republishes it without another RPC read. A query fails if its
+account ID differs from the client account ID, the client has not started, or no complete snapshot
+exists.
+
+The signer loads from `signer_private_key_env` (see
 [Transaction signing and broadcast](#transaction-signing-and-broadcast)). Disconnect removes the
 signer, and transaction operations reject a disconnected client before any execution RPC call.
 
@@ -668,9 +680,11 @@ Automated execution tests never use a live network:
   retry without rebroadcast, broadcast classification (`already known`, rejection, timeout after
   send), disconnect signer revocation, cancellation during persistence and after request dispatch,
   deployed‑bytecode rejection, approval simulation for false and empty returns, wrap balance and
-  approval allowance postconditions, and successful and failed initial and terminal-status
-  persistence against a temporary Postgres schema (skipped when Postgres is unavailable). JSON-RPC
-  fixtures live as files under the crate's `test_data/execution/` directory.
+  approval allowance postconditions, exact multi‑currency wallet snapshots, atomic refresh failure,
+  replacement without duplicates, connect and repeated-query account publication, and successful
+  and failed initial and terminal-status persistence against a temporary Postgres schema (skipped
+  when Postgres is unavailable). JSON-RPC fixtures live as files under the crate's
+  `test_data/execution/` directory.
 - A pinned‑block Anvil integration forks Arbitrum at block 489000000 with
   `anvil --fork-url <RPC> --fork-block-number 489000000 --chain-id 42161` and runs wrap, approve,
   and preflight against localhost only, asserting receipt status 1, positive gas usage, the WETH
@@ -938,8 +952,8 @@ A new protocol family needs the design pass above.
 ## Current limitations
 
 - Order submission is not yet implemented: the client connects, refreshes wallet balances, and
-  supports explicit preflight, wrap, and approve operations; order methods, account state, and
-  reconciliation are still to land. See [Execution](#execution).
+  publishes account state while supporting explicit preflight, wrap, and approve operations; order
+  methods and reconciliation are still to land. See [Execution](#execution).
 - Very large Uniswap V3 pools can still hit provider payload, timeout, or rate limits during
   final-state Multicall hydration.
 - `multicall_calls_per_rpc_request` documents the intended batching limit, but some final snapshot

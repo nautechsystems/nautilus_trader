@@ -24,14 +24,15 @@ use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
+    live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
         ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
-use nautilus_core::{Params, UnixNanos};
-use nautilus_live::ExecutionClientCore;
+use nautilus_core::{Params, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     defi::{
@@ -92,6 +93,8 @@ struct IncludedTransaction {
 pub struct BlockchainExecutionClient {
     /// Core execution client providing base functionality.
     core: ExecutionClientCore,
+    /// Generates and dispatches execution events.
+    emitter: ExecutionEventEmitter,
     /// Cache for storing token metadata and other blockchain data.
     cache: BlockchainCache,
     /// The client configuration.
@@ -161,9 +164,17 @@ impl BlockchainExecutionClient {
             }
         }
         let wallet_balance = WalletBalance::new(token_universe);
+        let emitter = ExecutionEventEmitter::new(
+            get_atomic_clock_realtime(),
+            core_client.trader_id,
+            core_client.account_id,
+            core_client.account_type,
+            core_client.base_currency,
+        );
 
         Ok(Self {
             core: core_client,
+            emitter,
             wallet_balance,
             chain,
             cache,
@@ -187,10 +198,7 @@ impl BlockchainExecutionClient {
 
         let native_currency = self.chain.native_currency();
 
-        // Convert from wei (18 decimals on-chain) to Money
-        let balance = Money::from_wei(balance_u256, native_currency);
-
-        Ok(balance)
+        Money::from_u256(balance_u256, native_currency).map_err(Into::into)
     }
 
     /// Fetches the balance of a specific ERC-20 token for the wallet.
@@ -226,37 +234,48 @@ impl BlockchainExecutionClient {
         Ok(token_balance)
     }
 
-    /// Refreshes all wallet balances including native currency and tracked ERC-20 tokens.
+    /// Refreshes and publishes all native currency and tracked ERC-20 balances.
     async fn refresh_wallet_balances(&mut self) -> anyhow::Result<()> {
+        let (wallet_balance, balances) = self.fetch_wallet_balances().await?;
+        self.generate_account_state(
+            balances,
+            vec![],
+            true,
+            get_atomic_clock_realtime().get_time_ns(),
+            None,
+        )?;
+        self.wallet_balance = wallet_balance;
+        Ok(())
+    }
+
+    async fn fetch_wallet_balances(
+        &mut self,
+    ) -> anyhow::Result<(WalletBalance, Vec<AccountBalance>)> {
         let native_currency_balance = self.fetch_native_currency_balance().await?;
-        log::debug!(
-            "Initializing wallet balance with native currency balance: {} {}",
-            native_currency_balance.as_decimal(),
-            native_currency_balance.currency
-        );
-        self.wallet_balance
-            .set_native_currency_balance(native_currency_balance);
+        let mut token_addresses = self
+            .wallet_balance
+            .token_universe
+            .iter()
+            .copied()
+            .collect::<Vec<_>>();
+        token_addresses.sort_unstable();
 
-        // Fetch token balances from the blockchain.
-        if self.wallet_balance.is_token_universe_initialized() {
-            let tokens: Vec<Address> = self
-                .wallet_balance
-                .token_universe
-                .clone()
-                .into_iter()
-                .collect();
-
-            for token in tokens {
-                if let Ok(token_balance) = self.fetch_token_balance(&token).await {
-                    log::debug!("Adding token balance to the wallet: {token_balance}");
-                    self.wallet_balance.add_token_balance(token_balance);
-                }
-            }
-        } else {
-            // TODO sync from transfer events for tokens that wallet interacted with.
+        let mut token_balances = Vec::with_capacity(token_addresses.len());
+        for token_address in token_addresses {
+            let token_balance = self
+                .fetch_token_balance(&token_address)
+                .await
+                .with_context(|| format!("failed to fetch token balance for {token_address}"))?;
+            token_balances.push(token_balance);
         }
 
-        Ok(())
+        let mut wallet_balance = WalletBalance::new(self.wallet_balance.token_universe.clone());
+        let balances = wallet_balance.replace_balances(native_currency_balance, token_balances)?;
+        log::debug!(
+            "Refreshed wallet balance with {} account balances",
+            balances.len()
+        );
+        Ok((wallet_balance, balances))
     }
 
     /// Runs a read-only execution preflight for the pool selected by `instrument_id`.
@@ -818,26 +837,46 @@ impl ExecutionClient for BlockchainExecutionClient {
     }
 
     fn get_account(&self) -> Option<AccountAny> {
-        todo!("implement get_account")
+        self.core.cache().account_owned(&self.core.account_id)
     }
 
     fn generate_account_state(
         &self,
-        _balances: Vec<AccountBalance>,
-        _margins: Vec<MarginBalance>,
-        _reported: bool,
-        _ts_event: UnixNanos,
-        _info: Option<Params>,
+        balances: Vec<AccountBalance>,
+        margins: Vec<MarginBalance>,
+        reported: bool,
+        ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
-        todo!("implement generate_account_state")
+        self.emitter
+            .try_emit_account_state(balances, margins, reported, ts_event, info)
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        todo!("implement start")
+        if self.core.is_started() {
+            return Ok(());
+        }
+
+        self.emitter.set_sender(get_exec_event_sender());
+        self.core.set_started();
+        log::info!(
+            "Started: client_id={}, account_id={}",
+            self.core.client_id,
+            self.core.account_id
+        );
+        Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        todo!("implement stop")
+        if self.core.is_stopped() {
+            return Ok(());
+        }
+
+        self.signer = None;
+        self.core.set_stopped();
+        self.core.set_disconnected();
+        log::info!("Stopped: client_id={}", self.core.client_id);
+        Ok(())
     }
 
     fn submit_order(&self, _cmd: SubmitOrder) -> anyhow::Result<()> {
@@ -864,8 +903,23 @@ impl ExecutionClient for BlockchainExecutionClient {
         todo!("implement batch_cancel_orders")
     }
 
-    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
-        todo!("implement query_account")
+    fn query_account(&self, cmd: QueryAccount) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            cmd.account_id == self.core.account_id,
+            "Query account ID {} does not match client account ID {}",
+            cmd.account_id,
+            self.core.account_id
+        );
+        anyhow::ensure!(self.core.is_started(), "Execution client is not started");
+
+        let balances = self.wallet_balance.as_account_balances()?;
+        self.generate_account_state(
+            balances,
+            vec![],
+            true,
+            get_atomic_clock_realtime().get_time_ns(),
+            None,
+        )
     }
 
     fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
@@ -882,8 +936,6 @@ impl ExecutionClient for BlockchainExecutionClient {
             "Connecting to blockchain execution client on chain {}",
             self.chain.name
         );
-
-        self.refresh_wallet_balances().await?;
 
         // Attach the durable store for execution transaction records when configured
         if let Some(pg_options) = &self.config.postgres_cache_database_config {
@@ -933,8 +985,9 @@ impl ExecutionClient for BlockchainExecutionClient {
                 self.wallet_address
             );
         }
-        self.signer = Some(signer);
 
+        self.refresh_wallet_balances().await?;
+        self.signer = Some(signer);
         self.core.set_connected();
         log::info!(
             "Blockchain execution client connected on chain {}",
@@ -990,7 +1043,10 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use alloy::primitives::address;
-    use nautilus_common::cache::Cache;
+    use nautilus_common::{
+        cache::Cache, live::runner::replace_exec_event_sender, messages::ExecutionEvent,
+    };
+    use nautilus_core::UUID4;
     use nautilus_infrastructure::sql::pg::{PostgresConnectOptions, get_postgres_connect_options};
     use nautilus_model::{defi::chain::chains, enums::AccountType, identifiers::TraderId};
     use rstest::rstest;
@@ -1020,6 +1076,14 @@ mod tests {
     const CALL_BALANCE: &str = include_str!("../../test_data/execution/rpc_eth_call_balance.json");
     const CALL_BALANCE_AFTER_WRAP: &str =
         include_str!("../../test_data/execution/rpc_eth_call_balance_after_wrap.json");
+    const CALL_BALANCE_WETH: &str =
+        include_str!("../../test_data/execution/rpc_eth_call_balance_weth.json");
+    const CALL_BALANCE_USDC: &str =
+        include_str!("../../test_data/execution/rpc_eth_call_balance_usdc.json");
+    const CALL_BALANCE_WETH_UPDATED: &str =
+        include_str!("../../test_data/execution/rpc_eth_call_balance_weth_updated.json");
+    const CALL_BALANCE_USDC_UPDATED: &str =
+        include_str!("../../test_data/execution/rpc_eth_call_balance_usdc_updated.json");
     const CALL_BOOL_TRUE: &str =
         include_str!("../../test_data/execution/rpc_eth_call_bool_true.json");
     const CALL_EMPTY: &str = include_str!("../../test_data/execution/rpc_eth_call_empty.json");
@@ -1049,6 +1113,7 @@ mod tests {
     const WALLET: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
     const ROUTER: &str = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
     const WETH: &str = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
+    const USDC: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
 
     const WETH_ADDRESS: Address = address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1");
     const ROUTER_ADDRESS: Address = address!("E592427A0AEce92De3Edee1F18E0157C05861564");
@@ -1127,6 +1192,13 @@ mod tests {
         config: BlockchainExecutionClientConfig,
         pool: Pool,
     ) -> anyhow::Result<BlockchainExecutionClient> {
+        test_client_and_cache(config, pool).map(|(client, _)| client)
+    }
+
+    fn test_client_and_cache(
+        config: BlockchainExecutionClientConfig,
+        pool: Pool,
+    ) -> anyhow::Result<(BlockchainExecutionClient, Rc<RefCell<Cache>>)> {
         let cache = Rc::new(RefCell::new(Cache::default()));
         cache.borrow_mut().add_pool(pool).unwrap();
         let core = ExecutionClientCore::new(
@@ -1137,10 +1209,11 @@ mod tests {
             AccountId::from("BLOCKCHAIN-001"),
             AccountType::Wallet,
             None,
-            cache,
+            cache.clone(),
         );
 
-        BlockchainExecutionClient::new(core, config)
+        let client = BlockchainExecutionClient::new(core, config)?;
+        Ok((client, cache))
     }
 
     fn test_client(http_rpc_url: String) -> BlockchainExecutionClient {
@@ -1152,6 +1225,22 @@ mod tests {
     ) -> (BlockchainExecutionClient, MockRpcState) {
         let addr = start_mock_rpc_server(state.clone()).await;
         (test_client(format!("http://{addr}")), state)
+    }
+
+    async fn client_with_token_mock_rpc(
+        state: MockRpcState,
+        signer_env: &str,
+    ) -> (BlockchainExecutionClient, MockRpcState, Rc<RefCell<Cache>>) {
+        let addr = start_mock_rpc_server(state.clone()).await;
+        let pool = test_pool();
+        let tokens = [pool.token0.clone(), pool.token1.clone()];
+        let mut config = test_config_with_signer_env(format!("http://{addr}"), signer_env);
+        config.tokens = Some(vec![WETH.to_string(), USDC.to_string()]);
+        let (mut client, cache) = test_client_and_cache(config, pool).unwrap();
+        for token in tokens {
+            client.cache.add_token(token).await.unwrap();
+        }
+        (client, state, cache)
     }
 
     fn execution_rpc_state() -> MockRpcState {
@@ -1775,6 +1864,211 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn wallet_balance_refresh_replaces_complete_snapshot_with_exact_precision() {
+        let state = execution_rpc_state()
+            .with_response_sequence("eth_getBalance", &[GET_BALANCE, GET_BALANCE_ZERO])
+            .with_response_sequence(
+                "eth_call",
+                &[
+                    CALL_BALANCE_WETH,
+                    CALL_BALANCE_USDC,
+                    CALL_BALANCE_WETH_UPDATED,
+                    CALL_BALANCE_USDC_UPDATED,
+                ],
+            );
+        let (mut client, _, _) =
+            client_with_token_mock_rpc(state, "BLOCKCHAIN_TEST_BALANCE_REPLACE").await;
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_exec_event_sender(sender);
+        client.start().unwrap();
+
+        client.refresh_wallet_balances().await.unwrap();
+        let balances = client.wallet_balance.as_account_balances().unwrap();
+
+        assert_eq!(balances.len(), 3);
+        assert_eq!(balances[0].currency.code.as_str(), "ETH");
+        assert_eq!(balances[0].currency.name.as_str(), "Ethereum");
+        assert_eq!(balances[0].currency.precision, 18);
+        assert_eq!(balances[0].total.raw, 1_000_000_000_000_000_000);
+        assert_eq!(balances[0].free, balances[0].total);
+        assert_eq!(balances[0].locked, Money::zero(balances[0].currency));
+        assert_eq!(balances[1].currency.code.as_str(), "WETH");
+        assert_eq!(balances[1].currency.name.as_str(), "Wrapped Ether");
+        assert_eq!(balances[1].currency.precision, 18);
+        assert_eq!(balances[1].total.raw, 1_234_567_890_123_456_789);
+        assert_eq!(balances[1].free, balances[1].total);
+        assert_eq!(balances[1].locked, Money::zero(balances[1].currency));
+        assert_eq!(balances[2].currency.code.as_str(), "USDC");
+        assert_eq!(balances[2].currency.name.as_str(), "USD Coin");
+        assert_eq!(balances[2].currency.precision, 6);
+        assert_eq!(balances[2].total.raw, 9_876_543_210_000_000_000);
+        assert_eq!(balances[2].free, balances[2].total);
+        assert_eq!(balances[2].locked, Money::zero(balances[2].currency));
+
+        client.refresh_wallet_balances().await.unwrap();
+        let balances = client.wallet_balance.as_account_balances().unwrap();
+
+        assert_eq!(balances.len(), 3);
+        assert_eq!(client.wallet_balance.token_balances.len(), 2);
+        assert_eq!(balances[0].total.raw, 0);
+        assert_eq!(balances[1].total.raw, 2_000_000_000_000_000_000);
+        assert_eq!(balances[2].total.raw, 12_345_670_000_000_000);
+    }
+
+    #[allow(unsafe_code)] // env-var mutation in tests; unique var names avoid cross-test races
+    #[tokio::test]
+    async fn failed_connect_refresh_retains_snapshot_and_publishes_nothing() {
+        let state = execution_rpc_state()
+            .with_response_sequence("eth_getBalance", &[GET_BALANCE, GET_BALANCE_ZERO])
+            .with_response_sequence(
+                "eth_call",
+                &[
+                    CALL_BALANCE_WETH,
+                    CALL_BALANCE_USDC,
+                    CALL_BALANCE_WETH_UPDATED,
+                    RPC_METHOD_NOT_FOUND,
+                ],
+            );
+        let (mut client, _, _) =
+            client_with_token_mock_rpc(state, "BLOCKCHAIN_TEST_BALANCE_ATOMIC").await;
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_exec_event_sender(sender);
+        client.start().unwrap();
+        client.refresh_wallet_balances().await.unwrap();
+        let retained = client.wallet_balance.as_account_balances().unwrap();
+        receiver.try_recv().unwrap();
+        // SAFETY: this variable name is unique to this test across the test binary
+        unsafe { std::env::set_var("BLOCKCHAIN_TEST_BALANCE_ATOMIC", TEST_PRIVATE_KEY) };
+
+        let error = client.connect().await.unwrap_err();
+        let failed_address = Address::from_str(USDC).unwrap();
+
+        assert!(
+            error.to_string().contains(&format!(
+                "failed to fetch token balance for {failed_address}"
+            )),
+            "was: {error}"
+        );
+        assert!(!client.is_connected());
+        assert!(client.signer.is_none());
+        assert_eq!(
+            client.wallet_balance.as_account_balances().unwrap(),
+            retained
+        );
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[allow(unsafe_code)] // env-var mutation in tests; unique var names avoid cross-test races
+    #[tokio::test]
+    async fn failed_connect_publication_retains_snapshot() {
+        let state = execution_rpc_state()
+            .with_response_sequence("eth_getBalance", &[GET_BALANCE, GET_BALANCE_ZERO])
+            .with_response_sequence(
+                "eth_call",
+                &[
+                    CALL_BALANCE_WETH,
+                    CALL_BALANCE_USDC,
+                    CALL_BALANCE_WETH_UPDATED,
+                    CALL_BALANCE_USDC_UPDATED,
+                ],
+            );
+        let (mut client, _, _) =
+            client_with_token_mock_rpc(state, "BLOCKCHAIN_TEST_BALANCE_PUBLICATION").await;
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_exec_event_sender(sender);
+        client.start().unwrap();
+        client.refresh_wallet_balances().await.unwrap();
+        let retained = client.wallet_balance.as_account_balances().unwrap();
+        receiver.try_recv().unwrap();
+        drop(receiver);
+        // SAFETY: this variable name is unique to this test across the test binary
+        unsafe { std::env::set_var("BLOCKCHAIN_TEST_BALANCE_PUBLICATION", TEST_PRIVATE_KEY) };
+
+        let error = client.connect().await.unwrap_err();
+
+        assert!(
+            error.to_string().contains("Failed to send account state"),
+            "was: {error}"
+        );
+        assert!(!client.is_connected());
+        assert!(client.signer.is_none());
+        assert_eq!(
+            client.wallet_balance.as_account_balances().unwrap(),
+            retained
+        );
+    }
+
+    #[allow(unsafe_code)] // env-var mutation in tests; unique var names avoid cross-test races
+    #[tokio::test]
+    async fn connect_and_repeated_query_publish_wallet_account_state() {
+        let state = execution_rpc_state()
+            .with_response_sequence("eth_call", &[CALL_BALANCE_WETH, CALL_BALANCE_USDC]);
+        let (mut client, state, cache) =
+            client_with_token_mock_rpc(state, "BLOCKCHAIN_TEST_ACCOUNT_STATE").await;
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_exec_event_sender(sender);
+        client.start().unwrap();
+        // SAFETY: this variable name is unique to this test across the test binary
+        unsafe { std::env::set_var("BLOCKCHAIN_TEST_ACCOUNT_STATE", TEST_PRIVATE_KEY) };
+
+        client.connect().await.unwrap();
+
+        let ExecutionEvent::Account(connected) = receiver.try_recv().unwrap() else {
+            panic!("expected account state event")
+        };
+        assert_eq!(connected.account_id, AccountId::from("BLOCKCHAIN-001"));
+        assert_eq!(connected.account_type, AccountType::Wallet);
+        assert_eq!(connected.base_currency, None);
+        assert_eq!(connected.balances.len(), 3);
+        assert!(connected.margins.is_empty());
+        assert!(connected.is_reported);
+        cache.borrow_mut().update_account_state(&connected).unwrap();
+
+        let account = client.get_account().unwrap();
+        assert!(matches!(account, AccountAny::Wallet(_)));
+        assert_eq!(account.id(), AccountId::from("BLOCKCHAIN-001"));
+        assert_eq!(account.last_event(), Some(connected.clone()));
+
+        let requests_before = state.recorded_requests().len();
+        let query = || {
+            QueryAccount::new(
+                TraderId::from("TRADER-001"),
+                Some(ClientId::from("BLOCKCHAIN-001")),
+                AccountId::from("BLOCKCHAIN-001"),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )
+        };
+        client.query_account(query()).unwrap();
+        client.query_account(query()).unwrap();
+
+        let ExecutionEvent::Account(first_query) = receiver.try_recv().unwrap() else {
+            panic!("expected first query account state event")
+        };
+        let ExecutionEvent::Account(second_query) = receiver.try_recv().unwrap() else {
+            panic!("expected second query account state event")
+        };
+        assert!(connected.has_same_balances_and_margins(&first_query));
+        assert!(first_query.has_same_balances_and_margins(&second_query));
+        assert_eq!(first_query.account_id, connected.account_id);
+        assert_eq!(first_query.account_type, connected.account_type);
+        assert_eq!(first_query.base_currency, connected.base_currency);
+        assert_eq!(first_query.is_reported, connected.is_reported);
+        assert_ne!(first_query.event_id, second_query.event_id);
+        assert_eq!(state.recorded_requests().len(), requests_before);
+
+        client.stop().unwrap();
+        assert!(client.core.is_stopped());
+        assert!(!client.is_connected());
+        assert!(client.signer.is_none());
+    }
+
+    #[tokio::test]
     async fn connect_rejects_on_chain_mismatch() {
         let state = ready_rpc_state().with_response("eth_chainId", CHAIN_ID_ETHEREUM);
         let (mut client, _) = client_with_mock_rpc(state).await;
@@ -1822,6 +2116,9 @@ mod tests {
         let config =
             test_config_with_signer_env(format!("http://{addr}"), "BLOCKCHAIN_TEST_PRIVATE_KEY_OK");
         let mut client = test_client_from_config(config, test_pool());
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_exec_event_sender(sender);
+        client.start().unwrap();
         // SAFETY: this variable name is unique to this test across the test binary
         unsafe { std::env::set_var("BLOCKCHAIN_TEST_PRIVATE_KEY_OK", TEST_PRIVATE_KEY) };
 
