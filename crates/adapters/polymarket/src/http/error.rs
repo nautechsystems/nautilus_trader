@@ -33,12 +33,13 @@ pub enum Error {
     Auth(String),
 
     #[error(
-        "Rate limited on {endpoint} (token_cost={token_cost}) retry_after_ms={retry_after_ms:?}"
+        "HTTP 429 rate limit on {endpoint} (token_cost={token_cost}) retry_after_ms={retry_after_ms:?}: {message}"
     )]
     RateLimit {
         endpoint: &'static str,
         token_cost: u32,
         retry_after_ms: Option<u64>,
+        message: String,
     },
 
     #[error("bad request: {0}")]
@@ -88,11 +89,35 @@ impl Error {
         token_cost: u32,
         retry_after_ms: Option<u64>,
     ) -> Self {
+        Self::rate_limit_response(endpoint, token_cost, retry_after_ms, "rate limit exceeded")
+    }
+
+    pub fn rate_limit_response(
+        endpoint: &'static str,
+        token_cost: u32,
+        retry_after_ms: Option<u64>,
+        message: impl Into<String>,
+    ) -> Self {
         Self::RateLimit {
             endpoint,
             token_cost,
             retry_after_ms,
+            message: message.into(),
         }
+    }
+
+    pub fn rate_limit_from_body(
+        endpoint: &'static str,
+        token_cost: u32,
+        retry_after_ms: Option<u64>,
+        body: &[u8],
+    ) -> Self {
+        Self::rate_limit_response(
+            endpoint,
+            token_cost,
+            retry_after_ms,
+            venue_error_message(body),
+        )
     }
 
     pub fn bad_request(msg: impl Into<String>) -> Self {
@@ -122,10 +147,9 @@ impl Error {
     /// Classifies a raw status code (as `u16`) and body into the appropriate error variant.
     pub fn from_status_code(status: u16, body: &[u8]) -> Self {
         let message = venue_error_message(body);
+
         match status {
-            401 | 403 => Self::auth(format!("HTTP {status}: {message}")),
-            400 => Self::bad_request(format!("HTTP {status}: {message}")),
-            429 => Self::rate_limit("unknown", 0, None),
+            429 => Self::rate_limit_response("unknown", 0, None, message),
             _ => Self::http(status, message),
         }
     }
@@ -138,8 +162,6 @@ impl Error {
         } else if let Some(status) = error.status() {
             let status_code = status.as_u16();
             match status_code {
-                401 | 403 => Self::auth(format!("HTTP {status_code}: authentication failed")),
-                400 => Self::bad_request(format!("HTTP {status_code}: bad request")),
                 429 => Self::rate_limit("unknown", 0, None),
                 _ => Self::http(status_code, format!("HTTP error: {error}")),
             }
@@ -150,20 +172,18 @@ impl Error {
         }
     }
 
-    #[expect(clippy::needless_pass_by_value)]
     pub fn from_http_client(error: HttpClientError) -> Self {
-        Self::transport(format!("HTTP client error: {error}"))
+        match error {
+            HttpClientError::TimeoutError(_) => Self::Timeout,
+            error => Self::transport(format!("HTTP client error: {error}")),
+        }
     }
 
     pub fn is_retryable(&self) -> bool {
         match self {
             Self::Transport(_) | Self::Timeout => true,
-            Self::RateLimit {
-                token_cost,
-                retry_after_ms,
-                ..
-            } => retry_after_ms.is_some() || *token_cost == 0,
-            Self::Http { status, .. } => *status >= 500,
+            Self::RateLimit { .. } => true,
+            Self::Http { status, .. } => *status == 425 || *status >= 500,
             _ => false,
         }
     }
@@ -201,7 +221,14 @@ impl Error {
     }
 
     pub fn is_auth_error(&self) -> bool {
-        matches!(self, Self::Auth(_))
+        matches!(
+            self,
+            Self::Auth(_)
+                | Self::Http {
+                    status: 401 | 403,
+                    ..
+                }
+        )
     }
 
     /// Returns `true` if this error originated from an HTTP status code response
@@ -211,6 +238,17 @@ impl Error {
             self,
             Self::Auth(_) | Self::BadRequest(_) | Self::RateLimit { .. } | Self::Http { .. }
         )
+    }
+
+    /// Returns a bounded reason suitable for strategy-facing rejection events.
+    #[must_use]
+    pub fn strategy_reason(&self) -> String {
+        match self {
+            Self::Http { message, .. }
+            | Self::RateLimit { message, .. }
+            | Self::Exchange(message) => sanitize_error_text(message),
+            _ => sanitize_error_text(&self.to_string()),
+        }
     }
 }
 
@@ -224,10 +262,104 @@ fn venue_error_message(body: &[u8]) -> String {
             // through to a populated `errorMsg` instead of discarding both for the raw body
             ["error", "errorMsg"].iter().find_map(|key| {
                 let message = value.get(key)?.as_str()?;
-                (!message.trim().is_empty()).then(|| message.to_string())
+                (!message.trim().is_empty()).then(|| sanitize_error_text(message))
             })
         })
-        .unwrap_or_else(|| String::from_utf8_lossy(body).to_string())
+        .unwrap_or_else(|| sanitize_error_text(&String::from_utf8_lossy(body)))
+}
+
+const ERROR_TEXT_MAX_CHARS: usize = 512;
+const ERROR_TEXT_TRUNCATED_SUFFIX: &str = " ... [truncated]";
+
+/// Removes unsafe formatting and bounds venue text before logging or emitting it.
+#[must_use]
+pub(crate) fn sanitize_error_text(text: &str) -> String {
+    let visible = if looks_like_html(text) {
+        html_title(text).unwrap_or_else(|| strip_html_tags(text))
+    } else {
+        text.to_string()
+    };
+    let normalized = normalize_error_text(&visible);
+    let normalized = if normalized.is_empty() {
+        "empty response body".to_string()
+    } else {
+        normalized
+    };
+
+    if normalized.chars().count() <= ERROR_TEXT_MAX_CHARS {
+        return normalized;
+    }
+
+    let suffix_chars = ERROR_TEXT_TRUNCATED_SUFFIX.chars().count();
+    let mut bounded: String = normalized
+        .chars()
+        .take(ERROR_TEXT_MAX_CHARS - suffix_chars)
+        .collect();
+    bounded.push_str(ERROR_TEXT_TRUNCATED_SUFFIX);
+    bounded
+}
+
+fn looks_like_html(text: &str) -> bool {
+    let trimmed = text.trim_start().to_ascii_lowercase();
+
+    trimmed.starts_with("<!doctype html")
+        || trimmed.starts_with("<html")
+        || trimmed.contains("<html")
+}
+
+fn html_title(text: &str) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    let title_start = lower.find("<title")?;
+    let content_start = title_start + lower[title_start..].find('>')? + 1;
+    let content_end = content_start + lower[content_start..].find("</title>")?;
+    let title = text[content_start..content_end].to_string();
+
+    (!title.trim().is_empty()).then_some(title)
+}
+
+fn strip_html_tags(text: &str) -> String {
+    let mut visible = String::with_capacity(text.len());
+    let mut in_tag = false;
+
+    for ch in text.chars() {
+        match ch {
+            '<' => {
+                in_tag = true;
+                visible.push(' ');
+            }
+            '>' => {
+                in_tag = false;
+                visible.push(' ');
+            }
+            _ if !in_tag => visible.push(ch),
+            _ => {}
+        }
+    }
+
+    visible
+}
+
+fn normalize_error_text(text: &str) -> String {
+    let mut normalized = String::with_capacity(text.len());
+    let mut previous_space = true;
+
+    for ch in text.chars() {
+        if ch.is_whitespace() || ch.is_control() {
+            if !previous_space {
+                normalized.push(' ');
+                previous_space = true;
+            }
+        } else {
+            normalized.push(ch);
+            previous_space = false;
+        }
+    }
+
+    if normalized.ends_with(' ') {
+        normalized.pop();
+    }
+
+    normalized
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -266,10 +398,11 @@ mod tests {
             endpoint: "/orders",
             token_cost: 10,
             retry_after_ms: Some(60000),
+            message: "slow down".to_string(),
         };
         assert_eq!(
             err.to_string(),
-            "Rate limited on /orders (token_cost=10) retry_after_ms=Some(60000)"
+            "HTTP 429 rate limit on /orders (token_cost=10) retry_after_ms=Some(60000): slow down"
         );
     }
 
@@ -279,11 +412,13 @@ mod tests {
         assert!(Error::Timeout.is_retryable());
         assert!(Error::rate_limit("/orders", 10, Some(1_000)).is_retryable());
         assert!(Error::rate_limit("unknown", 0, None).is_retryable());
+        assert!(Error::http(425, "matching engine restarting").is_retryable());
         assert!(Error::http(500, "server error").is_retryable());
 
-        assert!(!Error::rate_limit("/orders", 10, None).is_retryable());
+        assert!(Error::rate_limit("/orders", 10, None).is_retryable());
         assert!(!Error::auth("test").is_retryable());
         assert!(!Error::bad_request("test").is_retryable());
+        assert!(!Error::http(404, "not found").is_retryable());
         assert!(
             !Error::BurstExceeded {
                 endpoint: "/orders",
@@ -304,56 +439,47 @@ mod tests {
     #[case::fok_killed(
         400,
         br#"{"error":"order couldn't be fully filled. FOK orders are fully filled or killed.","orderID":"0x3776d59db9ea1e4bbedf33f6f79ca677cfa6c93c2a44801f5a10516d822cc502"}"#,
-        "bad request: HTTP 400: order couldn't be fully filled. FOK orders are fully filled or killed."
+        "HTTP error 400: order couldn't be fully filled. FOK orders are fully filled or killed."
     )]
     #[case::error_msg_key(
         400,
         br#"{"errorMsg":"not enough balance / allowance: the balance is not enough"}"#,
-        "bad request: HTTP 400: not enough balance / allowance: the balance is not enough"
+        "HTTP error 400: not enough balance / allowance: the balance is not enough"
     )]
     #[case::auth(
         401,
         br#"{"error":"invalid api key"}"#,
-        "auth error: HTTP 401: invalid api key"
+        "HTTP error 401: invalid api key"
     )]
     #[case::server_error(
         500,
         br#"{"error":"internal error"}"#,
         "HTTP error 500: internal error"
     )]
-    #[case::plain_text_body(400, b"Bad Request", "bad request: HTTP 400: Bad Request")]
-    #[case::json_without_error_key(
-        400,
-        br#"{"foo":"bar"}"#,
-        r#"bad request: HTTP 400: {"foo":"bar"}"#
-    )]
-    #[case::empty_error_value(400, br#"{"error":""}"#, r#"bad request: HTTP 400: {"error":""}"#)]
-    #[case::whitespace_error_value(
-        400,
-        br#"{"error":"   "}"#,
-        r#"bad request: HTTP 400: {"error":"   "}"#
-    )]
+    #[case::plain_text_body(400, b"Bad Request", "HTTP error 400: Bad Request")]
+    #[case::json_without_error_key(400, br#"{"foo":"bar"}"#, r#"HTTP error 400: {"foo":"bar"}"#)]
+    #[case::empty_error_value(400, br#"{"error":""}"#, r#"HTTP error 400: {"error":""}"#)]
+    #[case::whitespace_error_value(400, br#"{"error":"   "}"#, r#"HTTP error 400: {"error":" "}"#)]
     // A blank `error` must fall through too, otherwise the populated `errorMsg` beside it is
     // discarded and the whole raw body reaches the reason.
     #[case::blank_error_falls_through(
         400,
         br#"{"error":"","errorMsg":"not enough balance / allowance"}"#,
-        "bad request: HTTP 400: not enough balance / allowance"
+        "HTTP error 400: not enough balance / allowance"
     )]
     // A null `error` must fall through to `errorMsg` rather than ending the lookup: the CLOB sends
     // null for the unused key (see `test_data/http_order_response_ok.json`).
     #[case::null_error_falls_through(
         400,
         br#"{"error":null,"errorMsg":"invalid post-only order: order crosses book"}"#,
-        "bad request: HTTP 400: invalid post-only order: order crosses book"
+        "HTTP error 400: invalid post-only order: order crosses book"
     )]
-    // 429 carries its own endpoint-and-cost message, so the body is deliberately dropped
-    #[case::rate_limited_ignores_body(
+    #[case::rate_limited_preserves_body(
         429,
         br#"{"error":"slow down"}"#,
-        "Rate limited on unknown (token_cost=0) retry_after_ms=None"
+        "HTTP 429 rate limit on unknown (token_cost=0) retry_after_ms=None: slow down"
     )]
-    #[case::empty_body(400, b"", "bad request: HTTP 400: ")]
+    #[case::empty_body(400, b"", "HTTP error 400: empty response body")]
     fn test_from_status_code_message(
         #[case] status: u16,
         #[case] body: &[u8],
@@ -374,8 +500,82 @@ mod tests {
         assert_eq!(from_status.to_string(), from_code.to_string());
         assert_eq!(
             from_status.to_string(),
-            "bad request: HTTP 400: order couldn't be fully filled. FOK orders are fully filled or killed."
+            "HTTP error 400: order couldn't be fully filled. FOK orders are fully filled or killed."
         );
+    }
+
+    #[rstest]
+    #[case::bad_request(400, false, false, false)]
+    #[case::unauthorized(401, false, false, true)]
+    #[case::forbidden(403, false, false, true)]
+    #[case::not_found(404, false, false, false)]
+    #[case::too_early(425, true, false, false)]
+    #[case::rate_limited(429, true, false, false)]
+    #[case::server_error(500, true, true, false)]
+    #[case::service_unavailable(503, true, true, false)]
+    fn test_http_status_classification(
+        #[case] status: u16,
+        #[case] retryable: bool,
+        #[case] outcome_unknown: bool,
+        #[case] auth: bool,
+    ) {
+        let error = Error::from_status_code(status, br#"{"error":"venue message"}"#);
+
+        assert_eq!(error.is_retryable(), retryable);
+        assert_eq!(error.is_submit_outcome_unknown(), outcome_unknown);
+        assert_eq!(error.is_auth_error(), auth);
+        assert!(error.is_http_status_error());
+        assert_eq!(error.strategy_reason(), "venue message");
+    }
+
+    #[rstest]
+    #[case::empty(b"", "empty response body")]
+    #[case::plain_text(b"  Bad\r\nRequest  ", "Bad Request")]
+    #[case::malformed_json(br#"{"error":"broken"#, r#"{"error":"broken"#)]
+    #[case::structured_error(br#"{"error":"  insufficient\n balance  "}"#, "insufficient balance")]
+    #[case::structured_error_msg(br#"{"errorMsg":"placement failed"}"#, "placement failed")]
+    #[case::unknown_json(
+        br#"{"message":"not a verified key"}"#,
+        r#"{"message":"not a verified key"}"#
+    )]
+    #[case::html(
+        b"<!doctype html><html><head><title>502 Bad Gateway</title></head><body><h1>cloud proxy</h1></body></html>",
+        "502 Bad Gateway"
+    )]
+    fn test_venue_error_message_shapes(#[case] body: &[u8], #[case] expected: &str) {
+        assert_eq!(venue_error_message(body), expected);
+    }
+
+    #[rstest]
+    fn test_venue_error_message_is_bounded_by_unicode_characters() {
+        let body = format!(r#"{{"error":"{}"}}"#, "é".repeat(600));
+        let message = venue_error_message(body.as_bytes());
+
+        assert_eq!(message.chars().count(), ERROR_TEXT_MAX_CHARS);
+        assert!(message.ends_with(ERROR_TEXT_TRUNCATED_SUFFIX));
+    }
+
+    #[rstest]
+    fn test_raw_fallback_is_lossy_and_bounded() {
+        let mut body = vec![b'x'; 600];
+        body[10] = 0xff;
+
+        let message = venue_error_message(&body);
+
+        assert_eq!(message.chars().count(), ERROR_TEXT_MAX_CHARS);
+        assert_eq!(message.chars().nth(10), Some(char::REPLACEMENT_CHARACTER));
+        assert!(message.ends_with(ERROR_TEXT_TRUNCATED_SUFFIX));
+    }
+
+    #[rstest]
+    fn test_from_http_client_preserves_timeout_classification() {
+        let timeout = Error::from_http_client(HttpClientError::TimeoutError("late".to_string()));
+        let transport = Error::from_http_client(HttpClientError::Error("reset".to_string()));
+
+        assert!(matches!(timeout, Error::Timeout));
+        assert!(matches!(transport, Error::Transport(_)));
+        assert!(timeout.is_retryable());
+        assert!(timeout.is_submit_outcome_unknown());
     }
 
     #[rstest]
@@ -388,6 +588,7 @@ mod tests {
         assert!(!Error::rate_limit("/orders", 10, Some(1_000)).is_submit_outcome_unknown());
         assert!(!Error::auth("test").is_submit_outcome_unknown());
         assert!(!Error::bad_request("test").is_submit_outcome_unknown());
+        assert!(!Error::http(425, "too early").is_submit_outcome_unknown());
         assert!(!Error::http(404, "not found").is_submit_outcome_unknown());
     }
 }

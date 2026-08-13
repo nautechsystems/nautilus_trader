@@ -99,6 +99,7 @@ struct TestServerState {
     gamma_markets_query_pair_log: QueryPairLog,
     gamma_slug_responses: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
     gamma_force_error: Arc<std::sync::atomic::AtomicBool>,
+    gamma_error_response: Arc<tokio::sync::Mutex<Option<(StatusCode, Value)>>>,
     gamma_event_slug_responses: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
     gamma_events_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     gamma_events_force_error: Arc<std::sync::atomic::AtomicBool>,
@@ -111,6 +112,7 @@ struct TestServerState {
     single_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     data_api_trade_pages: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     data_api_trade_query_log: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    data_api_error_response: Arc<tokio::sync::Mutex<Option<(StatusCode, Value)>>>,
 }
 
 impl Default for TestServerState {
@@ -136,6 +138,7 @@ impl Default for TestServerState {
             gamma_markets_query_pair_log: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             gamma_slug_responses: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
             gamma_force_error: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            gamma_error_response: Arc::new(tokio::sync::Mutex::new(None)),
             gamma_event_slug_responses: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
             gamma_events_response: Arc::new(tokio::sync::Mutex::new(None)),
             gamma_events_force_error: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -148,6 +151,7 @@ impl Default for TestServerState {
             single_order_response: Arc::new(tokio::sync::Mutex::new(None)),
             data_api_trade_pages: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             data_api_trade_query_log: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            data_api_error_response: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 }
@@ -421,6 +425,10 @@ async fn handle_gamma_markets(
     uri: Uri,
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> Response {
+    if let Some((status, body)) = state.gamma_error_response.lock().await.clone() {
+        return (status, Json(body)).into_response();
+    }
+
     if state
         .gamma_force_error
         .load(std::sync::atomic::Ordering::Relaxed)
@@ -600,6 +608,10 @@ async fn handle_data_api_trades(
     State(state): State<TestServerState>,
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> Response {
+    if let Some((status, body)) = state.data_api_error_response.lock().await.clone() {
+        return (status, Json(body)).into_response();
+    }
+
     state
         .data_api_trade_query_log
         .lock()
@@ -976,6 +988,8 @@ async fn test_post_heartbeat_returns_replacement_id_from_bad_request() {
 async fn test_post_heartbeat_rate_limit_preserves_retry_after() {
     let state = TestServerState::default();
     *state.heartbeat_response_status.lock().await = StatusCode::TOO_MANY_REQUESTS;
+    *state.heartbeat_response.lock().await = json!({"error": "Too Many Requests"});
+
     let mut response_headers = HeaderMap::new();
     response_headers.insert(
         HeaderName::from_static("retry-after"),
@@ -996,7 +1010,8 @@ async fn test_post_heartbeat_rate_limit_preserves_retry_after() {
             endpoint: "/v1/heartbeats",
             token_cost: 0,
             retry_after_ms: Some(1_251),
-        }
+            message,
+        } if message == "Too Many Requests"
     ));
 }
 
@@ -1085,6 +1100,7 @@ async fn test_order_rate_limit_preserves_retry_after_and_is_definitive() {
         endpoint,
         token_cost,
         retry_after_ms,
+        message,
     } = &error
     else {
         panic!("expected rate-limit error, was {error}");
@@ -1092,6 +1108,8 @@ async fn test_order_rate_limit_preserves_retry_after_and_is_definitive() {
     assert_eq!(*endpoint, "/order");
     assert_eq!(*token_cost, 1);
     assert_eq!(*retry_after_ms, Some(2_000));
+    assert_eq!(message, "Rate limit exceeded");
+    assert_eq!(error.strategy_reason(), "Rate limit exceeded");
     assert!(error.is_retryable());
     assert!(!error.is_submit_outcome_unknown());
 }
@@ -1126,6 +1144,7 @@ async fn test_batch_order_rate_limit_reports_entry_cost() {
         endpoint,
         token_cost,
         retry_after_ms,
+        message,
     } = error
     else {
         panic!("expected rate-limit error");
@@ -1133,6 +1152,7 @@ async fn test_batch_order_rate_limit_reports_entry_cost() {
     assert_eq!(endpoint, "/orders");
     assert_eq!(token_cost, 3);
     assert_eq!(retry_after_ms, Some(1_000));
+    assert_eq!(message, "Rate limit exceeded");
 }
 
 #[rstest]
@@ -1161,6 +1181,7 @@ async fn test_batch_cancel_rate_limit_reports_submitted_id_cost() {
         endpoint,
         token_cost,
         retry_after_ms,
+        message,
     } = error
     else {
         panic!("expected rate-limit error");
@@ -1168,6 +1189,7 @@ async fn test_batch_cancel_rate_limit_reports_submitted_id_cost() {
     assert_eq!(endpoint, "/orders");
     assert_eq!(token_cost, 2);
     assert_eq!(retry_after_ms, Some(1_000));
+    assert_eq!(message, "Rate limit exceeded");
 }
 
 #[rstest]
@@ -1201,7 +1223,8 @@ async fn test_retry_after_delays_next_order_request() {
             endpoint: "/order",
             token_cost: 1,
             retry_after_ms: Some(2_000),
-        }
+            message,
+        } if message == "Rate limit exceeded"
     ));
     state.rate_limit_after.store(usize::MAX, Ordering::Relaxed);
 
@@ -1241,11 +1264,7 @@ async fn test_request_times_out_when_server_is_slow() {
     let elapsed = started.elapsed();
 
     let err = result.expect_err("request must error when server exceeds timeout");
-    let err_text = err.to_string().to_lowercase();
-    assert!(
-        err_text.contains("timeout") || err_text.contains("timed out"),
-        "error must indicate a timeout, not some other failure (got: {err_text})",
-    );
+    assert!(matches!(err, Error::Timeout));
 
     // Lower bound: must not have errored before the configured timeout.
     assert!(
@@ -1478,6 +1497,35 @@ async fn test_get_gamma_markets_bare_array_response() {
         markets[0].condition_id,
         "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b"
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_gamma_http_error_preserves_status_and_clean_reason() {
+    let state = TestServerState::default();
+    *state.gamma_error_response.lock().await = Some((
+        StatusCode::FORBIDDEN,
+        json!({"error": "Gamma request forbidden"}),
+    ));
+
+    let addr = start_mock_server(state).await;
+    let client = create_gamma_client(&addr);
+
+    let error = client
+        .get_gamma_markets(GetGammaMarketsParams::default())
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        &error,
+        Error::Http {
+            status: 403,
+            message,
+        } if message == "Gamma request forbidden"
+    ));
+    assert!(error.is_auth_error());
+    assert!(!error.is_retryable());
+    assert_eq!(error.strategy_reason(), "Gamma request forbidden");
 }
 
 #[rstest]
@@ -4264,6 +4312,35 @@ fn make_data_api_trade(asset: &str, price: f64, timestamp: i64, tx_suffix: &str)
         "timestamp": timestamp,
         "transactionHash": format!("0x{tx_suffix:0>66}")
     })
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_api_http_error_preserves_status_and_clean_reason() {
+    let state = TestServerState::default();
+    *state.data_api_error_response.lock().await = Some((
+        StatusCode::NOT_FOUND,
+        json!({"errorMsg": "Data API market not found"}),
+    ));
+
+    let addr = start_mock_server(state).await;
+    let client = create_data_api_client(&addr);
+
+    let error = client
+        .get_trades("0xmissing", Some(10), Some(0))
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        &error,
+        Error::Http {
+            status: 404,
+            message,
+        } if message == "Data API market not found"
+    ));
+    assert!(!error.is_retryable());
+    assert!(!error.is_submit_outcome_unknown());
+    assert_eq!(error.strategy_reason(), "Data API market not found");
 }
 
 #[rstest]

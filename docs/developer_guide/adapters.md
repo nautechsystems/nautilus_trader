@@ -680,6 +680,32 @@ Two conditions are easy to misfile:
   surface as one serialization error variant, so classify by which side of the write boundary
   the failure occurred on.
 
+#### Separate diagnostics from strategy-facing reasons
+
+Preserve a structured diagnostic error through classification and logging. Derive a
+strategy‑facing reason only at the execution event boundary, after the outcome and retry decisions.
+
+| Representation         | Consumers                                          | Required content                                                                                         |
+| ---------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Diagnostic error       | Classification, retry control, logs, and operators | Typed source plus available status, venue code, endpoint, backoff, transport, and decode context.        |
+| Strategy‑facing reason | Rejection events consumed by strategies            | Bounded venue meaning without HTTP prefixes, response envelopes, markup, control characters, or secrets. |
+
+Apply these rules at the boundary:
+
+- Classify from typed or structured evidence. Never recover status, retryability, or command
+  outcome from formatted display text.
+- Extracting a clean reason must not erase the diagnostic error or the evidence used to classify
+  it.
+- Prefer documented venue error fields and codes. Sanitize and bound raw fallback text before
+  logging, interning, or emitting it, and use a stable fallback when no useful text remains.
+- Map equivalent venue evidence through the same adapter‑owned classification and reason functions
+  whether it arrives through HTTP, WebSocket, polling, or reconciliation.
+
+Set `OrderRejected.due_post_only` from a structured venue code or flag when the protocol provides
+one. Otherwise, use one narrow adapter‑owned, source‑backed message classifier across every venue
+path. Test exact positive cases and close non‑matching messages. Do not introduce a cross‑adapter
+venue classifier.
+
 ## HTTP client patterns
 
 ### Client structure
@@ -790,9 +816,15 @@ Allocate the semantic request identity outside the retry closure and keep it sta
 attempts. Regenerate authentication timestamps, signatures, or other transport fields only when
 changing them does not alter the venue's request identity or duplicate detection.
 
-If any attempt may have reached the venue, a later failure remains ambiguous. A later venue
-rejection resolves it only when documented semantics make the response authoritative for the same
-request identity and prove that no attempt was applied.
+Ambiguity is monotonic across attempts for one semantic command. Once any attempt may have reached
+the venue, a later failure remains ambiguous. A later venue rejection resolves it only when
+documented semantics make the response authoritative for the same request identity and prove that
+no attempt was applied.
+
+An acceptance resolves ambiguity only when it correlates to the same semantic command. Validate a
+returned venue identifier for syntax and expected scope before constructing a domain identifier or
+binding it to a local order; a non‑empty string alone is not proof. A malformed or mismatched
+identifier leaves the outcome ambiguous unless separate authoritative evidence proves rejection.
 
 Treat a venue duplicate‑identity response as evidence that the venue saw an earlier request with
 that wire identity, not as a rejection of the original command by default. Use it to resolve the
@@ -810,6 +842,9 @@ a variant when the adapter must distinguish its control reason; never branch on 
 error returned for `OperationTimeout` is evaluated by `should_retry`, so map it to the adapter's
 transient timeout variant when timeouts should retry. Other synthesized reasons terminate without
 reclassification.
+
+`InvalidConfiguration` is created before the operation can run, so it is a definitive local
+failure. Preserve that evidence instead of mapping it to a transport or ambiguous outcome.
 
 `RetryManager` control errors do not record whether the operation ran. Track possible transmission
 at the adapter boundary for state‑changing commands, treating entry into the send operation as
@@ -999,6 +1034,10 @@ and protocol correlation. The consuming data or execution client owns domain rou
 Parsing may remain in the handler when it depends on handler‑owned protocol state, but tracked versus
 external execution ownership remains a client decision.
 
+When reporting malformed frames, log the parse error separately from a sanitized, bounded payload
+excerpt. Never log a raw authenticated frame. Log a peer close code and reason at the transport
+layer that receives it; the adapter should not duplicate the shared transport log.
+
 Dispatch module layout, intermediate enum names, context registries, venue bindings, and state
 containers remain adapter‑specific. Prefer the smallest design that makes protocol ownership and
 state transitions testable; extract another component only when multiple adapters share its
@@ -1173,7 +1212,15 @@ Execution tests cover each advertised command and report, plus:
 
 - Local denial before submission.
 - Definitive venue rejection.
+- Diagnostic context and the exact clean strategy‑facing reason for each changed rejection path.
 - Unknown transport outcomes that remain reconcilable.
+- An ambiguous attempt followed by a definitive‑looking response.
+- Missing, malformed, and mismatched returned venue identifiers.
+- Structured error fields and bounded raw‑body fallbacks: empty, plain text, malformed structured
+  data, markup, invalid UTF‑8, and oversized input.
+- Equivalent HTTP, WebSocket, polling, and reconciliation evidence producing the same reason and
+  classification.
+- Structured post‑only evidence or an exact text classifier, including close non‑matching messages.
 - Partial and per‑order batch results.
 - Duplicate or out‑of‑order stream updates.
 - Account state, open orders, fills, positions, and startup reconciliation.

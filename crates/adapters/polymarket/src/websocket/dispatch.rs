@@ -46,7 +46,9 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::{
-    messages::{PolymarketUserOrder, PolymarketUserTrade, UserWsMessage},
+    messages::{
+        PolymarketUserOrder, PolymarketUserOrderStatus, PolymarketUserTrade, UserWsMessage,
+    },
     parse::parse_timestamp_ms,
 };
 use crate::{
@@ -60,6 +62,7 @@ use crate::{
     execution::{
         get_pusd_currency,
         identity::{OrderIdentity, OrderIdentityRegistry},
+        is_post_only_crossing,
         order_fill_tracker::{BufferedFill, FillCorrectionMetadata, OrderFillTrackerMap},
         parse::{
             build_maker_fill_report, compute_commission, determine_order_side,
@@ -67,6 +70,7 @@ use crate::{
         },
         pending::PendingSubmitTracker,
     },
+    http::error::sanitize_error_text,
 };
 
 /// Signal returned when a finalized trade requires an async account refresh.
@@ -151,10 +155,11 @@ fn dispatch_order_update(
     ctx: &WsDispatchContext<'_>,
     state: &mut WsDispatchState,
 ) {
-    let Some(status) = order.status else {
+    let Some(status) = order.status.as_ref() else {
         log::warn!("Ignoring order update without status: {}", order.id);
         return;
     };
+
     let Some(order_type) = order.order_type else {
         log::warn!("Ignoring order update without order_type: {}", order.id);
         return;
@@ -257,7 +262,7 @@ fn dispatch_order_update(
         }
     }
 
-    if status == PolymarketOrderStatus::Matched
+    if status.status == PolymarketOrderStatus::Matched
         && let Some(trade_ids) = order.associate_trades.clone().filter(|ids| !ids.is_empty())
     {
         state.pending_terminal_orders.insert(
@@ -679,7 +684,7 @@ fn reemit_terminal_cancel(
 
 fn build_ws_order_status_report(
     order: &PolymarketUserOrder,
-    status: PolymarketOrderStatus,
+    status: &PolymarketUserOrderStatus,
     order_type: PolymarketOrderType,
     instrument: &InstrumentAny,
     account_id: AccountId,
@@ -687,7 +692,8 @@ fn build_ws_order_status_report(
     ts_init: UnixNanos,
 ) -> OrderStatusReport {
     let venue_order_id = VenueOrderId::from(order.id.as_str());
-    let order_status = crate::execution::parse::resolve_order_status(status, order.event_type);
+    let order_status =
+        crate::execution::parse::resolve_order_status(status.status, order.event_type);
     let order_side = OrderSide::from(order.side);
     let time_in_force = TimeInForce::from(order_type);
     let size_precision = instrument.size_precision();
@@ -722,6 +728,11 @@ fn build_ws_order_status_report(
         None,
     );
     report.price = Some(price);
+
+    if order_status == OrderStatus::Rejected {
+        report.cancel_reason.clone_from(&status.reason);
+    }
+
     report
 }
 
@@ -847,6 +858,7 @@ fn emit_tracked_order_status(
                 .cancel_reason
                 .clone()
                 .unwrap_or_else(|| "REJECTED".to_string());
+
             emit_order_rejected(identity, &reason, ts_event, ctx);
         }
         other => log::debug!("No order event for status {other:?} on {venue_order_id}"),
@@ -1102,18 +1114,20 @@ fn emit_order_rejected(
     ts_event: UnixNanos,
     ctx: &WsDispatchContext<'_>,
 ) {
+    let reason = sanitize_error_text(reason);
+
     let rejected = OrderRejected::new(
         ctx.emitter.trader_id(),
         identity.strategy_id,
         identity.instrument_id,
         identity.client_order_id,
         ctx.account_id,
-        Ustr::from(reason),
+        Ustr::from(&reason),
         UUID4::new(),
         ts_event,
         ctx.clock.get_time_ns(),
         false,
-        false,
+        is_post_only_crossing(&reason),
     );
     ctx.emitter
         .send_order_event(OrderEventAny::Rejected(rejected));
@@ -1182,6 +1196,57 @@ mod tests {
     }
 
     #[rstest]
+    fn test_emit_order_rejected_uses_bounded_clean_reason() {
+        let instrument = test_instrument();
+        let token_instruments = AtomicMap::new();
+        let fill_tracker = OrderFillTrackerMap::new();
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        emitter.set_sender(sender);
+
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            order_identities: &order_identities,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+        let identity = OrderIdentity {
+            client_order_id: ClientOrderId::from("O-WS-REJECT"),
+            strategy_id: StrategyId::from("S-001"),
+            instrument_id: instrument.id(),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+            time_in_force: TimeInForce::Gtc,
+        };
+
+        emit_order_rejected(
+            &identity,
+            "  invalid post-only order:\norder crosses book  ",
+            UnixNanos::from(1_000_000_000),
+            &ctx,
+        );
+
+        match receiver.try_recv().expect("expected rejected event") {
+            ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+                assert_eq!(
+                    event.reason.as_str(),
+                    "invalid post-only order: order crosses book"
+                );
+                assert!(event.due_post_only);
+            }
+            other => panic!("expected rejected event, was {other:?}"),
+        }
+    }
+
+    #[rstest]
     fn test_build_ws_order_status_report() {
         let order: PolymarketUserOrder = load("ws_user_order_placement.json");
         let instrument = test_instrument();
@@ -1190,7 +1255,7 @@ mod tests {
 
         let report = build_ws_order_status_report(
             &order,
-            order.status.unwrap(),
+            order.status.as_ref().unwrap(),
             order.order_type.unwrap(),
             &instrument,
             AccountId::from("POLY-001"),
@@ -1219,7 +1284,7 @@ mod tests {
 
         let report = build_ws_order_status_report(
             &order,
-            order.status.unwrap(),
+            order.status.as_ref().unwrap(),
             order.order_type.unwrap(),
             &instrument,
             AccountId::from("POLY-001"),
@@ -1312,7 +1377,7 @@ mod tests {
 
         let report = build_ws_order_status_report(
             &order,
-            order.status.unwrap(),
+            order.status.as_ref().unwrap(),
             order.order_type.unwrap(),
             &instrument,
             AccountId::from("POLY-001"),
@@ -2421,7 +2486,7 @@ mod tests {
         #[case] expected_order_status: OrderStatus,
     ) {
         let mut terminal_order: PolymarketUserOrder = load("ws_user_order_cancellation.json");
-        terminal_order.status = Some(status);
+        terminal_order.status = Some(status.into());
         let trade: PolymarketUserTrade = load("ws_user_trade.json");
         let instrument = test_instrument();
 
@@ -2609,7 +2674,7 @@ mod tests {
                 price: "0.18".to_string(),
                 side: PolymarketOrderSide::Buy,
                 size_matched: size_matched.to_string(),
-                status: Some(PolymarketOrderStatus::Canceled),
+                status: Some(PolymarketOrderStatus::Canceled.into()),
                 timestamp: ts.to_string(),
                 event_type,
             };
@@ -3146,13 +3211,19 @@ mod tests {
     // Unmatched -> Rejected (placement never became live); CanceledMarketResolved -> Expired
     // (market settled). Both are tracked own-order terminal states emitted as order events.
     #[rstest]
-    #[case(crate::common::enums::PolymarketOrderStatus::Unmatched, "Rejected")]
+    #[case(
+        crate::common::enums::PolymarketOrderStatus::Unmatched,
+        Some("invalid post-only order: order crosses book"),
+        "Rejected"
+    )]
     #[case(
         crate::common::enums::PolymarketOrderStatus::CanceledMarketResolved,
+        None,
         "Expired"
     )]
     fn test_dispatch_order_terminal_status_emits_event(
         #[case] status: crate::common::enums::PolymarketOrderStatus,
+        #[case] reason: Option<&str>,
         #[case] expected: &str,
     ) {
         use crate::common::enums::{
@@ -3219,7 +3290,7 @@ mod tests {
             price: "0.50".to_string(),
             side: PolymarketOrderSide::Buy,
             size_matched: "0".to_string(),
-            status: Some(status),
+            status: Some(PolymarketUserOrderStatus::new(status, reason)),
             timestamp: "1775074738031".to_string(),
             event_type: PolymarketEventType::Placement,
         };
@@ -3237,6 +3308,14 @@ mod tests {
                     order_event.client_order_id(),
                     ClientOrderId::from("O-TERMINAL")
                 );
+
+                if let OrderEventAny::Rejected(rejected) = order_event {
+                    assert_eq!(
+                        rejected.reason.as_str(),
+                        "invalid post-only order: order crosses book"
+                    );
+                    assert!(rejected.due_post_only);
+                }
             }
             other => panic!("expected order event, was {other:?}"),
         }

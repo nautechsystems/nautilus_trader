@@ -223,6 +223,10 @@ lost. Failed connection and retry attempts do not publish events, and deliberate
 publish a disconnect event. Reconnect exhaustion also adds no event after the transport loss was
 reported.
 
+Socket state is operational evidence, not an execution‑command outcome. A disconnect by itself does
+not reject, cancel, or resolve an in‑flight command; stream updates, queries, or reconciliation
+provide that evidence under the [command outcome policy](execution.md#command-outcomes).
+
 ### Endpoint labels
 
 Endpoint labels identify a logical adapter stream group without exposing its URL. Multiple sockets

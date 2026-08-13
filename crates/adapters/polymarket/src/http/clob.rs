@@ -358,10 +358,11 @@ impl PolymarketClobHttpClient {
                 .await;
 
             if rate_limited {
-                Err(Error::rate_limit(
+                Err(Error::rate_limit_from_body(
                     path,
                     cost,
                     rate_limit_headers.retry_after_ms(),
+                    &response.body,
                 ))
             } else {
                 Err(Error::from_status_code(
@@ -395,10 +396,11 @@ impl PolymarketClobHttpClient {
 
         if response.status.as_u16() == 429 {
             let rate_limit_headers = RateLimitHeaders::parse(&response.headers);
-            return Err(Error::rate_limit(
+            return Err(Error::rate_limit_from_body(
                 PATH_HEARTBEATS,
                 0,
                 rate_limit_headers.retry_after_ms(),
+                &response.body,
             ));
         }
 

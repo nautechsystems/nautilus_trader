@@ -42,7 +42,7 @@ use super::{
     },
     types::{BatchLimitOrderContext, LimitOrderSubmitRequest},
 };
-use crate::common::consts::BATCH_ORDER_LIMIT;
+use crate::{common::consts::BATCH_ORDER_LIMIT, http::error::Error as HttpError};
 
 impl PolymarketExecutionClient {
     pub(super) fn submit_limit_order(&self, order: OrderAny) {
@@ -193,7 +193,13 @@ impl PolymarketExecutionClient {
                     }
                 }
                 Err(e) => {
-                    reject_submit_order(&order, &format!("{e}"), &emitter, clock, &pending_cancels);
+                    reject_submit_order(
+                        &order,
+                        &e.strategy_reason(),
+                        &emitter,
+                        clock,
+                        &pending_cancels,
+                    );
                 }
             }
             Ok(())
@@ -399,8 +405,11 @@ impl PolymarketExecutionClient {
                     {
                         emitter.emit_order_denied(&order, &invalid_price.to_string());
                     } else {
-                        let ts_now = clock.get_time_ns();
-                        emitter.emit_order_rejected(&order, &format!("{e}"), ts_now, false);
+                        let reason = e
+                            .downcast_ref::<HttpError>()
+                            .map_or_else(|| e.to_string(), HttpError::strategy_reason);
+
+                        reject_submit_order(&order, &reason, &emitter, clock, &pending_cancels);
                     }
                 }
             }
@@ -696,7 +705,7 @@ impl PolymarketExecutionClient {
                             for batch_order in orders_chunk {
                                 reject_submit_order(
                                     &batch_order.order,
-                                    &format!("{e}"),
+                                    &e.strategy_reason(),
                                     &emitter,
                                     clock,
                                     &pending_cancels,

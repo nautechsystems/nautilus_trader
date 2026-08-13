@@ -391,6 +391,11 @@ A `delayed` response:
 
 #### Definitive and ambiguous outcomes
 
+Polymarket applies the shared [command outcome policy](../concepts/execution.md#command-outcomes) and
+the adapter guide's
+[diagnostic and strategy reason boundary](../developer_guide/adapters.md#separate-diagnostics-from-strategy-facing-reasons)
+at its execution boundary.
+
 Ambiguous failures include:
 
 - Transport failures and timeouts.
@@ -399,22 +404,39 @@ Ambiguous failures include:
 - Local I/O failures.
 - Server‑side failures.
 
-| Outcome                                                                                   | Nautilus result             | Reason                                    |
-| ----------------------------------------------------------------------------------------- | --------------------------- | ----------------------------------------- |
-| `success=false`, a documented processing error, or another non‑retryable client/API error | `OrderRejected`             | The response proves rejection.            |
-| Batch `FOK`: `success=true`, non‑empty `orderID`, no status, and the unfilled error       | Immediate `OrderRejected`   | The venue proves it killed the order.     |
-| Batch leg: `success=true`, empty `orderID`, and a populated `errorMsg`                    | `OrderRejected` with reason | The venue proves it rejected that leg.    |
-| No `orderID` and no reason                                                                | Remains `Submitted`         | The response does not prove rejection.    |
-| Any ambiguous failure                                                                     | Remains `Submitted`         | The adapter cannot determine the outcome. |
-| Definitive retry error after an earlier ambiguous attempt                                 | Remains `Submitted`         | The earlier attempt may have succeeded.   |
-| Failure before `POST /order`, such as a failed pUSD balance lookup                        | `OrderDenied`               | The adapter did not submit the order.     |
+| Outcome                                                                                       | Nautilus result             | Reason                                    |
+| --------------------------------------------------------------------------------------------- | --------------------------- | ----------------------------------------- |
+| `success=false`, a documented processing error, or another non‑retryable client/API error     | `OrderRejected`             | The response proves rejection.            |
+| Single or batch `FOK`: `success=true`, non‑empty `orderID`, no status, and the unfilled error | Immediate `OrderRejected`   | The venue proves it killed the order.     |
+| Batch leg: `success=true`, empty `orderID`, and a populated `errorMsg`                        | `OrderRejected` with reason | The venue proves it rejected that leg.    |
+| No `orderID` and no reason                                                                    | Remains `Submitted`         | The response does not prove rejection.    |
+| Any ambiguous failure                                                                         | Remains `Submitted`         | The adapter cannot determine the outcome. |
+| Definitive retry error after an earlier ambiguous attempt                                     | Remains `Submitted`         | The earlier attempt may have succeeded.   |
+| Failure before `POST /order`, such as a failed pUSD balance lookup                            | `OrderDenied`               | The adapter did not submit the order.     |
 
-The proven unfilled batch `FOK` response skips the REST check. A later single‑order retry can
-return a client error such as an already‑existing order without proving that the first attempt
-failed.
+The proven unfilled `FOK` response skips the REST check. After an ambiguous single‑order attempt, a
+later HTTP error or decoded rejection does not prove that the first attempt failed. An accepted
+response carrying the matching valid order ID confirms the deterministic signed order; a rejection
+does not, even with a matching ID.
 
-When a rejection reason reports a post‑only order crossing the book, the `OrderRejected` event
-sets `due_post_only=true` so strategies can distinguish it from other venue rejections.
+Diagnostic errors retain the HTTP status and transport or rate‑limit context. For venue HTTP status,
+rate‑limit, and exchange errors, strategy‑facing rejection events contain only the venue reason;
+other failures use the bounded error description. The adapter reads the first non‑blank string from
+`error`, then `errorMsg`, and collapses whitespace and control characters. An empty body becomes
+`empty response body`. A plain‑text or malformed response uses the same bounded fallback. Invalid
+UTF‑8 is decoded lossily before that handling. An HTML response uses its title when available, or its
+visible text otherwise. Reasons are limited to 512 characters, including the literal
+`... [truncated]` truncation marker and its preceding space.
+
+The venue reports a post‑only crossing as `invalid post-only order: order crosses book`. Only that
+exact normalized reason sets `OrderRejected.due_post_only=true`; other post‑only errors remain
+ordinary rejections.
+
+Retry‑managed single‑order submit and cancel requests retry HTTP 425, 429, and 5xx responses with the
+configured backoff. Without an earlier ambiguous attempt, retry exhaustion makes a 425 or 429 a
+definitive rejection; a 5xx response remains an unknown submit outcome. HTTP 400, 401, 403, and 404
+responses do not retry. A malformed successful submit response also remains unknown and enters
+reconciliation instead of becoming a terminal rejection.
 
 #### Unknown-outcome reconciliation
 
@@ -937,6 +959,11 @@ history.
 The execution adapter keeps a `user` channel connection for order and trade events and manages market
 subscriptions as needed for instruments seen during trading.
 
+The shared WebSocket client logs a peer close code and reason before reconnecting. Malformed payload
+warnings and venue rejection reasons use the same bounded text handling as HTTP responses. Order
+rejections received through WebSocket or reconciliation use the same exact post‑only classification
+as submit responses.
+
 The adapter supports dynamic WebSocket subscribe and unsubscribe operations.
 Matched WebSocket fills and their corrections are restored from cached order history and
 deduplicated across reconnects. If a trade arrives before its instrument is available, the adapter
@@ -1006,9 +1033,9 @@ or indebted bucket's wait. The adapter logs `Poly-RateLimit-Warning` responses w
 token cost, tier, remaining balance, and reset time.
 
 A `429 Too Many Requests` response with `Retry-After` blocks the applicable bucket for at least that
-delay and can then be retried; without `Retry-After`, the adapter does not retry it automatically. A
-standalone 429 is a definitive venue rejection. Transport failures, timeouts, and any submit with an
-earlier ambiguous attempt remain ambiguous outcomes.
+delay before retry. Without `Retry-After`, the retry manager uses its configured exponential
+backoff. A standalone 429 is a definitive venue rejection. Transport failures, timeouts, and any
+submit with an earlier ambiguous attempt remain ambiguous outcomes.
 
 ### Selected IP-based REST limits
 

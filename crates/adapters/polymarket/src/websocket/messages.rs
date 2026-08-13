@@ -18,7 +18,7 @@
 use nautilus_core::serialization::deserialize_empty_string_as_none;
 use rust_decimal::Decimal;
 use serde::{
-    Deserialize, Serialize,
+    Deserialize, Deserializer, Serialize, Serializer,
     de::{
         DeserializeSeed, MapAccess, Visitor,
         value::{BorrowedStrDeserializer, MapAccessDeserializer},
@@ -37,6 +37,57 @@ use crate::common::{
         serialize_decimal_as_str, serialize_optional_decimal_as_str,
     },
 };
+
+/// A user-channel order status and its optional venue reason suffix.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PolymarketUserOrderStatus {
+    pub status: PolymarketOrderStatus,
+    pub reason: Option<String>,
+}
+
+impl PolymarketUserOrderStatus {
+    pub(crate) fn new(status: PolymarketOrderStatus, reason: Option<&str>) -> Self {
+        Self {
+            status,
+            reason: reason
+                .filter(|reason| !reason.trim().is_empty())
+                .map(str::to_string),
+        }
+    }
+}
+
+impl From<PolymarketOrderStatus> for PolymarketUserOrderStatus {
+    fn from(status: PolymarketOrderStatus) -> Self {
+        Self::new(status, None)
+    }
+}
+
+impl<'de> Deserialize<'de> for PolymarketUserOrderStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+
+        PolymarketOrderStatus::parse_wire(&raw)
+            .map(|(status, reason)| Self::new(status, reason))
+            .ok_or_else(|| {
+                serde::de::Error::custom(format!("Unknown PolymarketOrderStatus: {raw}"))
+            })
+    }
+}
+
+impl Serialize for PolymarketUserOrderStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self.reason.as_deref() {
+            Some(reason) => serializer.serialize_str(&format!("{}_{reason}", self.status)),
+            None => self.status.serialize(serializer),
+        }
+    }
+}
 
 /// A user order status update from the WebSocket user channel.
 ///
@@ -58,7 +109,7 @@ pub struct PolymarketUserOrder {
     pub price: String,
     pub side: PolymarketOrderSide,
     pub size_matched: String,
-    pub status: Option<PolymarketOrderStatus>,
+    pub status: Option<PolymarketUserOrderStatus>,
     pub timestamp: String,
     #[serde(rename = "type")]
     pub event_type: PolymarketEventType,
@@ -702,7 +753,10 @@ mod tests {
         let order: PolymarketUserOrder = load("ws_user_order_placement.json");
 
         assert_eq!(order.event_type, PolymarketEventType::Placement);
-        assert_eq!(order.status, Some(PolymarketOrderStatus::Live));
+        assert_eq!(
+            order.status.as_ref().map(|status| status.status),
+            Some(PolymarketOrderStatus::Live)
+        );
         assert_eq!(order.side, PolymarketOrderSide::Buy);
         assert_eq!(order.order_type, Some(PolymarketOrderType::GTC));
         assert_eq!(order.outcome, Some(PolymarketOutcome::yes()));
@@ -729,8 +783,28 @@ mod tests {
         let order: PolymarketUserOrder = load("ws_user_order_cancellation.json");
 
         assert_eq!(order.event_type, PolymarketEventType::Cancellation);
-        assert_eq!(order.status, Some(PolymarketOrderStatus::Canceled));
+        assert_eq!(
+            order.status.as_ref().map(|status| status.status),
+            Some(PolymarketOrderStatus::Canceled)
+        );
         assert_eq!(order.size_matched, "0.0");
+    }
+
+    #[rstest]
+    fn test_user_order_status_preserves_rejection_reason() {
+        let raw = "UNMATCHED_invalid post-only order: order crosses book";
+        let status: PolymarketUserOrderStatus =
+            serde_json::from_str(&format!("\"{raw}\"")).unwrap();
+
+        assert_eq!(status.status, PolymarketOrderStatus::Unmatched);
+        assert_eq!(
+            status.reason.as_deref(),
+            Some("invalid post-only order: order crosses book")
+        );
+        assert_eq!(
+            serde_json::to_string(&status).unwrap(),
+            format!("\"{raw}\"")
+        );
     }
 
     /// Repro for issue #3987: venue cancels a FOK order with a status field
@@ -744,7 +818,17 @@ mod tests {
             panic!("Expected UserWsMessage::Order");
         };
         assert_eq!(order.event_type, PolymarketEventType::Cancellation);
-        assert_eq!(order.status, Some(PolymarketOrderStatus::Canceled));
+        assert_eq!(
+            order.status.as_ref().map(|status| status.status),
+            Some(PolymarketOrderStatus::Canceled)
+        );
+        assert_eq!(
+            order
+                .status
+                .as_ref()
+                .and_then(|status| status.reason.as_deref()),
+            Some("order couldn't be fully filled. FOK orders are fully filled or killed.")
+        );
         assert_eq!(order.order_type, Some(PolymarketOrderType::FOK));
         assert_eq!(order.size_matched, "");
         assert_eq!(order.created_at.as_deref(), Some(""));
@@ -927,7 +1011,10 @@ mod tests {
         assert_eq!(order.price, "0.01");
         assert_eq!(order.side, PolymarketOrderSide::Buy);
         assert_eq!(order.size_matched, "");
-        assert_eq!(order.status, Some(PolymarketOrderStatus::Canceled));
+        assert_eq!(
+            order.status.as_ref().map(|status| status.status),
+            Some(PolymarketOrderStatus::Canceled)
+        );
         assert_eq!(order.timestamp, "1786179547007");
         assert_eq!(order.event_type, PolymarketEventType::Cancellation);
     }

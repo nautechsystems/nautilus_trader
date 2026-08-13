@@ -128,7 +128,12 @@ A local denial (`OrderDenied`) carries a standardized `CATEGORY_CONDITION` reaso
 `key=value` context, for example `QUANTITY_EXCEEDS_MAXIMUM: effective_quantity=15, max_quantity=10`.
 The table covers local denials emitted by execution algorithms, execution clients, the risk engine,
 and the execution engine. These codes are the source of truth for locally denied orders; venue
-rejections (`OrderRejected`) pass through the venue's own text unchanged.
+rejections (`OrderRejected`) instead carry the venue‑provided meaning. Adapters remove protocol
+wrappers and bound untrusted venue text before emission without replacing it with a standardized
+local denial code.
+
+`OrderRejected.due_post_only` is `true` only when venue evidence proves that a post‑only order would
+cross or immediately match. Other venue rejections leave it `false`.
 
 <!-- Generated from the `OrderDeniedReason` enum (crates/model). Regenerate with: cargo test -p nautilus-model regenerate_order_denied_reasons_doc -- --ignored -->
 <!-- BEGIN GENERATED: order-denied-reasons -->

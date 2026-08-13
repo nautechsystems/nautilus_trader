@@ -23,7 +23,10 @@ use nautilus_model::{
 };
 
 use super::{PolymarketExecutionClient, pending::PendingCancelTracker};
-use crate::{execution::types::CancelOutcome, http::query::CancelResponse};
+use crate::{
+    execution::types::CancelOutcome,
+    http::{error::sanitize_error_text, query::CancelResponse},
+};
 
 impl PolymarketExecutionClient {
     pub(super) fn cancel_order_command(&self, cmd: &CancelOrder) {
@@ -233,8 +236,9 @@ pub(super) fn process_cancel_result(
     clock: &'static AtomicTime,
 ) -> CancelResponseStatus {
     if let Some(reason_opt) = response.not_canceled.get(venue_order_id_str) {
-        let reason = reason_opt.as_deref().unwrap_or("unknown reason");
-        match CancelOutcome::classify(reason) {
+        let reason = sanitize_error_text(reason_opt.as_deref().unwrap_or("unknown reason"));
+
+        match CancelOutcome::classify(&reason) {
             CancelOutcome::AlreadyDone => {
                 log::debug!(
                     "Cancel rejected for {}: {reason} - awaiting WS for terminal state",
@@ -246,6 +250,7 @@ pub(super) fn process_cancel_result(
                 emitter.emit_order_cancel_rejected(order, Some(venue_order_id), &msg, ts_now);
             }
         }
+
         return CancelResponseStatus::PerOrderResult;
     }
 

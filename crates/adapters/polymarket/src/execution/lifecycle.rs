@@ -701,7 +701,7 @@ async fn run_heartbeats(
                         return;
                     }
                 }
-                Err(HttpError::Auth(_)) => {
+                Err(e) if e.is_auth_error() => {
                     log::error!("Polymarket heartbeat authentication failed");
                     healthy.store(false, Ordering::Release);
                     return;

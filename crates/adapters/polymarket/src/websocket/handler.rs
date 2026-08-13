@@ -36,7 +36,7 @@ use super::{
         UserWsMessage,
     },
 };
-use crate::common::credential::Credential;
+use crate::{common::credential::Credential, http::error::sanitize_error_text};
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -284,21 +284,33 @@ impl FeedHandler {
                             }
                         })
                         .collect()
-                } else if let Ok(msg) = MarketWsMessage::parse(text) {
-                    vec![PolymarketWsMessage::Market(msg)]
                 } else {
-                    log::warn!("Failed to parse market WS message: {text}");
-                    vec![]
+                    match MarketWsMessage::parse(text) {
+                        Ok(msg) => vec![PolymarketWsMessage::Market(msg)],
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to parse market WS message: {e}; payload={}",
+                                sanitize_error_text(text)
+                            );
+                            vec![]
+                        }
+                    }
                 }
             }
             WsChannel::User => {
                 if let Ok(msgs) = UserWsMessage::parse_batch(text) {
                     msgs.into_iter().map(PolymarketWsMessage::User).collect()
-                } else if let Ok(msg) = UserWsMessage::parse(text) {
-                    vec![PolymarketWsMessage::User(msg)]
                 } else {
-                    log::warn!("Failed to parse user WS message: {text}");
-                    vec![]
+                    match UserWsMessage::parse(text) {
+                        Ok(msg) => vec![PolymarketWsMessage::User(msg)],
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to parse user WS message: {e}; payload={}",
+                                sanitize_error_text(text)
+                            );
+                            vec![]
+                        }
+                    }
                 }
             }
         }
