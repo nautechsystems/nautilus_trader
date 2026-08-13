@@ -2,22 +2,21 @@
 
 `FIX OrdType <40>=3` (Stop) + trailing peg
 
-A *Trailing-Stop-Market* order is a conditional order which trails a stop trigger price
-a fixed offset away from the defined market price. Once triggered a *Market* order will
-immediately be placed.
+A *Trailing‑Stop‑Market* order keeps its stop trigger a fixed offset from the specified market
+price as the market moves favorably. It releases a *Market* order when triggered.
 
 ## Use cases
 
-Use a *Trailing-Stop-Market* order to lock in gains while letting a position run: the trigger trails
-favorable moves by a fixed offset and only fires on a reversal, with no manual adjustment. The
-advantage is dynamic protection plus execution certainty on trigger. The tradeoff is choosing the
-offset, which balances whipsaw risk (too tight) against giving back profit (too wide), and the market
-fill can still slip on a sharp reversal.
+Use a *Trailing‑Stop‑Market* order to protect gains while allowing a position to continue through
+favorable moves. A tight offset can trigger on ordinary volatility, while a wide offset can give
+back more profit. The released *Market* order can also slip, be rejected, or remain unfilled on a
+sharp reversal.
 
 ## Example
 
-In the following example we create a *Trailing-Stop-Market* order on the Binance Futures exchange to SELL 10 ETHUSD-PERP COIN_M margined
-Perpetual Futures Contracts activating at a price of 5,000 USD, then trailing at an offset of 1% (in basis points) away from the current last traded price:
+In the following example we create a *Trailing-Stop-Market* order on the Binance Futures exchange
+to SELL 10 ETHUSD-PERP COIN_M margined Perpetual Futures Contracts. It activates at a price of
+5,000 USD, then trails at an offset of 1% (in basis points) from the current last traded price:
 
 ```rust tab="Rust"
 use nautilus_model::{
@@ -52,16 +51,16 @@ let order = self.order().trailing_stop_market(
 ```
 
 ```python tab="Python"
-import pandas as pd
 from decimal import Decimal
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.enums import TrailingOffsetType
+
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model.orders import TrailingStopMarketOrder
+from nautilus_trader.model import TimeInForce
+from nautilus_trader.model import TrailingOffsetType
+from nautilus_trader.model import TrailingStopMarketOrder
+from nautilus_trader.model import TriggerType
 
 order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
     instrument_id=InstrumentId.from_str("ETHUSD-PERP.BINANCE"),
@@ -81,10 +80,12 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
 If both `activation_price` and `trigger_price` are omitted, the order activates immediately at the
 current market and its trigger price materializes from `trailing_offset` on the first update.
 
-See the [`TrailingStopMarketOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.trailing_stop_market.TrailingStopMarketOrder) for further details.
+See the
+[`TrailingStopMarketOrder` API reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.TrailingStopMarketOrder)
+for further details.
 
 ## Related guides
 
-- [Orders](index.md#trigger-offset-type) - Trigger and trailing offset types.
+- [Orders](index.md#trailing-offset-type) - Trigger and trailing offset types.
 - [Emulated orders](emulated.md) - Emulating trailing stops on venues without native support.
 - [Execution](../execution.md) - How orders reach the venue and fills are handled.

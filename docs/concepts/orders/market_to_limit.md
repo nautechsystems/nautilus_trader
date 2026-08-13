@@ -2,21 +2,19 @@
 
 `FIX OrdType <40>=K` (Market With Left Over as Limit)
 
-A *Market-To-Limit* order submits as a market order at the current best price.
-If the order partially fills, the system cancels the remainder and resubmits it as a *Limit* order at the executed price.
+A *Market‑To‑Limit* order submits as a *Market* order. After the first fill, any unfilled quantity
+rests as a *Limit* order at that fill price.
 
 ## Use cases
 
-Use a *Market-To-Limit* order to take the liquidity available at the best price immediately, without
-sweeping deeper levels at worse prices: helpful in thin books, or for larger orders where you want the
-touch price but not the market impact of walking the book. The advantage is an immediate fill at the
-best price with any remainder resting there as a *Limit* rather than chasing. The tradeoff is that the
-unfilled remainder may sit unexecuted if the market moves away.
+Use a *Market‑To‑Limit* order to take liquidity at the best available price without sweeping deeper
+levels. This can suit thin books or larger orders where limiting further market impact matters. Any
+remainder can stay unfilled if the market moves away from the first fill price.
 
 ## Example
 
-In the following example we create a *Market-To-Limit* order on the Interactive Brokers [IdealPro](https://ibkr.info/node/1708) Forex ECN
-to BUY 200,000 USD using JPY:
+In the following example we create a *Market-To-Limit* order on the Interactive Brokers
+[IdealPro](https://ibkr.info/node/1708) Forex ECN to BUY 200,000 USD using JPY:
 
 ```rust tab="Rust"
 use nautilus_model::{
@@ -42,11 +40,11 @@ let order = self.order().market_to_limit(
 ```
 
 ```python tab="Python"
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import MarketToLimitOrder
+from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Quantity
-from nautilus_trader.model.orders import MarketToLimitOrder
+from nautilus_trader.model import TimeInForce
 
 order: MarketToLimitOrder = self.order_factory.market_to_limit(
     instrument_id=InstrumentId.from_str("USD/JPY.IDEALPRO"),
@@ -59,7 +57,9 @@ order: MarketToLimitOrder = self.order_factory.market_to_limit(
 )
 ```
 
-See the [`MarketToLimitOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.market_to_limit.MarketToLimitOrder) for further details.
+See the
+[`MarketToLimitOrder` API reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.MarketToLimitOrder)
+for further details.
 
 ## Related guides
 

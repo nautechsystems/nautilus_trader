@@ -1,29 +1,30 @@
 # Orders
 
-NautilusTrader supports a broad set of order types and execution instructions, exposing as much
-of a trading venue's functionality as possible. Traders can define instructions and contingencies
-for order execution and management across any trading strategy.
+NautilusTrader provides a common model for order types, execution instructions, and contingency
+relationships across trading venues.
 
 ## Overview
 
-All order types are derived from two fundamentals: *Market* and *Limit* orders. In terms of liquidity, they are opposites.
-*Market* orders consume liquidity by executing immediately at the best available price, whereas *Limit*
-orders provide liquidity by resting in the order book at a specified price until matched.
+All order types derive from two fundamentals: *Market* and *Limit* orders. *Market* orders seek
+immediate execution at the best available price. Non‑marketable *Limit* orders rest in the order
+book at a specified price until matched, while marketable *Limit* orders can take liquidity.
 
 NautilusTrader supports nine order types (the `OrderType` enum values), summarized under
 [Order types](#order-types) with a dedicated guide for each.
 
 :::info
-NautilusTrader provides a unified API for many order types and execution instructions, but not all venues support every option.
-If an order includes an instruction or option the target venue does not support, the system does not submit it.
-Instead, it logs a clear, explanatory error.
+NautilusTrader provides a unified API, but order and instruction support varies by venue and adapter.
+An adapter may deny an unsupported request before submission, or the venue may reject it. Check the
+target integration's capabilities before relying on an option.
 :::
 
 ### Terminology
 
-- An order is **aggressive** if its type is `MARKET` or if it executes as a *marketable* order (i.e., takes liquidity).
-- An order is **passive** if it is not marketable (i.e., provides liquidity).
-- An order is **active local** if it remains within the local system boundary in one of the following three non-terminal statuses:
+- An order is **aggressive** if its type is `MARKET` or it executes as a marketable order and takes
+  liquidity.
+- An order is **passive** if it rests without taking liquidity.
+- An order is **active local** if it remains within the local system boundary in one of these
+  non‑terminal statuses:
   - `INITIALIZED`
   - `EMULATED`
   - `RELEASED`
@@ -122,7 +123,7 @@ flowchart TB
 | `REJECTED`         | Order was rejected by the trading venue.                                                  |
 | `CANCELED`         | Order was canceled (terminal).                                                            |
 | `EXPIRED`          | Order reached its GTD expiration (terminal).                                              |
-| `TRIGGERED`        | Order's STOP price was triggered on the venue.                                            |
+| `TRIGGERED`        | A stop‑limit, trailing‑stop‑limit, or limit‑if‑touched order triggered on the venue.      |
 | `PENDING_UPDATE`   | Order is pending a modification request on the venue.                                     |
 | `PENDING_CANCEL`   | Order is pending a cancellation request on the venue.                                     |
 | `PARTIALLY_FILLED` | Order has been partially filled on the venue.                                             |
@@ -131,17 +132,16 @@ flowchart TB
 
 ## Execution instructions
 
-Certain venues allow a trader to specify conditions and restrictions on
-how an order will be processed and executed. The following is a brief
-summary of the different execution instructions available.
+Execution instructions specify conditions and restrictions on how a venue processes an order.
+Support varies by venue and adapter.
 
 ### Time in force
 
-The order's time in force specifies how long the order will remain open or active before any
-remaining quantity is canceled.
+Time in force specifies how long an order remains active before any unfilled quantity is canceled.
 
 - `GTC` **(Good Till Cancel)**: The order remains active until canceled by the trader or the venue.
-- `IOC` **(Immediate or Cancel / Fill and Kill)**: The order executes immediately, with any unfilled portion canceled.
+- `IOC` **(Immediate or Cancel / Fill and Kill)**: The order executes immediately, with any
+  unfilled portion canceled.
 - `FOK` **(Fill or Kill)**: The order executes immediately in full or not at all.
 - `GTD` **(Good Till Date)**: The order remains active until a specified expiration date and time.
 - `DAY` **(Good for session/day)**: The order remains active until the end of the current trading session.
@@ -150,75 +150,77 @@ remaining quantity is canceled.
 
 ### Expire time
 
-This instruction is to be used in conjunction with the `GTD` time in force to specify the time
-at which the order will expire and be removed from the venue's order book (or order management system).
+Use `expire_time` with `GTD` to specify when the order expires and leaves the venue's order book or
+order management system.
 
 ### Post-only
 
-An order which is marked as `post_only` will only ever participate in providing liquidity to the
-limit order book, and never initiating a trade which takes liquidity as an aggressor. This option is
-important for market makers, or traders seeking to restrict the order to a liquidity *maker* fee tier.
+An order marked `post_only` may provide liquidity but must not take it. A venue normally rejects or
+cancels the order if it would execute immediately. Market makers can use this instruction to target
+maker fees.
 
 ### Reduce-only
 
-An order which is set as `reduce_only` will only ever reduce an existing position on an instrument and
-never open a new position (if already flat). The exact behavior of this instruction can vary between venues.
+An order marked `reduce_only` may reduce an existing position but must not increase exposure or open
+a position while flat. Exact behavior varies by venue.
 
-However, the behavior in the Nautilus `SimulatedExchange` is typical of a real venue.
+The Nautilus `SimulatedExchange` applies these rules:
 
-- Order will be canceled if the associated position is closed (becomes flat).
-- Order quantity will be reduced as the associated position's size decreases.
+- It cancels the order when the associated position becomes flat.
+- It reduces the order quantity as the associated position shrinks.
 
 ### Display quantity
 
-The `display_qty` specifies the portion of a *Limit* order which is displayed on the limit order book.
-These are also known as iceberg orders as there is a visible portion to be displayed, with more quantity which is hidden.
-Specifying a display quantity of zero is also equivalent to setting an order as `hidden`.
+The `display_qty` specifies how much of an order is visible on the limit order book. An order with a
+smaller displayed quantity than its total quantity is commonly called an iceberg order. A display
+quantity of zero makes the order hidden when the venue supports that behavior.
 
 ### Trigger type
 
-Also known as [trigger method](https://www.interactivebrokers.com/en/software/tws/usersguidebook/configuretws/Modify%20the%20Stop%20Trigger%20Method.htm)
-which is applicable to conditional trigger orders, specifying the method of triggering the stop price.
+The trigger type, also known as a
+[trigger method](https://www.interactivebrokers.com/en/software/tws/usersguidebook/configuretws/Modify%20the%20Stop%20Trigger%20Method.htm),
+specifies the market price used to trigger a conditional order.
 
-- `DEFAULT`: The default trigger type for the venue (typically `LAST_PRICE` or `BID_ASK`).
-- `LAST_PRICE`: The trigger price will be based on the last traded price.
-- `BID_ASK`: The trigger price will be based on the bid for buy orders and ask for sell orders.
-- `DOUBLE_LAST`: The trigger price will be based on the last two consecutive last prices.
-- `DOUBLE_BID_ASK`: The trigger price will be based on the last two consecutive bid or ask prices as applicable.
-- `LAST_OR_BID_ASK`: The trigger price will be based on either the last price or bid/ask.
-- `MID_POINT`: The trigger price will be based on the mid-point between the bid and ask.
-- `MARK_PRICE`: The trigger price will be based on the venue's mark price for the instrument.
-- `INDEX_PRICE`: The trigger price will be based on the venue's index price for the instrument.
+- `NO_TRIGGER`: Indicates that no trigger is specified; invalid for an order that requires one.
+- `DEFAULT`: Uses the venue's default trigger type.
+- `LAST_PRICE`: Uses the last traded price.
+- `BID_ASK`: Uses the ask for BUY orders and the bid for SELL orders.
+- `DOUBLE_LAST`: Requires two consecutive matching last prices.
+- `DOUBLE_BID_ASK`: Requires two consecutive matching bid or ask prices, based on the order side.
+- `LAST_OR_BID_ASK`: Uses either the last price or the side‑appropriate bid or ask.
+- `MID_POINT`: Uses the midpoint between the bid and ask.
+- `MARK_PRICE`: Uses the venue's mark price for the instrument.
+- `INDEX_PRICE`: Uses the venue's index price for the instrument.
 
-### Trigger offset type
+### Trailing offset type
 
-Applicable to conditional trailing-stop trigger orders, specifies the method of triggering modification
-of the stop price based on the offset from the *market* (bid, ask or last price as applicable).
+The trailing offset type specifies how a trailing order calculates its trigger offset from the
+applicable market price.
 
-- `DEFAULT`: The default offset type for the venue (typically `PRICE`).
-- `PRICE`: The offset is based on a price difference.
-- `BASIS_POINTS`: The offset is based on a price percentage difference expressed in basis points (100bp = 1%).
-- `TICKS`: The offset is based on a number of ticks.
-- `PRICE_TIER`: The offset is based on a venue-specific price tier.
+- `NO_TRAILING_OFFSET`: Indicates that no offset is specified; invalid for a trailing order.
+- `PRICE`: Uses a price difference.
+- `BASIS_POINTS`: Uses a percentage difference in basis points, where 100 basis points equals 1%.
+- `TICKS`: Uses a number of ticks.
+- `PRICE_TIER`: Uses a venue‑specific price tier.
 
 ### Contingent orders
 
-More advanced relationships can be specified between orders.
-For example, child orders can be assigned to trigger only when the parent is activated or filled, or orders can be
-linked so that one cancels or reduces the quantity of another. See the [Advanced orders](advanced.md) guide for more details.
+Contingency relationships can hold child orders until a parent activates or fills, cancel linked
+orders, or reduce their quantities. See [Advanced orders](advanced.md) for the available models and
+their constraints.
 
 ## Order factory
 
-The easiest way to create new orders is by using the built-in `OrderFactory`, which is
-automatically attached to every `Strategy` class. This factory will take care
-of lower level details - such as ensuring the correct trader ID and strategy ID are assigned, generation
-of a necessary initialization ID and timestamp, and abstracts away parameters which don't necessarily
-apply to the order type being created, or are only needed to specify more advanced execution instructions.
+Use the built‑in `OrderFactory` to create orders. Each Python `Strategy` exposes one as
+`self.order_factory`; the Rust strategy API exposes it through `self.order()`. The factory assigns
+the trader and strategy IDs, generates client order and initialization IDs when needed, records the
+initial timestamp, and applies defaults for the selected order type.
 
-This leaves the factory with simpler order creation methods to work with, all the
-examples use an `OrderFactory` from within a `Strategy` context.
+The examples in these guides create orders from a `Strategy` context.
 
-See the [`OrderFactory` API Reference](/docs/python-api-latest/common.html#nautilus_trader.common.factories.OrderFactory) for further details.
+See the
+[`OrderFactory` API reference](/docs/python-api-latest/common.html#nautilus_trader.common.OrderFactory)
+for further details.
 
 ## Order types
 
@@ -239,8 +241,9 @@ example; optional parameters are marked with a comment showing the default value
 
 ### FIX OrdType mapping
 
-Each type maps to the nearest FIX 5.0 SP2 [`OrdType <40>`](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_40.html)
-value, where the protocol defines one:
+Each type maps to the nearest FIX 5.0 SP2
+[`OrdType <40>`](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_40.html) value, where the protocol
+defines one:
 
 | Order type           | FIX `OrdType <40>`                   |
 | -------------------- | ------------------------------------ |
@@ -262,7 +265,8 @@ plus trailing peg fields.
 
 Orders can be grouped into lists and linked with contingency relationships (OTO, OCO, OUO), and
 bracket orders attach take-profit and stop-loss children to an entry. See the
-[Advanced orders](advanced.md) guide for order lists, contingency types, validation rules, and brackets.
+[Advanced orders](advanced.md) guide for order lists, contingency types, validation rules, and
+brackets.
 
 ## Emulated orders
 

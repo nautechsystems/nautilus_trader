@@ -1,27 +1,31 @@
 # Advanced orders
 
-The following guide should be read in conjunction with the specific documentation from the broker or venue
-involving these order types, lists/groups and execution instructions (such as for Interactive Brokers).
+Order lists group related orders, while contingency metadata describes how fills, cancellations, or
+updates should affect linked orders. The component that handles the list determines the behavior:
+the backtest matching engine, local order emulator, live adapter and venue, or strategy code.
+
+:::warning
+An `OrderList` or `ContingencyType` does not guarantee that every live adapter or venue implements
+the relationship. Check the target integration before relying on native contingency behavior.
+:::
 
 ## Order lists
 
-Combinations of contingent orders, or larger order bulks can be grouped together into a list with a common
-`order_list_id`. The orders contained in this list may or may not have a contingent relationship with
-each other, as this is specific to how the orders themselves are constructed, and the
-specific venue they are being routed to.
+An order list groups contingent orders or a larger batch under one `order_list_id`. Orders in the
+list do not need a contingency relationship; their own metadata defines any relationship.
 
-All orders in a list must share the same venue. Orders may target different instruments at that
-venue (e.g. pairs, calendar spreads, multi-leg legs); whether the destination venue accepts
-mixed-instrument batches is venue-specific. The list's `instrument_id` is taken from the first
-order as a representative value; downstream consumers that need a per-order instrument resolve
-each order individually.
+Production constructors require every order in a list to use the same venue. Orders may target
+different instruments at that venue, such as pairs, calendar spreads, or multi‑leg strategies. The
+list takes its representative `instrument_id` from the first order; consumers that need the actual
+instrument must resolve each order individually.
 
 Caveats for mixed-instrument lists:
 
-- Pre-trade per-order checks (price/quantity precision, GTD) use each order's own instrument.
-- The cumulative risk check (free balance, min/max notional, position-reducing exposure,
-  per-order market-data lookups) uses the list's representative instrument. For mixed lists
-  this is a single-instrument bound, not per-instrument accuracy.
+- Pre‑trade checks for price precision, quantity precision, and GTD expiry use each order's own
+  instrument.
+- The cumulative risk check for free balance, notional bounds, position‑reducing exposure, and
+  market data uses the list's representative instrument. For a mixed list, this produces a
+  single‑instrument bound rather than per‑instrument accuracy.
 - Cache lookups like `cache.order_lists(instrument_id=...)` filter against the representative
   `instrument_id`; lists containing other instruments will not match queries for those other
   instruments.
@@ -31,118 +35,114 @@ Caveats for mixed-instrument lists:
   each order's own `instrument_id` against the venue API; others still build the batch
   request around the list's representative `instrument_id` and will misroute non-first
   orders. Treat mixed-instrument lists as adapter-specific; verify the target adapter's
-  behaviour before relying on it. Backtesting and custom strategy code that handle
-  multi-leg routing in user space remain the safest path today.
+  behavior before relying on it. Backtesting and strategy‑managed routing avoid relying on an
+  adapter's mixed‑instrument batch behavior.
 
 ## Contingency types
 
-- **OTO (One-Triggers-Other)** - a parent order that, once executed, automatically places one or more child orders.
-  - *Full-trigger model*: child order(s) are released **only after the parent is completely filled**. Common at most retail equity/option brokers (e.g. Schwab, Fidelity, TD Ameritrade) and many spot-crypto venues (Binance, Coinbase).
-  - *Partial-trigger model*: child order(s) are released **pro-rata to each partial fill**. Used by professional-grade platforms such as Interactive Brokers, most futures/FX OMSs, and Kraken Pro.
-
-- **OCO (One-Cancels-Other)** - two (or more) linked live orders where executing one cancels the remainder.
-
-- **OUO (One-Updates-Other)** - two (or more) linked live orders where executing one reduces the open quantity of the remainder.
+- **OTO (One‑Triggers‑Other):** A parent order releases one or more child orders after a configured
+  fill condition.
+- **OCO (One‑Cancels‑Other):** A fill in one linked order requests cancellation of the others.
+- **OUO (One‑Updates‑Other):** A fill in one linked order requests a quantity update for the others.
 
 :::info
-These contingency types relate to ContingencyType FIX tag <1385> <https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html>.
+These types correspond to FIX
+[`ContingencyType <1385>`](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
 :::
 
 ### One-Triggers-Other (OTO)
 
-An OTO order involves two parts:
+An OTO relationship has two parts:
 
-1. **Parent order** - submitted to the matching engine immediately.
-2. **Child order(s)** - held *off-book* until the trigger condition is met.
+1. The parent order enters its execution path.
+1. One or more child orders reference the parent and wait for the configured release condition.
+
+The handler determines where the children wait. The backtest engine can hold them locally, while a
+live adapter may send native venue instructions, submit all legs, reject the list, or require the
+strategy to manage the relationship.
 
 #### Trigger models
 
-| Trigger model       | When are child orders released?                                                                                                                  |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Full trigger**    | When the parent order's cumulative quantity equals its original quantity (i.e., it is *fully* filled).                                           |
-| **Partial trigger** | Immediately upon each partial execution of the parent; the child's quantity matches the executed amount and is increased as further fills occur. |
+| Trigger model | Backtest release condition                                                |
+| ------------- | ------------------------------------------------------------------------- |
+| **Partial**   | Release children after the parent's first partial fill.                   |
+| **Full**      | Release children after the parent's cumulative fill reaches its quantity. |
 
 :::info
-The default backtest venue for NautilusTrader uses a *partial-trigger model* for OTO orders.
-To opt-in to a *full-trigger mode*, set `oto_trigger_mode="FULL"` for the venue (e.g. via `BacktestVenueConfig`).
+The default `BacktestVenueConfig` mode is `OtoTriggerMode.PARTIAL`. Set `oto_trigger_mode` to
+`OtoTriggerMode.FULL` to wait for a complete fill. This setting controls release timing; it does not
+promise pro rata child sizing. Verify child quantities when the parent fills partially.
 :::
 
-**Working with partial-trigger in production:**
+#### Enforcing a full-fill trigger in strategy code
 
-If your strategy requires full-trigger semantics but the venue or backtest engine uses partial-trigger:
+If the execution context does not provide the required full‑fill behavior:
 
 1. Submit the parent order without contingent children.
-2. Subscribe to `OrderFilled` events for the parent order.
-3. Only submit child orders (stop-loss, take-profit) after confirming the parent is fully filled.
-4. Use `order.is_closed` and `order.filled_qty == order.quantity` to verify complete fill.
+1. Handle `OrderFilled` events for the parent.
+1. Confirm the parent has reached `FILLED` status.
+1. Submit the stop‑loss, take‑profit, or other child orders.
 
-> **Why the distinction matters**
-> *Full trigger* leaves a risk window: any partially filled position is live without its protective exit until the remaining quantity fills.
-> *Partial trigger* mitigates that risk by ensuring every executed lot instantly has its linked stop/limit, at the cost of creating more order traffic and updates.
-
-An OTO order can use any supported asset type on the venue (e.g. stock entry with option hedge, futures entry with OCO bracket, crypto spot entry with TP/SL).
-
-| Venue / Adapter ID                          | Asset classes            | Trigger rule for child                     | Practical notes                                                   |
-| ------------------------------------------- | ------------------------ | ------------------------------------------ | ----------------------------------------------------------------- |
-| Binance / Binance Futures (`BINANCE`)       | Spot, perpetual futures  | **Partial or full** - fires on first fill. | OTOCO/TP-SL children appear instantly; monitor margin usage.      |
-| Bybit Spot (`BYBIT`)                        | Spot                     | **Full** - child placed after completion.  | TP-SL preset activates only once the limit order is fully filled. |
-| Bybit Perps (`BYBIT`)                       | Perpetual futures        | **Partial and full** - configurable.       | "Partial‑position" mode sizes TP-SL as fills arrive.              |
-| Kraken Futures (`KRAKEN`)                   | Futures & perps          | **Partial and full** - automatic.          | Child quantity matches every partial execution.                   |
-| OKX (`OKX`)                                 | Spot, futures, options   | **Full** - attached stop waits for fill.   | Position‑level TP-SL can be added separately.                     |
-| Interactive Brokers (`INTERACTIVE_BROKERS`) | Stocks, options, FX, fut | **Configurable** - OCA can pro‑rate.       | `OcaType 2/3` reduces remaining child quantities.                 |
-| dYdX v4 (`DYDX`)                            | Perpetual futures (DEX)  | On‑chain condition (size exact).           | TP-SL triggers by oracle price; partial fill not applicable.      |
-| Polymarket (`POLYMARKET`)                   | Prediction market (DEX)  | N/A.                                       | Advanced contingency handled entirely at the strategy layer.      |
-| Betfair (`BETFAIR`)                         | Sports betting           | N/A.                                       | Advanced contingency handled entirely at the strategy layer.      |
+:::warning
+Full‑fill release leaves a partially filled position without its contingent exits until the parent
+finishes. Partial release reduces that delay, but the current backtest mode does not guarantee that
+child quantities track each partial fill. Check quantities and adapter behavior before treating a
+child as complete protection.
+:::
 
 ### One-Cancels-Other (OCO)
 
-An OCO order is a set of linked orders where the execution of **any** order (full *or partial*) triggers a best-efforts cancellation of the others.
-Both orders are live simultaneously; once one starts filling, the venue attempts to cancel the unexecuted portion of the remainder.
+In backtest local matching, a full or partial fill in one OCO order causes a best‑effort request to
+cancel its open siblings. The local order manager applies this behavior only while a sibling remains
+active local. After release, the adapter or venue determines cancellation behavior. Another sibling
+can fill before cancellation completes.
 
 ### One-Updates-Other (OUO)
 
-An OUO order is a set of linked orders where execution of one order causes an immediate *reduction* of open quantity in the other order(s).
-Both orders are live concurrently, and each partial execution proportionally updates the remaining quantity of its peer order on a best-effort basis.
+In backtest local matching, a fill in one OUO order uses that order's remaining quantity as the
+target for each open sibling. The engine cancels a sibling when the target is zero or its filled
+quantity already meets the target; otherwise, it updates the sibling when needed. This behavior
+suits equal‑sized peers and does not preserve a ratio between unequal starting quantities. Live
+behavior depends on adapter and venue support.
 
-## Contingent order validation
+## Constructing contingent orders
 
-When working with contingent orders (OTO, OCO, OUO), be aware of the following validation rules and error scenarios:
+Use `OrderFactory.bracket` to construct a bracket's contingency metadata. In Rust,
+`self.order().create_list(...)` assigns a fresh `order_list_id` to an existing group of orders.
+Python code instead passes a plain list to `self.submit_order_list(...)`, which creates an
+`OrderList` when needed. These grouping paths do not create parent or linked‑order relationships.
+The current model enforces only part of the remaining consistency:
 
-**Order list requirements:**
+- A contingent order must have at least one `linked_order_id`.
+- A child identifies its parent through `parent_order_id`.
+- Rust `create_list` requires a non‑empty list whose orders use one venue.
+- `OrderList.validate` checks for non‑empty, unique client order IDs when a strategy submits the
+  list.
+- `OrderList.validate` does not verify shared `order_list_id` values, parent references, or other
+  cross‑field relationships.
 
-- All orders in a contingent group must share the same `order_list_id`.
-- Parent orders must be submitted before or simultaneously with their children.
-- Child orders reference their parent via `parent_order_id`.
-
-**Modification rules:**
-
-- Parent orders can typically be modified while pending, but modifications may cascade to children.
-- Child orders can be modified independently on most venues, but check venue-specific behavior.
-- Canceling a parent order will cancel all associated child orders.
-
-**Common error scenarios:**
-
-| Scenario                                    | System behavior                                   |
-| ------------------------------------------- | ------------------------------------------------- |
-| Child references non‑existent parent        | Order denied with `INVALID_ORDER` error           |
-| Parent canceled before children trigger     | Children automatically canceled                   |
-| OCO sibling filled before cancel propagates | Partial fill honored, remaining quantity canceled |
-| Insufficient margin for bracket             | Entry may execute, children rejected separately   |
+Modification, cancellation, and rejection behavior depends on the component managing the
+contingency. Do not assume a parent update or cancellation cascades in every live integration.
 
 :::warning
-Always handle `OrderDenied` and `OrderRejected` events in your strategy, especially for contingent orders where
-partial failures can leave positions unprotected.
+Handle `OrderDenied` and `OrderRejected` events for every leg. Adapter or venue failures can affect
+legs independently and leave a position without its intended protection.
 :::
 
 ## Bracket orders
 
-Bracket orders are an advanced order type that allows traders to set both take-profit and stop-loss
-levels for a position simultaneously. This involves placing a parent order (entry order) and two child
-orders: a take-profit `LIMIT` order and a stop-loss `STOP_MARKET` order. When the parent order executes,
-the system places the child orders. The take-profit closes the position if the market moves favorably, and the stop-loss limits losses if it moves unfavorably.
+Bracket orders combine an entry with take‑profit and stop‑loss children. By default,
+`OrderFactory.bracket` creates a `MARKET` entry, a `LIMIT` take‑profit, and a `STOP_MARKET`
+stop‑loss. It marks the entry with an `OTO` contingency, marks both exits `reduce_only`, and links
+the exits with an `OUO` contingency. The default `LIMIT` take‑profit is also `post_only`.
 
-Bracket orders can be easily created using the [OrderFactory](/docs/python-api-latest/common.html#nautilus_trader.common.factories.OrderFactory),
-which supports various order types, parameters, and instructions.
+The factory creates the orders and their relationship metadata. The execution context determines
+whether children wait locally, use a native venue instruction, enter the venue with the parent, or
+require manual strategy handling.
+
+Create brackets with
+[`OrderFactory`](/docs/python-api-latest/common.html#nautilus_trader.common.OrderFactory), which
+also supports different entry and exit types, trigger settings, and execution instructions.
 
 In the following example we bracket a *Market* entry to BUY 10 ETHUSDT-PERP contracts with a
 take-profit *Limit* at 3,300 USDT and a stop-loss *Stop-Market* triggering at 2,800 USDT. The entry
@@ -170,13 +170,12 @@ let orders = self
 ```
 
 ```python tab="Python"
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model.orders import OrderList
 
-bracket: OrderList = self.order_factory.bracket(
+orders = self.order_factory.bracket(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
     order_side=OrderSide.BUY,
     quantity=Quantity.from_int(10),
@@ -186,8 +185,8 @@ bracket: OrderList = self.order_factory.bracket(
 ```
 
 :::warning
-You should be aware of the margin requirements of positions, as bracketing a position will consume
-more order margin.
+Some venues reserve margin for bracket legs. Check the venue's margin rules and handle a child
+rejection after the entry fills.
 :::
 
 ## Related guides

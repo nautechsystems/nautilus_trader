@@ -2,23 +2,20 @@
 
 `FIX OrdType <40>=1`
 
-A *Market* order is an instruction by the trader to immediately trade
-the given quantity at the best price available. You can also specify several
-time in force options, and indicate whether this order is only intended to reduce
-a position.
+A *Market* order instructs the venue to trade a quantity immediately at the best available price.
+It can also carry time in force and reduce‑only instructions.
 
 ## Use cases
 
-Use a *Market* order when filling matters more than the exact price: urgent risk reduction,
-entering a fast-moving liquid market, or crossing a tight spread where waiting costs more than the
-spread. The advantage is near-certain, immediate execution. The tradeoff is no price protection:
-you pay the spread and risk slippage in thin or fast markets, so it suits liquid instruments far
-more than illiquid ones.
+Use a *Market* order when prompt execution matters more than the exact price, such as for urgent
+risk reduction or entry into a liquid, fast‑moving market. A *Market* order has no price protection:
+it can incur spread costs and slippage, and the venue can still reject it or leave it unfilled when
+no market is available.
 
 ## Example
 
-In the following example we create a *Market* order on the Interactive Brokers [IdealPro](https://ibkr.info/node/1708) Forex ECN
-to BUY 100,000 AUD using USD:
+In the following example we create a *Market* order on the Interactive Brokers
+[IdealPro](https://ibkr.info/node/1708) Forex ECN to BUY 100,000 AUD using USD:
 
 ```rust tab="Rust"
 use nautilus_model::{
@@ -43,11 +40,11 @@ let order = self.order().market(
 ```
 
 ```python tab="Python"
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import MarketOrder
+from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Quantity
-from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model import TimeInForce
 
 order: MarketOrder = self.order_factory.market(
     instrument_id=InstrumentId.from_str("AUD/USD.IDEALPRO"),
@@ -59,7 +56,8 @@ order: MarketOrder = self.order_factory.market(
 )
 ```
 
-See the [`MarketOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.market.MarketOrder) for further details.
+See the [`MarketOrder` API reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.MarketOrder)
+for further details.
 
 ## Related guides
 
