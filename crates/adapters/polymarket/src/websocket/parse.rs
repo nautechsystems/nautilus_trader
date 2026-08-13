@@ -34,7 +34,7 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 
 use super::messages::{
-    PolymarketBookLevel, PolymarketBookSnapshot, PolymarketQuote, PolymarketQuotes, PolymarketTrade,
+    PolymarketBookLevel, PolymarketBookSnapshot, PolymarketQuote, PolymarketTrade,
 };
 use crate::{
     common::{enums::PolymarketOrderSide, parse::determine_trade_id},
@@ -228,52 +228,65 @@ pub fn parse_book_snapshot(
     Ok(OrderBookDeltas::new(instrument_id, deltas))
 }
 
-/// Parses price change quotes into incremental [`OrderBookDeltas`].
+/// Parses price change quotes into incremental book deltas.
+///
+/// Each result corresponds to one quote. The final successful delta carries
+/// [`RecordFlag::F_LAST`], including when later quotes fail to parse.
 pub fn parse_book_deltas(
-    quotes: &PolymarketQuotes,
+    quotes: &[&PolymarketQuote],
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
+    ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> anyhow::Result<OrderBookDeltas> {
-    let ts_event = parse_timestamp_ms(&quotes.timestamp)?;
+) -> Vec<anyhow::Result<OrderBookDelta>> {
+    let mut deltas = quotes
+        .iter()
+        .map(|change| {
+            parse_book_delta(
+                change,
+                instrument_id,
+                price_precision,
+                size_precision,
+                ts_event,
+                ts_init,
+            )
+        })
+        .collect::<Vec<_>>();
 
-    let total = quotes.price_changes.len();
-    let mut deltas = Vec::with_capacity(total);
-
-    for (idx, change) in quotes.price_changes.iter().enumerate() {
-        let price = parse_price(&change.price, price_precision)?;
-        let size = parse_quantity(&change.size, size_precision)?;
-        let side = match change.side {
-            PolymarketOrderSide::Buy => OrderSide::Buy,
-            PolymarketOrderSide::Sell => OrderSide::Sell,
-        };
-
-        let (action, order_size) = if size.is_zero() {
-            (BookAction::Delete, Quantity::zero(size_precision))
-        } else {
-            (BookAction::Update, size)
-        };
-
-        let order = BookOrder::new(side, price, order_size, 0);
-        let flags = if idx == total - 1 {
-            RecordFlag::F_LAST as u8
-        } else {
-            0
-        };
-
-        deltas.push(OrderBookDelta::new_checked(
-            instrument_id,
-            action,
-            order,
-            flags,
-            0,
-            ts_event,
-            ts_init,
-        )?);
+    if let Some(delta) = deltas
+        .iter_mut()
+        .rev()
+        .find_map(|result| result.as_mut().ok())
+    {
+        delta.flags |= RecordFlag::F_LAST as u8;
     }
 
-    Ok(OrderBookDeltas::new(instrument_id, deltas))
+    deltas
+}
+
+fn parse_book_delta(
+    change: &PolymarketQuote,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderBookDelta> {
+    let price = parse_price(&change.price, price_precision)?;
+    let size = parse_quantity(&change.size, size_precision)?;
+    let side = match change.side {
+        PolymarketOrderSide::Buy => OrderSide::Buy,
+        PolymarketOrderSide::Sell => OrderSide::Sell,
+    };
+    let (action, order_size) = if size.is_zero() {
+        (BookAction::Delete, Quantity::zero(size_precision))
+    } else {
+        (BookAction::Update, size)
+    };
+    let order = BookOrder::new(side, price, order_size, 0);
+
+    OrderBookDelta::new_checked(instrument_id, action, order, 0, 0, ts_event, ts_init)
 }
 
 /// Parses a trade message into a [`TradeTick`].
@@ -483,8 +496,11 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::http::parse::{
-        create_instrument_from_def, parse_gamma_market, rebuild_instrument_with_tick_size,
+    use crate::{
+        http::parse::{
+            create_instrument_from_def, parse_gamma_market, rebuild_instrument_with_tick_size,
+        },
+        websocket::messages::PolymarketQuotes,
     };
 
     fn load<T: serde::de::DeserializeOwned>(filename: &str) -> T {
@@ -601,30 +617,31 @@ mod tests {
     fn test_parse_book_deltas() {
         let quotes: PolymarketQuotes = load("ws_quotes.json");
         let instrument = test_instrument();
+        let ts_event = parse_timestamp_ms(&quotes.timestamp).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
+        let changes = quotes.price_changes.iter().collect::<Vec<_>>();
 
         let deltas = parse_book_deltas(
-            &quotes,
+            &changes,
             instrument.id(),
             instrument.price_precision(),
             instrument.size_precision(),
+            ts_event,
             ts_init,
         )
+        .into_iter()
+        .collect::<anyhow::Result<Vec<_>>>()
         .unwrap();
 
-        assert_eq!(deltas.deltas.len(), 2);
+        assert_eq!(deltas.len(), 2);
 
         // Exactly one delta carries F_LAST, and it must be the last one
         let f_last_count = deltas
-            .deltas
             .iter()
             .filter(|d| d.flags & RecordFlag::F_LAST as u8 != 0)
             .count();
         assert_eq!(f_last_count, 1);
-        assert_ne!(
-            deltas.deltas.last().unwrap().flags & RecordFlag::F_LAST as u8,
-            0
-        );
+        assert_ne!(deltas.last().unwrap().flags & RecordFlag::F_LAST as u8, 0);
     }
 
     #[rstest]
@@ -632,18 +649,23 @@ mod tests {
         let mut quotes: PolymarketQuotes = load("ws_quotes.json");
         quotes.price_changes[0].size = "0".to_string();
         let instrument = test_instrument();
+        let ts_event = parse_timestamp_ms(&quotes.timestamp).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
+        let changes = quotes.price_changes.iter().collect::<Vec<_>>();
 
         let deltas = parse_book_deltas(
-            &quotes,
+            &changes,
             instrument.id(),
             instrument.price_precision(),
             instrument.size_precision(),
+            ts_event,
             ts_init,
         )
+        .into_iter()
+        .collect::<anyhow::Result<Vec<_>>>()
         .unwrap();
 
-        assert_eq!(deltas.deltas[0].action, BookAction::Delete);
+        assert_eq!(deltas[0].action, BookAction::Delete);
     }
 
     #[rstest]

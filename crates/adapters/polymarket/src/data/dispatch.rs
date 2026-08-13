@@ -35,12 +35,13 @@
 
 use std::sync::{Arc, Mutex as StdMutex};
 
+use ahash::AHashMap;
 use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_common::{live::get_runtime, messages::DataEvent};
 use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
 use nautilus_model::{
     data::{Data as NautilusData, InstrumentStatus, OrderBookDeltas, QuoteTick},
-    enums::{BookType, MarketStatusAction, RecordFlag},
+    enums::{BookType, MarketStatusAction},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -62,7 +63,7 @@ use crate::{
     resolve::{ResolveContext, ResolveWatchEntry, apply_condition_resolution},
     rtds::PolymarketRtdsFeed,
     websocket::{
-        messages::{MarketWsMessage, PolymarketNewMarket, PolymarketQuotes, PolymarketWsMessage},
+        messages::{MarketWsMessage, PolymarketNewMarket, PolymarketQuote, PolymarketWsMessage},
         parse::{
             parse_book_deltas, parse_book_snapshot, parse_quote_from_price_change,
             parse_quote_from_snapshot, parse_timestamp_ms, parse_trade_tick,
@@ -309,7 +310,8 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             };
 
             let mut resolved = Vec::with_capacity(quotes.price_changes.len());
-            let mut groups: Vec<(TokenMeta, Vec<_>)> = Vec::new();
+            let mut groups: Vec<(TokenMeta, Vec<&PolymarketQuote>)> = Vec::new();
+            let mut group_indices = AHashMap::with_capacity(quotes.price_changes.len());
 
             for change in &quotes.price_changes {
                 let token_id = Ustr::from(change.asset_id.as_str());
@@ -320,27 +322,24 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         continue;
                     }
                 };
-                resolved.push((meta, change));
-
-                match groups
-                    .iter_mut()
-                    .find(|(existing, _)| existing.instrument_id == meta.instrument_id)
-                {
-                    Some((_, changes)) => changes.push(change.clone()),
-                    None => groups.push((meta, vec![change.clone()])),
-                }
+                let group_index = match group_indices.get(&meta.instrument_id) {
+                    Some(index) => *index,
+                    None => {
+                        let index = groups.len();
+                        groups.push((meta, Vec::new()));
+                        group_indices.insert(meta.instrument_id, index);
+                        index
+                    }
+                };
+                groups[group_index].1.push(change);
+                resolved.push((group_index, meta, change));
             }
 
-            for (meta, change) in resolved {
+            for (group_index, meta, change) in resolved {
                 let instrument_id = meta.instrument_id;
-                let group = groups
-                    .iter_mut()
-                    .find(|(existing, _)| existing.instrument_id == instrument_id)
-                    .map(|(_, changes)| std::mem::take(changes));
+                let changes = std::mem::take(&mut groups[group_index].1);
 
-                if let Some(changes) = group.filter(|changes| !changes.is_empty())
-                    && ctx.active_delta_subs.contains(&instrument_id)
-                {
+                if !changes.is_empty() && ctx.active_delta_subs.contains(&instrument_id) {
                     if ctx
                         .pending_snapshot_after_tick_change
                         .contains(&instrument_id)
@@ -349,36 +348,25 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                             "Dropping book deltas for {instrument_id}: awaiting valid snapshot",
                         );
                     } else {
-                        let mut parsed = Vec::with_capacity(changes.len());
-
-                        for change in changes {
-                            let per_asset = PolymarketQuotes {
-                                market: quotes.market,
-                                price_changes: vec![change],
-                                timestamp: quotes.timestamp.clone(),
-                            };
-
-                            match parse_book_deltas(
-                                &per_asset,
-                                instrument_id,
-                                meta.price_precision,
-                                meta.size_precision,
-                                ts_init,
-                            ) {
-                                Ok(mut deltas) => parsed.append(&mut deltas.deltas),
-                                Err(e) => log::error!(
-                                    "Failed to parse book delta for {instrument_id}: {e}"
-                                ),
+                        let parsed = parse_book_deltas(
+                            &changes,
+                            instrument_id,
+                            meta.price_precision,
+                            meta.size_precision,
+                            ts_event,
+                            ts_init,
+                        )
+                        .into_iter()
+                        .filter_map(|result| match result {
+                            Ok(delta) => Some(delta),
+                            Err(e) => {
+                                log::error!("Failed to parse book delta for {instrument_id}: {e}");
+                                None
                             }
-                        }
+                        })
+                        .collect::<Vec<_>>();
 
                         if !parsed.is_empty() {
-                            for delta in &mut parsed {
-                                delta.flags &= !(RecordFlag::F_LAST as u8);
-                            }
-                            parsed.last_mut().expect("parsed not empty").flags |=
-                                RecordFlag::F_LAST as u8;
-
                             let deltas = OrderBookDeltas::new(instrument_id, parsed);
 
                             if let Some(mut book) = ctx.order_books.get_mut(&instrument_id)
@@ -846,7 +834,7 @@ mod tests {
     use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_model::{
         data::{BookOrder, CustomData as ModelCustomData, DataType, OrderBookDelta},
-        enums::{BookAction, InstrumentCloseType, OrderSide, PositionSide},
+        enums::{BookAction, InstrumentCloseType, OrderSide, PositionSide, RecordFlag},
         events::{PositionEvent, PositionOpened},
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol,
@@ -880,7 +868,7 @@ mod tests {
         websocket::{
             messages::{
                 PolymarketBookLevel, PolymarketBookSnapshot, PolymarketMarketResolved,
-                PolymarketQuote, PolymarketTickSizeChange,
+                PolymarketQuote, PolymarketQuotes, PolymarketTickSizeChange,
             },
             pool::PolymarketMarketConnectionPool,
         },
@@ -3853,6 +3841,7 @@ mod tests {
     fn price_change_batches_interleaved_changes_by_instrument() {
         let asset_a = "0xTOKEN-A";
         let asset_b = "0xTOKEN-B";
+        let asset_unknown = "0xTOKEN-UNKNOWN";
         let market = Ustr::from("0xMARKET");
         let (ctx, mut data_rx) = make_ws_ctx();
         let instrument_a =
@@ -3884,8 +3873,10 @@ mod tests {
         while data_rx.try_recv().is_ok() {}
 
         let price_changes = vec![
+            (asset_unknown, "0.111", PolymarketOrderSide::Buy, "1"),
             (asset_a, "0.007", PolymarketOrderSide::Buy, "20"),
             (asset_b, "0.997", PolymarketOrderSide::Buy, "20"),
+            (asset_unknown, "0.222", PolymarketOrderSide::Sell, "2"),
             (asset_a, "0.005", PolymarketOrderSide::Sell, "0"),
             (asset_b, "0.995", PolymarketOrderSide::Sell, "0"),
             (asset_a, "0.009", PolymarketOrderSide::Sell, "30"),
@@ -3940,14 +3931,137 @@ mod tests {
                 _ => None,
             })
             .collect();
+        let event_sequence: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                DataEvent::Data(NautilusData::Deltas(deltas)) => {
+                    Some(("deltas", deltas.instrument_id))
+                }
+                DataEvent::Data(NautilusData::Quote(quote)) => Some(("quote", quote.instrument_id)),
+                _ => None,
+            })
+            .collect();
         let book_a = ctx.order_books.get(&instrument_a).expect("book A");
         let book_b = ctx.order_books.get(&instrument_b).expect("book B");
-
         assert_eq!(batches.len(), 2);
+
+        let ts_event = UnixNanos::from(1_700_000_003_000_000_000_u64);
+        let ts_init_a = batches[0].ts_init;
+        let ts_init_b = batches[1].ts_init;
+
         assert_eq!(batches[0].instrument_id, instrument_a);
-        assert_eq!(batches[0].deltas.len(), 3);
+        assert_eq!(batches[0].flags, RecordFlag::F_LAST as u8);
+        assert_eq!(batches[0].sequence, 0);
+        assert_eq!(batches[0].ts_event, ts_event);
+        assert_eq!(
+            batches[0].deltas,
+            vec![
+                OrderBookDelta::new(
+                    instrument_a,
+                    BookAction::Update,
+                    BookOrder::new(
+                        OrderSide::Buy,
+                        Price::from("0.007"),
+                        Quantity::from("20.00"),
+                        0,
+                    ),
+                    0,
+                    0,
+                    ts_event,
+                    ts_init_a,
+                ),
+                OrderBookDelta::new(
+                    instrument_a,
+                    BookAction::Delete,
+                    BookOrder::new(
+                        OrderSide::Sell,
+                        Price::from("0.005"),
+                        Quantity::from("0.00"),
+                        0,
+                    ),
+                    0,
+                    0,
+                    ts_event,
+                    ts_init_a,
+                ),
+                OrderBookDelta::new(
+                    instrument_a,
+                    BookAction::Update,
+                    BookOrder::new(
+                        OrderSide::Sell,
+                        Price::from("0.009"),
+                        Quantity::from("30.00"),
+                        0,
+                    ),
+                    RecordFlag::F_LAST as u8,
+                    0,
+                    ts_event,
+                    ts_init_a,
+                ),
+            ]
+        );
         assert_eq!(batches[1].instrument_id, instrument_b);
-        assert_eq!(batches[1].deltas.len(), 3);
+        assert_eq!(batches[1].flags, RecordFlag::F_LAST as u8);
+        assert_eq!(batches[1].sequence, 0);
+        assert_eq!(batches[1].ts_event, ts_event);
+        assert_eq!(
+            batches[1].deltas,
+            vec![
+                OrderBookDelta::new(
+                    instrument_b,
+                    BookAction::Update,
+                    BookOrder::new(
+                        OrderSide::Buy,
+                        Price::from("0.997"),
+                        Quantity::from("20.00"),
+                        0,
+                    ),
+                    0,
+                    0,
+                    ts_event,
+                    ts_init_b,
+                ),
+                OrderBookDelta::new(
+                    instrument_b,
+                    BookAction::Delete,
+                    BookOrder::new(
+                        OrderSide::Sell,
+                        Price::from("0.995"),
+                        Quantity::from("0.00"),
+                        0,
+                    ),
+                    0,
+                    0,
+                    ts_event,
+                    ts_init_b,
+                ),
+                OrderBookDelta::new(
+                    instrument_b,
+                    BookAction::Update,
+                    BookOrder::new(
+                        OrderSide::Sell,
+                        Price::from("0.999"),
+                        Quantity::from("30.00"),
+                        0,
+                    ),
+                    RecordFlag::F_LAST as u8,
+                    0,
+                    ts_event,
+                    ts_init_b,
+                ),
+            ]
+        );
+        assert_eq!(
+            event_sequence,
+            vec![
+                ("deltas", instrument_a),
+                ("quote", instrument_a),
+                ("deltas", instrument_b),
+                ("quote", instrument_b),
+                ("quote", instrument_a),
+                ("quote", instrument_b),
+            ]
+        );
         assert_eq!(
             quote_instruments,
             vec![instrument_a, instrument_b, instrument_a, instrument_b]
@@ -3958,6 +4072,69 @@ mod tests {
         assert_eq!(book_b.best_ask_price(), Some(Price::from("0.999")));
         assert!(nautilus_model::orderbook::analysis::book_check_integrity(&book_a).is_ok());
         assert!(nautilus_model::orderbook::analysis::book_check_integrity(&book_b).is_ok());
+    }
+
+    #[rstest]
+    fn price_change_quotes_use_per_entry_resolved_metadata() {
+        let asset_a = "0xTOKEN-META-A";
+        let asset_b = Ustr::from("0xTOKEN-META-B");
+        let market = Ustr::from("0xMARKET");
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let instrument_id =
+            seed_instrument(&ctx, asset_a, Price::from("0.001"), Quantity::from("0.01")).id();
+        ctx.token_meta.insert(
+            asset_b,
+            TokenMeta {
+                instrument_id,
+                price_precision: 2,
+                size_precision: 1,
+                min_order_size: None,
+                neg_risk: None,
+            },
+        );
+        ctx.active_quote_subs.insert(instrument_id);
+
+        handle_market_message(
+            MarketWsMessage::PriceChange(PolymarketQuotes {
+                market,
+                price_changes: vec![
+                    PolymarketQuote {
+                        asset_id: Ustr::from(asset_a),
+                        price: "0.501".to_string(),
+                        side: PolymarketOrderSide::Buy,
+                        size: "20".to_string(),
+                        hash: String::new(),
+                        best_bid: Some("invalid".to_string()),
+                        best_ask: Some("0.509".to_string()),
+                    },
+                    PolymarketQuote {
+                        asset_id: asset_b,
+                        price: "0.50".to_string(),
+                        side: PolymarketOrderSide::Buy,
+                        size: "3".to_string(),
+                        hash: String::new(),
+                        best_bid: Some("0.50".to_string()),
+                        best_ask: Some("0.51".to_string()),
+                    },
+                ],
+                timestamp: "1700000003000".to_string(),
+            }),
+            &ctx,
+        );
+
+        let quotes = std::iter::from_fn(|| data_rx.try_recv().ok())
+            .filter_map(|event| match event {
+                DataEvent::Data(NautilusData::Quote(quote)) => Some(quote),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(quotes.len(), 1);
+        assert_eq!(quotes[0].instrument_id, instrument_id);
+        assert_eq!(quotes[0].bid_price, Price::from("0.50"));
+        assert_eq!(quotes[0].ask_price, Price::from("0.51"));
+        assert_eq!(quotes[0].bid_size, Quantity::from("3.0"));
+        assert_eq!(quotes[0].ask_size, Quantity::from("0.0"));
     }
 
     #[rstest]
@@ -4044,14 +4221,60 @@ mod tests {
         assert_eq!(batches.len(), 2);
         assert_eq!(batches[0].instrument_id, instrument_a);
         assert_eq!(batches[0].deltas.len(), 1);
+        assert_eq!(batches[0].flags, RecordFlag::F_LAST as u8);
+        assert_eq!(batches[0].deltas[0].flags, RecordFlag::F_LAST as u8);
         assert_eq!(batches[1].instrument_id, instrument_b);
         assert_eq!(batches[1].deltas.len(), 1);
+        assert_eq!(batches[1].flags, RecordFlag::F_LAST as u8);
+        assert_eq!(batches[1].deltas[0].flags, RecordFlag::F_LAST as u8);
         assert_eq!(book_a.best_bid_price(), Some(Price::from("0.004")));
         assert_eq!(book_b.best_bid_price(), Some(Price::from("0.994")));
         assert!(
             !ctx.pending_snapshot_after_tick_change
                 .contains(&instrument_a)
         );
+    }
+
+    #[rstest]
+    fn all_malformed_price_changes_emit_no_delta_batch() {
+        let asset_id = "0xTOKEN-INVALID";
+        let market = Ustr::from("0xMARKET");
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let instrument_id =
+            seed_instrument(&ctx, asset_id, Price::from("0.001"), Quantity::from("0.01")).id();
+        ctx.active_delta_subs.insert(instrument_id);
+
+        handle_market_message(
+            MarketWsMessage::PriceChange(PolymarketQuotes {
+                market,
+                price_changes: vec![
+                    PolymarketQuote {
+                        asset_id: Ustr::from(asset_id),
+                        price: "invalid".to_string(),
+                        side: PolymarketOrderSide::Buy,
+                        size: "20".to_string(),
+                        hash: String::new(),
+                        best_bid: None,
+                        best_ask: None,
+                    },
+                    PolymarketQuote {
+                        asset_id: Ustr::from(asset_id),
+                        price: "0.004".to_string(),
+                        side: PolymarketOrderSide::Sell,
+                        size: "invalid".to_string(),
+                        hash: String::new(),
+                        best_bid: None,
+                        best_ask: None,
+                    },
+                ],
+                timestamp: "1700000003000".to_string(),
+            }),
+            &ctx,
+        );
+
+        let batches = collect_delta_batches(&mut data_rx);
+
+        assert!(batches.is_empty());
     }
 
     #[rstest]
