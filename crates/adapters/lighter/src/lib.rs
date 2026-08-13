@@ -73,3 +73,6 @@ pub mod websocket;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+#[cfg(test)]
+mod tests;

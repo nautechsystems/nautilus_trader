@@ -85,6 +85,8 @@ use rstest::rstest;
 use serde_json::{Value, json};
 const ETH_PERP_SYMBOL: &str = "ETH-PERP";
 const HISTORY_REQUEST_PAGE_CAP: usize = 500;
+const PRIVATE_KEY_HEX: &str =
+    "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
 
 fn data_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
@@ -371,6 +373,9 @@ fn build_config(addr: SocketAddr) -> LighterDataClientConfig {
     LighterDataClientConfig {
         base_url_http: Some(format!("http://{addr}")),
         base_url_ws: Some(format!("ws://{addr}/stream")),
+        account_index: Some(12_345),
+        api_key_index: Some(5),
+        private_key: Some(PRIVATE_KEY_HEX.to_string()),
         // Disable the periodic refresh loop; tests drive bootstrap directly
         // via `connect()` and request_instruments(). A nonzero interval would
         // leak a background task across the entire crate's test run.

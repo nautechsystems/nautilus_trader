@@ -34,6 +34,9 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::{Py, Python, types::PyModule};
 use rstest::rstest;
 
+const PRIVATE_KEY_HEX: &str =
+    "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
+
 fn register_lighter_python_module(py: Python<'_>) {
     let module = PyModule::new(py, "lighter").expect("Lighter module should be created");
     python::lighter(&module).expect("Lighter Python module should register");
@@ -70,6 +73,9 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
         py,
         LighterDataClientConfig {
             environment: LighterEnvironment::Testnet,
+            account_index: Some(12_345),
+            api_key_index: Some(5),
+            private_key: Some(PRIVATE_KEY_HEX.to_string()),
             http_timeout_secs: 7,
             rest_quota_per_min: Some(24_000),
             ..LighterDataClientConfig::default()
@@ -120,6 +126,9 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             .trader_id(trader_id)
             .account_id(account_id)
             .environment(LighterEnvironment::Testnet)
+            .account_index(12_345)
+            .api_key_index(5)
+            .private_key(PRIVATE_KEY_HEX.to_string())
             .rest_quota_per_min(24_000)
             .sendtx_quota_per_min(4_000)
             .build(),

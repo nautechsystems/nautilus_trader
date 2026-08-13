@@ -38,6 +38,7 @@ use std::{
     collections::VecDeque,
     net::SocketAddr,
     path::PathBuf,
+    process::Command,
     rc::Rc,
     sync::{
         Arc,
@@ -102,6 +103,14 @@ use serde_json::{Value, json};
 
 const PRIVATE_KEY_HEX: &str =
     "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
+const LIGHTER_ENV_VARS: [&str; 6] = [
+    "LIGHTER_API_KEY_INDEX",
+    "LIGHTER_API_SECRET",
+    "LIGHTER_ACCOUNT_INDEX",
+    "LIGHTER_TESTNET_API_KEY_INDEX",
+    "LIGHTER_TESTNET_API_SECRET",
+    "LIGHTER_TESTNET_ACCOUNT_INDEX",
+];
 const TEST_ACCOUNT_INDEX: u64 = 12_345;
 const TEST_API_KEY_INDEX: u8 = 5;
 const ETH_PERP_SYMBOL: &str = "ETH-PERP";
@@ -1598,64 +1607,33 @@ async fn connect_clears_prior_position_cache_across_reconnect() {
     client.disconnect().await.expect("final disconnect");
 }
 
-/// Snapshots and clears the Lighter credential env vars, restoring the
-/// originals on drop. Tests that exercise `Credential::resolve`'s
-/// fall-back-to-env path must serialise on the workspace `serial_tests`
-/// nextest group; see [`crate::common::credential::credential_env_vars`]
-/// for the full list.
-struct EnvGuard {
-    saved: Vec<(&'static str, Option<String>)>,
-}
-
-const LIGHTER_ENV_VARS: &[&str] = &[
-    "LIGHTER_API_KEY_INDEX",
-    "LIGHTER_API_SECRET",
-    "LIGHTER_ACCOUNT_INDEX",
-    "LIGHTER_TESTNET_API_KEY_INDEX",
-    "LIGHTER_TESTNET_API_SECRET",
-    "LIGHTER_TESTNET_ACCOUNT_INDEX",
-];
-
-impl EnvGuard {
-    fn clear_lighter() -> Self {
-        let saved = LIGHTER_ENV_VARS
-            .iter()
-            .map(|&name| (name, std::env::var(name).ok()))
-            .collect::<Vec<_>>();
-        for &(name, _) in &saved {
-            // SAFETY: tests in the `serial_tests` module run under the
-            // workspace `serial-tests` nextest group, which serialises
-            // them. No other Lighter test reads or writes these vars
-            // concurrently.
-            unsafe { std::env::remove_var(name) };
-        }
-        Self { saved }
-    }
-}
-
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        for (name, original) in &self.saved {
-            match original {
-                Some(value) => unsafe { std::env::set_var(name, value) },
-                None => unsafe { std::env::remove_var(name) },
-            }
-        }
-    }
-}
-
-// Tests in this module mutate process-global LIGHTER_* env vars while
-// exercising the fail-fast credential path. The nextest filter
-// `test(serial_tests)` (see `.config/nextest.toml`) pins them to the
-// `serial-tests` group so they cannot race other tests that also read or
-// write LIGHTER_* state.
 mod serial_tests {
     use super::*;
 
     #[rstest]
+    fn test_credentialless_paths_in_isolated_environment() {
+        for test_name in [
+            "serial_tests::test_connect_without_credentials_fails_fast",
+            "serial_tests::test_submit_order_without_credentials_errors_synchronously",
+        ] {
+            let mut command =
+                Command::new(std::env::current_exe().expect("test executable must exist"));
+            command.arg(test_name).arg("--exact").arg("--ignored");
+            for name in LIGHTER_ENV_VARS {
+                command.env_remove(name);
+            }
+            let output = command.output().expect("isolated test process must run");
+            assert!(
+                output.status.success(),
+                "isolated credentialless case {test_name} failed",
+            );
+        }
+    }
+
+    #[rstest]
     #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "runs only in an isolated child process"]
     async fn test_connect_without_credentials_fails_fast() {
-        let _guard = EnvGuard::clear_lighter();
         let (addr, state) = start_server().await;
         let (mut client, _rx, _cache) = build_client_with(build_config_no_credentials(addr));
 
@@ -1672,8 +1650,8 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "runs only in an isolated child process"]
     async fn test_submit_order_without_credentials_errors_synchronously() {
-        let _guard = EnvGuard::clear_lighter();
         let (addr, _state) = start_server().await;
         let (client, cache, _rx) = {
             let (c, rx, ca) = build_client_with(build_config_no_credentials(addr));
