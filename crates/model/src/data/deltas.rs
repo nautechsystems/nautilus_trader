@@ -87,14 +87,24 @@ impl OrderBookDeltas {
         deltas: Vec<OrderBookDelta>,
     ) -> anyhow::Result<Self> {
         check_predicate_true(!deltas.is_empty(), "`deltas` cannot be empty")?;
-        check_predicate_true(
-            deltas.iter().all(|delta| {
-                instrument_id == delta.instrument_id
-                    || (instrument_id.symbol.as_str() == delta.instrument_id.symbol.as_str()
-                        && instrument_id.venue.as_str() == delta.instrument_id.venue.as_str())
-            }),
-            "`deltas` instrument IDs must match `instrument_id`",
-        )?;
+
+        let mismatch = deltas.iter().enumerate().find(|(_, delta)| {
+            instrument_id != delta.instrument_id
+                && (instrument_id.symbol.as_str() != delta.instrument_id.symbol.as_str()
+                    || instrument_id.venue.as_str() != delta.instrument_id.venue.as_str())
+        });
+
+        if let Some((index, delta)) = mismatch {
+            check_predicate_true(
+                false,
+                &format!(
+                    "`deltas` instrument IDs must match `instrument_id` {instrument_id}, but \
+                     delta at index {index} of {} has {}",
+                    deltas.len(),
+                    delta.instrument_id,
+                ),
+            )?;
+        }
         let last = deltas.last().expect("deltas not empty");
         let flags = last.flags;
         let sequence = last.sequence;
@@ -333,7 +343,10 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err().to_string(),
-            "`deltas` instrument IDs must match `instrument_id`"
+            format!(
+                "`deltas` instrument IDs must match `instrument_id` EURUSD.SIM, but delta at \
+                 index {mismatch_index} of 2 has GBPUSD.SIM"
+            )
         );
     }
 
