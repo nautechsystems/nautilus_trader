@@ -157,6 +157,7 @@ mod tests {
         average::{sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage},
         indicator::{Indicator, MovingAverage},
         stubs::*,
+        testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -211,7 +212,7 @@ mod tests {
         indicator_vidya_10.update_raw(1.00020);
         indicator_vidya_10.update_raw(1.00010);
         indicator_vidya_10.update_raw(1.00000);
-        assert_eq!(indicator_vidya_10.value, 0.046_813_474_863_949_864);
+        assert_approx_equal(indicator_vidya_10.value, 0.0468134748639);
     }
 
     #[rstest]

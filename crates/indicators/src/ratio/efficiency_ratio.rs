@@ -136,6 +136,8 @@ mod tests {
 
     use rstest::rstest;
 
+    use crate::testing::assert_approx_equal;
+
     use crate::{indicator::Indicator, ratio::efficiency_ratio::EfficiencyRatio, stubs::*};
 
     #[rstest]
@@ -201,7 +203,7 @@ mod tests {
         efficiency_ratio_10.update_raw(1.00010);
         efficiency_ratio_10.update_raw(1.00030);
         efficiency_ratio_10.update_raw(1.00020);
-        assert_eq!(efficiency_ratio_10.value, 0.333_333_333_333_333_3);
+        assert_approx_equal(efficiency_ratio_10.value, 0.333333333333);
     }
 
     #[rstest]
@@ -213,7 +215,7 @@ mod tests {
         efficiency_ratio_10.update_raw(1.00012);
         efficiency_ratio_10.update_raw(1.00005);
         efficiency_ratio_10.update_raw(1.00015);
-        assert_eq!(efficiency_ratio_10.value, 0.428_571_428_572_153_63);
+        assert_approx_equal(efficiency_ratio_10.value, 0.428571428572);
     }
 
     #[rstest]

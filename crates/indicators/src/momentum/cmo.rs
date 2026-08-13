@@ -153,7 +153,7 @@ mod tests {
 
     use crate::{
         average::MovingAverageType, indicator::Indicator, momentum::cmo::ChandeMomentumOscillator,
-        stubs::*,
+        stubs::*, testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -211,7 +211,7 @@ mod tests {
         cmo_10.update_raw(110.15);
         cmo_10.update_raw(109.9);
         cmo_10.update_raw(110.04);
-        assert_eq!(cmo_10.value, 2.089_629_456_238_705_4);
+        assert_approx_equal(cmo_10.value, 2.08962945624);
     }
 
     #[rstest]

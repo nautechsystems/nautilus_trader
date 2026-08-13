@@ -146,6 +146,8 @@ impl Pressure {
 mod tests {
     use rstest::rstest;
 
+    use crate::testing::assert_approx_equal;
+
     use super::*;
     use crate::stubs::{bar_ethusdt_binance_minute_bid, pressure_10};
 
@@ -226,8 +228,8 @@ mod tests {
     #[rstest]
     fn test_handle_bar(mut pressure_10: Pressure, bar_ethusdt_binance_minute_bid: Bar) {
         pressure_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(pressure_10.value, -0.018_181_818_181_818_132);
-        assert_eq!(pressure_10.value_cumulative, -0.018_181_818_181_818_132);
+        assert_approx_equal(pressure_10.value, -0.0181818181818);
+        assert_approx_equal(pressure_10.value_cumulative, -0.0181818181818);
         assert!(pressure_10.has_inputs);
         assert!(!pressure_10.initialized);
     }

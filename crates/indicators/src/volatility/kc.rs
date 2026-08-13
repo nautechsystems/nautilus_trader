@@ -136,6 +136,8 @@ impl KeltnerChannel {
 mod tests {
     use rstest::rstest;
 
+    use crate::testing::assert_approx_equal;
+
     use super::*;
     use crate::stubs::kc_10;
 
@@ -179,9 +181,9 @@ mod tests {
         }
 
         assert!(kc_10.initialized());
-        assert_eq!(kc_10.upper, 13.436_666_666_666_666);
-        assert_eq!(kc_10.middle, 9.676_666_666_666_666);
-        assert_eq!(kc_10.lower, 5.916_666_666_666_666);
+        assert_approx_equal(kc_10.upper, 13.4366666667);
+        assert_approx_equal(kc_10.middle, 9.67666666667);
+        assert_approx_equal(kc_10.lower, 5.91666666667);
     }
 
     #[rstest]

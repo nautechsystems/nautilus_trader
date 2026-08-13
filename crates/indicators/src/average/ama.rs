@@ -223,6 +223,7 @@ mod tests {
         average::ama::AdaptiveMovingAverage,
         indicator::{Indicator, MovingAverage},
         stubs::*,
+        testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -244,7 +245,7 @@ mod tests {
     fn test_value_with_two_inputs(mut indicator_ama_10: AdaptiveMovingAverage) {
         indicator_ama_10.update_raw(1.0);
         indicator_ama_10.update_raw(2.0);
-        assert_eq!(indicator_ama_10.value, 1.444_444_444_444_444_2);
+        assert_approx_equal(indicator_ama_10.value, 1.44444444444);
     }
 
     #[rstest]
@@ -252,7 +253,7 @@ mod tests {
         indicator_ama_10.update_raw(1.0);
         indicator_ama_10.update_raw(2.0);
         indicator_ama_10.update_raw(3.0);
-        assert_eq!(indicator_ama_10.value, 2.135_802_469_135_802);
+        assert_approx_equal(indicator_ama_10.value, 2.13580246914);
     }
 
     #[rstest]

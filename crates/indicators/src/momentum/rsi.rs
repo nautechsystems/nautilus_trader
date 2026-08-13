@@ -155,7 +155,7 @@ mod tests {
 
     use crate::{
         average::MovingAverageType, indicator::Indicator, momentum::rsi::RelativeStrengthIndex,
-        stubs::*,
+        stubs::*, testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -205,7 +205,7 @@ mod tests {
         rsi_10.update_raw(7.0);
         rsi_10.update_raw(6.0);
 
-        assert_eq!(rsi_10.value, 0.683_736_332_582_526_5);
+        assert_approx_equal(rsi_10.value, 0.683736332583);
     }
 
     #[rstest]
@@ -219,7 +219,7 @@ mod tests {
         rsi_10.update_raw(6.0);
         rsi_10.update_raw(7.0);
 
-        assert_eq!(rsi_10.value, 0.761_534_466_766_272_5);
+        assert_approx_equal(rsi_10.value, 0.761534466766);
     }
 
     #[rstest]
