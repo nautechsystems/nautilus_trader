@@ -19,6 +19,7 @@ from decimal import Decimal
 
 import pytest
 
+import nautilus_trader.model
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.common import ComponentState
@@ -91,6 +92,8 @@ from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import StrategyId
 from nautilus_trader.model import StrikeRange
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import SyntheticInstrument
 from nautilus_trader.model import TimeInForce
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
@@ -122,6 +125,9 @@ HISTORICAL_REQUEST_DATETIME_CASES = [
     pytest.param("pandas-timestamp-utc", id="pandas-timestamp-utc"),
     pytest.param("pandas-timestamp-utc-nanos", id="pandas-timestamp-utc-nanos"),
 ]
+DATA_OPERATION_REGISTRATION_ERROR = (
+    "Strategy must be registered before publishing, managing synthetics, or requesting data"
+)
 
 
 class HistoricalRequestProbeStrategy(Strategy):
@@ -152,6 +158,11 @@ class HistoricalRequestProbeStrategy(Strategy):
                 venue,
                 end=request_time,
                 params={"kind": "instruments"},
+            ),
+            "book_snapshot": self.request_book_snapshot(
+                instrument_id,
+                depth=5,
+                params={"kind": "snapshot"},
             ),
             "book_deltas": self.request_book_deltas(
                 instrument_id,
@@ -1407,6 +1418,52 @@ def _subscription_registration_cases():
     ]
 
 
+def _data_operation_registration_cases():
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+    bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
+    custom_data = _model_custom_data()
+    synthetic = _synthetic("(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2")
+
+    return [
+        ("publish_data", (custom_data.data_type, custom_data)),
+        ("publish_signal", ("risk", "value")),
+        ("add_synthetic", (synthetic,)),
+        ("update_synthetic", (synthetic,)),
+        ("request_data", (DataType("TestData"), ClientId("SIM"))),
+        ("request_instrument", (instrument_id,)),
+        ("request_instruments", (Venue("SIM"),)),
+        ("request_book_snapshot", (instrument_id,)),
+        ("request_book_deltas", (instrument_id,)),
+        ("request_book_depth", (instrument_id,)),
+        ("request_quotes", (instrument_id,)),
+        ("request_trades", (instrument_id,)),
+        ("request_funding_rates", (instrument_id,)),
+        ("request_bars", (bar_type,)),
+    ]
+
+
+def _model_custom_data():
+    class Payload:
+        ts_event = 3
+        ts_init = 4
+
+    return nautilus_trader.model.CustomData(DataType("Payload"), Payload())
+
+
+def _synthetic(formula):
+    return SyntheticInstrument(
+        symbol=Symbol("BTC-ETH"),
+        price_precision=8,
+        components=[
+            TestInstrumentProvider.btcusdt_binance().id,
+            TestInstrumentProvider.ethusdt_binance().id,
+        ],
+        formula=formula,
+        ts_event=0,
+        ts_init=1,
+    )
+
+
 @pytest.mark.parametrize(("method_name", "args"), _subscription_registration_cases())
 def test_strategy_subscriptions_require_registration(method_name, args):
     strategy = Strategy()
@@ -1415,6 +1472,52 @@ def test_strategy_subscriptions_require_registration(method_name, args):
         getattr(strategy, method_name)(*args)
 
     assert str(exc_info.value) == "Strategy must be registered before managing subscriptions"
+
+
+@pytest.mark.parametrize(("method_name", "args"), _data_operation_registration_cases())
+def test_strategy_data_operations_require_registration(method_name, args):
+    strategy = Strategy()
+
+    with pytest.raises(RuntimeError) as exc_info:
+        getattr(strategy, method_name)(*args)
+
+    assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
+
+
+def test_strategy_registration_precedes_publish_signal_conversion():
+    class InvalidSignalValue:
+        def __str__(self):
+            raise ValueError("invalid signal value")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        Strategy().publish_signal("risk", InvalidSignalValue())
+
+    assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
+
+
+def test_strategy_registration_precedes_request_params_conversion():
+    with pytest.raises(RuntimeError) as exc_info:
+        Strategy().request_instruments(params={"invalid": object()})
+
+    assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
+
+
+def test_strategy_data_operations_succeed_when_registered():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    strategy = Strategy()
+    custom_data = _model_custom_data()
+    synthetic = _synthetic("(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2")
+    updated = _synthetic("BTCUSDT.BINANCE + ETHUSDT.BINANCE")
+    engine.add_strategy(strategy)
+
+    try:
+        assert strategy.publish_data(custom_data.data_type, custom_data) is None
+        assert strategy.publish_signal("risk", "value") is None
+        assert strategy.add_synthetic(synthetic) is None
+        assert strategy.update_synthetic(updated) is None
+        assert strategy.cache.synthetic(updated.id) == updated
+    finally:
+        engine.dispose()
 
 
 def test_strategy_subscription_validation_precedes_registration():
@@ -1474,6 +1577,7 @@ def test_strategy_historical_requests_accept_datetimes_when_registered(request_t
             "data",
             "instrument",
             "instruments",
+            "book_snapshot",
             "book_deltas",
             "book_depth",
             "quotes",

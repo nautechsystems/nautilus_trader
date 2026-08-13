@@ -15,10 +15,13 @@
 
 import datetime as dt
 import inspect
+import subprocess
+import sys
 from decimal import Decimal
 
 import pytest
 
+import nautilus_trader.model
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.common import ComponentState
@@ -72,6 +75,8 @@ from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import StrikeRange
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import SyntheticInstrument
 from nautilus_trader.model import Token
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
@@ -263,8 +268,18 @@ INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
 )
 BAR_REQUEST_PARAMETERS = ("bar_type", "start", "end", "limit", "client_id", "params")
 OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS = ("series_id", "client_id")
+PUBLISH_DATA_PARAMETERS = ("data_type", "data")
+PUBLISH_SIGNAL_PARAMETERS = ("name", "value", "ts_event")
+SYNTHETIC_PARAMETERS = ("synthetic",)
+DATA_OPERATION_REGISTRATION_ERROR = (
+    "DataActor must be registered before publishing, managing synthetics, or requesting data"
+)
 
 REGISTRATION_REQUIRED_SIGNATURES = [
+    ("publish_data", PUBLISH_DATA_PARAMETERS),
+    ("publish_signal", PUBLISH_SIGNAL_PARAMETERS),
+    ("add_synthetic", SYNTHETIC_PARAMETERS),
+    ("update_synthetic", SYNTHETIC_PARAMETERS),
     ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("subscribe_signal", SIGNAL_SUBSCRIPTION_PARAMETERS),
     ("subscribe_queue_state", STATE_SUBSCRIPTION_PARAMETERS),
@@ -490,6 +505,11 @@ class HistoricalRequestProbeActor(TestActor):
                 venue,
                 end=request_time,
                 params={"kind": "instruments"},
+            ),
+            "book_snapshot": self.request_book_snapshot(
+                instrument_id,
+                depth=5,
+                params={"kind": "snapshot"},
             ),
             "book_deltas": self.request_book_deltas(
                 instrument_id,
@@ -718,12 +738,120 @@ def _subscription_registration_cases():
     ]
 
 
+def _data_operation_registration_cases():
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+    bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
+    custom_data = _model_custom_data()
+    synthetic = _synthetic("(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2")
+
+    return [
+        ("publish_data", (custom_data.data_type, custom_data)),
+        ("publish_signal", ("risk", "value")),
+        ("add_synthetic", (synthetic,)),
+        ("update_synthetic", (synthetic,)),
+        ("request_data", (DataType("TestData"), ClientId("SIM"))),
+        ("request_instrument", (instrument_id,)),
+        ("request_instruments", (Venue("SIM"),)),
+        ("request_book_snapshot", (instrument_id,)),
+        ("request_book_deltas", (instrument_id,)),
+        ("request_book_depth", (instrument_id,)),
+        ("request_quotes", (instrument_id,)),
+        ("request_trades", (instrument_id,)),
+        ("request_funding_rates", (instrument_id,)),
+        ("request_bars", (bar_type,)),
+    ]
+
+
+def _model_custom_data():
+    class Payload:
+        ts_event = 3
+        ts_init = 4
+
+    return nautilus_trader.model.CustomData(DataType("Payload"), Payload())
+
+
+def _synthetic(formula):
+    return SyntheticInstrument(
+        symbol=Symbol("BTC-ETH"),
+        price_precision=8,
+        components=[
+            TestInstrumentProvider.btcusdt_binance().id,
+            TestInstrumentProvider.ethusdt_binance().id,
+        ],
+        formula=formula,
+        ts_event=0,
+        ts_init=1,
+    )
+
+
 @pytest.mark.parametrize(("method_name", "args"), _subscription_registration_cases())
 def test_data_actor_subscriptions_require_registration(actor, method_name, args):
     with pytest.raises(RuntimeError) as exc_info:
         getattr(actor, method_name)(*args)
 
     assert str(exc_info.value) == "DataActor must be registered before managing subscriptions"
+
+
+@pytest.mark.parametrize(("method_name", "args"), _data_operation_registration_cases())
+def test_data_actor_data_operations_require_registration(actor, method_name, args):
+    with pytest.raises(RuntimeError) as exc_info:
+        getattr(actor, method_name)(*args)
+
+    assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
+
+
+def test_data_actor_registration_precedes_publish_signal_conversion(actor):
+    class InvalidSignalValue:
+        def __str__(self):
+            raise ValueError("invalid signal value")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        actor.publish_signal("risk", InvalidSignalValue())
+
+    assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
+
+
+def test_data_actor_registration_precedes_request_params_conversion(actor):
+    with pytest.raises(RuntimeError) as exc_info:
+        actor.request_instruments(params={"invalid": object()})
+
+    assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
+
+
+def test_data_actor_unregistered_publish_signal_does_not_abort_subprocess():
+    code = (
+        "from nautilus_trader.common import DataActor\n"
+        "try:\n"
+        "    DataActor().publish_signal('risk', 'value')\n"
+        "except RuntimeError as e:\n"
+        "    print(e)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == DATA_OPERATION_REGISTRATION_ERROR
+
+
+def test_data_actor_data_operations_succeed_when_registered(actor):
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    custom_data = _model_custom_data()
+    synthetic = _synthetic("(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2")
+    updated = _synthetic("BTCUSDT.BINANCE + ETHUSDT.BINANCE")
+    engine.add_actor(actor)
+
+    try:
+        assert actor.publish_data(custom_data.data_type, custom_data) is None
+        assert actor.publish_signal("risk", "value") is None
+        assert actor.add_synthetic(synthetic) is None
+        assert actor.update_synthetic(updated) is None
+        assert actor.cache.synthetic(updated.id) == updated
+    finally:
+        engine.dispose()
 
 
 def test_data_actor_subscription_validation_precedes_registration(actor):
@@ -804,6 +932,7 @@ def test_data_actor_historical_requests_accept_datetimes_when_registered(request
             "data",
             "instrument",
             "instruments",
+            "book_snapshot",
             "book_deltas",
             "book_depth",
             "quotes",

@@ -870,9 +870,8 @@ impl PyDataActor {
 
     /// Stores the original Python config object passed at construction.
     ///
-    /// Retained so the constructed instance exposes `.config` (matching v1) and so
-    /// instance-based registration can source the actor ID and logging flags from the
-    /// same single config object.
+    /// Retained so the constructed instance exposes `.config` and instance-based registration can
+    /// source the actor ID and logging flags from the same single config object.
     pub fn set_config(&mut self, config: Option<Py<PyAny>>) {
         self.inner_mut().config = config;
     }
@@ -1402,8 +1401,10 @@ impl PyDataActor {
     }
 
     #[pyo3(name = "publish_data")]
-    fn py_publish_data(&self, data_type: &DataType, data: &CustomData) {
+    fn py_publish_data(&self, data_type: &DataType, data: &CustomData) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         self.inner().publish_data(data_type, data);
+        Ok(())
     }
 
     #[pyo3(name = "publish_signal")]
@@ -1419,7 +1420,7 @@ impl PyDataActor {
         value: Py<PyAny>,
         ts_event: u64,
     ) -> PyResult<()> {
-        // Accept any int / float / str / bool - match v1 behaviour by coercing with `str(value)`.
+        self.ensure_registered_for_data()?;
         let value_str: String = value.bind(py).str()?.extract()?;
         self.inner()
             .publish_signal(name, value_str, UnixNanos::from(ts_event));
@@ -1428,6 +1429,7 @@ impl PyDataActor {
 
     #[pyo3(name = "add_synthetic")]
     fn py_add_synthetic(&self, synthetic: SyntheticInstrument) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         self.inner()
             .add_synthetic(synthetic)
             .map_err(to_pyvalue_err)
@@ -1435,6 +1437,7 @@ impl PyDataActor {
 
     #[pyo3(name = "update_synthetic")]
     fn py_update_synthetic(&self, synthetic: SyntheticInstrument) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         self.inner()
             .update_synthetic(synthetic)
             .map_err(to_pyvalue_err)
@@ -2197,6 +2200,7 @@ impl PyDataActor {
         limit: Option<usize>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_data(
@@ -2223,6 +2227,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let request_id = DataActor::request_instrument(
             self.inner_mut(),
@@ -2247,6 +2252,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let request_id =
             DataActor::request_instruments(self.inner_mut(), venue, start, end, client_id, params)
@@ -2264,6 +2270,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let depth = depth.and_then(NonZeroUsize::new);
 
@@ -2291,6 +2298,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_book_deltas(
@@ -2320,6 +2328,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let depth = depth.and_then(NonZeroUsize::new);
@@ -2350,6 +2359,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_quotes(
@@ -2378,6 +2388,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_trades(
@@ -2406,6 +2417,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_funding_rates(
@@ -2434,6 +2446,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_bars(
@@ -2736,6 +2749,16 @@ impl PyDataActor {
 }
 
 impl PyDataActor {
+    fn ensure_registered_for_data(&self) -> PyResult<()> {
+        if self.inner().core.is_registered() {
+            Ok(())
+        } else {
+            Err(to_pyruntime_err(
+                "DataActor must be registered before publishing, managing synthetics, or requesting data",
+            ))
+        }
+    }
+
     fn ensure_registered(&self) -> PyResult<()> {
         if self.inner().core.is_registered() {
             Ok(())
@@ -3034,7 +3057,7 @@ mod tests {
         });
         msgbus::subscribe_any(topic.into(), handler, None);
 
-        actor.py_publish_data(&data.data_type, &data);
+        actor.py_publish_data(&data.data_type, &data).unwrap();
 
         let received = received.borrow();
         assert_eq!(received.len(), 1);
@@ -3205,8 +3228,8 @@ mod tests {
                 .py_subscribe_data(py, data.data_type.clone(), None, None)
                 .unwrap();
 
-            rust_actor.py_publish_data(&data.data_type, &data);
-            rust_actor.py_publish_data(&data.data_type, &data);
+            rust_actor.py_publish_data(&data.data_type, &data).unwrap();
+            rust_actor.py_publish_data(&data.data_type, &data).unwrap();
 
             assert!(python_method_was_called(&py_actor, py, "on_data"));
             assert_eq!(python_method_call_count(&py_actor, py, "on_data"), 2);

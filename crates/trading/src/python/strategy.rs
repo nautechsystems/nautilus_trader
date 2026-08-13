@@ -1335,9 +1335,8 @@ impl PyStrategy {
 
     /// Stores the original Python config object passed at construction.
     ///
-    /// Retained so the constructed instance exposes `.config` (matching v1) and so
-    /// instance-based registration can source strategy ID, order ID tag, and logging
-    /// flags from the same single config object.
+    /// Retained so the constructed instance exposes `.config` and instance-based registration can
+    /// source strategy ID, order ID tag, and logging flags from the same single config object.
     pub fn set_config(&mut self, config: Option<Py<PyAny>>) {
         self.inner_mut().config = config;
     }
@@ -1639,8 +1638,10 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "publish_data")]
-    fn py_publish_data(&self, data_type: &DataType, data: &CustomData) {
+    fn py_publish_data(&self, data_type: &DataType, data: &CustomData) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         DataActor::publish_data(self.inner(), data_type, data);
+        Ok(())
     }
 
     #[pyo3(name = "publish_signal")]
@@ -1656,6 +1657,7 @@ impl PyStrategy {
         value: Py<PyAny>,
         ts_event: u64,
     ) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         let value_str: String = value.bind(py).str()?.extract()?;
         DataActor::publish_signal(self.inner(), name, value_str, UnixNanos::from(ts_event));
         Ok(())
@@ -1663,11 +1665,13 @@ impl PyStrategy {
 
     #[pyo3(name = "add_synthetic")]
     fn py_add_synthetic(&self, synthetic: SyntheticInstrument) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         DataActor::add_synthetic(self.inner(), synthetic).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "update_synthetic")]
     fn py_update_synthetic(&self, synthetic: SyntheticInstrument) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         DataActor::update_synthetic(self.inner(), synthetic).map_err(to_pyvalue_err)
     }
 
@@ -3034,6 +3038,7 @@ impl PyStrategy {
         limit: Option<usize>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3064,6 +3069,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3092,6 +3098,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3119,6 +3126,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3149,6 +3157,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3182,6 +3191,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3215,6 +3225,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3246,6 +3257,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3277,6 +3289,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3308,6 +3321,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3336,6 +3350,16 @@ impl PyStrategy {
 }
 
 impl PyStrategy {
+    fn ensure_registered_for_data(&self) -> PyResult<()> {
+        if self.inner().core.actor.is_registered() {
+            Ok(())
+        } else {
+            Err(to_pyruntime_err(
+                "Strategy must be registered before publishing, managing synthetics, or requesting data",
+            ))
+        }
+    }
+
     fn ensure_registered(&self) -> PyResult<()> {
         if self.inner().core.actor.is_registered() {
             Ok(())
@@ -4419,7 +4443,9 @@ class IndicatorEventStrategy:
             let signal_pattern: MStr<Pattern> = "data.Signal*".to_string().into();
             msgbus::subscribe_any(signal_pattern, signal_handler, None);
 
-            rust_strategy.py_publish_data(&data.data_type, &data);
+            rust_strategy
+                .py_publish_data(&data.data_type, &data)
+                .unwrap();
 
             let value: Py<PyAny> = 2.0_f64.into_py_any_unwrap(py);
             rust_strategy

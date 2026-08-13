@@ -818,8 +818,10 @@ impl PyExecutionAlgorithm {
     }
 
     #[pyo3(name = "publish_data")]
-    fn py_publish_data(&self, data_type: &DataType, data: &CustomData) {
+    fn py_publish_data(&self, data_type: &DataType, data: &CustomData) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         DataActor::publish_data(self, data_type, data);
+        Ok(())
     }
 
     #[pyo3(name = "publish_signal")]
@@ -835,6 +837,7 @@ impl PyExecutionAlgorithm {
         value: Py<PyAny>,
         ts_event: u64,
     ) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         let value_str: String = value.bind(py).str()?.extract()?;
         DataActor::publish_signal(self, name, value_str, UnixNanos::from(ts_event));
         Ok(())
@@ -1262,6 +1265,16 @@ impl PyExecutionAlgorithm {
         }
 
         Ok(has_id)
+    }
+
+    fn ensure_registered_for_data(&self) -> PyResult<()> {
+        if self.inner().core.actor.is_registered() {
+            Ok(())
+        } else {
+            Err(to_pyruntime_err(
+                "ExecutionAlgorithm must be registered before publishing data",
+            ))
+        }
     }
 
     fn ensure_registered(&self) -> PyResult<()> {
