@@ -538,6 +538,19 @@ mod tests {
                 let right_program = parse(&right_tokens).unwrap();
                 drop(right_program);
 
+                // A call nests both the syntax depth and the argument's own depth, so
+                // `MAX_EXPRESSION_DEPTH - 1` nested calls sit exactly at the limit.
+                let calls = format!(
+                    "{}1{}",
+                    "abs(".repeat(MAX_EXPRESSION_DEPTH - 1),
+                    ")".repeat(MAX_EXPRESSION_DEPTH - 1)
+                );
+                let call_tokens = tokenize(&calls, &bindings).unwrap();
+                let call_program = parse(&call_tokens).unwrap();
+                let call_compiled = eval::compile(&call_program, &bindings).unwrap();
+                drop(call_compiled);
+                drop(call_program);
+
                 let excessive_spine = format!("{spine} + 1");
                 let excessive_tokens = tokenize(&excessive_spine, &bindings).unwrap();
                 assert_eq!(
@@ -564,6 +577,20 @@ mod tests {
                     ")".repeat(MAX_EXPRESSION_DEPTH)
                 );
                 let excessive_tokens = tokenize(&excessive_parens, &bindings).unwrap();
+                assert_eq!(
+                    parse(&excessive_tokens).unwrap_err(),
+                    ExpressionError::ExpressionDepthExceeded {
+                        depth: MAX_EXPRESSION_DEPTH + 1,
+                        max: MAX_EXPRESSION_DEPTH,
+                    }
+                );
+
+                let excessive_calls = format!(
+                    "{}1{}",
+                    "abs(".repeat(MAX_EXPRESSION_DEPTH),
+                    ")".repeat(MAX_EXPRESSION_DEPTH)
+                );
+                let excessive_tokens = tokenize(&excessive_calls, &bindings).unwrap();
                 assert_eq!(
                     parse(&excessive_tokens).unwrap_err(),
                     ExpressionError::ExpressionDepthExceeded {
