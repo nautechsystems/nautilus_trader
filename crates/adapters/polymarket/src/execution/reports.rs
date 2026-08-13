@@ -667,7 +667,7 @@ pub(super) async fn fetch_and_emit_account_state(
         "Account state updated: balance={} pUSD",
         account_balance.total
     );
-    emitter.emit_account_state(vec![account_balance], vec![], true, ts_event);
+    emitter.emit_account_state(vec![account_balance], vec![], true, ts_event, None);
     Ok(())
 }
 

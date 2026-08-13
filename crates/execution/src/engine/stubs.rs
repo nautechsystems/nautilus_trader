@@ -28,7 +28,7 @@ use nautilus_common::{
         QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
@@ -202,6 +202,7 @@ impl ExecutionClient for StubExecutionClient {
         _margins: Vec<MarginBalance>,
         _reported: bool,
         _ts_event: UnixNanos,
+        _info: Option<Params>,
     ) -> anyhow::Result<()> {
         Ok(()) // Stub implementation always succeeds
     }

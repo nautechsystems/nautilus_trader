@@ -29,7 +29,7 @@ use nautilus_common::{
     },
     msgbus::{self, MessagingSwitchboard},
 };
-use nautilus_core::{SharedCell, UnixNanos, WeakCell};
+use nautilus_core::{Params, SharedCell, UnixNanos, WeakCell};
 use nautilus_execution::client::core::ExecutionClientCore;
 use nautilus_model::{
     accounts::AccountAny,
@@ -165,11 +165,12 @@ impl ExecutionClient for BacktestExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         let ts_init = self.clock.borrow().timestamp_ns();
         let state = self
             .factory
-            .generate_account_state(balances, margins, reported, ts_event, ts_init);
+            .generate_account_state(balances, margins, reported, ts_event, ts_init, info);
         let endpoint = MessagingSwitchboard::portfolio_update_account();
         msgbus::send_account_state(endpoint, &state);
         Ok(())

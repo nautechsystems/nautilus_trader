@@ -33,7 +33,7 @@ use nautilus_common::{
     factories::OrderEventFactory,
     messages::{ExecutionEvent, ExecutionReport},
 };
-use nautilus_core::{UUID4, UnixNanos, time::AtomicTime};
+use nautilus_core::{Params, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_model::{
     enums::{AccountType, LiquiditySide},
     events::{
@@ -121,6 +121,7 @@ impl ExecutionEventEmitter {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) {
         let state = self.factory.generate_account_state(
             balances,
@@ -128,6 +129,7 @@ impl ExecutionEventEmitter {
             reported,
             ts_event,
             self.ts_init(),
+            info,
         );
         self.send_account_state(state);
     }

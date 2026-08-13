@@ -1115,25 +1115,31 @@ fn test_rust_write_order_book_depths() {
 #[rstest]
 fn test_rust_write_and_read_account_state() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
-    let account_states = vec![AccountState::new(
-        AccountId::from("SIM-001"),
-        AccountType::Margin,
-        vec![AccountBalance::new(
-            Money::from("1000.00 USD"),
-            Money::from("200.00 USD"),
-            Money::from("800.00 USD"),
-        )],
-        vec![MarginBalance::new(
-            Money::from("150.00 USD"),
-            Money::from("75.00 USD"),
-            Some(ethusdt_binance_id()),
-        )],
-        true,
-        UUID4::new(),
-        UnixNanos::from(1),
-        UnixNanos::from(2),
-        Some(Currency::USD()),
-    )];
+    let mut info = Params::new();
+    info.insert("total_wallet_balance".to_string(), json!("1000.00000001"));
+    info.insert("can_trade".to_string(), json!(true));
+    let account_states = vec![
+        AccountState::new(
+            AccountId::from("SIM-001"),
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::from("1000.00 USD"),
+                Money::from("200.00 USD"),
+                Money::from("800.00 USD"),
+            )],
+            vec![MarginBalance::new(
+                Money::from("150.00 USD"),
+                Money::from("75.00 USD"),
+                Some(ethusdt_binance_id()),
+            )],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            Some(Currency::USD()),
+        )
+        .with_info(Some(info)),
+    ];
     catalog
         .write_to_parquet(&account_states, None, None, None)
         .unwrap();

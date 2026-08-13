@@ -523,7 +523,7 @@ impl HyperliquidExecutionClient {
         // await_account_registered on unfunded wallets.
         let ts_event = self.clock.get_time_ns();
         self.emitter
-            .emit_account_state(balances, margins, true, ts_event);
+            .emit_account_state(balances, margins, true, ts_event, None);
 
         log::debug!("Account state updated successfully");
         Ok(())
@@ -716,9 +716,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
+            .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
     }
 
@@ -1557,7 +1558,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 parse_combined_account_balances_and_margins(&perp_state, &spot_state)
                     .context("failed to parse combined account balances and margins")?;
             let ts_event = clock.get_time_ns();
-            emitter.emit_account_state(balances, margins, true, ts_event);
+            emitter.emit_account_state(balances, margins, true, ts_event, None);
 
             Ok(())
         });

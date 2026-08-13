@@ -1049,9 +1049,10 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
+            .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
     }
 
@@ -1341,6 +1342,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                 account_state.margins.clone(),
                 account_state.is_reported,
                 account_state.ts_event,
+                account_state.info,
             );
             Ok(())
         });

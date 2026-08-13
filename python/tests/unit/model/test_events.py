@@ -155,6 +155,54 @@ def test_account_state_to_dict_and_from_dict_roundtrip(account_id, uuid):
     assert restored == state
 
 
+def test_account_state_info_roundtrip(account_id, uuid):
+    balance = AccountBalance(
+        total=Money.from_str("1_000_000 USD"),
+        locked=Money.from_str("0 USD"),
+        free=Money.from_str("1_000_000 USD"),
+    )
+    info = {"total_wallet_balance": 1525.0, "available_balance": 1500.0}
+
+    state = AccountState(
+        account_id=account_id,
+        account_type=AccountType.MARGIN,
+        balances=[balance],
+        margins=[],
+        is_reported=True,
+        event_id=uuid,
+        ts_event=0,
+        ts_init=0,
+        base_currency=Currency.from_str("USD"),
+        info=info,
+    )
+
+    assert state.info == info
+
+    restored = AccountState.from_dict(state.to_dict())
+    assert restored.info == info
+
+
+def test_account_state_info_defaults_empty(account_id, uuid):
+    balance = AccountBalance(
+        total=Money.from_str("1_000_000 USD"),
+        locked=Money.from_str("0 USD"),
+        free=Money.from_str("1_000_000 USD"),
+    )
+
+    state = AccountState(
+        account_id=account_id,
+        account_type=AccountType.CASH,
+        balances=[balance],
+        margins=[],
+        is_reported=True,
+        event_id=uuid,
+        ts_event=0,
+        ts_init=0,
+    )
+
+    assert state.info == {}
+
+
 def test_portfolio_snapshot_valuation_metadata(account_id, audusd_id, uuid):
     usd = Currency.from_str("USD")
     snapshot = PortfolioSnapshot(

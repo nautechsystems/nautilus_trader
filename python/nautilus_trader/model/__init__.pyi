@@ -77,6 +77,8 @@ class AccountState:
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
+    @property
+    def info(self) -> dict: ...
     def __new__(
         cls,
         account_id: AccountId,
@@ -88,6 +90,7 @@ class AccountState:
         ts_event: int,
         ts_init: int,
         base_currency: Currency | None = None,
+        info: dict | None = None,
     ) -> AccountState: ...
     @staticmethod
     def from_dict(values: dict) -> AccountState: ...

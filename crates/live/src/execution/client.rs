@@ -33,7 +33,7 @@ use nautilus_common::{
         ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{LiquiditySide, OmsType},
@@ -200,10 +200,11 @@ impl ExecutionClient for LiveExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.client
             .borrow()
-            .generate_account_state(balances, margins, reported, ts_event)
+            .generate_account_state(balances, margins, reported, ts_event, info)
     }
 
     fn start(&mut self) -> anyhow::Result<()> {

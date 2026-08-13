@@ -47,7 +47,7 @@ use nautilus_common::{
         switchboard,
     },
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_execution::{
     engine::ExecutionEngine,
     reconciliation::{
@@ -9034,6 +9034,7 @@ impl ExecutionClient for MockExecutionClient {
         _margins: Vec<MarginBalance>,
         _reported: bool,
         _ts_event: UnixNanos,
+        _info: Option<Params>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -11120,6 +11121,7 @@ impl ExecutionClient for MockPositionExecutionClient {
         _margins: Vec<MarginBalance>,
         _reported: bool,
         _ts_event: UnixNanos,
+        _info: Option<Params>,
     ) -> anyhow::Result<()> {
         Ok(())
     }

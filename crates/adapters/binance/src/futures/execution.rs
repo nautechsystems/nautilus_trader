@@ -421,6 +421,32 @@ impl BinanceFuturesExecutionClient {
             margins.push(MarginBalance::new(initial, maintenance, None));
         }
 
+        let mut info = Params::new();
+        let mut push_decimal = |key: &str, val: Option<Decimal>| {
+            if let Some(decimal) = val {
+                info.insert(
+                    key.to_string(),
+                    serde_json::Value::from(decimal.to_string()),
+                );
+            }
+        };
+        push_decimal("total_wallet_balance", account_info.total_wallet_balance);
+        push_decimal("total_margin_balance", account_info.total_margin_balance);
+        push_decimal("total_initial_margin", account_info.total_initial_margin);
+        push_decimal("total_maint_margin", account_info.total_maint_margin);
+        push_decimal(
+            "total_unrealized_profit",
+            account_info.total_unrealized_profit,
+        );
+        push_decimal(
+            "total_cross_wallet_balance",
+            account_info.total_cross_wallet_balance,
+        );
+        push_decimal("total_cross_unpnl", account_info.total_cross_un_pnl);
+        push_decimal("available_balance", account_info.available_balance);
+        push_decimal("max_withdraw_amount", account_info.max_withdraw_amount);
+        let info = if info.is_empty() { None } else { Some(info) };
+
         AccountState::new(
             account_id,
             account_type,
@@ -432,6 +458,7 @@ impl BinanceFuturesExecutionClient {
             ts_now,
             None, // base currency
         )
+        .with_info(info)
     }
 
     async fn refresh_account_state(&self) -> anyhow::Result<AccountState> {
@@ -472,6 +499,7 @@ impl BinanceFuturesExecutionClient {
                 account_state.margins.clone(),
                 account_state.is_reported,
                 ts_now,
+                account_state.info,
             );
             Ok(())
         });
@@ -2402,9 +2430,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
+            .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
     }
 
@@ -3124,12 +3153,75 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::common::testing::load_fixture_string;
 
     fn http_error(code: i64) -> anyhow::Error {
         anyhow::Error::new(BinanceFuturesHttpError::BinanceError {
             code,
             message: format!("test error {code}"),
         })
+    }
+
+    #[rstest]
+    fn test_create_account_state_preserves_info_decimal_values() {
+        let json = load_fixture_string("futures/http_json/account_info_v2.json");
+        let mut account_info: BinanceFuturesAccountInfo = serde_json::from_str(&json).unwrap();
+        account_info.total_wallet_balance = Some("1.0000000000000001".parse().unwrap());
+        account_info.total_margin_balance = Some("2.0000000000000002".parse().unwrap());
+        account_info.total_initial_margin = Some("3.0000000000000003".parse().unwrap());
+        account_info.total_maint_margin = Some("4.0000000000000004".parse().unwrap());
+        account_info.total_unrealized_profit = Some("5.0000000000000005".parse().unwrap());
+        account_info.total_cross_wallet_balance = Some("6.0000000000000006".parse().unwrap());
+        account_info.total_cross_un_pnl = Some("7.0000000000000007".parse().unwrap());
+        account_info.available_balance = Some("8.0000000000000008".parse().unwrap());
+        account_info.max_withdraw_amount = Some("9.0000000000000009".parse().unwrap());
+
+        let state = BinanceFuturesExecutionClient::create_account_state_from(
+            &account_info,
+            AccountId::from("BINANCE-001"),
+            AccountType::Margin,
+            Currency::USDT(),
+            get_atomic_clock_realtime(),
+        );
+
+        let info = state.info.as_ref().unwrap();
+        assert_eq!(info.len(), 9);
+        assert_eq!(
+            info.get_str("total_wallet_balance"),
+            Some("1.0000000000000001")
+        );
+        assert_eq!(
+            info.get_str("total_margin_balance"),
+            Some("2.0000000000000002")
+        );
+        assert_eq!(
+            info.get_str("total_initial_margin"),
+            Some("3.0000000000000003")
+        );
+        assert_eq!(
+            info.get_str("total_maint_margin"),
+            Some("4.0000000000000004")
+        );
+        assert_eq!(
+            info.get_str("total_unrealized_profit"),
+            Some("5.0000000000000005")
+        );
+        assert_eq!(
+            info.get_str("total_cross_wallet_balance"),
+            Some("6.0000000000000006")
+        );
+        assert_eq!(
+            info.get_str("total_cross_unpnl"),
+            Some("7.0000000000000007")
+        );
+        assert_eq!(
+            info.get_str("available_balance"),
+            Some("8.0000000000000008")
+        );
+        assert_eq!(
+            info.get_str("max_withdraw_amount"),
+            Some("9.0000000000000009")
+        );
     }
 
     #[rstest]

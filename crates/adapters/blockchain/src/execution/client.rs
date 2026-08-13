@@ -30,7 +30,7 @@ use nautilus_common::{
         ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::AccountAny,
@@ -827,6 +827,7 @@ impl ExecutionClient for BlockchainExecutionClient {
         _margins: Vec<MarginBalance>,
         _reported: bool,
         _ts_event: UnixNanos,
+        _info: Option<Params>,
     ) -> anyhow::Result<()> {
         todo!("implement generate_account_state")
     }

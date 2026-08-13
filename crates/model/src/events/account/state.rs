@@ -15,7 +15,7 @@
 
 use std::{collections::HashMap, fmt::Display};
 
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -25,6 +25,11 @@ use crate::{
 };
 
 /// Represents an event which includes information on the state of the account.
+///
+/// The optional `info` bag carries venue-specific account data that does not map
+/// to the typed `balances` and `margins` fields, such as wallet balance,
+/// available balance, or an account summary, so consumers can read the venue
+/// context that accompanied a given snapshot.
 #[repr(C)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
@@ -55,6 +60,9 @@ pub struct AccountState {
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
+    /// Additional implementation-specific account information, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub info: Option<Params>,
 }
 
 impl AccountState {
@@ -82,7 +90,15 @@ impl AccountState {
             event_id,
             ts_event,
             ts_init,
+            info: None,
         }
+    }
+
+    /// Attaches additional implementation-specific account information to this event.
+    #[must_use]
+    pub fn with_info(mut self, info: Option<Params>) -> Self {
+        self.info = info;
+        self
     }
 
     /// Returns `true` if this account state has the same balances and margins as another.
@@ -197,8 +213,10 @@ impl PartialEq for AccountState {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{UUID4, UnixNanos};
+    use indexmap::IndexMap;
+    use nautilus_core::{Params, UUID4, UnixNanos};
     use rstest::rstest;
+    use serde_json::json;
 
     use crate::{
         enums::AccountType,
@@ -437,5 +455,79 @@ mod tests {
         );
 
         assert!(state1.has_same_balances_and_margins(&state2));
+    }
+
+    fn account_state_with_info() -> AccountState {
+        let mut info = IndexMap::new();
+        info.insert("total_wallet_balance".to_string(), json!(1525.0_f64));
+        info.insert("available_balance".to_string(), json!(1500.0_f64));
+        AccountState::new(
+            AccountId::new("SIM-001"),
+            AccountType::Cash,
+            vec![],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(Currency::USD()),
+        )
+        .with_info(Some(Params::from_index_map(info)))
+    }
+
+    #[rstest]
+    fn test_new_defaults_info_to_none() {
+        let state = cash_account_state();
+        assert!(state.info.is_none());
+    }
+
+    #[rstest]
+    fn test_with_info_attaches_params() {
+        let state = account_state_with_info();
+        let info = state.info.expect("info should be set");
+        assert_eq!(info.get_f64("total_wallet_balance"), Some(1525.0));
+        assert_eq!(info.get_f64("available_balance"), Some(1500.0));
+        assert_eq!(info.get_f64("missing"), None);
+    }
+
+    #[rstest]
+    fn test_serde_round_trips_info() {
+        let state = account_state_with_info();
+        let serialized = serde_json::to_string(&state).expect("serialize");
+        let deserialized: AccountState = serde_json::from_str(&serialized).expect("deserialize");
+        let info = deserialized.info.expect("info should round-trip");
+        assert_eq!(info.get_f64("total_wallet_balance"), Some(1525.0));
+        assert_eq!(info.get_f64("available_balance"), Some(1500.0));
+    }
+
+    #[rstest]
+    fn test_serde_back_compatible_without_info() {
+        // Serialized AccountState from before the info field existed must still
+        // deserialize, defaulting info to None. Build the JSON by serializing a
+        // current state and removing the info key so the format is exact.
+        let state = cash_account_state();
+        let mut value = serde_json::to_value(&state)
+            .expect("serialize")
+            .as_object()
+            .cloned()
+            .unwrap();
+        value.remove("info");
+        let deserialized: AccountState =
+            serde_json::from_value(serde_json::Value::Object(value)).expect("deserialize legacy");
+        assert!(deserialized.info.is_none());
+    }
+
+    #[rstest]
+    fn test_info_excluded_from_equality() {
+        // Equality keys on account_id, account_type, and event_id only, so a
+        // differing info bag must not affect equality.
+        let base = account_state_with_info();
+        let mut other_info = IndexMap::new();
+        other_info.insert("different".to_string(), json!(1_u64));
+        let other = AccountState {
+            info: Some(Params::from_index_map(other_info)),
+            ..base.clone()
+        };
+        assert_eq!(base, other);
     }
 }

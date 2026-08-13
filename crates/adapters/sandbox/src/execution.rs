@@ -40,7 +40,7 @@ use nautilus_common::{
     },
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{UnixNanos, WeakCell, datetime::NANOSECONDS_IN_SECOND};
+use nautilus_core::{Params, UnixNanos, WeakCell, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_execution::{
     client::core::ExecutionClientCore,
     matching_engine::OrderMatchingEngine,
@@ -927,11 +927,12 @@ impl ExecutionClient for SandboxExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         let ts_init = self.clock.borrow().timestamp_ns();
         let state = self
             .factory
-            .generate_account_state(balances, margins, reported, ts_event, ts_init);
+            .generate_account_state(balances, margins, reported, ts_event, ts_init, info);
         let endpoint = MessagingSwitchboard::portfolio_update_account();
         msgbus::send_account_state(endpoint, &state);
         self.sync_cached_account_config()?;
@@ -997,7 +998,7 @@ impl ExecutionClient for SandboxExecutionClient {
 
         let balances = self.get_account_balances();
         let ts_event = self.clock.borrow().timestamp_ns();
-        self.generate_account_state(balances, vec![], false, ts_event)?;
+        self.generate_account_state(balances, vec![], false, ts_event, None)?;
 
         self.core.borrow().set_connected();
         log::info!(
@@ -1196,7 +1197,7 @@ impl ExecutionClient for SandboxExecutionClient {
     fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         let balances = self.get_current_account_balances();
         let ts_event = self.clock.borrow().timestamp_ns();
-        self.generate_account_state(balances, vec![], false, ts_event)?;
+        self.generate_account_state(balances, vec![], false, ts_event, None)?;
         Ok(())
     }
 

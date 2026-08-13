@@ -37,7 +37,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    UnixNanos,
+    Params, UnixNanos,
     env::get_or_env_var,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -813,9 +813,10 @@ impl ExecutionClient for BybitExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
+            .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
     }
 

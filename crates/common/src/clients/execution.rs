@@ -17,7 +17,9 @@
 
 use anyhow::Context;
 use async_trait::async_trait;
-use nautilus_core::{UnixNanos, datetime::checked_mins_to_nanos, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    Params, UnixNanos, datetime::checked_mins_to_nanos, time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{LiquiditySide, OmsType},
@@ -92,6 +94,7 @@ pub trait ExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()>;
 
     /// Starts the execution client.
@@ -476,6 +479,7 @@ mod tests {
             _margins: Vec<MarginBalance>,
             _reported: bool,
             _ts_event: UnixNanos,
+            _info: Option<Params>,
         ) -> anyhow::Result<()> {
             Ok(())
         }
@@ -547,6 +551,7 @@ mod tests {
             _margins: Vec<MarginBalance>,
             _reported: bool,
             _ts_event: UnixNanos,
+            _info: Option<Params>,
         ) -> anyhow::Result<()> {
             Ok(())
         }

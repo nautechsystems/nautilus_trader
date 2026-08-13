@@ -38,7 +38,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UUID4, UnixNanos,
+    MUTEX_POISONED, Params, UUID4, UnixNanos,
     datetime::{NANOSECONDS_IN_MILLISECOND, checked_mins_to_nanos},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -257,6 +257,7 @@ impl BinanceSpotExecutionClient {
                 account_state.margins.clone(),
                 account_state.is_reported,
                 ts_now,
+                account_state.info,
             );
             Ok(())
         });
@@ -1024,9 +1025,10 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
+            .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
     }
 

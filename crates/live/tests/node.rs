@@ -50,7 +50,7 @@ use nautilus_common::{
     nautilus_actor,
     testing::{wait_until, wait_until_async},
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::{
     builder::LiveNodeBuilder,
     config::{LiveExecEngineConfig, LiveNodeConfig},
@@ -713,6 +713,7 @@ mod serial_tests {
             _margins: Vec<MarginBalance>,
             _reported: bool,
             _ts_event: UnixNanos,
+            _info: Option<Params>,
         ) -> anyhow::Result<()> {
             Ok(())
         }
@@ -799,6 +800,7 @@ mod serial_tests {
             _margins: Vec<MarginBalance>,
             _reported: bool,
             _ts_event: UnixNanos,
+            _info: Option<Params>,
         ) -> anyhow::Result<()> {
             Ok(())
         }
@@ -1132,6 +1134,7 @@ mod serial_tests {
             _margins: Vec<MarginBalance>,
             _reported: bool,
             _ts_event: UnixNanos,
+            _info: Option<Params>,
         ) -> anyhow::Result<()> {
             Ok(())
         }

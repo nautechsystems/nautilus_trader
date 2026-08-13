@@ -46,7 +46,7 @@ use nautilus_common::{
     msgbus::TypedHandler,
 };
 use nautilus_core::{
-    UnixNanos,
+    Params, UnixNanos,
     collections::AtomicMap,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -314,9 +314,10 @@ impl ExecutionClient for PolymarketExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
+            .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
     }
 

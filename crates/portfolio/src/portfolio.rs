@@ -3697,7 +3697,7 @@ fn on_order_event(
 /// with `calculate_account_state` set needs the owned recompute path.
 enum AccountPeek {
     MarginRecompute,
-    LastEvent(Option<AccountState>),
+    LastEvent(Box<Option<AccountState>>),
     Missing,
 }
 
@@ -3778,7 +3778,7 @@ fn update_position(
                 AccountAny::Margin(margin_account) if margin_account.calculate_account_state => {
                     AccountPeek::MarginRecompute
                 }
-                account => AccountPeek::LastEvent(account.last_event()),
+                account => AccountPeek::LastEvent(Box::new(account.last_event())),
             },
             None => AccountPeek::Missing,
         }
@@ -3787,7 +3787,7 @@ fn update_position(
         AccountPeek::MarginRecompute => {
             recompute_margin_account(cache, clock, inner, account_id, &instrument_id)
         }
-        AccountPeek::LastEvent(last_event) => last_event,
+        AccountPeek::LastEvent(last_event) => *last_event,
         AccountPeek::Missing => {
             log::error!(
                 "Cannot update position: no account registered for {}",

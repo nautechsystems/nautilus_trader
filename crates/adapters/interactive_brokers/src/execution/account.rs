@@ -30,7 +30,7 @@ use nautilus_common::{
     live::runner::get_exec_event_sender,
     messages::{ExecutionEvent, ExecutionReport},
 };
-use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_core::{Params, time::get_atomic_clock_realtime};
 use nautilus_model::{
     enums::PositionSideSpecified,
     identifiers::AccountId,
@@ -56,7 +56,7 @@ pub(crate) fn raw_ib_account_code(account_id: &AccountId) -> String {
 pub async fn subscribe_account_summary(
     client: &Arc<Client>,
     account_id: AccountId,
-) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>)> {
+) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>, Option<Params>)> {
     let raw_account_id = raw_ib_account_code(&account_id);
     // Request key account summary tags (includes TotalCashValue to match Python account summary info dict).
     let tags = &[
@@ -86,6 +86,7 @@ pub async fn subscribe_account_summary(
     // returned balances/margins are complete (matches Python behavior of waiting for all tags).
     let mut balances: Vec<AccountBalance> = Vec::new();
     let mut margins: Vec<MarginBalance> = Vec::new();
+    let mut info = Params::new();
 
     while let Some(result) = subscription.next().await {
         match result {
@@ -94,6 +95,14 @@ pub async fn subscribe_account_summary(
                 if summary.account != raw_account_id {
                     continue;
                 }
+
+                // Record the raw summary tag so the account state carries the
+                // venue-reported values (for example TotalCashValue) that do not
+                // map to the typed balances and margins.
+                info.insert(
+                    summary.tag.to_string(),
+                    serde_json::Value::from(summary.value.as_str()),
+                );
 
                 match parse_account_summary_to_balance(&summary) {
                     Ok(balance) => {
@@ -140,7 +149,11 @@ pub async fn subscribe_account_summary(
         margins.len()
     );
 
-    Ok((balances, margins))
+    Ok((
+        balances,
+        margins,
+        if info.is_empty() { None } else { Some(info) },
+    ))
 }
 
 fn merge_account_summary_margin(margins: &mut Vec<MarginBalance>, summary: &AccountSummary) {

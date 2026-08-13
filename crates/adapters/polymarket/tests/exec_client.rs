@@ -2209,7 +2209,7 @@ async fn test_generate_account_state_emits_event() {
         Money::new(1000.0, pusd),
     )];
     client
-        .generate_account_state(balances, vec![], true, UnixNanos::default())
+        .generate_account_state(balances, vec![], true, UnixNanos::default(), None)
         .unwrap();
 
     let event = rx.try_recv().unwrap();

@@ -629,7 +629,7 @@ impl SimulatedExchange {
 
             if let Some((balances, margins, ts_event)) = account_state {
                 exec_client
-                    .generate_account_state(balances, margins, true, ts_event)
+                    .generate_account_state(balances, margins, true, ts_event, None)
                     .map_err(|e| AccountAdjustmentError::AccountStateGeneration(e.to_string()))?;
             }
         }
@@ -1824,7 +1824,7 @@ impl SimulatedExchange {
         if let Some(exec_client) = &self.exec_client {
             let ts_event = self.clock.borrow().timestamp_ns();
             exec_client
-                .generate_account_state(balances, vec![], true, ts_event)
+                .generate_account_state(balances, vec![], true, ts_event, None)
                 .unwrap();
         }
 

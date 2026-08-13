@@ -33,7 +33,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, UUID4, UnixNanos,
+    AtomicMap, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -174,6 +174,7 @@ impl AxExecutionClient {
                 account_state.margins.clone(),
                 account_state.is_reported,
                 ts_event,
+                account_state.info,
             );
             Ok(())
         });
@@ -618,9 +619,10 @@ impl ExecutionClient for AxExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
+            .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
     }
 

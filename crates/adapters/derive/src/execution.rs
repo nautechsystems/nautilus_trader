@@ -48,7 +48,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, UUID4, UnixNanos,
+    AtomicMap, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
@@ -597,9 +597,10 @@ impl ExecutionClient for DeriveExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
+            .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
     }
 
@@ -1838,7 +1839,7 @@ impl ExecutionClient for DeriveExecutionClient {
                 .await?;
             let (balances, margins) = parse_derive_subaccount_to_balances(&subaccount)?;
             let ts_event = clock.get_time_ns();
-            emitter.emit_account_state(balances, margins, true, ts_event);
+            emitter.emit_account_state(balances, margins, true, ts_event, None);
             Ok(())
         });
         Ok(())
@@ -1923,7 +1924,7 @@ impl DeriveReconciliationContext {
             .context("failed to parse Derive subaccount balances")?;
         let ts_event = self.clock.get_time_ns();
         self.emitter
-            .emit_account_state(balances, margins, true, ts_event);
+            .emit_account_state(balances, margins, true, ts_event, None);
         Ok(())
     }
 
