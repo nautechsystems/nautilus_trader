@@ -271,6 +271,11 @@ project version locally.
 
 ## Builds
 
+The Python package and the standalone Nautilus CLI are separate build artifacts. `make build-debug`
+and `make build` install the Python package into the root `.venv`; neither command updates the
+`nautilus` binary in Cargo's binary directory. See the
+[Nautilus CLI developer guide](#nautilus-cli-developer-guide) when changing or using the CLI.
+
 After changing Rust bindings or Python package code, use a debug build for normal development. It
 skips release optimization and LTO, which reduces build time and peak memory use:
 
@@ -291,6 +296,30 @@ CARGO_PROFILE_RELEASE_LTO=thin make build
 
 This override applies only to that command. Use the default fat LTO profile for performance
 measurements.
+
+### Refresh after pulling changes
+
+Use the command that updates the affected artifact. The build targets call their prerequisites, so
+`make build-debug` also syncs Python dependencies and regenerates Python type stubs.
+
+| Changed input                                       | Command                      | Updated artifact                                  |
+| --------------------------------------------------- | ---------------------------- | ------------------------------------------------- |
+| `python/pyproject.toml` or `python/uv.lock`         | `make sync`                  | Dependencies in the root `.venv`.                 |
+| Rust bindings, Python package code, or stub sources | `make build-debug`           | Debug Python package and generated type stubs.    |
+| CLI code, SQL initialization code, or `schema/sql`  | `make install-cli`           | Standalone `nautilus` binary in Cargo's bin path. |
+| Cargo, uv, `prek`, or OSV Scanner tool pins         | `make install-tools`         | Pinned development tools.                         |
+| Cap'n Proto version in `tools.toml`                 | `./scripts/install-capnp.sh` | Cap'n Proto compiler.                             |
+
+The environment variables in [Configure environment variables](#4-configure-environment-variables)
+contain checkout‑specific paths. After switching checkouts, changing the selected Python version,
+or recreating `.venv`, activate that checkout's environment and export the variables again. Verify
+that the shell resolves Python from the expected checkout:
+
+```bash
+source .venv/bin/activate
+command -v python
+python --version
+```
 
 ## Cap'n Proto
 
@@ -424,53 +453,85 @@ Please use this as development environment only. For production, use a proper an
 Use `make stop-services` to stop the containers without removing their data. Use
 `make purge-services` only when you intend to delete the development volumes.
 
+PostgreSQL‑backed tests can each maintain several connections. On a high‑core workstation, the
+local nextest concurrency can exceed the development container's connection limit. Use the CI
+profile to match CI's lower concurrency:
+
+```bash
+NEXTEST_PROFILE=ci make cargo-test-extras
+```
+
+To retain more local parallelism, set an explicit bounded worker count, for example:
+
+```bash
+NEXTEST_TEST_THREADS=8 make cargo-test-extras
+```
+
 ## Nautilus CLI developer guide
 
-## Introduction
+The Nautilus CLI is a standalone Rust binary for PostgreSQL administration and other repository
+operations. It is independent from the Python package installed by `make build-debug` or
+`make build`.
 
-The Nautilus CLI is a command-line interface tool for interacting with the NautilusTrader ecosystem.
-It offers commands for managing the PostgreSQL database and handling various trading operations.
+### Build and select the CLI
 
-:::warning
-On Linux systems with GNOME desktop, the `nautilus` command typically refers to the GNOME file manager (`/usr/bin/nautilus`).
-After installing the NautilusTrader CLI, you may need to ensure the Cargo binary takes precedence by either:
-
-- Adding an alias to your shell config: `alias nautilus="$HOME/.cargo/bin/nautilus"`
-- Using the full path: `~/.cargo/bin/nautilus`
-- Ensuring `~/.cargo/bin` appears before `/usr/bin` in your `PATH`
-
-:::
-
-## Install
-
-You can install the Nautilus CLI using the below Makefile target, which uses `cargo install` under the hood.
-This places the `nautilus` binary in Cargo's binary directory. Windows source installs require GNU
-Make through MSYS2 or WSL; the nightly workflow also publishes a Windows x86‑64 CLI archive.
+Install the CLI from the current checkout with:
 
 ```bash
 make install-cli
 ```
 
-## Commands
+This target runs `cargo install --locked --force` and places `nautilus` in Cargo's binary directory,
+normally `~/.cargo/bin`. Reinstall it after pulling changes to `crates/cli`, SQL initialization code,
+or `schema/sql`. An installed CLI can otherwise remain older than the checkout while reading newer
+schema files from it.
 
-You can run `nautilus --help` to view the CLI structure and available command groups:
+Before running repository‑dependent commands, check which binary the shell resolves and its version:
 
-### Database
-
-These commands handle bootstrapping the PostgreSQL database.
-To use them, you need to provide the correct connection configuration,
-either through command-line arguments or a `.env` file located in the root directory or the current working directory.
-
-- `--host` or `POSTGRES_HOST` for the database host
-- `--port` or `POSTGRES_PORT` for the database port
-- `--user` or `POSTGRES_USERNAME` for the root administrator (typically the postgres user)
-- `--password` or `POSTGRES_PASSWORD` for the root administrator's password
-- `--database` or `POSTGRES_DATABASE` for both the database **name and the new user** with privileges to that database
-    (e.g., if you provide `nautilus` as the value, a new user named nautilus will be created with the password from `POSTGRES_PASSWORD`, and the `nautilus` database will be bootstrapped with this user as the owner).
-
-Example of `.env` file
-
+```bash
+command -v nautilus
+nautilus --version
 ```
+
+To build and run the CLI directly from the checkout without replacing the installed binary, use:
+
+```bash
+cargo run --locked --package nautilus-cli --bin nautilus -- --help
+```
+
+:::warning
+On Linux systems with GNOME, `/usr/bin/nautilus` is normally the GNOME file manager. Select the
+NautilusTrader CLI with one of these methods:
+
+- Put `~/.cargo/bin` before `/usr/bin` in `PATH`.
+- Run `~/.cargo/bin/nautilus` explicitly.
+- Add `alias nautilus="$HOME/.cargo/bin/nautilus"` to the shell configuration.
+
+:::
+
+Windows source installs require GNU Make through MSYS2 or WSL. The nightly workflow also publishes
+a Windows x86‑64 CLI archive.
+
+Run `nautilus --help` to view the available command groups.
+
+### Database commands
+
+The database commands accept connection settings as command‑line arguments or through a `.env` file
+in the current working directory or one of its parents. The CLI also accepts the corresponding
+environment variables.
+
+| Flag         | Environment variable | Purpose                                                       |
+| ------------ | -------------------- | ------------------------------------------------------------- |
+| `--host`     | `POSTGRES_HOST`      | Database host.                                                |
+| `--port`     | `POSTGRES_PORT`      | Database port.                                                |
+| `--username` | `POSTGRES_USERNAME`  | Connecting administrator, normally the `postgres` role.       |
+| `--password` | `POSTGRES_PASSWORD`  | Administrator password and password for the application role. |
+| `--database` | `POSTGRES_DATABASE`  | Database name and application role created during `init`.     |
+| `--schema`   | `SCHEMA_DIR`         | Directory containing the SQL schema files.                    |
+
+For example:
+
+```dotenv
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_USERNAME=postgres
@@ -478,10 +539,22 @@ POSTGRES_PASSWORD=pass
 POSTGRES_DATABASE=nautilus
 ```
 
-List of commands are:
+`nautilus database init` creates or updates the roles and schema from the SQL files. Pass the schema
+directory explicitly so renamed clones and worktrees do not depend on checkout path detection:
 
-1. `nautilus database init`: Will bootstrap schema, roles, and all sql files located in `schema` root directory (like `tables.sql`).
-2. `nautilus database drop`: Will drop all tables, roles, and data in target Postgres database.
+```bash
+nautilus database init --schema "$PWD/schema/sql"
+```
+
+Use a CLI built from the same checkout as these schema files. The initialization is designed to be
+re‑run, including after an earlier run stopped partway through.
+
+:::danger
+`nautilus database drop` removes the target schema, privileges, role, and stored data. Use it only
+for a disposable database or after confirming that the data can be deleted.
+:::
+
+Run `nautilus database --help` for the complete command syntax.
 
 ## Rust analyzer settings
 

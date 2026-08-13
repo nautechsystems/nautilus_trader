@@ -2301,6 +2301,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2313,20 +2314,26 @@ impl PyStrategy {
 
     #[pyo3(name = "subscribe_signal")]
     #[pyo3(signature = (name="", priority=None))]
-    fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) {
+    fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::subscribe_signal(self.inner_mut(), name, priority);
+        Ok(())
     }
 
     #[pyo3(name = "subscribe_queue_state")]
     #[pyo3(signature = (priority=None))]
-    fn py_subscribe_queue_state(&mut self, priority: Option<u32>) {
+    fn py_subscribe_queue_state(&mut self, priority: Option<u32>) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::subscribe_queue_state(self.inner_mut(), priority);
+        Ok(())
     }
 
     #[pyo3(name = "subscribe_socket_state")]
     #[pyo3(signature = (priority=None))]
-    fn py_subscribe_socket_state(&mut self, priority: Option<u32>) {
+    fn py_subscribe_socket_state(&mut self, priority: Option<u32>) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::subscribe_socket_state(self.inner_mut(), priority);
+        Ok(())
     }
 
     #[pyo3(name = "subscribe_instruments")]
@@ -2337,6 +2344,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2355,6 +2363,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2376,6 +2385,7 @@ impl PyStrategy {
         managed: bool,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2405,6 +2415,7 @@ impl PyStrategy {
         managed: bool,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2433,6 +2444,10 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        let interval_ms = NonZeroUsize::new(interval_ms)
+            .ok_or_else(|| to_pyvalue_err("interval_ms must be > 0"))?;
+
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2440,9 +2455,6 @@ impl PyStrategy {
             }
         })?;
         let depth = depth.and_then(NonZeroUsize::new);
-        let interval_ms = NonZeroUsize::new(interval_ms)
-            .ok_or_else(|| to_pyvalue_err("interval_ms must be > 0"))?;
-
         DataActor::subscribe_book_at_interval(
             self.inner_mut(),
             instrument_id,
@@ -2463,6 +2475,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2481,6 +2494,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2499,6 +2513,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2517,6 +2532,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2535,6 +2551,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2553,6 +2570,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2571,6 +2589,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2589,6 +2608,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2612,6 +2632,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2638,6 +2659,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = match params {
             Some(dict) => from_pydict(py, &dict)?,
             None => None,
@@ -2661,6 +2683,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2672,18 +2695,24 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "unsubscribe_signal")]
-    fn py_unsubscribe_signal(&mut self, name: &str) {
+    fn py_unsubscribe_signal(&mut self, name: &str) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::unsubscribe_signal(self.inner_mut(), name);
+        Ok(())
     }
 
     #[pyo3(name = "unsubscribe_queue_state")]
-    fn py_unsubscribe_queue_state(&mut self) {
+    fn py_unsubscribe_queue_state(&mut self) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::unsubscribe_queue_state(self.inner_mut());
+        Ok(())
     }
 
     #[pyo3(name = "unsubscribe_socket_state")]
-    fn py_unsubscribe_socket_state(&mut self) {
+    fn py_unsubscribe_socket_state(&mut self) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::unsubscribe_socket_state(self.inner_mut());
+        Ok(())
     }
 
     #[pyo3(name = "unsubscribe_instruments")]
@@ -2694,6 +2723,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2712,6 +2742,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2730,6 +2761,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2748,6 +2780,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2767,15 +2800,16 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        let interval_ms = NonZeroUsize::new(interval_ms)
+            .ok_or_else(|| to_pyvalue_err("interval_ms must be > 0"))?;
+
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
-        let interval_ms = NonZeroUsize::new(interval_ms)
-            .ok_or_else(|| to_pyvalue_err("interval_ms must be > 0"))?;
-
         DataActor::unsubscribe_book_at_interval(
             self.inner_mut(),
             instrument_id,
@@ -2794,6 +2828,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2812,6 +2847,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2830,6 +2866,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2848,6 +2885,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2866,6 +2904,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2884,6 +2923,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2907,6 +2947,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2930,6 +2971,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2953,6 +2995,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2974,8 +3017,10 @@ impl PyStrategy {
         &mut self,
         series_id: OptionSeriesId,
         client_id: Option<ClientId>,
-    ) {
+    ) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::unsubscribe_option_chain(self.inner_mut(), series_id, client_id);
+        Ok(())
     }
 
     #[pyo3(name = "request_data")]
@@ -3281,6 +3326,18 @@ impl PyStrategy {
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
+    }
+}
+
+impl PyStrategy {
+    fn ensure_registered(&self) -> PyResult<()> {
+        if self.inner().core.actor.is_registered() {
+            Ok(())
+        } else {
+            Err(to_pyruntime_err(
+                "Strategy must be registered before managing subscriptions",
+            ))
+        }
     }
 }
 
@@ -4432,14 +4489,14 @@ class IndicatorEventStrategy:
         Python::attach(|py| {
             let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
 
-            rust_strategy.py_subscribe_signal("risk", Some(50));
+            rust_strategy.py_subscribe_signal("risk", Some(50)).unwrap();
 
             let topic = get_signal_topic("risk");
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert_eq!(subscriptions.len(), 1);
             assert_eq!(subscriptions[0].priority, 50);
 
-            rust_strategy.py_unsubscribe_signal("risk");
+            rust_strategy.py_unsubscribe_signal("risk").unwrap();
 
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert!(subscriptions.is_empty());
@@ -4456,14 +4513,14 @@ class IndicatorEventStrategy:
         Python::attach(|py| {
             let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
 
-            rust_strategy.py_subscribe_queue_state(Some(50));
+            rust_strategy.py_subscribe_queue_state(Some(50)).unwrap();
 
             let topic = MessagingSwitchboard::queue_state_changed_topic();
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert_eq!(subscriptions.len(), 1);
             assert_eq!(subscriptions[0].priority, 50);
 
-            rust_strategy.py_unsubscribe_queue_state();
+            rust_strategy.py_unsubscribe_queue_state().unwrap();
 
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert!(subscriptions.is_empty());
@@ -4480,14 +4537,14 @@ class IndicatorEventStrategy:
         Python::attach(|py| {
             let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
 
-            rust_strategy.py_subscribe_socket_state(Some(50));
+            rust_strategy.py_subscribe_socket_state(Some(50)).unwrap();
 
             let topic = MessagingSwitchboard::socket_state_changed_topic();
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert_eq!(subscriptions.len(), 1);
             assert_eq!(subscriptions[0].priority, 50);
 
-            rust_strategy.py_unsubscribe_socket_state();
+            rust_strategy.py_unsubscribe_socket_state().unwrap();
 
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert!(subscriptions.is_empty());

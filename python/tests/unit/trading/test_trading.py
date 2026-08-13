@@ -90,6 +90,7 @@ from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import StrategyId
+from nautilus_trader.model import StrikeRange
 from nautilus_trader.model import TimeInForce
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
@@ -1063,6 +1064,13 @@ BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
     "managed",
     "params",
 )
+BOOK_DEPTH10_SUBSCRIPTION_PARAMETERS = (
+    "instrument_id",
+    "book_type",
+    "client_id",
+    "managed",
+    "params",
+)
 BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
     "book_type",
@@ -1157,6 +1165,7 @@ DATA_SURFACE_SIGNATURES = [
     ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_book_depth10", BOOK_DEPTH10_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_at_interval", BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS),
     ("subscribe_quotes", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_trades", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -1175,6 +1184,7 @@ DATA_SURFACE_SIGNATURES = [
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_book_depth10", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_at_interval", BOOK_INTERVAL_UNSUBSCRIBE_PARAMETERS),
     ("unsubscribe_quotes", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_trades", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -1347,6 +1357,86 @@ def test_strategy_shutdown_system_requires_registration():
 
     with pytest.raises(RuntimeError, match="registered"):
         strategy.shutdown_system("unit test shutdown")
+
+
+def _subscription_registration_cases():
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+    bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
+    series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
+    strike_range = StrikeRange.atm_relative(1, 1)
+
+    return [
+        ("subscribe_data", (DataType("TestData"),)),
+        ("subscribe_signal", ("risk",)),
+        ("subscribe_queue_state", ()),
+        ("subscribe_socket_state", ()),
+        ("subscribe_instruments", (Venue("SIM"),)),
+        ("subscribe_instrument", (instrument_id,)),
+        ("subscribe_book_deltas", (instrument_id, BookType.L2_MBP)),
+        ("subscribe_book_depth10", (instrument_id, BookType.L2_MBP)),
+        ("subscribe_book_at_interval", (instrument_id, BookType.L2_MBP, 100)),
+        ("subscribe_quotes", (instrument_id,)),
+        ("subscribe_trades", (instrument_id,)),
+        ("subscribe_bars", (bar_type,)),
+        ("subscribe_mark_prices", (instrument_id,)),
+        ("subscribe_index_prices", (instrument_id,)),
+        ("subscribe_funding_rates", (instrument_id,)),
+        ("subscribe_option_greeks", (instrument_id,)),
+        ("subscribe_instrument_status", (instrument_id,)),
+        ("subscribe_instrument_close", (instrument_id,)),
+        ("subscribe_option_chain", (series_id, strike_range)),
+        ("unsubscribe_data", (DataType("TestData"),)),
+        ("unsubscribe_signal", ("risk",)),
+        ("unsubscribe_queue_state", ()),
+        ("unsubscribe_socket_state", ()),
+        ("unsubscribe_instruments", (Venue("SIM"),)),
+        ("unsubscribe_instrument", (instrument_id,)),
+        ("unsubscribe_book_deltas", (instrument_id,)),
+        ("unsubscribe_book_depth10", (instrument_id,)),
+        ("unsubscribe_book_at_interval", (instrument_id, 100)),
+        ("unsubscribe_quotes", (instrument_id,)),
+        ("unsubscribe_trades", (instrument_id,)),
+        ("unsubscribe_bars", (bar_type,)),
+        ("unsubscribe_mark_prices", (instrument_id,)),
+        ("unsubscribe_index_prices", (instrument_id,)),
+        ("unsubscribe_funding_rates", (instrument_id,)),
+        ("unsubscribe_option_greeks", (instrument_id,)),
+        ("unsubscribe_instrument_status", (instrument_id,)),
+        ("unsubscribe_instrument_close", (instrument_id,)),
+        ("unsubscribe_option_chain", (series_id,)),
+    ]
+
+
+@pytest.mark.parametrize(("method_name", "args"), _subscription_registration_cases())
+def test_strategy_subscriptions_require_registration(method_name, args):
+    strategy = Strategy()
+
+    with pytest.raises(RuntimeError) as exc_info:
+        getattr(strategy, method_name)(*args)
+
+    assert str(exc_info.value) == "Strategy must be registered before managing subscriptions"
+
+
+def test_strategy_subscription_validation_precedes_registration():
+    strategy = Strategy()
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+
+    with pytest.raises(ValueError, match="interval_ms must be > 0"):
+        strategy.subscribe_book_at_interval(
+            instrument_id,
+            BookType.L2_MBP,
+            0,
+            params={"invalid": object()},
+        )
+
+
+def test_strategy_registration_precedes_params_conversion():
+    strategy = Strategy()
+
+    with pytest.raises(RuntimeError) as exc_info:
+        strategy.subscribe_data(DataType("TestData"), params={"invalid": object()})
+
+    assert str(exc_info.value) == "Strategy must be registered before managing subscriptions"
 
 
 @pytest.mark.parametrize("method_name", REMOVED_ORDER_EVENT_SUBSCRIPTION_METHODS)

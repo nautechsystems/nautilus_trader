@@ -272,6 +272,30 @@ def test_execution_algorithm_pre_registration_surface():
 
 
 @pytest.mark.parametrize(
+    ("method_name", "args"),
+    [
+        ("subscribe_signal", ("risk",)),
+        ("subscribe_queue_state", ()),
+        ("subscribe_socket_state", ()),
+        ("unsubscribe_signal", ("risk",)),
+        ("unsubscribe_queue_state", ()),
+        ("unsubscribe_socket_state", ()),
+    ],
+)
+def test_execution_algorithm_subscriptions_require_registration(method_name, args):
+    exec_algorithm = ExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-PRE-REGISTRATION")),
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        getattr(exec_algorithm, method_name)(*args)
+
+    assert (
+        str(exc_info.value) == "ExecutionAlgorithm must be registered before managing subscriptions"
+    )
+
+
+@pytest.mark.parametrize(
     "method_name",
     ["start", "stop", "resume", "reset", "dispose", "degrade", "fault"],
 )

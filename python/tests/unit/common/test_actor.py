@@ -71,6 +71,7 @@ from nautilus_trader.model import PoolSwap
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
+from nautilus_trader.model import StrikeRange
 from nautilus_trader.model import Token
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
@@ -202,6 +203,8 @@ CALLBACK_SIGNATURES = (
 
 DATA_SUBSCRIPTION_PARAMETERS = ("data_type", "client_id", "params")
 DATA_REQUEST_PARAMETERS = ("data_type", "client_id", "start", "end", "limit", "params")
+SIGNAL_SUBSCRIPTION_PARAMETERS = ("name", "priority")
+SIGNAL_UNSUBSCRIBE_PARAMETERS = ("name",)
 VENUE_SUBSCRIPTION_PARAMETERS = ("venue", "client_id", "params")
 VENUE_REQUEST_PARAMETERS = ("venue", "start", "end", "client_id", "params")
 INSTRUMENT_SUBSCRIPTION_PARAMETERS = ("instrument_id", "client_id", "params")
@@ -209,6 +212,13 @@ BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
     "book_type",
     "depth",
+    "client_id",
+    "managed",
+    "params",
+)
+BOOK_DEPTH10_SUBSCRIPTION_PARAMETERS = (
+    "instrument_id",
+    "book_type",
     "client_id",
     "managed",
     "params",
@@ -256,11 +266,13 @@ OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS = ("series_id", "client_id")
 
 REGISTRATION_REQUIRED_SIGNATURES = [
     ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_signal", SIGNAL_SUBSCRIPTION_PARAMETERS),
     ("subscribe_queue_state", STATE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_socket_state", STATE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_book_depth10", BOOK_DEPTH10_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_at_interval", BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS),
     ("subscribe_quotes", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_trades", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -279,11 +291,13 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("subscribe_pool_fee_collects", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_pool_flash_events", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_signal", SIGNAL_UNSUBSCRIBE_PARAMETERS),
     ("unsubscribe_queue_state", NO_PARAMETERS),
     ("unsubscribe_socket_state", NO_PARAMETERS),
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_book_depth10", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_at_interval", BOOK_INTERVAL_UNSUBSCRIBE_PARAMETERS),
     ("unsubscribe_quotes", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_trades", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -642,6 +656,93 @@ def test_data_actor_shutdown_system_signature_exposes_optional_reason(actor):
 def test_data_actor_shutdown_system_requires_registration(actor):
     with pytest.raises(RuntimeError, match="registered"):
         actor.shutdown_system("unit test shutdown")
+
+
+def _subscription_registration_cases():
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+    bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
+    series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
+    strike_range = StrikeRange.atm_relative(1, 1)
+
+    return [
+        ("subscribe_data", (DataType("TestData"),)),
+        ("subscribe_signal", ("risk",)),
+        ("subscribe_queue_state", ()),
+        ("subscribe_socket_state", ()),
+        ("subscribe_instruments", (Venue("SIM"),)),
+        ("subscribe_instrument", (instrument_id,)),
+        ("subscribe_book_deltas", (instrument_id, BookType.L2_MBP)),
+        ("subscribe_book_depth10", (instrument_id, BookType.L2_MBP)),
+        ("subscribe_book_at_interval", (instrument_id, BookType.L2_MBP, 100)),
+        ("subscribe_quotes", (instrument_id,)),
+        ("subscribe_trades", (instrument_id,)),
+        ("subscribe_bars", (bar_type,)),
+        ("subscribe_mark_prices", (instrument_id,)),
+        ("subscribe_index_prices", (instrument_id,)),
+        ("subscribe_funding_rates", (instrument_id,)),
+        ("subscribe_option_greeks", (instrument_id,)),
+        ("subscribe_instrument_status", (instrument_id,)),
+        ("subscribe_instrument_close", (instrument_id,)),
+        ("subscribe_option_chain", (series_id, strike_range)),
+        ("subscribe_blocks", (Blockchain.BASE,)),
+        ("subscribe_pool", (instrument_id,)),
+        ("subscribe_pool_swaps", (instrument_id,)),
+        ("subscribe_pool_liquidity_updates", (instrument_id,)),
+        ("subscribe_pool_fee_collects", (instrument_id,)),
+        ("subscribe_pool_flash_events", (instrument_id,)),
+        ("unsubscribe_data", (DataType("TestData"),)),
+        ("unsubscribe_signal", ("risk",)),
+        ("unsubscribe_queue_state", ()),
+        ("unsubscribe_socket_state", ()),
+        ("unsubscribe_instruments", (Venue("SIM"),)),
+        ("unsubscribe_instrument", (instrument_id,)),
+        ("unsubscribe_book_deltas", (instrument_id,)),
+        ("unsubscribe_book_depth10", (instrument_id,)),
+        ("unsubscribe_book_at_interval", (instrument_id, 100)),
+        ("unsubscribe_quotes", (instrument_id,)),
+        ("unsubscribe_trades", (instrument_id,)),
+        ("unsubscribe_bars", (bar_type,)),
+        ("unsubscribe_mark_prices", (instrument_id,)),
+        ("unsubscribe_index_prices", (instrument_id,)),
+        ("unsubscribe_funding_rates", (instrument_id,)),
+        ("unsubscribe_option_greeks", (instrument_id,)),
+        ("unsubscribe_instrument_status", (instrument_id,)),
+        ("unsubscribe_instrument_close", (instrument_id,)),
+        ("unsubscribe_option_chain", (series_id,)),
+        ("unsubscribe_blocks", (Blockchain.BASE,)),
+        ("unsubscribe_pool", (instrument_id,)),
+        ("unsubscribe_pool_swaps", (instrument_id,)),
+        ("unsubscribe_pool_liquidity_updates", (instrument_id,)),
+        ("unsubscribe_pool_fee_collects", (instrument_id,)),
+        ("unsubscribe_pool_flash_events", (instrument_id,)),
+    ]
+
+
+@pytest.mark.parametrize(("method_name", "args"), _subscription_registration_cases())
+def test_data_actor_subscriptions_require_registration(actor, method_name, args):
+    with pytest.raises(RuntimeError) as exc_info:
+        getattr(actor, method_name)(*args)
+
+    assert str(exc_info.value) == "DataActor must be registered before managing subscriptions"
+
+
+def test_data_actor_subscription_validation_precedes_registration(actor):
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+
+    with pytest.raises(ValueError, match="interval_ms must be > 0"):
+        actor.subscribe_book_at_interval(
+            instrument_id,
+            BookType.L2_MBP,
+            0,
+            params={"invalid": object()},
+        )
+
+
+def test_data_actor_registration_precedes_params_conversion(actor):
+    with pytest.raises(RuntimeError) as exc_info:
+        actor.subscribe_data(DataType("TestData"), params={"invalid": object()})
+
+    assert str(exc_info.value) == "DataActor must be registered before managing subscriptions"
 
 
 def test_queue_state_changed_subscription_priority_defaults_to_none(actor):

@@ -842,36 +842,48 @@ impl PyExecutionAlgorithm {
 
     #[pyo3(name = "subscribe_signal")]
     #[pyo3(signature = (name="", priority=None))]
-    fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) {
+    fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::subscribe_signal(self, name, priority);
+        Ok(())
     }
 
     #[pyo3(name = "subscribe_queue_state")]
     #[pyo3(signature = (priority=None))]
-    fn py_subscribe_queue_state(&mut self, priority: Option<u32>) {
+    fn py_subscribe_queue_state(&mut self, priority: Option<u32>) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::subscribe_queue_state(self, priority);
+        Ok(())
     }
 
     #[pyo3(name = "subscribe_socket_state")]
     #[pyo3(signature = (priority=None))]
-    fn py_subscribe_socket_state(&mut self, priority: Option<u32>) {
+    fn py_subscribe_socket_state(&mut self, priority: Option<u32>) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::subscribe_socket_state(self, priority);
+        Ok(())
     }
 
     #[pyo3(name = "unsubscribe_signal")]
     #[pyo3(signature = (name=""))]
-    fn py_unsubscribe_signal(&mut self, name: &str) {
+    fn py_unsubscribe_signal(&mut self, name: &str) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::unsubscribe_signal(self, name);
+        Ok(())
     }
 
     #[pyo3(name = "unsubscribe_queue_state")]
-    fn py_unsubscribe_queue_state(&mut self) {
+    fn py_unsubscribe_queue_state(&mut self) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::unsubscribe_queue_state(self);
+        Ok(())
     }
 
     #[pyo3(name = "unsubscribe_socket_state")]
-    fn py_unsubscribe_socket_state(&mut self) {
+    fn py_unsubscribe_socket_state(&mut self) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::unsubscribe_socket_state(self);
+        Ok(())
     }
 
     #[pyo3(name = "on_start")]
@@ -1251,6 +1263,16 @@ impl PyExecutionAlgorithm {
 
         Ok(has_id)
     }
+
+    fn ensure_registered(&self) -> PyResult<()> {
+        if self.inner().core.actor.is_registered() {
+            Ok(())
+        } else {
+            Err(to_pyruntime_err(
+                "ExecutionAlgorithm must be registered before managing subscriptions",
+            ))
+        }
+    }
 }
 
 #[pyo3::pymethods]
@@ -1408,7 +1430,9 @@ mod tests {
         messages::system::{
             QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged,
         },
-        msgbus::{MessageBus, MessagingSwitchboard, get_message_bus},
+        msgbus::{
+            MessageBus, MessagingSwitchboard, get_message_bus, switchboard::get_signal_topic,
+        },
         runner::SystemChannel,
     };
     use nautilus_core::{UUID4, UnixNanos};
@@ -1541,6 +1565,28 @@ class SocketStateTracker:
     }
 
     #[rstest]
+    fn test_python_subscribe_and_unsubscribe_signal_update_msgbus() {
+        *get_message_bus().borrow_mut() = MessageBus::default();
+
+        let mut algorithm = PyExecutionAlgorithm::new(None);
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache).unwrap();
+
+        algorithm.py_subscribe_signal("risk", Some(50)).unwrap();
+
+        let topic = get_signal_topic("risk");
+        let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+        assert_eq!(subscriptions.len(), 1);
+        assert_eq!(subscriptions[0].priority, 50);
+
+        algorithm.py_unsubscribe_signal("risk").unwrap();
+
+        let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+        assert!(subscriptions.is_empty());
+    }
+
+    #[rstest]
     fn test_python_subscribe_and_unsubscribe_queue_state_update_msgbus() {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
@@ -1549,14 +1595,14 @@ class SocketStateTracker:
         let cache = Rc::new(RefCell::new(Cache::default()));
         Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache).unwrap();
 
-        algorithm.py_subscribe_queue_state(Some(50));
+        algorithm.py_subscribe_queue_state(Some(50)).unwrap();
 
         let topic = MessagingSwitchboard::queue_state_changed_topic();
         let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
         assert_eq!(subscriptions.len(), 1);
         assert_eq!(subscriptions[0].priority, 50);
 
-        algorithm.py_unsubscribe_queue_state();
+        algorithm.py_unsubscribe_queue_state().unwrap();
 
         let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
         assert!(subscriptions.is_empty());
@@ -1571,14 +1617,14 @@ class SocketStateTracker:
         let cache = Rc::new(RefCell::new(Cache::default()));
         Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache).unwrap();
 
-        algorithm.py_subscribe_socket_state(Some(50));
+        algorithm.py_subscribe_socket_state(Some(50)).unwrap();
 
         let topic = MessagingSwitchboard::socket_state_changed_topic();
         let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
         assert_eq!(subscriptions.len(), 1);
         assert_eq!(subscriptions[0].priority, 50);
 
-        algorithm.py_unsubscribe_socket_state();
+        algorithm.py_unsubscribe_socket_state().unwrap();
 
         let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
         assert!(subscriptions.is_empty());

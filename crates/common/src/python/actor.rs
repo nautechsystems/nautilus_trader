@@ -1608,6 +1608,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_data(self.inner_mut(), data_type, client_id, params);
         Ok(())
@@ -1615,20 +1616,26 @@ impl PyDataActor {
 
     #[pyo3(name = "subscribe_signal")]
     #[pyo3(signature = (name="", priority=None))]
-    fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) {
+    fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::subscribe_signal(self.inner_mut(), name, priority);
+        Ok(())
     }
 
     #[pyo3(name = "subscribe_queue_state")]
     #[pyo3(signature = (priority=None))]
-    fn py_subscribe_queue_state(&mut self, priority: Option<u32>) {
+    fn py_subscribe_queue_state(&mut self, priority: Option<u32>) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::subscribe_queue_state(self.inner_mut(), priority);
+        Ok(())
     }
 
     #[pyo3(name = "subscribe_socket_state")]
     #[pyo3(signature = (priority=None))]
-    fn py_subscribe_socket_state(&mut self, priority: Option<u32>) {
+    fn py_subscribe_socket_state(&mut self, priority: Option<u32>) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::subscribe_socket_state(self.inner_mut(), priority);
+        Ok(())
     }
 
     #[pyo3(name = "subscribe_instruments")]
@@ -1640,6 +1647,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_instruments(self.inner_mut(), venue, client_id, params);
         Ok(())
@@ -1654,6 +1662,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_instrument(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -1672,6 +1681,7 @@ impl PyDataActor {
         managed: bool,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         let depth = depth.and_then(NonZeroUsize::new);
         DataActor::subscribe_book_deltas(
@@ -1697,6 +1707,7 @@ impl PyDataActor {
         managed: bool,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_book_depth10(
             self.inner_mut(),
@@ -1722,11 +1733,12 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
-        let params = dict_to_params(py, params)?;
-        let depth = depth.and_then(NonZeroUsize::new);
         let interval_ms = NonZeroUsize::new(interval_ms)
             .ok_or_else(|| to_pyvalue_err("interval_ms must be > 0"))?;
 
+        self.ensure_registered()?;
+        let params = dict_to_params(py, params)?;
+        let depth = depth.and_then(NonZeroUsize::new);
         DataActor::subscribe_book_at_interval(
             self.inner_mut(),
             instrument_id,
@@ -1748,6 +1760,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_quotes(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -1762,6 +1775,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_trades(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -1776,6 +1790,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_bars(self.inner_mut(), bar_type, client_id, params);
         Ok(())
@@ -1790,6 +1805,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_mark_prices(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -1804,6 +1820,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_index_prices(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -1818,6 +1835,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_funding_rates(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -1832,6 +1850,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_option_greeks(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -1846,6 +1865,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_instrument_status(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -1860,6 +1880,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_instrument_close(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -1876,6 +1897,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_option_chain(
             self.inner_mut(),
@@ -1897,6 +1919,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_data(self.inner_mut(), data_type, client_id, params);
         Ok(())
@@ -1904,18 +1927,24 @@ impl PyDataActor {
 
     #[pyo3(name = "unsubscribe_signal")]
     #[pyo3(signature = (name=""))]
-    fn py_unsubscribe_signal(&mut self, name: &str) {
+    fn py_unsubscribe_signal(&mut self, name: &str) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::unsubscribe_signal(self.inner_mut(), name);
+        Ok(())
     }
 
     #[pyo3(name = "unsubscribe_queue_state")]
-    fn py_unsubscribe_queue_state(&mut self) {
+    fn py_unsubscribe_queue_state(&mut self) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::unsubscribe_queue_state(self.inner_mut());
+        Ok(())
     }
 
     #[pyo3(name = "unsubscribe_socket_state")]
-    fn py_unsubscribe_socket_state(&mut self) {
+    fn py_unsubscribe_socket_state(&mut self) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::unsubscribe_socket_state(self.inner_mut());
+        Ok(())
     }
 
     #[pyo3(name = "unsubscribe_instruments")]
@@ -1927,6 +1956,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_instruments(self.inner_mut(), venue, client_id, params);
         Ok(())
@@ -1941,6 +1971,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_instrument(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -1955,6 +1986,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_book_deltas(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -1969,6 +2001,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_book_depth10(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -1984,10 +2017,11 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
-        let params = dict_to_params(py, params)?;
         let interval_ms = NonZeroUsize::new(interval_ms)
             .ok_or_else(|| to_pyvalue_err("interval_ms must be > 0"))?;
 
+        self.ensure_registered()?;
+        let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_book_at_interval(
             self.inner_mut(),
             instrument_id,
@@ -2007,6 +2041,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_quotes(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -2021,6 +2056,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_trades(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -2035,6 +2071,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_bars(self.inner_mut(), bar_type, client_id, params);
         Ok(())
@@ -2049,6 +2086,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_mark_prices(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -2063,6 +2101,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_index_prices(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -2077,6 +2116,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_funding_rates(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -2091,6 +2131,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_option_greeks(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -2105,6 +2146,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_instrument_status(
             self.inner_mut(),
@@ -2124,6 +2166,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_instrument_close(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -2135,8 +2178,10 @@ impl PyDataActor {
         &mut self,
         series_id: OptionSeriesId,
         client_id: Option<ClientId>,
-    ) {
+    ) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::unsubscribe_option_chain(self.inner_mut(), series_id, client_id);
+        Ok(())
     }
 
     #[pyo3(name = "request_data")]
@@ -2492,6 +2537,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_blocks(self.inner_mut(), chain, client_id, params);
         Ok(())
@@ -2506,6 +2552,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_pool(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -2520,6 +2567,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_pool_swaps(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -2534,6 +2582,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_pool_liquidity_updates(
             self.inner_mut(),
@@ -2553,6 +2602,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_pool_fee_collects(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -2567,6 +2617,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::subscribe_pool_flash_events(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -2581,6 +2632,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_blocks(self.inner_mut(), chain, client_id, params);
         Ok(())
@@ -2595,6 +2647,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_pool(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -2609,6 +2662,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_pool_swaps(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
@@ -2623,6 +2677,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_pool_liquidity_updates(
             self.inner_mut(),
@@ -2642,6 +2697,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_pool_fee_collects(
             self.inner_mut(),
@@ -2661,6 +2717,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_pool_flash_events(
             self.inner_mut(),
@@ -2669,6 +2726,18 @@ impl PyDataActor {
             params,
         );
         Ok(())
+    }
+}
+
+impl PyDataActor {
+    fn ensure_registered(&self) -> PyResult<()> {
+        if self.inner().core.is_registered() {
+            Ok(())
+        } else {
+            Err(to_pyruntime_err(
+                "DataActor must be registered before managing subscriptions",
+            ))
+        }
     }
 }
 
@@ -3076,10 +3145,10 @@ mod tests {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         let mut actor = create_registered_actor(clock, cache, trader_id);
-        actor.py_subscribe_signal("example", None);
-        actor.py_unsubscribe_signal("example");
-        actor.py_subscribe_signal("", None);
-        actor.py_unsubscribe_signal("");
+        actor.py_subscribe_signal("example", None).unwrap();
+        actor.py_unsubscribe_signal("example").unwrap();
+        actor.py_subscribe_signal("", None).unwrap();
+        actor.py_unsubscribe_signal("").unwrap();
     }
 
     #[rstest]
@@ -3093,7 +3162,7 @@ mod tests {
         *get_message_bus().borrow_mut() = MessageBus::default();
 
         let mut actor = create_registered_actor(clock, cache, trader_id);
-        actor.py_subscribe_signal("trigger", Some(50));
+        actor.py_subscribe_signal("trigger", Some(50)).unwrap();
 
         // The PyO3 binding must forward the priority to the bus unchanged.
         let topic = get_signal_topic("trigger");
@@ -3157,7 +3226,7 @@ mod tests {
             rust_actor.register_in_global_registries();
             rust_actor.py_start().unwrap();
 
-            rust_actor.py_subscribe_signal("example", None);
+            rust_actor.py_subscribe_signal("example", None).unwrap();
             let val1: Py<PyAny> = "1.5".into_py_any_unwrap(py);
             let val2: Py<PyAny> = 2.0_f64.into_py_any_unwrap(py);
             rust_actor
@@ -3193,14 +3262,14 @@ mod tests {
             rust_actor.register_in_global_registries();
             rust_actor.py_start().unwrap();
 
-            rust_actor.py_subscribe_signal("example", None);
+            rust_actor.py_subscribe_signal("example", None).unwrap();
             let val1: Py<PyAny> = "1".into_py_any_unwrap(py);
             let val2: Py<PyAny> = "2".into_py_any_unwrap(py);
             rust_actor
                 .py_publish_signal(py, "example", val1, 0)
                 .unwrap();
 
-            rust_actor.py_unsubscribe_signal("example");
+            rust_actor.py_unsubscribe_signal("example").unwrap();
             rust_actor
                 .py_publish_signal(py, "example", val2, 0)
                 .unwrap();
@@ -3227,7 +3296,7 @@ mod tests {
             rust_actor.register(trader_id, clock, cache).unwrap();
             rust_actor.register_in_global_registries();
             rust_actor.py_start().unwrap();
-            rust_actor.py_subscribe_queue_state(Some(50));
+            rust_actor.py_subscribe_queue_state(Some(50)).unwrap();
 
             let topic = MessagingSwitchboard::queue_state_changed_topic();
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
@@ -3244,7 +3313,7 @@ mod tests {
                 .unwrap();
             assert_eq!(received, triggered);
 
-            rust_actor.py_unsubscribe_queue_state();
+            rust_actor.py_unsubscribe_queue_state().unwrap();
             let cleared = sample_queue_state_changed(QueueState::Cleared);
             msgbus::publish_any(topic, &cleared);
 
@@ -3270,7 +3339,7 @@ mod tests {
             rust_actor.register(trader_id, clock, cache).unwrap();
             rust_actor.register_in_global_registries();
             rust_actor.py_start().unwrap();
-            rust_actor.py_subscribe_socket_state(Some(50));
+            rust_actor.py_subscribe_socket_state(Some(50)).unwrap();
 
             let topic = MessagingSwitchboard::socket_state_changed_topic();
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
@@ -3287,7 +3356,7 @@ mod tests {
                 .unwrap();
             assert_eq!(received, connected);
 
-            rust_actor.py_unsubscribe_socket_state();
+            rust_actor.py_unsubscribe_socket_state().unwrap();
             let disconnected = sample_socket_state_changed(SocketState::Disconnected);
             msgbus::publish_any(topic, &disconnected);
 
@@ -3319,7 +3388,7 @@ mod tests {
             rust_actor.register_in_global_registries();
             rust_actor.py_start().unwrap();
 
-            rust_actor.py_subscribe_signal("", None);
+            rust_actor.py_subscribe_signal("", None).unwrap();
             let val1: Py<PyAny> = "1".into_py_any_unwrap(py);
             let val2: Py<PyAny> = "2".into_py_any_unwrap(py);
             let val3: Py<PyAny> = "3".into_py_any_unwrap(py);
