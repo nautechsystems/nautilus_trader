@@ -21,14 +21,13 @@ Greeks-relevant metadata varies by instrument type:
 
 - `OptionContract`, `CryptoOption`: full Greeks inputs including `strike_price`,
   `option_kind` (CALL/PUT), `expiration_ns`, `underlying`, `multiplier`.
-- `OptionSpread`, `CryptoOptionSpread`: a combination of up to 4 option legs,
-  each weighted by a ratio. Has `underlying`, `expiration_ns`, and
-  `strategy_type` (vertical, calendar, straddle, etc.). Per-leg `strike_price`
-  and `option_kind` live on each leg's `OptionContract`/`CryptoOption`, not on
-  the spread itself. Greeks are computed per leg and aggregated. Spreads are
-  commonly used for orders (the exchange executes as a single order), while
-  the individual legs appear as positions. `CryptoOptionSpread` additionally
-  carries `is_inverse` and `settlement_currency` for venues like Deribit.
+- `OptionSpread`, `CryptoOptionSpread`: an exchange‑defined multi‑leg strategy
+  published as a single tradable instrument. Has `underlying`, `expiration_ns`,
+  and `strategy_type` (a venue‑defined code). The spread itself carries no
+  `strike_price` or `option_kind`; venue‑provided leg details are stored in
+  `info` when the adapter supplies them. Orders execute against the spread as
+  one line. `CryptoOptionSpread` additionally carries `is_inverse` and
+  `settlement_currency` for venues like Deribit.
 - `BinaryOption`: has `expiration_ns` and `outcome`/`description`, but no
   `strike_price`, `option_kind`, or `underlying`.
 
@@ -80,7 +79,7 @@ incoming data, running snapshot timers, and draining wire subscription changes.
 from nautilus_trader.model import OptionSeriesId
 from nautilus_trader.model import StrikeRange
 
-series_id = OptionSeriesId(...)  # identifies the series (venue, underlying, expiry)
+series_id = OptionSeriesId(...)  # venue, underlying, settlement currency, expiry
 
 # Subscribe to 5 strikes above and below ATM, snapshot every 1000ms
 strike_range = StrikeRange.atm_relative(strikes_above=5, strikes_below=5)
@@ -136,9 +135,9 @@ The `snapshot_interval_ms` parameter controls publishing behavior:
 - **Snapshot mode** (`snapshot_interval_ms=1000`): Quotes and Greeks accumulate in a
   buffer and publish as an `OptionChainSlice` on a timer. Suitable for periodic
   portfolio rebalancing or UI display.
-- **Raw mode** (`snapshot_interval_ms=None`): Each quote or Greeks update publishes
-  a slice immediately. Suitable for latency-sensitive strategies that react to
-  individual updates.
+- **Raw mode** (`snapshot_interval_ms=None`): Each quote or Greeks update for an
+  active instrument publishes a slice immediately. Suitable for latency-sensitive
+  strategies that react to individual updates.
 
 ## Backtesting option chains
 
@@ -186,7 +185,7 @@ self.subscribe_option_chain(
 ```
 
 Use `snapshot_interval_ms=None` for raw mode. Raw mode publishes a slice after each
-quote or Greeks update that changes the active chain. Use an integer interval for
+quote or Greeks update for an active instrument. Use an integer interval for
 thinned snapshots. Thinned mode accumulates the latest BBO and Greeks per instrument
 and publishes the chain on the timer cadence, reducing event volume for large chains.
 
@@ -245,13 +244,13 @@ publishes snapshots, and queues wire subscription changes for the engine to drai
 flowchart TD
     subgraph DataEngine
         DE[DataEngine]
-        TMR[SnapshotTimer]
     end
 
     subgraph "OptionChainManager (per series)"
         MGR[OptionChainManager]
         AGG[OptionChainAggregator]
         ATM[AtmTracker]
+        TMR[SnapshotTimer]
     end
 
     DC[DataClient] -- QuoteTick --> DE
@@ -261,10 +260,8 @@ flowchart TD
     MGR --> AGG
     MGR --> ATM
     ATM -- "forward price" --> AGG
-    TMR -- "timer tick" --> DE
-    DE -- "publish_slice()" --> MGR
-    MGR -- "OptionChainSlice" --> DE
-    DE -- publish --> MB((MessageBus))
+    TMR -- "timer tick" --> MGR
+    MGR -- "OptionChainSlice" --> MB((MessageBus))
     MB -- "on_option_chain" --> S[DataActor / Strategy]
     DE -- "sub/unsub" --> DC
 ```
@@ -332,9 +329,9 @@ paths:
    drain.
 
 Once bootstrapped, the aggregator monitors ATM drift. On each snapshot timer tick,
-the engine calls `check_rebalance()` which returns any instruments to add or
-remove. A hysteresis threshold and cooldown period prevent thrashing near strike
-boundaries.
+the manager calls the aggregator's `check_rebalance()` which returns any instruments
+to add or remove. A hysteresis threshold and cooldown period prevent thrashing near
+strike boundaries.
 
 ## OptionGreeks data type
 
@@ -347,9 +344,9 @@ single option contract:
 | `convention`       | `GreeksConvention` | Numeraire convention for the Greeks.                |
 | `delta`            | `float`            | Rate of change of option price per unit underlying. |
 | `gamma`            | `float`            | Rate of change of delta per unit underlying.        |
-| `vega`             | `float`            | Sensitivity to a 1% change in implied volatility.   |
-| `theta`            | `float`            | Daily time decay (dV/dt / 365.25).                  |
-| `rho`              | `float`            | Sensitivity to a change in interest rate.           |
+| `vega`             | `float`            | Venue‑reported vega.                                |
+| `theta`            | `float`            | Venue‑reported theta.                               |
+| `rho`              | `float`            | Venue‑reported rho; defaults to zero.               |
 | `mark_iv`          | `float` or None    | Mark implied volatility.                            |
 | `bid_iv`           | `float` or None    | Bid implied volatility.                             |
 | `ask_iv`           | `float` or None    | Ask implied volatility.                             |
