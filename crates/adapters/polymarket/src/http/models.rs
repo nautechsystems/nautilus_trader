@@ -190,7 +190,12 @@ pub struct GammaMarket {
     /// Minimum price increment.
     pub order_price_min_tick_size: Option<f64>,
     /// Minimum order size.
-    pub order_min_size: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub order_min_size: Option<Decimal>,
     /// Maker fee in basis points.
     pub maker_base_fee: Option<i64>,
     /// Taker fee in basis points.

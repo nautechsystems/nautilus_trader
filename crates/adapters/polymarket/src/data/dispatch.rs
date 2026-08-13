@@ -28,6 +28,10 @@
 //! `best_bid` / `best_ask` on the new grid; `last_quotes` is preserved so the
 //! unchanged side's size carries forward. See
 //! `docs/integrations/polymarket.md` for the full description.
+//!
+//! A snapshot hash mismatch reuses the same book-delta gate until a later
+//! valid snapshot arrives. The mismatched snapshot is not parsed, applied, or
+//! emitted as a quote.
 
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -62,6 +66,7 @@ use crate::{
         parse::{
             parse_book_deltas, parse_book_snapshot, parse_quote_from_price_change,
             parse_quote_from_snapshot, parse_timestamp_ms, parse_trade_tick,
+            verify_book_snapshot_hash,
         },
     },
 };
@@ -184,6 +189,17 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 }
             };
             let instrument_id = meta.instrument_id;
+
+            if let Err(e) =
+                verify_book_snapshot_hash(&snap, meta.min_order_size.as_deref(), meta.neg_risk)
+            {
+                log::error!("Rejected book snapshot for {instrument_id}: {e}");
+                if ctx.active_delta_subs.contains(&instrument_id) {
+                    ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+                }
+                return;
+            }
+
             let ts_init = ctx.clock.get_time_ns();
             let mut book_seeded = false;
 
@@ -330,7 +346,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         .contains(&instrument_id)
                     {
                         log::debug!(
-                            "Dropping book deltas for {instrument_id}: awaiting snapshot after tick size change",
+                            "Dropping book deltas for {instrument_id}: awaiting valid snapshot",
                         );
                     } else {
                         let mut parsed = Vec::with_capacity(changes.len());
@@ -1075,6 +1091,8 @@ mod tests {
         market_slug: Option<&'a str>,
         market_id: Option<&'a str>,
         condition_id: Option<&'a str>,
+        min_order_size: Option<&'a str>,
+        neg_risk: Option<bool>,
         expiration_ns: Option<UnixNanos>,
         market_closed: Option<bool>,
     }
@@ -1117,6 +1135,17 @@ mod tests {
                     "condition_id".to_string(),
                     serde_json::Value::String(condition_id.to_string()),
                 );
+            }
+
+            if let Some(min_order_size) = seed_ctx.min_order_size {
+                info.insert(
+                    "min_order_size".to_string(),
+                    serde_json::Value::String(min_order_size.to_string()),
+                );
+            }
+
+            if let Some(neg_risk) = seed_ctx.neg_risk {
+                info.insert("neg_risk".to_string(), neg_risk.into());
             }
 
             if let Some(closed) = seed_ctx.market_closed {
@@ -2213,6 +2242,8 @@ mod tests {
                 market_slug: Some("btc-updown-5m"),
                 market_id: Some("1778973900"),
                 condition_id: Some("0xCOND-BTC"),
+                min_order_size: None,
+                neg_risk: None,
                 expiration_ns: Some(expiration_ns),
                 market_closed: None,
             },
@@ -2226,6 +2257,8 @@ mod tests {
                 market_slug: Some("btc-updown-5m"),
                 market_id: Some("1778973900"),
                 condition_id: Some("0xCOND-BTC"),
+                min_order_size: None,
+                neg_risk: None,
                 expiration_ns: Some(expiration_ns),
                 market_closed: None,
             },
@@ -2327,6 +2360,8 @@ mod tests {
                 market_slug: Some("btc-updown-5m"),
                 market_id: Some("1778973900"),
                 condition_id: Some("0xCOND-BTC"),
+                min_order_size: None,
+                neg_risk: None,
                 expiration_ns: Some(expiration_ns),
                 market_closed: None,
             },
@@ -2340,6 +2375,8 @@ mod tests {
                 market_slug: Some("btc-updown-5m"),
                 market_id: Some("1778973900"),
                 condition_id: Some("0xCOND-BTC"),
+                min_order_size: None,
+                neg_risk: None,
                 expiration_ns: Some(expiration_ns),
                 market_closed: None,
             },
@@ -3362,6 +3399,10 @@ mod tests {
             asks,
             timestamp: "1700000000000".to_string(),
             hash: None,
+            min_order_size: None,
+            tick_size: None,
+            neg_risk: None,
+            last_trade_price: None,
         })
     }
 
@@ -3701,6 +3742,10 @@ mod tests {
             asks: vec![level("0.51", "8"), level("0.55", "12")],
             timestamp: "1700000000000".to_string(),
             hash: None,
+            min_order_size: None,
+            tick_size: None,
+            neg_risk: None,
+            last_trade_price: None,
         });
         handle_market_message(snap, &ctx);
 
@@ -3709,6 +3754,63 @@ mod tests {
                 .contains(&instrument_id)
         );
         assert!(!ctx.order_books.contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    #[case::initial_snapshot(false)]
+    #[case::tick_change_recovery(true)]
+    fn snapshot_hash_mismatch_gates_until_valid_snapshot(#[case] already_pending: bool) {
+        let valid: PolymarketBookSnapshot = serde_json::from_str(include_str!(
+            "../../test_data/ws_book_snapshot_captured.json"
+        ))
+        .expect("captured snapshot should deserialize");
+        let asset_id = valid.asset_id.as_str();
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let inst = seed_instrument_with_context(
+            &ctx,
+            asset_id,
+            Price::from("0.01"),
+            Quantity::from("0.000001"),
+            SeedInstrumentContext {
+                min_order_size: Some("5"),
+                neg_risk: Some(false),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let instrument_id = inst.id();
+        ctx.active_delta_subs.insert(instrument_id);
+        ctx.active_quote_subs.insert(instrument_id);
+        if already_pending {
+            ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+        }
+
+        let mut divergent = valid.clone();
+        divergent.bids[0].size = "3149725.71".to_string();
+        handle_market_message(MarketWsMessage::Book(divergent), &ctx);
+
+        assert!(
+            ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        assert!(!ctx.order_books.contains_key(&instrument_id));
+        assert!(!ctx.last_quotes.contains_key(&instrument_id));
+        assert!(data_rx.try_recv().is_err());
+
+        handle_market_message(MarketWsMessage::Book(valid), &ctx);
+
+        assert!(
+            !ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id)
+        );
+        assert!(ctx.order_books.contains_key(&instrument_id));
+        assert!(ctx.last_quotes.contains_key(&instrument_id));
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        assert_eq!(events.len(), 2);
+        assert!(matches!(
+            events[0],
+            DataEvent::Data(NautilusData::Deltas(_))
+        ));
+        assert!(matches!(events[1], DataEvent::Data(NautilusData::Quote(_))));
     }
 
     #[rstest]
@@ -4112,6 +4214,10 @@ mod tests {
             asks: vec![],
             timestamp: "1700000000000".to_string(),
             hash: None,
+            min_order_size: None,
+            tick_size: None,
+            neg_risk: None,
+            last_trade_price: None,
         });
         handle_market_message(empty, &ctx);
 

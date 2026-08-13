@@ -78,7 +78,7 @@ pub struct PolymarketInstrumentDef {
     /// URL slug for the market.
     pub market_slug: Option<String>,
     /// Whether the market uses the neg-risk CTF exchange contract.
-    pub neg_risk: bool,
+    pub neg_risk: Option<bool>,
     /// Fee schedule for this market.
     pub fee_schedule: Option<FeeSchedule>,
     /// Game ID for sport markets.
@@ -133,17 +133,13 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
         .as_ref()
         .and_then(|fs| Decimal::try_from(fs.rate).ok());
 
-    let min_size: Option<Decimal> = market
-        .order_min_size
-        .map(|s| s.to_string().parse())
-        .transpose()
-        .map_err(|e| anyhow::anyhow!("Failed to parse min size: {e}"))?;
+    let min_size = market.order_min_size;
 
     let active = market.active.unwrap_or(false)
         && !market.closed.unwrap_or(false)
         && market.accepting_orders.unwrap_or(false);
 
-    let neg_risk = market.neg_risk.unwrap_or(false);
+    let neg_risk = market.neg_risk;
 
     let mut defs = Vec::with_capacity(2);
 
@@ -354,10 +350,16 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
         );
     }
 
-    map.insert(
-        "neg_risk".to_string(),
-        serde_json::Value::Bool(def.neg_risk),
-    );
+    if let Some(neg_risk) = def.neg_risk {
+        map.insert("neg_risk".to_string(), serde_json::Value::Bool(neg_risk));
+    }
+
+    if let Some(min_size) = def.min_size {
+        map.insert(
+            "min_order_size".to_string(),
+            serde_json::Value::String(min_size.to_string()),
+        );
+    }
 
     if let Some(fee_schedule) = &def.fee_schedule
         && let Ok(value) = serde_json::to_value(fee_schedule)
@@ -637,7 +639,25 @@ mod tests {
             Some("btc-updown-5m-1773307200")
         );
         assert_eq!(info.get_u64("game_id"), None);
+        assert_eq!(info.get_str("min_order_size"), Some("5"));
+        assert_eq!(info.get_bool("neg_risk"), Some(false));
         assert_eq!(info.get("fee_schedule"), None);
+    }
+
+    #[rstest]
+    fn test_create_instrument_info_omits_missing_neg_risk() {
+        let mut market = load_gamma_market("gamma_market.json");
+        market.neg_risk = None;
+        let defs = parse_gamma_market(&market).unwrap();
+
+        let instrument =
+            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
+        let InstrumentAny::BinaryOption(binary) = instrument else {
+            panic!("Expected BinaryOption");
+        };
+        let info = binary.info.as_ref().expect("info should be Some");
+
+        assert_eq!(info.get_bool("neg_risk"), None);
     }
 
     #[rstest]

@@ -166,6 +166,14 @@ pub struct PolymarketBookSnapshot {
     pub timestamp: String,
     #[serde(default)]
     pub hash: Option<String>,
+    #[serde(default)]
+    pub min_order_size: Option<String>,
+    #[serde(default)]
+    pub tick_size: Option<String>,
+    #[serde(default)]
+    pub neg_risk: Option<bool>,
+    #[serde(default)]
+    pub last_trade_price: Option<String>,
 }
 
 /// A single price change entry within a quotes message.
@@ -690,10 +698,11 @@ mod tests {
         assert_eq!(snap.bids[0].size, "500.0");
         assert_eq!(snap.asks[0].price, "0.53");
         assert_eq!(snap.timestamp, "1703875200000");
-        assert_eq!(
-            snap.hash.as_deref(),
-            Some("655a38d4977427b086c25b985993691b753ed166")
-        );
+        assert!(snap.hash.is_none());
+        assert!(snap.min_order_size.is_none());
+        assert!(snap.tick_size.is_none());
+        assert!(snap.neg_risk.is_none());
+        assert!(snap.last_trade_price.is_none());
     }
 
     #[rstest]
@@ -738,6 +747,10 @@ mod tests {
         let trade: PolymarketTrade = load("ws_last_trade_missing_transaction_hash.json");
 
         assert!(snap.hash.is_none());
+        assert!(snap.min_order_size.is_none());
+        assert!(snap.tick_size.is_none());
+        assert!(snap.neg_risk.is_none());
+        assert!(snap.last_trade_price.is_none());
         assert!(trade.transaction_hash.is_none());
     }
 

@@ -17,10 +17,12 @@
 
 use std::str::FromStr;
 
+use aws_lc_rs::digest::{SHA1_FOR_LEGACY_USE_ONLY, digest};
 use nautilus_core::{
     UnixNanos,
     correctness::{CorrectnessError, CorrectnessResult},
     datetime::NANOSECONDS_IN_MILLISECOND,
+    hex,
 };
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
@@ -29,8 +31,11 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
+use serde::Serialize;
 
-use super::messages::{PolymarketBookSnapshot, PolymarketQuote, PolymarketQuotes, PolymarketTrade};
+use super::messages::{
+    PolymarketBookLevel, PolymarketBookSnapshot, PolymarketQuote, PolymarketQuotes, PolymarketTrade,
+};
 use crate::{
     common::{enums::PolymarketOrderSide, parse::determine_trade_id},
     http::parse::tick_relative_price_bounds,
@@ -59,6 +64,93 @@ pub(crate) fn parse_quantity(s: &str, precision: u8) -> CorrectnessResult<Quanti
         message: format!("Invalid quantity '{s}': {e}"),
     })?;
     Quantity::from_decimal_dp(value, precision)
+}
+
+pub(crate) fn verify_book_snapshot_hash(
+    snap: &PolymarketBookSnapshot,
+    min_order_size: Option<&str>,
+    neg_risk: Option<bool>,
+) -> anyhow::Result<()> {
+    let Some(expected) = snap.hash.as_deref() else {
+        return Ok(());
+    };
+    let computed = book_snapshot_hash(snap, min_order_size, neg_risk)?;
+
+    if computed != expected {
+        anyhow::bail!(
+            "Book snapshot hash mismatch for {}: expected {expected}, computed {computed}",
+            snap.asset_id
+        );
+    }
+
+    Ok(())
+}
+
+fn book_snapshot_hash(
+    snap: &PolymarketBookSnapshot,
+    min_order_size: Option<&str>,
+    neg_risk: Option<bool>,
+) -> anyhow::Result<String> {
+    let min_order_size = snap
+        .min_order_size
+        .as_deref()
+        .or(min_order_size)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Book snapshot hash preimage missing min_order_size for {}",
+                snap.asset_id
+            )
+        })?;
+    let tick_size = snap.tick_size.as_deref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Book snapshot hash preimage missing tick_size for {}",
+            snap.asset_id
+        )
+    })?;
+    let neg_risk = snap.neg_risk.or(neg_risk).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Book snapshot hash preimage missing neg_risk for {}",
+            snap.asset_id
+        )
+    })?;
+    let last_trade_price = snap.last_trade_price.as_deref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Book snapshot hash preimage missing last_trade_price for {}",
+            snap.asset_id
+        )
+    })?;
+
+    // Keep field order aligned with the server-compatible payload in the official SDK:
+    // Polymarket/py-clob-client-v2@215fc63a8fd6ec3a10c7edb73997c9772d8686d3:utilities.py
+    let preimage = BookSnapshotHashPreimage {
+        market: snap.market.as_str(),
+        asset_id: snap.asset_id.as_str(),
+        timestamp: &snap.timestamp,
+        hash: "",
+        bids: &snap.bids,
+        asks: &snap.asks,
+        min_order_size,
+        tick_size,
+        neg_risk,
+        last_trade_price,
+    };
+    let serialized = serde_json::to_vec(&preimage)?;
+    let hash = digest(&SHA1_FOR_LEGACY_USE_ONLY, &serialized);
+    Ok(hex::encode(hash))
+}
+
+#[derive(Serialize)]
+struct BookSnapshotHashPreimage<'a> {
+    market: &'a str,
+    asset_id: &'a str,
+    timestamp: &'a str,
+    hash: &'static str,
+    bids: &'a [PolymarketBookLevel],
+    asks: &'a [PolymarketBookLevel],
+    min_order_size: &'a str,
+    tick_size: &'a str,
+    neg_risk: bool,
+    last_trade_price: &'a str,
 }
 
 /// Parses a book snapshot into [`OrderBookDeltas`] (CLEAR + ADD).
@@ -422,6 +514,46 @@ mod tests {
     #[rstest]
     fn test_parse_timestamp_ms_invalid() {
         assert!(parse_timestamp_ms("not_a_number").is_err());
+    }
+
+    #[rstest]
+    fn test_book_snapshot_hash_matches_captured_snapshot() {
+        let snap: PolymarketBookSnapshot = load("ws_book_snapshot_captured.json");
+
+        assert_eq!(snap.min_order_size, None);
+        assert_eq!(snap.neg_risk, None);
+        assert_eq!(snap.tick_size.as_deref(), Some("0.01"));
+        assert_eq!(snap.last_trade_price.as_deref(), Some("0.920"));
+        assert_eq!(
+            book_snapshot_hash(&snap, Some("5"), Some(false)).unwrap(),
+            "ed47eb91f3c7985fac1cb18cb7c19535eddd3c0a"
+        );
+        verify_book_snapshot_hash(&snap, Some("5"), Some(false)).unwrap();
+    }
+
+    #[rstest]
+    fn test_book_snapshot_hash_rejects_mismatch() {
+        let mut snap: PolymarketBookSnapshot = load("ws_book_snapshot_captured.json");
+        snap.bids[0].size = "3149725.71".to_string();
+
+        let error = verify_book_snapshot_hash(&snap, Some("5"), Some(false)).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            concat!(
+                "Book snapshot hash mismatch for ",
+                "350977769852917329387037893294763093471844346281449484439085576212613048126: ",
+                "expected ed47eb91f3c7985fac1cb18cb7c19535eddd3c0a, ",
+                "computed 6402b534c270a1ce46a75c62f1d7e3651182cc75"
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_book_snapshot_hash_allows_missing_hash() {
+        let snap: PolymarketBookSnapshot = load("ws_book_snapshot_missing_hash.json");
+
+        verify_book_snapshot_hash(&snap, None, None).unwrap();
     }
 
     #[rstest]

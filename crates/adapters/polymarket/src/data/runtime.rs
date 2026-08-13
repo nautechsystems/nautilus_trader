@@ -59,11 +59,7 @@ pub(crate) fn seed_token_meta_from_live_instruments(
 
         token_meta.insert(
             Ustr::from(instrument.raw_symbol().as_str()),
-            TokenMeta {
-                instrument_id: instrument.id(),
-                price_precision: instrument.price_precision(),
-                size_precision: instrument.size_precision(),
-            },
+            TokenMeta::from_instrument(instrument),
         );
     }
 }
@@ -322,11 +318,7 @@ mod tests {
     ) {
         token_meta.insert(
             Ustr::from(instrument.raw_symbol().as_str()),
-            TokenMeta {
-                instrument_id: instrument.id(),
-                price_precision: instrument.price_precision(),
-                size_precision: instrument.size_precision(),
-            },
+            TokenMeta::from_instrument(instrument),
         );
         instruments.insert(instrument.id(), instrument.clone());
     }

@@ -769,6 +769,11 @@ A single `price_change` payload can contain interleaved updates for several asse
 groups updates by instrument and publishes one atomic order book delta batch per instrument, while
 quote processing remains in the venue payload order.
 
+When a `book` snapshot includes a hash, the adapter reproduces it from the exact wire values and
+level order. It logs and rejects a mismatch before the snapshot can update local book state, emit
+snapshot‑derived deltas or quotes, or resume gated book deltas. Snapshots without a hash remain
+compatible.
+
 #### Effective deltas
 
 `compute_effective_deltas` defaults to `false`. Enable it to trade extra processing for smaller

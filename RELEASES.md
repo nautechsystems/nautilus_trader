@@ -100,6 +100,7 @@ Released on TBD (UTC).
 - Fixed Polymarket HTTP rejection reasons carrying the raw JSON error body, so an `OrderRejected` now reports the venue message alone
 - Fixed Polymarket WebSocket order message sizes for `FAK` and `FOK` BUY orders, where the venue reports the signed pUSD maker amount rather than a share quantity
 - Fixed Polymarket order‑safety heartbeat routing, ID chaining, rate‑limit retries, and safety deadlines
+- Fixed Polymarket order book snapshots accepting divergent data with invalid venue hashes
 
 ### Internal Improvements
 

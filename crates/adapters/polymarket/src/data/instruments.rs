@@ -40,6 +40,8 @@ pub(crate) struct TokenMeta {
     pub(crate) instrument_id: InstrumentId,
     pub(crate) price_precision: u8,
     pub(crate) size_precision: u8,
+    pub(crate) min_order_size: Option<Ustr>,
+    pub(crate) neg_risk: Option<bool>,
 }
 
 // Inserts `instrument` into the live instrument cache and updates the
@@ -54,13 +56,28 @@ pub(crate) fn cache_instrument(
     let instrument_id = instrument.id();
     token_meta.insert(
         Ustr::from(instrument.raw_symbol().as_str()),
-        TokenMeta {
-            instrument_id,
-            price_precision: instrument.price_precision(),
-            size_precision: instrument.size_precision(),
-        },
+        TokenMeta::from_instrument(instrument),
     );
     instruments.insert(instrument_id, instrument.clone());
+}
+
+impl TokenMeta {
+    pub(crate) fn from_instrument(instrument: &InstrumentAny) -> Self {
+        let info = match instrument {
+            InstrumentAny::BinaryOption(binary) => binary.info.as_ref(),
+            _ => None,
+        };
+
+        Self {
+            instrument_id: instrument.id(),
+            price_precision: instrument.price_precision(),
+            size_precision: instrument.size_precision(),
+            min_order_size: info
+                .and_then(|params| params.get_str("min_order_size"))
+                .map(Ustr::from),
+            neg_risk: info.and_then(|params| params.get_bool("neg_risk")),
+        }
+    }
 }
 
 pub(super) fn cache_instrument_if_active(
