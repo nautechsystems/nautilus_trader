@@ -38,7 +38,7 @@ use futures::future::join_all;
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     cache::{Cache, PositionRef},
-    clients::ExecutionClient,
+    clients::{ExecutionClient, SocketReconnectLookup},
     clock::Clock,
     enums::LogColor,
     generators::position_id::PositionIdGenerator,
@@ -90,6 +90,7 @@ use nautilus_model::{
 use position::CorrectedPosition;
 pub use position::{PositionStateSnapshot, SnapshotAnchorer};
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use crate::{
     client::ExecutionClientAdapter,
@@ -419,6 +420,26 @@ impl ExecutionEngine {
     /// Returns a reference to the execution client registered with the given ID.
     pub fn get_client(&self, client_id: &ClientId) -> Option<&dyn ExecutionClient> {
         self.clients.get(client_id).map(|a| a.client.as_ref())
+    }
+
+    /// Resolves a reconnectable socket endpoint owned by a registered execution client.
+    #[must_use]
+    pub fn socket_reconnect_lookup(
+        &self,
+        client_id: &ClientId,
+        endpoint: Ustr,
+    ) -> SocketReconnectLookup {
+        let Some(client) = self.get_client(client_id) else {
+            return SocketReconnectLookup::ClientNotFound;
+        };
+        let Some(registry) = client.socket_reconnect_registry() else {
+            return SocketReconnectLookup::Unsupported;
+        };
+
+        registry.get(endpoint).map_or(
+            SocketReconnectLookup::EndpointNotFound,
+            SocketReconnectLookup::Handle,
+        )
     }
 
     #[must_use]

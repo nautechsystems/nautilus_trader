@@ -106,6 +106,8 @@ use crate::{
     testing::init_logger_for_testing,
     timer::TimeEvent,
 };
+#[cfg(feature = "live")]
+use crate::{live::runner::replace_system_command_sender, messages::SystemCommand};
 
 /// Minimal custom data type for actor tests.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -4249,6 +4251,32 @@ fn test_socket_state_changed_reaches_typed_subscriber(
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_socket_state_changes, vec![event]);
+}
+
+#[cfg(feature = "live")]
+#[rstest]
+fn test_reconnect_socket_enqueues_typed_command(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_command_sender(system_tx);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor
+        .reconnect_socket(ClientId::from("POLYMARKET"), "polymarket-market-streams")
+        .expect("valid reconnect command");
+    drop(actor);
+
+    let SystemCommand::ReconnectSocket(command) =
+        system_rx.try_recv().expect("reconnect command queued");
+
+    assert_eq!(command.trader_id, trader_id);
+    assert_eq!(command.client_id, ClientId::from("POLYMARKET"));
+    assert_eq!(command.endpoint.as_str(), "polymarket-market-streams");
+    assert_eq!(command.ts_init, UnixNanos::default());
 }
 
 #[rstest]

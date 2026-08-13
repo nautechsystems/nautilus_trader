@@ -96,6 +96,14 @@ use crate::{
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
 };
+#[cfg(feature = "live")]
+use crate::{
+    live::try_get_system_command_sender,
+    messages::{
+        SystemCommand,
+        system::{ReconnectSocket, socket_endpoint},
+    },
+};
 
 /// Common configuration for [`DataActor`] based components.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -2742,6 +2750,24 @@ pub trait DataActor: Component {
             handler,
         )
     }
+
+    /// Requests reconnect of one socket endpoint owned by `client_id`.
+    ///
+    /// This is a fire-and-observe command. A successful return means the live runner queued the
+    /// request. [`SocketStateChanged`] events for the same endpoint report whether the transport
+    /// enters reconnect mode and later recovers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor is not registered, the endpoint label is invalid, the live
+    /// runner is unavailable, or the runner command channel is closed.
+    #[cfg(feature = "live")]
+    fn reconnect_socket(&self, client_id: ClientId, endpoint: &str) -> anyhow::Result<()>
+    where
+        Self: DataActorNative,
+    {
+        DataActorCore::reconnect_socket(self.core(), client_id, endpoint)
+    }
 }
 
 // Blanket implementation: any DataActor automatically implements Actor
@@ -5140,6 +5166,35 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Request(command));
 
         Ok(request_id)
+    }
+
+    /// Sends a fire-and-observe reconnect command.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor is not registered, the endpoint label is invalid, the live
+    /// runner is unavailable, or the command channel is closed.
+    #[cfg(feature = "live")]
+    pub fn reconnect_socket(&self, client_id: ClientId, endpoint: &str) -> anyhow::Result<()> {
+        let endpoint = socket_endpoint(endpoint)?;
+
+        if !self.is_properly_registered() {
+            anyhow::bail!(
+                "Actor {} has not been registered with a Trader",
+                self.actor_id
+            );
+        }
+
+        let sender = try_get_system_command_sender()
+            .ok_or_else(|| anyhow::anyhow!("Live runner system command channel is unavailable"))?;
+        let trader_id = self
+            .trader_id
+            .ok_or_else(|| anyhow::anyhow!("Actor {} has no trader ID", self.actor_id))?;
+        let command = ReconnectSocket::new(trader_id, client_id, endpoint, self.timestamp_ns());
+        sender
+            .send(SystemCommand::ReconnectSocket(command))
+            .map_err(|_| anyhow::anyhow!("Live runner system command channel is closed"))?;
+        Ok(())
     }
 
     #[cfg(test)]

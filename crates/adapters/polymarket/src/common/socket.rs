@@ -16,6 +16,10 @@
 //! Socket state publication for the Polymarket adapter.
 
 use nautilus_common::{
+    clients::{
+        SocketReconnectHandle, SocketReconnectRegistration, SocketReconnectRegistry,
+        SocketReconnectRequestOutcome,
+    },
     live::runner::try_get_system_event_sender,
     messages::{
         SystemEvent,
@@ -23,7 +27,10 @@ use nautilus_common::{
     },
 };
 use nautilus_model::identifiers::ClientId;
-use nautilus_network::{SocketState, SocketStateSink};
+use nautilus_network::{
+    SocketState, SocketStateSink, mode::ReconnectRequestOutcome,
+    websocket::WebSocketReconnectHandle,
+};
 use ustr::Ustr;
 
 use super::consts::POLYMARKET_VENUE;
@@ -36,16 +43,41 @@ pub(crate) const USER_STREAMS_ENDPOINT: &str = "polymarket-user-streams";
 pub(crate) struct SocketStatePublisher {
     client_id: ClientId,
     sender: tokio::sync::mpsc::UnboundedSender<SystemEvent>,
+    registry: SocketReconnectRegistry,
 }
 
 impl SocketStatePublisher {
-    pub(crate) fn new(client_id: ClientId) -> Option<Self> {
-        try_get_system_event_sender().map(|sender| Self { client_id, sender })
+    pub(crate) fn new(client_id: ClientId, registry: SocketReconnectRegistry) -> Option<Self> {
+        try_get_system_event_sender().map(|sender| Self {
+            client_id,
+            sender,
+            registry,
+        })
     }
 
-    pub(crate) fn sink(&self, endpoint: &'static str) -> SocketStateSink {
+    pub(crate) fn control(&self, endpoint: impl AsRef<str>) -> SocketControl {
+        SocketControl {
+            client_id: self.client_id,
+            endpoint: Ustr::from(endpoint.as_ref()),
+            sender: self.sender.clone(),
+            registry: self.registry.clone(),
+        }
+    }
+}
+
+/// Observation and reconnect control for one logical socket endpoint.
+#[derive(Clone, Debug)]
+pub(crate) struct SocketControl {
+    client_id: ClientId,
+    endpoint: Ustr,
+    sender: tokio::sync::mpsc::UnboundedSender<SystemEvent>,
+    registry: SocketReconnectRegistry,
+}
+
+impl SocketControl {
+    pub(crate) fn sink(&self) -> SocketStateSink {
         let client_id = self.client_id;
-        let endpoint = Ustr::from(endpoint);
+        let endpoint = self.endpoint;
         let sender = self.sender.clone();
 
         SocketStateSink::new(move |state| {
@@ -59,5 +91,18 @@ impl SocketStatePublisher {
                 log::error!("Failed to emit socket state change: {e}");
             }
         })
+    }
+
+    pub(crate) fn register(&self, handle: WebSocketReconnectHandle) -> SocketReconnectRegistration {
+        let handle = SocketReconnectHandle::new(move || match handle.request_reconnect() {
+            ReconnectRequestOutcome::Accepted => SocketReconnectRequestOutcome::Accepted,
+            ReconnectRequestOutcome::AlreadyReconnecting => {
+                SocketReconnectRequestOutcome::AlreadyReconnecting
+            }
+            ReconnectRequestOutcome::Disconnected => SocketReconnectRequestOutcome::Disconnected,
+            ReconnectRequestOutcome::Closed => SocketReconnectRequestOutcome::Closed,
+            ReconnectRequestOutcome::Unsupported => SocketReconnectRequestOutcome::Unsupported,
+        });
+        self.registry.register(self.endpoint, handle)
     }
 }

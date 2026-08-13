@@ -20,7 +20,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
-use nautilus_common::live::get_runtime;
+use nautilus_common::{clients::SocketReconnectRegistration, live::get_runtime};
 use nautilus_network::{
     SocketStateSink,
     mode::ConnectionMode,
@@ -37,6 +37,7 @@ use super::{
 };
 use crate::common::{
     credential::Credential,
+    socket::SocketControl,
     urls::{clob_ws_market_url, clob_ws_user_url},
 };
 
@@ -121,7 +122,9 @@ pub struct PolymarketWebSocketClient {
     subscribe_new_markets: bool,
     transport_backend: TransportBackend,
     proxy_url: Option<ProxyUrl>,
-    state_sink: Option<SocketStateSink>,
+    socket_sink: Option<SocketStateSink>,
+    socket_control: Option<SocketControl>,
+    socket_registration: Option<SocketReconnectRegistration>,
 }
 
 impl PolymarketWebSocketClient {
@@ -212,14 +215,24 @@ impl PolymarketWebSocketClient {
             subscribe_new_markets,
             transport_backend,
             proxy_url,
-            state_sink: None,
+            socket_sink: None,
+            socket_control: None,
+            socket_registration: None,
         }
     }
 
     /// Configures socket state reporting for the underlying transport.
     #[must_use]
     pub fn with_state_sink(mut self, state_sink: SocketStateSink) -> Self {
-        self.state_sink = Some(state_sink);
+        self.socket_sink = Some(state_sink);
+        self
+    }
+
+    /// Configures state reporting and reconnect control for the underlying transport.
+    #[must_use]
+    pub(crate) fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_sink = Some(control.sink());
+        self.socket_control = Some(control);
         self
     }
 
@@ -247,9 +260,13 @@ impl PolymarketWebSocketClient {
             message_handler,
             None,
             Arc::new(RateLimiter::new_with_quota(None, vec![])),
-            self.state_sink.clone(),
+            self.socket_sink.clone(),
         )
         .await?;
+        self.socket_registration = self
+            .socket_control
+            .as_ref()
+            .map(|control| control.register(client.reconnect_handle()));
         let connection_epoch = client.connection_epoch();
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();

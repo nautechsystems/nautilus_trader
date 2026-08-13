@@ -1142,18 +1142,12 @@ async fn count_discovery_payloads(state: &TestServerState) -> usize {
 async fn pool_shards_assets_across_two_connections_at_cap() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
-    let socket_states = Arc::new(Mutex::new(Vec::new()));
-    let socket_states_callback = Arc::clone(&socket_states);
-    let sink = SocketStateSink::new(move |state| {
-        socket_states_callback.lock().unwrap().push(state);
-    });
     let pool = PolymarketMarketConnectionPool::new(
         Some(format!("ws://{addr}/ws/market")),
         false,
         TransportBackend::default(),
         200,
-    )
-    .with_state_sink(sink);
+    );
     pool.connect().await.expect("pool connect failed");
     wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
 
@@ -1168,14 +1162,7 @@ async fn pool_shards_assets_across_two_connections_at_cap() {
     wait_for_connection_count(&state, 2, Duration::from_secs(5)).await;
     wait_for_unique_subscribed_count(&state, 250, Duration::from_secs(5)).await;
 
-    assert_eq!(
-        *socket_states.lock().unwrap(),
-        vec![SocketState::Connected, SocketState::Connected]
-    );
-
     pool.disconnect().await.expect("disconnect failed");
-
-    assert_eq!(socket_states.lock().unwrap().len(), 2);
 }
 
 // A universe below the cap stays on a single connection.

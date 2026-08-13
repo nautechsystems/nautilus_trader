@@ -36,7 +36,7 @@ use std::sync::{Arc, Mutex, atomic::AtomicBool};
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
-    clients::ExecutionClient,
+    clients::{ExecutionClient, SocketReconnectRegistry},
     live::task::TaskHandles,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
@@ -101,6 +101,7 @@ pub struct PolymarketExecutionClient {
     data_api_client: PolymarketDataApiHttpClient,
     submitter: OrderSubmitter,
     ws_client: PolymarketWebSocketClient,
+    socket_registry: SocketReconnectRegistry,
     secrets: Secrets,
     pending_tasks: Arc<TaskHandles>,
     stopping: Arc<AtomicBool>,
@@ -190,8 +191,11 @@ impl PolymarketExecutionClient {
             proxy_url,
         );
 
-        let ws_client = if let Some(publisher) = SocketStatePublisher::new(core.client_id) {
-            ws_client.with_state_sink(publisher.sink(USER_STREAMS_ENDPOINT))
+        let socket_registry = SocketReconnectRegistry::default();
+        let ws_client = if let Some(publisher) =
+            SocketStatePublisher::new(core.client_id, socket_registry.clone())
+        {
+            ws_client.with_socket_control(publisher.control(USER_STREAMS_ENDPOINT))
         } else {
             ws_client
         };
@@ -215,6 +219,7 @@ impl PolymarketExecutionClient {
             data_api_client,
             submitter,
             ws_client,
+            socket_registry,
             secrets,
             pending_tasks: Arc::new(TaskHandles::default()),
             stopping: Arc::new(AtomicBool::new(false)),
@@ -293,6 +298,10 @@ impl ExecutionClient for PolymarketExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         self.core.cache().account_owned(&self.core.account_id)
+    }
+
+    fn socket_reconnect_registry(&self) -> Option<&SocketReconnectRegistry> {
+        Some(&self.socket_registry)
     }
 
     fn position_reconciliation_tolerance(&self) -> Decimal {

@@ -19,7 +19,7 @@
 
 use std::cell::RefCell;
 
-use crate::messages::{DataEvent, ExecutionEvent, SystemEvent};
+use crate::messages::{DataEvent, ExecutionEvent, SystemCommand, SystemEvent};
 
 /// Gets the global data event sender.
 ///
@@ -114,6 +114,53 @@ pub fn replace_system_event_sender(sender: tokio::sync::mpsc::UnboundedSender<Sy
     });
 }
 
+/// Gets the global system command sender.
+///
+/// # Panics
+///
+/// Panics if the sender is uninitialized.
+#[must_use]
+pub fn get_system_command_sender() -> tokio::sync::mpsc::UnboundedSender<SystemCommand> {
+    SYSTEM_COMMAND_SENDER.with(|sender| {
+        sender
+            .borrow()
+            .as_ref()
+            .expect("System command sender should be initialized by runner")
+            .clone()
+    })
+}
+
+/// Attempts to get the global system command sender without panicking.
+///
+/// Returns `None` if the sender is not initialized.
+#[must_use]
+pub fn try_get_system_command_sender() -> Option<tokio::sync::mpsc::UnboundedSender<SystemCommand>>
+{
+    SYSTEM_COMMAND_SENDER.with(|sender| sender.borrow().as_ref().cloned())
+}
+
+/// Sets the global system command sender.
+///
+/// Can only be called once per thread.
+///
+/// # Panics
+///
+/// Panics if a sender has already been set.
+pub fn set_system_command_sender(sender: tokio::sync::mpsc::UnboundedSender<SystemCommand>) {
+    SYSTEM_COMMAND_SENDER.with(|s| {
+        let mut slot = s.borrow_mut();
+        assert!(slot.is_none(), "System command sender can only be set once");
+        *slot = Some(sender);
+    });
+}
+
+/// Replaces the global system command sender for the current thread.
+pub fn replace_system_command_sender(sender: tokio::sync::mpsc::UnboundedSender<SystemCommand>) {
+    SYSTEM_COMMAND_SENDER.with(|s| {
+        *s.borrow_mut() = Some(sender);
+    });
+}
+
 /// Gets the global execution event sender.
 ///
 /// # Panics
@@ -167,6 +214,7 @@ thread_local! {
     static DATA_EVENT_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<DataEvent>>> = const { RefCell::new(None) };
     static EXEC_EVENT_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<ExecutionEvent>>> = const { RefCell::new(None) };
     static SYSTEM_EVENT_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SystemEvent>>> = const { RefCell::new(None) };
+    static SYSTEM_COMMAND_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SystemCommand>>> = const { RefCell::new(None) };
 }
 
 #[cfg(test)]
@@ -215,6 +263,19 @@ mod tests {
     }
 
     #[rstest]
+    fn test_replace_system_command_sender_overwrites_previous() {
+        std::thread::spawn(|| {
+            let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
+            let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
+            replace_system_command_sender(tx1);
+            replace_system_command_sender(tx2);
+            let _sender = get_system_command_sender();
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[rstest]
     fn test_set_data_event_sender_panics_on_double_set() {
         let result = std::thread::spawn(|| {
             let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
@@ -251,6 +312,18 @@ mod tests {
     }
 
     #[rstest]
+    fn test_set_system_command_sender_panics_on_double_set() {
+        let result = std::thread::spawn(|| {
+            let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
+            let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
+            set_system_command_sender(tx1);
+            set_system_command_sender(tx2);
+        })
+        .join();
+        assert!(result.is_err());
+    }
+
+    #[rstest]
     fn test_try_get_exec_event_sender_returns_none_when_unset() {
         let result = std::thread::spawn(try_get_exec_event_sender)
             .join()
@@ -261,6 +334,14 @@ mod tests {
     #[rstest]
     fn test_try_get_system_event_sender_returns_none_when_unset() {
         let result = std::thread::spawn(try_get_system_event_sender)
+            .join()
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_try_get_system_command_sender_returns_none_when_unset() {
+        let result = std::thread::spawn(try_get_system_command_sender)
             .join()
             .unwrap();
         assert!(result.is_none());

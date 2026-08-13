@@ -916,9 +916,8 @@ async fn test_connect_emits_socket_state_changes() {
     wait_until_async(
         || {
             while let Ok(event) = system_rx.try_recv() {
-                match event {
-                    SystemEvent::SocketState(change) => changes.push(change),
-                }
+                let SystemEvent::SocketState(change) = event;
+                changes.push(change);
             }
             let done = changes.len() == 2;
             async move { done }

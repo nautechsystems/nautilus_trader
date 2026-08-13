@@ -74,6 +74,7 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::messages::system::QueueStateChanged>()?;
     m.add_class::<crate::messages::system::SocketState>()?;
     m.add_class::<crate::messages::system::SocketStateChanged>()?;
+    m.add_class::<crate::messages::system::ReconnectSocket>()?;
     m.add_class::<crate::timer::TimeEvent>()?;
     m.add_class::<crate::cache::CacheConfig>()?;
     m.add_class::<crate::python::actor::PyDataActor>()?;

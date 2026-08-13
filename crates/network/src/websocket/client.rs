@@ -103,7 +103,7 @@ use crate::{
     dst,
     error::{SendError, is_connection_drop_io_error},
     logging::{log_task_aborted, log_task_started, log_task_stopped},
-    mode::{ConnectionMode, ReadSessionFence, ReconnectOutcome},
+    mode::{ConnectionMode, ReadSessionFence, ReconnectOutcome, ReconnectRequestOutcome},
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
     transport::{BoxedWsTransport, Message, TransportError, tungstenite::TungsteniteTransport},
 };
@@ -1845,6 +1845,145 @@ pub struct WebSocketClient {
     reconnect_buffer_waits_for_auth: Arc<AtomicBool>,
     reconnect_headers: ReconnectHeaders,
     state_sink: Option<SocketStateSink>,
+    reconnect_supported: bool,
+}
+
+/// Cloneable controller handle for requesting one transport reconnect.
+#[derive(Clone)]
+pub struct WebSocketReconnectHandle {
+    connection_mode: Arc<AtomicU8>,
+    state_notify: Arc<tokio::sync::Notify>,
+    auth_tracker: Arc<OnceLock<AuthTracker>>,
+    state_sink: Option<SocketStateSink>,
+    supported: bool,
+}
+
+impl Debug for WebSocketReconnectHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(WebSocketReconnectHandle))
+            .field(
+                "connection_mode",
+                &ConnectionMode::from_atomic(&self.connection_mode),
+            )
+            .field("supported", &self.supported)
+            .finish_non_exhaustive()
+    }
+}
+
+impl WebSocketReconnectHandle {
+    /// Requests that the controller replace the active transport.
+    ///
+    /// An accepted request invalidates registered authentication state and wakes the controller.
+    /// Rejected requests leave the transport and authentication state unchanged.
+    #[must_use]
+    pub fn request_reconnect(&self) -> ReconnectRequestOutcome {
+        if !self.supported {
+            return ReconnectRequestOutcome::Unsupported;
+        }
+
+        let outcome = ConnectionMode::request_reconnect_outcome_with_sink(
+            &self.connection_mode,
+            self.state_sink.as_ref(),
+        );
+
+        if outcome == ReconnectRequestOutcome::Accepted {
+            if let Some(tracker) = self.auth_tracker.get() {
+                tracker.invalidate();
+            }
+            self.state_notify.notify_one();
+        }
+        outcome
+    }
+}
+
+#[cfg(test)]
+mod reconnect_request_tests {
+    use std::sync::{Arc, OnceLock, atomic::AtomicU8};
+
+    use rstest::rstest;
+
+    use super::*;
+
+    fn handle(
+        mode: ConnectionMode,
+        supported: bool,
+    ) -> (
+        WebSocketReconnectHandle,
+        AuthTracker,
+        Arc<tokio::sync::Notify>,
+    ) {
+        let tracker = AuthTracker::new();
+        let _receiver = tracker.begin();
+        tracker.succeed();
+        let auth_tracker = Arc::new(OnceLock::new());
+        auth_tracker
+            .set(tracker.clone())
+            .expect("auth tracker should be unset");
+        let notify = Arc::new(tokio::sync::Notify::new());
+        let handle = WebSocketReconnectHandle {
+            connection_mode: Arc::new(AtomicU8::new(mode.as_u8())),
+            state_notify: Arc::clone(&notify),
+            auth_tracker,
+            state_sink: None,
+            supported,
+        };
+        (handle, tracker, notify)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn accepted_request_invalidates_auth_and_wakes_controller_once() {
+        let (handle, tracker, notify) = handle(ConnectionMode::Active, true);
+
+        assert_eq!(
+            handle.request_reconnect(),
+            ReconnectRequestOutcome::Accepted
+        );
+        assert!(!tracker.is_authenticated());
+        tokio::time::timeout(Duration::from_millis(10), notify.notified())
+            .await
+            .expect("accepted request should notify controller");
+
+        let _receiver = tracker.begin();
+        tracker.succeed();
+        assert_eq!(
+            handle.request_reconnect(),
+            ReconnectRequestOutcome::AlreadyReconnecting
+        );
+        assert!(tracker.is_authenticated());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), notify.notified())
+                .await
+                .is_err(),
+            "duplicate request should not notify controller",
+        );
+    }
+
+    #[rstest]
+    #[case(
+        ConnectionMode::Disconnect,
+        true,
+        ReconnectRequestOutcome::Disconnected
+    )]
+    #[case(ConnectionMode::Closed, true, ReconnectRequestOutcome::Closed)]
+    #[case(ConnectionMode::Active, false, ReconnectRequestOutcome::Unsupported)]
+    #[tokio::test]
+    async fn rejected_request_preserves_auth_and_does_not_wake_controller(
+        #[case] mode: ConnectionMode,
+        #[case] supported: bool,
+        #[case] expected: ReconnectRequestOutcome,
+    ) {
+        let (handle, tracker, notify) = handle(mode, supported);
+
+        assert_eq!(handle.request_reconnect(), expected);
+        assert!(tracker.is_authenticated());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), notify.notified())
+                .await
+                .is_err(),
+            "rejected request should not notify controller",
+        );
+    }
 }
 
 impl Debug for WebSocketClient {
@@ -1953,6 +2092,7 @@ impl WebSocketClient {
                 reconnect_buffer_waits_for_auth,
                 reconnect_headers,
                 state_sink,
+                reconnect_supported: false,
             },
         ))
     }
@@ -2178,6 +2318,7 @@ impl WebSocketClient {
             reconnect_buffer_waits_for_auth,
             reconnect_headers,
             state_sink,
+            reconnect_supported: true,
         })
     }
 
@@ -2185,6 +2326,27 @@ impl WebSocketClient {
     #[must_use]
     pub fn reconnect_headers(&self) -> ReconnectHeaders {
         self.reconnect_headers.clone()
+    }
+
+    /// Returns a cloneable handle to this client's reconnect controller.
+    #[must_use]
+    pub fn reconnect_handle(&self) -> WebSocketReconnectHandle {
+        WebSocketReconnectHandle {
+            connection_mode: Arc::clone(&self.connection_mode),
+            state_notify: Arc::clone(&self.state_notify),
+            auth_tracker: Arc::clone(&self.auth_tracker),
+            state_sink: self.state_sink.clone(),
+            supported: self.reconnect_supported,
+        }
+    }
+
+    /// Requests that the controller replace the active transport.
+    ///
+    /// Returns `true` only when this call transitions a handler-mode client from active to
+    /// reconnecting. Stream-mode, duplicate, disconnecting, and closed requests return `false`.
+    #[must_use]
+    pub fn request_reconnect(&self) -> bool {
+        self.reconnect_handle().request_reconnect() == ReconnectRequestOutcome::Accepted
     }
 
     /// Returns the current connection mode.

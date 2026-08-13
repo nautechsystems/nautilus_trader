@@ -90,7 +90,7 @@ use nautilus_common::{
     live::dst,
     log_info,
     messages::{
-        DataEvent, ExecutionEvent, ExecutionReport, SystemEvent,
+        DataEvent, ExecutionEvent, ExecutionReport, SystemCommand, SystemEvent,
         data::DataCommand,
         execution::{GenerateOrderStatusReports, GeneratePositionStatusReports, TradingCommand},
         system::{QueueStateChanged, SocketStateChange, SocketStateChanged},
@@ -382,12 +382,16 @@ impl LiveNode {
                 .await;
         }
 
-        let startup_system_events = if let Some(runner) = self.runner.as_mut() {
-            runner.flush_pending_data();
-            runner.drain_pending_system_events()
-        } else {
-            Vec::new()
-        };
+        let (startup_system_events, startup_system_commands) =
+            if let Some(runner) = self.runner.as_mut() {
+                runner.flush_pending_data();
+                (
+                    runner.drain_pending_system_events(),
+                    runner.drain_pending_system_commands(),
+                )
+            } else {
+                (Vec::new(), Vec::new())
+            };
 
         if let Err(e) = self.connect_exec_clients(connection_deadline).await {
             return self
@@ -446,6 +450,7 @@ impl LiveNode {
         }
 
         self.process_system_events(startup_system_events);
+        self.process_system_commands(startup_system_commands);
 
         if !self.finish_startup_trader(None).await? {
             return Ok(());
@@ -578,6 +583,7 @@ impl LiveNode {
                 let _ = AsyncRunner::handle_time_event(message);
             }
             PendingRunnerEvent::SystemEvent(event) => self.process_system_event(event),
+            PendingRunnerEvent::SystemCommand(command) => self.process_system_command(command),
             PendingRunnerEvent::ExecEvent(event) => self.process_exec_event(event),
             PendingRunnerEvent::ExecCommand(command) => self.process_exec_command(command),
             PendingRunnerEvent::DataEvent(event) => AsyncRunner::handle_data_event(event),
@@ -588,6 +594,20 @@ impl LiveNode {
     fn process_system_events(&self, events: Vec<SystemEvent>) {
         for event in events {
             self.process_system_event(event);
+        }
+    }
+
+    fn process_system_commands(&self, commands: Vec<SystemCommand>) {
+        for command in commands {
+            self.process_system_command(command);
+        }
+    }
+
+    fn process_system_command(&self, command: SystemCommand) {
+        match command {
+            SystemCommand::ReconnectSocket(command) => {
+                self.kernel.process_socket_reconnect(command);
+            }
         }
     }
 
@@ -905,6 +925,7 @@ impl LiveNode {
         let AsyncRunnerChannels {
             mut time_evt_rx,
             mut system_evt_rx,
+            mut system_cmd_rx,
             mut exec_evt_rx,
             mut exec_cmd_rx,
             mut data_evt_rx,
@@ -943,6 +964,7 @@ impl LiveNode {
                 Self::drain_channels(
                     &mut time_evt_rx,
                     &mut system_evt_rx,
+                    &mut system_cmd_rx,
                     &mut exec_evt_rx,
                     &mut exec_cmd_rx,
                     &mut data_evt_rx,
@@ -963,6 +985,7 @@ impl LiveNode {
         let stop_handle = self.handle.clone();
         let mut pending = PendingEvents::default();
         let mut startup_system_events = Vec::new();
+        let mut startup_system_commands = Vec::new();
         let connection_deadline = dst::time::Instant::now() + self.config.timeout_connection;
 
         // Startup phase 1: Connect data clients and drain instrument events into cache.
@@ -972,6 +995,7 @@ impl LiveNode {
             &mut pending,
             &mut time_evt_rx,
             &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
@@ -984,6 +1008,7 @@ impl LiveNode {
                 &mut pending,
                 &mut time_evt_rx,
                 &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
@@ -995,6 +1020,7 @@ impl LiveNode {
             Self::drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
@@ -1009,6 +1035,7 @@ impl LiveNode {
         // drain everything into cache.
         flush_pending_data(&mut pending, &mut data_evt_rx, &mut data_cmd_rx);
         startup_system_events.extend(pending.take_system_events());
+        startup_system_commands.extend(pending.take_system_commands());
         debug_assert!(
             pending.data_evts.is_empty() && pending.data_cmds.is_empty(),
             "data must be drained into cache before exec clients connect",
@@ -1020,6 +1047,7 @@ impl LiveNode {
             &mut pending,
             &mut time_evt_rx,
             &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
@@ -1032,12 +1060,14 @@ impl LiveNode {
             &mut pending,
             &mut time_evt_rx,
             &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
         );
         startup_system_events.extend(pending.take_system_events());
+        startup_system_commands.extend(pending.take_system_commands());
         debug_assert!(
             pending.is_empty(),
             "all startup events must be processed before reconciliation",
@@ -1052,6 +1082,7 @@ impl LiveNode {
                 Self::drain_channels(
                     &mut time_evt_rx,
                     &mut system_evt_rx,
+                    &mut system_cmd_rx,
                     &mut exec_evt_rx,
                     &mut exec_cmd_rx,
                     &mut data_evt_rx,
@@ -1072,6 +1103,7 @@ impl LiveNode {
             Self::drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
@@ -1089,6 +1121,7 @@ impl LiveNode {
             Self::drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
@@ -1106,6 +1139,7 @@ impl LiveNode {
             Self::drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
@@ -1127,6 +1161,7 @@ impl LiveNode {
             Self::drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
@@ -1141,6 +1176,7 @@ impl LiveNode {
             Self::drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
@@ -1155,6 +1191,7 @@ impl LiveNode {
             Self::drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
@@ -1165,11 +1202,13 @@ impl LiveNode {
         }
 
         self.process_system_events(startup_system_events);
+        self.process_system_commands(startup_system_commands);
 
         let finish_result = {
             let mut receivers = RunnerReceivers {
                 time_evt: &mut time_evt_rx,
                 system_evt: &mut system_evt_rx,
+                system_cmd: &mut system_cmd_rx,
                 data_evt: &mut data_evt_rx,
                 data_cmd: &mut data_cmd_rx,
                 exec_evt: &mut exec_evt_rx,
@@ -1569,6 +1608,13 @@ impl LiveNode {
                     }
                     self.process_system_event(event);
                 }
+                Some(command) = system_cmd_rx.recv() => {
+                    if is_shutting_down {
+                        log::debug!("Residual system command: {command:?}");
+                        residual_events += 1;
+                    }
+                    self.process_system_command(command);
+                }
                 Some(evt) = exec_evt_rx.recv() => {
                     let dispatch_start = dst::time::Instant::now();
 
@@ -1676,6 +1722,7 @@ impl LiveNode {
         Self::drain_channels(
             &mut time_evt_rx,
             &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
@@ -2015,6 +2062,7 @@ impl LiveNode {
             Self::drain_channels(
                 receivers.time_evt,
                 receivers.system_evt,
+                receivers.system_cmd,
                 receivers.exec_evt,
                 receivers.exec_cmd,
                 receivers.data_evt,
@@ -2067,6 +2115,10 @@ impl LiveNode {
                 }
                 Some(event) = receivers.system_evt.recv() => {
                     self.process_system_event(event);
+                    processed += 1;
+                }
+                Some(command) = receivers.system_cmd.recv() => {
+                    self.process_system_command(command);
                     processed += 1;
                 }
                 Some(event) = receivers.exec_evt.recv() => {
@@ -2175,6 +2227,7 @@ impl LiveNode {
     fn drain_channels(
         time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
         system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
+        system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
         exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
         exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
         data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
@@ -2191,8 +2244,7 @@ impl LiveNode {
             drained += 1;
         }
 
-        while let Ok(cmd) = data_cmd_rx.try_recv() {
-            AsyncRunner::handle_data_command(cmd);
+        while system_cmd_rx.try_recv().is_ok() {
             drained += 1;
         }
 
@@ -2201,13 +2253,18 @@ impl LiveNode {
             drained += 1;
         }
 
-        while let Ok(cmd) = exec_cmd_rx.try_recv() {
-            AsyncRunner::handle_trading_command(cmd);
+        while let Ok(cmd) = data_cmd_rx.try_recv() {
+            AsyncRunner::handle_data_command(cmd);
             drained += 1;
         }
 
         while let Ok(evt) = exec_evt_rx.try_recv() {
             AsyncRunner::handle_exec_event(evt);
+            drained += 1;
+        }
+
+        while let Ok(cmd) = exec_cmd_rx.try_recv() {
+            AsyncRunner::handle_trading_command(cmd);
             drained += 1;
         }
 
@@ -3051,6 +3108,7 @@ struct PositionReportQueryResult {
 struct RunnerReceivers<'a> {
     time_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
     system_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
+    system_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
     exec_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     exec_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
     data_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
@@ -3092,10 +3150,15 @@ fn flush_pending_data(
 /// Unlike [`flush_pending_data`] this is a single pass, not a drain-until-quiet
 /// loop. Sufficient for phase 2 where the goal is to capture items the biased
 /// select did not poll before the connect future resolved.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "all runner receivers are drained together"
+)]
 fn flush_all_pending(
     pending: &mut PendingEvents,
     time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
     system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
+    system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
     exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
     data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
@@ -3108,6 +3171,10 @@ fn flush_all_pending(
 
     while let Ok(event) = system_evt_rx.try_recv() {
         pending.system_events.push(event);
+    }
+
+    while let Ok(command) = system_cmd_rx.try_recv() {
+        pending.system_commands.push(command);
     }
 
     while let Ok(evt) = data_evt_rx.try_recv() {
@@ -3167,6 +3234,7 @@ async fn drive_with_event_buffering<F: std::future::Future>(
     pending: &mut PendingEvents,
     time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
     system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
+    system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
     exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
     data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
@@ -3186,6 +3254,9 @@ async fn drive_with_event_buffering<F: std::future::Future>(
             }
             Some(event) = system_evt_rx.recv() => {
                 pending.system_events.push(event);
+            }
+            Some(command) = system_cmd_rx.recv() => {
+                pending.system_commands.push(command);
             }
             Some(evt) = exec_evt_rx.recv() => {
                 // Account events are safe to process immediately. Report and
@@ -3234,21 +3305,23 @@ async fn drive_with_event_buffering<F: std::future::Future>(
 #[derive(Default)]
 struct PendingEvents {
     system_events: Vec<SystemEvent>,
-    data_cmds: Vec<DataCommand>,
+    system_commands: Vec<SystemCommand>,
     data_evts: Vec<DataEvent>,
-    exec_cmds: Vec<TradingCommandMessage>,
+    data_cmds: Vec<DataCommand>,
     exec_reports: Vec<ExecutionReport>,
     order_evts: Vec<OrderEventAny>,
+    exec_cmds: Vec<TradingCommandMessage>,
 }
 
 impl PendingEvents {
     fn is_empty(&self) -> bool {
         self.system_events.is_empty()
+            && self.system_commands.is_empty()
             && self.data_evts.is_empty()
             && self.data_cmds.is_empty()
-            && self.exec_cmds.is_empty()
             && self.exec_reports.is_empty()
             && self.order_evts.is_empty()
+            && self.exec_cmds.is_empty()
     }
 
     /// Drains only data events and commands into the cache.
@@ -3281,19 +3354,19 @@ impl PendingEvents {
     fn drain(&mut self) {
         let total = self.data_evts.len()
             + self.data_cmds.len()
-            + self.exec_cmds.len()
             + self.exec_reports.len()
-            + self.order_evts.len();
+            + self.order_evts.len()
+            + self.exec_cmds.len();
 
         if total > 0 {
             log::debug!(
                 "Processing {total} events/commands queued during startup \
-                 (data_evts={}, data_cmds={}, exec_cmds={}, exec_reports={}, order_evts={})",
+                 (data_evts={}, data_cmds={}, exec_reports={}, order_evts={}, exec_cmds={})",
                 self.data_evts.len(),
                 self.data_cmds.len(),
-                self.exec_cmds.len(),
                 self.exec_reports.len(),
-                self.order_evts.len()
+                self.order_evts.len(),
+                self.exec_cmds.len()
             );
         }
 
@@ -3309,17 +3382,21 @@ impl PendingEvents {
             AsyncRunner::handle_exec_event(ExecutionEvent::Report(report));
         }
 
-        for cmd in self.exec_cmds.drain(..) {
-            AsyncRunner::handle_trading_command(cmd);
-        }
-
         for evt in self.order_evts.drain(..) {
             AsyncRunner::handle_exec_event(ExecutionEvent::Order(evt));
+        }
+
+        for cmd in self.exec_cmds.drain(..) {
+            AsyncRunner::handle_trading_command(cmd);
         }
     }
 
     fn take_system_events(&mut self) -> Vec<SystemEvent> {
         std::mem::take(&mut self.system_events)
+    }
+
+    fn take_system_commands(&mut self) -> Vec<SystemCommand> {
+        std::mem::take(&mut self.system_commands)
     }
 }
 
@@ -3372,7 +3449,9 @@ mod tests {
         live::runner::{get_data_event_sender, get_exec_event_sender, get_system_event_sender},
         messages::{
             execution::{QueryAccount, SubmitOrder, TradingCommand},
-            system::{QueueCondition, QueueState, SocketState, SocketStateChanged},
+            system::{
+                QueueCondition, QueueState, ReconnectSocket, SocketState, SocketStateChanged,
+            },
         },
         msgbus::{
             self, BusMessage, BusPayloadType, MessageBusBacking, MessageBusBackingFactory,
@@ -6605,6 +6684,15 @@ mod tests {
         )))
     }
 
+    fn stub_system_command() -> SystemCommand {
+        SystemCommand::ReconnectSocket(ReconnectSocket::new(
+            TraderId::from("TRADER-001"),
+            ClientId::from("POLYMARKET"),
+            Ustr::from("polymarket-market-streams"),
+            UnixNanos::default(),
+        ))
+    }
+
     #[rstest]
     fn test_flush_pending_data_drains_events_and_commands() {
         let (evt_tx, mut evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -6666,6 +6754,18 @@ mod tests {
         let system_events = pending.take_system_events();
 
         assert_eq!(system_events, vec![SystemEvent::SocketState(change)]);
+        assert!(pending.is_empty());
+    }
+
+    #[rstest]
+    fn test_pending_system_commands_stay_separate_from_data() {
+        let mut pending = PendingEvents::default();
+        let command = stub_system_command();
+
+        pending.system_commands.push(command);
+        let system_commands = pending.take_system_commands();
+
+        assert_eq!(system_commands, vec![command]);
         assert!(pending.is_empty());
     }
 
@@ -6738,7 +6838,10 @@ mod tests {
     #[rstest]
     fn test_flush_all_pending_drains_buffered_channels() {
         let (time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
-        let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (system_evt_tx, mut system_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (system_cmd_tx, mut system_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
         let (data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
@@ -6760,7 +6863,10 @@ mod tests {
             Ustr::from("binance-futures-market-streams"),
             SocketState::Connected,
         );
-        system_tx.send(SystemEvent::SocketState(change)).unwrap();
+        system_evt_tx
+            .send(SystemEvent::SocketState(change))
+            .unwrap();
+        system_cmd_tx.send(stub_system_command()).unwrap();
         data_evt_tx.send(stub_data_event()).unwrap();
         data_cmd_tx.send(stub_data_command()).unwrap();
         exec_evt_tx.send(stub_exec_event()).unwrap();
@@ -6769,7 +6875,8 @@ mod tests {
         flush_all_pending(
             &mut pending,
             &mut time_rx,
-            &mut system_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
@@ -6777,14 +6884,17 @@ mod tests {
         );
 
         let system_events = pending.take_system_events();
+        let system_commands = pending.take_system_commands();
         assert_eq!(system_events, vec![SystemEvent::SocketState(change)]);
+        assert_eq!(system_commands, vec![stub_system_command()]);
         assert!(pending.data_evts.is_empty());
         assert!(pending.data_cmds.is_empty());
         assert!(pending.exec_reports.is_empty());
         assert!(pending.exec_cmds.is_empty());
         assert!(pending.order_evts.is_empty());
         assert!(time_rx.try_recv().is_err());
-        assert!(system_rx.try_recv().is_err());
+        assert!(system_evt_rx.try_recv().is_err());
+        assert!(system_cmd_rx.try_recv().is_err());
         assert!(data_evt_rx.try_recv().is_err());
         assert!(data_cmd_rx.try_recv().is_err());
         assert!(exec_evt_rx.try_recv().is_err());
@@ -6821,7 +6931,10 @@ mod tests {
     #[rstest]
     fn test_flush_all_pending_routes_order_event_to_order_evts() {
         let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
-        let (_system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (_system_evt_tx, mut system_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (_system_cmd_tx, mut system_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
         let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
@@ -6837,7 +6950,8 @@ mod tests {
         flush_all_pending(
             &mut pending,
             &mut time_rx,
-            &mut system_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
@@ -6853,7 +6967,10 @@ mod tests {
     #[rstest]
     fn test_flush_all_pending_routes_account_event_immediately() {
         let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
-        let (_system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (_system_evt_tx, mut system_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (_system_cmd_tx, mut system_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
         let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
@@ -6868,7 +6985,8 @@ mod tests {
         flush_all_pending(
             &mut pending,
             &mut time_rx,
-            &mut system_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
@@ -7024,7 +7142,10 @@ mod tests {
     #[rstest]
     fn test_flush_all_pending_buffers_submitted_batch_as_individual_events() {
         let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
-        let (_system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (_system_evt_tx, mut system_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (_system_cmd_tx, mut system_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
         let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
@@ -7039,7 +7160,8 @@ mod tests {
         flush_all_pending(
             &mut pending,
             &mut time_rx,
-            &mut system_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
@@ -7054,7 +7176,10 @@ mod tests {
     #[rstest]
     fn test_flush_all_pending_buffers_canceled_batch_as_individual_events() {
         let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
-        let (_system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (_system_evt_tx, mut system_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (_system_cmd_tx, mut system_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
         let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
@@ -7069,7 +7194,8 @@ mod tests {
         flush_all_pending(
             &mut pending,
             &mut time_rx,
-            &mut system_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
             &mut data_evt_rx,

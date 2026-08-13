@@ -70,6 +70,7 @@ use handlers::{
 use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
+    clients::SocketReconnectLookup,
     clock::Clock,
     logging::{RECV, RES},
     messages::data::{
@@ -813,6 +814,26 @@ impl DataEngine {
     #[must_use]
     pub fn get_clients_mut(&mut self) -> Vec<&mut DataClientAdapter> {
         self.clients.values_mut().collect()
+    }
+
+    /// Resolves a reconnectable socket endpoint owned by a registered data client.
+    #[must_use]
+    pub fn socket_reconnect_lookup(
+        &self,
+        client_id: &ClientId,
+        endpoint: Ustr,
+    ) -> SocketReconnectLookup {
+        let Some(client) = self.clients.get(client_id) else {
+            return SocketReconnectLookup::ClientNotFound;
+        };
+        let Some(registry) = client.socket_reconnect_registry() else {
+            return SocketReconnectLookup::Unsupported;
+        };
+
+        registry.get(endpoint).map_or(
+            SocketReconnectLookup::EndpointNotFound,
+            SocketReconnectLookup::Handle,
+        )
     }
 
     pub fn get_client(

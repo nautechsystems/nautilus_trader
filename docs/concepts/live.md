@@ -229,12 +229,13 @@ provide that evidence under the [command outcome policy](execution.md#command-ou
 
 ### Endpoint labels
 
-Endpoint labels identify a logical adapter stream group without exposing its URL. Multiple sockets
-in a connection pool can share one label, so events report individual transport edges rather than
-aggregate feed availability. The Binance Futures data client uses
-`binance-futures-market-streams` and `binance-futures-public-streams`. Polymarket uses
-`polymarket-market-streams` for pooled CLOB market connections, `polymarket-rtds-streams` for RTDS
-data, and `polymarket-user-streams` for execution events.
+Endpoint labels identify one logical adapter transport without exposing its URL. The Binance
+Futures data client uses `binance-futures-market-streams` and
+`binance-futures-public-streams`. Polymarket uses `polymarket-market-streams` for the primary pooled
+CLOB market connection and numbered labels such as `polymarket-market-streams-1` for additional
+pool shards. It uses `polymarket-rtds-streams` for RTDS data and `polymarket-user-streams` for
+execution events. Each Polymarket WebSocket has its own state sink and reconnect handle under the
+same label.
 
 ### Adapter and actor integration
 
@@ -246,6 +247,24 @@ Actors subscribe with `subscribe_socket_state(...)` and receive events through
 `on_socket_state(...)`. The Python API exposes `SocketState` and `SocketStateChanged` from
 `nautilus_trader.common`. Delivery stays on the typed in‑process bus; external message‑bus streaming
 and wire formats do not expose these events.
+
+### Endpoint reconnect commands
+
+An actor or strategy can call `reconnect_socket(client_id, endpoint)` with an endpoint label from a
+state event. The runner routes the typed command through the kernel and the engine that owns the
+registered endpoint. The engine invokes only that transport's reconnect handle. It does not call
+the containing `DataClient` or `ExecutionClient` disconnect and connect lifecycle.
+
+The API is fire‑and‑observe. A successful return means the command passed local validation and was
+queued. It does not acknowledge kernel acceptance or completed recovery. An accepted request emits
+`SocketStateChanged` with `SocketState.DISCONNECTED` for the selected endpoint as it enters reconnect
+mode. A later `SocketState.CONNECTED` event reports transport recovery. The normal WebSocket
+controller preserves its authentication, subscription replay, and adapter recovery behavior.
+
+The kernel logs unknown clients, unsupported clients, unknown or ambiguous endpoints, duplicate
+requests, disconnecting transports, and closed transports. These rejections emit no socket state
+change and do not affect another endpoint. Endpoint labels use identifier characters only and never
+contain raw URLs.
 
 ## Shutdown on error
 

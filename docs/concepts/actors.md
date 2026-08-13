@@ -165,6 +165,7 @@ Actors have access to core system components:
 | `publish_signal()` / `subscribe_signal()` | Lightweight alerts and notifications.                |
 | `subscribe_queue_state()`                 | Live runner queue pressure state changes.            |
 | `subscribe_socket_state()`                | Live socket transport state changes.                 |
+| `reconnect_socket()`                      | Request recovery of one live socket endpoint.        |
 | `unsubscribe_queue_state()`               | Stop receiving runner queue pressure state changes.  |
 | `unsubscribe_socket_state()`              | Stop receiving socket transport state changes.       |
 | `on_queue_state()`                        | Handle a runner queue pressure state change.         |
@@ -299,6 +300,49 @@ URL.
 Delivery uses the typed in‑process message bus and has no external wire representation. See
 [Socket transport state](live.md#socket-transport-state) for supported adapters and the precise
 connection edge semantics.
+
+### Reconnect a socket endpoint
+
+Live actors and strategies can request recovery of one endpoint without restarting its data or
+execution client. Pass the `client_id` and the endpoint label reported by `SocketStateChanged`:
+
+```rust tab="Rust"
+use nautilus_common::actor::DataActor;
+use nautilus_model::identifiers::ClientId;
+
+impl MyActor {
+    fn recover_market_socket(&self) -> anyhow::Result<()> {
+        self.reconnect_socket(
+            ClientId::from("POLYMARKET"),
+            "polymarket-market-streams",
+        )?;
+        Ok(())
+    }
+}
+```
+
+```python tab="Python"
+from nautilus_trader.model import ClientId
+
+
+def recover_market_socket(self) -> None:
+    self.reconnect_socket(
+        client_id=ClientId("POLYMARKET"),
+        endpoint="polymarket-market-streams",
+    )
+```
+
+This API is fire‑and‑observe. A successful return means the command passed local validation and was
+queued. It does not acknowledge that the kernel accepted the request or that recovery completed.
+Subscribe with `subscribe_socket_state()` and inspect `SocketStateChanged` events for the same
+client and endpoint. An accepted request reports `SocketState.DISCONNECTED` as the transport enters
+reconnect mode, followed by `SocketState.CONNECTED` after transport recovery.
+
+The kernel logs unknown clients, unsupported clients, unknown or ambiguous endpoints, duplicate
+requests, disconnecting transports, and closed transports. These rejections do not emit a socket
+state change or affect another endpoint. Invalid endpoint labels and unavailable or closed runner
+channels fail synchronously. Endpoint labels accept only ASCII letters, digits, `.`, `-`, and `_`;
+pass a logical label rather than a raw URL.
 
 ## Data handling and callbacks
 

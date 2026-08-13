@@ -29,9 +29,10 @@ pub mod timer;
 pub use clock::LiveClock;
 pub use listener::MessageBusListener;
 pub use runner::{
-    get_data_event_sender, get_exec_event_sender, get_system_event_sender, set_data_event_sender,
-    set_exec_event_sender, set_system_event_sender, try_get_data_event_sender,
-    try_get_exec_event_sender, try_get_system_event_sender,
+    get_data_event_sender, get_exec_event_sender, get_system_command_sender,
+    get_system_event_sender, set_data_event_sender, set_exec_event_sender,
+    set_system_command_sender, set_system_event_sender, try_get_data_event_sender,
+    try_get_exec_event_sender, try_get_system_command_sender, try_get_system_event_sender,
 };
 pub use runtime::{get_runtime, set_runtime, shutdown_runtime};
 pub use timer::LiveTimer;

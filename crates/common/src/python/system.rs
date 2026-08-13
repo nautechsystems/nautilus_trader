@@ -13,14 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{UUID4, UnixNanos, python::IntoPyObjectNautilusExt};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
+};
 use nautilus_model::identifiers::{ClientId, TraderId, Venue};
 use pyo3::{basic::CompareOp, prelude::*};
 use ustr::Ustr;
 
 use crate::{
     messages::system::{
-        QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged,
+        QueueCondition, QueueState, QueueStateChanged, ReconnectSocket, SocketState,
+        SocketStateChanged, socket_endpoint,
     },
     runner::SystemChannel,
 };
@@ -54,6 +58,58 @@ impl QueueState {
 impl SocketState {
     const fn __hash__(&self) -> isize {
         *self as isize
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl ReconnectSocket {
+    /// Command requesting reconnect of one socket endpoint owned by one client.
+    #[new]
+    fn py_new(
+        trader_id: TraderId,
+        client_id: ClientId,
+        endpoint: &str,
+        ts_init: u64,
+    ) -> PyResult<Self> {
+        Ok(Self::new(
+            trader_id,
+            client_id,
+            socket_endpoint(endpoint).map_err(to_pyvalue_err)?,
+            UnixNanos::from(ts_init),
+        ))
+    }
+
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        match op {
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
+            _ => py.NotImplemented(),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    const fn trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    #[getter]
+    const fn client_id(&self) -> ClientId {
+        self.client_id
+    }
+
+    #[getter]
+    fn endpoint(&self) -> &str {
+        self.endpoint.as_str()
+    }
+
+    #[getter]
+    const fn ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 }
 
@@ -240,5 +296,49 @@ impl SocketStateChanged {
     #[pyo3(name = "ts_init")]
     const fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::exceptions::PyValueError;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn reconnect_socket_python_constructor_assigns_all_fields() {
+        let trader_id = TraderId::from("TRADER-001");
+        let client_id = ClientId::from("POLYMARKET");
+        let command =
+            ReconnectSocket::py_new(trader_id, client_id, "polymarket-market-streams", 11).unwrap();
+
+        assert_eq!(command.trader_id, trader_id);
+        assert_eq!(command.client_id, client_id);
+        assert_eq!(command.endpoint.as_str(), "polymarket-market-streams");
+        assert_eq!(command.ts_init, UnixNanos::from(11));
+    }
+
+    #[rstest]
+    fn reconnect_socket_python_constructor_rejects_raw_urls() {
+        pyo3::Python::initialize();
+        let trader_id = TraderId::from("TRADER-001");
+        let client_id = ClientId::from("POLYMARKET");
+
+        Python::attach(|py| {
+            let command_error = ReconnectSocket::py_new(
+                trader_id,
+                client_id,
+                "wss://user:secret@example.com/feed",
+                11,
+            )
+            .unwrap_err();
+
+            assert!(command_error.is_instance_of::<PyValueError>(py));
+            assert_eq!(
+                command_error.value(py).to_string(),
+                "Socket endpoint must contain only ASCII letters, digits, '.', '-', or '_'",
+            );
+        });
     }
 }

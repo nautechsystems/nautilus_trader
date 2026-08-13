@@ -19,6 +19,78 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::identifiers::{ClientId, TraderId, Venue};
 use ustr::Ustr;
 
+#[cfg(any(feature = "live", test))]
+const ENDPOINT_MAX_LEN: usize = 128;
+
+#[cfg(any(feature = "live", test))]
+pub(crate) fn socket_endpoint(endpoint: &str) -> anyhow::Result<Ustr> {
+    if endpoint.is_empty() {
+        anyhow::bail!("Socket endpoint cannot be empty");
+    }
+
+    if endpoint.len() > ENDPOINT_MAX_LEN {
+        anyhow::bail!("Socket endpoint cannot exceed {ENDPOINT_MAX_LEN} bytes");
+    }
+
+    if !endpoint
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+    {
+        anyhow::bail!("Socket endpoint must contain only ASCII letters, digits, '.', '-', or '_'");
+    }
+
+    Ok(Ustr::from(endpoint))
+}
+
+/// Command requesting reconnect of one socket endpoint owned by one client.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.common", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
+)]
+pub struct ReconnectSocket {
+    pub trader_id: TraderId,
+    pub client_id: ClientId,
+    pub endpoint: Ustr,
+    pub ts_init: UnixNanos,
+}
+
+impl ReconnectSocket {
+    /// Creates a new [`ReconnectSocket`] instance.
+    #[must_use]
+    pub const fn new(
+        trader_id: TraderId,
+        client_id: ClientId,
+        endpoint: Ustr,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            trader_id,
+            client_id,
+            endpoint,
+            ts_init,
+        }
+    }
+}
+
+impl Display for ReconnectSocket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}(trader_id={}, client_id={}, endpoint={})",
+            stringify!(ReconnectSocket),
+            self.trader_id,
+            self.client_id,
+            self.endpoint,
+        )
+    }
+}
+
 /// Represents the availability state of a socket transport.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -171,6 +243,35 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case("market")]
+    #[case("polymarket-market-streams-1")]
+    #[case("feed.v2_primary")]
+    fn test_socket_endpoint_accepts_identifier_labels(#[case] endpoint: &str) {
+        assert_eq!(socket_endpoint(endpoint).unwrap().as_str(), endpoint);
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("wss://example.com/feed?token=secret")]
+    #[case("user@example.com")]
+    #[case("contains space")]
+    fn test_socket_endpoint_rejects_non_identifier_values(#[case] endpoint: &str) {
+        assert!(socket_endpoint(endpoint).is_err());
+    }
+
+    #[rstest]
+    fn test_socket_endpoint_enforces_maximum_length() {
+        let maximum = "a".repeat(ENDPOINT_MAX_LEN);
+        let too_long = "a".repeat(ENDPOINT_MAX_LEN + 1);
+
+        assert_eq!(socket_endpoint(&maximum).unwrap().as_str(), maximum);
+        assert_eq!(
+            socket_endpoint(&too_long).unwrap_err().to_string(),
+            "Socket endpoint cannot exceed 128 bytes",
+        );
+    }
 
     #[rstest]
     #[case(

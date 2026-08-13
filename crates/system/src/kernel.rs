@@ -13,6 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Kernel construction, component ownership, and run-lifecycle orchestration.
+//!
+//! # Architecture
+//!
+//! [`NautilusKernel`] owns the shared clock, cache, portfolio, trader, order emulator, and data,
+//! risk, and execution engines around an in-process message bus. These components use
+//! `Rc<RefCell<_>>`, so the kernel is not a cross-thread synchronization boundary.
+//!
+//! # Lifecycle
+//!
+//! Construction initializes logging, optional persistence, message-bus handlers, and shutdown
+//! routing. Normal startup starts the engines before initializing the trader. Live callers then
+//! connect data clients, let instrument events populate the cache, connect execution clients, and
+//! call [`NautilusKernel::start_trader`]. Event-store replay instead restores state and skips
+//! engines, clients, trader startup, and live reconciliation.
+//!
+//! Shutdown is split so [`NautilusKernel::stop_trader`] can emit residual events before
+//! [`NautilusKernel::finalize_stop`] saves state, stops engines, cancels timers, and seals the
+//! event-store run. [`NautilusKernel::reset`] retains the assembled system for reuse, while
+//! [`NautilusKernel::dispose`] releases its resources.
+
 use std::{
     cell::{Cell, Ref, RefCell},
     fmt::Debug,
@@ -22,6 +43,7 @@ use std::{
 
 use nautilus_common::{
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
+    clients::{SocketReconnectLookup, SocketReconnectRequestOutcome},
     clock::Clock,
     component::Component,
     enums::{ComponentState, Environment},
@@ -30,7 +52,7 @@ use nautilus_common::{
         logger::{LogGuard, LoggerConfig},
         try_drain_shutdown_on_error_trigger,
     },
-    messages::system::ShutdownSystem,
+    messages::system::{ReconnectSocket, ShutdownSystem},
     msgbus::{
         self, MessageBus, MessagingSwitchboard, ShareableMessageHandler, get_message_bus,
         set_message_bus,
@@ -406,6 +428,70 @@ impl NautilusKernel {
     #[must_use]
     pub fn generate_timestamp_ns(&self) -> UnixNanos {
         self.clock.borrow().timestamp_ns()
+    }
+
+    /// Routes a reconnect command to one registered socket endpoint.
+    pub fn process_socket_reconnect(&self, command: ReconnectSocket) {
+        let outcome = if command.trader_id == self.config.trader_id() {
+            let data = self
+                .data_engine
+                .borrow()
+                .socket_reconnect_lookup(&command.client_id, command.endpoint);
+            let execution = self
+                .exec_engine
+                .borrow()
+                .socket_reconnect_lookup(&command.client_id, command.endpoint);
+            Self::request_socket_reconnect(data, execution)
+        } else {
+            SocketReconnectDispatchOutcome::InvalidTrader
+        };
+
+        if outcome == SocketReconnectDispatchOutcome::Accepted {
+            log::info!(
+                "Requested socket reconnect for client {}",
+                command.client_id
+            );
+        } else {
+            log::warn!(
+                "Rejected socket reconnect request for client {}: {outcome:?}",
+                command.client_id
+            );
+        }
+    }
+
+    fn request_socket_reconnect(
+        data: SocketReconnectLookup,
+        execution: SocketReconnectLookup,
+    ) -> SocketReconnectDispatchOutcome {
+        match (data, execution) {
+            (SocketReconnectLookup::Handle(_), SocketReconnectLookup::Handle(_)) => {
+                SocketReconnectDispatchOutcome::AmbiguousEndpoint
+            }
+            (SocketReconnectLookup::Handle(handle), _)
+            | (_, SocketReconnectLookup::Handle(handle)) => match handle.request_reconnect() {
+                SocketReconnectRequestOutcome::Accepted => SocketReconnectDispatchOutcome::Accepted,
+                SocketReconnectRequestOutcome::AlreadyReconnecting => {
+                    SocketReconnectDispatchOutcome::AlreadyReconnecting
+                }
+                SocketReconnectRequestOutcome::Disconnected => {
+                    SocketReconnectDispatchOutcome::Disconnected
+                }
+                SocketReconnectRequestOutcome::Closed => SocketReconnectDispatchOutcome::Closed,
+                SocketReconnectRequestOutcome::Unsupported => {
+                    SocketReconnectDispatchOutcome::Unsupported
+                }
+            },
+            (SocketReconnectLookup::EndpointNotFound, _)
+            | (_, SocketReconnectLookup::EndpointNotFound) => {
+                SocketReconnectDispatchOutcome::UnknownEndpoint
+            }
+            (SocketReconnectLookup::Unsupported, _) | (_, SocketReconnectLookup::Unsupported) => {
+                SocketReconnectDispatchOutcome::Unsupported
+            }
+            (SocketReconnectLookup::ClientNotFound, SocketReconnectLookup::ClientNotFound) => {
+                SocketReconnectDispatchOutcome::UnknownClient
+            }
+        }
     }
 
     /// Returns the kernel's environment context (Backtest, Sandbox, Live).
@@ -976,6 +1062,126 @@ impl NautilusKernel {
     #[must_use]
     pub fn exec_client_connection_status(&self) -> Vec<(ClientId, bool)> {
         self.exec_engine.borrow().client_connection_status()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SocketReconnectDispatchOutcome {
+    Accepted,
+    AlreadyReconnecting,
+    Disconnected,
+    Closed,
+    Unsupported,
+    UnknownClient,
+    UnknownEndpoint,
+    AmbiguousEndpoint,
+    InvalidTrader,
+}
+
+#[cfg(test)]
+mod socket_reconnect_tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+
+    use nautilus_common::clients::{SocketReconnectHandle, SocketReconnectRegistry};
+    use rstest::rstest;
+
+    use super::*;
+
+    fn stateful_handle(count: Arc<AtomicUsize>) -> SocketReconnectHandle {
+        let reconnecting = AtomicBool::new(false);
+        SocketReconnectHandle::new(move || {
+            if reconnecting.swap(true, Ordering::SeqCst) {
+                SocketReconnectRequestOutcome::AlreadyReconnecting
+            } else {
+                count.fetch_add(1, Ordering::SeqCst);
+                SocketReconnectRequestOutcome::Accepted
+            }
+        })
+    }
+
+    #[rstest]
+    fn endpoint_request_and_duplicate_leave_sibling_untouched() {
+        let registry = SocketReconnectRegistry::default();
+        let selected = Arc::new(AtomicUsize::new(0));
+        let sibling = Arc::new(AtomicUsize::new(0));
+        let _selected_registration = registry.register(
+            Ustr::from("market-0"),
+            stateful_handle(Arc::clone(&selected)),
+        );
+        let _sibling_registration = registry.register(
+            Ustr::from("market-1"),
+            stateful_handle(Arc::clone(&sibling)),
+        );
+        let selected_lookup = || {
+            SocketReconnectLookup::Handle(
+                registry
+                    .get(Ustr::from("market-0"))
+                    .expect("selected endpoint should be registered"),
+            )
+        };
+
+        assert_eq!(
+            NautilusKernel::request_socket_reconnect(
+                selected_lookup(),
+                SocketReconnectLookup::ClientNotFound,
+            ),
+            SocketReconnectDispatchOutcome::Accepted,
+        );
+        assert_eq!(
+            NautilusKernel::request_socket_reconnect(
+                selected_lookup(),
+                SocketReconnectLookup::ClientNotFound,
+            ),
+            SocketReconnectDispatchOutcome::AlreadyReconnecting,
+        );
+        assert_eq!(selected.load(Ordering::SeqCst), 1);
+        assert_eq!(sibling.load(Ordering::SeqCst), 0);
+    }
+
+    #[rstest]
+    #[case(
+        SocketReconnectLookup::ClientNotFound,
+        SocketReconnectLookup::ClientNotFound,
+        SocketReconnectDispatchOutcome::UnknownClient
+    )]
+    #[case(
+        SocketReconnectLookup::Unsupported,
+        SocketReconnectLookup::ClientNotFound,
+        SocketReconnectDispatchOutcome::Unsupported
+    )]
+    #[case(
+        SocketReconnectLookup::EndpointNotFound,
+        SocketReconnectLookup::ClientNotFound,
+        SocketReconnectDispatchOutcome::UnknownEndpoint
+    )]
+    fn rejected_lookup_does_not_invoke_an_endpoint(
+        #[case] data: SocketReconnectLookup,
+        #[case] execution: SocketReconnectLookup,
+        #[case] expected: SocketReconnectDispatchOutcome,
+    ) {
+        assert_eq!(
+            NautilusKernel::request_socket_reconnect(data, execution),
+            expected,
+        );
+    }
+
+    #[rstest]
+    fn ambiguous_lookup_does_not_invoke_either_endpoint() {
+        let data_count = Arc::new(AtomicUsize::new(0));
+        let execution_count = Arc::new(AtomicUsize::new(0));
+
+        assert_eq!(
+            NautilusKernel::request_socket_reconnect(
+                SocketReconnectLookup::Handle(stateful_handle(Arc::clone(&data_count))),
+                SocketReconnectLookup::Handle(stateful_handle(Arc::clone(&execution_count))),
+            ),
+            SocketReconnectDispatchOutcome::AmbiguousEndpoint,
+        );
+        assert_eq!(data_count.load(Ordering::SeqCst), 0);
+        assert_eq!(execution_count.load(Ordering::SeqCst), 0);
     }
 }
 

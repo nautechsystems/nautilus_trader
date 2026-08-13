@@ -79,14 +79,20 @@ impl ConnectionMode {
     /// so a writer detecting a dead connection cannot resurrect a client that
     /// is being torn down.
     pub fn request_reconnect(value: &AtomicU8) -> bool {
-        value
-            .compare_exchange(
-                Self::Active.as_u8(),
-                Self::Reconnect.as_u8(),
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            )
-            .is_ok()
+        Self::request_reconnect_outcome(value) == ReconnectRequestOutcome::Accepted
+    }
+
+    /// Atomically requests reconnect and reports the observed state on rejection.
+    pub(crate) fn request_reconnect_outcome(value: &AtomicU8) -> ReconnectRequestOutcome {
+        match value.compare_exchange(
+            Self::Active.as_u8(),
+            Self::Reconnect.as_u8(),
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            Ok(_) => ReconnectRequestOutcome::Accepted,
+            Err(actual) => ReconnectRequestOutcome::from_rejected(Self::from_u8(actual)),
+        }
     }
 
     /// Atomically transitions from `Active` to `Reconnect` and reports the loss.
@@ -94,15 +100,25 @@ impl ConnectionMode {
         value: &AtomicU8,
         sink: Option<&SocketStateSink>,
     ) -> bool {
+        Self::request_reconnect_outcome_with_sink(value, sink) == ReconnectRequestOutcome::Accepted
+    }
+
+    pub(crate) fn request_reconnect_outcome_with_sink(
+        value: &AtomicU8,
+        sink: Option<&SocketStateSink>,
+    ) -> ReconnectRequestOutcome {
         sink.map_or_else(
-            || Self::request_reconnect(value),
+            || Self::request_reconnect_outcome(value),
             |sink| {
-                sink.transition(
+                sink.transition_result(
                     value,
                     Self::Active,
                     Self::Reconnect,
                     SocketState::Disconnected,
                 )
+                .map_or_else(ReconnectRequestOutcome::from_rejected, |()| {
+                    ReconnectRequestOutcome::Accepted
+                })
             },
         )
     }
@@ -209,6 +225,31 @@ impl ConnectionMode {
     #[must_use]
     pub const fn is_closed(&self) -> bool {
         matches!(self, Self::Closed)
+    }
+}
+
+/// Outcome of a controller-owned reconnect request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReconnectRequestOutcome {
+    /// The active transport entered reconnect mode.
+    Accepted,
+    /// The transport is already reconnecting.
+    AlreadyReconnecting,
+    /// The transport is disconnecting.
+    Disconnected,
+    /// The transport is permanently closed.
+    Closed,
+    /// The client uses stream mode and cannot replace its caller-owned reader.
+    Unsupported,
+}
+
+impl ReconnectRequestOutcome {
+    fn from_rejected(mode: ConnectionMode) -> Self {
+        match mode {
+            ConnectionMode::Active | ConnectionMode::Reconnect => Self::AlreadyReconnecting,
+            ConnectionMode::Disconnect => Self::Disconnected,
+            ConnectionMode::Closed => Self::Closed,
+        }
     }
 }
 

@@ -30,7 +30,7 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
-use super::log_not_implemented;
+use super::{SocketReconnectRegistry, log_not_implemented};
 use crate::messages::execution::{
     BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
     GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -57,6 +57,11 @@ pub trait ExecutionClient {
     fn venue(&self) -> Venue;
     fn oms_type(&self) -> OmsType;
     fn get_account(&self) -> Option<AccountAny>;
+
+    /// Returns endpoint-level socket reconnect controls exposed by this client.
+    fn socket_reconnect_registry(&self) -> Option<&SocketReconnectRegistry> {
+        None
+    }
 
     /// Returns the maximum absolute position difference tolerated during reconciliation.
     fn position_reconciliation_tolerance(&self) -> Decimal {

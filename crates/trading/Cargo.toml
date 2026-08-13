@@ -76,3 +76,4 @@ pyo3-stub-gen = { workspace = true, optional = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }

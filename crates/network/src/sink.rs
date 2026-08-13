@@ -59,26 +59,33 @@ impl SocketStateSink {
         next: ConnectionMode,
         state: SocketState,
     ) -> bool {
+        self.transition_result(value, current, next, state).is_ok()
+    }
+
+    pub(crate) fn transition_result(
+        &self,
+        value: &AtomicU8,
+        current: ConnectionMode,
+        next: ConnectionMode,
+        state: SocketState,
+    ) -> Result<(), ConnectionMode> {
         let _guard = self
             .transition_lock
             .lock()
             .expect("socket state sink transition lock poisoned");
 
-        if value
-            .compare_exchange(
-                current.as_u8(),
-                next.as_u8(),
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            )
-            .is_err()
-        {
-            return false;
+        if let Err(actual) = value.compare_exchange(
+            current.as_u8(),
+            next.as_u8(),
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            return Err(ConnectionMode::from_u8(actual));
         }
 
         self.notify(state);
 
-        true
+        Ok(())
     }
 
     pub(crate) fn close_on_loss(&self, value: &AtomicU8) -> bool {

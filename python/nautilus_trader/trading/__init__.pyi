@@ -950,6 +950,7 @@ class Strategy:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> str: ...
+    def reconnect_socket(self, client_id: model.ClientId, endpoint: str) -> None: ...
 
 class StrategyConfig:
     def __init__(

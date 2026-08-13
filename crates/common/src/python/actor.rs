@@ -2449,6 +2449,12 @@ impl PyDataActor {
         Ok(request_id.to_string())
     }
 
+    /// Requests reconnect of one socket endpoint owned by `client_id`.
+    #[pyo3(name = "reconnect_socket")]
+    fn py_reconnect_socket(&self, client_id: ClientId, endpoint: &str) -> PyResult<()> {
+        DataActor::reconnect_socket(self.inner(), client_id, endpoint).map_err(to_pyruntime_err)
+    }
+
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_data")]
     fn py_on_historical_data(&mut self, data: Py<PyAny>) {
@@ -2787,7 +2793,9 @@ mod tests {
         clock::TestClock,
         component::Component,
         enums::ComponentState,
+        live::runner::replace_system_command_sender,
         messages::{
+            SystemCommand,
             data::{BarsResponse, CustomDataResponse, QuotesResponse, TradesResponse},
             system::{
                 QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged,
@@ -3607,6 +3615,46 @@ class CapturingActor:
         let actor = create_registered_actor(clock, cache, trader_id);
         let state = actor.state();
         assert_eq!(state, ComponentState::Ready);
+    }
+
+    #[rstest]
+    fn test_python_reconnect_socket_enqueues_typed_command(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+        replace_system_command_sender(system_tx);
+        let actor = create_registered_actor(clock, cache, trader_id);
+
+        actor
+            .py_reconnect_socket(ClientId::from("POLYMARKET"), "polymarket-market-streams")
+            .expect("valid reconnect command");
+        let command = system_rx
+            .try_recv()
+            .expect("reconnect command should be queued");
+        let SystemCommand::ReconnectSocket(command) = command;
+
+        assert_eq!(command.trader_id, trader_id);
+        assert_eq!(command.client_id, ClientId::from("POLYMARKET"));
+        assert_eq!(command.endpoint.as_str(), "polymarket-market-streams");
+        assert_eq!(command.ts_init, UnixNanos::default());
+    }
+
+    #[rstest]
+    fn test_python_reconnect_socket_returns_errors_without_panicking() {
+        let actor = create_unregistered_actor();
+
+        assert!(
+            actor
+                .py_reconnect_socket(ClientId::from("POLYMARKET"), "polymarket-market-streams")
+                .is_err()
+        );
+        assert!(
+            actor
+                .py_reconnect_socket(ClientId::from("POLYMARKET"), "wss://secret.example")
+                .is_err()
+        );
     }
 
     fn sample_instrument() -> CurrencyPair {

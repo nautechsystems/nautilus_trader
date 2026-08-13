@@ -340,13 +340,13 @@ impl PolymarketDataClient {
         self.pending_snapshot_after_tick_change = std::sync::Arc::new(AtomicSet::new());
         self.new_market_inflight_keys = std::sync::Arc::new(DashMap::new());
         self.ws_open_tokens = std::sync::Arc::new(AtomicSet::new());
-        self.rtds_feed = crate::rtds::PolymarketRtdsFeed::new_with_proxy_and_state_sink(
+        self.rtds_feed = crate::rtds::PolymarketRtdsFeed::new_with_proxy_and_socket_control(
             self.config.rtds_url(),
             self.config.transport_backend,
             self.clock,
             self.data_sender.clone(),
             self.proxy_url.clone(),
-            self.rtds_state_sink.clone(),
+            self.rtds_socket_control.clone(),
         );
 
         self.pending_auto_loads

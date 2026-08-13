@@ -3327,6 +3327,12 @@ impl PyStrategy {
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
+
+    /// Requests reconnect of one socket endpoint owned by `client_id`.
+    #[pyo3(name = "reconnect_socket")]
+    fn py_reconnect_socket(&self, client_id: ClientId, endpoint: &str) -> PyResult<()> {
+        DataActor::reconnect_socket(self.inner(), client_id, endpoint).map_err(to_pyruntime_err)
+    }
 }
 
 impl PyStrategy {
@@ -3371,7 +3377,9 @@ mod tests {
         cache::Cache,
         clock::{Clock, TestClock},
         component::Component,
+        live::runner::replace_system_command_sender,
         messages::{
+            SystemCommand,
             data::{
                 BarsResponse, DataCommand, QuotesResponse, SubscribeCommand, TradesResponse,
                 UnsubscribeCommand,
@@ -4548,6 +4556,29 @@ class IndicatorEventStrategy:
 
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert!(subscriptions.is_empty());
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_reconnect_socket_enqueues_typed_command() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+            replace_system_command_sender(system_tx);
+            let (_, strategy) = create_registered_tracking_strategy(py);
+
+            strategy
+                .py_reconnect_socket(ClientId::from("POLYMARKET"), "polymarket-market-streams")
+                .expect("valid reconnect command");
+            let command = system_rx
+                .try_recv()
+                .expect("reconnect command should be queued");
+            let SystemCommand::ReconnectSocket(command) = command;
+
+            assert_eq!(command.trader_id, TraderId::from("TRADER-001"));
+            assert_eq!(command.client_id, ClientId::from("POLYMARKET"));
+            assert_eq!(command.endpoint.as_str(), "polymarket-market-streams");
+            assert_eq!(command.ts_init, UnixNanos::default());
         });
     }
 
