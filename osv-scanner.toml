@@ -64,10 +64,5 @@ id = "RUSTSEC-2026-0235"
 reason = "rkyv validation bug in unused optional rust_decimal dependency; no 0.7 fix"
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2026-0253"
-ignoreUntil = 2026-08-18
-reason = "lru 0.16.4 pop unsoundness requires a panicking key Drop; alloy-provider 2.3.0 is the only path and uses Copy keys, with its lru 0.18.2 update merged but unreleased"
-
-[[IgnoredVulns]]
 id = "GHSA-2f9f-gq7v-9h6m"
 reason = "thrift 0.17.0 memory-allocation DoS; the affected TCompactInputProtocol is used only by Parquet's feature-gated CLI, which Nautilus does not enable or ship"

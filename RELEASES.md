@@ -6,6 +6,7 @@ Released on TBD (UTC).
 
 - Added canonical Rust backtest results with normalized projections, content digests, and stable ordering
 - Added full Rust config parity for the Python testkit `ExecTesterConfig`
+- Added `Sum` iterator support for owned and borrowed `Quantity` values (#4720), thanks @faysou
 - Added Python v2 Redis message bus backing for `LiveNode` (#4630), thanks for reporting @davidgreyme
 - Added Python v2 cache database backing for `LiveNode` (#4634), thanks for reporting @AlphaTraderK
 - Added direct message bus backing installation through `RedisMessageBusConfig`
@@ -15,6 +16,7 @@ Released on TBD (UTC).
 - Added `INFO` logs for socket and WebSocket connection loss and recovery (#4621), thanks @folknor
 - Added Rust and Python `SocketStateChanged` events for Binance Futures and Polymarket live clients
 - Added Deribit book summaries as requestable custom data (#4576), thanks @graceyangfan
+- Added Hyperliquid user TWAP history and slice fills as opt‑in custom data (#4674), thanks @graceyangfan
 - Added Polymarket `compute_effective_deltas` config option to emit net changes for book snapshots (default `False`)
 - Added Polymarket `series_ids` instrument provider scoping for recurring Gamma market families (#4650), thanks @mystic-io
 - Added Polymarket instrument bootstrap from a `filters` map or a market-sourcing registered `InstrumentFilter` alone, without requiring `load_all`
@@ -58,6 +60,8 @@ Released on TBD (UTC).
 - Fixed macOS ARM64 PyArrow SIGSEGVs (#4633, #4642), thanks for reporting @ZhongxuanWang; thanks @alex09x
 - Fixed fee model panics from invalid Python inputs and decimal overflow (#4640), thanks @dfjmax
 - Fixed Rust network and WebSocket adapter logs that could expose credentials and payload contents
+- Fixed `CashAccount` aborts when reserving negative‑price buy orders (#4725), thanks @folknor
+- Fixed `OrderBookDeltas::new_checked` accepting child instrument mismatches (#4710), thanks @folknor
 - Removed `OrderBookDeltas.from_pycapsule`, which reinterpreted unvalidated capsule pointers and could cause invalid memory access
 
 ### Fixes
@@ -85,13 +89,20 @@ Released on TBD (UTC).
 - Fixed option expiry settlement dispatching partial legs and failing to retry missing prices (#4618), thanks @folknor
 - Fixed simulated exchange order queries returning all orders for unknown instruments (#4687), thanks @folknor
 - Fixed `FixedRiskSizer` omitting instrument contract multipliers (#4699), thanks @dfjmax
+- Fixed cache resets retaining stale `OptionGreeks` values (#4701), thanks @folknor
+- Fixed `f32` exponential approximation outside its normal exponent range (#4709), thanks @folknor
+- Fixed orderless position cache indexes and replayed flips (#4688), thanks @pengpengyi92
+- Fixed portfolio Greeks failing on closed positions (#4700), thanks @folknor
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
 - Fixed Databento MBO snapshots advancing the incremental sequence (#4686), thanks @faysou
 - Fixed Derive cancel‑only replacements and reused labels during order reconciliation
+- Fixed Hyperliquid historical candle timestamps and unfinished candle filtering (#4727), thanks @HKOWL
 - Fixed Interactive Brokers continuous futures historical bar requests (#4664), thanks @dfjmax
 - Fixed Interactive Brokers deactivated open‑order processing
+- Fixed Interactive Brokers delayed market data not emitting `QuoteTick` values (#4719), thanks @faysou
 - Fixed Interactive Brokers local modify and cancel rejection event emission (#4564), thanks for reporting @davidgreyme
+- Fixed OKX margin reconciliation omitting `SPOT` orders and fills (#4743), thanks @silarin
 - Fixed Polymarket commissions to preserve exact decimal values in `Money` construction
 - Fixed Polymarket maker fill ownership and reported mass‑status trade drops (#4662), thanks @seungpyoson
 - Fixed Polymarket WebSocket asset and discovery subscription replay across reconnects
@@ -101,11 +112,15 @@ Released on TBD (UTC).
 - Fixed Polymarket WebSocket order message sizes for `FAK` and `FOK` BUY orders, where the venue reports the signed pUSD maker amount rather than a share quantity
 - Fixed Polymarket order‑safety heartbeat routing, ID chaining, rate‑limit retries, and safety deadlines
 - Fixed Polymarket order book snapshots accepting divergent data with invalid venue hashes
+- Fixed Polymarket compact book snapshots being dropped when hash preimage fields are absent
+- Fixed Polymarket open markets being removed from live state after `endDate` (#4706), thanks @mystic-io
 
 ### Internal Improvements
 
 - Added `From` conversions from `ActorId`, `ExecAlgorithmId`, and `StrategyId` to `ComponentId` that reuse the interned value
 - Improved native backtest workload coverage for canonical result checks
+- Improved indicator test tolerances across floating‑point magnitudes (#4718), thanks @mkzung
+- Improved published‑registry verifier tests to ignore fork metadata (#4715), thanks @xxxxxx-oss
 - Improved Coinbase request tests by removing redundant waits (#4637), thanks @pengpengyi92
 - Improved network crate tests for retries, rate limits, mutual TLS, HTTP, socket reconnects, and WebSocket messages
 - Improved Polymarket order response tests for the `tradeIDs` matched shape and batch submission legs
@@ -113,6 +128,7 @@ Released on TBD (UTC).
 - Refined CI, build, and dependency configuration after the v1 removal
 - Replaced Chrono and Chrono-TZ with Jiff and bundled TZDB data (#4639), thanks @sunlei
 - Standardized Rust adapter order command failure classification with a shared `CommandFailure` type for Architect AX, Bybit, and Kraken
+- Optimized Polymarket interleaved price‑change dispatch and timestamp parsing
 - Updated concept and tutorial docs to describe current Rust and PyO3 behavior after the v1 removal
 - Upgraded Rust development tools: `cargo-hawk` v0.1.12, `cargo-nextest` v0.9.143, and Miri `nightly-2026-08-01`
 - Upgraded Python and workflow tools: `uv` v0.12.3, `pypi-attestations` v0.0.30, and `zizmor` v1.29.0

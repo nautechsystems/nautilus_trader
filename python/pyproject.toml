@@ -66,6 +66,8 @@ include = ["**/*.pyi"]
 [tool.uv]
 required-version = ">=0.12,<0.13"
 exclude-newer = "7 days"
+# Allow Ruff 0.16.2 while retaining the cooldown cutoff for later releases.
+exclude-newer-package = { ruff = "2026-08-08T00:00:00Z" }
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
 # building from source. Kept in sync with python/uv.lock by
