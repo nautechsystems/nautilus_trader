@@ -13,11 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Shared connection state for socket clients.
+//! Atomic connection state and controller lifecycle coordination for socket transports.
+//!
+//! # Transition contract
+//!
+//! [`ConnectionMode`] is shared across transport tasks. Reconnect transitions use atomic
+//! compare‑and‑exchange operations so late reconnect work cannot overwrite a concurrent
+//! `Disconnect` or `Closed` state. Sink‑backed transitions pair each successful mode change with
+//! its semantic availability edge.
+//!
+//! # Session and controller fencing
+//!
+//! `ReadSessionFence` marks a reader as retired so its dispatch checks drop old‑transport messages
+//! after observing invalidation. `ControllerLifecycle` prevents retained reconnect handles from
+//! accepting work after shutdown and defers aborting the controller until each in‑flight request
+//! reaches its handoff boundary.
 
 use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU8, Ordering},
+    Arc, OnceLock,
+    atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
 };
 
 use strum::{AsRefStr, Display, EnumString};
@@ -123,8 +137,12 @@ impl ConnectionMode {
         )
     }
 
-    /// Atomically transitions from `Active` to `Closed` and reports the loss.
-    pub(crate) fn close_on_loss(value: &AtomicU8, sink: Option<&SocketStateSink>) -> bool {
+    /// Atomically transitions from `Active` or `Reconnect` to `Closed` using WebSocket callback
+    /// serialization.
+    pub(crate) fn close_websocket_on_loss(
+        value: &AtomicU8,
+        sink: Option<&SocketStateSink>,
+    ) -> bool {
         sink.map_or_else(
             || {
                 value
@@ -291,6 +309,87 @@ impl ReadSessionFence {
     #[must_use]
     pub(crate) fn is_valid(&self) -> bool {
         self.valid.load(Ordering::SeqCst)
+    }
+}
+
+const CONTROLLER_CLOSED: usize = 1 << (usize::BITS - 1);
+const CONTROLLER_REQUEST_MASK: usize = CONTROLLER_CLOSED - 1;
+
+pub(crate) struct ControllerLifecycle {
+    state: AtomicUsize,
+    abort_handle: OnceLock<tokio::task::AbortHandle>,
+}
+
+impl ControllerLifecycle {
+    pub(crate) const fn new() -> Self {
+        Self {
+            state: AtomicUsize::new(0),
+            abort_handle: OnceLock::new(),
+        }
+    }
+
+    pub(crate) fn enter_request(&self) -> Option<ControllerRequest<'_>> {
+        self.state
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |state| {
+                if state & CONTROLLER_CLOSED != 0 {
+                    None
+                } else {
+                    assert_ne!(
+                        state, CONTROLLER_REQUEST_MASK,
+                        "too many reconnect requests"
+                    );
+                    Some(state + 1)
+                }
+            })
+            .ok()
+            .map(|_| ControllerRequest(self))
+    }
+
+    pub(crate) fn set_abort_handle(&self, abort_handle: tokio::task::AbortHandle) {
+        assert!(
+            self.abort_handle.set(abort_handle).is_ok(),
+            "controller abort handle already set"
+        );
+    }
+
+    pub(crate) fn close_and_abort(&self) {
+        let previous = self.state.fetch_or(CONTROLLER_CLOSED, Ordering::SeqCst);
+        if previous & CONTROLLER_REQUEST_MASK == 0 {
+            self.abort();
+        }
+    }
+
+    pub(crate) fn activity(self: &Arc<Self>) -> ControllerActivity {
+        ControllerActivity(Arc::clone(self))
+    }
+
+    fn close(&self) {
+        self.state.fetch_or(CONTROLLER_CLOSED, Ordering::SeqCst);
+    }
+
+    fn abort(&self) {
+        if let Some(abort_handle) = self.abort_handle.get() {
+            abort_handle.abort();
+        }
+    }
+}
+
+pub(crate) struct ControllerRequest<'a>(&'a ControllerLifecycle);
+
+impl Drop for ControllerRequest<'_> {
+    fn drop(&mut self) {
+        let previous = self.0.state.fetch_sub(1, Ordering::SeqCst);
+        if previous == CONTROLLER_CLOSED | 1 {
+            self.0.abort();
+        }
+    }
+}
+
+pub(crate) struct ControllerActivity(Arc<ControllerLifecycle>);
+
+impl Drop for ControllerActivity {
+    fn drop(&mut self) {
+        self.0.close();
     }
 }
 

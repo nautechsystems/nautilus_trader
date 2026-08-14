@@ -44,8 +44,8 @@ use std::{
     path::Path,
     pin::pin,
     sync::{
-        Arc, OnceLock,
-        atomic::{AtomicU8, AtomicUsize, Ordering},
+        Arc,
+        atomic::{AtomicU8, Ordering},
     },
     time::Duration,
 };
@@ -63,7 +63,10 @@ use crate::{
     dst,
     error::{SendError, is_connection_drop_io_error},
     logging::{log_task_aborted, log_task_started, log_task_stopped},
-    mode::{ConnectionMode, ReadSessionFence, ReconnectOutcome, ReconnectRequestOutcome},
+    mode::{
+        ConnectionMode, ControllerLifecycle, ReadSessionFence, ReconnectOutcome,
+        ReconnectRequestOutcome,
+    },
     net::TcpStream,
     tls::{create_tls_config_from_certs_dir, tcp_tls},
 };
@@ -889,18 +892,18 @@ pub struct SocketClient {
     pub(crate) state_notify: Arc<tokio::sync::Notify>,
     pub(crate) reconnect_timeout: Duration,
     pub writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+    state_sink: Option<SocketStateSink>,
     controller_lifecycle: Arc<ControllerLifecycle>,
     controller_notify: Arc<tokio::sync::Notify>,
-    state_sink: Option<SocketStateSink>,
 }
 
 /// Cloneable controller handle for requesting one raw socket reconnect.
 #[derive(Clone)]
 pub struct SocketReconnectHandle {
     connection_mode: Arc<AtomicU8>,
+    state_sink: Option<SocketStateSink>,
     controller_lifecycle: Arc<ControllerLifecycle>,
     controller_notify: Arc<tokio::sync::Notify>,
-    state_sink: Option<SocketStateSink>,
 }
 
 impl Debug for SocketReconnectHandle {
@@ -961,9 +964,9 @@ mod reconnect_request_tests {
         });
         let handle = SocketReconnectHandle {
             connection_mode: Arc::new(AtomicU8::new(mode.as_u8())),
+            state_sink: Some(state_sink),
             controller_lifecycle: Arc::new(ControllerLifecycle::new()),
             controller_notify: Arc::clone(&controller_notify),
-            state_sink: Some(state_sink),
         };
         (handle, controller_notify, states)
     }
@@ -1077,9 +1080,9 @@ impl SocketClient {
             state_notify,
             reconnect_timeout,
             writer_tx,
+            state_sink,
             controller_lifecycle,
             controller_notify,
-            state_sink,
         })
     }
 
@@ -1088,9 +1091,9 @@ impl SocketClient {
     pub fn reconnect_handle(&self) -> SocketReconnectHandle {
         SocketReconnectHandle {
             connection_mode: Arc::clone(&self.connection_mode),
+            state_sink: self.state_sink.clone(),
             controller_lifecycle: Arc::clone(&self.controller_lifecycle),
             controller_notify: Arc::clone(&self.controller_notify),
-            state_sink: self.state_sink.clone(),
         }
     }
 
@@ -1272,7 +1275,7 @@ impl SocketClient {
         const CONTROLLER_FALLBACK_INTERVAL_MS: u64 = 100;
 
         tokio::task::spawn(async move {
-            let _activity = ControllerActivity(controller_lifecycle);
+            let _activity = controller_lifecycle.activity();
             log_task_started("controller");
 
             let fallback_interval = Duration::from_millis(CONTROLLER_FALLBACK_INTERVAL_MS);
@@ -1492,83 +1495,6 @@ impl Drop for SocketClient {
         if controller_running {
             log_task_aborted("controller");
         }
-    }
-}
-
-const CONTROLLER_CLOSED: usize = 1 << (usize::BITS - 1);
-const CONTROLLER_REQUEST_MASK: usize = CONTROLLER_CLOSED - 1;
-
-struct ControllerLifecycle {
-    state: AtomicUsize,
-    abort_handle: OnceLock<tokio::task::AbortHandle>,
-}
-
-impl ControllerLifecycle {
-    const fn new() -> Self {
-        Self {
-            state: AtomicUsize::new(0),
-            abort_handle: OnceLock::new(),
-        }
-    }
-
-    fn enter_request(&self) -> Option<ControllerRequest<'_>> {
-        self.state
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |state| {
-                if state & CONTROLLER_CLOSED != 0 {
-                    None
-                } else {
-                    assert_ne!(
-                        state, CONTROLLER_REQUEST_MASK,
-                        "too many reconnect requests"
-                    );
-                    Some(state + 1)
-                }
-            })
-            .ok()
-            .map(|_| ControllerRequest(self))
-    }
-
-    fn set_abort_handle(&self, abort_handle: tokio::task::AbortHandle) {
-        assert!(
-            self.abort_handle.set(abort_handle).is_ok(),
-            "controller abort handle already set"
-        );
-    }
-
-    fn close(&self) {
-        self.state.fetch_or(CONTROLLER_CLOSED, Ordering::SeqCst);
-    }
-
-    fn close_and_abort(&self) {
-        let previous = self.state.fetch_or(CONTROLLER_CLOSED, Ordering::SeqCst);
-        if previous & CONTROLLER_REQUEST_MASK == 0 {
-            self.abort();
-        }
-    }
-
-    fn abort(&self) {
-        if let Some(abort_handle) = self.abort_handle.get() {
-            abort_handle.abort();
-        }
-    }
-}
-
-struct ControllerRequest<'a>(&'a ControllerLifecycle);
-
-impl Drop for ControllerRequest<'_> {
-    fn drop(&mut self) {
-        let previous = self.0.state.fetch_sub(1, Ordering::SeqCst);
-        if previous == CONTROLLER_CLOSED | 1 {
-            self.0.abort();
-        }
-    }
-}
-
-struct ControllerActivity(Arc<ControllerLifecycle>);
-
-impl Drop for ControllerActivity {
-    fn drop(&mut self) {
-        self.0.close();
     }
 }
 

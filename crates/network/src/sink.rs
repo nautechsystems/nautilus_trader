@@ -13,7 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Ordered socket state notification for shared connection modes.
+//! Ordered availability‑edge publication for socket transports.
+//!
+//! # Ordering
+//!
+//! A [`SocketStateSink`] reports transitions into and out of [`ConnectionMode::Active`] for one
+//! client, rather than every internal connection mode. Most paths perform the mode transition and
+//! callback under the same serialization lock, so concurrent loss and recovery attempts publish
+//! at most one ordered edge. WebSocket reconnect changes mode before publishing loss and uses the
+//! same lock for publication, while the controller prevents recovery until publication completes.
 
 use std::{
     fmt::Debug,
@@ -86,6 +94,14 @@ impl SocketStateSink {
         self.notify(state);
 
         Ok(())
+    }
+
+    pub(crate) fn publish_websocket(&self, state: SocketState) {
+        let _guard = self
+            .transition_lock
+            .lock()
+            .expect("socket state sink transition lock poisoned");
+        self.notify(state);
     }
 
     pub(crate) fn close_on_loss(&self, value: &AtomicU8) -> bool {
@@ -248,7 +264,7 @@ mod tests {
             let mode = Arc::clone(&mode);
             move || {
                 barrier.wait();
-                ConnectionMode::close_on_loss(&mode, Some(&sink))
+                ConnectionMode::close_websocket_on_loss(&mode, Some(&sink))
             }
         });
 
@@ -320,7 +336,7 @@ mod tests {
         });
         let mode = AtomicU8::new(ConnectionMode::Reconnect.as_u8());
 
-        assert!(ConnectionMode::close_on_loss(&mode, Some(&sink)));
+        assert!(ConnectionMode::close_websocket_on_loss(&mode, Some(&sink)));
 
         assert_eq!(ConnectionMode::from_atomic(&mode), ConnectionMode::Closed);
         assert_eq!(*states.lock().unwrap(), Vec::new());

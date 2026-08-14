@@ -27,6 +27,15 @@
 //! hands its sink to the writer, replaces the reader, then publishes the reconnect notification.
 //! Terminal disconnect and close states stop all tasks instead of starting another reconnect.
 //!
+//! # Reconnect ordering
+//!
+//! An accepted reconnect request first transitions to `Reconnect` and invalidates registered
+//! authentication. The controller may establish the replacement while the synchronous loss
+//! callback runs, but cannot restore `Active` until loss publication completes. A reconnect through
+//! [`WebSocketReconnectHandle`] releases its controller request fence before invoking the callback,
+//! so dropping the client can terminate controller work even if the callback blocks. Terminal
+//! states always take precedence.
+//!
 //! # Send semantics
 //!
 //! Ordinary sends return after entering the writer channel. Failed ordinary writes and ordinary
@@ -98,17 +107,21 @@ use crate::transport::sockudo::{
     PrefixedIo, SockudoTransport, client_handshake_with_headers, validate_extra_headers,
 };
 use crate::{
-    RECONNECTED, SocketStateSink,
+    RECONNECTED, SocketState, SocketStateSink,
     backoff::{ExponentialBackoff, RECONNECT_STABILITY_THRESHOLD, wait_reconnect_delay},
     dst,
     error::{SendError, is_connection_drop_io_error},
     logging::{log_task_aborted, log_task_started, log_task_stopped},
-    mode::{ConnectionMode, ReadSessionFence, ReconnectOutcome, ReconnectRequestOutcome},
+    mode::{
+        ConnectionMode, ControllerLifecycle, ReadSessionFence, ReconnectOutcome,
+        ReconnectRequestOutcome,
+    },
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
     transport::{BoxedWsTransport, Message, TransportError, tungstenite::TungsteniteTransport},
 };
 
 const WRITE_TIMEOUT_SECS: u64 = 5;
+const CONTROLLER_FALLBACK_INTERVAL_MS: u64 = 100;
 
 /// The RFC 6455 control-frame payload limit.
 const MAX_CONTROL_FRAME_PAYLOAD_BYTES: usize = 125;
@@ -212,6 +225,8 @@ pub struct WebSocketClientInner {
     connection_mode: Arc<AtomicU8>,
     connection_epoch: Arc<AtomicU64>,
     state_notify: Arc<tokio::sync::Notify>,
+    controller_notify: Arc<tokio::sync::Notify>,
+    reconnect_published: Arc<AtomicBool>,
     reconnect_timeout: Duration,
     backoff: ExponentialBackoff,
     reconnect_max_attempts: Option<u32>,
@@ -251,6 +266,7 @@ impl IncomingPingHandler {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ReconnectBufferAction {
     Drain,
     Wait,
@@ -295,6 +311,8 @@ impl WebSocketClientInner {
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
         let connection_epoch = Arc::new(AtomicU64::new(0));
         let state_notify = Arc::new(tokio::sync::Notify::new());
+        let controller_notify = Arc::new(tokio::sync::Notify::new());
+        let reconnect_published = Arc::new(AtomicBool::new(true));
         let outcome =
             ConnectionMode::complete_reconnect_with_sink(&connection_mode, state_sink.as_ref());
         debug_assert_eq!(outcome, ReconnectOutcome::Reconnected);
@@ -321,7 +339,8 @@ impl WebSocketClientInner {
         let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
         let write_task = Self::spawn_write_task(
             connection_mode.clone(),
-            state_notify.clone(),
+            Arc::clone(&controller_notify),
+            Arc::clone(&reconnect_published),
             writer,
             writer_rx,
             Arc::clone(&connection_epoch),
@@ -355,6 +374,8 @@ impl WebSocketClientInner {
             connection_mode,
             connection_epoch,
             state_notify,
+            controller_notify,
+            reconnect_published,
             reconnect_timeout,
             heartbeat_task,
             read_task,
@@ -465,6 +486,8 @@ impl WebSocketClientInner {
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
         let connection_epoch = Arc::new(AtomicU64::new(0));
         let state_notify = Arc::new(tokio::sync::Notify::new());
+        let controller_notify = Arc::new(tokio::sync::Notify::new());
+        let reconnect_published = Arc::new(AtomicBool::new(true));
         let outcome =
             ConnectionMode::complete_reconnect_with_sink(&connection_mode, state_sink.as_ref());
         debug_assert_eq!(outcome, ReconnectOutcome::Reconnected);
@@ -492,7 +515,8 @@ impl WebSocketClientInner {
         let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
         let write_task = Self::spawn_write_task(
             connection_mode.clone(),
-            state_notify.clone(),
+            Arc::clone(&controller_notify),
+            Arc::clone(&reconnect_published),
             writer,
             writer_rx,
             Arc::clone(&connection_epoch),
@@ -527,6 +551,8 @@ impl WebSocketClientInner {
             connection_mode,
             connection_epoch,
             state_notify,
+            controller_notify,
+            reconnect_published,
             reconnect_timeout,
             backoff,
             reconnect_max_attempts,
@@ -1027,6 +1053,29 @@ impl WebSocketClientInner {
         Box::pin(self.reconnect_with_outcome()).await.map(|_| ())
     }
 
+    async fn wait_for_reconnect_publication(&self) -> bool {
+        let fallback_interval = Duration::from_millis(CONTROLLER_FALLBACK_INTERVAL_MS);
+
+        loop {
+            let mut notified = pin!(self.controller_notify.notified());
+            notified.as_mut().enable();
+
+            if !ConnectionMode::from_atomic(&self.connection_mode).is_reconnect() {
+                return false;
+            }
+
+            if self.reconnect_published.load(Ordering::SeqCst) {
+                return true;
+            }
+
+            tokio::select! {
+                biased;
+                () = notified => {}
+                () = dst::time::sleep(fallback_interval) => {}
+            }
+        }
+    }
+
     async fn reconnect_with_outcome(&mut self) -> Result<ReconnectOutcome, TransportError> {
         log::info!("Reconnecting");
 
@@ -1123,6 +1172,11 @@ impl WebSocketClientInner {
         {
             read_task.abort();
             log_task_aborted("read");
+        }
+
+        if !self.wait_for_reconnect_publication().await {
+            log::debug!("Reconnect aborted before state publication completed");
+            return Ok(ReconnectOutcome::Aborted);
         }
 
         // Atomically transition from Reconnect to Active
@@ -1336,6 +1390,9 @@ impl WebSocketClientInner {
     async fn drain_reconnect_buffer(
         buffer: &mut VecDeque<Message>,
         writer: &mut MessageWriter,
+        connection_state: &AtomicU8,
+        auth_tracker: &Arc<OnceLock<AuthTracker>>,
+        reconnect_buffer_waits_for_auth: &AtomicBool,
     ) -> bool {
         if buffer.is_empty() {
             return false;
@@ -1344,9 +1401,29 @@ impl WebSocketClientInner {
         let initial_buffer_len = buffer.len();
         log::info!("Sending {initial_buffer_len} buffered messages after reconnection");
 
-        while let Some(buffered_msg) = buffer.front() {
+        while !buffer.is_empty() {
+            match Self::reconnect_buffer_action(
+                reconnect_buffer_waits_for_auth,
+                auth_tracker,
+                connection_state,
+            ) {
+                ReconnectBufferAction::Drain => {}
+                ReconnectBufferAction::Wait => return false,
+                ReconnectBufferAction::Discard => {
+                    log::warn!(
+                        "Discarding {} buffered messages after authentication failed",
+                        buffer.len()
+                    );
+                    buffer.clear();
+                    return false;
+                }
+            }
+
             // Clone message before attempting send (to keep in buffer if send fails)
-            let msg_to_send = buffered_msg.clone();
+            let msg_to_send = buffer
+                .front()
+                .expect("reconnect buffer should not be empty")
+                .clone();
 
             if let Err(e) = writer.send(msg_to_send).await {
                 if is_connection_drop_transport_error(&e) {
@@ -1389,13 +1466,32 @@ impl WebSocketClientInner {
         }
     }
 
+    fn reconnect_buffer_action(
+        reconnect_buffer_waits_for_auth: &AtomicBool,
+        auth_tracker: &Arc<OnceLock<AuthTracker>>,
+        connection_state: &AtomicU8,
+    ) -> ReconnectBufferAction {
+        let action =
+            Self::can_drain_reconnect_buffer(reconnect_buffer_waits_for_auth, auth_tracker);
+
+        // Keep mode as the final admission check so an accepted reconnect stops the next send.
+        if action == ReconnectBufferAction::Drain
+            && !ConnectionMode::from_atomic(connection_state).is_active()
+        {
+            ReconnectBufferAction::Wait
+        } else {
+            action
+        }
+    }
+
     #[expect(
         clippy::too_many_arguments,
         reason = "writer task owns the transport and shared lifecycle coordination state"
     )]
     fn spawn_write_task(
         connection_state: Arc<AtomicU8>,
-        state_notify: Arc<tokio::sync::Notify>,
+        controller_notify: Arc<tokio::sync::Notify>,
+        reconnect_published: Arc<AtomicBool>,
         writer: MessageWriter,
         mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand>,
         connection_epoch: Arc<AtomicU64>,
@@ -1452,9 +1548,10 @@ impl WebSocketClientInner {
                 }
 
                 if mode.is_active() && !reconnect_buffer.is_empty() {
-                    match Self::can_drain_reconnect_buffer(
+                    match Self::reconnect_buffer_action(
                         reconnect_buffer_waits_for_auth.as_ref(),
                         &auth_tracker,
+                        &connection_state,
                     ) {
                         ReconnectBufferAction::Drain => {
                             let drain_result = dst::time::timeout(
@@ -1462,6 +1559,9 @@ impl WebSocketClientInner {
                                 Self::drain_reconnect_buffer(
                                     &mut reconnect_buffer,
                                     &mut active_writer,
+                                    &connection_state,
+                                    &auth_tracker,
+                                    reconnect_buffer_waits_for_auth.as_ref(),
                                 ),
                             )
                             .await;
@@ -1474,16 +1574,15 @@ impl WebSocketClientInner {
                             });
 
                             // CAS: a disconnect landing mid-drain must not be overwritten
-                            if send_error
-                                && ConnectionMode::request_reconnect_with_sink(
+                            if send_error {
+                                _ = request_websocket_reconnect(
                                     &connection_state,
+                                    &reconnect_published,
                                     state_sink.as_ref(),
-                                )
-                            {
-                                if let Some(tracker) = auth_tracker.get() {
-                                    tracker.invalidate();
-                                }
-                                state_notify.notify_one();
+                                    &auth_tracker,
+                                    &controller_notify,
+                                    || {},
+                                );
                             }
 
                             continue;
@@ -1580,17 +1679,16 @@ impl WebSocketClientInner {
                                 };
 
                                 if send_failed
-                                    && ConnectionMode::request_reconnect_with_sink(
+                                    && request_websocket_reconnect(
                                         &connection_state,
+                                        &reconnect_published,
                                         state_sink.as_ref(),
-                                    )
+                                        &auth_tracker,
+                                        &controller_notify,
+                                        || {},
+                                    ) == ReconnectRequestOutcome::Accepted
                                 {
                                     log::warn!("Writer triggering reconnect");
-
-                                    if let Some(tracker) = auth_tracker.get() {
-                                        tracker.invalidate();
-                                    }
-                                    state_notify.notify_one();
                                 }
                             }
                             WriterCommand::SendOnConnection {
@@ -1636,17 +1734,16 @@ impl WebSocketClientInner {
                                 _ = response_tx.send(result);
 
                                 if send_failed
-                                    && ConnectionMode::request_reconnect_with_sink(
+                                    && request_websocket_reconnect(
                                         &connection_state,
+                                        &reconnect_published,
                                         state_sink.as_ref(),
-                                    )
+                                        &auth_tracker,
+                                        &controller_notify,
+                                        || {},
+                                    ) == ReconnectRequestOutcome::Accepted
                                 {
                                     log::warn!("Writer triggering reconnect");
-
-                                    if let Some(tracker) = auth_tracker.get() {
-                                        tracker.invalidate();
-                                    }
-                                    state_notify.notify_one();
                                 }
                             }
                             WriterCommand::Send(msg) => {
@@ -1677,16 +1774,16 @@ impl WebSocketClientInner {
                                     reconnect_buffer.push_back(msg);
 
                                     // CAS: a disconnect landing mid-send must not be overwritten
-                                    if ConnectionMode::request_reconnect_with_sink(
+                                    if request_websocket_reconnect(
                                         &connection_state,
+                                        &reconnect_published,
                                         state_sink.as_ref(),
-                                    ) {
+                                        &auth_tracker,
+                                        &controller_notify,
+                                        || {},
+                                    ) == ReconnectRequestOutcome::Accepted
+                                    {
                                         log::warn!("Writer triggering reconnect");
-
-                                        if let Some(tracker) = auth_tracker.get() {
-                                            tracker.invalidate();
-                                        }
-                                        state_notify.notify_one();
                                     }
                                 }
                             }
@@ -1845,6 +1942,9 @@ pub struct WebSocketClient {
     reconnect_buffer_waits_for_auth: Arc<AtomicBool>,
     reconnect_headers: ReconnectHeaders,
     state_sink: Option<SocketStateSink>,
+    controller_lifecycle: Arc<ControllerLifecycle>,
+    controller_notify: Arc<tokio::sync::Notify>,
+    reconnect_published: Arc<AtomicBool>,
     reconnect_supported: bool,
 }
 
@@ -1852,9 +1952,11 @@ pub struct WebSocketClient {
 #[derive(Clone)]
 pub struct WebSocketReconnectHandle {
     connection_mode: Arc<AtomicU8>,
-    state_notify: Arc<tokio::sync::Notify>,
     auth_tracker: Arc<OnceLock<AuthTracker>>,
     state_sink: Option<SocketStateSink>,
+    controller_lifecycle: Arc<ControllerLifecycle>,
+    controller_notify: Arc<tokio::sync::Notify>,
+    reconnect_published: Arc<AtomicBool>,
     supported: bool,
 }
 
@@ -1873,27 +1975,91 @@ impl Debug for WebSocketReconnectHandle {
 impl WebSocketReconnectHandle {
     /// Requests that the controller replace the active transport.
     ///
-    /// An accepted request invalidates registered authentication state and wakes the controller.
-    /// Rejected requests leave the transport and authentication state unchanged.
+    /// An accepted request invalidates registered authentication state, wakes the controller, and
+    /// publishes the loss before the replacement can become active. Rejected requests leave the
+    /// transport and authentication state unchanged. Handler-mode handles return
+    /// [`ReconnectRequestOutcome::Closed`] after the client drops; stream-mode handles always
+    /// return [`ReconnectRequestOutcome::Unsupported`].
     #[must_use]
     pub fn request_reconnect(&self) -> ReconnectRequestOutcome {
         if !self.supported {
             return ReconnectRequestOutcome::Unsupported;
         }
 
-        let outcome = ConnectionMode::request_reconnect_outcome_with_sink(
-            &self.connection_mode,
-            self.state_sink.as_ref(),
-        );
+        let Some(request) = self.controller_lifecycle.enter_request() else {
+            return ReconnectRequestOutcome::Closed;
+        };
+        let mut request = Some(request);
 
-        if outcome == ReconnectRequestOutcome::Accepted {
-            if let Some(tracker) = self.auth_tracker.get() {
-                tracker.invalidate();
-            }
-            self.state_notify.notify_one();
-        }
-        outcome
+        request_websocket_reconnect(
+            &self.connection_mode,
+            &self.reconnect_published,
+            self.state_sink.as_ref(),
+            &self.auth_tracker,
+            &self.controller_notify,
+            || drop(request.take()),
+        )
     }
+}
+
+struct ReconnectPublication<'a> {
+    published: &'a AtomicBool,
+    controller_notify: &'a tokio::sync::Notify,
+}
+
+impl Drop for ReconnectPublication<'_> {
+    fn drop(&mut self) {
+        self.published.store(true, Ordering::SeqCst);
+        self.controller_notify.notify_one();
+    }
+}
+
+fn request_websocket_reconnect<F>(
+    connection_mode: &AtomicU8,
+    reconnect_published: &AtomicBool,
+    state_sink: Option<&SocketStateSink>,
+    auth_tracker: &OnceLock<AuthTracker>,
+    controller_notify: &tokio::sync::Notify,
+    on_handoff: F,
+) -> ReconnectRequestOutcome
+where
+    F: FnOnce(),
+{
+    if reconnect_published
+        .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return match ConnectionMode::from_atomic(connection_mode) {
+            ConnectionMode::Active | ConnectionMode::Reconnect => {
+                ReconnectRequestOutcome::AlreadyReconnecting
+            }
+            ConnectionMode::Disconnect => ReconnectRequestOutcome::Disconnected,
+            ConnectionMode::Closed => ReconnectRequestOutcome::Closed,
+        };
+    }
+
+    let outcome = ConnectionMode::request_reconnect_outcome(connection_mode);
+    if outcome != ReconnectRequestOutcome::Accepted {
+        reconnect_published.store(true, Ordering::SeqCst);
+        return outcome;
+    }
+
+    let _publication = ReconnectPublication {
+        published: reconnect_published,
+        controller_notify,
+    };
+
+    if let Some(tracker) = auth_tracker.get() {
+        tracker.invalidate();
+    }
+    controller_notify.notify_one();
+    on_handoff();
+
+    if let Some(sink) = state_sink {
+        sink.publish_websocket(SocketState::Disconnected);
+    }
+
+    ReconnectRequestOutcome::Accepted
 }
 
 #[cfg(test)]
@@ -1922,9 +2088,11 @@ mod reconnect_request_tests {
         let notify = Arc::new(tokio::sync::Notify::new());
         let handle = WebSocketReconnectHandle {
             connection_mode: Arc::new(AtomicU8::new(mode.as_u8())),
-            state_notify: Arc::clone(&notify),
             auth_tracker,
             state_sink: None,
+            controller_lifecycle: Arc::new(ControllerLifecycle::new()),
+            controller_notify: Arc::clone(&notify),
+            reconnect_published: Arc::new(AtomicBool::new(true)),
             supported,
         };
         (handle, tracker, notify)
@@ -1957,6 +2125,18 @@ mod reconnect_request_tests {
                 .is_err(),
             "duplicate request should not notify controller",
         );
+
+        handle
+            .connection_mode
+            .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        assert_eq!(
+            handle.request_reconnect(),
+            ReconnectRequestOutcome::Accepted
+        );
+        assert!(!tracker.is_authenticated());
+        tokio::time::timeout(Duration::from_millis(10), notify.notified())
+            .await
+            .expect("a later reconnect cycle should notify the controller");
     }
 
     #[rstest]
@@ -1964,6 +2144,11 @@ mod reconnect_request_tests {
         ConnectionMode::Disconnect,
         true,
         ReconnectRequestOutcome::Disconnected
+    )]
+    #[case(
+        ConnectionMode::Reconnect,
+        true,
+        ReconnectRequestOutcome::AlreadyReconnecting
     )]
     #[case(ConnectionMode::Closed, true, ReconnectRequestOutcome::Closed)]
     #[case(ConnectionMode::Active, false, ReconnectRequestOutcome::Unsupported)]
@@ -1983,6 +2168,66 @@ mod reconnect_request_tests {
                 .is_err(),
             "rejected request should not notify controller",
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn reconnect_loss_callback_rejects_nested_request() {
+        let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let controller_notify = Arc::new(tokio::sync::Notify::new());
+        let handle_slot = Arc::new(OnceLock::<WebSocketReconnectHandle>::new());
+        let handle_slot_callback = Arc::clone(&handle_slot);
+        let nested_outcomes = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let nested_outcomes_callback = Arc::clone(&nested_outcomes);
+        let states = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().unwrap().push(state);
+            nested_outcomes_callback
+                .lock()
+                .unwrap()
+                .push(handle_slot_callback.get().unwrap().request_reconnect());
+        });
+        let handle = WebSocketReconnectHandle {
+            connection_mode,
+            auth_tracker: Arc::new(OnceLock::new()),
+            state_sink: Some(sink),
+            controller_lifecycle: Arc::new(ControllerLifecycle::new()),
+            controller_notify,
+            reconnect_published: Arc::new(AtomicBool::new(true)),
+            supported: true,
+        };
+        handle_slot.set(handle.clone()).unwrap();
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+
+        std::thread::spawn(move || {
+            _ = result_tx.send(handle.request_reconnect());
+        });
+
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), result_rx)
+                .await
+                .expect("reentrant reconnect callback deadlocked")
+                .unwrap(),
+            ReconnectRequestOutcome::Accepted
+        );
+        assert_eq!(
+            *nested_outcomes.lock().unwrap(),
+            vec![ReconnectRequestOutcome::AlreadyReconnecting]
+        );
+        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+    }
+
+    #[rstest]
+    fn closed_stream_handle_remains_unsupported() {
+        let (handle, tracker, _notify) = handle(ConnectionMode::Closed, false);
+        handle.controller_lifecycle.close_and_abort();
+
+        assert_eq!(
+            handle.request_reconnect(),
+            ReconnectRequestOutcome::Unsupported
+        );
+        assert!(tracker.is_authenticated());
     }
 }
 
@@ -2059,6 +2304,8 @@ impl WebSocketClient {
         let connection_mode = inner.connection_mode.clone();
         let connection_epoch = Arc::clone(&inner.connection_epoch);
         let state_notify = inner.state_notify.clone();
+        let controller_notify = Arc::clone(&inner.controller_notify);
+        let reconnect_published = Arc::clone(&inner.reconnect_published);
         let reconnect_timeout = inner.reconnect_timeout;
         let auth_tracker = Arc::clone(&inner.auth_tracker);
         let reconnect_buffer_waits_for_auth = Arc::clone(&inner.reconnect_buffer_waits_for_auth);
@@ -2070,13 +2317,18 @@ impl WebSocketClient {
             .collect();
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
         let writer_tx = inner.writer_tx.clone();
+        let controller_lifecycle = Arc::new(ControllerLifecycle::new());
 
         let controller_task = Self::spawn_controller_task(
             inner,
             connection_mode.clone(),
             state_notify.clone(),
             Arc::clone(&auth_tracker),
+            Arc::clone(&controller_lifecycle),
+            Arc::clone(&controller_notify),
+            Arc::clone(&reconnect_published),
         );
+        controller_lifecycle.set_abort_handle(controller_task.abort_handle());
 
         Ok((
             reader,
@@ -2092,6 +2344,9 @@ impl WebSocketClient {
                 reconnect_buffer_waits_for_auth,
                 reconnect_headers,
                 state_sink,
+                controller_lifecycle,
+                controller_notify,
+                reconnect_published,
                 reconnect_supported: false,
             },
         ))
@@ -2292,19 +2547,26 @@ impl WebSocketClient {
         let connection_mode = inner.connection_mode.clone();
         let connection_epoch = Arc::clone(&inner.connection_epoch);
         let state_notify = inner.state_notify.clone();
+        let controller_notify = Arc::clone(&inner.controller_notify);
+        let reconnect_published = Arc::clone(&inner.reconnect_published);
         let writer_tx = inner.writer_tx.clone();
         let reconnect_timeout = inner.reconnect_timeout;
         let auth_tracker = Arc::clone(&inner.auth_tracker);
         let reconnect_buffer_waits_for_auth = Arc::clone(&inner.reconnect_buffer_waits_for_auth);
         let reconnect_headers = inner.reconnect_headers.clone();
         let state_sink = inner.state_sink.clone();
+        let controller_lifecycle = Arc::new(ControllerLifecycle::new());
 
         let controller_task = Self::spawn_controller_task(
             inner,
             connection_mode.clone(),
             state_notify.clone(),
             Arc::clone(&auth_tracker),
+            Arc::clone(&controller_lifecycle),
+            Arc::clone(&controller_notify),
+            Arc::clone(&reconnect_published),
         );
+        controller_lifecycle.set_abort_handle(controller_task.abort_handle());
 
         Ok(Self {
             controller_task,
@@ -2318,6 +2580,9 @@ impl WebSocketClient {
             reconnect_buffer_waits_for_auth,
             reconnect_headers,
             state_sink,
+            controller_lifecycle,
+            controller_notify,
+            reconnect_published,
             reconnect_supported: true,
         })
     }
@@ -2333,9 +2598,11 @@ impl WebSocketClient {
     pub fn reconnect_handle(&self) -> WebSocketReconnectHandle {
         WebSocketReconnectHandle {
             connection_mode: Arc::clone(&self.connection_mode),
-            state_notify: Arc::clone(&self.state_notify),
             auth_tracker: Arc::clone(&self.auth_tracker),
             state_sink: self.state_sink.clone(),
+            controller_lifecycle: Arc::clone(&self.controller_lifecycle),
+            controller_notify: Arc::clone(&self.controller_notify),
+            reconnect_published: Arc::clone(&self.reconnect_published),
             supported: self.reconnect_supported,
         }
     }
@@ -2549,7 +2816,8 @@ impl WebSocketClient {
 
         log::debug!("Stream reader signalled EOF, transitioning to CLOSED");
 
-        if ConnectionMode::close_on_loss(&self.connection_mode, self.state_sink.as_ref()) {
+        if ConnectionMode::close_websocket_on_loss(&self.connection_mode, self.state_sink.as_ref())
+        {
             fail_registered_auth(self.auth_tracker.as_ref(), "WebSocket client closed");
             self.state_notify.notify_waiters();
         }
@@ -2777,10 +3045,12 @@ impl WebSocketClient {
         connection_mode: Arc<AtomicU8>,
         state_notify: Arc<tokio::sync::Notify>,
         auth_tracker: Arc<OnceLock<AuthTracker>>,
+        controller_lifecycle: Arc<ControllerLifecycle>,
+        controller_notify: Arc<tokio::sync::Notify>,
+        reconnect_published: Arc<AtomicBool>,
     ) -> tokio::task::JoinHandle<()> {
-        const CONTROLLER_FALLBACK_INTERVAL_MS: u64 = 100;
-
         tokio::task::spawn(async move {
+            let _activity = controller_lifecycle.activity();
             log_task_started("controller");
 
             let fallback_interval = Duration::from_millis(CONTROLLER_FALLBACK_INTERVAL_MS);
@@ -2789,6 +3059,7 @@ impl WebSocketClient {
             loop {
                 tokio::select! {
                     biased;
+                    () = controller_notify.notified() => {}
                     () = state_notify.notified() => {}
                     () = dst::time::sleep(fallback_interval) => {}
                 }
@@ -2844,19 +3115,24 @@ impl WebSocketClient {
                     };
 
                     let transitioned = if target.is_closed() {
-                        ConnectionMode::close_on_loss(&connection_mode, inner.state_sink.as_ref())
-                    } else {
-                        ConnectionMode::request_reconnect_with_sink(
+                        ConnectionMode::close_websocket_on_loss(
                             &connection_mode,
                             inner.state_sink.as_ref(),
                         )
+                    } else {
+                        request_websocket_reconnect(
+                            &connection_mode,
+                            &reconnect_published,
+                            inner.state_sink.as_ref(),
+                            &auth_tracker,
+                            &controller_notify,
+                            || {},
+                        ) == ReconnectRequestOutcome::Accepted
                     };
 
                     if transitioned {
                         if target.is_closed() {
                             fail_registered_auth(auth_tracker.as_ref(), "WebSocket client closed");
-                        } else if let Some(tracker) = auth_tracker.get() {
-                            tracker.invalidate();
                         }
                         log::info!("Detected dead connection, transitioning to {target:?}");
                     }
@@ -2864,6 +3140,10 @@ impl WebSocketClient {
                 }
 
                 if mode.is_reconnect() {
+                    if let Some(tracker) = auth_tracker.get() {
+                        tracker.invalidate();
+                    }
+
                     let reconnect_uptime = reconnected_at
                         .take()
                         .map(|started: dst::time::Instant| started.elapsed());
@@ -3031,11 +3311,10 @@ impl Drop for WebSocketClient {
     fn drop(&mut self) {
         self.connection_mode
             .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
-
-        if !self.controller_task.is_finished() {
-            self.controller_task.abort();
-            log_task_aborted("controller");
-        }
+        fail_registered_auth(self.auth_tracker.as_ref(), "WebSocket client closed");
+        self.state_notify.notify_waiters();
+        self.controller_notify.notify_waiters();
+        self.controller_lifecycle.close_and_abort();
     }
 }
 
@@ -4300,6 +4579,7 @@ mod rust_tests {
         task: JoinHandle<()>,
         port: u16,
         messages: Arc<tokio::sync::Mutex<Vec<String>>>,
+        connections: Arc<AtomicUsize>,
     }
 
     #[cfg(feature = "transport-sockudo")]
@@ -4361,11 +4641,14 @@ mod rust_tests {
             let port = listener.local_addr().unwrap().port();
             let messages = Arc::new(tokio::sync::Mutex::new(Vec::new()));
             let messages_clone = Arc::clone(&messages);
+            let connections = Arc::new(AtomicUsize::new(0));
+            let connections_clone = Arc::clone(&connections);
 
             let task = task::spawn(async move {
                 loop {
                     let (stream, _) = listener.accept().await.unwrap();
                     let mut websocket = accept_async(stream).await.unwrap();
+                    connections_clone.fetch_add(1, Ordering::SeqCst);
                     let messages = Arc::clone(&messages_clone);
 
                     task::spawn(async move {
@@ -4389,11 +4672,20 @@ mod rust_tests {
                 task,
                 port,
                 messages,
+                connections,
             }
         }
 
         async fn messages(&self) -> Vec<String> {
             self.messages.lock().await.clone()
+        }
+
+        async fn wait_for_connections(&self, expected: usize) {
+            wait_until_async(
+                || async { self.connections.load(Ordering::SeqCst) == expected },
+                TEST_TIMEOUT,
+            )
+            .await;
         }
     }
 
@@ -4401,6 +4693,302 @@ mod rust_tests {
         fn drop(&mut self) {
             self.task.abort();
         }
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_manual_reconnect_waits_for_slow_loss_callback_and_new_auth() {
+        let server = RecordingServer::setup().await;
+        let tracker = AuthTracker::new();
+        let _initial_auth = tracker.begin();
+        tracker.succeed();
+        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let auth_at_loss = Arc::new(StdMutex::new(Vec::new()));
+        let auth_at_loss_callback = Arc::clone(&auth_at_loss);
+        let tracker_callback = tracker.clone();
+        let callback_release = Arc::new((StdMutex::new(false), Condvar::new()));
+        let callback_release_guard = CondvarReleaseGuard::new(callback_release.as_ref());
+        let callback_release_clone = Arc::clone(&callback_release);
+        let (callback_entered_tx, callback_entered_rx) = std::sync::mpsc::channel();
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().unwrap().push(state);
+            if state == SocketState::Disconnected {
+                auth_at_loss_callback
+                    .lock()
+                    .unwrap()
+                    .push(tracker_callback.auth_state());
+                callback_entered_tx.send(()).unwrap();
+                let (lock, condvar) = callback_release_clone.as_ref();
+                let mut released = lock.lock().unwrap();
+                while !*released {
+                    released = condvar.wait(released).unwrap();
+                }
+            }
+        });
+        let (handler, mut handler_rx) = channel_message_handler();
+        let client = WebSocketClient::connect_with_state_sink(
+            reconnect_test_config(server.port),
+            Some(handler),
+            None,
+            vec![],
+            None,
+            Some(sink),
+        )
+        .await
+        .unwrap();
+        client.set_auth_tracker(tracker.clone(), true);
+        server.wait_for_connections(1).await;
+
+        let handle = client.reconnect_handle();
+        let (request_tx, request_rx) = std::sync::mpsc::channel();
+        let request_thread = std::thread::spawn(move || {
+            request_tx.send(handle.request_reconnect()).unwrap();
+        });
+
+        recv_rendezvous(callback_entered_rx, "slow reconnect callback entry").await;
+        client
+            .writer_tx
+            .send(WriterCommand::Send(Message::text("buffered")))
+            .unwrap();
+        server.wait_for_connections(2).await;
+        tokio::time::sleep(Duration::from_millis(250)).await;
+
+        assert_eq!(client.connection_mode(), ConnectionMode::Reconnect);
+        assert!(!client.reconnect_published.load(Ordering::SeqCst));
+        assert_eq!(tracker.auth_state(), AuthState::Unauthenticated);
+        assert_eq!(
+            *auth_at_loss.lock().unwrap(),
+            vec![AuthState::Unauthenticated]
+        );
+        assert_eq!(
+            *states.lock().unwrap(),
+            vec![SocketState::Connected, SocketState::Disconnected]
+        );
+        assert!(server.messages().await.is_empty());
+
+        callback_release_guard.release();
+        assert_eq!(
+            recv_rendezvous(request_rx, "manual reconnect result").await,
+            ReconnectRequestOutcome::Accepted
+        );
+        request_thread.join().unwrap();
+        wait_until_async(|| async { client.is_active() }, TEST_TIMEOUT).await;
+        wait_until_async(
+            || {
+                let states = Arc::clone(&states);
+                async move { states.lock().unwrap().len() == 3 }
+            },
+            TEST_TIMEOUT,
+        )
+        .await;
+
+        let notification = tokio::time::timeout(TEST_TIMEOUT, handler_rx.recv())
+            .await
+            .expect("reconnect notification was not delivered")
+            .expect("handler channel closed");
+        assert_eq!(notification, WsMessage::Text(RECONNECTED.into()));
+        assert!(handler_rx.try_recv().is_err());
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(server.messages().await.is_empty());
+
+        let _replacement_auth = tracker.begin();
+        tracker.succeed();
+        wait_until_async(
+            || {
+                let messages = Arc::clone(&server.messages);
+                async move { messages.lock().await.len() == 1 }
+            },
+            TEST_TIMEOUT,
+        )
+        .await;
+        client.send_text("live".into(), None).await.unwrap();
+        wait_until_async(
+            || {
+                let messages = Arc::clone(&server.messages);
+                async move { messages.lock().await.len() == 2 }
+            },
+            TEST_TIMEOUT,
+        )
+        .await;
+
+        assert_eq!(server.messages().await, vec!["buffered", "live"]);
+        assert_eq!(server.connections.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            *states.lock().unwrap(),
+            vec![
+                SocketState::Connected,
+                SocketState::Disconnected,
+                SocketState::Connected,
+            ]
+        );
+
+        client.disconnect().await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_handle_is_closed_after_client_drop() {
+        let server = RecordingServer::setup().await;
+        let (handler, _handler_rx) = channel_message_handler();
+        let client = WebSocketClient::connect(
+            reconnect_test_config(server.port),
+            Some(handler),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+        let tracker = AuthTracker::new();
+        let pending_auth = tracker.begin();
+        client.set_auth_tracker(tracker.clone(), true);
+        let controller_abort = client.controller_task.abort_handle();
+        let handle = client.reconnect_handle();
+
+        drop(client);
+        wait_until_async(|| async { controller_abort.is_finished() }, TEST_TIMEOUT).await;
+
+        assert_eq!(handle.request_reconnect(), ReconnectRequestOutcome::Closed);
+        assert_eq!(tracker.auth_state(), AuthState::Failed);
+        assert_eq!(
+            tokio::time::timeout(TEST_TIMEOUT, pending_auth)
+                .await
+                .expect("client drop should resolve pending authentication")
+                .expect("authentication sender should report its terminal result"),
+            Err("WebSocket client closed".to_string())
+        );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_concurrent_drop_closes_accepted_reconnect() {
+        let server = RecordingServer::setup().await;
+        let tracker = AuthTracker::new();
+        let _initial_auth = tracker.begin();
+        tracker.succeed();
+        let callback_release = Arc::new((StdMutex::new(false), Condvar::new()));
+        let callback_release_guard = CondvarReleaseGuard::new(callback_release.as_ref());
+        let callback_release_clone = Arc::clone(&callback_release);
+        let (callback_entered_tx, callback_entered_rx) = std::sync::mpsc::channel();
+        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().unwrap().push(state);
+            if state == SocketState::Disconnected {
+                callback_entered_tx.send(()).unwrap();
+                let (lock, condvar) = callback_release_clone.as_ref();
+                let mut released = lock.lock().unwrap();
+                while !*released {
+                    released = condvar.wait(released).unwrap();
+                }
+            }
+        });
+        let (handler, _handler_rx) = channel_message_handler();
+        let client = WebSocketClient::connect_with_state_sink(
+            reconnect_test_config(server.port),
+            Some(handler),
+            None,
+            vec![],
+            None,
+            Some(sink),
+        )
+        .await
+        .unwrap();
+        client.set_auth_tracker(tracker.clone(), true);
+        let controller_abort = client.controller_task.abort_handle();
+        let connection_mode = Arc::clone(&client.connection_mode);
+        let handle = client.reconnect_handle();
+        let surviving_handle = handle.clone();
+        let (request_tx, request_rx) = std::sync::mpsc::channel();
+        let request_thread = std::thread::spawn(move || {
+            request_tx.send(handle.request_reconnect()).unwrap();
+        });
+
+        recv_rendezvous(callback_entered_rx, "concurrent drop callback entry").await;
+        drop(client);
+        wait_until_async(|| async { controller_abort.is_finished() }, TEST_TIMEOUT).await;
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_mode),
+            ConnectionMode::Closed
+        );
+        assert_eq!(tracker.auth_state(), AuthState::Failed);
+
+        callback_release_guard.release();
+        assert_eq!(
+            recv_rendezvous(request_rx, "concurrent drop reconnect result").await,
+            ReconnectRequestOutcome::Accepted
+        );
+        request_thread.join().unwrap();
+        assert_eq!(
+            surviving_handle.request_reconnect(),
+            ReconnectRequestOutcome::Closed
+        );
+        assert_eq!(
+            *states.lock().unwrap(),
+            vec![SocketState::Connected, SocketState::Disconnected]
+        );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_reconnect_callback_can_drop_client() {
+        let server = RecordingServer::setup().await;
+        let client_slot = Arc::new(StdMutex::new(None::<WebSocketClient>));
+        let client_slot_callback = Arc::clone(&client_slot);
+        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().unwrap().push(state);
+            if state == SocketState::Disconnected {
+                drop(client_slot_callback.lock().unwrap().take());
+            }
+        });
+        let (handler, _handler_rx) = channel_message_handler();
+        let client = WebSocketClient::connect_with_state_sink(
+            reconnect_test_config(server.port),
+            Some(handler),
+            None,
+            vec![],
+            None,
+            Some(sink),
+        )
+        .await
+        .unwrap();
+        let tracker = AuthTracker::new();
+        let _initial_auth = tracker.begin();
+        tracker.succeed();
+        client.set_auth_tracker(tracker.clone(), true);
+        let controller_abort = client.controller_task.abort_handle();
+        let connection_mode = Arc::clone(&client.connection_mode);
+        let handle = client.reconnect_handle();
+        let surviving_handle = handle.clone();
+        *client_slot.lock().unwrap() = Some(client);
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            result_tx.send(handle.request_reconnect()).unwrap();
+        });
+
+        assert_eq!(
+            recv_rendezvous(result_rx, "callback drop reconnect result").await,
+            ReconnectRequestOutcome::Accepted
+        );
+        wait_until_async(|| async { controller_abort.is_finished() }, TEST_TIMEOUT).await;
+
+        assert!(client_slot.lock().unwrap().is_none());
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_mode),
+            ConnectionMode::Closed
+        );
+        assert_eq!(tracker.auth_state(), AuthState::Failed);
+        assert_eq!(
+            surviving_handle.request_reconnect(),
+            ReconnectRequestOutcome::Closed
+        );
+        assert_eq!(
+            *states.lock().unwrap(),
+            vec![SocketState::Connected, SocketState::Disconnected]
+        );
     }
 
     #[rstest]
@@ -5866,6 +6454,7 @@ mod rust_tests {
     struct BlockingFailState {
         send_entered: AtomicBool,
         send_entered_notify: tokio::sync::Notify,
+        released: AtomicBool,
         fail: AtomicBool,
         waker: std::sync::Mutex<Option<std::task::Waker>>,
     }
@@ -5873,6 +6462,11 @@ mod rust_tests {
     impl BlockingFailState {
         fn trigger_failure(&self) {
             self.fail.store(true, Ordering::SeqCst);
+            self.release_send();
+        }
+
+        fn release_send(&self) {
+            self.released.store(true, Ordering::SeqCst);
 
             if let Some(waker) = self.waker.lock().unwrap().take() {
                 waker.wake();
@@ -5880,8 +6474,7 @@ mod rust_tests {
         }
     }
 
-    /// Transport whose sends block until [`BlockingFailState::trigger_failure`],
-    /// then fail. Used to interleave a disconnect with an in-flight send.
+    /// Transport whose sends block until released and can fail on demand.
     struct BlockingFailTransport {
         state: Arc<BlockingFailState>,
     }
@@ -5921,10 +6514,12 @@ mod rust_tests {
             self.state.send_entered.store(true, Ordering::SeqCst);
             self.state.send_entered_notify.notify_one();
 
-            if self.state.fail.load(Ordering::SeqCst) {
+            if !self.state.released.load(Ordering::SeqCst) {
+                std::task::Poll::Pending
+            } else if self.state.fail.load(Ordering::SeqCst) {
                 std::task::Poll::Ready(Err(TransportError::ConnectionReset))
             } else {
-                std::task::Poll::Pending
+                std::task::Poll::Ready(Ok(()))
             }
         }
 
@@ -6060,6 +6655,7 @@ mod rust_tests {
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
             writer,
             writer_rx,
             Arc::new(AtomicU64::new(0)),
@@ -6190,6 +6786,50 @@ mod rust_tests {
     }
 
     #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_buffer_drain_stops_after_reconnect_request() {
+        let state = Arc::new(BlockingFailState::default());
+        let transport: BoxedWsTransport = Box::pin(BlockingFailTransport {
+            state: Arc::clone(&state),
+        });
+        let (mut writer, _reader) = transport.split();
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let task_connection_state = Arc::clone(&connection_state);
+
+        let drain_task = tokio::spawn(async move {
+            let auth_tracker = Arc::new(OnceLock::new());
+            let reconnect_buffer_waits_for_auth = AtomicBool::new(false);
+            let mut buffer = VecDeque::from([
+                Message::text("admitted"),
+                Message::text("held-for-reconnect"),
+            ]);
+            let send_error = WebSocketClientInner::drain_reconnect_buffer(
+                &mut buffer,
+                &mut writer,
+                &task_connection_state,
+                &auth_tracker,
+                &reconnect_buffer_waits_for_auth,
+            )
+            .await;
+            (buffer, send_error)
+        });
+
+        state.send_entered_notify.notified().await;
+        connection_state.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+        state.release_send();
+
+        let (buffer, send_error) = tokio::time::timeout(TEST_TIMEOUT, drain_task)
+            .await
+            .expect("buffer drain should stop after reconnect acceptance")
+            .unwrap();
+        assert!(!send_error);
+        assert_eq!(
+            buffer,
+            VecDeque::from([Message::text("held-for-reconnect")])
+        );
+    }
+
+    #[rstest]
     #[tokio::test(start_paused = true)]
     async fn test_stalled_websocket_send_reconnects_and_replays() {
         let state = Arc::new(BlockingFailState::default());
@@ -6210,6 +6850,7 @@ mod rust_tests {
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
             writer,
             writer_rx,
             Arc::new(AtomicU64::new(0)),
@@ -6284,6 +6925,7 @@ mod rust_tests {
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
             writer,
             writer_rx,
             Arc::new(AtomicU64::new(0)),
@@ -6398,6 +7040,7 @@ mod rust_tests {
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
             writer,
             writer_rx,
             Arc::new(AtomicU64::new(0)),
@@ -6708,6 +7351,7 @@ mod rust_tests {
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
             writer,
             writer_rx,
             connection_epoch,
@@ -6761,6 +7405,7 @@ mod rust_tests {
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
             writer,
             writer_rx,
             Arc::clone(&connection_epoch),
@@ -6831,6 +7476,7 @@ mod rust_tests {
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
             writer,
             writer_rx,
             Arc::clone(&connection_epoch),
@@ -6964,6 +7610,35 @@ mod rust_tests {
         write_task.abort();
     }
 
+    #[rstest]
+    fn test_reconnect_buffer_action_requires_active_mode() {
+        let connection_state = AtomicU8::new(ConnectionMode::Active.as_u8());
+        let reconnect_buffer_waits_for_auth = AtomicBool::new(true);
+        let auth_tracker = Arc::new(OnceLock::new());
+        let tracker = AuthTracker::new();
+        tracker.succeed();
+        auth_tracker.set(tracker).unwrap();
+
+        assert_eq!(
+            WebSocketClientInner::reconnect_buffer_action(
+                &reconnect_buffer_waits_for_auth,
+                &auth_tracker,
+                &connection_state,
+            ),
+            ReconnectBufferAction::Drain,
+        );
+
+        connection_state.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+        assert_eq!(
+            WebSocketClientInner::reconnect_buffer_action(
+                &reconnect_buffer_waits_for_auth,
+                &auth_tracker,
+                &connection_state,
+            ),
+            ReconnectBufferAction::Wait,
+        );
+    }
+
     #[tokio::test]
     async fn test_write_task_waits_for_auth_before_replaying_buffer() {
         use nautilus_common::testing::wait_until_async;
@@ -6991,6 +7666,7 @@ mod rust_tests {
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
             writer,
             writer_rx,
             Arc::clone(&connection_epoch),
@@ -7069,6 +7745,7 @@ mod rust_tests {
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
             writer,
             writer_rx,
             Arc::clone(&connection_epoch),
@@ -7097,6 +7774,8 @@ mod rust_tests {
 
         connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
         tracker.fail("rejected");
+        tracker.invalidate();
+        assert_eq!(tracker.auth_state(), AuthState::Failed);
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert!(
             server.messages().await.is_empty(),
@@ -7750,11 +8429,17 @@ mod property_tests {
             }
             ReconnectBufferTraceOp::AuthInvalidates => {
                 tracker.invalidate();
-                model.auth_state = AuthState::Unauthenticated;
+
+                if model.auth_state == AuthState::Authenticated {
+                    model.auth_state = AuthState::Unauthenticated;
+                }
             }
             ReconnectBufferTraceOp::ReconnectStarts => {
                 tracker.invalidate();
-                model.auth_state = AuthState::Unauthenticated;
+
+                if model.auth_state == AuthState::Authenticated {
+                    model.auth_state = AuthState::Unauthenticated;
+                }
                 model.mode = ModelConnectionMode::Reconnect;
             }
             ReconnectBufferTraceOp::ReconnectCompletes => {
