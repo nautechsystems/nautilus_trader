@@ -19,6 +19,7 @@ use nautilus_common::{
     actor::DataActor,
     cache::Cache,
     clock::{Clock, TestClock},
+    timer::TimeEvent,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -28,11 +29,13 @@ use nautilus_model::{
         OrderDenied, OrderExpired, OrderRejected,
         order::spec::{OrderDeniedSpec, OrderExpiredSpec, OrderRejectedSpec},
     },
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
-    types::{Price, Quantity},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId},
+    instruments::{CryptoPerpetual, InstrumentAny},
+    types::{Currency, Price, Quantity},
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use rstest::rstest;
+use ustr::Ustr;
 
 use super::{DeltaNeutralVol, DeltaNeutralVolConfig};
 use crate::strategy::Strategy;
@@ -81,6 +84,39 @@ fn quote_tick(instrument_id: InstrumentId, bid: &str, ask: &str) -> QuoteTick {
         Quantity::from("1"),
         UnixNanos::default(),
         UnixNanos::default(),
+    )
+}
+
+/// The configured hedge instrument, sized in whole contracts (`size_precision` 0), so a
+/// fractional delta cannot be expressed as a quantity.
+fn hedge_swap_integer_sized() -> CryptoPerpetual {
+    CryptoPerpetual::new(
+        InstrumentId::from("BTC-USD-SWAP.OKX"),
+        Symbol::from("BTC-USD-SWAP"),
+        Currency::BTC(),
+        Currency::USD(),
+        Currency::USD(),
+        false,
+        1,
+        0,
+        Price::from("0.1"),
+        Quantity::from(1),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        0.into(),
+        0.into(),
     )
 }
 
@@ -490,6 +526,33 @@ fn test_on_option_greeks_initializes_both_legs_before_rehedging() {
 
     strategy.on_option_greeks(&put_greeks).unwrap();
     assert!(strategy.greeks_initialized());
+}
+
+#[rstest]
+fn test_rehedge_skips_quantity_rounded_to_zero() {
+    let mut strategy = create_initialized_strategy();
+    strategy.config.rehedge_delta_threshold = 0.1;
+    strategy.hedge_position = 0.4;
+    register_strategy(&mut strategy);
+    strategy
+        .core
+        .cache_rc()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CryptoPerpetual(hedge_swap_integer_sized()))
+        .unwrap();
+
+    assert!(strategy.should_rehedge());
+
+    let event = TimeEvent::new(
+        Ustr::from("delta_rehedge"),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    DataActor::on_time_event(&mut strategy, &event).unwrap();
+
+    // The latch stays clear, so a later rehedge at an expressible size is not blocked.
+    assert!(!strategy.hedge_pending);
 }
 
 #[rstest]

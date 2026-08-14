@@ -439,11 +439,6 @@ impl DeltaNeutralVol {
             OrderSide::Buy
         };
 
-        log::info!(
-            "Rehedging: portfolio_delta={delta:.4}, submitting {side:?} {hedge_qty:.4} on {}",
-            self.config.hedge_instrument_id,
-        );
-
         let hedge_id = self.config.hedge_instrument_id;
         let size_precision = {
             let cache = self.cache();
@@ -452,10 +447,24 @@ impl DeltaNeutralVol {
                 .map_or(2, |i| i.size_precision())
         };
 
+        // A delta above the float threshold can still round to zero at the size precision.
+        let hedge_quantity = Quantity::new(hedge_qty, size_precision);
+
+        if hedge_quantity.is_zero() {
+            log::debug!(
+                "Rehedge delta {hedge_qty} rounds to zero at size precision {size_precision}, skipping"
+            );
+            return Ok(());
+        }
+
+        log::info!(
+            "Rehedging: portfolio_delta={delta:.4}, submitting {side:?} {hedge_quantity} on {hedge_id}",
+        );
+
         let order = self.order().market(
             hedge_id,
             side,
-            Quantity::new(hedge_qty, size_precision),
+            hedge_quantity,
             None,
             None,
             None,
