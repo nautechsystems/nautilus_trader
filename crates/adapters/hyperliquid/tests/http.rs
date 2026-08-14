@@ -61,8 +61,10 @@ struct TestServerState {
     last_request_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     rate_limit_after: Arc<AtomicUsize>,
     frontend_open_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    frontend_open_orders_dex_responses: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
     order_status_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    clearinghouse_dex_responses: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
     spot_fails: Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -73,8 +75,10 @@ impl Default for TestServerState {
             last_request_body: Arc::new(tokio::sync::Mutex::new(None)),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
             frontend_open_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
+            frontend_open_orders_dex_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
             clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
+            clearinghouse_dex_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             spot_fails: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
@@ -185,12 +189,30 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         }
         "openOrders" => Json(json!([])).into_response(),
         "frontendOpenOrders" => {
-            let custom = state.frontend_open_orders_response.lock().await;
-            Json(custom.clone().unwrap_or(json!([]))).into_response()
+            let custom = if let Some(dex) = request_body.get("dex").and_then(Value::as_str) {
+                state
+                    .frontend_open_orders_dex_responses
+                    .lock()
+                    .await
+                    .get(dex)
+                    .cloned()
+            } else {
+                state.frontend_open_orders_response.lock().await.clone()
+            };
+            Json(custom.unwrap_or(json!([]))).into_response()
         }
         "clearinghouseState" => {
-            let custom = state.clearinghouse_response.lock().await;
-            let body = custom.clone().unwrap_or_else(|| {
+            let custom = if let Some(dex) = request_body.get("dex").and_then(Value::as_str) {
+                state
+                    .clearinghouse_dex_responses
+                    .lock()
+                    .await
+                    .get(dex)
+                    .cloned()
+            } else {
+                state.clearinghouse_response.lock().await.clone()
+            };
+            let body = custom.unwrap_or_else(|| {
                 json!({
                     "marginSummary": {
                         "accountValue": "10000.0",
@@ -645,6 +667,7 @@ async fn test_request_position_status_reports_skips_spot_fetch_for_perp_filter()
         "clearinghouseState",
         "filtered perp query must not reach spotClearinghouseState"
     );
+    assert_eq!(body.get("dex"), None);
 }
 
 #[rstest]
@@ -1500,6 +1523,21 @@ fn create_domain_client(addr: &SocketAddr) -> HyperliquidHttpClient {
 }
 
 fn cache_btc_instrument(client: &HyperliquidHttpClient) {
+    cache_perp_instrument(client, "BTC-USD-PERP.HYPERLIQUID", "BTC");
+}
+
+fn cache_xyz_instrument(client: &HyperliquidHttpClient) {
+    cache_perp_instrument(client, "xyz:XYZ100-USD-PERP.HYPERLIQUID", "xyz:XYZ100");
+}
+
+fn cache_reconciliation_perps(client: &HyperliquidHttpClient) {
+    cache_btc_instrument(client);
+    cache_perp_instrument(client, "flx:TEST-USD-PERP.HYPERLIQUID", "flx:TEST");
+    cache_perp_instrument(client, "flx:OTHER-USD-PERP.HYPERLIQUID", "flx:OTHER");
+    cache_xyz_instrument(client);
+}
+
+fn cache_perp_instrument(client: &HyperliquidHttpClient, instrument_id: &str, symbol: &str) {
     use nautilus_model::{
         enums::CurrencyType,
         identifiers::{InstrumentId, Symbol},
@@ -1507,15 +1545,15 @@ fn cache_btc_instrument(client: &HyperliquidHttpClient) {
         types::{Currency, Money, Price, Quantity},
     };
 
-    let btc = Currency::new("BTC", 8, 0, "BTC", CurrencyType::Crypto);
+    let base = Currency::new(symbol, 8, 0, symbol, CurrencyType::Crypto);
     let usd = Currency::new("USD", 2, 0, "USD", CurrencyType::Fiat);
     let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
     let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
 
     let instrument = CryptoPerpetual::new_checked(
-        InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
-        Symbol::new("BTC"),
-        btc,
+        InstrumentId::from(instrument_id),
+        Symbol::new(symbol),
+        base,
         usd,
         usdc,
         false,
@@ -1543,6 +1581,292 @@ fn cache_btc_instrument(client: &HyperliquidHttpClient) {
     .unwrap();
 
     client.cache_instrument(&InstrumentAny::CryptoPerpetual(instrument));
+}
+
+fn open_order(coin: &str, oid: u64, price: &str, size: &str) -> Value {
+    json!({
+        "coin": coin,
+        "side": "B",
+        "limitPx": price,
+        "sz": size,
+        "oid": oid,
+        "timestamp": 1_700_000_000_000u64,
+        "origSz": size
+    })
+}
+
+fn clearinghouse_position(coin: &str, size: &str, entry_price: &str) -> Value {
+    json!({
+        "assetPositions": [{
+            "type": "oneWay",
+            "position": {
+                "coin": coin,
+                "cumFunding": {
+                    "allTime": "0.0",
+                    "sinceOpen": "0.0",
+                    "sinceChange": "0.0"
+                },
+                "entryPx": entry_price,
+                "leverage": {"type": "cross", "value": 2},
+                "liquidationPx": null,
+                "marginUsed": "1.0",
+                "maxLeverage": 10,
+                "positionValue": "10.0",
+                "returnOnEquity": "0.0",
+                "szi": size,
+                "unrealizedPnl": "0.0"
+            }
+        }]
+    })
+}
+
+async fn configure_open_order_responses(state: &TestServerState) {
+    *state.frontend_open_orders_response.lock().await =
+        Some(json!([open_order("BTC", 1001, "95000.0", "0.10000")]));
+    *state.frontend_open_orders_dex_responses.lock().await = HashMap::from([
+        (
+            "flx".to_string(),
+            json!([open_order("flx:TEST", 2002, "100.0", "0.20000")]),
+        ),
+        (
+            "xyz".to_string(),
+            json!([open_order("xyz:XYZ100", 3003, "25000.0", "0.30000")]),
+        ),
+    ]);
+}
+
+async fn configure_position_responses(state: &TestServerState) {
+    *state.clearinghouse_response.lock().await =
+        Some(clearinghouse_position("BTC", "0.10000", "95000.0"));
+    *state.clearinghouse_dex_responses.lock().await = HashMap::from([
+        (
+            "flx".to_string(),
+            clearinghouse_position("flx:TEST", "0.20000", "100.0"),
+        ),
+        (
+            "xyz".to_string(),
+            clearinghouse_position("xyz:XYZ100", "-0.30000", "25000.0"),
+        ),
+    ]);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_reports_aggregates_all_cached_dexs() {
+    let state = TestServerState::default();
+    configure_open_order_responses(&state).await;
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    cache_reconciliation_perps(&client);
+
+    let reports = client
+        .request_order_status_reports("0xuser", None)
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 3);
+    assert_eq!(reports[0].instrument_id, "BTC-USD-PERP.HYPERLIQUID".into());
+    assert_eq!(reports[0].venue_order_id.as_str(), "1001");
+    assert_eq!(
+        reports[1].instrument_id,
+        "flx:TEST-USD-PERP.HYPERLIQUID".into()
+    );
+    assert_eq!(reports[1].venue_order_id.as_str(), "2002");
+    assert_eq!(
+        reports[2].instrument_id,
+        "xyz:XYZ100-USD-PERP.HYPERLIQUID".into()
+    );
+    assert_eq!(reports[2].venue_order_id.as_str(), "3003");
+    assert_eq!(*state.request_count.lock().await, 3);
+}
+
+#[rstest]
+#[case("flx:TEST-USD-PERP.HYPERLIQUID", "flx", "2002")]
+#[case("xyz:XYZ100-USD-PERP.HYPERLIQUID", "xyz", "3003")]
+#[tokio::test]
+async fn test_request_order_status_reports_routes_builder_dex_filter(
+    #[case] instrument_id: InstrumentId,
+    #[case] expected_dex: &str,
+    #[case] expected_order_id: &str,
+) {
+    let state = TestServerState::default();
+    configure_open_order_responses(&state).await;
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    cache_reconciliation_perps(&client);
+
+    let reports = client
+        .request_order_status_reports("0xuser", Some(instrument_id))
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].instrument_id, instrument_id);
+    assert_eq!(reports[0].venue_order_id.as_str(), expected_order_id);
+    assert_eq!(*state.request_count.lock().await, 1);
+    assert_eq!(
+        state
+            .last_request_body
+            .lock()
+            .await
+            .as_ref()
+            .and_then(|body| body.get("dex")),
+        Some(&json!(expected_dex))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_reports_routes_default_filter() {
+    let state = TestServerState::default();
+    configure_open_order_responses(&state).await;
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    cache_reconciliation_perps(&client);
+
+    let reports = client
+        .request_order_status_reports("0xuser", Some("BTC-USD-PERP.HYPERLIQUID".into()))
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].instrument_id, "BTC-USD-PERP.HYPERLIQUID".into());
+    assert_eq!(*state.request_count.lock().await, 1);
+    assert_eq!(
+        state
+            .last_request_body
+            .lock()
+            .await
+            .as_ref()
+            .and_then(|body| body.get("dex")),
+        None
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_reports_fails_when_later_dex_fetch_fails() {
+    let state = TestServerState::default();
+    state.rate_limit_after.store(2, Ordering::Relaxed);
+    configure_open_order_responses(&state).await;
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_reconciliation_perps(&client);
+
+    let result = client.request_order_status_reports("0xuser", None).await;
+
+    assert!(matches!(result, Err(Error::RateLimit { .. })));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_aggregates_all_cached_dexs() {
+    let state = TestServerState::default();
+    configure_position_responses(&state).await;
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    cache_reconciliation_perps(&client);
+
+    let reports = client
+        .request_position_status_reports("0xuser", None)
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 3);
+    assert_eq!(reports[0].instrument_id, "BTC-USD-PERP.HYPERLIQUID".into());
+    assert_eq!(reports[0].position_side, PositionSideSpecified::Long);
+    assert_eq!(
+        reports[0].quantity.as_decimal(),
+        rust_decimal_macros::dec!(0.1)
+    );
+    assert_eq!(
+        reports[1].instrument_id,
+        "flx:TEST-USD-PERP.HYPERLIQUID".into()
+    );
+    assert_eq!(reports[1].position_side, PositionSideSpecified::Long);
+    assert_eq!(
+        reports[1].quantity.as_decimal(),
+        rust_decimal_macros::dec!(0.2)
+    );
+    assert_eq!(
+        reports[2].instrument_id,
+        "xyz:XYZ100-USD-PERP.HYPERLIQUID".into()
+    );
+    assert_eq!(reports[2].position_side, PositionSideSpecified::Short);
+    assert_eq!(
+        reports[2].quantity.as_decimal(),
+        rust_decimal_macros::dec!(0.3)
+    );
+    assert_eq!(*state.request_count.lock().await, 4);
+}
+
+#[rstest]
+#[case(
+    "flx:TEST-USD-PERP.HYPERLIQUID",
+    "flx",
+    PositionSideSpecified::Long,
+    rust_decimal_macros::dec!(0.2)
+)]
+#[case(
+    "xyz:XYZ100-USD-PERP.HYPERLIQUID",
+    "xyz",
+    PositionSideSpecified::Short,
+    rust_decimal_macros::dec!(0.3)
+)]
+#[tokio::test]
+async fn test_request_position_status_reports_routes_builder_dex_filter(
+    #[case] instrument_id: InstrumentId,
+    #[case] expected_dex: &str,
+    #[case] expected_side: PositionSideSpecified,
+    #[case] expected_quantity: rust_decimal::Decimal,
+) {
+    let state = TestServerState::default();
+    configure_position_responses(&state).await;
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    cache_reconciliation_perps(&client);
+
+    let reports = client
+        .request_position_status_reports("0xuser", Some(instrument_id))
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].instrument_id, instrument_id);
+    assert_eq!(reports[0].position_side, expected_side);
+    assert_eq!(reports[0].quantity.as_decimal(), expected_quantity);
+    assert_eq!(*state.request_count.lock().await, 1);
+    assert_eq!(
+        state
+            .last_request_body
+            .lock()
+            .await
+            .as_ref()
+            .and_then(|body| body.get("dex")),
+        Some(&json!(expected_dex))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_fails_when_later_dex_fetch_fails() {
+    let state = TestServerState::default();
+    state.rate_limit_after.store(2, Ordering::Relaxed);
+    configure_position_responses(&state).await;
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_reconciliation_perps(&client);
+
+    let result = client.request_position_status_reports("0xuser", None).await;
+
+    assert!(matches!(result, Err(Error::RateLimit { .. })));
 }
 
 #[rstest]

@@ -125,12 +125,16 @@ pub struct OrderStatusParams {
 #[derive(Debug, Clone, Serialize)]
 pub struct OpenOrdersParams {
     pub user: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dex: Option<String>,
 }
 
 /// Parameters for clearinghouse state request.
 #[derive(Debug, Clone, Serialize)]
 pub struct ClearinghouseStateParams {
     pub user: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dex: Option<String>,
 }
 
 /// Parameters for spot clearinghouse state request.
@@ -290,20 +294,32 @@ impl InfoRequest {
 
     /// Creates a request to get all open orders for a user.
     pub fn open_orders(user: &str) -> Self {
+        Self::open_orders_for_dex(user, None)
+    }
+
+    /// Creates a request to get all open orders for a user on a specific perp dex.
+    pub(crate) fn open_orders_for_dex(user: &str, dex: Option<&str>) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::OpenOrders,
             params: InfoRequestParams::OpenOrders(OpenOrdersParams {
                 user: user.to_string(),
+                dex: dex.map(str::to_string),
             }),
         }
     }
 
     /// Creates a request to get frontend open orders (includes more detail).
     pub fn frontend_open_orders(user: &str) -> Self {
+        Self::frontend_open_orders_for_dex(user, None)
+    }
+
+    /// Creates a frontend open-orders request for a user on a specific perp dex.
+    pub(crate) fn frontend_open_orders_for_dex(user: &str, dex: Option<&str>) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::FrontendOpenOrders,
             params: InfoRequestParams::OpenOrders(OpenOrdersParams {
                 user: user.to_string(),
+                dex: dex.map(str::to_string),
             }),
         }
     }
@@ -314,16 +330,23 @@ impl InfoRequest {
             request_type: HyperliquidInfoRequestType::HistoricalOrders,
             params: InfoRequestParams::OpenOrders(OpenOrdersParams {
                 user: user.to_string(),
+                dex: None,
             }),
         }
     }
 
     /// Creates a request to get user state (balances, positions, margin).
     pub fn clearinghouse_state(user: &str) -> Self {
+        Self::clearinghouse_state_for_dex(user, None)
+    }
+
+    /// Creates a clearinghouse-state request for a user on a specific perp dex.
+    pub(crate) fn clearinghouse_state_for_dex(user: &str, dex: Option<&str>) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::ClearinghouseState,
             params: InfoRequestParams::ClearinghouseState(ClearinghouseStateParams {
                 user: user.to_string(),
+                dex: dex.map(str::to_string),
             }),
         }
     }
@@ -344,6 +367,7 @@ impl InfoRequest {
             request_type: HyperliquidInfoRequestType::UserFees,
             params: InfoRequestParams::OpenOrders(OpenOrdersParams {
                 user: user.to_string(),
+                dex: None,
             }),
         }
     }
@@ -537,6 +561,60 @@ mod tests {
         assert_eq!(req.request_type, HyperliquidInfoRequestType::RecentTrades);
         let json = serde_json::to_string(&req).unwrap();
         assert_eq!(json, r#"{"type":"recentTrades","coin":"BTC"}"#);
+    }
+
+    #[rstest]
+    fn test_info_request_open_orders_dex_serialization() {
+        let default = serde_json::to_value(InfoRequest::open_orders("0xabc")).unwrap();
+        let xyz =
+            serde_json::to_value(InfoRequest::open_orders_for_dex("0xabc", Some("xyz"))).unwrap();
+
+        assert_eq!(
+            default,
+            serde_json::json!({"type": "openOrders", "user": "0xabc"})
+        );
+        assert_eq!(
+            xyz,
+            serde_json::json!({"type": "openOrders", "user": "0xabc", "dex": "xyz"})
+        );
+    }
+
+    #[rstest]
+    fn test_info_request_frontend_open_orders_dex_serialization() {
+        let default = serde_json::to_value(InfoRequest::frontend_open_orders("0xabc")).unwrap();
+        let xyz = serde_json::to_value(InfoRequest::frontend_open_orders_for_dex(
+            "0xabc",
+            Some("xyz"),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            default,
+            serde_json::json!({"type": "frontendOpenOrders", "user": "0xabc"})
+        );
+        assert_eq!(
+            xyz,
+            serde_json::json!({"type": "frontendOpenOrders", "user": "0xabc", "dex": "xyz"})
+        );
+    }
+
+    #[rstest]
+    fn test_info_request_clearinghouse_state_dex_serialization() {
+        let default = serde_json::to_value(InfoRequest::clearinghouse_state("0xabc")).unwrap();
+        let xyz = serde_json::to_value(InfoRequest::clearinghouse_state_for_dex(
+            "0xabc",
+            Some("xyz"),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            default,
+            serde_json::json!({"type": "clearinghouseState", "user": "0xabc"})
+        );
+        assert_eq!(
+            xyz,
+            serde_json::json!({"type": "clearinghouseState", "user": "0xabc", "dex": "xyz"})
+        );
     }
 
     #[rstest]
