@@ -30,22 +30,13 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use nautilus_polymarket::{
-    common::credential::EvmPrivateKey,
-    signing::eip712::{CTF_EXCHANGE, NEG_RISK_CTF_EXCHANGE},
+    common::credential::EvmPrivateKey, signing::eip712::COLLATERAL_APPROVAL_TARGETS,
 };
 
 const DEFAULT_POLYGON_RPC_URL: &str = "https://polygon.drpc.org";
 const POLYGON_CHAIN_ID: u64 = 137;
 const PUSD_COLLATERAL: Address = address!("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB");
 const CONDITIONAL_TOKENS: Address = address!("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045");
-const NEG_RISK_CTF_COLLATERAL_ADAPTER: Address =
-    address!("0xadA2005600Dec949baf300f4C6120000bDB6eAab");
-const APPROVAL_TARGETS: [Address; 3] = [
-    CTF_EXCHANGE,
-    NEG_RISK_CTF_EXCHANGE,
-    NEG_RISK_CTF_COLLATERAL_ADAPTER,
-];
-
 alloy::sol! {
     #[sol(rpc)]
     interface Erc20 {
@@ -113,7 +104,7 @@ async fn run(private_key: &str, rpc_url: &str) -> Result<(), Box<dyn std::error:
 }
 
 fn approval_transactions() -> impl Iterator<Item = Approval> {
-    APPROVAL_TARGETS.into_iter().flat_map(|target| {
+    COLLATERAL_APPROVAL_TARGETS.into_iter().flat_map(|target| {
         [
             Approval::Collateral {
                 spender: target,

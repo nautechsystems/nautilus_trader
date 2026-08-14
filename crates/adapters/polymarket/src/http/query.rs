@@ -15,11 +15,19 @@
 
 //! HTTP query and response model types for the Polymarket CLOB API.
 
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    fmt,
+};
+
 use ahash::{AHashMap, AHashSet};
 use derive_builder::Builder;
 use jiff::{Timestamp, civil::Date, tz::Offset};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer, Serialize, de::Error};
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{Error, MapAccess, Visitor},
+};
 
 use crate::{
     common::{
@@ -100,8 +108,48 @@ pub struct BalanceAllowance {
     pub balance: Decimal,
     #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
     pub allowance: Option<Decimal>,
-    #[serde(default)]
-    pub allowances: std::collections::HashMap<String, String>,
+    #[serde(default, deserialize_with = "deserialize_spender_allowances")]
+    pub allowances: HashMap<String, String>,
+}
+
+fn deserialize_spender_allowances<'de, D>(
+    deserializer: D,
+) -> Result<HashMap<String, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct SpenderAllowancesVisitor;
+
+    impl<'de> Visitor<'de> for SpenderAllowancesVisitor {
+        type Value = HashMap<String, String>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a spender-to-allowance map without duplicate spenders")
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            let mut allowances = HashMap::with_capacity(map.size_hint().unwrap_or_default());
+            while let Some((spender, allowance)) = map.next_entry::<String, String>()? {
+                match allowances.entry(spender) {
+                    Entry::Occupied(entry) => {
+                        return Err(A::Error::custom(format!(
+                            "duplicate spender `{}` in allowance evidence",
+                            entry.key()
+                        )));
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(allowance);
+                    }
+                }
+            }
+            Ok(allowances)
+        }
+    }
+
+    deserializer.deserialize_map(SpenderAllowancesVisitor)
 }
 
 /// CLOB protocol version response from `GET /version`.
@@ -705,6 +753,22 @@ mod tests {
         assert_eq!(ba.balance, dec!(250.5));
         assert_eq!(ba.allowance, Some(dec!(1000)));
         assert!(ba.allowances.is_empty());
+    }
+
+    #[rstest]
+    fn test_balance_allowance_rejects_duplicate_spender() {
+        let duplicate = serde_json::from_str::<BalanceAllowance>(
+            r#"{
+                "balance":"250.5",
+                "allowances":{
+                    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":"0",
+                    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":"115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                }
+            }"#,
+        )
+        .expect_err("duplicate spender evidence must be rejected before map construction");
+
+        assert!(duplicate.to_string().contains("duplicate spender"));
     }
 
     #[rstest]

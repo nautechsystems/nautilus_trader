@@ -54,6 +54,17 @@ pub const CTF_EXCHANGE: Address = address!("0xE111180000d2663C0091e4f400237545B8
 /// Neg Risk CTF Exchange contract address on Polygon mainnet (CLOB V2).
 pub const NEG_RISK_CTF_EXCHANGE: Address = address!("0xe2222d279d744050d28e00520010520000310F59");
 
+/// Neg Risk CTF collateral adapter address on Polygon mainnet.
+pub const NEG_RISK_CTF_COLLATERAL_ADAPTER: Address =
+    address!("0xadA2005600Dec949baf300f4C6120000bDB6eAab");
+
+/// Complete spender set requiring collateral approval for Polymarket CLOB V2 orders.
+pub const COLLATERAL_APPROVAL_TARGETS: [Address; 3] = [
+    CTF_EXCHANGE,
+    NEG_RISK_CTF_EXCHANGE,
+    NEG_RISK_CTF_COLLATERAL_ADAPTER,
+];
+
 const DOMAIN_NAME: &str = "Polymarket CTF Exchange";
 const DOMAIN_VERSION: &str = "2";
 const POLYGON_CHAIN_ID: u64 = 137;
