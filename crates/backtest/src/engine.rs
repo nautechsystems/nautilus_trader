@@ -845,7 +845,6 @@ impl BacktestEngine {
             let d = self.data_iterator.next_item().unwrap();
 
             if ts_init > self.last_ns {
-                self.last_ns = ts_init;
                 self.advance_time_impl(ts_init, &clocks)?;
             }
 
@@ -1463,6 +1462,7 @@ impl BacktestEngine {
         if let Some(ts_event) = shutdown_at {
             self.last_ns = ts_event;
         } else {
+            self.last_ns = ts_now;
             Self::set_all_clocks_time(clocks, ts_now);
             logging_clock_set_static_time(ts_now.as_u64());
         }
@@ -1548,6 +1548,7 @@ impl BacktestEngine {
         ts_event: UnixNanos,
         advance_to: UnixNanos,
     ) {
+        self.last_ns = ts_event;
         while self.accumulator.peek_next_time() == Some(ts_event) {
             let handler = self
                 .accumulator
@@ -2141,6 +2142,8 @@ fn log_portfolio_performance(analyzer: &PortfolioAnalyzer) {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use indexmap::IndexMap;
     use nautilus_common::{
         actor::DataActor,
@@ -2261,6 +2264,45 @@ mod tests {
             .unwrap();
         engine.add_venue(venue_config).unwrap();
         engine
+    }
+
+    #[rstest]
+    fn test_timer_handler_sets_last_ns_to_fire_time() {
+        let mut engine = create_engine();
+        engine.last_ns = UnixNanos::from(30);
+        let fired = Rc::new(Cell::new(false));
+        let fired_clone = Rc::clone(&fired);
+        let callback = TimeEventCallback::RustLocal(Rc::new(move |_| {
+            fired_clone.set(true);
+        }));
+        engine
+            .kernel
+            .clock
+            .borrow_mut()
+            .set_timer_ns(
+                "ROLL",
+                1,
+                Some(UnixNanos::from(20)),
+                None,
+                Some(callback),
+                Some(true),
+                Some(true),
+            )
+            .unwrap();
+        let clocks = engine.collect_all_clocks();
+
+        for clock in &clocks {
+            BacktestEngine::advance_clock_on_accumulator(
+                &mut engine.accumulator,
+                clock,
+                UnixNanos::from(30),
+                false,
+            );
+        }
+        engine.run_timer_handlers_at(&clocks, UnixNanos::from(20), UnixNanos::from(30));
+
+        assert!(fired.get());
+        assert_eq!(engine.last_ns, UnixNanos::from(20));
     }
 
     #[rstest]
