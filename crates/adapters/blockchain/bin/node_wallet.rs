@@ -75,6 +75,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .base_fee_buffer_bps(2_000)
         .gas_limit(1_000_000)
         .gas_buffer_bps(2_000)
+        .allowed_token_pairs(vec![(
+            String::from("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+            String::from("0xaf88d065e77c8cC2239327C5EDb3A432268e5831"),
+        )])
+        .slippage_bps(50)
+        .max_slippage_bps(200)
+        .max_order_amount(1_000_000_000_000_000_000)
+        .deadline_seconds(300)
+        .max_quote_age_blocks(100)
+        .receipt_timeout_secs(60)
         .build();
     let ethereum_config = BlockchainExecutionClientConfig::builder()
         .trader_id(trader_id)
@@ -97,6 +107,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .base_fee_buffer_bps(2_000)
         .gas_limit(1_000_000)
         .gas_buffer_bps(2_000)
+        .allowed_token_pairs(vec![(
+            String::from("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
+            String::from("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
+        )])
+        .slippage_bps(50)
+        .max_slippage_bps(200)
+        .max_order_amount(1_000_000_000_000_000_000)
+        .deadline_seconds(300)
+        .max_quote_age_blocks(100)
+        .receipt_timeout_secs(60)
         .build();
     let cache = Rc::new(RefCell::new(Cache::default()));
     let core_execution_client = ExecutionClientCore::new(

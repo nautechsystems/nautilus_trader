@@ -656,9 +656,19 @@ CREATE TABLE IF NOT EXISTS "pool_tick" (
 CREATE TABLE IF NOT EXISTS "execution_transaction" (
     id BIGSERIAL PRIMARY KEY,
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    wallet_address TEXT NOT NULL,
     nonce BIGINT NOT NULL,
     transaction_hash TEXT NOT NULL,
     purpose TEXT NOT NULL,
     status TEXT NOT NULL,
+    client_order_id TEXT,
     UNIQUE (chain_id, transaction_hash)
 );
+ALTER TABLE "execution_transaction" ADD COLUMN IF NOT EXISTS client_order_id TEXT;
+ALTER TABLE "execution_transaction" ADD COLUMN IF NOT EXISTS wallet_address TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS execution_transaction_signer_nonce_key
+    ON "execution_transaction" (chain_id, wallet_address, nonce)
+    WHERE wallet_address IS NOT NULL AND status IN ('pending', 'included', 'reverted');
+CREATE UNIQUE INDEX IF NOT EXISTS execution_transaction_client_order_key
+    ON "execution_transaction" (chain_id, wallet_address, client_order_id)
+    WHERE wallet_address IS NOT NULL AND client_order_id IS NOT NULL;

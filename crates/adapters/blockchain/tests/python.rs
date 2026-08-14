@@ -52,7 +52,7 @@ fn test_blockchain_python_module_contract() {
             &blockchain_module,
             &network_module,
         );
-        assert_execution_config_constructs_from_python(&blockchain_module);
+        assert_execution_config_constructs_from_python(py, &blockchain_module);
     });
 }
 
@@ -124,7 +124,10 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
     );
 }
 
-fn assert_execution_config_constructs_from_python(blockchain_module: &Bound<'_, PyModule>) {
+fn assert_execution_config_constructs_from_python(
+    py: Python<'_>,
+    blockchain_module: &Bound<'_, PyModule>,
+) {
     const USERINFO_SECRET: &str = "python-execution-userinfo-secret";
     const PATH_SECRET: &str = "python-execution-path-secret";
     const QUERY_SECRET: &str = "python-execution-query-secret";
@@ -135,21 +138,53 @@ fn assert_execution_config_constructs_from_python(blockchain_module: &Bound<'_, 
         .getattr("BlockchainExecutionClientConfig")
         .expect("BlockchainExecutionClientConfig should be available");
 
+    let kwargs = PyDict::new(py);
+    kwargs
+        .set_item(
+            "allowed_token_pairs",
+            vec![(
+                "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+                "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+            )],
+        )
+        .expect("allowed_token_pairs kwarg should be set");
+    kwargs
+        .set_item("slippage_bps", 50_u32)
+        .expect("slippage_bps kwarg should be set");
+    kwargs
+        .set_item("max_slippage_bps", 200_u32)
+        .expect("max_slippage_bps kwarg should be set");
+    kwargs
+        .set_item("max_order_amount", 1_000_000_000_000_000_000_u64)
+        .expect("max_order_amount kwarg should be set");
+    kwargs
+        .set_item("deadline_seconds", 300_u64)
+        .expect("deadline_seconds kwarg should be set");
+    kwargs
+        .set_item("max_quote_age_blocks", 100_u64)
+        .expect("max_quote_age_blocks kwarg should be set");
+    kwargs
+        .set_item("receipt_timeout_secs", 60_u64)
+        .expect("receipt_timeout_secs kwarg should be set");
+
     let config = config_type
-        .call1((
-            TraderId::from("TRADER-001"),
-            AccountId::from("BLOCKCHAIN-001"),
-            chains::ARBITRUM.clone(),
-            "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-            http_rpc_url.clone(),
-            "BLOCKCHAIN_PRIVATE_KEY",
-            vec!["0xE592427A0AEce92De3Edee1F18E0157C05861564"],
-            "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-            1_000_000_000_u64,
-            2_000_u32,
-            1_000_000_u64,
-            2_000_u32,
-        ))
+        .call(
+            (
+                TraderId::from("TRADER-001"),
+                AccountId::from("BLOCKCHAIN-001"),
+                chains::ARBITRUM.clone(),
+                "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+                http_rpc_url.clone(),
+                "BLOCKCHAIN_PRIVATE_KEY",
+                vec!["0xE592427A0AEce92De3Edee1F18E0157C05861564"],
+                "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+                1_000_000_000_u64,
+                2_000_u32,
+                1_000_000_u64,
+                2_000_u32,
+            ),
+            Some(&kwargs),
+        )
         .expect("BlockchainExecutionClientConfig should construct from Python");
 
     let repr: String = config
@@ -169,6 +204,19 @@ fn assert_execution_config_constructs_from_python(blockchain_module: &Bound<'_, 
         .extract()
         .expect("signer_private_key_env getter should return a string");
     assert_eq!(getter_value, "BLOCKCHAIN_PRIVATE_KEY");
+
+    let getter_pairs: Vec<(String, String)> = config
+        .getattr("allowed_token_pairs")
+        .expect("allowed_token_pairs getter should exist")
+        .extract()
+        .expect("allowed_token_pairs getter should return a list of pairs");
+    assert_eq!(
+        getter_pairs,
+        vec![(
+            "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
+            "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
+        )]
+    );
 
     let extracted = config
         .extract::<BlockchainExecutionClientConfig>()
@@ -195,6 +243,19 @@ fn assert_execution_config_constructs_from_python(blockchain_module: &Bound<'_, 
     assert_eq!(extracted.base_fee_buffer_bps, 2_000);
     assert_eq!(extracted.gas_limit, 1_000_000);
     assert_eq!(extracted.gas_buffer_bps, 2_000);
+    assert_eq!(
+        extracted.allowed_token_pairs,
+        vec![(
+            "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
+            "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
+        )]
+    );
+    assert_eq!(extracted.slippage_bps, 50);
+    assert_eq!(extracted.max_slippage_bps, 200);
+    assert_eq!(extracted.max_order_amount, 1_000_000_000_000_000_000);
+    assert_eq!(extracted.deadline_seconds, 300);
+    assert_eq!(extracted.max_quote_age_blocks, 100);
+    assert_eq!(extracted.receipt_timeout_secs, 60);
     assert!(extracted.postgres_cache_database_config.is_none());
     assert_eq!(extracted.transport_backend, TransportBackend::default());
 }

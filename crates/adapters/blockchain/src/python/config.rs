@@ -168,7 +168,7 @@ impl BlockchainExecutionClientConfig {
     /// Configuration for blockchain execution clients.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (trader_id, client_id, chain, wallet_address, http_rpc_url, signer_private_key_env, router_addresses, weth_address, max_fee_per_gas_wei, base_fee_buffer_bps, gas_limit, gas_buffer_bps, tokens=None, rpc_requests_per_second=None, unlimited_approval=false, postgres_cache_database_config=None, transport_backend=None))]
+    #[pyo3(signature = (trader_id, client_id, chain, wallet_address, http_rpc_url, signer_private_key_env, router_addresses, weth_address, max_fee_per_gas_wei, base_fee_buffer_bps, gas_limit, gas_buffer_bps, allowed_token_pairs, slippage_bps, max_slippage_bps, max_order_amount, deadline_seconds, max_quote_age_blocks, receipt_timeout_secs, tokens=None, rpc_requests_per_second=None, unlimited_approval=false, postgres_cache_database_config=None, transport_backend=None))]
     fn py_new(
         trader_id: TraderId,
         client_id: AccountId,
@@ -188,6 +188,13 @@ impl BlockchainExecutionClientConfig {
         base_fee_buffer_bps: u32,
         gas_limit: u64,
         gas_buffer_bps: u32,
+        allowed_token_pairs: Vec<(String, String)>,
+        slippage_bps: u32,
+        max_slippage_bps: u32,
+        max_order_amount: u64,
+        deadline_seconds: u64,
+        max_quote_age_blocks: u64,
+        receipt_timeout_secs: u64,
         tokens: Option<Vec<String>>,
         rpc_requests_per_second: Option<u32>,
         unlimited_approval: bool,
@@ -213,12 +220,26 @@ impl BlockchainExecutionClientConfig {
             .base_fee_buffer_bps(base_fee_buffer_bps)
             .gas_limit(gas_limit)
             .gas_buffer_bps(gas_buffer_bps)
+            .allowed_token_pairs(allowed_token_pairs)
+            .slippage_bps(slippage_bps)
+            .max_slippage_bps(max_slippage_bps)
+            .max_order_amount(max_order_amount)
+            .deadline_seconds(deadline_seconds)
+            .max_quote_age_blocks(max_quote_age_blocks)
+            .receipt_timeout_secs(receipt_timeout_secs)
             .maybe_tokens(tokens)
             .maybe_rpc_requests_per_second(rpc_requests_per_second)
             .unlimited_approval(unlimited_approval)
             .maybe_postgres_cache_database_config(postgres_cache_database_config)
             .transport_backend(transport_backend.unwrap_or_default())
             .build()
+    }
+
+    /// Returns the allowed (input token, output token) address pairs.
+    #[getter]
+    #[gen_stub(override_return_type(type_repr = "list[tuple[str, str]]",))]
+    fn allowed_token_pairs(&self) -> Vec<(String, String)> {
+        self.allowed_token_pairs.clone()
     }
 
     /// Returns the trader ID.

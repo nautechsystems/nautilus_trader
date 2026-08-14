@@ -32,6 +32,8 @@ pub enum TransactionPurpose {
     Wrap,
     /// ERC-20 `approve` granting the router an allowance.
     Approve,
+    /// Uniswap V3 `exactInputSingle` swap executing an order.
+    Swap,
 }
 
 impl TransactionPurpose {
@@ -41,6 +43,7 @@ impl TransactionPurpose {
         match self {
             Self::Wrap => "wrap",
             Self::Approve => "approve",
+            Self::Swap => "swap",
         }
     }
 }

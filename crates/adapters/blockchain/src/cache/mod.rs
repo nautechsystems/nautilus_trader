@@ -143,13 +143,19 @@ impl BlockchainCache {
     /// # Errors
     ///
     /// Returns an error if no database is configured or the database operation fails.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters mirror the persisted execution transaction fields"
+    )]
     pub async fn add_execution_transaction(
         &self,
         chain_id: u32,
+        wallet_address: &str,
         nonce: u64,
         transaction_hash: &str,
         purpose: &str,
         status: &str,
+        client_order_id: Option<&str>,
     ) -> anyhow::Result<()> {
         let database = self.database.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
@@ -158,8 +164,32 @@ impl BlockchainCache {
         })?;
 
         database
-            .add_execution_transaction(chain_id, nonce, transaction_hash, purpose, status)
+            .add_execution_transaction(
+                chain_id,
+                wallet_address,
+                nonce,
+                transaction_hash,
+                purpose,
+                status,
+                client_order_id,
+            )
             .await
+    }
+
+    /// Migrates the execution transaction table and installs its signer and order uniqueness
+    /// constraints, failing closed when no database is attached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no database is configured or the database operation fails.
+    pub async fn ensure_execution_transaction_schema(&self) -> anyhow::Result<()> {
+        let database = self.database.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "No durable store configured; refusing to migrate execution transaction"
+            )
+        })?;
+
+        database.ensure_execution_transaction_schema().await
     }
 
     /// Updates the status of a persisted execution transaction record, failing closed when no

@@ -542,11 +542,19 @@ impl BlockchainHttpRpcClient {
             })?;
 
         if let Some(error) = parsed.error {
-            if error.message.contains("already known") {
+            let message = error.message.to_ascii_lowercase();
+            if message.contains("already known") {
                 log::warn!(
                     "Broadcast returned 'already known' for transaction {expected_tx_hash}; treating as acceptance"
                 );
                 return Ok(*expected_tx_hash);
+            }
+
+            if message.contains("nonce too low") {
+                return Err(BroadcastError::Failed(format!(
+                    "node RPC error {} reported a consumed nonce",
+                    error.code
+                )));
             }
             return Err(BroadcastError::Rejected { code: error.code });
         }
@@ -608,6 +616,7 @@ pub(crate) mod tests {
             sleep_methods: HashMap<String, Duration>,
             requests: Arc<Mutex<Vec<Value>>>,
             receipt_hash_from_request: bool,
+            send_raw_echo: bool,
         }
 
         impl MockRpcState {
@@ -635,6 +644,15 @@ pub(crate) mod tests {
             #[must_use]
             pub(crate) fn with_receipt_hash_from_request(mut self) -> Self {
                 self.receipt_hash_from_request = true;
+                self
+            }
+
+            /// Answers `eth_sendRawTransaction` with the hash of the submitted bytes when no
+            /// canned response is configured, mirroring an honest node.
+            #[cfg(feature = "hypersync")]
+            #[must_use]
+            pub(crate) fn with_send_raw_transaction_echo(mut self) -> Self {
+                self.send_raw_echo = true;
                 self
             }
 
@@ -697,13 +715,10 @@ pub(crate) mod tests {
                 response
             } else if let Some(response) = state.responses.get(method) {
                 response.clone()
+            } else if method == "eth_sendRawTransaction" && state.send_raw_echo {
+                echo_send_raw_transaction_hash(&request)
             } else {
-                serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "error": {"code": -32601, "message": "method not found"}
-                })
-                .to_string()
+                method_not_found_response()
             };
 
             if state.receipt_hash_from_request && method == "eth_getTransactionReceipt" {
@@ -728,6 +743,33 @@ pub(crate) mod tests {
                 Value::String(requested_hash.to_string()),
             );
             value.to_string()
+        }
+
+        /// Computes the transaction hash for an `eth_sendRawTransaction` request, mirroring
+        /// an honest node: the keccak256 digest of the submitted EIP-2718 bytes.
+        fn echo_send_raw_transaction_hash(request: &Value) -> String {
+            let Some(raw) = request["params"][0].as_str() else {
+                return method_not_found_response();
+            };
+            let stripped = raw.strip_prefix("0x").unwrap_or(raw);
+            match nautilus_core::hex::decode(stripped) {
+                Ok(bytes) => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": alloy::primitives::keccak256(bytes).to_string()
+                })
+                .to_string(),
+                Err(_) => method_not_found_response(),
+            }
+        }
+
+        fn method_not_found_response() -> String {
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32601, "message": "method not found"}
+            })
+            .to_string()
         }
 
         /// Starts a mock JSON-RPC server on a random localhost port and returns its address.
@@ -778,6 +820,8 @@ pub(crate) mod tests {
         include_str!("../../test_data/execution/rpc_eth_send_raw_transaction_already_known.json");
     const SEND_RAW_TRANSACTION_REJECTED: &str =
         include_str!("../../test_data/execution/rpc_eth_send_raw_transaction_rejected.json");
+    const SEND_RAW_TRANSACTION_NONCE_TOO_LOW: &str =
+        include_str!("../../test_data/execution/rpc_eth_send_raw_transaction_nonce_too_low.json");
 
     async fn client_for(state: MockRpcState) -> (BlockchainHttpRpcClient, MockRpcState) {
         let addr = start_mock_rpc_server(state.clone()).await;
@@ -1095,7 +1139,30 @@ pub(crate) mod tests {
             other => panic!("Expected BroadcastError::Rejected, was {other}"),
         }
         let message = error.to_string();
-        assert!(!message.contains("nonce too low"), "was: {message}");
+        assert!(!message.contains("insufficient funds"), "was: {message}");
+    }
+
+    #[tokio::test]
+    async fn send_raw_transaction_treats_nonce_too_low_as_ambiguous() {
+        let (client, _) = client_for(
+            MockRpcState::default()
+                .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION_NONCE_TOO_LOW),
+        )
+        .await;
+
+        let error = client
+            .send_raw_transaction(
+                &[0x02, 0xf8],
+                &b256!("9da4b71be3336357259f56bda5cfbd3803c211ce09b510c43e6fb2af84088c6a"),
+            )
+            .await
+            .unwrap_err();
+
+        let BroadcastError::Failed(message) = error else {
+            panic!("Expected BroadcastError::Failed, was {error}");
+        };
+        assert_eq!(message, "node RPC error -32000 reported a consumed nonce");
+        assert!(!message.contains("0xf39Fd6e51"), "was: {message}");
     }
 
     #[rstest]

@@ -16,9 +16,10 @@
 //! Pinned-block Anvil fork integration test for blockchain execution operations.
 //!
 //! Forks Arbitrum at a fixed block with a local Anvil process and exercises `wrap`,
-//! `approve`, and `preflight` against localhost only. The fork-source RPC only reads chain
-//! state; signed transactions never leave localhost. Gated behind `BLOCKCHAIN_FORK_TESTS=1`
-//! and `BLOCKCHAIN_FORK_RPC_URL`; never runs in default CI.
+//! `approve`, `preflight`, and a WETH-to-USDC swap through `submit_order` against localhost
+//! only. The fork-source RPC only reads chain state; signed transactions never leave
+//! localhost. The suite is gated behind `BLOCKCHAIN_FORK_TESTS=1`, requires
+//! `BLOCKCHAIN_FORK_RPC_URL`, and never runs in default CI.
 
 #![cfg(feature = "hypersync")]
 
@@ -33,18 +34,41 @@ use std::{
 
 use alloy::primitives::{Address, U256, address};
 use nautilus_blockchain::{
-    config::BlockchainExecutionClientConfig, constants::BLOCKCHAIN_VENUE,
-    contracts::erc20::Erc20Contract, exchanges::arbitrum::UNISWAP_V3,
-    execution::client::BlockchainExecutionClient, rpc::http::BlockchainHttpRpcClient,
+    config::BlockchainExecutionClientConfig,
+    constants::BLOCKCHAIN_VENUE,
+    contracts::{
+        erc20::Erc20Contract,
+        uniswap_v3_pool::{FeeProtocolEncoding, UniswapV3PoolContract},
+    },
+    exchanges::arbitrum::UNISWAP_V3,
+    execution::client::BlockchainExecutionClient,
+    rpc::http::BlockchainHttpRpcClient,
 };
-use nautilus_common::{cache::Cache, clients::ExecutionClient};
-use nautilus_core::UnixNanos;
+use nautilus_common::{
+    cache::Cache,
+    clients::ExecutionClient,
+    live::runner::replace_exec_event_sender,
+    messages::{ExecutionEvent, execution::SubmitOrder},
+};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_infrastructure::sql::pg::get_postgres_connect_options;
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
-    defi::{Pool, PoolIdentifier, Token, chain::chains},
-    enums::{AccountType, OmsType},
-    identifiers::{AccountId, ClientId, TraderId},
+    defi::{
+        Pool, PoolIdentifier, PoolProfiler, Token,
+        chain::chains,
+        data::block::BlockPosition,
+        pool_analysis::{
+            position::PoolPosition,
+            snapshot::{PoolAnalytics, PoolSnapshot},
+        },
+        tick_map::tick::PoolTick,
+    },
+    enums::{AccountType, OmsType, OrderSide, OrderType},
+    events::OrderEventAny,
+    identifiers::{AccountId, ClientId, ClientOrderId, StrategyId, TraderId},
+    orders::{Order, OrderTestBuilder},
+    types::Quantity,
 };
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 
@@ -59,7 +83,11 @@ const SIGNER_ENV: &str = "BLOCKCHAIN_FORK_TEST_PRIVATE_KEY";
 const WALLET: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 const ROUTER: &str = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
 const WETH: &str = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
+const USDC: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
 const WRAP_AMOUNT_WEI: u128 = 1_000_000_000_000_000;
+const SWAP_AMOUNT: &str = "0.001";
+const SWAP_ORDER_ID: &str = "O-FORK-SWAP-001";
+const SLIPPAGE_BPS: u32 = 50;
 const ANVIL_READY_TIMEOUT: Duration = Duration::from_secs(120);
 
 struct AnvilProcess(Child);
@@ -129,7 +157,7 @@ async fn start_anvil(fork_rpc_url: &str) -> Option<(AnvilProcess, AnvilStartup)>
     {
         Ok(child) => child,
         Err(e) => {
-            eprintln!("anvil binary not found on PATH; skipping fork test: {e}");
+            eprintln!("anvil binary not found on PATH: {e}");
             return None;
         }
     };
@@ -193,11 +221,11 @@ async fn start_anvil(fork_rpc_url: &str) -> Option<(AnvilProcess, AnvilStartup)>
                 output.push_str(&line);
                 output.push('\n');
             }
-            eprintln!("Anvil exited before binding; skipping fork test:\n{output}");
+            eprintln!("Anvil exited before binding:\n{output}");
             return None;
         }
         Err(_) => {
-            eprintln!("Anvil did not print a listening address in time; skipping fork test");
+            eprintln!("Anvil did not print a listening address in time");
             return None;
         }
     };
@@ -211,9 +239,7 @@ async fn start_anvil(fork_rpc_url: &str) -> Option<(AnvilProcess, AnvilStartup)>
             Ok(chain_id) if chain_id == CHAIN_ID => break,
             _ if Instant::now() < deadline => tokio::time::sleep(Duration::from_secs(1)).await,
             _ => {
-                eprintln!(
-                    "Anvil did not become ready within {ANVIL_READY_TIMEOUT:?}; skipping fork test"
-                );
+                eprintln!("Anvil did not become ready within {ANVIL_READY_TIMEOUT:?}");
                 return None;
             }
         }
@@ -223,31 +249,40 @@ async fn start_anvil(fork_rpc_url: &str) -> Option<(AnvilProcess, AnvilStartup)>
 }
 
 #[tokio::test]
-async fn anvil_fork_wrap_approve_and_preflight() {
+async fn anvil_fork_wrap_approve_preflight_and_swap() {
     if std::env::var("BLOCKCHAIN_FORK_TESTS").as_deref() != Ok("1") {
         eprintln!("BLOCKCHAIN_FORK_TESTS is not 1; skipping fork test");
         return;
     }
-    let Ok(fork_rpc_url) = std::env::var("BLOCKCHAIN_FORK_RPC_URL") else {
-        eprintln!("BLOCKCHAIN_FORK_RPC_URL is not set; skipping fork test");
-        return;
-    };
+
+    let evidence_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../target/blockchain-fork-evidence");
+    for filename in ["run.json", "SHA256SUMS"] {
+        let path = evidence_dir.join(filename);
+        if let Err(e) = std::fs::remove_file(&path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            panic!(
+                "failed to remove stale fork evidence {}: {e}",
+                path.display()
+            );
+        }
+    }
+
+    let fork_rpc_url = std::env::var("BLOCKCHAIN_FORK_RPC_URL")
+        .expect("BLOCKCHAIN_FORK_RPC_URL must be set when BLOCKCHAIN_FORK_TESTS=1");
 
     let pg_config = get_postgres_connect_options(None, None, None, None, None);
     let admin_options: PgConnectOptions = pg_config.clone().into();
-    let Some(admin_pool) = PgPoolOptions::new()
+    let admin_pool = PgPoolOptions::new()
         .max_connections(1)
         .connect_with(admin_options)
         .await
-        .ok()
-    else {
-        eprintln!("Postgres unavailable; skipping fork test");
-        return;
-    };
+        .expect("Postgres must be reachable when BLOCKCHAIN_FORK_TESTS=1");
 
-    let Some((_anvil, startup)) = start_anvil(&fork_rpc_url).await else {
-        return;
-    };
+    let (_anvil, startup) = start_anvil(&fork_rpc_url)
+        .await
+        .expect("Anvil must start when BLOCKCHAIN_FORK_TESTS=1");
     let anvil_url = format!("http://127.0.0.1:{}", startup.port);
 
     // Additive schema only: create the tables this slice needs when absent, never touch
@@ -286,7 +321,7 @@ async fn anvil_fork_wrap_approve_and_preflight() {
         AccountId::from("BLOCKCHAIN-FORK-001"),
         AccountType::Wallet,
         None,
-        cache,
+        cache.clone(),
     );
     let config = BlockchainExecutionClientConfig::builder()
         .trader_id(TraderId::from("TRADER-001"))
@@ -302,6 +337,13 @@ async fn anvil_fork_wrap_approve_and_preflight() {
         .base_fee_buffer_bps(2_000)
         .gas_limit(5_000_000)
         .gas_buffer_bps(2_000)
+        .allowed_token_pairs(vec![(WETH.to_string(), USDC.to_string())])
+        .slippage_bps(SLIPPAGE_BPS)
+        .max_slippage_bps(200)
+        .max_order_amount(1_000_000_000_000_000_000)
+        .deadline_seconds(300)
+        .max_quote_age_blocks(100)
+        .receipt_timeout_secs(60)
         .postgres_cache_database_config(pg_config)
         .build();
 
@@ -310,7 +352,18 @@ async fn anvil_fork_wrap_approve_and_preflight() {
     unsafe { std::env::set_var(SIGNER_ENV, ANVIL_PRIVATE_KEY) };
 
     let mut client = BlockchainExecutionClient::new(core, config).unwrap();
+    let (event_sender, mut event_receiver) = tokio::sync::mpsc::unbounded_channel();
+    replace_exec_event_sender(event_sender);
+    client.start().unwrap();
     client.connect().await.unwrap();
+
+    // A failed prior run may leave rows behind. This public Anvil development wallet is reserved
+    // for this opt-in test, so remove only its transaction records before reusing its nonces.
+    sqlx::query("DELETE FROM execution_transaction WHERE chain_id = 42161 AND wallet_address = $1")
+        .bind(WALLET)
+        .execute(&admin_pool)
+        .await
+        .unwrap();
 
     // Before setup the wallet has no WETH and no router allowance: not ready
     let report = client.preflight(&pool.instrument_id).await.unwrap();
@@ -370,12 +423,168 @@ async fn anvil_fork_wrap_approve_and_preflight() {
     let report = client.preflight(&pool.instrument_id).await.unwrap();
     assert!(report.ready, "issues: {:?}", report.issues);
 
-    // Both transaction records persisted and marked included
-    for (hash, purpose) in [(wrap_hash, "wrap"), (approve_hash, "approve")] {
+    // Build a live pool profiler from the fork's current on-chain state so submit_order can
+    // quote. A synthetic full-range position carries the pool's real active liquidity: the
+    // tiny swap never crosses a tick, so the local quote matches the fork's execution math
+    let pool_contract = UniswapV3PoolContract::new(rpc_client.clone(), 100);
+    let pool_state = pool_contract
+        .get_global_state(&pool.address, None, FeeProtocolEncoding::UniswapV3Packed)
+        .await
+        .unwrap();
+    let head = rpc_client.latest_block().await.unwrap();
+    let liquidity = pool_state.liquidity;
+    let snapshot = PoolSnapshot::new(
+        pool.instrument_id,
+        pool_state,
+        vec![PoolPosition::new(
+            pool.address,
+            -887_220,
+            887_220,
+            liquidity as i128,
+        )],
+        vec![
+            PoolTick::new(
+                -887_220,
+                liquidity,
+                liquidity as i128,
+                U256::ZERO,
+                U256::ZERO,
+                true,
+                0,
+            ),
+            PoolTick::new(
+                887_220,
+                liquidity,
+                -(liquidity as i128),
+                U256::ZERO,
+                U256::ZERO,
+                true,
+                0,
+            ),
+        ],
+        PoolAnalytics::default(),
+        BlockPosition::new(
+            head.number,
+            "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            0,
+            0,
+        ),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    let mut profiler = PoolProfiler::new(Arc::new(pool.clone()));
+    profiler.restore_from_snapshot(snapshot).unwrap();
+
+    let quote = profiler
+        .swap_exact_in(U256::from(WRAP_AMOUNT_WEI), true, None)
+        .unwrap();
+    let quoted_out = quote.amount1.unsigned_abs();
+    let min_amount_out = quoted_out * U256::from(10_000 - SLIPPAGE_BPS) / U256::from(10_000);
+    assert!(min_amount_out > U256::ZERO);
+    cache.borrow_mut().add_pool_profiler(profiler).unwrap();
+
+    // Sell the wrapped WETH for USDC through the order path
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(pool.instrument_id)
+        .client_order_id(ClientOrderId::from(SWAP_ORDER_ID))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(SWAP_AMOUNT))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let usdc_address: Address = USDC.parse().unwrap();
+    let usdc_balance_before = erc20.balance_of(&usdc_address, &wallet).await.unwrap();
+
+    let submit = SubmitOrder::new(
+        TraderId::from("TRADER-001"),
+        Some(ClientId::from("BLOCKCHAIN-FORK-001")),
+        StrategyId::from("S-001"),
+        pool.instrument_id,
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.submit_order(submit).unwrap();
+
+    // The submission runs on a spawned task; the persisted record reaching `included`
+    // proves the swap completed
+    let swap_hash_string = tokio::time::timeout(Duration::from_secs(60), async {
+        loop {
+            let row: Option<(String, String)> = sqlx::query_as(
+                "SELECT transaction_hash, status FROM execution_transaction WHERE chain_id = 42161 AND client_order_id = $1",
+            )
+            .bind(SWAP_ORDER_ID)
+            .fetch_optional(&admin_pool)
+            .await
+            .unwrap();
+
+            if let Some((hash, status)) = row
+                && status == "included"
+            {
+                break hash;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    let swap_receipt = rpc_client
+        .get_transaction_receipt(&swap_hash_string.parse().unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(swap_receipt.status);
+    assert!(swap_receipt.gas_used > 0);
+
+    // Lifecycle events: submitted after broadcast acceptance, and no fill at first inclusion
+    let mut saw_submitted = false;
+
+    while let Ok(event) = event_receiver.try_recv() {
+        match event {
+            ExecutionEvent::Order(OrderEventAny::Submitted(e)) => {
+                assert_eq!(e.client_order_id.as_str(), SWAP_ORDER_ID);
+                saw_submitted = true;
+            }
+            ExecutionEvent::Order(OrderEventAny::Filled(_)) => {
+                panic!("no fill may be emitted at broadcast or first inclusion")
+            }
+            _ => {}
+        }
+    }
+    assert!(saw_submitted, "expected an OrderSubmitted event");
+
+    // Observed asset delta: exact WETH spend, USDC received within the configured protection
+    let weth_balance_after_swap = erc20.balance_of(&weth_address, &wallet).await.unwrap();
+    let usdc_balance_after = erc20.balance_of(&usdc_address, &wallet).await.unwrap();
+    let weth_spent = weth_balance_after
+        .checked_sub(weth_balance_after_swap)
+        .unwrap();
+    let usdc_received = usdc_balance_after.checked_sub(usdc_balance_before).unwrap();
+    assert_eq!(weth_spent, U256::from(WRAP_AMOUNT_WEI));
+    assert_eq!(usdc_received, quoted_out);
+    assert!(usdc_received >= min_amount_out);
+
+    // All transaction records persisted and marked included
+    for (hash, purpose) in [
+        (wrap_hash.to_string(), "wrap"),
+        (approve_hash.to_string(), "approve"),
+        (swap_hash_string.clone(), "swap"),
+    ] {
         let (record_purpose, record_status): (String, String) = sqlx::query_as(
             "SELECT purpose, status FROM execution_transaction WHERE chain_id = 42161 AND transaction_hash = $1",
         )
-        .bind(hash.to_string())
+        .bind(hash)
         .fetch_one(&admin_pool)
         .await
         .unwrap();
@@ -391,12 +600,23 @@ async fn anvil_fork_wrap_approve_and_preflight() {
             |_| "unknown".to_string(),
             |output| String::from_utf8_lossy(&output.stdout).trim().to_string(),
         );
+    let patch_sha = Command::new("git")
+        .args(["diff", "--binary", "--cached", "HEAD", "--"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map_or_else(
+            || "unknown".to_string(),
+            |output| {
+                let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, &output.stdout);
+                nautilus_core::hex::encode(digest.as_ref())
+            },
+        );
 
-    let evidence_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../target/blockchain-fork-evidence");
     std::fs::create_dir_all(&evidence_dir).unwrap();
     let run_json = serde_json::json!({
         "repository_commit": commit,
+        "repository_patch_sha256": patch_sha,
         "fork_block": FORK_BLOCK,
         "chain_id": CHAIN_ID,
         "anvil_version": startup.version,
@@ -409,6 +629,30 @@ async fn anvil_fork_wrap_approve_and_preflight() {
             "transaction_hash": approve_hash.to_string(),
             "gas_used": approve_receipt.gas_used,
             "status": approve_receipt.status,
+        },
+        "swap": {
+            "client_order_id": SWAP_ORDER_ID,
+            "transaction_hash": swap_hash_string,
+            "receipt_status": swap_receipt.status,
+            "block_number": swap_receipt.block_number,
+            "gas_used": swap_receipt.gas_used,
+            "configured_protections": {
+                "slippage_bps": SLIPPAGE_BPS,
+                "max_slippage_bps": 200,
+                "max_order_amount": "1000000000000000000",
+                "deadline_seconds": 300,
+                "max_quote_age_blocks": 100,
+                "receipt_timeout_secs": 60,
+                "max_fee_per_gas_wei": 100_000_000_000u64,
+                "gas_limit": 5_000_000,
+                "amount_in": WRAP_AMOUNT_WEI.to_string(),
+                "quoted_amount_out": quoted_out.to_string(),
+                "min_amount_out": min_amount_out.to_string(),
+            },
+            "observed_asset_delta": {
+                "weth_spent": weth_spent.to_string(),
+                "usdc_received": usdc_received.to_string(),
+            },
         },
     });
     let run_path = evidence_dir.join("run.json");
@@ -432,11 +676,15 @@ async fn anvil_fork_wrap_approve_and_preflight() {
     );
 
     // Remove only the rows this test inserted
-    for hash in [wrap_hash, approve_hash] {
+    for hash in [
+        wrap_hash.to_string(),
+        approve_hash.to_string(),
+        swap_hash_string.clone(),
+    ] {
         sqlx::query(
             "DELETE FROM execution_transaction WHERE chain_id = 42161 AND transaction_hash = $1",
         )
-        .bind(hash.to_string())
+        .bind(hash)
         .execute(&admin_pool)
         .await
         .unwrap();

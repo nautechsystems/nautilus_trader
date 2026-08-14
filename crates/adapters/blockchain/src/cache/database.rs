@@ -52,7 +52,7 @@ use crate::{
 };
 
 /// Database interface for persisting and retrieving blockchain entities and domain objects.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockchainCacheDatabase {
     /// PostgreSQL connection pool used for database operations.
     pool: PgPool,
@@ -2967,36 +2967,105 @@ impl BlockchainCacheDatabase {
     /// Persists an execution transaction record to the `execution_transaction` table.
     ///
     /// Records are written before broadcast so a signed transaction is never forgotten;
-    /// the unique `(chain_id, transaction_hash)` constraint makes re-insertion idempotent.
+    /// the unique `(chain_id, transaction_hash)` constraint makes an exact re-insertion
+    /// idempotent. Signer nonce ownership and order IDs are unique before broadcast. Order
+    /// submission records carry the client order ID; operator transactions (wrap, approve)
+    /// store `NULL`.
     ///
     /// # Errors
     ///
     /// Returns an error if the database operation fails.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters mirror the persisted execution transaction fields"
+    )]
     pub async fn add_execution_transaction(
         &self,
         chain_id: u32,
+        wallet_address: &str,
         nonce: u64,
         transaction_hash: &str,
         purpose: &str,
         status: &str,
+        client_order_id: Option<&str>,
     ) -> anyhow::Result<()> {
-        sqlx::query(
+        let result = sqlx::query(
             "
-            INSERT INTO execution_transaction (chain_id, nonce, transaction_hash, purpose, status)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO execution_transaction (
+                chain_id,
+                wallet_address,
+                nonce,
+                transaction_hash,
+                purpose,
+                status,
+                client_order_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (chain_id, transaction_hash)
-            DO NOTHING
+            DO UPDATE SET transaction_hash = EXCLUDED.transaction_hash
+            WHERE execution_transaction.wallet_address = EXCLUDED.wallet_address
+              AND execution_transaction.nonce = EXCLUDED.nonce
+              AND execution_transaction.purpose = EXCLUDED.purpose
+              AND execution_transaction.status = EXCLUDED.status
+              AND execution_transaction.client_order_id IS NOT DISTINCT FROM EXCLUDED.client_order_id
         ",
         )
         .bind(chain_id as i32)
+        .bind(wallet_address)
         .bind(nonce as i64)
         .bind(transaction_hash)
         .bind(purpose)
         .bind(status)
+        .bind(client_order_id)
         .execute(&self.pool)
         .await
-        .map(|_| ())
-        .map_err(|e| anyhow::anyhow!("Failed to insert into execution_transaction table: {e}"))
+        .map_err(|e| anyhow::anyhow!("Failed to insert into execution_transaction table: {e}"))?;
+
+        anyhow::ensure!(
+            result.rows_affected() == 1,
+            "Execution transaction {transaction_hash} conflicts with its persisted record"
+        );
+        Ok(())
+    }
+
+    /// Adds execution identity columns and uniqueness constraints when they are missing.
+    ///
+    /// Runs at execution client connect so databases created before order submission support
+    /// keep their existing rows without a reset.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn ensure_execution_transaction_schema(&self) -> anyhow::Result<()> {
+        for statement in [
+            "
+            ALTER TABLE execution_transaction
+            ADD COLUMN IF NOT EXISTS client_order_id TEXT
+            ",
+            "
+            ALTER TABLE execution_transaction
+            ADD COLUMN IF NOT EXISTS wallet_address TEXT
+            ",
+            "
+            CREATE UNIQUE INDEX IF NOT EXISTS execution_transaction_signer_nonce_key
+            ON execution_transaction (chain_id, wallet_address, nonce)
+            WHERE wallet_address IS NOT NULL AND status IN ('pending', 'included', 'reverted')
+            ",
+            "
+            CREATE UNIQUE INDEX IF NOT EXISTS execution_transaction_client_order_key
+            ON execution_transaction (chain_id, wallet_address, client_order_id)
+            WHERE wallet_address IS NOT NULL AND client_order_id IS NOT NULL
+            ",
+        ] {
+            sqlx::query(statement)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to migrate execution_transaction table: {e}")
+                })?;
+        }
+
+        Ok(())
     }
 
     /// Updates the status of a persisted execution transaction record.
@@ -3010,7 +3079,7 @@ impl BlockchainCacheDatabase {
         transaction_hash: &str,
         status: &str,
     ) -> anyhow::Result<()> {
-        sqlx::query(
+        let result = sqlx::query(
             "
             UPDATE execution_transaction
             SET status = $3
@@ -3022,8 +3091,13 @@ impl BlockchainCacheDatabase {
         .bind(status)
         .execute(&self.pool)
         .await
-        .map(|_| ())
-        .map_err(|e| anyhow::anyhow!("Failed to update execution_transaction table: {e}"))
+        .map_err(|e| anyhow::anyhow!("Failed to update execution_transaction table: {e}"))?;
+
+        anyhow::ensure!(
+            result.rows_affected() == 1,
+            "Execution transaction {transaction_hash} was not found for status update"
+        );
+        Ok(())
     }
 
     /// Loads an execution transaction record by chain ID and transaction hash.
@@ -3038,7 +3112,7 @@ impl BlockchainCacheDatabase {
     ) -> anyhow::Result<Option<ExecutionTransactionRow>> {
         sqlx::query_as::<_, ExecutionTransactionRow>(
             "
-            SELECT nonce, transaction_hash, purpose, status
+            SELECT wallet_address, nonce, transaction_hash, purpose, status, client_order_id
             FROM execution_transaction
             WHERE chain_id = $1 AND transaction_hash = $2
         ",

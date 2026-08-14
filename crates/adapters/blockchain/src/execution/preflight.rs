@@ -159,10 +159,12 @@ impl BlockchainPreflightReport {
             issues.push(format!("Input token {} balance is zero", pool.base_token));
         }
 
-        let allowance_ok = base_token_check.is_some_and(|t| {
-            t.router_allowances
+        let execution_router = routers.first().map(|router| router.address);
+        let allowance_ok = base_token_check.is_some_and(|token| {
+            token
+                .router_allowances
                 .iter()
-                .any(|(_, amount)| !amount.is_zero())
+                .any(|(router, amount)| Some(*router) == execution_router && !amount.is_zero())
         });
 
         if !allowance_ok {
@@ -195,5 +197,75 @@ impl BlockchainPreflightReport {
             ready,
             issues,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy::primitives::{U256, address};
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn report_requires_allowance_on_execution_router() {
+        let base_token = address!("1111111111111111111111111111111111111111");
+        let quote_token = address!("2222222222222222222222222222222222222222");
+        let execution_router = address!("3333333333333333333333333333333333333333");
+        let alternate_router = address!("4444444444444444444444444444444444444444");
+        let report = BlockchainPreflightReport::new(
+            42161,
+            42161,
+            PoolPreflightCheck {
+                instrument_id: "0x5555555555555555555555555555555555555555.Arbitrum:UniswapV3"
+                    .parse()
+                    .unwrap(),
+                address: address!("5555555555555555555555555555555555555555"),
+                has_deployed_code: true,
+                fee: Some(500),
+                base_token,
+                quote_token,
+            },
+            vec![
+                ContractCodeCheck {
+                    address: execution_router,
+                    has_deployed_code: true,
+                },
+                ContractCodeCheck {
+                    address: alternate_router,
+                    has_deployed_code: true,
+                },
+            ],
+            vec![
+                TokenPreflightCheck {
+                    address: base_token,
+                    symbol: "BASE".to_string(),
+                    has_deployed_code: true,
+                    wallet_balance: U256::from(1),
+                    router_allowances: vec![
+                        (execution_router, U256::ZERO),
+                        (alternate_router, U256::from(1)),
+                    ],
+                },
+                TokenPreflightCheck {
+                    address: quote_token,
+                    symbol: "QUOTE".to_string(),
+                    has_deployed_code: true,
+                    wallet_balance: U256::ZERO,
+                    router_allowances: Vec::new(),
+                },
+            ],
+            U256::from(1),
+            100_000_000,
+            10_000_000,
+            130_000_000,
+            1_000_000_000,
+        );
+
+        assert!(!report.ready);
+        assert_eq!(
+            report.issues,
+            vec![format!("No router allowance for input token {base_token}")]
+        );
     }
 }
