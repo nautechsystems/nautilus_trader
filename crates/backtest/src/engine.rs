@@ -1481,6 +1481,8 @@ impl BacktestEngine {
             return Ok(());
         }
 
+        let last_ns = self.last_ns;
+
         for clock in clocks {
             Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
         }
@@ -1506,6 +1508,10 @@ impl BacktestEngine {
             for clock in clocks {
                 Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
             }
+        }
+
+        if !self.kernel.is_shutdown_requested() {
+            self.last_ns = last_ns;
         }
 
         Ok(())
@@ -2303,6 +2309,53 @@ mod tests {
 
         assert!(fired.get());
         assert_eq!(engine.last_ns, UnixNanos::from(20));
+    }
+
+    #[rstest]
+    #[case::complete(false, 25)]
+    #[case::shutdown(true, 20)]
+    fn test_flush_accumulator_events_sets_last_ns_for_completion(
+        #[case] shutdown: bool,
+        #[case] expected_last_ns: u64,
+    ) {
+        let mut engine = create_engine();
+        let last_ns = UnixNanos::from(25);
+        let ts_now = UnixNanos::from(30);
+        engine.last_ns = last_ns;
+        let clocks = engine.collect_all_clocks();
+        BacktestEngine::set_all_clocks_time(&clocks, last_ns);
+        let fired = Rc::new(Cell::new(false));
+        let fired_clone = Rc::clone(&fired);
+        let observed_ns = Rc::new(Cell::new(UnixNanos::default()));
+        let observed_ns_clone = Rc::clone(&observed_ns);
+        let clock = Rc::clone(&engine.kernel.clock);
+        let shutdown_requested = engine.kernel.shutdown_flag();
+        let callback = TimeEventCallback::RustLocal(Rc::new(move |_| {
+            fired_clone.set(true);
+            observed_ns_clone.set(clock.borrow().timestamp_ns());
+            shutdown_requested.set(shutdown);
+        }));
+        engine
+            .kernel
+            .clock
+            .borrow_mut()
+            .set_timer_ns(
+                "ROLL",
+                100,
+                Some(UnixNanos::from(20)),
+                None,
+                Some(callback),
+                Some(true),
+                Some(true),
+            )
+            .unwrap();
+
+        engine.flush_accumulator_events(&clocks, ts_now).unwrap();
+
+        assert!(fired.get());
+        assert_eq!(observed_ns.get(), UnixNanos::from(20));
+        assert_eq!(engine.kernel.is_shutdown_requested(), shutdown);
+        assert_eq!(engine.last_ns, UnixNanos::from(expected_last_ns));
     }
 
     #[rstest]
