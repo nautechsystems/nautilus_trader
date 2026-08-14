@@ -204,7 +204,9 @@ impl Debug for ReconnectHeaders {
 /// # Heartbeats
 ///
 /// When configured, a dedicated task sends heartbeat messages at the requested interval. Configure
-/// the interval below the server's heartbeat deadline.
+/// the interval below the server's heartbeat deadline. Handler mode can also opt into a heartbeat
+/// timeout that reconnects when no frame arrives within a venue-specific duration. The timeout
+/// starts with each connection and resets on every inbound frame, including Ping and Pong.
 ///
 /// # Reconnection
 ///
@@ -228,6 +230,7 @@ pub struct WebSocketClientInner {
     controller_notify: Arc<tokio::sync::Notify>,
     reconnect_published: Arc<AtomicBool>,
     reconnect_timeout: Duration,
+    heartbeat_timeout: Option<Duration>,
     backoff: ExponentialBackoff,
     reconnect_max_attempts: Option<u32>,
     reconnection_attempt_count: u32,
@@ -377,6 +380,7 @@ impl WebSocketClientInner {
             controller_notify,
             reconnect_published,
             reconnect_timeout,
+            heartbeat_timeout: None,
             heartbeat_task,
             read_task,
             read_fence,
@@ -407,6 +411,7 @@ impl WebSocketClientInner {
             message_handler.map(IncomingHandler::Message),
             ping_handler.map(IncomingPingHandler::Ping),
             None,
+            None,
         )
         .await
     }
@@ -416,6 +421,7 @@ impl WebSocketClientInner {
         handler: Option<IncomingHandler>,
         ping_handler: Option<IncomingPingHandler>,
         state_sink: Option<SocketStateSink>,
+        heartbeat_timeout: Option<Duration>,
     ) -> Result<Self, TransportError> {
         install_cryptographic_provider();
 
@@ -430,6 +436,13 @@ impl WebSocketClientInner {
             return Err(TransportError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "Idle timeout cannot be zero",
+            )));
+        }
+
+        if heartbeat_timeout == Some(Duration::ZERO) {
+            return Err(TransportError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Heartbeat timeout cannot be zero",
             )));
         }
 
@@ -505,6 +518,7 @@ impl WebSocketClientInner {
                 handler.as_ref(),
                 ping_handler.as_ref(),
                 config.idle_timeout_ms,
+                heartbeat_timeout,
             );
             (Some(read_task), Some(read_fence))
         };
@@ -554,6 +568,7 @@ impl WebSocketClientInner {
             controller_notify,
             reconnect_published,
             reconnect_timeout,
+            heartbeat_timeout,
             backoff,
             reconnect_max_attempts,
             reconnection_attempt_count: 0,
@@ -1201,6 +1216,7 @@ impl WebSocketClientInner {
                 self.handler.as_ref(),
                 self.ping_handler.as_ref(),
                 self.config.idle_timeout_ms,
+                self.heartbeat_timeout,
             ));
             self.read_fence = Some(read_fence);
         } else {
@@ -1239,6 +1255,7 @@ impl WebSocketClientInner {
         handler: Option<&IncomingHandler>,
         ping_handler: Option<&IncomingPingHandler>,
         idle_timeout_ms: Option<u64>,
+        heartbeat_timeout: Option<Duration>,
     ) -> tokio::task::JoinHandle<()> {
         log::debug!("Started message handler task 'read'");
 
@@ -1250,6 +1267,7 @@ impl WebSocketClientInner {
 
         tokio::task::spawn(async move {
             let mut last_data_time = dst::time::Instant::now();
+            let mut last_frame_time = dst::time::Instant::now();
 
             loop {
                 if !ConnectionMode::from_atomic(&connection_state).is_active()
@@ -1269,6 +1287,10 @@ impl WebSocketClientInner {
                         message.as_bytes().len()
                     );
                     break;
+                }
+
+                if matches!(&read_result, Ok(Some(Ok(_)))) {
+                    last_frame_time = dst::time::Instant::now();
                 }
 
                 match read_result {
@@ -1371,6 +1393,10 @@ impl WebSocketClientInner {
                         break;
                     }
                     Err(_) => {
+                        if heartbeat_timeout_exceeded(last_frame_time, heartbeat_timeout) {
+                            break;
+                        }
+
                         if idle_timeout_exceeded(last_data_time, idle_timeout) {
                             break;
                         }
@@ -1850,6 +1876,24 @@ impl WebSocketClientInner {
     }
 }
 
+fn heartbeat_timeout_exceeded(
+    last_frame_time: dst::time::Instant,
+    timeout: Option<Duration>,
+) -> bool {
+    if let Some(timeout) = timeout {
+        let elapsed = last_frame_time.elapsed();
+        if elapsed >= timeout {
+            log::warn!(
+                "Heartbeat timeout: no frame received for {:.1}s",
+                elapsed.as_secs_f64()
+            );
+            return true;
+        }
+    }
+
+    false
+}
+
 fn idle_timeout_exceeded(
     last_data_time: dst::time::Instant,
     idle_timeout: Option<Duration>,
@@ -1864,6 +1908,7 @@ fn idle_timeout_exceeded(
             return true;
         }
     }
+
     false
 }
 
@@ -2376,13 +2421,43 @@ impl WebSocketClient {
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
     ) -> Result<Self, TransportError> {
-        Self::connect_with_state_sink(
+        Self::connect_with_state_sink_and_heartbeat_timeout(
             config,
             message_handler,
             ping_handler,
             keyed_quotas,
             default_quota,
             None,
+            None,
+        )
+        .await
+    }
+
+    /// Creates a handler-mode client with an inbound-frame timeout.
+    ///
+    /// The timeout starts when each connection is established and resets on every inbound frame,
+    /// including Ping and Pong. When the timeout expires, the client reconnects normally.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection cannot be established, `message_handler` is `None`, or
+    /// `heartbeat_timeout` is zero.
+    pub async fn connect_with_heartbeat_timeout(
+        config: WebSocketConfig,
+        heartbeat_timeout: Duration,
+        message_handler: Option<MessageHandler>,
+        ping_handler: Option<PingHandler>,
+        keyed_quotas: Vec<(String, Quota)>,
+        default_quota: Option<Quota>,
+    ) -> Result<Self, TransportError> {
+        Self::connect_with_state_sink_and_heartbeat_timeout(
+            config,
+            message_handler,
+            ping_handler,
+            keyed_quotas,
+            default_quota,
+            None,
+            Some(heartbeat_timeout),
         )
         .await
     }
@@ -2399,6 +2474,27 @@ impl WebSocketClient {
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
         state_sink: Option<SocketStateSink>,
+    ) -> Result<Self, TransportError> {
+        Self::connect_with_state_sink_and_heartbeat_timeout(
+            config,
+            message_handler,
+            ping_handler,
+            keyed_quotas,
+            default_quota,
+            state_sink,
+            None,
+        )
+        .await
+    }
+
+    async fn connect_with_state_sink_and_heartbeat_timeout(
+        config: WebSocketConfig,
+        message_handler: Option<MessageHandler>,
+        ping_handler: Option<PingHandler>,
+        keyed_quotas: Vec<(String, Quota)>,
+        default_quota: Option<Quota>,
+        state_sink: Option<SocketStateSink>,
+        heartbeat_timeout: Option<Duration>,
     ) -> Result<Self, TransportError> {
         let keyed_quotas = keyed_quotas
             .into_iter()
@@ -2417,6 +2513,7 @@ impl WebSocketClient {
             ping_handler.map(IncomingPingHandler::Ping),
             rate_limiter,
             state_sink,
+            heartbeat_timeout,
         )
         .await
     }
@@ -2454,6 +2551,7 @@ impl WebSocketClient {
             IncomingHandler::Message(message_handler),
             ping_handler.map(IncomingPingHandler::Ping),
             rate_limiter,
+            None,
             None,
         )
         .await
@@ -2504,6 +2602,7 @@ impl WebSocketClient {
             ping_handler.map(IncomingPingHandler::Ping),
             rate_limiter,
             state_sink,
+            None,
         )
         .await
     }
@@ -2525,6 +2624,7 @@ impl WebSocketClient {
             epoch_ping_handler.map(IncomingPingHandler::Epoch),
             rate_limiter,
             None,
+            None,
         )
         .await
     }
@@ -2535,6 +2635,7 @@ impl WebSocketClient {
         ping_handler: Option<IncomingPingHandler>,
         rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
         state_sink: Option<SocketStateSink>,
+        heartbeat_timeout: Option<Duration>,
     ) -> Result<Self, TransportError> {
         log::debug!("Connecting");
         let inner = WebSocketClientInner::connect_url_with_handler(
@@ -2542,6 +2643,7 @@ impl WebSocketClient {
             Some(handler),
             ping_handler,
             state_sink,
+            heartbeat_timeout,
         )
         .await?;
         let connection_mode = inner.connection_mode.clone();
@@ -4550,6 +4652,7 @@ mod rust_tests {
         let mut inner = WebSocketClientInner::connect_url_with_handler(
             reconnect_test_config(port),
             Some(IncomingHandler::Epoch(epoch_handler)),
+            None,
             None,
             None,
         )
@@ -6771,6 +6874,7 @@ mod rust_tests {
             Some(&message_handler),
             Some(&ping_handler),
             None,
+            None,
         );
 
         recv_rendezvous(polled_rx, "WebSocket reader poll entry").await;
@@ -7824,6 +7928,45 @@ mod rust_tests {
         assert!(
             err_msg.contains("Idle timeout cannot be zero"),
             "Error should mention zero idle timeout, was: {err_msg}"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_zero_heartbeat_timeout_rejected() {
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: "ws://127.0.0.1:9999".to_string(),
+            headers: vec![],
+            heartbeat: Some(30),
+            heartbeat_msg: None,
+            reconnect_timeout_ms: None,
+            reconnect_delay_initial_ms: None,
+            reconnect_delay_max_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_jitter_ms: None,
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
+            proxy_url: None,
+        };
+
+        let result = WebSocketClient::connect_with_heartbeat_timeout(
+            config,
+            Duration::ZERO,
+            Some(handler),
+            None,
+            vec![],
+            None,
+        )
+        .await;
+
+        assert!(result.is_err(), "Zero heartbeat timeout should be rejected");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Heartbeat timeout cannot be zero"),
+            "Error should mention zero heartbeat timeout, was: {err_msg}"
         );
     }
 

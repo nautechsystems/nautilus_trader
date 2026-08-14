@@ -396,6 +396,28 @@ This distinction protects both sides of the order lifecycle. A false terminal re
 make the engine treat a live order as rejected; a false ambiguous outcome can leave an
 unplaced order hanging in `Submitted` forever because no WebSocket frame will arrive.
 
+## WebSocket recovery
+
+The data and execution clients reconnect automatically after a peer close, transport error, or
+heartbeat timeout. The adapter sends protocol Ping frames every 30 seconds and treats 60 seconds
+without any inbound frame as a dead connection; the selected transport can report a missed Pong
+sooner. The transport retries connections with exponential backoff and jitter.
+
+Recovery completes in this order:
+
+1. The transport reconnects. If another disconnect occurs, recovery follows the latest connection.
+1. Credentialed sessions log in again, then every session replays its confirmed subscriptions.
+   Acknowledged unsubscriptions are not replayed.
+1. The execution client refreshes account state and generates mass status for orders, fills, and
+   positions.
+
+State-changing requests follow the [order rejection semantics](#order-rejection-semantics): the
+adapter sends them once and never replays them. After three failed login or subscription recovery
+attempts, the client logs the error, marks itself disconnected, and stops that WebSocket session.
+
+`ws_timeout_secs` applies to individual WebSocket operations, not heartbeat detection or reconnect
+backoff.
+
 ## Subscription parameters
 
 `subscribe_book_deltas` and `subscribe_book_depth10` accept these `subscribe_params` keys:

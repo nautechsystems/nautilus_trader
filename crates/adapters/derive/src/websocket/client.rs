@@ -62,7 +62,8 @@ use crate::{
     common::{
         consts::{
             RECONNECT_BACKOFF_FACTOR, RECONNECT_BASE_BACKOFF, RECONNECT_JITTER_MS,
-            RECONNECT_MAX_BACKOFF, RECONNECT_TIMEOUT, WS_HEARTBEAT_SECS, WS_REQUEST_TIMEOUT,
+            RECONNECT_MAX_BACKOFF, RECONNECT_TIMEOUT, WS_HEARTBEAT_SECS, WS_HEARTBEAT_TIMEOUT,
+            WS_REQUEST_TIMEOUT,
         },
         enums::DeriveEnvironment,
         rate_limit::{
@@ -126,7 +127,10 @@ impl Debug for DeriveWsCredentials {
 // enqueued for the feed handler.
 type WsRateLimiter = RateLimiter<Ustr, MonotonicClock>;
 
-const MAX_REAUTH_ATTEMPTS: u32 = 3;
+const MAX_SESSION_RECOVERY_ATTEMPTS: u32 = 3;
+const SUBSCRIPTION_ACCEPTED_STATUSES: &[&str] = &["ok"];
+const SUBSCRIPTION_REPLAY_ACCEPTED_STATUSES: &[&str] = &["ok", "already subscribed"];
+pub(super) const UNAUTHENTICATED_CONNECTION_EPOCH: u64 = u64::MAX;
 
 /// WebSocket client for the Derive JSON-RPC stream.
 ///
@@ -139,13 +143,16 @@ pub struct DeriveWebSocketClient {
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
+    connection_epoch: Arc<ArcSwap<AtomicU64>>,
     signal: Arc<AtomicBool>,
     auth_tracker: AuthTracker,
+    authenticated_epoch: Arc<AtomicU64>,
     credentials: Option<DeriveWsCredentials>,
     next_id: Arc<AtomicU64>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>>,
     subscriptions: Arc<DashMap<String, ()>>,
+    subscription_lock: Arc<tokio::sync::Mutex<()>>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
     request_timeout: Duration,
     conn_id: Arc<ArcSwap<String>>,
@@ -157,6 +164,7 @@ pub struct DeriveWebSocketClient {
 pub struct DeriveWebSocketSubscriptionHandle {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     subscriptions: Arc<DashMap<String, ()>>,
+    subscription_lock: Arc<tokio::sync::Mutex<()>>,
     request_timeout: Duration,
     rate_limiter: Arc<WsRateLimiter>,
 }
@@ -233,8 +241,11 @@ impl DeriveWebSocketClient {
         let connection_mode = Arc::new(ArcSwap::new(Arc::new(AtomicU8::new(
             ConnectionMode::Closed as u8,
         ))));
+        let connection_epoch = Arc::new(ArcSwap::new(Arc::new(AtomicU64::new(0))));
+
         // Placeholder channel; replaced by connect() before commands are issued.
         let (placeholder_tx, _) = tokio::sync::mpsc::unbounded_channel();
+
         // Matching writes and custom cancellation methods use keyed quotas;
         // login, subscription, and reads use the non-matching default. Handles
         // pace each frame in the caller's task before enqueueing, so the feed
@@ -262,13 +273,16 @@ impl DeriveWebSocketClient {
             transport_backend,
             proxy_url,
             connection_mode,
+            connection_epoch,
             signal: Arc::new(AtomicBool::new(false)),
             auth_tracker: AuthTracker::new(),
+            authenticated_epoch: Arc::new(AtomicU64::new(UNAUTHENTICATED_CONNECTION_EPOCH)),
             credentials,
             next_id: Arc::new(AtomicU64::new(1)),
             cmd_tx: Arc::new(tokio::sync::RwLock::new(placeholder_tx)),
             out_rx: None,
             subscriptions: Arc::new(DashMap::new()),
+            subscription_lock: Arc::new(tokio::sync::Mutex::new(())),
             task_handle: None,
             request_timeout: WS_REQUEST_TIMEOUT,
             conn_id: Arc::new(ArcSwap::from_pointee(UUID4::new().to_string())),
@@ -294,6 +308,9 @@ impl DeriveWebSocketClient {
     #[must_use]
     pub fn is_authenticated(&self) -> bool {
         self.auth_tracker.is_authenticated()
+            && self.is_active()
+            && self.authenticated_epoch.load(Ordering::Acquire)
+                == self.connection_epoch.load().load(Ordering::Acquire)
     }
 
     /// Returns `true` while the underlying transport is in the active state.
@@ -327,6 +344,9 @@ impl DeriveWebSocketClient {
             self.teardown().await;
         }
 
+        self.authenticated_epoch
+            .store(UNAUTHENTICATED_CONNECTION_EPOCH, Ordering::Release);
+
         let (message_handler, raw_rx) = channel_message_handler();
         let cfg = WebSocketConfig {
             url: self.url.clone(),
@@ -346,9 +366,16 @@ impl DeriveWebSocketClient {
         // Rate limiting runs caller-side via `self.rate_limiter` before frames
         // are enqueued, so the network client's own limiter is left unconfigured
         // and never sleeps inside the single feed-handler task.
-        let client = WebSocketClient::connect(cfg, Some(message_handler), None, vec![], None)
-            .await
-            .map_err(|e| DeriveWsError::transport(e.to_string()))?;
+        let client = WebSocketClient::connect_with_heartbeat_timeout(
+            cfg,
+            WS_HEARTBEAT_TIMEOUT,
+            Some(message_handler),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .map_err(|e| DeriveWsError::transport(e.to_string()))?;
 
         // Register the tracker so the network controller clears
         // `is_authenticated()` on dead-socket detection, not just on the
@@ -362,7 +389,10 @@ impl DeriveWebSocketClient {
         self.out_rx = Some(out_rx);
         self.conn_id.store(Arc::new(UUID4::new().to_string()));
 
-        self.connection_mode.store(client.connection_mode_atomic());
+        let connection_mode = client.connection_mode_atomic();
+        let connection_epoch = client.connection_epoch_atomic();
+        self.connection_mode.store(Arc::clone(&connection_mode));
+        self.connection_epoch.store(Arc::clone(&connection_epoch));
         log::debug!("Derive WebSocket connected: {}", self.url);
 
         if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
@@ -373,69 +403,114 @@ impl DeriveWebSocketClient {
 
         let signal = Arc::clone(&self.signal);
         let auth_tracker = self.auth_tracker.clone();
+        let authenticated_epoch = Arc::clone(&self.authenticated_epoch);
         let next_id = Arc::clone(&self.next_id);
         let credentials = self.credentials.clone();
         let subscriptions = Arc::clone(&self.subscriptions);
+        let subscription_lock = Arc::clone(&self.subscription_lock);
         let conn_id = Arc::clone(&self.conn_id);
         let cmd_tx_for_loop = cmd_tx.clone();
         let rate_limiter = Arc::clone(&self.rate_limiter);
         let request_timeout = self.request_timeout;
-        let recovering = Arc::new(AtomicBool::new(false));
+        let recovery_connection_mode = Arc::clone(&connection_mode);
+        let recovery_connection_epoch = Arc::clone(&connection_epoch);
 
         let stream_handle = get_runtime().spawn(async move {
-            let mut handler =
-                FeedHandler::new(signal, cmd_rx, raw_rx, next_id, auth_tracker.clone());
+            let (recovery_tx, mut recovery_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
+            let recovery_out_tx = out_tx.clone();
+            let recovery_cmd_tx = cmd_tx_for_loop.clone();
+            let recovery_auth_tracker = auth_tracker.clone();
+            let recovery_authenticated_epoch = Arc::clone(&authenticated_epoch);
+            let recovery_subscriptions = Arc::clone(&subscriptions);
+            let recovery_subscription_lock = Arc::clone(&subscription_lock);
+            let recovery_rate_limiter = Arc::clone(&rate_limiter);
+            let recovery_credentials = credentials.clone();
+            let recovery_mode = Arc::clone(&recovery_connection_mode);
+            let recovery_epoch = Arc::clone(&recovery_connection_epoch);
+            let mut recovery_tasks = tokio::task::JoinSet::new();
+
+            recovery_tasks.spawn(async move {
+                while let Some(mut requested_epoch) = recovery_rx.recv().await {
+                    while let Ok(epoch) = recovery_rx.try_recv() {
+                        requested_epoch = requested_epoch.max(epoch);
+                    }
+
+                    loop {
+                        match recover_session(
+                            &recovery_rate_limiter,
+                            &recovery_cmd_tx,
+                            &recovery_auth_tracker,
+                            &recovery_authenticated_epoch,
+                            &recovery_mode,
+                            &recovery_epoch,
+                            recovery_credentials.as_ref(),
+                            &recovery_subscriptions,
+                            &recovery_subscription_lock,
+                            request_timeout,
+                        )
+                        .await
+                        {
+                            Ok(recovered_epoch) => {
+                                while let Ok(epoch) = recovery_rx.try_recv() {
+                                    requested_epoch = requested_epoch.max(epoch);
+                                }
+
+                                if requested_epoch > recovered_epoch
+                                    || !session_connection_is_active(
+                                        &recovery_mode,
+                                        &recovery_epoch,
+                                        recovered_epoch,
+                                    )
+                                {
+                                    continue;
+                                }
+
+                                if recovery_out_tx.send(DeriveWsMessage::Reconnected).is_err() {
+                                    log::debug!("Derive outer receiver dropped during recovery");
+                                }
+                                break;
+                            }
+                            Err(e) => {
+                                let mut retry = false;
+
+                                while let Ok(epoch) = recovery_rx.try_recv() {
+                                    requested_epoch = requested_epoch.max(epoch);
+                                    retry = true;
+                                }
+
+                                if retry {
+                                    continue;
+                                }
+                                log::error!("Derive WebSocket session recovery failed: {e}");
+                                let _ = recovery_out_tx
+                                    .send(DeriveWsMessage::SessionRecoveryFailed(e.to_string()));
+                                let _ = recovery_cmd_tx.send(HandlerCommand::Disconnect);
+                                return;
+                            }
+                        }
+                    }
+                }
+            });
+
+            let mut handler = FeedHandler::new(
+                signal,
+                cmd_rx,
+                raw_rx,
+                next_id,
+                auth_tracker.clone(),
+                Arc::clone(&authenticated_epoch),
+            );
 
             loop {
                 match handler.next().await {
                     Some(DeriveWsMessage::Reconnected) => {
                         log::info!("Derive WebSocket re-establishing session after reconnect");
                         conn_id.store(Arc::new(UUID4::new().to_string()));
-
-                        if recovering.swap(true, Ordering::AcqRel) {
-                            log::debug!("Derive WebSocket session recovery already in progress");
-                            continue;
+                        let epoch = recovery_connection_epoch.load(Ordering::Acquire);
+                        if recovery_tx.send(epoch).is_err() {
+                            log::error!("Derive WebSocket recovery task stopped unexpectedly");
+                            let _ = cmd_tx_for_loop.send(HandlerCommand::Disconnect);
                         }
-
-                        let cmd_tx_async = cmd_tx_for_loop.clone();
-                        let auth_tracker_async = auth_tracker.clone();
-                        let creds_async = credentials.clone();
-                        let subs_async = Arc::clone(&subscriptions);
-                        let rate_limiter_async = Arc::clone(&rate_limiter);
-                        let out_tx_async = out_tx.clone();
-                        let recovering_async = Arc::clone(&recovering);
-
-                        get_runtime().spawn(async move {
-                            let channels: Vec<String> =
-                                subs_async.iter().map(|e| e.key().clone()).collect();
-
-                            match recover_session(
-                                &rate_limiter_async,
-                                &cmd_tx_async,
-                                &auth_tracker_async,
-                                creds_async.as_ref(),
-                                channels,
-                                request_timeout,
-                            )
-                            .await
-                            {
-                                Ok(()) => {
-                                    if out_tx_async.send(DeriveWsMessage::Reconnected).is_err() {
-                                        log::debug!(
-                                            "Derive outer receiver dropped during recovery"
-                                        );
-                                    }
-                                }
-                                Err(e) => {
-                                    log::error!("Derive WebSocket session recovery failed: {e}");
-                                    let _ = out_tx_async.send(
-                                        DeriveWsMessage::SessionRecoveryFailed(e.to_string()),
-                                    );
-                                    let _ = cmd_tx_async.send(HandlerCommand::Disconnect);
-                                }
-                            }
-                            recovering_async.store(false, Ordering::Release);
-                        });
                     }
                     Some(msg) => {
                         if out_tx.send(msg).is_err() {
@@ -457,6 +532,9 @@ impl DeriveWebSocketClient {
                 &self.rate_limiter,
                 &cmd_tx,
                 &self.auth_tracker,
+                &self.authenticated_epoch,
+                &connection_mode,
+                &connection_epoch,
                 &creds,
                 self.request_timeout,
             )
@@ -506,7 +584,10 @@ impl DeriveWebSocketClient {
         self.out_rx = None;
         self.connection_mode
             .store(Arc::new(AtomicU8::new(ConnectionMode::Closed as u8)));
+        self.connection_epoch.store(Arc::new(AtomicU64::new(0)));
         self.auth_tracker.invalidate();
+        self.authenticated_epoch
+            .store(UNAUTHENTICATED_CONNECTION_EPOCH, Ordering::Release);
         self.subscriptions.clear();
         self.signal.store(false, Ordering::Relaxed);
     }
@@ -663,6 +744,7 @@ impl DeriveWebSocketClient {
         DeriveWebSocketSubscriptionHandle {
             cmd_tx: Arc::clone(&self.cmd_tx),
             subscriptions: Arc::clone(&self.subscriptions),
+            subscription_lock: Arc::clone(&self.subscription_lock),
             request_timeout: self.request_timeout,
             rate_limiter: Arc::clone(&self.rate_limiter),
         }
@@ -802,6 +884,7 @@ impl DeriveWebSocketSubscriptionHandle {
         if channels.is_empty() {
             return Ok(());
         }
+        let _guard = self.subscription_lock.lock().await;
         let params = WsSubscribeParams { channels };
         let cmd_tx = self.cmd_tx.read().await.clone();
         let result: WsSubscribeResult = send_request(
@@ -813,7 +896,9 @@ impl DeriveWebSocketSubscriptionHandle {
         )
         .await?;
 
-        let (confirmed, failure) = subscription_outcome(&params.channels, &result);
+        let (confirmed, failure) =
+            subscription_outcome(&params.channels, &result, SUBSCRIPTION_ACCEPTED_STATUSES);
+
         for channel in confirmed {
             self.subscriptions.insert(channel, ());
         }
@@ -835,6 +920,7 @@ impl DeriveWebSocketSubscriptionHandle {
         if channels.is_empty() {
             return Ok(());
         }
+        let _guard = self.subscription_lock.lock().await;
         let topics = channel_topics(&channels);
         let params = WsUnsubscribeParams { channels };
         let cmd_tx = self.cmd_tx.read().await.clone();
@@ -850,10 +936,12 @@ impl DeriveWebSocketSubscriptionHandle {
         for channel in topics {
             self.subscriptions.remove(&channel);
         }
+
         Ok(())
     }
 
     async fn send_subscribe(&self, channel: String, params: &WsSubscribeParams) -> Result<()> {
+        let _guard = self.subscription_lock.lock().await;
         let cmd_tx = self.cmd_tx.read().await.clone();
         let result: WsSubscribeResult = send_request(
             &self.rate_limiter,
@@ -863,7 +951,10 @@ impl DeriveWebSocketSubscriptionHandle {
             self.request_timeout,
         )
         .await?;
-        let (confirmed, failure) = subscription_outcome(&params.channels, &result);
+
+        let (confirmed, failure) =
+            subscription_outcome(&params.channels, &result, SUBSCRIPTION_ACCEPTED_STATUSES);
+
         if confirmed.iter().any(|topic| topic == &channel) {
             self.subscriptions.insert(channel, ());
         }
@@ -871,6 +962,7 @@ impl DeriveWebSocketSubscriptionHandle {
     }
 
     async fn send_unsubscribe(&self, channel: String) -> Result<()> {
+        let _guard = self.subscription_lock.lock().await;
         let params = WsUnsubscribeParams {
             channels: vec![DeriveWsChannel::from(channel.clone())],
         };
@@ -883,7 +975,9 @@ impl DeriveWebSocketSubscriptionHandle {
             self.request_timeout,
         )
         .await?;
+
         self.subscriptions.remove(&channel);
+
         Ok(())
     }
 }
@@ -1195,6 +1289,7 @@ where
         params,
         timeout,
         RequestRateLimit::Await,
+        None,
     )
     .await
 }
@@ -1216,6 +1311,7 @@ where
         params,
         timeout,
         RequestRateLimit::Reserved,
+        None,
     )
     .await
 }
@@ -1227,6 +1323,7 @@ async fn send_raw_with_rate_limit<P>(
     params: &P,
     timeout: Duration,
     rate_limit: RequestRateLimit,
+    connection_epoch: Option<u64>,
 ) -> Result<Value>
 where
     P: Serialize + ?Sized,
@@ -1243,6 +1340,7 @@ where
         .send(HandlerCommand::Request {
             method,
             params,
+            connection_epoch,
             response_tx,
         })
         .map_err(|e| DeriveWsError::transport(format!("failed to enqueue `{method}`: {e}")))?;
@@ -1283,6 +1381,38 @@ where
     Ok(typed)
 }
 
+async fn send_request_on_connection<P, R>(
+    rate_limiter: &WsRateLimiter,
+    cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+    method: &'static str,
+    params: &P,
+    timeout: Duration,
+    connection_epoch: u64,
+) -> Result<R>
+where
+    P: Serialize + ?Sized,
+    R: Default + DeserializeOwned,
+{
+    let value = send_raw_with_rate_limit(
+        rate_limiter,
+        cmd_tx,
+        method,
+        params,
+        timeout,
+        RequestRateLimit::Await,
+        Some(connection_epoch),
+    )
+    .await?;
+
+    let typed = if value.is_null() {
+        R::default()
+    } else {
+        serde_json::from_value(value)?
+    };
+
+    Ok(typed)
+}
+
 // Decodes the result with no `Default` fallback, for `private/order` and
 // `private/replace` whose success result is always a populated object.
 async fn send_request_typed<P, R>(
@@ -1319,22 +1449,47 @@ fn channel_topics(channels: &[DeriveWsChannel]) -> Vec<String> {
     channels.iter().map(ToString::to_string).collect()
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "authentication state is passed explicitly for epoch fencing"
+)]
 async fn login_via_handler(
     rate_limiter: &WsRateLimiter,
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     auth_tracker: &AuthTracker,
+    authenticated_epoch: &AtomicU64,
+    connection_mode: &AtomicU8,
+    connection_epoch: &AtomicU64,
     creds: &DeriveWsCredentials,
     timeout: Duration,
 ) -> Result<()> {
     let _receiver = auth_tracker.begin();
+    let expected_epoch = connection_epoch.load(Ordering::Acquire);
 
-    match send_login_request(rate_limiter, cmd_tx, creds, timeout).await {
-        Ok(()) => {
-            auth_tracker.succeed();
+    match send_login_request(rate_limiter, cmd_tx, creds, timeout, expected_epoch).await {
+        Ok(())
+            if complete_session_authentication(
+                auth_tracker,
+                authenticated_epoch,
+                connection_mode,
+                connection_epoch,
+                expected_epoch,
+            ) =>
+        {
             log::debug!("Derive WebSocket authenticated");
+
             Ok(())
         }
+        Ok(()) => {
+            let e = DeriveWsError::transport(
+                "connection changed while completing WebSocket authentication",
+            );
+            authenticated_epoch.store(UNAUTHENTICATED_CONNECTION_EPOCH, Ordering::Release);
+            auth_tracker.fail(e.to_string());
+            Err(e)
+        }
         Err(e) => {
+            authenticated_epoch.store(UNAUTHENTICATED_CONNECTION_EPOCH, Ordering::Release);
             auth_tracker.fail(e.to_string());
             Err(e)
         }
@@ -1346,6 +1501,7 @@ async fn send_login_request(
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     creds: &DeriveWsCredentials,
     timeout: Duration,
+    connection_epoch: u64,
 ) -> Result<()> {
     let login = build_ws_login(&creds.wallet_address, &creds.signer)?;
     let params = WsLoginParams {
@@ -1353,12 +1509,13 @@ async fn send_login_request(
         timestamp: login.timestamp,
         signature: login.signature,
     };
-    let result = send_request::<_, WsLoginResult>(
+    let result = send_request_on_connection::<_, WsLoginResult>(
         rate_limiter,
         cmd_tx,
         methods::PUBLIC_LOGIN,
         &params,
         timeout,
+        connection_epoch,
     )
     .await?;
 
@@ -1372,48 +1529,151 @@ async fn send_login_request(
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "recovery state is passed explicitly for epoch fencing"
+)]
 async fn recover_session(
     rate_limiter: &WsRateLimiter,
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     auth_tracker: &AuthTracker,
+    authenticated_epoch: &AtomicU64,
+    connection_mode: &AtomicU8,
+    connection_epoch: &AtomicU64,
     creds: Option<&DeriveWsCredentials>,
-    channels: Vec<String>,
+    subscriptions: &DashMap<String, ()>,
+    subscription_lock: &tokio::sync::Mutex<()>,
     timeout: Duration,
-) -> Result<()> {
-    if let Some(creds) = creds {
-        let _receiver = auth_tracker.begin();
+) -> Result<u64> {
+    let _guard = subscription_lock.lock().await;
+    let _receiver = creds.map(|_| auth_tracker.begin());
 
-        for attempt in 1..=MAX_REAUTH_ATTEMPTS {
-            match send_login_request(rate_limiter, cmd_tx, creds, timeout).await {
-                Ok(()) => {
-                    auth_tracker.succeed();
-                    log::info!("Derive WebSocket re-authenticated");
-                    break;
+    for attempt in 1..=MAX_SESSION_RECOVERY_ATTEMPTS {
+        let expected_epoch = wait_for_session_connection(connection_mode, connection_epoch).await?;
+
+        let result = async {
+            if !session_connection_is_active(connection_mode, connection_epoch, expected_epoch) {
+                return Err(DeriveWsError::transport(
+                    "connection changed before WebSocket session recovery",
+                ));
+            }
+
+            if let Some(creds) = creds {
+                send_login_request(rate_limiter, cmd_tx, creds, timeout, expected_epoch).await?;
+            }
+            let channels: Vec<String> = subscriptions
+                .iter()
+                .map(|entry| entry.key().clone())
+                .collect();
+            subscribe_via_handler(rate_limiter, cmd_tx, channels, timeout, expected_epoch).await?;
+
+            if !session_connection_is_active(connection_mode, connection_epoch, expected_epoch) {
+                return Err(DeriveWsError::transport(
+                    "connection changed during WebSocket session recovery",
+                ));
+            }
+
+            Ok(())
+        }
+        .await;
+
+        match result {
+            Ok(()) => {
+                if creds.is_some()
+                    && !complete_session_authentication(
+                        auth_tracker,
+                        authenticated_epoch,
+                        connection_mode,
+                        connection_epoch,
+                        expected_epoch,
+                    )
+                {
+                    continue;
                 }
-                Err(e) if attempt < MAX_REAUTH_ATTEMPTS => {
-                    let multiplier = 1_u32 << (attempt - 1);
-                    let delay = RECONNECT_BASE_BACKOFF
-                        .saturating_mul(multiplier)
-                        .min(RECONNECT_MAX_BACKOFF);
-                    log::warn!(
-                        "Derive WebSocket re-login attempt {attempt}/{MAX_REAUTH_ATTEMPTS} failed: {e}; retrying in {delay:?}",
-                    );
-                    tokio::time::sleep(delay).await;
+
+                if creds.is_some() {
+                    log::info!("Derive WebSocket session re-authenticated");
                 }
-                Err(e) => {
+
+                return Ok(expected_epoch);
+            }
+            Err(e) if attempt < MAX_SESSION_RECOVERY_ATTEMPTS => {
+                let multiplier = 1_u32 << (attempt - 1);
+                let delay = RECONNECT_BASE_BACKOFF
+                    .saturating_mul(multiplier)
+                    .min(RECONNECT_MAX_BACKOFF);
+                log::warn!(
+                    "Derive WebSocket session recovery attempt {attempt}/{MAX_SESSION_RECOVERY_ATTEMPTS} failed: {e}; retrying in {delay:?}",
+                );
+                tokio::time::sleep(delay).await;
+            }
+            Err(e) => {
+                authenticated_epoch.store(UNAUTHENTICATED_CONNECTION_EPOCH, Ordering::Release);
+
+                if creds.is_some() {
                     auth_tracker.fail(e.to_string());
-                    return Err(e);
                 }
+                return Err(e);
             }
         }
     }
 
-    if let Err(e) = subscribe_via_handler(rate_limiter, cmd_tx, channels, timeout).await {
+    let e = DeriveWsError::transport("WebSocket session changed while recovery completed");
+    authenticated_epoch.store(UNAUTHENTICATED_CONNECTION_EPOCH, Ordering::Release);
+
+    if creds.is_some() {
         auth_tracker.fail(e.to_string());
-        return Err(e);
+    }
+    Err(e)
+}
+
+async fn wait_for_session_connection(
+    connection_mode: &AtomicU8,
+    connection_epoch: &AtomicU64,
+) -> Result<u64> {
+    loop {
+        match ConnectionMode::from_atomic(connection_mode) {
+            ConnectionMode::Active => return Ok(connection_epoch.load(Ordering::Acquire)),
+            ConnectionMode::Reconnect => tokio::time::sleep(RECONNECT_BASE_BACKOFF).await,
+            ConnectionMode::Disconnect | ConnectionMode::Closed => {
+                return Err(DeriveWsError::transport(
+                    "WebSocket closed during session recovery",
+                ));
+            }
+        }
+    }
+}
+
+fn complete_session_authentication(
+    auth_tracker: &AuthTracker,
+    authenticated_epoch: &AtomicU64,
+    connection_mode: &AtomicU8,
+    connection_epoch: &AtomicU64,
+    expected_epoch: u64,
+) -> bool {
+    if !session_connection_is_active(connection_mode, connection_epoch, expected_epoch) {
+        return false;
     }
 
-    Ok(())
+    authenticated_epoch.store(expected_epoch, Ordering::Release);
+    auth_tracker.succeed();
+
+    if session_connection_is_active(connection_mode, connection_epoch, expected_epoch) {
+        true
+    } else {
+        authenticated_epoch.store(UNAUTHENTICATED_CONNECTION_EPOCH, Ordering::Release);
+        auth_tracker.invalidate();
+        false
+    }
+}
+
+fn session_connection_is_active(
+    connection_mode: &AtomicU8,
+    connection_epoch: &AtomicU64,
+    expected_epoch: u64,
+) -> bool {
+    ConnectionMode::from_atomic(connection_mode).is_active()
+        && connection_epoch.load(Ordering::Acquire) == expected_epoch
 }
 
 async fn subscribe_via_handler(
@@ -1421,6 +1681,7 @@ async fn subscribe_via_handler(
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     channels: Vec<String>,
     timeout: Duration,
+    connection_epoch: u64,
 ) -> Result<()> {
     if channels.is_empty() {
         return Ok(());
@@ -1429,21 +1690,28 @@ async fn subscribe_via_handler(
     let params = WsSubscribeParams {
         channels: channels.into_iter().map(DeriveWsChannel::from).collect(),
     };
-    let result: WsSubscribeResult = send_request(
+    let result: WsSubscribeResult = send_request_on_connection(
         rate_limiter,
         cmd_tx,
         methods::PUBLIC_SUBSCRIBE,
         &params,
         timeout,
+        connection_epoch,
     )
     .await?;
-    let (_, failure) = subscription_outcome(&params.channels, &result);
+
+    let (_, failure) = subscription_outcome(
+        &params.channels,
+        &result,
+        SUBSCRIPTION_REPLAY_ACCEPTED_STATUSES,
+    );
     failure.map_or(Ok(()), Err)
 }
 
 fn subscription_outcome(
     requested: &[DeriveWsChannel],
     result: &WsSubscribeResult,
+    accepted_statuses: &[&str],
 ) -> (Vec<String>, Option<DeriveWsError>) {
     let mut confirmed = Vec::with_capacity(requested.len());
     let mut failures = Vec::new();
@@ -1451,7 +1719,7 @@ fn subscription_outcome(
     for channel in requested {
         let topic = channel.to_string();
         match result.status.get(channel) {
-            Some(status) if status.as_str() == "ok" => confirmed.push(topic),
+            Some(status) if accepted_statuses.contains(&status.as_str()) => confirmed.push(topic),
             Some(status) => failures.push(format!("{topic}: {status}")),
             None if result.channels.contains(channel) => confirmed.push(topic),
             None => failures.push(format!("{topic}: missing channel status")),
@@ -1541,6 +1809,30 @@ mod tests {
             .expect_err("terminal auth failure must reject private operations");
 
         assert!(matches!(error, DeriveWsError::Authentication { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_session_recovery_waits_for_reconnecting_transport() {
+        let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Reconnect as u8));
+        let connection_epoch = Arc::new(AtomicU64::new(1));
+        let mode_for_task = Arc::clone(&connection_mode);
+        let epoch_for_task = Arc::clone(&connection_epoch);
+
+        get_runtime().spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            epoch_for_task.store(2, Ordering::Release);
+            mode_for_task.store(ConnectionMode::Active as u8, Ordering::Release);
+        });
+
+        let epoch = tokio::time::timeout(
+            Duration::from_secs(1),
+            wait_for_session_connection(&connection_mode, &connection_epoch),
+        )
+        .await
+        .expect("session recovery should resume after reconnect")
+        .expect("active replacement connection should be accepted");
+
+        assert_eq!(epoch, 2);
     }
 
     #[rstest]

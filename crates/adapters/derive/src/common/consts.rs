@@ -139,6 +139,7 @@ pub const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 pub const DERIVE_ACCOUNT_REGISTRATION_TIMEOUT_SECS: f64 = 30.0;
 
 pub const WS_HEARTBEAT_SECS: u64 = 30;
+pub const WS_HEARTBEAT_TIMEOUT: Duration = Duration::from_mins(1);
 
 pub const RECONNECT_BASE_BACKOFF: Duration = Duration::from_millis(250);
 pub const RECONNECT_MAX_BACKOFF: Duration = Duration::from_secs(30);
