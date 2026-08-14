@@ -1259,24 +1259,49 @@ impl ExecutionClient for OKXExecutionClient {
         let venue_order_id = cmd.venue_order_id;
         let order_state = {
             let cache = self.core.cache();
-            cache
-                .order(&client_order_id)
-                .map(|order| (order.order_type(), order.is_triggered()))
+            cache.order(&client_order_id).map(|order| {
+                let order_type = order.order_type();
+                let is_conditional = OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type);
+                let has_regular_child = is_conditional && order.venue_order_ids().len() > 1;
+
+                CachedQueryOrderState {
+                    order_type,
+                    is_triggered: order.is_triggered(),
+                    has_regular_child,
+                    venue_order_id: order.venue_order_id(),
+                }
+            })
         };
-        let route = query_order_route(instrument_id, order_state.map(|state| state.0));
+        let route = query_order_route(
+            instrument_id,
+            order_state.map(|state| state.order_type),
+            order_state.is_some_and(|state| state.has_regular_child),
+        );
+        let regular_venue_order_id = order_state
+            .filter(|state| {
+                state.has_regular_child
+                    || state.venue_order_id.is_some_and(|venue_order_id| {
+                        venue_order_id.as_str() == client_order_id.as_str()
+                    })
+            })
+            .and_then(|state| state.venue_order_id);
         let algo_id = order_state
-            .filter(|(order_type, is_triggered)| {
-                OKX_CONDITIONAL_ORDER_TYPES.contains(order_type) && *is_triggered == Some(false)
+            .filter(|state| {
+                OKX_CONDITIONAL_ORDER_TYPES.contains(&state.order_type)
+                    && !state.has_regular_child
+                    && state.is_triggered == Some(false)
             })
             .and_then(|_| {
                 venue_order_id
                     .as_ref()
                     .map(|venue_order_id| venue_order_id.as_str().to_string())
             });
-
         self.spawn_task("query_order", async move {
             let mut reports = Vec::with_capacity(1);
-            let mut query_algo = route == QueryOrderRoute::Algo;
+            let mut query_algo = matches!(
+                route,
+                QueryOrderRoute::Algo | QueryOrderRoute::RegularAndAlgo
+            );
 
             match route {
                 QueryOrderRoute::Spread => {
@@ -1298,18 +1323,31 @@ impl ExecutionClient for OKXExecutionClient {
                         }
                     }
                 }
-                QueryOrderRoute::Regular | QueryOrderRoute::RegularThenAlgo => {
-                    match http_client
-                        .request_order_status_report(
-                            account_id,
-                            instrument_id,
-                            client_order_id,
-                        )
-                        .await
-                    {
+                QueryOrderRoute::Regular
+                | QueryOrderRoute::RegularThenAlgo
+                | QueryOrderRoute::RegularAndAlgo => {
+                    let result = if let Some(venue_order_id) = regular_venue_order_id {
+                        http_client
+                            .request_order_status_report_by_venue_order_id(
+                                account_id,
+                                instrument_id,
+                                venue_order_id,
+                            )
+                            .await
+                    } else {
+                        http_client
+                            .request_order_status_report(
+                                account_id,
+                                instrument_id,
+                                client_order_id,
+                            )
+                            .await
+                    };
+
+                    match result {
                         Ok(Some(report)) => reports.push(report),
                         Ok(None) => {
-                            query_algo = route == QueryOrderRoute::RegularThenAlgo;
+                            query_algo |= route == QueryOrderRoute::RegularThenAlgo;
                         }
                         Err(e) => {
                             log::error!("OKX query_order failed to fetch regular order: {e}");
@@ -1319,9 +1357,10 @@ impl ExecutionClient for OKXExecutionClient {
                 QueryOrderRoute::Algo => {}
             }
 
-            // Known conditional orders route directly to the algo endpoint. For
-            // an uncached order, only fall back when the regular detail lookup
-            // has no match (including OKX 51603).
+            // Known conditional orders query the algo endpoint. Once a regular
+            // child is cached, query both endpoints so a missed child event can
+            // supersede the parent algo state. For an uncached order, only fall
+            // back when the regular detail lookup has no match (including 51603).
             if query_algo {
                 match http_client
                     .request_algo_order_status_reports(
@@ -2406,7 +2445,16 @@ enum QueryOrderRoute {
     Regular,
     Algo,
     RegularThenAlgo,
+    RegularAndAlgo,
     Spread,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CachedQueryOrderState {
+    order_type: OrderType,
+    is_triggered: Option<bool>,
+    has_regular_child: bool,
+    venue_order_id: Option<VenueOrderId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2532,6 +2580,7 @@ fn order_routing_instrument_types(
 fn query_order_route(
     instrument_id: InstrumentId,
     order_type: Option<OrderType>,
+    has_regular_child: bool,
 ) -> QueryOrderRoute {
     if is_spread_instrument(instrument_id) {
         return QueryOrderRoute::Spread;
@@ -2542,6 +2591,13 @@ fn query_order_route(
     ));
 
     match order_type {
+        Some(order_type)
+            if supports_algo
+                && OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type)
+                && has_regular_child =>
+        {
+            QueryOrderRoute::RegularAndAlgo
+        }
         Some(order_type) if supports_algo && OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type) => {
             QueryOrderRoute::Algo
         }
@@ -2582,9 +2638,8 @@ fn merge_order_status_reports(
 //   2. Exact `venue_order_id` match (rare: only when the cached vid is
 //      still valid; OKX rotates venue_order_id once an algo order triggers).
 //
-// Triggered-algo recovery is handled by the algo endpoint in the caller,
-// which queries by `algo_id` when it is known to be stable and otherwise by
-// `algo_cl_ord_id`. `linked_order_ids` is deliberately not consulted here
+// Triggered-algo recovery queries the regular child by `ord_id` and the algo
+// parent by `algo_cl_ord_id`. `linked_order_ids` is deliberately not consulted here
 // because it is also populated with attached TP/SL child ids on the parent
 // order, which would otherwise let a query for a child match the parent report.
 fn select_query_order_report(
@@ -2592,23 +2647,33 @@ fn select_query_order_report(
     client_order_id: ClientOrderId,
     venue_order_id: Option<VenueOrderId>,
 ) -> Option<OrderStatusReport> {
+    let mut by_client_id: Option<OrderStatusReport> = None;
     let mut by_vid: Option<OrderStatusReport> = None;
 
     for report in reports {
         if report.client_order_id == Some(client_order_id) {
-            return Some(report);
+            if by_client_id
+                .as_ref()
+                .is_none_or(|current| is_order_status_report_more_advanced(&report, current))
+            {
+                by_client_id = Some(report);
+            }
+
+            continue;
         }
 
-        if by_vid.is_none()
-            && venue_order_id
+        if venue_order_id
+            .as_ref()
+            .is_some_and(|vid| report.venue_order_id.as_str() == vid.as_str())
+            && by_vid
                 .as_ref()
-                .is_some_and(|vid| report.venue_order_id.as_str() == vid.as_str())
+                .is_none_or(|current| is_order_status_report_more_advanced(&report, current))
         {
             by_vid = Some(report);
         }
     }
 
-    by_vid
+    by_client_id.or(by_vid)
 }
 
 #[cfg(test)]
@@ -2632,15 +2697,27 @@ mod tests {
         #[case] expected: QueryOrderRoute,
     ) {
         assert_eq!(
-            query_order_route(InstrumentId::from("BTC-USDT.OKX"), Some(order_type)),
+            query_order_route(InstrumentId::from("BTC-USDT.OKX"), Some(order_type), false,),
             expected
+        );
+    }
+
+    #[rstest]
+    fn test_query_order_route_for_conditional_order_with_known_regular_child() {
+        assert_eq!(
+            query_order_route(
+                InstrumentId::from("BTC-USDT.OKX"),
+                Some(OrderType::StopMarket),
+                true,
+            ),
+            QueryOrderRoute::RegularAndAlgo,
         );
     }
 
     #[rstest]
     fn test_query_order_route_for_unknown_order_type() {
         assert_eq!(
-            query_order_route(InstrumentId::from("BTC-USDT.OKX"), None),
+            query_order_route(InstrumentId::from("BTC-USDT.OKX"), None, false),
             QueryOrderRoute::RegularThenAlgo,
         );
     }
@@ -2648,7 +2725,11 @@ mod tests {
     #[rstest]
     fn test_query_order_route_for_spread() {
         assert_eq!(
-            query_order_route(InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"), None,),
+            query_order_route(
+                InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"),
+                None,
+                false,
+            ),
             QueryOrderRoute::Spread,
         );
     }
@@ -2997,6 +3078,68 @@ mod tests {
             selected.and_then(|r| r.client_order_id),
             Some(ClientOrderId::from("O-001"))
         );
+    }
+
+    #[rstest]
+    #[case(
+        OrderStatus::Accepted,
+        Quantity::zero(0),
+        OrderStatus::Triggered,
+        Quantity::zero(0),
+        OrderStatus::Triggered
+    )]
+    #[case(
+        OrderStatus::Triggered,
+        Quantity::zero(0),
+        OrderStatus::PartiallyFilled,
+        Quantity::new(0.5, 1),
+        OrderStatus::PartiallyFilled
+    )]
+    #[case(
+        OrderStatus::PartiallyFilled,
+        Quantity::new(0.5, 1),
+        OrderStatus::Filled,
+        Quantity::new(1.0, 0),
+        OrderStatus::Filled
+    )]
+    #[case(
+        OrderStatus::Triggered,
+        Quantity::zero(0),
+        OrderStatus::Canceled,
+        Quantity::zero(0),
+        OrderStatus::Canceled
+    )]
+    #[case(
+        OrderStatus::Triggered,
+        Quantity::zero(0),
+        OrderStatus::Rejected,
+        Quantity::zero(0),
+        OrderStatus::Rejected
+    )]
+    fn test_select_query_order_report_chooses_most_advanced_client_match_regardless_of_order(
+        #[case] first_status: OrderStatus,
+        #[case] first_filled_qty: Quantity,
+        #[case] second_status: OrderStatus,
+        #[case] second_filled_qty: Quantity,
+        #[case] expected_status: OrderStatus,
+    ) {
+        let mut first = make_query_order_report(Some("O-001"), "V-PARENT");
+        first.order_status = first_status;
+        first.filled_qty = first_filled_qty;
+        let mut second = make_query_order_report(Some("O-001"), "V-CHILD");
+        second.order_status = second_status;
+        second.filled_qty = second_filled_qty;
+
+        for reports in [vec![first.clone(), second.clone()], vec![second, first]] {
+            let selected = select_query_order_report(
+                reports,
+                ClientOrderId::from("O-001"),
+                Some(VenueOrderId::from("V-PARENT")),
+            )
+            .unwrap();
+
+            assert_eq!(selected.order_status, expected_status);
+        }
     }
 
     #[rstest]
