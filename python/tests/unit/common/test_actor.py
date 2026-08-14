@@ -568,28 +568,6 @@ class HistoricalRequestProbeActor(TestActor):
         }
 
 
-class RequestCallbackProbeActor(TestActor):
-    events = []
-    callback_ids = []
-    request_id = None
-
-    def on_start(self):
-        type(self).events = []
-        type(self).callback_ids = []
-        type(self).request_id = self.request_data(
-            DataType("TestData"),
-            ClientId("BACKTEST"),
-            callback=self.on_request_complete,
-        )
-
-    def on_historical_data(self, data):
-        type(self).events.append("historical_data")
-
-    def on_request_complete(self, request_id):
-        type(self).events.append("callback")
-        type(self).callback_ids.append(request_id)
-
-
 class InvalidRequestCallbackProbeActor(TestActor):
     error = None
     historical_calls = 0
@@ -608,25 +586,6 @@ class InvalidRequestCallbackProbeActor(TestActor):
 
     def on_historical_data(self, data):
         type(self).historical_calls += 1
-
-
-class RaisingRequestCallbackProbeActor(TestActor):
-    events = []
-
-    def on_start(self):
-        type(self).events = []
-        self.request_data(
-            DataType("TestData"),
-            ClientId("BACKTEST"),
-            callback=self.on_request_complete,
-        )
-
-    def on_historical_data(self, data):
-        type(self).events.append("historical_data")
-
-    def on_request_complete(self, request_id):
-        type(self).events.append("callback")
-        raise RuntimeError("callback failure")
 
 
 def test_data_actor_pre_registration_surface(actor):
@@ -1025,26 +984,6 @@ def test_data_actor_historical_requests_accept_datetimes_when_registered(request
         engine.dispose()
 
 
-def test_data_actor_request_callback_runs_after_response_handler():
-    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
-    engine.add_actor_from_config(
-        ImportableActorConfig(
-            actor_path="tests.unit.common.test_actor:RequestCallbackProbeActor",
-            config_path="tests.unit.common.actor:TestActorConfig",
-            config={"actor_id": "REQUEST-CALLBACK-ACTOR"},
-        ),
-    )
-
-    try:
-        engine.run()
-
-        assert RequestCallbackProbeActor.events == ["historical_data", "callback"]
-        assert RequestCallbackProbeActor.callback_ids == [RequestCallbackProbeActor.request_id]
-        assert UUID4.from_str(RequestCallbackProbeActor.request_id)
-    finally:
-        engine.dispose()
-
-
 def test_data_actor_request_rejects_non_callable_callback_without_sending():
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     engine.add_actor_from_config(
@@ -1060,24 +999,6 @@ def test_data_actor_request_rejects_non_callable_callback_without_sending():
 
         assert InvalidRequestCallbackProbeActor.error == "callback must be callable"
         assert InvalidRequestCallbackProbeActor.historical_calls == 0
-    finally:
-        engine.dispose()
-
-
-def test_data_actor_request_callback_error_does_not_escape_dispatch():
-    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
-    engine.add_actor_from_config(
-        ImportableActorConfig(
-            actor_path="tests.unit.common.test_actor:RaisingRequestCallbackProbeActor",
-            config_path="tests.unit.common.actor:TestActorConfig",
-            config={"actor_id": "RAISING-REQUEST-CALLBACK-ACTOR"},
-        ),
-    )
-
-    try:
-        engine.run()
-
-        assert RaisingRequestCallbackProbeActor.events == ["historical_data", "callback"]
     finally:
         engine.dispose()
 

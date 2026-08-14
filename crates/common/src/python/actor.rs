@@ -2857,7 +2857,7 @@ mod tests {
         enums::{
             AggressorSide, BookType, GreeksConvention, InstrumentCloseType, MarketStatusAction,
         },
-        identifiers::{ClientId, OptionSeriesId, TradeId, TraderId, Venue},
+        identifiers::{ActorId, ClientId, OptionSeriesId, TradeId, TraderId, Venue},
         instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
         orderbook::OrderBook,
         types::{Price, Quantity},
@@ -2870,7 +2870,7 @@ mod tests {
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
-    use super::PyDataActor;
+    use super::{DataActorConfig, PyDataActor, request_callback_from_py};
     use crate::{
         actor::DataActor,
         cache::Cache,
@@ -2880,7 +2880,9 @@ mod tests {
         live::runner::replace_system_command_sender,
         messages::{
             SystemCommand,
-            data::{BarsResponse, CustomDataResponse, QuotesResponse, TradesResponse},
+            data::{
+                BarsResponse, CustomDataResponse, DataResponse, QuotesResponse, TradesResponse,
+            },
             system::{
                 QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged,
             },
@@ -5238,6 +5240,134 @@ class IndicatorEventActor:
                 3
             );
             assert_eq!(actual, data);
+        });
+    }
+
+    #[rstest]
+    fn test_python_request_callback_runs_after_response_handler(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        client_id: ClientId,
+        data_type: DataType,
+    ) {
+        pyo3::Python::initialize();
+
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+            let locals = PyDict::new(py);
+            locals.set_item("actor", &py_actor).unwrap();
+            let callback = py
+                .eval(
+                    c_str!(
+                        "lambda request_id, actor=actor: actor._record('request_callback', request_id)"
+                    ),
+                    None,
+                    Some(&locals),
+                )
+                .unwrap()
+                .unbind();
+
+            *get_message_bus().borrow_mut() = MessageBus::default();
+            let config = DataActorConfig {
+                actor_id: Some(ActorId::from("PY-REQUEST-CALLBACK-ACTOR")),
+                ..Default::default()
+            };
+            let mut rust_actor = PyDataActor::new(Some(config));
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+            rust_actor.register_in_global_registries();
+
+            let request_id = rust_actor
+                .py_request_data(
+                    py,
+                    data_type.clone(),
+                    client_id,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(callback),
+                )
+                .unwrap();
+            let request_uuid = UUID4::from_str(&request_id).unwrap();
+            let response = DataResponse::Data(CustomDataResponse::new(
+                request_uuid,
+                client_id,
+                None,
+                data_type,
+                Vec::<CustomData>::new(),
+                None,
+                None,
+                UnixNanos::default(),
+                None,
+            ));
+
+            msgbus::send_response(&request_uuid, &response);
+
+            let call_names = py
+                .eval(
+                    c_str!("[name for name, _ in actor.calls]"),
+                    None,
+                    Some(&locals),
+                )
+                .unwrap()
+                .extract::<Vec<String>>()
+                .unwrap();
+            let callback_id = py_actor
+                .call_method1(py, "last_call_args", ("request_callback",))
+                .unwrap()
+                .bind(py)
+                .get_item(0)
+                .unwrap()
+                .extract::<String>()
+                .unwrap();
+
+            assert_eq!(call_names, vec!["on_historical_data", "request_callback"]);
+            assert_eq!(callback_id, request_id);
+
+            msgbus::send_response(&request_uuid, &response);
+            assert_eq!(
+                python_method_call_count(&py_actor, py, "request_callback"),
+                1
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_python_request_callback_error_does_not_escape() {
+        pyo3::Python::initialize();
+
+        Python::attach(|py| {
+            let locals = PyDict::new(py);
+            py.run(
+                c_str!(
+                    r#"
+events = []
+
+def callback(request_id, events=events):
+    events.append(request_id)
+    raise RuntimeError("callback failure")
+"#
+                ),
+                None,
+                Some(&locals),
+            )
+            .unwrap();
+            let callback = locals.get_item("callback").unwrap().unbind();
+            let callback = request_callback_from_py(py, Some(callback))
+                .unwrap()
+                .unwrap();
+            let request_id = UUID4::new();
+
+            callback(request_id);
+
+            let events = locals
+                .get_item("events")
+                .unwrap()
+                .extract::<Vec<String>>()
+                .unwrap();
+            assert_eq!(events, vec![request_id.to_string()]);
         });
     }
 
