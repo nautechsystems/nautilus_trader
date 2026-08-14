@@ -51,7 +51,7 @@ DEX), traditional markets (FX, equities, futures, options), and betting exchange
 
 ## Features
 
-- **Fast**: Rust core with the [mimalloc](https://github.com/microsoft/mimalloc)\* allocator and asynchronous networking using [tokio](https://crates.io/crates/tokio).
+- **Fast**: Rust core with the [mimalloc](https://github.com/microsoft/mimalloc) allocator and asynchronous networking using [tokio](https://crates.io/crates/tokio).
 - **Reliable**: Type- and thread-safety backed by Rust, with optional Redis-backed state persistence.
 - **Portable**: Runs on Linux, macOS, and Windows. Deploy using Docker.
 - **Flexible**: Modular adapters integrate any REST API or WebSocket feed.
@@ -61,8 +61,6 @@ DEX), traditional markets (FX, equities, futures, options), and betting exchange
 - **Live**: Identical strategy implementations between research and live deployment.
 - **Multi-venue**: Run market-making and cross-venue strategies across multiple venues simultaneously.
 - **AI Training**: Engine fast enough to train AI trading agents (RL/ES).
-
-*\* Python wheels use mimalloc on Linux and Windows. macOS wheels use the system allocator for PyArrow compatibility.*
 
 ![nautilus](https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-art.png "nautilus")
 
