@@ -14693,6 +14693,125 @@ fn test_check_instrument_expiration_uses_close_price_fallback(account_id: Accoun
 }
 
 #[rstest]
+fn test_check_instrument_expiration_with_restored_position_uses_position_account_id() {
+    // A position loaded from a cache database after a restart has never been seen by
+    // this engine, so `account_ids` holds no entry for its trader. The expiration close
+    // order must still be accepted, carrying the account ID from the position.
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let activation = UnixNanos::from(
+        u64::try_from(utc_timestamp(2021, 9, 10, 0, 0, 0).as_nanosecond()).unwrap(),
+    );
+    let expiration_ns = UnixNanos::from(
+        u64::try_from(utc_timestamp(2099, 12, 17, 0, 0, 0).as_nanosecond()).unwrap(),
+    );
+    let instrument =
+        InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration_ns)));
+
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    clock
+        .borrow_mut()
+        .set_time(UnixNanos::from(activation.as_u64() + 1));
+
+    let fee_model =
+        FeeModelAny::Fixed(FixedFeeModel::new(Money::new(0.0, Currency::USD()), None).unwrap());
+    let mut engine = OrderMatchingEngine::new(
+        instrument.clone(),
+        1,
+        FillModelHandle::default(),
+        fee_model.into(),
+        BookType::L2_MBP,
+        OmsType::Netting,
+        AccountType::Margin,
+        clock,
+        cache.clone(),
+        OrderMatchingEngineConfig {
+            use_position_ids: true,
+            ..Default::default()
+        },
+    );
+
+    let opening_bid = OrderBookDeltaTestBuilder::new(instrument.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("4499.00"),
+            Quantity::from(10),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&opening_bid).unwrap();
+
+    // Restore an open position straight into the cache, with no order ever submitted
+    // through `process_order`.
+    let restored_account_id = AccountId::from("SIM-002");
+    let position_id = PositionId::from("P-RESTORED-1");
+    let opening_fill = build_order_filled(
+        TraderId::from("TRADER-001"),
+        StrategyId::from("S-001"),
+        instrument.id(),
+        ClientOrderId::from("RESTORED-1"),
+        VenueOrderId::from("V-RESTORED-1"),
+        restored_account_id,
+        TradeId::new("T-RESTORED-1"),
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::from(1),
+        Price::from("4500.00"),
+        instrument.quote_currency(),
+        LiquiditySide::Taker,
+        Some(position_id),
+        Some(Money::new(0.0, instrument.quote_currency())),
+    );
+    let position = Position::new(&instrument, opening_fill);
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let settlement = Price::from("4600.00");
+    engine.set_settlement_price(settlement);
+
+    // Drive the clock past expiration to trigger `check_instrument_expiration`.
+    let trigger_delta = OrderBookDeltaTestBuilder::new(instrument.id())
+        .book_action(BookAction::Update)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("4499.00"),
+            Quantity::from(10),
+            1,
+        ))
+        .ts_init(expiration_ns)
+        .build();
+    engine.process_order_book_delta(&trigger_delta).unwrap();
+
+    let is_expiration = |id: ClientOrderId| id.as_str().starts_with("EXPIRATION-");
+    let messages = get_order_event_handler_messages(&order_event_handler);
+
+    let accepted = messages
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Accepted(a) if is_expiration(a.client_order_id) => Some(a.clone()),
+            _ => None,
+        })
+        .expect("Expected OrderAccepted for the EXPIRATION close order");
+    assert_eq!(accepted.account_id, restored_account_id);
+
+    let fill = messages
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) if is_expiration(f.client_order_id) => Some(f.clone()),
+            _ => None,
+        })
+        .expect("Expected OrderFilled for the EXPIRATION close order");
+    assert_eq!(fill.account_id, restored_account_id);
+    assert_eq!(fill.last_px, settlement);
+}
+
+#[rstest]
 fn test_binary_option_pending_resolution_then_instrument_close_settles_position(
     account_id: AccountId,
 ) {

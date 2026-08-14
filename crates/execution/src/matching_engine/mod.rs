@@ -2417,7 +2417,14 @@ impl OrderMatchingEngine {
         self.cancel_open_orders_for_expiration();
 
         let instrument_id = self.instrument.id();
-        let positions: Vec<(TraderId, StrategyId, PositionId, OrderSide, Quantity)> = {
+        let positions: Vec<(
+            TraderId,
+            StrategyId,
+            AccountId,
+            PositionId,
+            OrderSide,
+            Quantity,
+        )> = {
             let cache = self.cache.borrow();
             cache
                 .positions_open(None, Some(&instrument_id), None, None, None)
@@ -2431,6 +2438,7 @@ impl OrderMatchingEngine {
                     (
                         pos.trader_id,
                         pos.strategy_id,
+                        pos.account_id,
                         pos.id,
                         closing_side,
                         pos.quantity,
@@ -2442,7 +2450,7 @@ impl OrderMatchingEngine {
         let ts_now = self.clock.borrow().timestamp_ns();
         let close_price_fallback = close.as_ref().map(|c| c.close_price);
 
-        for (trader_id, strategy_id, position_id, closing_side, quantity) in positions {
+        for (trader_id, strategy_id, account_id, position_id, closing_side, quantity) in positions {
             let client_order_id =
                 ClientOrderId::from(format!("EXPIRATION-{}-{}", self.venue, UUID4::new()).as_str());
             let mut order = OrderAny::Market(MarketOrder::new(
@@ -2482,6 +2490,10 @@ impl OrderMatchingEngine {
             }
 
             let venue_order_id = self.ids_generator.get_venue_order_id(&order).unwrap();
+            // The position may have been restored from a cache database without any
+            // order for this trader passing through the engine, so index the account
+            // ID from the position before emitting events.
+            self.account_ids.insert(trader_id, account_id);
             self.generate_order_accepted(&order, venue_order_id);
 
             let fill_price = self.settlement_price.or(close_price_fallback);
