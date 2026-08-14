@@ -543,7 +543,21 @@ impl BinanceFuturesExecutionClient {
         let activation_price = order.activation_price();
         let trailing_offset = order.trailing_offset();
         let trigger_type = order.trigger_type();
-        let position_side = determine_position_side(self.is_hedge_mode(), order_side, reduce_only);
+
+        let close_position = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get_bool("close_position"))
+            .unwrap_or(false);
+
+        // `close_position` retires an entire hedge leg, so it carries close intent on
+        // its own. It cannot be combined with `reduce_only` (rejected in `submit_order`),
+        // which is otherwise the flag that selects the closing `positionSide`.
+        let position_side = determine_position_side(
+            self.is_hedge_mode(),
+            order_side,
+            reduce_only || close_position,
+        );
 
         // Register identity for tracked/external dispatch routing
         self.dispatch_state.order_identities.insert(
@@ -559,12 +573,6 @@ impl BinanceFuturesExecutionClient {
         );
 
         let use_algo_api = is_algo_order_type(order_type);
-
-        let close_position = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get_bool("close_position"))
-            .unwrap_or(false);
 
         let price_match = cmd
             .params
