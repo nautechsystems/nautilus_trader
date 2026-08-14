@@ -538,7 +538,7 @@ fn dispatch_maker_fills(
     let mut fills = Vec::new();
 
     for mo in user_orders {
-        let asset_id = Ustr::from(mo.asset_id.as_str());
+        let asset_id = mo.asset_id;
         let instrument = match instruments.get(&asset_id) {
             Some(i) => i,
             None => {

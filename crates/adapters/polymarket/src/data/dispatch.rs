@@ -181,7 +181,7 @@ pub(super) fn handle_ws_message(message: PolymarketWsMessage, ctx: &WsMessageCon
 fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
     match message {
         MarketWsMessage::Book(snap) => {
-            let token_id = Ustr::from(snap.asset_id.as_str());
+            let token_id = snap.asset_id;
             let meta = match ctx.token_meta.get(&token_id) {
                 Some(m) => *m,
                 None => {
@@ -310,7 +310,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             let mut group_indices = AHashMap::with_capacity(quotes.price_changes.len());
 
             for change in &quotes.price_changes {
-                let token_id = Ustr::from(change.asset_id.as_str());
+                let token_id = change.asset_id;
                 let meta = match ctx.token_meta.get(&token_id) {
                     Some(m) => *m,
                     None => {
@@ -416,7 +416,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
         }
 
         MarketWsMessage::LastTradePrice(trade) => {
-            let token_id = Ustr::from(trade.asset_id.as_str());
+            let token_id = trade.asset_id;
             let meta = match ctx.token_meta.get(&token_id) {
                 Some(m) => *m,
                 None => {
@@ -450,7 +450,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
         }
 
         MarketWsMessage::TickSizeChange(change) => {
-            let token_id = Ustr::from(change.asset_id.as_str());
+            let token_id = change.asset_id;
             let meta = match ctx.token_meta.get(&token_id) {
                 Some(m) => *m,
                 None => {
