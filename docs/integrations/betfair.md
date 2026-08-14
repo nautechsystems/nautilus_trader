@@ -193,49 +193,55 @@ Reconciliation behavior:
 ## Session management and reconnection
 
 Betfair expires session tokens, so the adapter renews them rather than waiting for a failure. It
-handles renewal and recovery through three mechanisms:
+handles renewal and recovery through four mechanisms:
 
-| Mechanism           | Trigger                           | Action                                                               |
-| ------------------- | --------------------------------- | -------------------------------------------------------------------- |
-| Periodic keep‑alive | Every 10 hours (36,000 seconds).  | Renew session token, push to all stream watch channels.              |
-| Keep‑alive fallback | Keep‑alive returns `LoginFailed`. | Full re‑login via `reconnect()`, push fresh token to streams.        |
-| Stream reconnect    | `Connection` message after drop.  | Try keep‑alive, fall back to re‑login on `LoginFailed`, update auth. |
+| Mechanism            | Trigger                                     | Action                                                                                         |
+| -------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Periodic keep‑alive  | Every 10 hours (36,000 seconds).            | Renew the session token and update retained stream authentication without reconnecting.        |
+| Keep‑alive fallback  | Keep‑alive returns `LoginFailed`.           | Re‑login, update all active stream authentication, then request replacement stream transports. |
+| Stream reconnect     | `Connection` message after initial connect. | Try keep‑alive and fall back to the full re‑login path on `LoginFailed`.                       |
+| HTTP report recovery | A report query returns a session error.     | Refresh the session and retry once; full re‑login also replaces the execution stream.          |
 
-Transient errors (network timeouts, 5xx responses) during keep-alive are logged and
-skipped. The existing session token is preserved and the next keep-alive interval
-retries. Only `LoginFailed` errors (session expiry) trigger a full re-login.
+Transient errors (network timeouts, 5xx responses) during keep‑alive are logged and
+skipped. The existing session token is preserved and the next keep‑alive interval
+retries. Only `LoginFailed` errors (session expiry) trigger a full re‑login.
 
-Both the data and execution clients run identical reconnection logic. Each spawns:
+Both the data and execution clients run the same session‑recovery policy. Each spawns:
 
-- A **keep-alive task** that periodically refreshes the session and pushes updated
-  auth bytes to the stream watch channels.
-- A **reconnect handler** that listens for `Connection` messages after a stream
-  reconnect, refreshes the session, and pushes the new token.
+- A **keep‑alive task** that periodically attempts renewal. An ordinary successful keep‑alive
+  updates retained authentication without replacing the transport.
+- A **reconnect handler** that listens for `Connection` messages after a stream reconnect and
+  refreshes the session.
 
-The stream client stores auth bytes in a `tokio::sync::watch` channel. The
-`post_reconnection` closure reads from this channel on each TCP reconnect, so a token
-refreshed by either the keep-alive task or reconnect handler is picked up on the next
-connection attempt.
+After a full re‑login, the adapter updates authentication for every affected active stream before it
+requests any reconnect. Each replacement connection sends the latest authentication before retained
+subscriptions or traffic buffered during the reconnect. Market and order streams also
+retain their subscription IDs and `clk`/`initialClk` resume values.
 
-On the data client, both the keep-alive task and the reconnect handler also push the refreshed token
-to the race and cricket streams whenever those streams are active, so an auxiliary stream cannot
-outlive the session that authorized it.
+The data client applies the same update to active market, race, and cricket streams. The execution
+client waits for post‑reconnect reconciliation to finish before requesting a replacement execution
+stream. When the handler receives the replacement stream's `Connection` message, a successful
+keep‑alive updates retained authentication without requesting another replacement. This prevents a
+session replacement from creating a reconnect loop.
 
 ## Post-reconnect reconciliation
 
-When the Betfair execution stream reconnects, the adapter assumes the cache may have
-diverged from venue state during the gap (in particular, fills can complete and roll
-off the unmatched book before the post-reconnect stream image arrives). It therefore
-runs a mass-status reconciliation over a recent window before allowing strategies to
-add new exposure.
+After the initial handshake, each new Betfair execution stream connection starts reconciliation.
+This applies to automatic network reconnects and replacements requested after a full re‑login. The
+adapter assumes the cache may have diverged while the previous transport was unavailable. In
+particular, fills can complete and roll off the unmatched book before the post‑reconnect stream image
+arrives. The adapter therefore runs a mass‑status reconciliation over a recent window before
+allowing strategies to add new exposure.
 
-| Step | Trigger                                        | Action                                                                                                             |
-| ---- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| 1    | Second `Connection` message after stream drop. | OCM handler raises `pending_resync` and `is_reconciling`, sends a reconnect signal to the background task.         |
-| 2    | Reconnect task receives signal.                | Re‑asserts `is_reconciling` so a queued second reconnect halts during its own iteration too.                       |
-| 3    | Reconnect task body.                           | Refreshes session, updates stream auth, fetches `getAccountFunds`, and calls `listCurrentOrders` for orders+fills. |
-| 4    | Mass status built.                             | Dispatched as `ExecutionReport::MassStatus` so the engine reconciles into the cache.                               |
-| 5    | Iteration ends.                                | `is_reconciling` clears. A failed iteration also clears it (fail‑open), so order handling always resumes.          |
+| Step | Trigger                                       | Action                                                                                                     |
+| ---- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 1    | `Connection` message after initial handshake. | OCM handler raises `pending_resync` and `is_reconciling`, sends a reconnect signal to the background task. |
+| 2    | Reconnect task receives signal.               | Re‑asserts `is_reconciling` so a queued second reconnect halts during its own iteration too.               |
+| 3    | Reconnect task body.                          | Refreshes the session, fetches `getAccountFunds`, and calls `listCurrentOrders` for orders and fills.      |
+| 4    | Mass status built.                            | Dispatched as `ExecutionReport::MassStatus` so the engine reconciles into the cache.                       |
+| 5    | Iteration ends.                               | Publishes refreshed auth, requests a replacement only after full re‑login, then clears `is_reconciling`.   |
+
+A failed iteration also clears `is_reconciling` (fail‑open), so order handling resumes.
 
 While `is_reconciling` is set:
 
@@ -355,8 +361,10 @@ reconciliation do not throttle order placement:
 | General | 5/s     | Account state, reconciliation, keep‑alive.      | `request_rate_per_second`.       |
 | Orders  | 20/s    | `placeOrders`, `replaceOrders`, `cancelOrders`. | `order_request_rate_per_second`. |
 
-Order status and fill report queries retry once on session errors after refreshing the
-session. `TOO_MANY_REQUESTS` errors retry after a 5-second delay.
+Order status and fill report queries retry once on session errors after refreshing the session. If
+refresh requires a full re‑login, the adapter also updates execution stream authentication and
+requests a replacement after the query finishes. `TOO_MANY_REQUESTS` errors retry after a 5-second
+delay.
 
 Betfair's own API limits are more nuanced than a single request rate:
 

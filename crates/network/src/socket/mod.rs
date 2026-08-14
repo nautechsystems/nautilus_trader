@@ -20,6 +20,6 @@ pub mod client;
 pub mod config;
 pub mod types;
 
-pub use client::{SocketClient, SocketReconnectHandle};
+pub use client::{SocketClient, SocketReconnectHandle, SocketReconnectReplay};
 pub use config::SocketConfig;
 pub use types::{TcpMessageHandler, TcpReader, TcpWriter, WriterCommand};

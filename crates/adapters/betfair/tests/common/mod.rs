@@ -51,6 +51,7 @@ use serde_json::Value;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::TcpListener,
+    sync::Semaphore,
 };
 
 pub(crate) fn data_path() -> PathBuf {
@@ -82,6 +83,13 @@ pub(crate) fn plain_stream_config(port: u16) -> BetfairStreamConfig {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct BettingResponseGate {
+    pub method: String,
+    pub waiters: Arc<AtomicUsize>,
+    pub semaphore: Arc<Semaphore>,
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct MockState {
     pub login_count: Arc<AtomicUsize>,
@@ -103,6 +111,7 @@ pub(crate) struct MockState {
     pub betting_request_params: Arc<Mutex<Vec<(String, Value)>>>,
     /// Per-method response delay; lets tests widen reconciliation windows.
     pub betting_response_delays: Arc<Mutex<HashMap<String, Duration>>>,
+    pub betting_response_gate: Arc<Mutex<Option<BettingResponseGate>>>,
     pub accounts_overrides: Arc<Mutex<HashMap<String, Value>>>,
     pub login_response_override: Arc<Mutex<Option<String>>>,
     pub keep_alive_response_override: Arc<Mutex<Option<String>>>,
@@ -149,6 +158,7 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
     let request: Value = serde_json::from_slice(&body).unwrap_or_default();
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
     let id = request.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
+    let params = request.get("params").cloned().unwrap_or(Value::Null);
 
     if !method.is_empty() {
         state
@@ -156,12 +166,23 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
             .lock()
             .unwrap()
             .push(method.to_string());
-        let params = request.get("params").cloned().unwrap_or(Value::Null);
         state
             .betting_request_params
             .lock()
             .unwrap()
             .push((method.to_string(), params));
+    }
+
+    let response_gate = state.betting_response_gate.lock().unwrap().clone();
+    if let Some(gate) = response_gate
+        && gate.method == method
+    {
+        gate.waiters.fetch_add(1, Ordering::Relaxed);
+        gate.semaphore
+            .acquire()
+            .await
+            .expect("betting response gate must remain open")
+            .forget();
     }
 
     let delay = state

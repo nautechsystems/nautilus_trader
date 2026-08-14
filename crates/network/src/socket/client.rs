@@ -80,6 +80,9 @@ const WRITE_TIMEOUT_SECS: u64 = 5;
 // Maximum buffer size for read operations (10 MB)
 const MAX_READ_BUFFER_BYTES: usize = 10 * 1024 * 1024;
 
+/// Produces protocol messages that must precede buffered application writes after reconnect.
+pub type SocketReconnectReplay = Arc<dyn Fn() -> Vec<Bytes> + Send + Sync>;
+
 struct SocketClientInner {
     config: SocketConfig,
     connector: Option<Arc<rustls::ClientConfig>>,
@@ -362,7 +365,10 @@ impl SocketClientInner {
     /// so buffered messages can never drain into a connection that lost its
     /// reader to a timeout; the writer task bounds both the old-writer
     /// shutdown and the buffer drain with its graceful-shutdown timeout.
-    async fn reconnect(&mut self) -> Result<ReconnectOutcome, Error> {
+    async fn reconnect(
+        &mut self,
+        reconnect_replay: Option<&SocketReconnectReplay>,
+    ) -> Result<ReconnectOutcome, Error> {
         log::info!("Reconnecting");
 
         if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
@@ -400,7 +406,13 @@ impl SocketClientInner {
         // We must verify that the buffer was successfully drained before transitioning to ACTIVE
         // to prevent silent message loss if the new connection drops immediately.
         let (tx, rx) = tokio::sync::oneshot::channel();
-        if let Err(e) = self.writer_tx.send(WriterCommand::Update(new_writer, tx)) {
+        let command = if let Some(reconnect_replay) = reconnect_replay {
+            WriterCommand::UpdateWithReplay(new_writer, reconnect_replay(), tx)
+        } else {
+            WriterCommand::Update(new_writer, tx)
+        };
+
+        if let Err(e) = self.writer_tx.send(command) {
             log::error!("{e}");
             return Err(Error::Io(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
@@ -661,6 +673,54 @@ impl SocketClientInner {
         false
     }
 
+    async fn replace_writer<W>(
+        active_writer: &mut W,
+        new_writer: W,
+        replay: Vec<Bytes>,
+        reconnect_buffer: &mut VecDeque<Bytes>,
+        suffix: &[u8],
+    ) -> bool
+    where
+        W: AsyncWrite + Unpin,
+    {
+        log::debug!("Received new writer");
+        dst::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
+
+        _ = dst::time::timeout(
+            Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
+            active_writer.shutdown(),
+        )
+        .await;
+
+        *active_writer = new_writer;
+        log::debug!("Updated writer");
+
+        let drain_result =
+            dst::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
+                for replay_msg in replay {
+                    let mut framed = Vec::with_capacity(replay_msg.len() + suffix.len());
+                    framed.extend_from_slice(&replay_msg);
+                    framed.extend_from_slice(suffix);
+                    if let Err(e) = active_writer.write_all(&framed).await {
+                        log::warn!("Failed to send reconnect replay: {e}");
+                        return true;
+                    }
+                }
+
+                Self::drain_reconnect_buffer(reconnect_buffer, active_writer, suffix).await
+            })
+            .await;
+
+        let send_error = drain_result.unwrap_or_else(|_| {
+            log::warn!(
+                "Timed out sending reconnect replay and buffered messages, {} buffered messages remain",
+                reconnect_buffer.len()
+            );
+            true
+        });
+        !send_error
+    }
+
     fn spawn_write_task<W>(
         connection_state: Arc<AtomicU8>,
         state_notify: Arc<tokio::sync::Notify>,
@@ -700,43 +760,32 @@ impl SocketClientInner {
 
                         match msg {
                             WriterCommand::Update(new_writer, tx) => {
-                                log::debug!("Received new writer");
-
-                                // Delay before closing connection
-                                dst::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS))
-                                    .await;
-
-                                // Attempt to shutdown the writer gracefully before updating,
-                                // we ignore any error as the writer may already be closed.
-                                _ = dst::time::timeout(
-                                    Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
-                                    active_writer.shutdown(),
+                                let sent = Self::replace_writer(
+                                    &mut active_writer,
+                                    new_writer,
+                                    Vec::new(),
+                                    &mut reconnect_buffer,
+                                    &suffix,
                                 )
                                 .await;
 
-                                active_writer = new_writer;
-                                log::debug!("Updated writer");
-
-                                // Bound the drain: a peer that accepts the connection but stops
-                                // reading must not wedge the writer task.
-                                let drain_result = dst::time::timeout(
-                                    Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
-                                    Self::drain_reconnect_buffer(
-                                        &mut reconnect_buffer,
-                                        &mut active_writer,
-                                        &suffix,
-                                    ),
-                                )
-                                .await;
-                                let send_error = drain_result.unwrap_or_else(|_| {
-                                    log::warn!(
-                                        "Timed out draining reconnect buffer, {} messages remain",
-                                        reconnect_buffer.len()
+                                if let Err(e) = tx.send(sent) {
+                                    log::error!(
+                                        "Failed to report drain status to controller: {e:?}"
                                     );
-                                    true
-                                });
+                                }
+                            }
+                            WriterCommand::UpdateWithReplay(new_writer, replay, tx) => {
+                                let sent = Self::replace_writer(
+                                    &mut active_writer,
+                                    new_writer,
+                                    replay,
+                                    &mut reconnect_buffer,
+                                    &suffix,
+                                )
+                                .await;
 
-                                if let Err(e) = tx.send(!send_error) {
+                                if let Err(e) = tx.send(sent) {
                                     log::error!(
                                         "Failed to report drain status to controller: {e:?}"
                                     );
@@ -1043,7 +1092,19 @@ impl SocketClient {
         config: SocketConfig,
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
     ) -> anyhow::Result<Self> {
-        Self::connect_with_state_sink(config, post_reconnection, None).await
+        Self::connect_with_options(config, post_reconnection, None, None).await
+    }
+
+    /// Connects and sends protocol replay before messages buffered during each reconnect.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error connecting to the server.
+    pub async fn connect_with_reconnect_replay(
+        config: SocketConfig,
+        reconnect_replay: SocketReconnectReplay,
+    ) -> anyhow::Result<Self> {
+        Self::connect_with_options(config, None, None, Some(reconnect_replay)).await
     }
 
     /// Connects to the server and reports semantic transport availability changes.
@@ -1055,6 +1116,15 @@ impl SocketClient {
         config: SocketConfig,
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
         state_sink: Option<SocketStateSink>,
+    ) -> anyhow::Result<Self> {
+        Self::connect_with_options(config, post_reconnection, state_sink, None).await
+    }
+
+    async fn connect_with_options(
+        config: SocketConfig,
+        post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
+        state_sink: Option<SocketStateSink>,
+        reconnect_replay: Option<SocketReconnectReplay>,
     ) -> anyhow::Result<Self> {
         let inner = SocketClientInner::connect_url(config, state_sink).await?;
         let writer_tx = inner.writer_tx.clone();
@@ -1071,6 +1141,7 @@ impl SocketClient {
             Arc::clone(&controller_lifecycle),
             Arc::clone(&controller_notify),
             post_reconnection,
+            reconnect_replay,
         );
         controller_lifecycle.set_abort_handle(controller_task.abort_handle());
 
@@ -1271,6 +1342,7 @@ impl SocketClient {
         controller_lifecycle: Arc<ControllerLifecycle>,
         controller_notify: Arc<tokio::sync::Notify>,
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
+        reconnect_replay: Option<SocketReconnectReplay>,
     ) -> tokio::task::JoinHandle<()> {
         const CONTROLLER_FALLBACK_INTERVAL_MS: u64 = 100;
 
@@ -1416,7 +1488,7 @@ impl SocketClient {
                     // Race reconnect against disconnect notification
                     let reconnect_result = tokio::select! {
                         biased;
-                        result = inner.reconnect() => Some(result),
+                        result = inner.reconnect(reconnect_replay.as_ref()) => Some(result),
                         () = async {
                             loop {
                                 // Enable before the check so a disconnect notify between iterations is not missed
@@ -2068,7 +2140,7 @@ mod rust_tests {
             .connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
 
-        let outcome = inner.reconnect().await.unwrap();
+        let outcome = inner.reconnect(None).await.unwrap();
 
         assert_eq!(outcome, ReconnectOutcome::Aborted);
         server.abort();
@@ -2091,7 +2163,7 @@ mod rust_tests {
             .connection_mode
             .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
 
-        let outcome = inner.reconnect().await.unwrap();
+        let outcome = inner.reconnect(None).await.unwrap();
 
         assert_eq!(outcome, ReconnectOutcome::Reconnected);
         assert_eq!(
@@ -2725,7 +2797,7 @@ mod rust_tests {
 
     #[rstest]
     #[tokio::test(start_paused = true)]
-    async fn test_stalled_socket_write_reconnects_and_replays_complete_message() {
+    async fn test_stalled_socket_write_sends_reconnect_replay_before_buffer() {
         type TestWriter = Pin<Box<dyn AsyncWrite + Send>>;
 
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
@@ -2763,7 +2835,11 @@ mod rust_tests {
         });
         let (update_tx, update_rx) = oneshot::channel();
         writer_tx
-            .send(WriterCommand::Update(new_writer, update_tx))
+            .send(WriterCommand::UpdateWithReplay(
+                new_writer,
+                vec![Bytes::from_static(b"authentication")],
+                update_tx,
+            ))
             .unwrap();
 
         tokio::time::advance(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS)).await;
@@ -2780,7 +2856,10 @@ mod rust_tests {
             ConnectionMode::from_atomic(&connection_state),
             ConnectionMode::Reconnect
         );
-        assert_eq!(recorded.lock().unwrap().as_slice(), b"complete-message\r\n");
+        assert_eq!(
+            recorded.lock().unwrap().as_slice(),
+            b"authentication\r\ncomplete-message\r\n"
+        );
 
         connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
         state_notify.notify_waiters();
