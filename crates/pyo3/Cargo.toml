@@ -160,6 +160,7 @@ nautilus-tardis = { workspace = true, features = ["python", "replay"] }
 pyo3 = { workspace = true }
 pyo3-stub-gen = { workspace = true }
 
+# local_dynamic_tls avoids exhausting static TLS space when the extension is dlopen'd
 [target.'cfg(target_os = "macos")'.dependencies]
 # v2 avoids conflicting with PyArrow's independent mimalloc instance on macOS;
 # remove it once libmimalloc-sys bundles native mimalloc v3.4.4 or later
