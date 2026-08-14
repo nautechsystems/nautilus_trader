@@ -51,7 +51,8 @@ use nautilus_okx::{
     common::{
         enums::{
             OKXAlgoOrderStatus, OKXEnvironment, OKXInstrumentType, OKXOrderStatus, OKXOrderType,
-            OKXPositionMode, OKXRpiPermission, OKXSide, OKXTradeMode, OKXTriggerType,
+            OKXPositionMode, OKXPositionSide, OKXRpiPermission, OKXSide, OKXTradeMode,
+            OKXTriggerType,
         },
         models::OKXInstrument,
     },
@@ -2420,9 +2421,11 @@ async fn test_http_get_order_by_client_and_exchange_ids() {
     .unwrap();
 
     let params = GetOrderParamsBuilder::default()
+        .inst_type(OKXInstrumentType::Swap)
         .inst_id("BTC-USDT-SWAP")
         .ord_id("1234567890123456789")
         .cl_ord_id("client-order-1")
+        .pos_side(OKXPositionSide::Net)
         .build()
         .unwrap();
 

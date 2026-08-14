@@ -88,7 +88,7 @@ use super::{
         OKXCancelAllSpreadOrdersRequest, OKXCancelOrderRequest, OKXCancelOrderResponse,
         OKXCancelSpreadOrderRequest, OKXEventContractEvent, OKXEventContractMarket,
         OKXEventContractSeries, OKXFeeRate, OKXFundingRateHistory, OKXIndexTicker, OKXMarkPrice,
-        OKXOptionSummary, OKXOrderAlgo, OKXOrderBookSnapshot, OKXOrderHistory,
+        OKXOptionSummary, OKXOrderAlgo, OKXOrderAlgoDetails, OKXOrderBookSnapshot, OKXOrderHistory,
         OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse, OKXPlaceOrderRequest,
         OKXPlaceOrderResponse, OKXPlaceSpreadOrderRequest, OKXPosition, OKXPositionHistory,
         OKXPositionTier, OKXPriceLimit, OKXRpiOrderBookSnapshot, OKXServerTime, OKXSpread,
@@ -1604,6 +1604,18 @@ impl OKXRawHttpClient {
         &self,
         params: GetAlgoOrderParams,
     ) -> Result<Vec<OKXOrderAlgo>, OKXHttpError> {
+        self.get_algo_order_details(params).await.map(|details| {
+            details
+                .into_iter()
+                .map(OKXOrderAlgoDetails::into_order)
+                .collect()
+        })
+    }
+
+    async fn get_algo_order_details(
+        &self,
+        params: GetAlgoOrderParams,
+    ) -> Result<Vec<OKXOrderAlgoDetails>, OKXHttpError> {
         self.send_request(
             Method::GET,
             "/api/v5/trade/order-algo",
@@ -6270,15 +6282,20 @@ impl OKXHttpClient {
             let params = params_builder
                 .build()
                 .map_err(|e| anyhow::anyhow!(format!("Failed to build algo order params: {e}")))?;
-            let mut orders = match self.inner.get_algo_order(params).await {
-                Ok(orders) => orders,
+            let mut details = match self.inner.get_algo_order_details(params).await {
+                Ok(details) => details,
                 Err(e) if e.is_order_not_found() => return Ok(reports),
                 Err(e) => return Err(e.into()),
             };
 
             if let Some(state) = state {
-                orders.retain(|order| order.state == state);
+                details.retain(|detail| detail.order.state == state);
             }
+
+            let orders: Vec<_> = details
+                .into_iter()
+                .map(OKXOrderAlgoDetails::into_order)
+                .collect();
 
             self.collect_algo_reports(
                 account_id,

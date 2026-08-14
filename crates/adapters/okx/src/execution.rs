@@ -47,7 +47,9 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce, TrailingOffsetType},
+    enums::{
+        AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
+    },
     events::OrderDeniedReason,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
@@ -1259,43 +1261,27 @@ impl ExecutionClient for OKXExecutionClient {
         let venue_order_id = cmd.venue_order_id;
         let order_state = {
             let cache = self.core.cache();
-            cache.order(&client_order_id).map(|order| {
-                let order_type = order.order_type();
-                let is_conditional = OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type);
-                let has_regular_child = is_conditional && order.venue_order_ids().len() > 1;
-
-                CachedQueryOrderState {
-                    order_type,
-                    is_triggered: order.is_triggered(),
-                    has_regular_child,
+            cache
+                .order(&client_order_id)
+                .map(|order| CachedQueryOrderState {
+                    order_type: order.order_type(),
                     venue_order_id: order.venue_order_id(),
-                }
-            })
+                })
         };
+        let cached_venue_order_id = order_state.and_then(|state| state.venue_order_id);
+        let regular_venue_order_id = order_state.and_then(|state| {
+            if OKX_CONDITIONAL_ORDER_TYPES.contains(&state.order_type) {
+                state.venue_order_id.or(venue_order_id)
+            } else {
+                state.venue_order_id
+            }
+        });
+        let selection_venue_order_id = cached_venue_order_id.or(venue_order_id);
         let route = query_order_route(
             instrument_id,
             order_state.map(|state| state.order_type),
-            order_state.is_some_and(|state| state.has_regular_child),
+            regular_venue_order_id.is_some(),
         );
-        let regular_venue_order_id = order_state
-            .filter(|state| {
-                state.has_regular_child
-                    || state.venue_order_id.is_some_and(|venue_order_id| {
-                        venue_order_id.as_str() == client_order_id.as_str()
-                    })
-            })
-            .and_then(|state| state.venue_order_id);
-        let algo_id = order_state
-            .filter(|state| {
-                OKX_CONDITIONAL_ORDER_TYPES.contains(&state.order_type)
-                    && !state.has_regular_child
-                    && state.is_triggered == Some(false)
-            })
-            .and_then(|_| {
-                venue_order_id
-                    .as_ref()
-                    .map(|venue_order_id| venue_order_id.as_str().to_string())
-            });
         self.spawn_task("query_order", async move {
             let mut reports = Vec::with_capacity(1);
             let mut query_algo = matches!(
@@ -1323,9 +1309,7 @@ impl ExecutionClient for OKXExecutionClient {
                         }
                     }
                 }
-                QueryOrderRoute::Regular
-                | QueryOrderRoute::RegularThenAlgo
-                | QueryOrderRoute::RegularAndAlgo => {
+                QueryOrderRoute::Regular | QueryOrderRoute::RegularThenAlgo => {
                     let result = if let Some(venue_order_id) = regular_venue_order_id {
                         http_client
                             .request_order_status_report_by_venue_order_id(
@@ -1354,37 +1338,88 @@ impl ExecutionClient for OKXExecutionClient {
                         }
                     }
                 }
-                QueryOrderRoute::Algo => {}
+                QueryOrderRoute::Algo | QueryOrderRoute::RegularAndAlgo => {}
             }
 
-            // Known conditional orders query the algo endpoint. Once a regular
-            // child is cached, query both endpoints so a missed child event can
-            // supersede the parent algo state. For an uncached order, only fall
-            // back when the regular detail lookup has no match (including 51603).
+            // Known conditional orders query the algo endpoint by client ID. If
+            // the parent has triggered, query its single latest regular child so
+            // a missed child event can supersede the parent state. For an
+            // uncached order, only fall back after the regular lookup has no match.
             if query_algo {
+                let mut regular_child_venue_order_id = None;
+
                 match http_client
                     .request_algo_order_status_reports(
                         account_id,
                         None,
                         Some(instrument_id),
-                        algo_id,
+                        None,
                         Some(client_order_id),
                         None,
                         Some(1),
                     )
                     .await
                 {
-                    Ok(algo_reports) => merge_order_status_reports(&mut reports, algo_reports),
+                    Ok(algo_reports) => {
+                        if route == QueryOrderRoute::RegularAndAlgo {
+                            regular_child_venue_order_id = algo_reports
+                                .iter()
+                                .find(|report| {
+                                    matches!(
+                                        report.order_status,
+                                        OrderStatus::Triggered | OrderStatus::Filled
+                                    )
+                                })
+                                .map(|report| report.venue_order_id)
+                                .or_else(|| {
+                                    regular_venue_order_id.filter(|venue_order_id| {
+                                        algo_reports.first().is_none_or(|report| {
+                                            report.venue_order_id != *venue_order_id
+                                        })
+                                    })
+                                });
+                        }
+
+                        merge_order_status_reports(&mut reports, algo_reports);
+                    }
                     Err(e) => {
+                        if route == QueryOrderRoute::RegularAndAlgo {
+                            regular_child_venue_order_id = regular_venue_order_id;
+                        }
+
                         log::warn!("OKX query_order algo lookup failed for {instrument_id}: {e}");
+                    }
+                }
+
+                if let Some(child_venue_order_id) = regular_child_venue_order_id {
+                    match http_client
+                        .request_order_status_report_by_venue_order_id(
+                            account_id,
+                            instrument_id,
+                            child_venue_order_id,
+                        )
+                        .await
+                    {
+                        Ok(Some(child_report)) => {
+                            merge_order_status_reports(&mut reports, vec![child_report]);
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            log::error!(
+                                "OKX query_order failed to fetch regular child order: {e}"
+                            );
+                        }
                     }
                 }
             }
 
-            let Some(report) = select_query_order_report(reports, client_order_id, venue_order_id)
-            else {
+            let Some(report) = select_query_order_report(
+                reports,
+                client_order_id,
+                selection_venue_order_id,
+            ) else {
                 log::warn!(
-                    "OKX query_order found no order for client_order_id={client_order_id}, venue_order_id={venue_order_id:?}",
+                    "OKX query_order found no order for client_order_id={client_order_id}, venue_order_id={selection_venue_order_id:?}",
                 );
                 return Ok(());
             };
@@ -2452,8 +2487,6 @@ enum QueryOrderRoute {
 #[derive(Debug, Clone, Copy)]
 struct CachedQueryOrderState {
     order_type: OrderType,
-    is_triggered: Option<bool>,
-    has_regular_child: bool,
     venue_order_id: Option<VenueOrderId>,
 }
 
@@ -2580,7 +2613,7 @@ fn order_routing_instrument_types(
 fn query_order_route(
     instrument_id: InstrumentId,
     order_type: Option<OrderType>,
-    has_regular_child: bool,
+    has_cached_venue_order_id: bool,
 ) -> QueryOrderRoute {
     if is_spread_instrument(instrument_id) {
         return QueryOrderRoute::Spread;
@@ -2594,7 +2627,7 @@ fn query_order_route(
         Some(order_type)
             if supports_algo
                 && OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type)
-                && has_regular_child =>
+                && has_cached_venue_order_id =>
         {
             QueryOrderRoute::RegularAndAlgo
         }
@@ -2703,7 +2736,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_query_order_route_for_conditional_order_with_known_regular_child() {
+    fn test_query_order_route_for_conditional_order_with_cached_venue_id() {
         assert_eq!(
             query_order_route(
                 InstrumentId::from("BTC-USDT.OKX"),

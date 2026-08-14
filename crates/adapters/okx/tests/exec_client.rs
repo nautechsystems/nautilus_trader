@@ -2357,10 +2357,18 @@ fn regular_order_detail_response(params: &HashMap<String, String>) -> serde_json
         .expect("expected clOrdId or ordId query parameter");
     let (algo_client_order_id, client_order_id, venue_order_id, order_type, state, price) =
         match query_id {
-            "OQUERYREGULAR1" => (
+            "regular-venue-id" => (
                 "",
                 "OQUERYREGULAR1",
                 "regular-venue-id",
+                "limit",
+                "live",
+                "2000.00",
+            ),
+            "OQUERYREGULAR1" => (
+                "",
+                "OQUERYREGULAR1",
+                "reused-regular-venue-id",
                 "limit",
                 "live",
                 "2000.00",
@@ -2380,6 +2388,22 @@ fn regular_order_detail_response(params: &HashMap<String, String>) -> serde_json
                 "limit",
                 "filled",
                 "900.00",
+            ),
+            "missed-child-venue-id" => (
+                "OQUERYMISSEDCHILD1",
+                "",
+                "missed-child-venue-id",
+                "limit",
+                "filled",
+                "850.00",
+            ),
+            "single-child-venue-id" => (
+                "OQUERYSINGLECHILD1",
+                "",
+                "single-child-venue-id",
+                "limit",
+                "filled",
+                "800.00",
             ),
             "external-venue-id" => ("", "", "external-venue-id", "limit", "live", "2000.00"),
             other => panic!("unexpected regular order detail query: {other}"),
@@ -2419,6 +2443,11 @@ fn algo_order_detail_response(params: &HashMap<String, String>) -> serde_json::V
     order["instId"] = json!("ETH-USDT-SWAP");
 
     match params.get("algoClOrdId").map(String::as_str) {
+        Some("OQUERYALGO1") => {
+            order["algoId"] = json!("algo-venue-id");
+            order["ordId"] = json!("");
+            order["state"] = json!("live");
+        }
         Some("OQUERYMARKETCHILD1") => {
             order["algoId"] = json!("parent-market-algo-id");
             order["ordId"] = json!("market-child-venue-id");
@@ -2427,7 +2456,22 @@ fn algo_order_detail_response(params: &HashMap<String, String>) -> serde_json::V
         Some("OQUERYTRIGGERED1") => {
             order["algoId"] = json!("parent-algo-id");
             order["ordId"] = json!("triggered-child-venue-id");
+            order["ordIdList"] = json!(["triggered-child-venue-id"]);
             order["slOrdPx"] = json!("900.00");
+            order["state"] = json!("effective");
+        }
+        Some("OQUERYMISSEDCHILD1") => {
+            order["algoId"] = json!("parent-missed-algo-id");
+            order["ordId"] = json!("missed-child-venue-id");
+            order["ordIdList"] = json!(["missed-child-venue-id"]);
+            order["slOrdPx"] = json!("850.00");
+            order["state"] = json!("effective");
+        }
+        Some("OQUERYSINGLECHILD1") => {
+            order["algoId"] = json!("parent-single-algo-id");
+            order["ordId"] = json!("single-child-venue-id");
+            order["ordIdList"] = json!(["single-child-venue-id"]);
+            order["slOrdPx"] = json!("800.00");
             order["state"] = json!("effective");
         }
         _ => {}
@@ -2467,7 +2511,7 @@ async fn start_exec_query_order_test_server(state: Arc<QueryOrderRouteState>) ->
                         .await
                         .push(format!("regular:{query_id}"));
 
-                    if query_id == "OQUERYUNKNOWN1" {
+                    if matches!(query_id.as_str(), "OQUERYUNKNOWN1" | "algo-venue-id") {
                         state.regular_queries.lock().await.push(params);
                         return Json(json!({
                             "code": "51603",
@@ -3002,11 +3046,17 @@ async fn test_margin_only_restart_recovers_spot_fill_reports() {
 
 #[rstest]
 #[tokio::test]
-async fn test_query_order_routes_regular_untriggered_and_unknown_orders() {
+async fn test_query_order_routes_cached_regular_pretrigger_algo_and_unknown_orders() {
     let (client, mut rx, cache, state) = create_query_order_test_client().await;
 
     let regular_client_order_id = ClientOrderId::from("OQUERYREGULAR1");
-    cache_limit_order(&cache, regular_client_order_id);
+    let regular_venue_order_id = VenueOrderId::from("regular-venue-id");
+    let regular_order =
+        build_test_regular_order_with_venue_id(regular_client_order_id, regular_venue_order_id);
+    cache
+        .borrow_mut()
+        .add_order(regular_order, None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
     client
         .query_order(query_order_command(
             regular_client_order_id,
@@ -3015,13 +3065,14 @@ async fn test_query_order_routes_regular_untriggered_and_unknown_orders() {
         .unwrap();
     let regular_report = recv_query_order_report(&mut rx, Some(regular_client_order_id)).await;
     assert_eq!(regular_report.order_type, OrderType::Limit);
-    assert_eq!(
-        regular_report.venue_order_id,
-        VenueOrderId::from("regular-venue-id")
-    );
+    assert_eq!(regular_report.venue_order_id, regular_venue_order_id);
 
     let algo_client_order_id = ClientOrderId::from("OQUERYALGO1");
-    let algo_order = build_test_stop_order(algo_client_order_id);
+    let algo_venue_order_id = VenueOrderId::from("algo-venue-id");
+    let algo_order = build_test_conditional_order_with_single_venue_id(
+        algo_client_order_id,
+        algo_venue_order_id,
+    );
     cache
         .borrow_mut()
         .add_order(algo_order, None, Some(*OKX_CLIENT_ID), false)
@@ -3029,7 +3080,7 @@ async fn test_query_order_routes_regular_untriggered_and_unknown_orders() {
     client
         .query_order(query_order_command(
             algo_client_order_id,
-            Some(VenueOrderId::from("algo-venue-id")),
+            Some(algo_venue_order_id),
         ))
         .unwrap();
     let algo_report = recv_query_order_report(&mut rx, Some(algo_client_order_id)).await;
@@ -3063,10 +3114,10 @@ async fn test_query_order_routes_regular_untriggered_and_unknown_orders() {
 
     assert_eq!(regular_queries.len(), 2);
     assert_eq!(
-        regular_queries[0].get("clOrdId").map(String::as_str),
-        Some("OQUERYREGULAR1")
+        regular_queries[0].get("ordId").map(String::as_str),
+        Some("regular-venue-id")
     );
-    assert!(!regular_queries[0].contains_key("ordId"));
+    assert!(!regular_queries[0].contains_key("clOrdId"));
     assert_eq!(
         regular_queries[1].get("clOrdId").map(String::as_str),
         Some("OQUERYUNKNOWN1")
@@ -3074,13 +3125,10 @@ async fn test_query_order_routes_regular_untriggered_and_unknown_orders() {
     assert!(!regular_queries[1].contains_key("ordId"));
     assert_eq!(algo_queries.len(), 2);
     assert_eq!(
-        algo_queries[0].get("algoId").map(String::as_str),
-        Some("algo-venue-id")
-    );
-    assert_eq!(
         algo_queries[0].get("algoClOrdId").map(String::as_str),
         Some("OQUERYALGO1")
     );
+    assert!(!algo_queries[0].contains_key("algoId"));
     assert_eq!(
         algo_queries[1].get("algoClOrdId").map(String::as_str),
         Some("OQUERYUNKNOWN1")
@@ -3089,7 +3137,7 @@ async fn test_query_order_routes_regular_untriggered_and_unknown_orders() {
     assert_eq!(
         sequence.as_slice(),
         [
-            "regular:OQUERYREGULAR1",
+            "regular:regular-venue-id",
             "algo:OQUERYALGO1",
             "regular:OQUERYUNKNOWN1",
             "algo:OQUERYUNKNOWN1",
@@ -3143,7 +3191,7 @@ async fn test_query_order_market_conditional_with_child_id_queries_child_and_par
     assert!(!algo_queries[0].contains_key("algoId"));
     assert_eq!(
         sequence.as_slice(),
-        ["regular:market-child-venue-id", "algo:OQUERYMARKETCHILD1",]
+        ["algo:OQUERYMARKETCHILD1", "regular:market-child-venue-id",]
     );
 }
 
@@ -3191,27 +3239,131 @@ async fn test_query_order_triggered_conditional_recovers_missed_child_fill() {
     assert!(!algo_queries[0].contains_key("algoId"));
     assert_eq!(
         sequence.as_slice(),
-        ["regular:triggered-child-venue-id", "algo:OQUERYTRIGGERED1",]
+        ["algo:OQUERYTRIGGERED1", "regular:triggered-child-venue-id",]
     );
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_query_order_adopted_external_regular_uses_venue_order_id() {
+async fn test_query_order_recovers_fill_when_child_event_was_completely_missed() {
     let (client, mut rx, cache, state) = create_query_order_test_client().await;
 
-    // Adopted external regular orders synthesize their local client ID from
-    // ordId when OKX reports no clOrdId.
-    let venue_order_id = VenueOrderId::from("external-venue-id");
-    let client_order_id = ClientOrderId::from(venue_order_id.as_str());
-    let order = build_test_adopted_regular_order(client_order_id);
+    let client_order_id = ClientOrderId::from("OQUERYMISSEDCHILD1");
+    let parent_venue_order_id = VenueOrderId::from("parent-missed-algo-id");
+    let child_venue_order_id = VenueOrderId::from("missed-child-venue-id");
+    let order =
+        build_test_conditional_order_with_single_venue_id(client_order_id, parent_venue_order_id);
     cache
         .borrow_mut()
         .add_order(order, None, Some(*OKX_CLIENT_ID), false)
         .unwrap();
 
     client
-        .query_order(query_order_command(client_order_id, Some(venue_order_id)))
+        .query_order(query_order_command(
+            client_order_id,
+            Some(parent_venue_order_id),
+        ))
+        .unwrap();
+    let report = recv_query_order_report(&mut rx, Some(client_order_id)).await;
+
+    assert_eq!(report.order_type, OrderType::Limit);
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.filled_qty, Quantity::from("1"));
+    assert_eq!(report.venue_order_id, child_venue_order_id);
+
+    let regular_queries = state.regular_queries.lock().await;
+    let algo_queries = state.algo_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+    assert_eq!(regular_queries.len(), 1);
+    assert_eq!(
+        regular_queries[0].get("ordId").map(String::as_str),
+        Some("missed-child-venue-id")
+    );
+    assert!(!regular_queries[0].contains_key("clOrdId"));
+    assert_eq!(algo_queries.len(), 1);
+    assert_eq!(
+        algo_queries[0].get("algoClOrdId").map(String::as_str),
+        Some("OQUERYMISSEDCHILD1")
+    );
+    assert!(!algo_queries[0].contains_key("algoId"));
+    assert_eq!(
+        sequence.as_slice(),
+        ["algo:OQUERYMISSEDCHILD1", "regular:missed-child-venue-id",]
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_query_order_recovers_fill_when_only_cached_id_is_child() {
+    let (client, mut rx, cache, state) = create_query_order_test_client().await;
+
+    let client_order_id = ClientOrderId::from("OQUERYSINGLECHILD1");
+    let child_venue_order_id = VenueOrderId::from("single-child-venue-id");
+    let order =
+        build_test_conditional_order_with_single_venue_id(client_order_id, child_venue_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+
+    client
+        .query_order(query_order_command(
+            client_order_id,
+            Some(child_venue_order_id),
+        ))
+        .unwrap();
+    let report = recv_query_order_report(&mut rx, Some(client_order_id)).await;
+
+    assert_eq!(report.order_type, OrderType::Limit);
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.filled_qty, Quantity::from("1"));
+    assert_eq!(report.venue_order_id, child_venue_order_id);
+
+    let regular_queries = state.regular_queries.lock().await;
+    let algo_queries = state.algo_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+    assert_eq!(regular_queries.len(), 1);
+    assert_eq!(
+        regular_queries[0].get("ordId").map(String::as_str),
+        Some("single-child-venue-id")
+    );
+    assert!(!regular_queries[0].contains_key("clOrdId"));
+    assert_eq!(algo_queries.len(), 1);
+    assert_eq!(
+        algo_queries[0].get("algoClOrdId").map(String::as_str),
+        Some("OQUERYSINGLECHILD1")
+    );
+    assert!(!algo_queries[0].contains_key("algoId"));
+    assert_eq!(
+        sequence.as_slice(),
+        ["algo:OQUERYSINGLECHILD1", "regular:single-child-venue-id",]
+    );
+}
+
+#[rstest]
+#[case(None)]
+#[case(Some("stale-external-venue-id"))]
+#[tokio::test]
+async fn test_query_order_adopted_external_regular_uses_cached_venue_order_id(
+    #[case] command_venue_order_id: Option<&str>,
+) {
+    let (client, mut rx, cache, state) = create_query_order_test_client().await;
+
+    // Adopted external regular orders synthesize their local client ID from
+    // ordId when OKX reports no clOrdId.
+    let venue_order_id = VenueOrderId::from("external-venue-id");
+    let client_order_id = ClientOrderId::from(venue_order_id.as_str());
+    let order = build_test_regular_order_with_venue_id(client_order_id, venue_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+
+    client
+        .query_order(query_order_command(
+            client_order_id,
+            command_venue_order_id.map(VenueOrderId::from),
+        ))
         .unwrap();
     let report = recv_query_order_report(&mut rx, None).await;
 
@@ -3383,6 +3535,51 @@ fn build_test_stop_order(client_order_id: ClientOrderId) -> OrderAny {
         .build()
 }
 
+fn build_test_conditional_order_with_single_venue_id(
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+) -> OrderAny {
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+    let account_id = AccountId::from("OKX-001");
+    let mut order = OrderTestBuilder::new(OrderType::StopLimit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("850.00"))
+        .quantity(Quantity::from("1"))
+        .trigger_price(Price::from("1000.00"))
+        .trigger_type(TriggerType::MarkPrice)
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    let submitted = OrderSubmittedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .build();
+    let accepted = OrderAcceptedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .build();
+
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+    assert_eq!(order.is_triggered(), Some(false));
+    assert_eq!(order.venue_order_ids(), vec![&venue_order_id]);
+    assert_eq!(order.venue_order_id(), Some(venue_order_id));
+    order
+}
+
 fn build_test_triggered_conditional_order(
     client_order_id: ClientOrderId,
     child_venue_order_id: VenueOrderId,
@@ -3490,12 +3687,14 @@ fn build_test_market_conditional_order_with_child(
     order
 }
 
-fn build_test_adopted_regular_order(client_order_id: ClientOrderId) -> OrderAny {
+fn build_test_regular_order_with_venue_id(
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+) -> OrderAny {
     let trader_id = TraderId::from("TESTER-001");
     let strategy_id = StrategyId::from("STRATEGY-001");
     let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
     let account_id = AccountId::from("OKX-001");
-    let venue_order_id = VenueOrderId::from(client_order_id.as_str());
     let mut order = build_test_limit_order(instrument_id, client_order_id);
     let submitted = OrderSubmittedSpec::builder()
         .trader_id(trader_id)

@@ -1137,12 +1137,6 @@ pub struct OKXOrderAlgo {
     /// Latest regular order ID (deprecated by OKX; empty until triggered).
     #[serde(default)]
     pub ord_id: String,
-    /// Regular order IDs created after the algo order triggers.
-    #[serde(default)]
-    pub ord_id_list: Vec<String>,
-    /// Child algo order IDs created for split take-profit orders.
-    #[serde(default)]
-    pub sub_algo_id_list: Vec<String>,
     /// Instrument ID, e.g. `ETH-USDT-SWAP`.
     pub inst_id: Ustr,
     /// Instrument type.
@@ -1226,6 +1220,32 @@ pub struct OKXOrderAlgo {
     /// Activation price for trailing stop.
     #[serde(default)]
     pub active_px: String,
+}
+
+/// Internal response shape for current algo order detail identifiers.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct OKXOrderAlgoDetails {
+    #[serde(flatten)]
+    pub order: OKXOrderAlgo,
+    /// Regular order IDs created after the algo order triggers.
+    #[serde(default)]
+    pub ord_id_list: Vec<String>,
+    /// Child algo order IDs created for split take-profit orders.
+    #[serde(default)]
+    pub sub_algo_id_list: Vec<String>,
+}
+
+impl OKXOrderAlgoDetails {
+    pub(crate) fn into_order(self) -> OKXOrderAlgo {
+        let Self {
+            order,
+            ord_id_list,
+            sub_algo_id_list,
+        } = self;
+        drop((ord_id_list, sub_algo_id_list));
+        order
+    }
 }
 
 /// Represents a transaction detail (fill) from `GET /api/v5/trade/fills`.
@@ -1595,7 +1615,7 @@ mod tests {
 
     #[rstest]
     fn test_algo_order_deserializes_current_child_identifier_lists() {
-        let order: OKXOrderAlgo = serde_json::from_value(serde_json::json!({
+        let details: OKXOrderAlgoDetails = serde_json::from_value(serde_json::json!({
             "algoId": "123",
             "algoClOrdId": "algo-client-1",
             "ordId": "456",
@@ -1613,8 +1633,9 @@ mod tests {
         }))
         .unwrap();
 
-        assert_eq!(order.ord_id_list, ["456", "457"]);
-        assert_eq!(order.sub_algo_id_list, ["789"]);
+        assert_eq!(details.order.ord_id, "456");
+        assert_eq!(details.ord_id_list, ["456", "457"]);
+        assert_eq!(details.sub_algo_id_list, ["789"]);
     }
 
     #[rstest]
