@@ -158,6 +158,14 @@ repos:
         files: ^python/(uv\.lock|pyproject\.toml)$
         pass_filenames: false
 
+      - id: python-test-collection
+        name: Python test collection
+        description: Imports and collects the Python test tree against the existing extension
+        entry: make pytest-collect-fast
+        language: system
+        files: ^(Makefile|python/(generate_stubs\.py|pyproject\.toml|uv\.lock|nautilus_trader/.*|tests/.*))$
+        pass_filenames: false
+
       - id: check-copyright-year
         name: check copyright year
         description: Ensures copyright headers have current year

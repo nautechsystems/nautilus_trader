@@ -312,10 +312,7 @@ def generate_stubs() -> bool:
     if "nautilus-interactive-brokers/gateway" not in cargo_features:
         cargo_features.append("nautilus-interactive-brokers/gateway")
 
-    cmd = ["cargo", "run", "--bin", "python-stub-gen"]
-
-    if cargo_features:
-        cmd.extend(["--features", ",".join(cargo_features)])
+    cmd = stub_generator_command(cargo_features)
 
     result = run_command(cmd, cwd=crates_dir, stream_output=True, env=python_libdir_env())
 
@@ -365,6 +362,19 @@ def generate_stubs() -> bool:
         print(f"...and {remaining} more stub files")
 
     return True
+
+
+def stub_generator_command(cargo_features: list[str]) -> list[str]:
+    cmd = ["cargo", "run", "--bin", "python-stub-gen"]
+
+    profile = os.environ.get("NAUTILUS_STUB_PROFILE")
+    if profile:
+        cmd.extend(["--profile", profile])
+
+    if cargo_features:
+        cmd.extend(["--features", ",".join(cargo_features)])
+
+    return cmd
 
 
 def write_config_stub(root: Path) -> None:

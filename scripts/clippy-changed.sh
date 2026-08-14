@@ -4,7 +4,7 @@
 # changes, or when no crate-level changes can be identified.
 set -euo pipefail
 
-DESIRED_FEATURES=(ffi python high-precision defi)
+DESIRED_FEATURES=(arrow ffi python high-precision streaming defi)
 PROFILE="${CARGO_CI_PROFILE:-nextest}"
 export HIGH_PRECISION="${HIGH_PRECISION:-1}"
 resolved_changed_base=0

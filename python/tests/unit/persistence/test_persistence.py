@@ -73,7 +73,7 @@ def _make_bar(ts: int) -> Bar:
     return Bar(
         AUDUSD_1_MIN_BID,
         Price.from_str("1.00001"),
-        Price.from_str("1.1"),
+        Price.from_str("1.10000"),
         Price.from_str("1.00000"),
         Price.from_str("1.00000"),
         Quantity.from_int(100_000),

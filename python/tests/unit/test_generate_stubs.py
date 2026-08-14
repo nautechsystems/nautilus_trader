@@ -96,6 +96,39 @@ def test_python_libdir_env_does_not_mutate_os_environ(monkeypatch):
     assert "LD_LIBRARY_PATH" not in os.environ
 
 
+@pytest.mark.parametrize(
+    ("profile", "expected"),
+    [
+        (
+            None,
+            ["cargo", "run", "--bin", "python-stub-gen", "--features", "arrow,python"],
+        ),
+        (
+            "nextest",
+            [
+                "cargo",
+                "run",
+                "--bin",
+                "python-stub-gen",
+                "--profile",
+                "nextest",
+                "--features",
+                "arrow,python",
+            ],
+        ),
+    ],
+)
+def test_stub_generator_command_uses_selected_profile(monkeypatch, profile, expected):
+    if profile is None:
+        monkeypatch.delenv("NAUTILUS_STUB_PROFILE", raising=False)
+    else:
+        monkeypatch.setenv("NAUTILUS_STUB_PROFILE", profile)
+
+    command = generate_stubs.stub_generator_command(["arrow", "python"])
+
+    assert command == expected
+
+
 def test_write_config_stub_uses_runtime_exports(tmp_path):
     # Arrange
     runtime_path = tmp_path / "config" / "__init__.py"

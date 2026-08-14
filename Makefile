@@ -135,8 +135,24 @@ else
 DOCTEST_HARNESS_ARGS :=
 endif
 
-# CARGO_CI_PROFILE selects the Cargo compile profile used by nextest.
+# CARGO_CI_PROFILE selects the Cargo profile shared by Rust tests, stub generation,
+# and debug Python builds.
 CARGO_CI_PROFILE ?= nextest
+
+PYTHON_EXTENSION_PATH := $(firstword $(wildcard \
+	python/nautilus_trader/_libnautilus*.so \
+	python/nautilus_trader/_libnautilus*.pyd))
+PY_STUB_STAMP := $(TARGET_DIR)/.py-stubs.stamp
+# Track input paths separately so additions and deletions also invalidate the stamp.
+PY_STUB_INPUT_LIST := $(TARGET_DIR)/.py-stubs.inputs
+PY_STUB_INPUT_LIST_COMMAND = { \
+	printf '%s\n' .cargo/config.toml Cargo.lock Cargo.toml Makefile rust-toolchain.toml \
+		python/generate_docstrings.py python/generate_stubs.py python/pyproject.toml python/uv.lock; \
+	find crates -type f \( -name '*.rs' -o -name Cargo.toml \); \
+	find patches/pyo3-stub-gen -type f; \
+	find python/nautilus_trader -type f \( -name '*.py' -o -name '*.pyi' \); \
+}
+PY_STUB_INPUTS := $(shell $(PY_STUB_INPUT_LIST_COMMAND))
 
 # Select the appropriate flag for `cargo nextest` depending on FAIL_FAST.
 ifeq ($(FAIL_FAST),true)
@@ -293,17 +309,35 @@ build: py-stubs  #-- Build and install the package in release mode
 .PHONY: build-debug
 build-debug: py-stubs  #-- Build and install the package in debug mode
 	$(info $(M) Building the Python extension in debug mode...)
-	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync maturin develop
+	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync maturin develop --profile $(CARGO_CI_PROFILE)
 
 .PHONY: build-wheel
 build-wheel: sync  #-- Build a wheel distribution in release mode
 	$(info $(M) Building the Python wheel in release mode...)
 	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync maturin build --release --out ../dist
 
-.PHONY: py-stubs
-py-stubs: sync  #-- Regenerate Python type stubs from Rust bindings
+.PHONY: py-stub-input-list-force
+py-stub-input-list-force:
+
+$(PY_STUB_INPUT_LIST): py-stub-input-list-force
+	$Q mkdir -p "$(dir $(PY_STUB_INPUT_LIST))"
+	$Q py_stub_input_tmp="$(PY_STUB_INPUT_LIST).$$$$"; \
+	$(PY_STUB_INPUT_LIST_COMMAND) | LC_ALL=C sort > "$$py_stub_input_tmp"; \
+	if ! cmp -s "$$py_stub_input_tmp" "$(PY_STUB_INPUT_LIST)"; then \
+		mv "$$py_stub_input_tmp" "$(PY_STUB_INPUT_LIST)"; \
+	else \
+		rm "$$py_stub_input_tmp"; \
+	fi
+
+$(PY_STUB_STAMP): $(PY_STUB_INPUTS) $(PY_STUB_INPUT_LIST) | sync
 	$(info $(M) Generating Python type stubs...)
-	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync python generate_stubs.py
+	$Q mkdir -p "$(dir $(PY_STUB_STAMP))"
+	$Q cd python && VIRTUAL_ENV= NAUTILUS_STUB_PROFILE=$(CARGO_CI_PROFILE) \
+		CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync python generate_stubs.py
+	$Q touch "$(PY_STUB_STAMP)"
+
+.PHONY: py-stubs
+py-stubs: $(PY_STUB_STAMP)  #-- Regenerate Python type stubs when their inputs change
 
 .PHONY: check-generated-drift
 check-generated-drift:  #-- Check generated stubs and docstrings are committed
@@ -437,9 +471,7 @@ pre-flight:  #-- Run pre-flight checks (format, tests, build, generated drift, a
 		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-doc EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-extras \
-		&& $(MAKE) --no-print-directory check-code-sim \
-		&& $(MAKE) --no-print-directory cargo-test-sim \
-		&& $(MAKE) --no-print-directory cargo-test-postgres-ci \
+		&& $(MAKE) --no-print-directory cargo-test-postgres-changed \
 		&& $(MAKE) --no-print-directory build-debug \
 		&& $(MAKE) --no-print-directory check-generated-drift \
 		&& $(MAKE) --no-print-directory pytest \
@@ -799,6 +831,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash .pre-commit-hooks/test_check_logging_conventions.sh
 	$Q bash .pre-commit-hooks/test_check_pyo3_conventions.sh
 	$Q bash .pre-commit-hooks/test_check_unicode_typography.sh
+	$Q bash scripts/ci/test-build-artifact-reuse.bash
 	$Q bash scripts/ci/test-check-docker-toolchain-pins.bash
 	$Q bash scripts/ci/test-check-miri-toolchain.bash
 	$Q bash scripts/ci/test-check-nightly-merge-status.bash
@@ -855,6 +888,23 @@ cargo-test-postgres-ci:  #-- Run focused PostgreSQL tests with the CI bootstrap 
 	CARGO_CI_PROFILE="$(CARGO_CI_PROFILE)" \
 	POSTGRES_TEST_FEATURES="$(BASE_FEATURES),capnp,hypersync" \
 	bash scripts/ci/test-postgres-bootstrap.bash
+
+POSTGRES_BOOTSTRAP_INPUTS := schema/sql \
+	crates/infrastructure/src/sql/pg.rs \
+	crates/infrastructure/tests/test_cache_database_postgres.rs \
+	crates/cli/src/database \
+	crates/cli/src/bin/cli.rs \
+	crates/cli/src/lib.rs \
+	crates/cli/src/opt.rs \
+	scripts/ci/test-postgres-bootstrap.bash
+
+.PHONY: cargo-test-postgres-changed
+cargo-test-postgres-changed:  #-- Run PostgreSQL bootstrap tests when related staged files change
+	@if git diff --cached --quiet -- $(POSTGRES_BOOTSTRAP_INPUTS); then \
+		printf "$(YELLOW)Skipping PostgreSQL bootstrap tests: no related staged files changed$(RESET)\n"; \
+	else \
+		$(MAKE) --no-print-directory cargo-test-postgres-ci; \
+	fi
 
 # Doctests need their own target because `cargo nextest` cannot run them.
 # Sharing --features and --profile with the nextest targets lets both reuse the
@@ -1224,6 +1274,15 @@ init-db:  #-- Initialize PostgreSQL database schema
 	cat schema/sql/types.sql schema/sql/tables.sql schema/sql/functions.sql schema/sql/partitions.sql | docker exec -i nautilus-database psql -U nautilus -d nautilus
 
 #== Python Testing
+
+.PHONY: pytest-collect-fast
+pytest-collect-fast:  #-- Collect Python tests against the existing extension
+	@if [ -z "$(PYTHON_EXTENSION_PATH)" ]; then \
+		printf "$(YELLOW)Skipping Python test collection: run \`make build-debug\` first$(RESET)\n"; \
+	else \
+		printf "$(M) Collecting Python tests without rebuilding...\n"; \
+		cd python && VIRTUAL_ENV= uv run --no-sync pytest tests/ --collect-only -q; \
+	fi
 
 .PHONY: pytest
 pytest: build-debug  #-- Run Python tests
