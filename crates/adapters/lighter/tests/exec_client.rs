@@ -160,13 +160,12 @@ fn account_id() -> AccountId {
 /// Shared mock-server state for the exec-client integration tests.
 ///
 /// Records every inbound WS message (`subscribes`, `unsubscribes`,
-/// `send_txs`) and per-REST-endpoint call counts (`active_orders_calls`,
-/// `inactive_orders_calls`, `trades_calls`). Tests inject venue responses
-/// via the corresponding `*_response` and `next_send_tx_ack` overrides,
-/// push synthetic frames through `inbox_tx` (consumed via
-/// [`Self::push_frame`]), and arm a server-side close by toggling
-/// `close_after_next_frame` so the WS layer's auto-reconnect path can be
-/// exercised.
+/// `send_txs`), REST endpoint call counts, and trade queries. Tests inject
+/// venue responses via the corresponding `*_response` and
+/// `next_send_tx_ack` overrides, push synthetic frames through `inbox_tx`
+/// (consumed via [`Self::push_frame`]), and arm a server-side close by
+/// toggling `close_after_next_frame` so the WS layer's auto-reconnect path can
+/// be exercised.
 #[derive(Clone)]
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
@@ -181,6 +180,7 @@ struct TestServerState {
     tx_calls: Arc<AtomicUsize>,
     inactive_orders_calls: Arc<AtomicUsize>,
     trades_calls: Arc<AtomicUsize>,
+    trades_queries: Arc<tokio::sync::Mutex<Vec<std::collections::HashMap<String, String>>>>,
     active_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     active_orders_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     tx_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
@@ -218,6 +218,7 @@ impl Default for TestServerState {
             tx_calls: Arc::new(AtomicUsize::new(0)),
             inactive_orders_calls: Arc::new(AtomicUsize::new(0)),
             trades_calls: Arc::new(AtomicUsize::new(0)),
+            trades_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             active_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             active_orders_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             tx_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
@@ -401,9 +402,10 @@ async fn account_inactive_orders(
 
 async fn trades(
     State(state): State<Arc<TestServerState>>,
-    Query(_query): Query<std::collections::HashMap<String, String>>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
 ) -> Response {
     state.trades_calls.fetch_add(1, Ordering::Relaxed);
+    state.trades_queries.lock().await.push(query);
     if let Some(body) = state.trades_response.lock().await.clone() {
         return (StatusCode::OK, body.to_string()).into_response();
     }
@@ -3635,24 +3637,25 @@ async fn test_generate_mass_status_restores_filled_orders_from_trade_market() {
     let (_, reused_client_order_id) =
         cache_accepted_order(&cache, reused_order, reused_venue_order_id);
 
-    let now_ms = SystemTime::now()
+    let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("system time after epoch")
-        .as_millis() as i64;
+        .expect("system time after epoch");
+    let now_ms = now.as_millis() as i64;
+    let now_secs = now.as_secs();
     let client_order_index = 42_i64;
     let mut filled_order = http_order_fixture(venue_order_id.as_str(), "42", "filled", "0.1336");
     filled_order["initial_base_amount"] = json!("0.1336");
     filled_order["remaining_base_amount"] = json!("0.0000");
-    filled_order["timestamp"] = json!(now_ms);
-    filled_order["created_at"] = json!(now_ms);
-    filled_order["updated_at"] = json!(now_ms);
+    filled_order["timestamp"] = json!(now_secs as i64);
+    filled_order["created_at"] = json!(now_secs as i64);
+    filled_order["updated_at"] = json!(now_secs as i64);
     let mut reused_filled_order =
         http_order_fixture(reused_venue_order_id.as_str(), "42", "filled", "0.1336");
     reused_filled_order["initial_base_amount"] = json!("0.1336");
     reused_filled_order["remaining_base_amount"] = json!("0.0000");
-    reused_filled_order["timestamp"] = json!(now_ms);
-    reused_filled_order["created_at"] = json!(now_ms);
-    reused_filled_order["updated_at"] = json!(now_ms);
+    reused_filled_order["timestamp"] = json!(now_secs as i64);
+    reused_filled_order["created_at"] = json!(now_secs as i64);
+    reused_filled_order["updated_at"] = json!(now_secs as i64);
     let mut trade = http_trade_fixture(19_209_006_905, client_order_index);
     trade["timestamp"] = json!(now_ms);
     trade["transaction_time"] = json!(now_ms * 1_000);
@@ -3702,6 +3705,14 @@ async fn test_generate_mass_status_restores_filled_orders_from_trade_market() {
     assert_eq!(order_report.quantity, Quantity::from("0.1336"));
     assert_eq!(order_report.filled_qty, Quantity::from("0.1336"));
     assert_eq!(order_report.price, Some(Price::from("2361.31")));
+    assert_eq!(
+        order_report.ts_accepted,
+        UnixNanos::from(now_secs * 1_000_000_000),
+    );
+    assert_eq!(
+        order_report.ts_last,
+        UnixNanos::from(now_secs * 1_000_000_000),
+    );
     assert_eq!(fill_report.client_order_id, Some(client_order_id));
     assert_eq!(fill_report.venue_order_id, venue_order_id);
     assert_eq!(fill_report.order_side, OrderSide::Buy);
@@ -3739,7 +3750,8 @@ async fn test_generate_mass_status_excludes_old_fill_without_poisoning_replay() 
     trade["timestamp"] = json!(old_ms);
     trade["transaction_time"] = json!(old_ms * 1_000);
     *state.inactive_orders_unscoped_response.lock().await = Some(http_orders_payload(&[], None));
-    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[trade.clone()]}));
+    *state.trades_response.lock().await =
+        Some(json!({"code":200,"trades":[trade.clone()],"next_cursor":"older"}));
 
     let mass = client
         .generate_mass_status(Some(60))
@@ -3751,6 +3763,11 @@ async fn test_generate_mass_status_excludes_old_fill_without_poisoning_replay() 
     assert!(mass.fill_reports().is_empty());
     assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 0);
     assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.trades_calls.load(Ordering::Relaxed), 1);
+    let trades_queries = state.trades_queries.lock().await;
+    assert_eq!(trades_queries.len(), 1);
+    assert!(!trades_queries[0].contains_key("from"));
+    drop(trades_queries);
 
     state.push_frame(&json!({
         "type": "update/account_all_trades",
@@ -3897,6 +3914,57 @@ async fn test_account_all_trades_dedupes_across_reconnect() {
         "TradeId dedup must survive reconnect and collapse the duplicate fill \
          to a single OrderFilled (other_events seen: {other_events})",
     );
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_fill_reports_keeps_recent_fill_on_start_boundary_page() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time after epoch")
+        .as_millis() as i64;
+    let start_ms = now_ms - 60 * 60 * 1_000;
+    let mut recent_trade = http_trade_fixture(19_209_006_907, 42);
+    recent_trade["timestamp"] = json!(now_ms);
+    recent_trade["transaction_time"] = json!(now_ms * 1_000);
+    let mut boundary_trade = http_trade_fixture(19_209_006_908, 42);
+    boundary_trade["timestamp"] = json!(start_ms);
+    boundary_trade["transaction_time"] = json!(start_ms * 1_000);
+    let mut old_trade = http_trade_fixture(19_209_006_906, 42);
+    old_trade["timestamp"] = json!(start_ms - 1);
+    old_trade["transaction_time"] = json!((start_ms - 1) * 1_000);
+    *state.trades_response.lock().await = Some(json!({
+        "code": 200,
+        "trades": [recent_trade, boundary_trade, old_trade],
+        "next_cursor": "older",
+    }));
+
+    let reports = client
+        .generate_fill_reports(GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            Some(UnixNanos::from(start_ms as u64 * 1_000_000)),
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("fill reports");
+
+    let trade_ids = reports
+        .iter()
+        .map(|report| report.trade_id.to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(trade_ids, ["19209006907", "19209006908"]);
+    assert_eq!(state.trades_calls.load(Ordering::Relaxed), 1);
 
     client.disconnect().await.expect("disconnect");
 }

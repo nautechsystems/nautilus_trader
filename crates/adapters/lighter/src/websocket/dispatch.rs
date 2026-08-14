@@ -81,6 +81,10 @@ pub(crate) const ORDER_EXPIRY_IOC: i64 = 0;
 /// Defensive cap for authenticated reconciliation pagination.
 pub(crate) const MAX_RECONCILIATION_PAGES: usize = 1_000;
 
+/// Largest ten-digit Unix timestamp. Lighter REST orders currently use seconds,
+/// while account WebSocket orders use milliseconds.
+const UNIX_TIMESTAMP_SECONDS_MAX: i64 = 9_999_999_999;
+
 /// Order identity context captured at submit time.
 ///
 /// Used by the consumption loop to construct typed `OrderEventAny` variants
@@ -1667,8 +1671,9 @@ pub(crate) fn cache_instruments_for_reports(instruments: &[InstrumentAny]) {
 }
 
 /// Convert a Lighter HTTP `LighterOrder` into a Nautilus
-/// [`OrderStatusReport`], reusing the WS-side parser once the instrument has
-/// been resolved out of the process-global cache.
+/// [`OrderStatusReport`], normalizing the REST timestamps before reusing the
+/// WS-side parser once the instrument has been resolved out of the
+/// process-global cache.
 ///
 /// Translates the venue's numeric `client_order_index` echo back to the
 /// originating Nautilus [`ClientOrderId`] when available, so HTTP-driven
@@ -1688,7 +1693,9 @@ pub(crate) fn parse_http_order_to_report(
         }
     };
 
-    match parse_ws_order_status_report(order, &instrument, account_id, ts_init) {
+    let order = normalize_http_order_timestamps(order);
+
+    match parse_ws_order_status_report(&order, &instrument, account_id, ts_init) {
         Ok(report) => Some(report),
         Err(e) => {
             log::warn!(
@@ -1698,6 +1705,20 @@ pub(crate) fn parse_http_order_to_report(
             None
         }
     }
+}
+
+fn normalize_http_order_timestamps(order: &LighterOrder) -> LighterOrder {
+    let mut order = order.clone();
+    for timestamp in [
+        &mut order.timestamp,
+        &mut order.created_at,
+        &mut order.updated_at,
+    ] {
+        if *timestamp > 0 && *timestamp <= UNIX_TIMESTAMP_SECONDS_MAX {
+            *timestamp *= 1_000;
+        }
+    }
+    order
 }
 
 /// Look up an acknowledged create by its exact client index and submission nonce.

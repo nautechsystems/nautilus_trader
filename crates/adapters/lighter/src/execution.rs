@@ -4378,7 +4378,9 @@ impl ExecutionClient for LighterExecutionClient {
                 sort_by: LighterTradeSortBy::Timestamp,
                 sort_dir: Some(LighterSortDirection::Desc),
                 cursor: cursor.clone(),
-                from_timestamp: cmd.start.map(|ts| (ts.as_u64() / 1_000_000) as i64),
+                // The venue's `from` parameter is not a timestamp lower bound
+                // and can omit the newest trades when given an epoch value.
+                from_timestamp: None,
                 ask_filter: None,
                 role: None,
                 trade_type: None,
@@ -4393,10 +4395,9 @@ impl ExecutionClient for LighterExecutionClient {
                     // outer context wrap; `scrub_auth` masks any `auth=`
                     // query value the HTTP layer's error included.
                     log::warn!(
-                        "Lighter get_trades failed (market_id={:?}, account_index={}, from={:?}, cursor={:?}): {}",
+                        "Lighter get_trades failed (market_id={:?}, account_index={}, cursor={:?}): {}",
                         query.market_id,
                         credential.account_index(),
-                        query.from_timestamp,
                         cursor,
                         scrub_auth(&format!("{e:#}")),
                     );
@@ -4457,6 +4458,18 @@ impl ExecutionClient for LighterExecutionClient {
                 }
             }
 
+            let reached_start_boundary = cmd.start.is_some_and(|start| {
+                response.trades.iter().any(|trade| {
+                    u64::try_from(trade.timestamp).is_ok_and(|timestamp_ms| {
+                        timestamp_ms.saturating_mul(1_000_000) < start.as_u64()
+                    })
+                })
+            });
+
+            if reached_start_boundary {
+                break;
+            }
+
             match response.next_cursor {
                 Some(next) if !next.is_empty() => {
                     anyhow::ensure!(
@@ -4493,10 +4506,8 @@ impl ExecutionClient for LighterExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let ts_init = self.clock.get_time_ns();
 
-        // Push lookback_mins into the REST queries themselves so the venue
-        // can scope the response. Without this, pagination has to walk full
-        // trade history before local filtering, which can stall startup
-        // reconciliation under the venue's 60 req/min REST quota.
+        // Scope inactive orders at the venue and stop descending trade
+        // pagination once it crosses this local lookback boundary.
         let lookback_start: Option<UnixNanos> = lookback_mins.map(|mins| {
             let cutoff_ns = ts_init
                 .as_u64()
