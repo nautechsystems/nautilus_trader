@@ -513,9 +513,12 @@ impl DataClient for PolymarketDataClient {
 
         // Mark intent before routing so unsubscribe can race-safely clear it.
         self.active_delta_subs.insert(instrument_id);
-        self.order_books
-            .entry(instrument_id)
-            .or_insert_with(|| OrderBook::new(instrument_id, BookType::L2_MBP));
+
+        if self.config.compute_effective_deltas {
+            self.order_books
+                .entry(instrument_id)
+                .or_insert_with(|| OrderBook::new(instrument_id, BookType::L2_MBP));
+        }
 
         if !cached {
             self.queue_pending_load(instrument_id);
@@ -597,7 +600,7 @@ impl DataClient for PolymarketDataClient {
         self.pending_snapshot_after_tick_change
             .remove(&instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
-        self.drop_local_book_state_if_unwanted(instrument_id);
+        self.drop_local_data_state_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
         Ok(())
     }
@@ -606,7 +609,7 @@ impl DataClient for PolymarketDataClient {
         let instrument_id = cmd.instrument_id;
         self.active_quote_subs.remove(&instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
-        self.drop_local_book_state_if_unwanted(instrument_id);
+        self.drop_local_data_state_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
         Ok(())
     }

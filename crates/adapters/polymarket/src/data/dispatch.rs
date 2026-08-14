@@ -202,7 +202,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             }
 
             let ts_init = ctx.clock.get_time_ns();
-            let mut book_seeded = false;
+            let mut snapshot_accepted = false;
 
             if ctx.active_delta_subs.contains(&instrument_id) {
                 match parse_book_snapshot(
@@ -213,43 +213,39 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     ts_init,
                 ) {
                     Ok(deltas) => {
-                        let emit = match ctx.order_books.entry(instrument_id) {
-                            Entry::Occupied(mut entry) if ctx.compute_effective_deltas => {
-                                match apply_snapshot_and_diff(entry.get_mut(), &deltas) {
-                                    Ok(effective) => {
-                                        book_seeded = true;
-                                        effective
+                        let emit = if ctx.compute_effective_deltas {
+                            match ctx.order_books.entry(instrument_id) {
+                                Entry::Occupied(mut entry) => {
+                                    match apply_snapshot_and_diff(entry.get_mut(), &deltas) {
+                                        Ok(effective) => {
+                                            snapshot_accepted = true;
+                                            effective
+                                        }
+                                        Err(e) => {
+                                            log::error!(
+                                                "Failed to apply book snapshot for {instrument_id}: {e}"
+                                            );
+                                            None
+                                        }
                                     }
-                                    Err(e) => {
-                                        log::error!(
+                                }
+                                Entry::Vacant(entry) => {
+                                    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+                                    match book.apply_deltas(&deltas) {
+                                        Ok(()) => {
+                                            entry.insert(book);
+                                            snapshot_accepted = true;
+                                        }
+                                        Err(e) => log::error!(
                                             "Failed to apply book snapshot for {instrument_id}: {e}"
-                                        );
-                                        None
+                                        ),
                                     }
+                                    Some(deltas)
                                 }
                             }
-                            Entry::Occupied(mut entry) => {
-                                match entry.get_mut().apply_deltas(&deltas) {
-                                    Ok(()) => book_seeded = true,
-                                    Err(e) => log::error!(
-                                        "Failed to apply book snapshot for {instrument_id}: {e}"
-                                    ),
-                                }
-                                Some(deltas)
-                            }
-                            Entry::Vacant(entry) => {
-                                let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
-                                match book.apply_deltas(&deltas) {
-                                    Ok(()) => {
-                                        entry.insert(book);
-                                        book_seeded = true;
-                                    }
-                                    Err(e) => log::error!(
-                                        "Failed to apply book snapshot for {instrument_id}: {e}"
-                                    ),
-                                }
-                                Some(deltas)
-                            }
+                        } else {
+                            snapshot_accepted = true;
+                            Some(deltas)
                         };
 
                         if let Some(deltas) = emit {
@@ -288,7 +284,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 }
             }
 
-            if book_seeded
+            if snapshot_accepted
                 && ctx
                     .pending_snapshot_after_tick_change
                     .contains(&instrument_id)
@@ -369,7 +365,8 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         if !parsed.is_empty() {
                             let deltas = OrderBookDeltas::new(instrument_id, parsed);
 
-                            if let Some(mut book) = ctx.order_books.get_mut(&instrument_id)
+                            if ctx.compute_effective_deltas
+                                && let Some(mut book) = ctx.order_books.get_mut(&instrument_id)
                                 && let Err(e) = book.apply_deltas(&deltas)
                             {
                                 log::error!("Failed to apply book deltas for {instrument_id}: {e}");
@@ -827,7 +824,10 @@ mod tests {
         live::runner::replace_data_event_sender,
         messages::{
             DataResponse,
-            data::{RequestBookSnapshot, RequestCustomData, RequestTrades, SubscribeQuotes},
+            data::{
+                RequestBookSnapshot, RequestCustomData, RequestTrades, SubscribeBookDeltas,
+                SubscribeQuotes,
+            },
         },
         testing::wait_until_async,
     };
@@ -3160,8 +3160,10 @@ mod tests {
     }
 
     #[rstest]
+    #[case::quotes(false)]
+    #[case::book_deltas(true)]
     #[tokio::test]
-    async fn auto_load_quote_subscription_caches_before_ws_subscribe() {
+    async fn auto_load_data_subscription_caches_before_ws_subscribe(#[case] deltas: bool) {
         let state = TestServerState::default();
         *state.gamma_response.lock().await =
             Some(serde_json::json!([gamma_market_recheck_fixture_value()]));
@@ -3181,8 +3183,21 @@ mod tests {
 
         assert_eq!(client.ws_client.connection_count(), 0);
 
-        client
-            .subscribe_quotes(SubscribeQuotes::new(
+        let result = if deltas {
+            client.subscribe_book_deltas(SubscribeBookDeltas::new(
+                instrument_id,
+                BookType::L2_MBP,
+                Some(client.client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                true,
+                None,
+                None,
+            ))
+        } else {
+            client.subscribe_quotes(SubscribeQuotes::new(
                 instrument_id,
                 Some(client.client_id),
                 Some(*POLYMARKET_VENUE),
@@ -3191,7 +3206,8 @@ mod tests {
                 None,
                 None,
             ))
-            .expect("subscribe_quotes should queue auto-load");
+        };
+        result.expect("subscription should queue auto-load");
 
         wait_until_async(
             || {
@@ -3236,6 +3252,9 @@ mod tests {
 
         assert_eq!(emitted_instrument.raw_symbol().as_str(), TEST_TOKEN_ID_YES);
         assert_eq!(cached_instrument.raw_symbol().as_str(), TEST_TOKEN_ID_YES);
+        assert_eq!(client.active_delta_subs.contains(&instrument_id), deltas);
+        assert_eq!(client.active_quote_subs.contains(&instrument_id), !deltas);
+        assert!(!client.order_books.contains_key(&instrument_id));
         assert_eq!(cache_at_connect, vec![true]);
         assert_eq!(
             payloads,
@@ -3427,7 +3446,8 @@ mod tests {
         let token_ustr = Ustr::from(asset_id_str);
         let market = "0xMARKET";
 
-        let (ctx, mut data_rx) = make_ws_ctx();
+        let (mut ctx, mut data_rx) = make_ws_ctx();
+        ctx.compute_effective_deltas = true;
         let inst = seed_instrument(
             &ctx,
             asset_id_str,
@@ -3524,7 +3544,7 @@ mod tests {
             !ctx.pending_snapshot_after_tick_change
                 .contains(&instrument_id)
         );
-        assert!(ctx.order_books.contains_key(&instrument_id));
+        assert!(!ctx.order_books.contains_key(&instrument_id));
     }
 
     #[rstest]
@@ -3533,7 +3553,8 @@ mod tests {
         let token_ustr = Ustr::from(asset_id_str);
         let market = "0xMARKET";
 
-        let (ctx, mut data_rx) = make_ws_ctx();
+        let (mut ctx, mut data_rx) = make_ws_ctx();
+        ctx.compute_effective_deltas = true;
         let inst = seed_instrument(
             &ctx,
             asset_id_str,
@@ -3791,7 +3812,7 @@ mod tests {
             !ctx.pending_snapshot_after_tick_change
                 .contains(&instrument_id)
         );
-        assert!(ctx.order_books.contains_key(&instrument_id));
+        assert!(!ctx.order_books.contains_key(&instrument_id));
         assert!(ctx.last_quotes.contains_key(&instrument_id));
         let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
         assert_eq!(events.len(), 2);
@@ -3803,7 +3824,7 @@ mod tests {
     }
 
     #[rstest]
-    fn incomplete_snapshot_hash_preimage_resumes_book() {
+    fn incomplete_snapshot_hash_preimage_resumes_deltas() {
         let mut snapshot: PolymarketBookSnapshot = serde_json::from_str(include_str!(
             "../../test_data/ws_book_snapshot_captured.json"
         ))
@@ -3835,7 +3856,7 @@ mod tests {
             !ctx.pending_snapshot_after_tick_change
                 .contains(&instrument_id)
         );
-        assert!(ctx.order_books.contains_key(&instrument_id));
+        assert!(!ctx.order_books.contains_key(&instrument_id));
         assert!(ctx.last_quotes.contains_key(&instrument_id));
         let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
         assert_eq!(events.len(), 2);
@@ -3847,7 +3868,7 @@ mod tests {
     }
 
     #[rstest]
-    fn price_change_emits_delta_when_not_pending() {
+    fn price_change_emits_delta_without_updating_local_book_state_when_disabled() {
         let asset_id_str = "0xTOKEN10";
         let market = "0xMARKET";
 
@@ -3877,8 +3898,9 @@ mod tests {
         );
 
         let book = ctx.order_books.get(&instrument_id).expect("book entry");
-        assert_eq!(book.best_bid_price(), Some(Price::from("0.50")));
-        assert_eq!(book.best_bid_size(), Some(Quantity::from("20.00")));
+        assert_eq!(book.best_bid_price(), None);
+        assert_eq!(book.best_bid_size(), None);
+        assert_eq!(book.update_count, 0);
     }
 
     #[rstest]
@@ -3887,7 +3909,8 @@ mod tests {
         let asset_b = "0xTOKEN-B";
         let asset_unknown = "0xTOKEN-UNKNOWN";
         let market = Ustr::from("0xMARKET");
-        let (ctx, mut data_rx) = make_ws_ctx();
+        let (mut ctx, mut data_rx) = make_ws_ctx();
+        ctx.compute_effective_deltas = true;
         let instrument_a =
             seed_instrument(&ctx, asset_a, Price::from("0.001"), Quantity::from("0.01")).id();
         let instrument_b =
@@ -4186,7 +4209,8 @@ mod tests {
         let asset_a = "0xTOKEN-BAD";
         let asset_b = "0xTOKEN-GOOD";
         let market = Ustr::from("0xMARKET");
-        let (ctx, mut data_rx) = make_ws_ctx();
+        let (mut ctx, mut data_rx) = make_ws_ctx();
+        ctx.compute_effective_deltas = true;
         let instrument_a =
             seed_instrument(&ctx, asset_a, Price::from("0.001"), Quantity::from("0.01")).id();
         let instrument_b =
@@ -5283,10 +5307,12 @@ mod tests {
 
         let levels = [("0.45", "5"), ("0.49", "10"), ("0.51", "8"), ("0.55", "12")];
         handle_market_message(make_snapshot(market, asset_id_str, &levels), &ctx);
+        assert!(!ctx.order_books.contains_key(&instrument_id));
 
         while data_rx.try_recv().is_ok() {}
 
         handle_market_message(make_snapshot(market, asset_id_str, &levels), &ctx);
+        assert!(!ctx.order_books.contains_key(&instrument_id));
 
         let batches = collect_delta_batches(&mut data_rx);
         assert_eq!(batches.len(), 1);

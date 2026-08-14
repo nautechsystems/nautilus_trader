@@ -311,8 +311,8 @@ pub struct PolymarketDataClientConfig {
     /// Whether to drop quote ticks when bid or ask prices are missing.
     #[builder(default = true)]
     pub drop_quotes_missing_side: bool,
-    /// Whether to emit only the net changes from book snapshots when prior book
-    /// state exists, at a per-snapshot CPU cost.
+    /// Whether to maintain local book state and emit only the net changes from
+    /// book snapshots, at an additional CPU and memory cost.
     #[builder(default)]
     pub compute_effective_deltas: bool,
     /// Whether subscribe and request commands referencing an unknown instrument should

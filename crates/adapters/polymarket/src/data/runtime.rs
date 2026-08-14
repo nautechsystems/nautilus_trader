@@ -85,7 +85,6 @@ fn has_live_runtime_state(
     instrument_id: InstrumentId,
     token_id: Option<&str>,
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
-    order_books: &Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: &Arc<DashMap<InstrumentId, QuoteTick>>,
     active_quote_subs: &Arc<AtomicSet<InstrumentId>>,
     active_delta_subs: &Arc<AtomicSet<InstrumentId>>,
@@ -98,7 +97,6 @@ fn has_live_runtime_state(
         || active_delta_subs.contains(&instrument_id)
         || active_trade_subs.contains(&instrument_id)
         || pending_snapshot_after_tick_change.contains(&instrument_id)
-        || order_books.contains_key(&instrument_id)
         || last_quotes.contains_key(&instrument_id)
     {
         return true;
@@ -220,7 +218,6 @@ pub(crate) async fn retire_expired_local_instruments(
                 instrument_id,
                 Some(token_id.as_str()),
                 token_meta,
-                order_books,
                 last_quotes,
                 active_quote_subs,
                 active_delta_subs,
@@ -362,6 +359,49 @@ mod tests {
                 UnixNanos::default(),
             ),
         );
+    }
+
+    #[rstest]
+    fn active_delta_subscription_is_live_without_other_runtime_state() {
+        let instrument_id = InstrumentId::from("0xCOND-0xTOKEN.POLYMARKET");
+        let token_meta = Arc::new(DashMap::new());
+        let last_quotes = Arc::new(DashMap::new());
+        let active_quote_subs = Arc::new(AtomicSet::new());
+        let active_delta_subs = Arc::new(AtomicSet::new());
+        let active_trade_subs = Arc::new(AtomicSet::new());
+        let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
+        let pending_auto_loads = Arc::new(StdMutex::new(AHashSet::new()));
+        let ws_open_tokens = Arc::new(AtomicSet::new());
+
+        active_delta_subs.insert(instrument_id);
+
+        assert!(has_live_runtime_state(
+            instrument_id,
+            None,
+            &token_meta,
+            &last_quotes,
+            &active_quote_subs,
+            &active_delta_subs,
+            &active_trade_subs,
+            &pending_snapshot_after_tick_change,
+            &pending_auto_loads,
+            &ws_open_tokens,
+        ));
+
+        active_delta_subs.remove(&instrument_id);
+
+        assert!(!has_live_runtime_state(
+            instrument_id,
+            None,
+            &token_meta,
+            &last_quotes,
+            &active_quote_subs,
+            &active_delta_subs,
+            &active_trade_subs,
+            &pending_snapshot_after_tick_change,
+            &pending_auto_loads,
+            &ws_open_tokens,
+        ));
     }
 
     #[rstest]

@@ -61,16 +61,15 @@ impl PolymarketDataClient {
         pending.remove(&instrument_id);
     }
 
-    pub(super) fn drop_local_book_state_if_unwanted(&self, instrument_id: InstrumentId) {
+    pub(super) fn drop_local_data_state_if_unwanted(&self, instrument_id: InstrumentId) {
         // Stale book/quote leaks across resubscribes
-        if self.active_quote_subs.contains(&instrument_id)
-            || self.active_delta_subs.contains(&instrument_id)
-        {
-            return;
+        if !self.active_delta_subs.contains(&instrument_id) {
+            self.order_books.remove(&instrument_id);
         }
 
-        self.order_books.remove(&instrument_id);
-        self.last_quotes.remove(&instrument_id);
+        if !self.active_quote_subs.contains(&instrument_id) {
+            self.last_quotes.remove(&instrument_id);
+        }
     }
 
     fn ensure_auto_load_task(&self) {

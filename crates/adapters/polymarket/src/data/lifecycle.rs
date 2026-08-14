@@ -442,7 +442,10 @@ mod tests {
         live::runner::{replace_data_event_sender, replace_exec_event_sender},
         messages::{
             DataEvent, ExecutionEvent,
-            data::{SubscribeCustomData, UnsubscribeCustomData},
+            data::{
+                SubscribeBookDeltas, SubscribeCustomData, UnsubscribeBookDeltas,
+                UnsubscribeCustomData,
+            },
         },
         testing::wait_until_async,
     };
@@ -679,6 +682,22 @@ mod tests {
             .lock()
             .expect("pending_auto_loads mutex poisoned")
             .insert(instrument_id);
+        client.order_books.insert(
+            instrument_id,
+            OrderBook::new(instrument_id, BookType::L2_MBP),
+        );
+        client.last_quotes.insert(
+            instrument_id,
+            QuoteTick::new(
+                instrument_id,
+                Price::from("0.49"),
+                Price::from("0.51"),
+                Quantity::from("10"),
+                Quantity::from("8"),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ),
+        );
         client.auto_load_scheduled.store(true, Ordering::Release);
 
         client
@@ -692,6 +711,8 @@ mod tests {
         assert!(client.active_delta_subs.is_empty());
         assert!(client.active_trade_subs.is_empty());
         assert!(client.ws_open_tokens.is_empty());
+        assert!(client.order_books.is_empty());
+        assert!(client.last_quotes.is_empty());
         assert!(client.new_market_inflight_keys.is_empty());
         assert!(client.pending_snapshot_after_tick_change.is_empty());
         assert!(
@@ -702,6 +723,112 @@ mod tests {
                 .is_empty()
         );
         assert!(!client.auto_load_scheduled.load(Ordering::Acquire));
+    }
+
+    #[rstest]
+    #[case::disabled(false)]
+    #[case::enabled(true)]
+    fn book_delta_subscription_gates_and_cleans_local_book_state(#[case] enabled: bool) {
+        let mut client = make_client_for_reset_test();
+        client.config.compute_effective_deltas = enabled;
+        client.cancellation_token.cancel();
+        let instrument_id = InstrumentId::from("0xCOND-0xTOKEN.POLYMARKET");
+        let subscribe = || {
+            SubscribeBookDeltas::new(
+                instrument_id,
+                BookType::L2_MBP,
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                true,
+                None,
+                None,
+            )
+        };
+        let unsubscribe = || {
+            UnsubscribeBookDeltas::new(
+                instrument_id,
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )
+        };
+
+        client
+            .subscribe_book_deltas(subscribe())
+            .expect("subscribe book deltas");
+
+        assert!(client.active_delta_subs.contains(&instrument_id));
+        assert!(
+            client
+                .pending_auto_loads
+                .lock()
+                .expect("pending_auto_loads mutex poisoned")
+                .contains(&instrument_id)
+        );
+        assert_eq!(client.order_books.contains_key(&instrument_id), enabled);
+
+        if let Some(mut book) = client.order_books.get_mut(&instrument_id) {
+            book.update_count = 7;
+        }
+
+        client.active_quote_subs.insert(instrument_id);
+        client.last_quotes.insert(
+            instrument_id,
+            QuoteTick::new(
+                instrument_id,
+                Price::from("0.49"),
+                Price::from("0.51"),
+                Quantity::from("10"),
+                Quantity::from("8"),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ),
+        );
+        client
+            .unsubscribe_book_deltas(&unsubscribe())
+            .expect("unsubscribe book deltas");
+
+        assert!(!client.active_delta_subs.contains(&instrument_id));
+        assert!(!client.order_books.contains_key(&instrument_id));
+        assert!(client.last_quotes.contains_key(&instrument_id));
+        assert!(
+            client
+                .pending_auto_loads
+                .lock()
+                .expect("pending_auto_loads mutex poisoned")
+                .contains(&instrument_id)
+        );
+
+        client
+            .subscribe_book_deltas(subscribe())
+            .expect("resubscribe book deltas");
+
+        assert_eq!(client.order_books.contains_key(&instrument_id), enabled);
+        if let Some(book) = client.order_books.get(&instrument_id) {
+            assert_eq!(book.update_count, 0);
+        }
+
+        client.active_quote_subs.remove(&instrument_id);
+        client
+            .unsubscribe_book_deltas(&unsubscribe())
+            .expect("final unsubscribe book deltas");
+
+        assert!(!client.active_delta_subs.contains(&instrument_id));
+        assert!(!client.order_books.contains_key(&instrument_id));
+        assert!(!client.last_quotes.contains_key(&instrument_id));
+        assert!(
+            client
+                .pending_auto_loads
+                .lock()
+                .expect("pending_auto_loads mutex poisoned")
+                .is_empty()
+        );
     }
 
     #[rstest]
