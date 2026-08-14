@@ -104,6 +104,12 @@ pub struct BalanceAllowance {
     pub allowances: std::collections::HashMap<String, String>,
 }
 
+/// CLOB protocol version response from `GET /version`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub struct ClobVersionResponse {
+    pub version: u8,
+}
+
 /// Status returned after an order submission is processed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OrderResponseStatus {

@@ -420,13 +420,17 @@ response carrying the matching valid order ID confirms the deterministic signed 
 does not, even with a matching ID.
 
 Diagnostic errors retain the HTTP status and transport or rate‑limit context. For venue HTTP status,
-rate‑limit, and exchange errors, strategy‑facing rejection events contain only the venue reason;
-other failures use the bounded error description. The adapter reads the first non‑blank string from
+rate‑limit, and exchange errors, strategy‑facing rejection events use the venue reason; other
+failures use the bounded error description. The adapter reads the first non‑blank string from
 `error`, then `errorMsg`, and collapses whitespace and control characters. An empty body becomes
 `empty response body`. A plain‑text or malformed response uses the same bounded fallback. Invalid
 UTF‑8 is decoded lossily before that handling. An HTML response uses its title when available, or its
 visible text otherwise. Reasons are limited to 512 characters, including the literal
 `... [truncated]` truncation marker and its preceding space.
+
+On single and batch submit responses, the exact normalized reason `order_version_mismatch` becomes
+`Polymarket CLOB order version mismatch; adapter supports V2 only`. Other submit response reasons
+remain unchanged after normalization.
 
 The venue reports a post‑only crossing as `invalid post-only order: order crosses book`. Only that
 exact normalized reason sets `OrderRejected.due_post_only=true`; other post‑only errors remain
@@ -964,6 +968,11 @@ history.
 :::
 
 ### Execution
+
+Before starting its WebSocket or initializing account state, the execution client queries
+unauthenticated `GET /version`. Startup continues only when the venue reports numeric version `2`.
+Any other version stops startup with an unsupported‑version error; a missing, malformed, or errored
+response stops startup with a version‑query failure.
 
 The execution adapter keeps a `user` channel connection for order and trade events and manages market
 subscriptions as needed for instruments seen during trading.

@@ -58,8 +58,9 @@ use nautilus_polymarket::{
         gamma::{PolymarketGammaHttpClient, PolymarketGammaRawHttpClient},
         models::PolymarketOrder,
         query::{
-            AssetType, CancelMarketOrdersParams, GetBalanceAllowanceParams, GetGammaEventsParams,
-            GetGammaMarketsParams, GetOrdersParams, GetSearchParams, GetTradesParams,
+            AssetType, CancelMarketOrdersParams, ClobVersionResponse, GetBalanceAllowanceParams,
+            GetGammaEventsParams, GetGammaMarketsParams, GetOrdersParams, GetSearchParams,
+            GetTradesParams,
         },
     },
     providers::{
@@ -87,6 +88,8 @@ struct TestServerState {
     last_path: Arc<tokio::sync::Mutex<Option<String>>>,
     heartbeat_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     heartbeat_response: Arc<tokio::sync::Mutex<Value>>,
+    version_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
+    version_response: Arc<tokio::sync::Mutex<Value>>,
     rate_limit_after: Arc<AtomicUsize>,
     rate_limit_response_headers: Arc<tokio::sync::Mutex<HeaderMap>>,
     /// Delay before `handle_get_orders` responds. Used by the timeout test.
@@ -127,6 +130,10 @@ impl Default for TestServerState {
             heartbeat_response: Arc::new(tokio::sync::Mutex::new(json!({
                 "heartbeat_id": "heartbeat-next",
             }))),
+            version_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
+            version_response: Arc::new(tokio::sync::Mutex::new(load_json(
+                "http_version_response.json",
+            ))),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
             rate_limit_response_headers: Arc::new(tokio::sync::Mutex::new(HeaderMap::new())),
             get_orders_delay_secs: Arc::new(AtomicUsize::new(0)),
@@ -660,6 +667,15 @@ async fn handle_get_order(State(state): State<TestServerState>) -> Response {
     }
 }
 
+async fn handle_get_version(State(state): State<TestServerState>, headers: HeaderMap) -> Response {
+    *state.last_method.lock().await = Some(Method::GET);
+    *state.last_path.lock().await = Some("/version".to_string());
+    *state.last_headers.lock().await = extract_headers(&headers);
+    let status = *state.version_response_status.lock().await;
+    let response = state.version_response.lock().await.clone();
+    (status, Json(response)).into_response()
+}
+
 async fn handle_health() -> impl IntoResponse {
     StatusCode::OK
 }
@@ -669,6 +685,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/data/orders", get(handle_get_orders))
         .route("/data/order/{id}", get(handle_get_order))
         .route("/data/trades", get(handle_get_trades))
+        .route("/version", get(handle_get_version))
         .route("/balance-allowance", get(handle_get_balance))
         .route("/balance-allowance/update", get(handle_update_balance))
         .route(
@@ -732,6 +749,54 @@ async fn test_get_orders_returns_orders() {
         orders[1].id,
         "0xbbbb000000000000000000000000000000000000000000000000000000000002"
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_version_returns_typed_response() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+
+    let response = client.get_version().await.unwrap();
+
+    assert_eq!(response, ClobVersionResponse { version: 2 });
+    assert_eq!(*state.last_method.lock().await, Some(Method::GET));
+    assert_eq!(state.last_path.lock().await.as_deref(), Some("/version"));
+    assert!(!state.last_headers.lock().await.contains_key("poly_address"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_version_rejects_invalid_response_shape() {
+    let state = TestServerState::default();
+    *state.version_response.lock().await = json!({"version": "2"});
+    let addr = start_mock_server(state).await;
+    let client = create_clob_client(&addr);
+
+    let error = client.get_version().await.unwrap_err();
+
+    assert!(matches!(error, Error::Serde(_)));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_version_preserves_http_error() {
+    let state = TestServerState::default();
+    *state.version_response_status.lock().await = StatusCode::SERVICE_UNAVAILABLE;
+    *state.version_response.lock().await = json!({"error": "version unavailable"});
+    let addr = start_mock_server(state).await;
+    let client = create_clob_client(&addr);
+
+    let error = client.get_version().await.unwrap_err();
+
+    assert!(matches!(
+        error,
+        Error::Http {
+            status: 503,
+            ref message,
+        } if message == "version unavailable"
+    ));
 }
 
 #[rstest]

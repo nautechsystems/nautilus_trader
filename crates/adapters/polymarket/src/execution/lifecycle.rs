@@ -48,6 +48,8 @@ use crate::{
     },
 };
 
+const SUPPORTED_CLOB_VERSION: u8 = 2;
+
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const HEARTBEAT_REQUEST_TIMEOUT: Duration = Duration::from_secs(4);
 const HEARTBEAT_SAFETY_TIMEOUT: Duration = Duration::from_secs(10);
@@ -519,6 +521,19 @@ impl PolymarketExecutionClient {
         log::info!("Connecting Polymarket execution client");
 
         self.stopping.store(false, Ordering::Release);
+
+        let version = self
+            .http_client
+            .get_version()
+            .await
+            .context("failed to query Polymarket CLOB protocol version")?
+            .version;
+
+        if version != SUPPORTED_CLOB_VERSION {
+            anyhow::bail!(
+                "Polymarket CLOB protocol version {version} is unsupported; adapter supports V2 only"
+            );
+        }
 
         self.load_instruments_from_cache();
         self.load_orders_from_cache();

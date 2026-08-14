@@ -20,6 +20,10 @@ use std::time::Duration;
 use nautilus_network::http::{HttpClientError, ReqwestError, StatusCode};
 use thiserror::Error;
 
+const ORDER_VERSION_MISMATCH: &str = "order_version_mismatch";
+const ORDER_VERSION_MISMATCH_REASON: &str =
+    "Polymarket CLOB order version mismatch; adapter supports V2 only";
+
 /// Error type for Polymarket HTTP operations.
 #[derive(Debug, Error)]
 pub enum Error {
@@ -246,9 +250,21 @@ impl Error {
         match self {
             Self::Http { message, .. }
             | Self::RateLimit { message, .. }
-            | Self::Exchange(message) => sanitize_error_text(message),
-            _ => sanitize_error_text(&self.to_string()),
+            | Self::Exchange(message) => strategy_rejection_reason(message),
+            _ => strategy_rejection_reason(&self.to_string()),
         }
+    }
+}
+
+/// Returns a bounded, actionable reason for a strategy-facing rejection event.
+#[must_use]
+pub(crate) fn strategy_rejection_reason(reason: &str) -> String {
+    let reason = sanitize_error_text(reason);
+
+    if reason == ORDER_VERSION_MISMATCH {
+        ORDER_VERSION_MISMATCH_REASON.to_string()
+    } else {
+        reason
     }
 }
 
@@ -526,6 +542,25 @@ mod tests {
         assert_eq!(error.is_auth_error(), auth);
         assert!(error.is_http_status_error());
         assert_eq!(error.strategy_reason(), "venue message");
+    }
+
+    #[rstest]
+    fn test_order_version_mismatch_strategy_reason_is_actionable() {
+        let error = Error::from_status_code(400, br#"{"error":"order_version_mismatch"}"#);
+
+        assert!(!error.is_submit_outcome_unknown());
+        assert_eq!(
+            error.strategy_reason(),
+            "Polymarket CLOB order version mismatch; adapter supports V2 only"
+        );
+        assert_eq!(
+            strategy_rejection_reason(" order_version_mismatch "),
+            "Polymarket CLOB order version mismatch; adapter supports V2 only"
+        );
+        assert_eq!(
+            strategy_rejection_reason("ORDER_VERSION_MISMATCH"),
+            "ORDER_VERSION_MISMATCH"
+        );
     }
 
     #[rstest]

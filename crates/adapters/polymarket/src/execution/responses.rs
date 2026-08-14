@@ -42,7 +42,7 @@ use super::{
     types::BatchLimitOrderContext,
 };
 use crate::http::{
-    error::sanitize_error_text,
+    error::{sanitize_error_text, strategy_rejection_reason},
     query::{OrderResponse, OrderResponseStatus},
 };
 
@@ -197,7 +197,7 @@ pub(super) fn reject_submit_order(
     clock: &'static AtomicTime,
     pending_cancels: &PendingCancelTracker,
 ) {
-    let reason = sanitize_error_text(reason);
+    let reason = strategy_rejection_reason(reason);
 
     let ts_now = clock.get_time_ns();
 

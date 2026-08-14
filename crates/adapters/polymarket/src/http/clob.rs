@@ -43,8 +43,8 @@ use crate::{
         },
         query::{
             BalanceAllowance, BatchCancelResponse, CancelMarketOrdersParams, CancelResponse,
-            GetBalanceAllowanceParams, GetOrdersParams, GetTradesParams, OrderResponse,
-            PaginatedResponse,
+            ClobVersionResponse, GetBalanceAllowanceParams, GetOrdersParams, GetTradesParams,
+            OrderResponse, PaginatedResponse,
         },
         rate_limits::{PolymarketRateLimiter, RateLimitHeaders, TradingBucket},
     },
@@ -56,6 +56,7 @@ const CURSOR_END: &str = "LTE=";
 
 const PATH_ORDERS: &str = "/data/orders";
 const PATH_TRADES: &str = "/data/trades";
+const PATH_VERSION: &str = "/version";
 const PATH_BALANCE_ALLOWANCE: &str = "/balance-allowance";
 const PATH_BALANCE_ALLOWANCE_UPDATE: &str = "/balance-allowance/update";
 const PATH_POST_ORDER: &str = "/order";
@@ -371,6 +372,11 @@ impl PolymarketClobHttpClient {
                 ))
             }
         }
+    }
+
+    /// Returns the CLOB protocol version reported by the venue.
+    pub async fn get_version(&self) -> Result<ClobVersionResponse> {
+        self.send_get::<(), _>(PATH_VERSION, None, false).await
     }
 
     /// Sends an authenticated order-safety heartbeat.
