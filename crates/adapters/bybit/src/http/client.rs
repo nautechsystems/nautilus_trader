@@ -4223,6 +4223,10 @@ impl BybitHttpClient {
     ///
     /// Orders for instruments not currently loaded in cache will be skipped.
     ///
+    /// When `open_only` is true the realtime endpoint is queried twice per order filter,
+    /// once for currently open orders and once for recently closed orders, so terminal
+    /// reports are included.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -4291,63 +4295,75 @@ impl BybitHttpClient {
                         vec![None, Some(BybitOrderFilter::StopOrder)]
                     };
 
-                for order_filter in order_filters {
-                    let mut cursor: Option<String> = None;
+                // Query currently open orders, then recently closed ones. Without the
+                // `openOnly` parameter the realtime endpoint returns open orders only, so
+                // an order the venue has already cancelled, rejected or filled would never
+                // produce a report and a stale cache entry could not be resolved.
+                let open_only_modes = [None, Some(BybitOpenOnly::ClosedRecent)];
 
-                    loop {
-                        let remaining = if let Some(limit) = remaining_limit {
-                            (limit as usize).saturating_sub(all_orders.len())
-                        } else {
-                            usize::MAX
-                        };
+                for oo in open_only_modes {
+                    for order_filter in &order_filters {
+                        let mut cursor: Option<String> = None;
 
-                        if remaining == 0 {
-                            break;
-                        }
+                        loop {
+                            let remaining = if let Some(limit) = remaining_limit {
+                                (limit as usize).saturating_sub(all_orders.len())
+                            } else {
+                                usize::MAX
+                            };
 
-                        // Max 50 per Bybit API
-                        let page_limit = std::cmp::min(remaining, 50);
-
-                        let mut p = BybitOpenOrdersParamsBuilder::default();
-                        p.category(product_type);
-
-                        if let Some(symbol) = symbol_param.clone() {
-                            p.symbol(symbol);
-                        }
-
-                        if let Some(coin) = settle_coin.clone() {
-                            p.settle_coin(coin);
-                        }
-
-                        if let Some(of) = order_filter {
-                            p.order_filter(of);
-                        }
-                        p.limit(page_limit as u32);
-
-                        if let Some(c) = cursor {
-                            p.cursor(c);
-                        }
-                        let params = p.build().build_anyhow()?;
-                        let response: BybitOpenOrdersResponse = self
-                            .inner
-                            .send_request(
-                                Method::GET,
-                                BYBIT_ORDER_REALTIME,
-                                Some(&params),
-                                None,
-                                true,
-                            )
-                            .await?;
-
-                        for order in response.result.list {
-                            if seen_ids.insert(order.order_id) {
-                                all_orders.push(order);
+                            if remaining == 0 {
+                                break;
                             }
-                        }
 
-                        cursor = response.result.next_page_cursor;
-                        if cursor.as_ref().is_none_or(|c| c.is_empty()) {
-                            break;
+                            // Max 50 per Bybit API
+                            let page_limit = std::cmp::min(remaining, 50);
+
+                            let mut p = BybitOpenOrdersParamsBuilder::default();
+                            p.category(product_type);
+
+                            if let Some(symbol) = symbol_param.clone() {
+                                p.symbol(symbol);
+                            }
+
+                            if let Some(coin) = settle_coin.clone() {
+                                p.settle_coin(coin);
+                            }
+
+                            if let Some(of) = order_filter {
+                                p.order_filter(*of);
+                            }
+
+                            if let Some(oo) = oo {
+                                p.open_only(oo);
+                            }
+                            p.limit(page_limit as u32);
+
+                            if let Some(c) = cursor {
+                                p.cursor(c);
+                            }
+                            let params = p.build().build_anyhow()?;
+                            let response: BybitOpenOrdersResponse = self
+                                .inner
+                                .send_request(
+                                    Method::GET,
+                                    BYBIT_ORDER_REALTIME,
+                                    Some(&params),
+                                    None,
+                                    true,
+                                )
+                                .await?;
+
+                            for order in response.result.list {
+                                if seen_ids.insert(order.order_id) {
+                                    all_orders.push(order);
+                                }
+                            }
+
+                            cursor = response.result.next_page_cursor;
+                            if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                                break;
+                            }
                         }
                     }
                 }

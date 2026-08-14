@@ -45,7 +45,7 @@ use nautilus_bybit::{
 use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_model::{
     data::BarType,
-    enums::{OrderSide, OrderType, PositionSideSpecified, TimeInForce, TriggerType},
+    enums::{OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol},
     instruments::{CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -1926,11 +1926,11 @@ async fn test_request_order_status_reports_linear_queries_all_settle_coins() {
         .map(|(_, coin)| coin)
         .collect();
 
-    // 2 settle coins x 2 order filters (regular + StopOrder) = 4 queries
+    // 2 settle coins x 2 order filters (regular + StopOrder) x 2 openOnly passes = 8 queries
     assert_eq!(
         realtime_queries.len(),
-        4,
-        "Should query realtime endpoint for each settle coin and order filter"
+        8,
+        "Should query realtime endpoint for each settle coin, order filter and openOnly pass"
     );
     assert!(
         realtime_queries.contains(&&Some("USDT".to_string())),
@@ -2000,7 +2000,7 @@ async fn test_request_order_status_reports_respects_limit_across_settle_coins() 
         .filter(|(endpoint, _)| endpoint == "realtime")
         .count();
 
-    // At least 2 queries (both settle coins), up to 4 with StopOrder filter passes
+    // At least 2 queries (both settle coins), up to 8 with StopOrder and openOnly passes
     assert!(
         realtime_query_count >= 2,
         "Should query both settle coins, was {realtime_query_count}",
@@ -2123,11 +2123,11 @@ async fn test_request_order_status_reports_combines_orders_from_each_settle_coin
         .map(|(_, coin)| coin)
         .collect();
 
-    // 2 settle coins x 2 order filters (regular + StopOrder) = 4 queries
+    // 2 settle coins x 2 order filters (regular + StopOrder) x 2 openOnly passes = 8 queries
     assert_eq!(
         realtime_queries.len(),
-        4,
-        "Should query both USDT and USDC with both order filters"
+        8,
+        "Should query both USDT and USDC with both order filters and openOnly passes"
     );
     assert!(
         realtime_queries.contains(&&Some("USDT".to_string())),
@@ -2169,6 +2169,164 @@ async fn test_request_order_status_reports_combines_orders_from_each_settle_coin
         order_ids.contains(&"open-order-2-USDC".to_string()),
         "Should contain open-order-2-USDC from USDC settle coin"
     );
+}
+
+// Handler mirroring the venue: `/v5/order/realtime` returns open orders only unless
+// `openOnly=1` is sent, in which case recently closed orders are returned too.
+#[allow(dead_code)]
+async fn handle_get_orders_realtime_open_only(
+    query: Query<HashMap<String, String>>,
+    State(state): State<TestServerState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if !headers.contains_key("X-BAPI-API-KEY") {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "retCode": 10003,
+                "retMsg": "Invalid API key",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+
+    {
+        let mut count = state.realtime_requests.lock().await;
+        *count += 1;
+    }
+
+    // The fixture holds no conditional orders
+    if query.get("orderFilter").map(String::as_str) == Some("StopOrder") {
+        return Json(json!({
+            "retCode": 0,
+            "retMsg": "OK",
+            "result": { "list": [], "nextPageCursor": "" },
+            "retExtInfo": {},
+            "time": 1704470400123i64
+        }))
+        .into_response();
+    }
+
+    let mut orders = load_test_data("http_get_orders_realtime.json");
+    let list = orders["result"]["list"]
+        .as_array_mut()
+        .expect("Fixture should contain an order list");
+    list.truncate(1);
+
+    if query.get("openOnly").map(String::as_str) == Some("1") {
+        // The venue echoes the still open order back alongside the closed one
+        let mut cancelled = list[0].clone();
+        let fields = cancelled
+            .as_object_mut()
+            .expect("Fixture order should be an object");
+        fields.insert("orderId".to_string(), json!("cancelled-order-1"));
+        fields.insert("orderLinkId".to_string(), json!("client-cancelled-1"));
+        fields.insert("orderStatus".to_string(), json!("Cancelled"));
+        fields.insert("cancelType".to_string(), json!("CancelByUser"));
+        list.push(cancelled);
+    }
+
+    Json(orders).into_response()
+}
+
+#[allow(dead_code)]
+fn create_open_only_test_router(state: TestServerState) -> Router {
+    Router::new()
+        .route("/v5/market/time", get(handle_get_server_time))
+        .route("/v5/market/instruments-info", get(handle_get_instruments))
+        .route("/v5/account/fee-rate", get(handle_get_fee_rate))
+        .route(
+            "/v5/order/realtime",
+            get(handle_get_orders_realtime_open_only),
+        )
+        .with_state(state)
+}
+
+#[allow(dead_code)]
+async fn start_open_only_test_server()
+-> Result<(SocketAddr, TestServerState), Box<dyn std::error::Error + Send + Sync>> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let state = TestServerState::default();
+    let router = create_open_only_test_router(state.clone());
+
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    wait_for_server(addr, "/v5/market/time").await;
+    Ok((addr, state))
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_reports_open_only_includes_recently_closed() {
+    let (addr, state) = start_open_only_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None, None)
+        .await
+        .unwrap();
+
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let account_id = AccountId::from("BYBIT-UNIFIED");
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE);
+
+    let reports = client
+        .request_order_status_reports(
+            account_id,
+            BybitProductType::Linear,
+            Some(instrument_id),
+            true, // open_only
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    // 2 order filters (regular + StopOrder) x 2 openOnly passes (open + recently closed)
+    let realtime_requests = *state.realtime_requests.lock().await;
+    assert_eq!(
+        realtime_requests, 4,
+        "Should query realtime for both openOnly passes and both order filters"
+    );
+
+    let cancelled = reports
+        .iter()
+        .find(|r| r.venue_order_id.as_str() == "cancelled-order-1")
+        .expect("Terminal report for the closed order should be returned");
+    assert_eq!(cancelled.order_status, OrderStatus::Canceled);
+
+    let open_count = reports
+        .iter()
+        .filter(|r| r.venue_order_id.as_str() == "open-order-1")
+        .count();
+    assert_eq!(
+        open_count, 1,
+        "Open order returned by both passes should be deduplicated"
+    );
+    assert_eq!(reports.len(), 2, "Should have the open and the closed order");
 }
 
 #[rstest]
