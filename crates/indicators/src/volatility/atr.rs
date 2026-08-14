@@ -84,6 +84,7 @@ impl Indicator for AverageTrueRange {
     }
 
     fn reset(&mut self) {
+        self.ma.reset();
         self.previous_close = 0.0;
         self.value = 0.0;
         self.count = 0;
@@ -298,5 +299,13 @@ mod tests {
         atr.reset();
         assert!(!atr.initialized);
         assert_eq!(atr.value, 0.0);
+    }
+
+    #[rstest]
+    fn test_reset_resets_inner_ma() {
+        let mut atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
+        atr.update_raw(1.00010, 1.0, 1.00005);
+        atr.reset();
+        assert_eq!(atr.ma.count(), 0);
     }
 }
