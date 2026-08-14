@@ -164,8 +164,11 @@ impl MarginModel for StandardMarginModel {
     ) -> anyhow::Result<Money> {
         let use_quote = use_quote_for_inverse.unwrap_or(false);
         let notional = instrument.try_calculate_notional_value(quantity, price, Some(use_quote))?;
+        // Spreads and options may quote negative, which carries the sign into the notional.
+        // A requirement is a reserve against exposure magnitude, so take it on `abs`.
         let margin = notional
             .as_decimal()
+            .abs()
             .checked_mul(instrument.margin_init())
             .ok_or_else(|| anyhow::anyhow!("initial margin calculation overflow"))?;
         let currency = margin_currency(instrument, use_quote)?;
@@ -184,6 +187,7 @@ impl MarginModel for StandardMarginModel {
         let notional = instrument.try_calculate_notional_value(quantity, price, Some(use_quote))?;
         let margin = notional
             .as_decimal()
+            .abs()
             .checked_mul(instrument.margin_maint())
             .ok_or_else(|| anyhow::anyhow!("maintenance margin calculation overflow"))?;
         let currency = margin_currency(instrument, use_quote)?;
@@ -223,6 +227,7 @@ impl MarginModel for LeveragedMarginModel {
         let notional = instrument.try_calculate_notional_value(quantity, price, Some(use_quote))?;
         let margin = notional
             .as_decimal()
+            .abs()
             .checked_div(leverage)
             .and_then(|adjusted| adjusted.checked_mul(instrument.margin_init()))
             .ok_or_else(|| anyhow::anyhow!("initial margin calculation overflow"))?;
@@ -245,6 +250,7 @@ impl MarginModel for LeveragedMarginModel {
         let notional = instrument.try_calculate_notional_value(quantity, price, Some(use_quote))?;
         let margin = notional
             .as_decimal()
+            .abs()
             .checked_div(leverage)
             .and_then(|adjusted| adjusted.checked_mul(instrument.margin_maint()))
             .ok_or_else(|| anyhow::anyhow!("maintenance margin calculation overflow"))?;
@@ -258,10 +264,15 @@ mod tests {
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{
-        instruments::{CryptoPerpetual, Instrument, stubs::crypto_perpetual_ethusdt},
+        enums::AssetClass,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{
+            CryptoPerpetual, FuturesSpread, Instrument, stubs::crypto_perpetual_ethusdt,
+        },
         types::{Currency, Price, Quantity},
     };
 
@@ -304,6 +315,78 @@ mod tests {
 
         // StandardMarginModel ignores leverage so both should be equal
         assert_eq!(margin_low, margin_high);
+    }
+
+    /// A spread carrying non-zero margin rates, so the assertions below cannot pass on a
+    /// zero requirement. `FuturesSpread` is one of the three classes permitting a negative
+    /// price (see `InstrumentClass::allows_negative_price`).
+    fn negative_price_spread() -> FuturesSpread {
+        FuturesSpread::builder()
+            .instrument_id(InstrumentId::from("ESM4-ESU4.GLBX"))
+            .raw_symbol(Symbol::from("ESM4-ESU4"))
+            .asset_class(AssetClass::Index)
+            .underlying(Ustr::from("ES"))
+            .strategy_type(Ustr::from("EQ"))
+            .activation_ns(1_000.into())
+            .expiration_ns(2_000.into())
+            .currency(Currency::USD())
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .multiplier(Quantity::from(50))
+            .lot_size(Quantity::from(1))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap()
+    }
+
+    #[rstest]
+    fn test_standard_margin_is_positive_for_a_negative_price() {
+        let model = StandardMarginModel;
+        let instrument = negative_price_spread();
+        let quantity = Quantity::from(2);
+        let positive = Price::from("2.00");
+        let negative = Price::from("-2.00");
+
+        let initial = model
+            .calculate_initial_margin(&instrument, quantity, negative, dec!(1), None)
+            .unwrap();
+        let maintenance = model
+            .calculate_maintenance_margin(&instrument, quantity, negative, dec!(1), None)
+            .unwrap();
+
+        // notional magnitude = 2 * 50 * 2.00 = 200
+        assert_eq!(initial.as_decimal(), dec!(2));
+        assert_eq!(maintenance.as_decimal(), dec!(4));
+        // A negative quote reserves the same as the equivalent positive one.
+        assert_eq!(
+            initial,
+            model
+                .calculate_initial_margin(&instrument, quantity, positive, dec!(1), None)
+                .unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_leveraged_margin_is_positive_for_a_negative_price() {
+        let model = LeveragedMarginModel;
+        let instrument = negative_price_spread();
+        let quantity = Quantity::from(2);
+        let negative = Price::from("-2.00");
+        let leverage = dec!(10);
+
+        let initial = model
+            .calculate_initial_margin(&instrument, quantity, negative, leverage, None)
+            .unwrap();
+        let maintenance = model
+            .calculate_maintenance_margin(&instrument, quantity, negative, leverage, None)
+            .unwrap();
+
+        // notional magnitude = 200, adjusted = 200 / 10 = 20
+        assert_eq!(initial.as_decimal(), dec!(0.2));
+        assert_eq!(maintenance.as_decimal(), dec!(0.4));
     }
 
     #[rstest]
