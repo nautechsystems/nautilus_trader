@@ -312,7 +312,13 @@ repos:
         entry: bash .pre-commit-hooks/cargo_fmt_stable.sh
         language: system
         args: ["--all", "--", "--check"]
-        files: "\\.(rs|toml)$"
+        files: >-
+          (?x)^(
+            .*\.rs|
+            (?:.*/)?Cargo\.toml|
+            rustfmt\.toml|
+            rust-toolchain\.toml
+          )$
         types: [file]
         pass_filenames: false
 
@@ -321,7 +327,16 @@ repos:
         description: Run the Clippy linter on changed crates
         entry: bash scripts/clippy-changed.sh
         language: system
-        files: "\\.(rs|toml)$"
+        files: >-
+          (?x)^(
+            .*\.rs|
+            (?:.*/)?Cargo\.toml|
+            Cargo\.lock|
+            clippy\.toml|
+            rust-toolchain\.toml|
+            python/pyproject\.toml|
+            \.cargo/config\.toml
+          )$
         types: [file]
         pass_filenames: false
 
@@ -330,7 +345,15 @@ repos:
         description: Run the network Turmoil Clippy check on non-Linux hosts
         entry: bash .pre-commit-hooks/cargo_clippy_network_turmoil_non_linux.sh
         language: system
-        files: "^(crates/network/|Cargo\\.toml$|clippy\\.toml$|rust-toolchain\\.toml$|\\.cargo/)"
+        files: >-
+          (?x)^(
+            crates/network/.*\.rs|
+            crates/network/Cargo\.toml|
+            Cargo\.toml|
+            clippy\.toml|
+            rust-toolchain\.toml|
+            \.cargo/config\.toml
+          )$
         types: [file]
         pass_filenames: false
 
@@ -339,7 +362,15 @@ repos:
         description: Check documentation builds on changed crates
         entry: bash scripts/doc-changed.sh
         language: system
-        files: "\\.(rs|toml)$"
+        files: >-
+          (?x)^(
+            .*\.rs|
+            (?:.*/)?Cargo\.toml|
+            Cargo\.lock|
+            rust-toolchain\.toml|
+            python/pyproject\.toml|
+            \.cargo/config\.toml
+          )$
         types: [file]
         pass_filenames: false
 

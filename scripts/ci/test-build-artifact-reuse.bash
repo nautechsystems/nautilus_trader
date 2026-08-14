@@ -13,6 +13,7 @@ UV_LOG="$CASE_ROOT/uv.log"
 CARGO_LOG="$CASE_ROOT/cargo.log"
 GIT_LOG="$CASE_ROOT/git.log"
 MAKE_LOG="$CASE_ROOT/make.log"
+RUST_CHECK_LOG="$CASE_ROOT/rust-check.log"
 TARGET_DIR="$CASE_ROOT/target"
 SOURCE_DIR="$CASE_ROOT/source"
 MAKE_BIN=$(command -v make)
@@ -108,13 +109,15 @@ grep -Fq -- "- id: python-test-collection" "$REPO_ROOT/.pre-commit-config.yaml" 
   fail "Python collection is not registered with pre-commit"
 grep -Fq "entry: make pytest-collect-fast" "$REPO_ROOT/.pre-commit-config.yaml" ||
   fail "Pre-commit does not use fast Python collection"
-
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   '' \
   'set -euo pipefail' \
   '' \
   'if [ "${1:-}" = "diff" ]; then' \
+  '  if [ -n "${GIT_CHANGED_FILES:-}" ]; then' \
+  '    printf "%s\n" "$GIT_CHANGED_FILES"' \
+  '  fi' \
   '  exit 0' \
   'fi' \
   '' \
@@ -122,14 +125,88 @@ printf '%s\n' \
   'exit 1' > "$MOCK_BIN/git"
 chmod +x "$MOCK_BIN/git"
 
-PATH="$MOCK_BIN:$PATH" \
-  CARGO_CI_PROFILE=nextest \
-  CARGO_LOG="$CARGO_LOG" \
-  CHANGED_BASE_SHA='' \
-  bash "$REPO_ROOT/scripts/clippy-changed.sh"
+run_changed_script() {
+  local script="$1"
+  local changed_files="$2"
+
+  : > "$CARGO_LOG"
+  : > "$RUST_CHECK_LOG"
+  PATH="$MOCK_BIN:$PATH" \
+    CARGO_CI_PROFILE=nextest \
+    CARGO_LOG="$CARGO_LOG" \
+    GIT_CHANGED_FILES="$changed_files" \
+    CHANGED_BASE_SHA='' \
+    bash "$REPO_ROOT/scripts/$script" > "$RUST_CHECK_LOG"
+}
+
+run_changed_script clippy-changed.sh ""
 grep -Fq \
   "clippy --workspace --lib --bins --tests --features arrow,ffi,python,high-precision,streaming,defi --profile nextest -- -D warnings" \
   "$CARGO_LOG" || fail "Clippy features do not match make check-code"
+
+run_changed_script doc-changed.sh ""
+grep -Fq \
+  "doc --workspace --no-deps --quiet --features ffi,python,high-precision,defi --profile nextest" \
+  "$CARGO_LOG" || fail "Cargo doc clean-checkout fallback did not cover the workspace"
+
+grep -Fq '            crates/network/.*\.rs|' "$REPO_ROOT/.pre-commit-config.yaml" ||
+  fail "Non-Linux network Clippy hook does not select Rust source"
+grep -Fq '            crates/network/Cargo\.toml|' "$REPO_ROOT/.pre-commit-config.yaml" ||
+  fail "Non-Linux network Clippy hook is not limited to Rust build inputs"
+
+for config in .config/nextest.toml .cargo/audit.toml deny.toml tools.toml crates/model/cbindgen.toml; do
+  run_changed_script clippy-changed.sh "$config"
+  [[ ! -s "$CARGO_LOG" ]] || fail "Non-build TOML triggered Clippy: $config"
+  grep -Fq "No Rust build inputs detected; skipping clippy" "$RUST_CHECK_LOG" ||
+    fail "Clippy did not report its non-build TOML skip: $config"
+
+  run_changed_script doc-changed.sh "$config"
+  [[ ! -s "$CARGO_LOG" ]] || fail "Non-build TOML triggered Cargo doc: $config"
+  grep -Fq "No Rust build inputs detected; skipping cargo doc" "$RUST_CHECK_LOG" ||
+    fail "Cargo doc did not report its non-build TOML skip: $config"
+done
+
+run_changed_script clippy-changed.sh "python/pyproject.toml"
+grep -Fq "clippy --workspace" "$CARGO_LOG" ||
+  fail "Python manifest did not trigger workspace Clippy"
+
+run_changed_script doc-changed.sh "python/pyproject.toml"
+grep -Fq "doc --workspace" "$CARGO_LOG" ||
+  fail "Python manifest did not trigger workspace Cargo doc"
+
+mixed_rust_inputs=$(printf '%s\n' "python/pyproject.toml" "crates/model/src/lib.rs")
+
+run_changed_script clippy-changed.sh "$mixed_rust_inputs"
+grep -Fq \
+  "clippy -p nautilus-model --lib --bins --tests --profile nextest -- -D warnings" \
+  "$CARGO_LOG" || fail "Python manifest escalated crate-scoped Clippy"
+
+run_changed_script doc-changed.sh "$mixed_rust_inputs"
+grep -Fq \
+  "doc -p nautilus-model --no-deps --quiet --profile nextest" \
+  "$CARGO_LOG" || fail "Python manifest escalated crate-scoped Cargo doc"
+
+run_changed_script clippy-changed.sh "crates/model/src/lib.rs"
+grep -Fq \
+  "clippy -p nautilus-model --lib --bins --tests --profile nextest -- -D warnings" \
+  "$CARGO_LOG" || fail "Crate Rust change did not select its Clippy package"
+
+run_changed_script doc-changed.sh "crates/model/src/lib.rs"
+grep -Fq \
+  "doc -p nautilus-model --no-deps --quiet --profile nextest" \
+  "$CARGO_LOG" || fail "Crate Rust change did not select its Cargo doc package"
+
+run_changed_script clippy-changed.sh "Cargo.lock"
+grep -Fq "clippy --workspace" "$CARGO_LOG" || fail "Cargo.lock did not trigger workspace Clippy"
+
+run_changed_script doc-changed.sh "Cargo.lock"
+grep -Fq "doc --workspace" "$CARGO_LOG" || fail "Cargo.lock did not trigger workspace Cargo doc"
+
+run_changed_script clippy-changed.sh "clippy.toml"
+grep -Fq "clippy --workspace" "$CARGO_LOG" || fail "Clippy config did not trigger workspace Clippy"
+
+run_changed_script doc-changed.sh "clippy.toml"
+[[ ! -s "$CARGO_LOG" ]] || fail "Clippy config triggered Cargo doc"
 
 printf '%s\n' \
   '#!/usr/bin/env bash' \
