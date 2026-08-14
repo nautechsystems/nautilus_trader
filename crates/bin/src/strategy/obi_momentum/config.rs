@@ -15,10 +15,7 @@
 
 //! Configuration for the order book imbalance momentum strategy.
 
-use nautilus_model::{
-    identifiers::{InstrumentId, StrategyId},
-    types::Quantity,
-};
+use nautilus_model::identifiers::{InstrumentId, StrategyId};
 use nautilus_trading::StrategyConfig;
 
 use crate::config::ObiMomentumTomlConfig;
@@ -55,11 +52,15 @@ pub struct ObiMomentumConfig {
     /// Z-score magnitude below which an open position is fully closed.
     #[builder(default = 0.25)]
     pub close_threshold: f64,
-    /// Trade size per entry. When `None` the strategy resolves it from the
-    /// instrument's `min_quantity` during `on_start`.
-    pub trade_size: Option<Quantity>,
-    /// Hard cap on net exposure (long or short).
-    pub max_position: Quantity,
+    /// Capital (in quote currency) allocated to the strategy. When `None` it
+    /// is resolved from the account equity during `on_start`.
+    pub capital: Option<f64>,
+    /// Notional per entry as a fraction of the allocated capital.
+    #[builder(default = 0.10)]
+    pub trade_size_pct: f64,
+    /// Maximum net exposure as a fraction of the allocated capital.
+    #[builder(default = 0.30)]
+    pub max_position_pct: f64,
     /// Indicator evaluation cadence in milliseconds (timer-driven).
     #[builder(default = 1000)]
     pub timer_interval_ms: u64,
@@ -90,8 +91,9 @@ impl TryFrom<&ObiMomentumTomlConfig> for ObiMomentumConfig {
             .entry_threshold(cfg.entry_threshold)
             .reduce_threshold(cfg.reduce_threshold)
             .close_threshold(cfg.close_threshold)
-            .maybe_trade_size(cfg.trade_size.as_ref().map(|s| Quantity::from(s.as_str())))
-            .max_position(Quantity::from(cfg.max_position.as_str()))
+            .maybe_capital(cfg.capital)
+            .trade_size_pct(cfg.trade_size_pct)
+            .max_position_pct(cfg.max_position_pct)
             .timer_interval_ms(cfg.timer_interval_ms)
             .maybe_max_holding_secs(cfg.max_holding_secs)
             .regime_filter_enabled(cfg.regime_filter_enabled)

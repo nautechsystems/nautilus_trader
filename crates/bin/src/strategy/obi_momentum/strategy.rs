@@ -125,6 +125,24 @@ pub(super) fn median(values: &VecDeque<f64>) -> Option<f64> {
     }
 }
 
+/// Notional quantity for the given fraction of capital at the given mid price.
+#[must_use]
+pub(super) fn notional_qty(capital: f64, pct: f64, mid: f64) -> f64 {
+    if capital <= 0.0 || pct <= 0.0 || mid <= 0.0 {
+        return 0.0;
+    }
+    pct * capital / mid
+}
+
+/// Floors a quantity down to a multiple of the given size increment.
+#[must_use]
+pub(super) fn floor_to_increment(qty: f64, increment: f64) -> f64 {
+    if increment <= 0.0 {
+        return qty;
+    }
+    (qty / increment).floor() * increment
+}
+
 /// Multi-level order book imbalance momentum strategy.
 ///
 /// Computes the imbalance between bid and ask volume across the top
@@ -138,7 +156,9 @@ pub struct ObiMomentum {
     pub(super) core: StrategyCore,
     pub(super) config: ObiMomentumConfig,
     pub(super) size_precision: Option<u8>,
-    pub(super) trade_size: Option<Quantity>,
+    pub(super) size_increment: Option<Quantity>,
+    pub(super) min_quantity: Option<Quantity>,
+    pub(super) capital: Option<f64>,
     pub(super) imbalance_samples: VecDeque<f64>,
     pub(super) returns: VecDeque<f64>,
     pub(super) vol_samples: VecDeque<f64>,
@@ -157,7 +177,9 @@ impl ObiMomentum {
         Self {
             core: StrategyCore::new(config.base.clone()),
             size_precision: None,
-            trade_size: config.trade_size,
+            size_increment: None,
+            min_quantity: None,
+            capital: config.capital,
             imbalance_samples: VecDeque::with_capacity(config.zscore_window),
             returns: VecDeque::with_capacity(config.regime_vol_window),
             vol_samples: VecDeque::with_capacity(config.regime_history_window),
@@ -191,7 +213,7 @@ impl ObiMomentum {
     }
 
     /// Evaluates the z-score signal against the current position and trades.
-    fn handle_signal(&mut self, signal: f64) -> anyhow::Result<()> {
+    fn handle_signal(&mut self, signal: f64, mid: f64) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
         let strategy_id = self.strategy_id().expect("Strategy must be registered");
 
@@ -215,9 +237,9 @@ impl ObiMomentum {
         let net_qty: f64 = open.iter().map(|(_, _, _, qty)| qty).sum();
 
         if net_qty == 0.0 {
-            self.handle_entry(signal)?;
+            self.handle_entry(signal, mid)?;
         } else {
-            self.handle_position(signal, net_qty, &open)?;
+            self.handle_position(signal, net_qty, mid, &open)?;
         }
 
         Ok(())
@@ -229,6 +251,7 @@ impl ObiMomentum {
         &mut self,
         signal: f64,
         net_qty: f64,
+        mid: f64,
         open: &[(PositionId, Quantity, PositionSide, f64)],
     ) -> anyhow::Result<()> {
         if let Some(max_secs) = self.config.max_holding_secs
@@ -252,7 +275,7 @@ impl ObiMomentum {
 
         if signal.abs() < self.config.reduce_threshold {
             log::info!("OBI: signal {signal:.3} below reduce threshold; reducing position");
-            return self.submit_reduce(open);
+            return self.submit_reduce(open, mid);
         }
 
         Ok(())
@@ -260,15 +283,22 @@ impl ObiMomentum {
 
     /// Opens a long/short position when the signal crosses its entry threshold
     /// and the regime filter (if enabled) allows it.
-    fn handle_entry(&mut self, signal: f64) -> anyhow::Result<()> {
+    fn handle_entry(&mut self, signal: f64, mid: f64) -> anyhow::Result<()> {
         if self.low_vol_regime() {
             log::info!("OBI: low-vol regime; skipping entry (signal {signal:.3})");
             return Ok(());
         }
 
-        let Some(trade_size) = self.trade_size else {
+        let Some(trade_size) = self.notional_to_qty(self.config.trade_size_pct, mid) else {
+            log::warn!("OBI: cannot resolve trade size (capital/mid unavailable)");
             return Ok(());
         };
+        let trade_size =
+            if let Some(max_qty) = self.notional_to_qty(self.config.max_position_pct, mid) {
+                trade_size.min(max_qty)
+            } else {
+                trade_size
+            };
 
         let side = if signal > self.config.entry_threshold {
             OrderSide::Buy
@@ -291,7 +321,10 @@ impl ObiMomentum {
             None, // tags
             None, // client_order_id
         );
-        log::info!("OBI: signal {signal:.3} -> submitting {side:?} entry {trade_size}");
+        log::info!(
+            "OBI: signal {signal:.3} -> submitting {side:?} entry {trade_size} (~{:.2} USDT)",
+            self.config.trade_size_pct * self.capital.unwrap_or(0.0)
+        );
         self.entry_order_id = Some(order.client_order_id());
         self.submit_order(order, None, None, None)
     }
@@ -326,9 +359,10 @@ impl ObiMomentum {
     fn submit_reduce(
         &mut self,
         open: &[(PositionId, Quantity, PositionSide, f64)],
+        mid: f64,
     ) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
-        let Some(trade_size) = self.trade_size else {
+        let Some(trade_size) = self.notional_to_qty(self.config.trade_size_pct, mid) else {
             return Ok(());
         };
         for (position_id, quantity, side, _) in open {
@@ -361,6 +395,25 @@ impl ObiMomentum {
             self.entry_order_id = None;
         }
         self.exit_order_ids.remove(&client_order_id);
+    }
+
+    /// Resolves the quantity for the given fraction of capital at the given
+    /// mid price, floored to the instrument's size increment.
+    fn notional_to_qty(&self, pct: f64, mid: f64) -> Option<Quantity> {
+        let capital = self.capital?;
+        let step = self.size_increment?.as_f64();
+        let size_precision = self.size_precision?;
+        let qty = floor_to_increment(notional_qty(capital, pct, mid), step);
+        if qty <= 0.0 {
+            return None;
+        }
+        let mut qty = Quantity::new(qty, size_precision);
+        if let Some(min_qty) = self.min_quantity
+            && min_qty > qty
+        {
+            qty = min_qty;
+        }
+        Some(qty)
     }
 
     /// Evaluates the indicator from the cached order book and trades on it.
@@ -422,7 +475,7 @@ impl ObiMomentum {
             return Ok(());
         };
 
-        self.handle_signal(signal)
+        self.handle_signal(signal, mid)
     }
 }
 
@@ -486,7 +539,7 @@ impl Debug for ObiMomentum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(ObiMomentum))
             .field("config", &self.config)
-            .field("trade_size", &self.trade_size)
+            .field("capital", &self.capital)
             .finish()
     }
 }
@@ -494,27 +547,41 @@ impl Debug for ObiMomentum {
 impl DataActor for ObiMomentum {
     fn on_start(&mut self) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
-        let (size_precision, min_quantity) = {
+        let (size_precision, size_increment, min_quantity) = {
             let cache = self.cache();
             let instrument = cache.try_instrument(&instrument_id)?;
-            (instrument.size_precision(), instrument.min_quantity())
+            (
+                instrument.size_precision(),
+                instrument.size_increment(),
+                instrument.min_quantity(),
+            )
         };
         self.size_precision = Some(size_precision);
+        self.size_increment = Some(size_increment);
+        self.min_quantity = min_quantity;
 
-        // Resolve trade_size from instrument when not explicitly provided,
-        // normalizing to the instrument's size precision so orders are not
-        // rejected (e.g. precision 0 when size precision is 1)
-        let trade_size = match self.trade_size {
-            Some(qty) => Quantity::from_decimal_dp(qty.as_decimal(), size_precision)
-                .map_err(|e| anyhow::anyhow!("Invalid trade_size precision: {e}"))?,
-            None => min_quantity.unwrap_or_else(|| Quantity::new(1.0, size_precision)),
-        };
-        let trade_size = if trade_size.as_decimal() > self.config.max_position.as_decimal() {
-            self.config.max_position
-        } else {
-            trade_size
-        };
-        self.trade_size = Some(trade_size);
+        if self.capital.is_none() {
+            let Some(quote_currency) = self
+                .cache()
+                .instrument(&instrument_id)
+                .map(|i| i.quote_currency())
+            else {
+                log::warn!("OBI: instrument not found; cannot resolve capital from equity");
+                return Ok(());
+            };
+            let equity = self
+                .cache()
+                .accounts_all()
+                .into_iter()
+                .find_map(|account| {
+                    account
+                        .balance(Some(quote_currency))
+                        .map(|balance| balance.total.as_f64())
+                })
+                .unwrap_or(0.0);
+            log::info!("OBI: resolved strategy capital from account equity: {equity:.2}");
+            self.capital = Some(equity);
+        }
 
         self.subscribe_book_deltas(
             instrument_id,
@@ -537,14 +604,17 @@ impl DataActor for ObiMomentum {
 
         log::info!(
             "OBI momentum started: instrument={instrument_id}, levels={}, weighted={}, \
-             zscore_window={}, entry={}, reduce={}, close={}, trade_size={trade_size}, \
-             timer_interval_ms={}",
+             zscore_window={}, entry={}, reduce={}, close={}, capital={:.2}, \
+             trade_size_pct={}, max_position_pct={}, timer_interval_ms={}",
             self.config.num_levels,
             self.config.weighted,
             self.config.zscore_window,
             self.config.entry_threshold,
             self.config.reduce_threshold,
             self.config.close_threshold,
+            self.capital.unwrap_or(0.0),
+            self.config.trade_size_pct,
+            self.config.max_position_pct,
             self.config.timer_interval_ms,
         );
 
@@ -569,7 +639,9 @@ impl DataActor for ObiMomentum {
 
     fn on_reset(&mut self) -> anyhow::Result<()> {
         self.size_precision = None;
-        self.trade_size = self.config.trade_size;
+        self.size_increment = None;
+        self.min_quantity = None;
+        self.capital = self.config.capital;
         self.imbalance_samples.clear();
         self.returns.clear();
         self.vol_samples.clear();
@@ -698,5 +770,33 @@ mod tests {
             samples.iter().copied().collect::<Vec<_>>(),
             vec![2.0, 3.0, 4.0]
         );
+    }
+
+    #[rstest]
+    fn test_notional_qty_basic() {
+        // 10% of 1000 USDT at a mid of 0.0856 -> ~1168 contracts
+        let qty = notional_qty(1000.0, 0.10, 0.0856);
+        assert!((qty - 1168.22).abs() < 0.01);
+    }
+
+    #[rstest]
+    fn test_notional_qty_invalid_inputs_return_zero() {
+        assert_eq!(notional_qty(0.0, 0.1, 1.0), 0.0);
+        assert_eq!(notional_qty(1000.0, 0.0, 1.0), 0.0);
+        assert_eq!(notional_qty(1000.0, 0.1, 0.0), 0.0);
+    }
+
+    #[rstest]
+    fn test_floor_to_increment_rounds_down() {
+        assert_eq!(floor_to_increment(1168.22, 1.0), 1168.0);
+        assert_eq!(floor_to_increment(1168.22, 0.5), 1168.0);
+        assert_eq!(floor_to_increment(1168.4, 5.0), 1165.0);
+        assert_eq!(floor_to_increment(3.9, 1.0), 3.0);
+    }
+
+    #[rstest]
+    fn test_floor_to_increment_nonpositive_increment_is_identity() {
+        assert_eq!(floor_to_increment(3.9, 0.0), 3.9);
+        assert_eq!(floor_to_increment(3.9, -1.0), 3.9);
     }
 }

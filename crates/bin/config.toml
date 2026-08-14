@@ -6,7 +6,7 @@ venue = "BYBIT"
 account_id = "BYBIT-001"
 run_id = "grid-mm-backtest"
 start_date = "2026-08-01T00:00:00Z"
-end_date = "2026-08-08T00:00:00Z"
+end_date = "2026-08-13T00:00:00Z"
 
 [grid_mm]
 execution_environment = "live" # backtest, live, sandbox
@@ -170,11 +170,12 @@ path = "/var/lib/nautilus-trader/"
 num_levels = 5
 weighted = false
 zscore_window = 50
-entry_threshold = 2.0
+entry_threshold = 5
 reduce_threshold = 0.5
 close_threshold = 0.25
-trade_size = "10"
-max_position = "30"
+capital = 1000.0
+trade_size_pct = 0.02
+max_position_pct = 0.10
 timer_interval_ms = 1000
 max_holding_secs = 300
 regime_filter_enabled = true
