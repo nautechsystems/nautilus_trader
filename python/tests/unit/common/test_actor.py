@@ -207,11 +207,11 @@ CALLBACK_SIGNATURES = (
 )
 
 DATA_SUBSCRIPTION_PARAMETERS = ("data_type", "client_id", "params")
-DATA_REQUEST_PARAMETERS = ("data_type", "client_id", "start", "end", "limit", "params")
+DATA_REQUEST_PARAMETERS = ("data_type", "client_id", "start", "end", "limit", "params", "callback")
 SIGNAL_SUBSCRIPTION_PARAMETERS = ("name", "priority")
 SIGNAL_UNSUBSCRIBE_PARAMETERS = ("name",)
 VENUE_SUBSCRIPTION_PARAMETERS = ("venue", "client_id", "params")
-VENUE_REQUEST_PARAMETERS = ("venue", "start", "end", "client_id", "params")
+VENUE_REQUEST_PARAMETERS = ("venue", "start", "end", "client_id", "params", "callback")
 INSTRUMENT_SUBSCRIPTION_PARAMETERS = ("instrument_id", "client_id", "params")
 BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
@@ -246,9 +246,24 @@ OPTION_CHAIN_SUBSCRIPTION_PARAMETERS = (
     "client_id",
     "params",
 )
-INSTRUMENT_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "client_id", "params")
-BOOK_SNAPSHOT_REQUEST_PARAMETERS = ("instrument_id", "depth", "client_id", "params")
-BOOK_DELTAS_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "limit", "client_id", "params")
+INSTRUMENT_REQUEST_PARAMETERS = (
+    "instrument_id",
+    "start",
+    "end",
+    "client_id",
+    "params",
+    "callback",
+)
+BOOK_SNAPSHOT_REQUEST_PARAMETERS = ("instrument_id", "depth", "client_id", "params", "callback")
+BOOK_DELTAS_REQUEST_PARAMETERS = (
+    "instrument_id",
+    "start",
+    "end",
+    "limit",
+    "client_id",
+    "params",
+    "callback",
+)
 BOOK_DEPTH_REQUEST_PARAMETERS = (
     "instrument_id",
     "start",
@@ -257,6 +272,7 @@ BOOK_DEPTH_REQUEST_PARAMETERS = (
     "depth",
     "client_id",
     "params",
+    "callback",
 )
 INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
     "instrument_id",
@@ -265,8 +281,9 @@ INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
     "limit",
     "client_id",
     "params",
+    "callback",
 )
-BAR_REQUEST_PARAMETERS = ("bar_type", "start", "end", "limit", "client_id", "params")
+BAR_REQUEST_PARAMETERS = ("bar_type", "start", "end", "limit", "client_id", "params", "callback")
 OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS = ("series_id", "client_id")
 PUBLISH_DATA_PARAMETERS = ("data_type", "data")
 PUBLISH_SIGNAL_PARAMETERS = ("name", "value", "ts_event")
@@ -549,6 +566,67 @@ class HistoricalRequestProbeActor(TestActor):
                 params={"kind": "bars"},
             ),
         }
+
+
+class RequestCallbackProbeActor(TestActor):
+    events = []
+    callback_ids = []
+    request_id = None
+
+    def on_start(self):
+        type(self).events = []
+        type(self).callback_ids = []
+        type(self).request_id = self.request_data(
+            DataType("TestData"),
+            ClientId("BACKTEST"),
+            callback=self.on_request_complete,
+        )
+
+    def on_historical_data(self, data):
+        type(self).events.append("historical_data")
+
+    def on_request_complete(self, request_id):
+        type(self).events.append("callback")
+        type(self).callback_ids.append(request_id)
+
+
+class InvalidRequestCallbackProbeActor(TestActor):
+    error = None
+    historical_calls = 0
+
+    def on_start(self):
+        type(self).error = None
+        type(self).historical_calls = 0
+        try:
+            self.request_data(
+                DataType("TestData"),
+                ClientId("BACKTEST"),
+                callback=1,
+            )
+        except TypeError as e:
+            type(self).error = str(e)
+
+    def on_historical_data(self, data):
+        type(self).historical_calls += 1
+
+
+class RaisingRequestCallbackProbeActor(TestActor):
+    events = []
+
+    def on_start(self):
+        type(self).events = []
+        self.request_data(
+            DataType("TestData"),
+            ClientId("BACKTEST"),
+            callback=self.on_request_complete,
+        )
+
+    def on_historical_data(self, data):
+        type(self).events.append("historical_data")
+
+    def on_request_complete(self, request_id):
+        type(self).events.append("callback")
+        raise RuntimeError("callback failure")
 
 
 def test_data_actor_pre_registration_surface(actor):
@@ -943,6 +1021,63 @@ def test_data_actor_historical_requests_accept_datetimes_when_registered(request
 
         for request_id in HistoricalRequestProbeActor.observed_request_ids.values():
             assert UUID4.from_str(request_id)
+    finally:
+        engine.dispose()
+
+
+def test_data_actor_request_callback_runs_after_response_handler():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_actor_from_config(
+        ImportableActorConfig(
+            actor_path="tests.unit.common.test_actor:RequestCallbackProbeActor",
+            config_path="tests.unit.common.actor:TestActorConfig",
+            config={"actor_id": "REQUEST-CALLBACK-ACTOR"},
+        ),
+    )
+
+    try:
+        engine.run()
+
+        assert RequestCallbackProbeActor.events == ["historical_data", "callback"]
+        assert RequestCallbackProbeActor.callback_ids == [RequestCallbackProbeActor.request_id]
+        assert UUID4.from_str(RequestCallbackProbeActor.request_id)
+    finally:
+        engine.dispose()
+
+
+def test_data_actor_request_rejects_non_callable_callback_without_sending():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_actor_from_config(
+        ImportableActorConfig(
+            actor_path="tests.unit.common.test_actor:InvalidRequestCallbackProbeActor",
+            config_path="tests.unit.common.actor:TestActorConfig",
+            config={"actor_id": "INVALID-REQUEST-CALLBACK-ACTOR"},
+        ),
+    )
+
+    try:
+        engine.run()
+
+        assert InvalidRequestCallbackProbeActor.error == "callback must be callable"
+        assert InvalidRequestCallbackProbeActor.historical_calls == 0
+    finally:
+        engine.dispose()
+
+
+def test_data_actor_request_callback_error_does_not_escape_dispatch():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_actor_from_config(
+        ImportableActorConfig(
+            actor_path="tests.unit.common.test_actor:RaisingRequestCallbackProbeActor",
+            config_path="tests.unit.common.actor:TestActorConfig",
+            config={"actor_id": "RAISING-REQUEST-CALLBACK-ACTOR"},
+        ),
+    )
+
+    try:
+        engine.run()
+
+        assert RaisingRequestCallbackProbeActor.events == ["historical_data", "callback"]
     finally:
         engine.dispose()
 

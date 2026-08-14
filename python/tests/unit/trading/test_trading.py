@@ -204,6 +204,28 @@ class HistoricalRequestProbeStrategy(Strategy):
         }
 
 
+class RequestCallbackProbeStrategy(Strategy):
+    events = []
+    callback_ids = []
+    request_id = None
+
+    def on_start(self):
+        type(self).events = []
+        type(self).callback_ids = []
+        type(self).request_id = self.request_data(
+            DataType("TestData"),
+            ClientId("BACKTEST"),
+            callback=self.on_request_complete,
+        )
+
+    def on_historical_data(self, data):
+        type(self).events.append("historical_data")
+
+    def on_request_complete(self, request_id):
+        type(self).events.append("callback")
+        type(self).callback_ids.append(request_id)
+
+
 def test_strategy_default_construction():
     strategy = Strategy()
 
@@ -1063,9 +1085,9 @@ def test_strategy_portfolio_aggregates_multiple_venues_atomically():
 
 LIFECYCLE_METHODS = ["start", "stop", "resume", "reset", "dispose", "degrade", "fault"]
 DATA_SUBSCRIPTION_PARAMETERS = ("data_type", "client_id", "params")
-DATA_REQUEST_PARAMETERS = ("data_type", "client_id", "start", "end", "limit", "params")
+DATA_REQUEST_PARAMETERS = ("data_type", "client_id", "start", "end", "limit", "params", "callback")
 VENUE_SUBSCRIPTION_PARAMETERS = ("venue", "client_id", "params")
-VENUE_REQUEST_PARAMETERS = ("venue", "start", "end", "client_id", "params")
+VENUE_REQUEST_PARAMETERS = ("venue", "start", "end", "client_id", "params", "callback")
 INSTRUMENT_SUBSCRIPTION_PARAMETERS = ("instrument_id", "client_id", "params")
 BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
@@ -1100,9 +1122,24 @@ OPTION_CHAIN_SUBSCRIPTION_PARAMETERS = (
     "params",
 )
 OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS = ("series_id", "client_id")
-INSTRUMENT_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "client_id", "params")
-BOOK_SNAPSHOT_REQUEST_PARAMETERS = ("instrument_id", "depth", "client_id", "params")
-BOOK_DELTAS_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "limit", "client_id", "params")
+INSTRUMENT_REQUEST_PARAMETERS = (
+    "instrument_id",
+    "start",
+    "end",
+    "client_id",
+    "params",
+    "callback",
+)
+BOOK_SNAPSHOT_REQUEST_PARAMETERS = ("instrument_id", "depth", "client_id", "params", "callback")
+BOOK_DELTAS_REQUEST_PARAMETERS = (
+    "instrument_id",
+    "start",
+    "end",
+    "limit",
+    "client_id",
+    "params",
+    "callback",
+)
 BOOK_DEPTH_REQUEST_PARAMETERS = (
     "instrument_id",
     "start",
@@ -1111,6 +1148,7 @@ BOOK_DEPTH_REQUEST_PARAMETERS = (
     "depth",
     "client_id",
     "params",
+    "callback",
 )
 INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
     "instrument_id",
@@ -1119,8 +1157,9 @@ INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
     "limit",
     "client_id",
     "params",
+    "callback",
 )
-BAR_REQUEST_PARAMETERS = ("bar_type", "start", "end", "limit", "client_id", "params")
+BAR_REQUEST_PARAMETERS = ("bar_type", "start", "end", "limit", "client_id", "params", "callback")
 SUBMIT_ORDER_PARAMETERS = ("order", "position_id", "client_id", "params")
 SUBMIT_ORDER_LIST_PARAMETERS = ("order_list", "position_id", "client_id", "params")
 MODIFY_ORDER_PARAMETERS = (
@@ -1588,6 +1627,28 @@ def test_strategy_historical_requests_accept_datetimes_when_registered(request_t
 
         for request_id in HistoricalRequestProbeStrategy.observed_request_ids.values():
             assert UUID4.from_str(request_id)
+    finally:
+        engine.dispose()
+
+
+def test_strategy_request_callback_runs_after_response_handler():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_strategy_from_config(
+        ImportableStrategyConfig(
+            strategy_path="tests.unit.trading.test_trading:RequestCallbackProbeStrategy",
+            config_path="nautilus_trader.trading:StrategyConfig",
+            config={},
+        ),
+    )
+
+    try:
+        engine.run()
+
+        assert RequestCallbackProbeStrategy.events == ["historical_data", "callback"]
+        assert RequestCallbackProbeStrategy.callback_ids == [
+            RequestCallbackProbeStrategy.request_id,
+        ]
+        assert UUID4.from_str(RequestCallbackProbeStrategy.request_id)
     finally:
         engine.dispose()
 

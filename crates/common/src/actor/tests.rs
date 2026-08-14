@@ -19,7 +19,7 @@ use std::{
     num::NonZeroUsize,
     rc::Rc,
     str::FromStr,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -68,7 +68,10 @@ use {
     },
 };
 
-use super::{Actor, DataActor, DataActorCore, DataActorNative, data_actor::DataActorConfig};
+use super::{
+    Actor, DataActor, DataActorCore, DataActorNative,
+    data_actor::{DataActorConfig, RequestCallback},
+};
 #[cfg(feature = "defi")]
 use crate::defi::switchboard::{
     get_defi_blocks_topic, get_defi_pool_swaps_topic, get_defi_pool_topic,
@@ -2279,7 +2282,7 @@ fn test_request_instrument(
     actor.start().unwrap();
 
     let request_id = actor
-        .request_instrument(audusd_sim.id, None, None, None, None)
+        .request_instrument(audusd_sim.id, None, None, None, None, None)
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -2318,7 +2321,7 @@ fn test_request_instruments(
 
     let venue = Venue::test_default();
     let request_id = actor
-        .request_instruments(Some(venue), None, None, None, None)
+        .request_instruments(Some(venue), None, None, None, None, None)
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -2356,8 +2359,18 @@ fn test_request_quotes(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
+    let completed = Arc::new(Mutex::new(Vec::new()));
+    let callback_completed = completed.clone();
+    let callback_actor_id = actor_id;
+    let callback: RequestCallback = Arc::new(move |request_id| {
+        let actor = get_actor_unchecked::<TestDataActor>(&callback_actor_id);
+        callback_completed
+            .lock()
+            .unwrap()
+            .push((request_id, actor.received_quotes.len()));
+    });
     let request_id = actor
-        .request_quotes(audusd_sim.id, None, None, None, None, None)
+        .request_quotes(audusd_sim.id, None, None, None, None, None, Some(callback))
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -2380,6 +2393,10 @@ fn test_request_quotes(
 
     assert_eq!(actor.received_quotes.len(), 1);
     assert_eq!(actor.received_quotes[0], quote);
+    assert_eq!(*completed.lock().unwrap(), vec![(request_id, 1)]);
+
+    actor.core_mut().finish_response(request_id);
+    assert_eq!(*completed.lock().unwrap(), vec![(request_id, 1)]);
 }
 
 #[rstest]
@@ -2411,6 +2428,7 @@ fn test_request_quotes_accepts_equal_start_and_end(
             Some(point),
             limit,
             client_id,
+            None,
             None,
         )
         .unwrap();
@@ -2459,7 +2477,7 @@ fn test_request_quotes_rejects_invalid_time_range(
     );
 
     let error = actor
-        .request_quotes(audusd_sim.id, start, end, None, None, None)
+        .request_quotes(audusd_sim.id, start, end, None, None, None, None)
         .unwrap_err();
 
     assert_eq!(error.to_string(), expected_error);
@@ -2478,7 +2496,7 @@ fn test_request_trades(
     actor.start().unwrap();
 
     let request_id = actor
-        .request_trades(audusd_sim.id, None, None, None, None, None)
+        .request_trades(audusd_sim.id, None, None, None, None, None, None)
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -2515,7 +2533,7 @@ fn test_request_book_deltas(
     actor.start().unwrap();
 
     let request_id = actor
-        .request_book_deltas(audusd_sim.id, None, None, None, None, None)
+        .request_book_deltas(audusd_sim.id, None, None, None, None, None, None)
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -2549,7 +2567,7 @@ fn test_request_book_depth(
     actor.start().unwrap();
 
     let request_id = actor
-        .request_book_depth(audusd_sim.id, None, None, None, None, None, None)
+        .request_book_depth(audusd_sim.id, None, None, None, None, None, None, None)
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -2584,7 +2602,7 @@ fn test_request_funding_rates(
     actor.start().unwrap();
 
     let request_id = actor
-        .request_funding_rates(audusd_sim.id, None, None, None, None, None)
+        .request_funding_rates(audusd_sim.id, None, None, None, None, None, None)
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -2629,7 +2647,7 @@ fn test_request_bars(
 
     let bar_type = BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
     let request_id = actor
-        .request_bars(bar_type, None, None, None, None, None)
+        .request_bars(bar_type, None, None, None, None, None, None)
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -3272,7 +3290,7 @@ fn test_request_book_snapshot(
 
     // Request a book snapshot
     let request_id = actor
-        .request_book_snapshot(audusd_sim.id, None, None, None)
+        .request_book_snapshot(audusd_sim.id, None, None, None, None)
         .unwrap();
 
     // Build a dummy book and response
@@ -3314,8 +3332,26 @@ fn test_request_data(
     // Request custom data
     let data_type = DataType::new("TestData", None, None);
     let client_id = ClientId::new("TestClient");
+    let completed = Arc::new(Mutex::new(Vec::new()));
+    let callback_completed = completed.clone();
+    let callback_actor_id = actor_id;
+    let callback: RequestCallback = Arc::new(move |request_id| {
+        let actor = get_actor_unchecked::<TestDataActor>(&callback_actor_id);
+        callback_completed
+            .lock()
+            .unwrap()
+            .push((request_id, actor.received_data.len()));
+    });
     let request_id = actor
-        .request_data(data_type.clone(), client_id, None, None, None, None)
+        .request_data(
+            data_type.clone(),
+            client_id,
+            None,
+            None,
+            None,
+            None,
+            Some(callback),
+        )
         .unwrap();
 
     // Build a response payload containing a String
@@ -3342,6 +3378,131 @@ fn test_request_data(
     // Actor should receive the custom data
     assert_eq!(actor.received_data.len(), 1);
     assert_eq!(actor.received_data[0], "Any { .. }");
+    assert_eq!(*completed.lock().unwrap(), vec![(request_id, 1)]);
+
+    actor.core_mut().finish_response(request_id);
+    assert_eq!(*completed.lock().unwrap(), vec![(request_id, 1)]);
+}
+
+#[rstest]
+fn test_request_data_callbacks_match_out_of_order_responses(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let data_type = DataType::new("TestData", None, None);
+    let client_id = ClientId::new("TestClient");
+    let completed = Arc::new(Mutex::new(Vec::new()));
+    let first_completed = completed.clone();
+    let first_callback: RequestCallback = Arc::new(move |request_id| {
+        first_completed.lock().unwrap().push(("first", request_id));
+    });
+    let second_completed = completed.clone();
+    let second_callback: RequestCallback = Arc::new(move |request_id| {
+        second_completed
+            .lock()
+            .unwrap()
+            .push(("second", request_id));
+    });
+
+    let first_request_id = actor
+        .request_data(
+            data_type.clone(),
+            client_id,
+            None,
+            None,
+            None,
+            None,
+            Some(first_callback),
+        )
+        .unwrap();
+    let second_request_id = actor
+        .request_data(
+            data_type.clone(),
+            client_id,
+            None,
+            None,
+            None,
+            None,
+            Some(second_callback),
+        )
+        .unwrap();
+
+    for (request_id, payload) in [
+        (second_request_id, "Data-002"),
+        (first_request_id, "Data-001"),
+    ] {
+        let response = CustomDataResponse::new(
+            request_id,
+            client_id,
+            None,
+            data_type.clone(),
+            Arc::new(Bytes::from(payload)),
+            None,
+            None,
+            UnixNanos::default(),
+            None,
+        );
+        msgbus::send_response(&request_id, &DataResponse::Data(response));
+    }
+
+    assert_eq!(actor.received_data.len(), 2);
+    assert_eq!(
+        *completed.lock().unwrap(),
+        vec![("second", second_request_id), ("first", first_request_id),],
+    );
+}
+
+#[rstest]
+fn test_reset_discards_pending_request_callback(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let data_type = DataType::new("TestData", None, None);
+    let client_id = ClientId::new("TestClient");
+    let completed = Arc::new(Mutex::new(Vec::new()));
+    let callback_completed = completed.clone();
+    let callback: RequestCallback = Arc::new(move |request_id| {
+        callback_completed.lock().unwrap().push(request_id);
+    });
+    let request_id = actor
+        .request_data(
+            data_type.clone(),
+            client_id,
+            None,
+            None,
+            None,
+            None,
+            Some(callback),
+        )
+        .unwrap();
+
+    actor.stop().unwrap();
+    actor.reset().unwrap();
+
+    let response = CustomDataResponse::new(
+        request_id,
+        client_id,
+        None,
+        data_type,
+        Arc::new(Bytes::from("Data-001")),
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    );
+    msgbus::send_response(&request_id, &DataResponse::Data(response));
+
+    assert!(completed.lock().unwrap().is_empty());
 }
 
 #[rstest]

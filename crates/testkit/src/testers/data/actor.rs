@@ -80,6 +80,7 @@ impl DataActor for DataTester {
                     None,
                     client_id,
                     request_params.clone(),
+                    None,
                 );
             }
         }
@@ -183,6 +184,7 @@ impl DataActor for DataTester {
                     None,
                     client_id,
                     request_params.clone(),
+                    None,
                 ) {
                     log::error!("Failed to request quotes for {instrument_id}: {e}");
                 }
@@ -202,6 +204,7 @@ impl DataActor for DataTester {
                         .transpose()?,
                     client_id,
                     request_params.clone(),
+                    None,
                 );
             }
 
@@ -218,6 +221,7 @@ impl DataActor for DataTester {
                     None,
                     client_id,
                     request_params.clone(),
+                    None,
                 ) {
                     log::error!("Failed to request trades for {instrument_id}: {e}");
                 }
@@ -234,6 +238,7 @@ impl DataActor for DataTester {
                     None,
                     client_id,
                     request_params.clone(),
+                    None,
                 ) {
                     log::error!("Failed to request funding rates for {instrument_id}: {e}");
                 }
@@ -258,6 +263,7 @@ impl DataActor for DataTester {
                         None,
                         client_id,
                         request_params.clone(),
+                        None,
                     ) {
                         log::error!("Failed to request bars for {bar_type}: {e}");
                     }

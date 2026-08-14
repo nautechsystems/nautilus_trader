@@ -39,6 +39,7 @@ use nautilus_common::{
     enums::ComponentState,
     messages::system::{QueueStateChanged, SocketStateChanged},
     python::{
+        actor::request_callback_from_py,
         cache::PyCache,
         clock::PyClock,
         config_error_to_pyvalue_err,
@@ -3028,7 +3029,8 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "request_data")]
-    #[pyo3(signature = (data_type, client_id, start=None, end=None, limit=None, params=None))]
+    #[pyo3(signature = (data_type, client_id, start=None, end=None, limit=None, params=None, callback=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_request_data(
         &mut self,
         data_type: DataType,
@@ -3037,6 +3039,7 @@ impl PyStrategy {
         end: Option<Timestamp>,
         limit: Option<usize>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
@@ -3045,6 +3048,7 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
+        let callback = Python::attach(|py| request_callback_from_py(py, callback))?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_data(
             self.inner_mut(),
@@ -3054,13 +3058,14 @@ impl PyStrategy {
             end,
             limit,
             params_map,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_instrument")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, client_id=None, params=None, callback=None))]
     fn py_request_instrument(
         &mut self,
         instrument_id: InstrumentId,
@@ -3068,6 +3073,7 @@ impl PyStrategy {
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
@@ -3076,6 +3082,7 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
+        let callback = Python::attach(|py| request_callback_from_py(py, callback))?;
         let request_id = DataActor::request_instrument(
             self.inner_mut(),
             instrument_id,
@@ -3083,13 +3090,14 @@ impl PyStrategy {
             end,
             client_id,
             params_map,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_instruments")]
-    #[pyo3(signature = (venue=None, start=None, end=None, client_id=None, params=None))]
+    #[pyo3(signature = (venue=None, start=None, end=None, client_id=None, params=None, callback=None))]
     fn py_request_instruments(
         &mut self,
         venue: Option<Venue>,
@@ -3097,6 +3105,7 @@ impl PyStrategy {
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
@@ -3105,6 +3114,7 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
+        let callback = Python::attach(|py| request_callback_from_py(py, callback))?;
         let request_id = DataActor::request_instruments(
             self.inner_mut(),
             venue,
@@ -3112,19 +3122,21 @@ impl PyStrategy {
             end,
             client_id,
             params_map,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_book_snapshot")]
-    #[pyo3(signature = (instrument_id, depth=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, depth=None, client_id=None, params=None, callback=None))]
     fn py_request_book_snapshot(
         &mut self,
         instrument_id: InstrumentId,
         depth: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
@@ -3133,6 +3145,7 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
+        let callback = Python::attach(|py| request_callback_from_py(py, callback))?;
         let depth = depth.and_then(NonZeroUsize::new);
 
         let request_id = DataActor::request_book_snapshot(
@@ -3141,13 +3154,15 @@ impl PyStrategy {
             depth,
             client_id,
             params_map,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_book_deltas")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_request_book_deltas(
         &mut self,
         instrument_id: InstrumentId,
@@ -3156,6 +3171,7 @@ impl PyStrategy {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
@@ -3164,6 +3180,7 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
+        let callback = Python::attach(|py| request_callback_from_py(py, callback))?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_book_deltas(
             self.inner_mut(),
@@ -3173,13 +3190,14 @@ impl PyStrategy {
             limit,
             client_id,
             params_map,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_book_depth")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, depth=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, depth=None, client_id=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_book_depth(
         &mut self,
@@ -3190,6 +3208,7 @@ impl PyStrategy {
         depth: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
@@ -3198,6 +3217,7 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
+        let callback = Python::attach(|py| request_callback_from_py(py, callback))?;
         let limit = limit.and_then(NonZeroUsize::new);
         let depth = depth.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_book_depth(
@@ -3209,13 +3229,15 @@ impl PyStrategy {
             depth,
             client_id,
             params_map,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_quotes")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_request_quotes(
         &mut self,
         instrument_id: InstrumentId,
@@ -3224,6 +3246,7 @@ impl PyStrategy {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
@@ -3232,6 +3255,7 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
+        let callback = Python::attach(|py| request_callback_from_py(py, callback))?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_quotes(
             self.inner_mut(),
@@ -3241,13 +3265,15 @@ impl PyStrategy {
             limit,
             client_id,
             params_map,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_trades")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_request_trades(
         &mut self,
         instrument_id: InstrumentId,
@@ -3256,6 +3282,7 @@ impl PyStrategy {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
@@ -3264,6 +3291,7 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
+        let callback = Python::attach(|py| request_callback_from_py(py, callback))?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_trades(
             self.inner_mut(),
@@ -3273,13 +3301,15 @@ impl PyStrategy {
             limit,
             client_id,
             params_map,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_funding_rates")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_request_funding_rates(
         &mut self,
         instrument_id: InstrumentId,
@@ -3288,6 +3318,7 @@ impl PyStrategy {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
@@ -3296,6 +3327,7 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
+        let callback = Python::attach(|py| request_callback_from_py(py, callback))?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_funding_rates(
             self.inner_mut(),
@@ -3305,13 +3337,15 @@ impl PyStrategy {
             limit,
             client_id,
             params_map,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_bars")]
-    #[pyo3(signature = (bar_type, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (bar_type, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_request_bars(
         &mut self,
         bar_type: BarType,
@@ -3320,6 +3354,7 @@ impl PyStrategy {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
@@ -3328,6 +3363,7 @@ impl PyStrategy {
                 None => Ok(None),
             }
         })?;
+        let callback = Python::attach(|py| request_callback_from_py(py, callback))?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_bars(
             self.inner_mut(),
@@ -3337,6 +3373,7 @@ impl PyStrategy {
             limit,
             client_id,
             params_map,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())

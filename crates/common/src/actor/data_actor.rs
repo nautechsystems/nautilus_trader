@@ -155,7 +155,8 @@ pub struct ImportableActorConfig {
     pub config: HashMap<String, serde_json::Value>,
 }
 
-type RequestCallback = Arc<dyn Fn(UUID4) + Send + Sync>;
+/// Callback invoked after a historical request response is processed.
+pub type RequestCallback = Arc<dyn Fn(UUID4) + Send + Sync>;
 
 /// Explicit native-only access for data actor runtime state.
 ///
@@ -2411,6 +2412,7 @@ pub trait DataActor: Component {
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
+    #[expect(clippy::too_many_arguments)]
     fn request_data(
         &mut self,
         data_type: DataType,
@@ -2419,6 +2421,7 @@ pub trait DataActor: Component {
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         params: Option<Params>,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4>
     where
         Self: DataActorNative,
@@ -2426,7 +2429,9 @@ pub trait DataActor: Component {
     {
         let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &CustomDataResponse| {
-            get_actor_unchecked::<Self>(&actor_id).handle_data_response(resp);
+            let mut actor = get_actor_unchecked::<Self>(&actor_id);
+            actor.handle_data_response(resp);
+            actor.core_mut().finish_response(resp.correlation_id);
         });
 
         DataActorCore::request_data(
@@ -2438,6 +2443,7 @@ pub trait DataActor: Component {
             limit,
             params,
             handler,
+            callback,
         )
     }
 
@@ -2453,6 +2459,7 @@ pub trait DataActor: Component {
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Params>,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4>
     where
         Self: DataActorNative,
@@ -2460,7 +2467,9 @@ pub trait DataActor: Component {
     {
         let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &InstrumentResponse| {
-            get_actor_unchecked::<Self>(&actor_id).handle_instrument_response(resp);
+            let mut actor = get_actor_unchecked::<Self>(&actor_id);
+            actor.handle_instrument_response(resp);
+            actor.core_mut().finish_response(resp.correlation_id);
         });
 
         DataActorCore::request_instrument(
@@ -2471,6 +2480,7 @@ pub trait DataActor: Component {
             client_id,
             params,
             handler,
+            callback,
         )
     }
 
@@ -2486,6 +2496,7 @@ pub trait DataActor: Component {
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Params>,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4>
     where
         Self: DataActorNative,
@@ -2493,7 +2504,9 @@ pub trait DataActor: Component {
     {
         let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &InstrumentsResponse| {
-            get_actor_unchecked::<Self>(&actor_id).handle_instruments_response(resp);
+            let mut actor = get_actor_unchecked::<Self>(&actor_id);
+            actor.handle_instruments_response(resp);
+            actor.core_mut().finish_response(resp.correlation_id);
         });
 
         DataActorCore::request_instruments(
@@ -2504,6 +2517,7 @@ pub trait DataActor: Component {
             client_id,
             params,
             handler,
+            callback,
         )
     }
 
@@ -2518,6 +2532,7 @@ pub trait DataActor: Component {
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4>
     where
         Self: DataActorNative,
@@ -2525,7 +2540,9 @@ pub trait DataActor: Component {
     {
         let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &BookResponse| {
-            get_actor_unchecked::<Self>(&actor_id).handle_book_response(resp);
+            let mut actor = get_actor_unchecked::<Self>(&actor_id);
+            actor.handle_book_response(resp);
+            actor.core_mut().finish_response(resp.correlation_id);
         });
 
         DataActorCore::request_book_snapshot(
@@ -2535,6 +2552,7 @@ pub trait DataActor: Component {
             client_id,
             params,
             handler,
+            callback,
         )
     }
 
@@ -2543,6 +2561,7 @@ pub trait DataActor: Component {
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
+    #[expect(clippy::too_many_arguments)]
     fn request_book_deltas(
         &mut self,
         instrument_id: InstrumentId,
@@ -2551,6 +2570,7 @@ pub trait DataActor: Component {
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4>
     where
         Self: DataActorNative,
@@ -2558,7 +2578,9 @@ pub trait DataActor: Component {
     {
         let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &BookDeltasResponse| {
-            get_actor_unchecked::<Self>(&actor_id).handle_book_deltas_response(resp);
+            let mut actor = get_actor_unchecked::<Self>(&actor_id);
+            actor.handle_book_deltas_response(resp);
+            actor.core_mut().finish_response(resp.correlation_id);
         });
 
         DataActorCore::request_book_deltas(
@@ -2570,6 +2592,7 @@ pub trait DataActor: Component {
             client_id,
             params,
             handler,
+            callback,
         )
     }
 
@@ -2588,6 +2611,7 @@ pub trait DataActor: Component {
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4>
     where
         Self: DataActorNative,
@@ -2595,7 +2619,9 @@ pub trait DataActor: Component {
     {
         let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &BookDepthResponse| {
-            get_actor_unchecked::<Self>(&actor_id).handle_book_depth_response(resp);
+            let mut actor = get_actor_unchecked::<Self>(&actor_id);
+            actor.handle_book_depth_response(resp);
+            actor.core_mut().finish_response(resp.correlation_id);
         });
 
         DataActorCore::request_book_depth(
@@ -2608,6 +2634,7 @@ pub trait DataActor: Component {
             client_id,
             params,
             handler,
+            callback,
         )
     }
 
@@ -2616,6 +2643,7 @@ pub trait DataActor: Component {
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
+    #[expect(clippy::too_many_arguments)]
     fn request_quotes(
         &mut self,
         instrument_id: InstrumentId,
@@ -2624,6 +2652,7 @@ pub trait DataActor: Component {
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4>
     where
         Self: DataActorNative,
@@ -2631,7 +2660,9 @@ pub trait DataActor: Component {
     {
         let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &QuotesResponse| {
-            get_actor_unchecked::<Self>(&actor_id).handle_quotes_response(resp);
+            let mut actor = get_actor_unchecked::<Self>(&actor_id);
+            actor.handle_quotes_response(resp);
+            actor.core_mut().finish_response(resp.correlation_id);
         });
 
         DataActorCore::request_quotes(
@@ -2643,6 +2674,7 @@ pub trait DataActor: Component {
             client_id,
             params,
             handler,
+            callback,
         )
     }
 
@@ -2651,6 +2683,7 @@ pub trait DataActor: Component {
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
+    #[expect(clippy::too_many_arguments)]
     fn request_trades(
         &mut self,
         instrument_id: InstrumentId,
@@ -2659,6 +2692,7 @@ pub trait DataActor: Component {
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4>
     where
         Self: DataActorNative,
@@ -2666,7 +2700,9 @@ pub trait DataActor: Component {
     {
         let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &TradesResponse| {
-            get_actor_unchecked::<Self>(&actor_id).handle_trades_response(resp);
+            let mut actor = get_actor_unchecked::<Self>(&actor_id);
+            actor.handle_trades_response(resp);
+            actor.core_mut().finish_response(resp.correlation_id);
         });
 
         DataActorCore::request_trades(
@@ -2678,6 +2714,7 @@ pub trait DataActor: Component {
             client_id,
             params,
             handler,
+            callback,
         )
     }
 
@@ -2686,6 +2723,7 @@ pub trait DataActor: Component {
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
+    #[expect(clippy::too_many_arguments)]
     fn request_bars(
         &mut self,
         bar_type: BarType,
@@ -2694,6 +2732,7 @@ pub trait DataActor: Component {
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4>
     where
         Self: DataActorNative,
@@ -2701,7 +2740,9 @@ pub trait DataActor: Component {
     {
         let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &BarsResponse| {
-            get_actor_unchecked::<Self>(&actor_id).handle_bars_response(resp);
+            let mut actor = get_actor_unchecked::<Self>(&actor_id);
+            actor.handle_bars_response(resp);
+            actor.core_mut().finish_response(resp.correlation_id);
         });
 
         DataActorCore::request_bars(
@@ -2713,6 +2754,7 @@ pub trait DataActor: Component {
             client_id,
             params,
             handler,
+            callback,
         )
     }
 
@@ -2721,6 +2763,7 @@ pub trait DataActor: Component {
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
+    #[expect(clippy::too_many_arguments)]
     fn request_funding_rates(
         &mut self,
         instrument_id: InstrumentId,
@@ -2729,6 +2772,7 @@ pub trait DataActor: Component {
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4>
     where
         Self: DataActorNative,
@@ -2736,7 +2780,9 @@ pub trait DataActor: Component {
     {
         let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &FundingRatesResponse| {
-            get_actor_unchecked::<Self>(&actor_id).handle_funding_rates_response(resp);
+            let mut actor = get_actor_unchecked::<Self>(&actor_id);
+            actor.handle_funding_rates_response(resp);
+            actor.core_mut().finish_response(resp.correlation_id);
         });
 
         DataActorCore::request_funding_rates(
@@ -2748,6 +2794,7 @@ pub trait DataActor: Component {
             client_id,
             params,
             handler,
+            callback,
         )
     }
 
@@ -2857,6 +2904,7 @@ where
     }
 
     fn on_reset(&mut self) -> anyhow::Result<()> {
+        self.core_mut().pending_requests.clear();
         DataActor::on_reset(self)
     }
 
@@ -2867,10 +2915,7 @@ where
 
 /// Core functionality for all actors.
 #[derive(Clone)]
-#[allow(
-    dead_code,
-    reason = "TODO: Under development (pending_requests, signal_classes)"
-)]
+#[allow(dead_code, reason = "TODO: Under development (signal_classes)")]
 pub struct DataActorCore {
     /// The actor identifier.
     pub actor_id: ActorId,
@@ -4761,7 +4806,7 @@ impl DataActorCore {
     /// Returns an error if input parameters are invalid.
     #[expect(clippy::too_many_arguments)]
     pub fn request_data(
-        &self,
+        &mut self,
         data_type: DataType,
         client_id: ClientId,
         start: Option<Timestamp>,
@@ -4769,6 +4814,7 @@ impl DataActorCore {
         limit: Option<NonZeroUsize>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -4791,6 +4837,7 @@ impl DataActorCore {
             .borrow_mut()
             .register_response_handler(command.request_id(), handler)?;
 
+        self.pending_requests.insert(request_id, callback);
         self.send_data_cmd(DataCommand::Request(command));
 
         Ok(request_id)
@@ -4801,14 +4848,16 @@ impl DataActorCore {
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
+    #[expect(clippy::too_many_arguments)]
     pub fn request_instrument(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -4830,6 +4879,7 @@ impl DataActorCore {
             .borrow_mut()
             .register_response_handler(command.request_id(), handler)?;
 
+        self.pending_requests.insert(request_id, callback);
         self.send_data_cmd(DataCommand::Request(command));
 
         Ok(request_id)
@@ -4840,14 +4890,16 @@ impl DataActorCore {
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
+    #[expect(clippy::too_many_arguments)]
     pub fn request_instruments(
-        &self,
+        &mut self,
         venue: Option<Venue>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -4869,6 +4921,7 @@ impl DataActorCore {
             .borrow_mut()
             .register_response_handler(command.request_id(), handler)?;
 
+        self.pending_requests.insert(request_id, callback);
         self.send_data_cmd(DataCommand::Request(command));
 
         Ok(request_id)
@@ -4880,12 +4933,13 @@ impl DataActorCore {
     ///
     /// Returns an error if input parameters are invalid.
     pub fn request_book_snapshot(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -4903,6 +4957,7 @@ impl DataActorCore {
             .borrow_mut()
             .register_response_handler(command.request_id(), handler)?;
 
+        self.pending_requests.insert(request_id, callback);
         self.send_data_cmd(DataCommand::Request(command));
 
         Ok(request_id)
@@ -4915,7 +4970,7 @@ impl DataActorCore {
     /// Returns an error if input parameters are invalid.
     #[expect(clippy::too_many_arguments)]
     pub fn request_book_deltas(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
@@ -4923,6 +4978,7 @@ impl DataActorCore {
         client_id: Option<ClientId>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -4945,6 +5001,7 @@ impl DataActorCore {
             .borrow_mut()
             .register_response_handler(command.request_id(), handler)?;
 
+        self.pending_requests.insert(request_id, callback);
         self.send_data_cmd(DataCommand::Request(command));
 
         Ok(request_id)
@@ -4957,7 +5014,7 @@ impl DataActorCore {
     /// Returns an error if input parameters are invalid.
     #[expect(clippy::too_many_arguments)]
     pub fn request_book_depth(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
@@ -4966,6 +5023,7 @@ impl DataActorCore {
         client_id: Option<ClientId>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -4989,6 +5047,7 @@ impl DataActorCore {
             .borrow_mut()
             .register_response_handler(command.request_id(), handler)?;
 
+        self.pending_requests.insert(request_id, callback);
         self.send_data_cmd(DataCommand::Request(command));
 
         Ok(request_id)
@@ -5001,7 +5060,7 @@ impl DataActorCore {
     /// Returns an error if input parameters are invalid.
     #[expect(clippy::too_many_arguments)]
     pub fn request_quotes(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
@@ -5009,6 +5068,7 @@ impl DataActorCore {
         client_id: Option<ClientId>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -5031,6 +5091,7 @@ impl DataActorCore {
             .borrow_mut()
             .register_response_handler(command.request_id(), handler)?;
 
+        self.pending_requests.insert(request_id, callback);
         self.send_data_cmd(DataCommand::Request(command));
 
         Ok(request_id)
@@ -5043,7 +5104,7 @@ impl DataActorCore {
     /// Returns an error if input parameters are invalid.
     #[expect(clippy::too_many_arguments)]
     pub fn request_trades(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
@@ -5051,6 +5112,7 @@ impl DataActorCore {
         client_id: Option<ClientId>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -5073,6 +5135,7 @@ impl DataActorCore {
             .borrow_mut()
             .register_response_handler(command.request_id(), handler)?;
 
+        self.pending_requests.insert(request_id, callback);
         self.send_data_cmd(DataCommand::Request(command));
 
         Ok(request_id)
@@ -5085,7 +5148,7 @@ impl DataActorCore {
     /// Returns an error if input parameters are invalid.
     #[expect(clippy::too_many_arguments)]
     pub fn request_bars(
-        &self,
+        &mut self,
         bar_type: BarType,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
@@ -5093,6 +5156,7 @@ impl DataActorCore {
         client_id: Option<ClientId>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -5121,6 +5185,7 @@ impl DataActorCore {
             .borrow_mut()
             .register_response_handler(command.request_id(), handler)?;
 
+        self.pending_requests.insert(request_id, callback);
         self.send_data_cmd(DataCommand::Request(command));
 
         Ok(request_id)
@@ -5133,7 +5198,7 @@ impl DataActorCore {
     /// Returns an error if input parameters are invalid.
     #[expect(clippy::too_many_arguments)]
     pub fn request_funding_rates(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
@@ -5141,6 +5206,7 @@ impl DataActorCore {
         client_id: Option<ClientId>,
         params: Option<Params>,
         handler: ShareableMessageHandler,
+        callback: Option<RequestCallback>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -5163,9 +5229,17 @@ impl DataActorCore {
             .borrow_mut()
             .register_response_handler(command.request_id(), handler)?;
 
+        self.pending_requests.insert(request_id, callback);
         self.send_data_cmd(DataCommand::Request(command));
 
         Ok(request_id)
+    }
+
+    /// Finishes a request and invokes its completion callback, if registered.
+    pub fn finish_response(&mut self, request_id: UUID4) {
+        if let Some(Some(callback)) = self.pending_requests.remove(&request_id) {
+            callback(request_id);
+        }
     }
 
     /// Sends a fire-and-observe reconnect command.

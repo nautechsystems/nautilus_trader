@@ -871,6 +871,7 @@ class Strategy:
         end: datetime.datetime | None = None,
         limit: int | None = None,
         params: dict | None = None,
+        callback: typing.Any | None = None,
     ) -> str: ...
     def request_instrument(
         self,
@@ -879,6 +880,7 @@ class Strategy:
         end: datetime.datetime | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Any | None = None,
     ) -> str: ...
     def request_instruments(
         self,
@@ -887,6 +889,7 @@ class Strategy:
         end: datetime.datetime | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Any | None = None,
     ) -> str: ...
     def request_book_snapshot(
         self,
@@ -894,6 +897,7 @@ class Strategy:
         depth: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Any | None = None,
     ) -> str: ...
     def request_book_deltas(
         self,
@@ -903,6 +907,7 @@ class Strategy:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Any | None = None,
     ) -> str: ...
     def request_book_depth(
         self,
@@ -913,6 +918,7 @@ class Strategy:
         depth: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Any | None = None,
     ) -> str: ...
     def request_quotes(
         self,
@@ -922,6 +928,7 @@ class Strategy:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Any | None = None,
     ) -> str: ...
     def request_trades(
         self,
@@ -931,6 +938,7 @@ class Strategy:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Any | None = None,
     ) -> str: ...
     def request_funding_rates(
         self,
@@ -940,6 +948,7 @@ class Strategy:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Any | None = None,
     ) -> str: ...
     def request_bars(
         self,
@@ -949,6 +958,7 @@ class Strategy:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Any | None = None,
     ) -> str: ...
     def reconnect_socket(self, client_id: model.ClientId, endpoint: str) -> None: ...
 

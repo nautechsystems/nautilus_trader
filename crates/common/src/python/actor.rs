@@ -21,6 +21,7 @@ use std::{
     num::NonZeroUsize,
     ops::{Deref, DerefMut},
     rc::Rc,
+    sync::Arc,
 };
 
 use indexmap::IndexMap;
@@ -28,7 +29,7 @@ use jiff::Timestamp;
 use nautilus_core::{
     from_pydict,
     nanos::UnixNanos,
-    python::{to_pyruntime_err, to_pyvalue_err},
+    python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{
@@ -63,7 +64,7 @@ use ustr::Ustr;
 use crate::{
     actor::{
         Actor, DataActor, DataActorNative,
-        data_actor::{DataActorConfig, DataActorCore, ImportableActorConfig},
+        data_actor::{DataActorConfig, DataActorCore, ImportableActorConfig, RequestCallback},
         registry::{try_get_actor_unchecked, with_actor_registry},
     },
     cache::Cache,
@@ -739,6 +740,28 @@ fn dict_to_params(
         Some(dict) => from_pydict(py, &dict),
         None => Ok(None),
     }
+}
+
+/// Converts an optional Python callable into a request completion callback.
+pub fn request_callback_from_py(
+    py: Python<'_>,
+    callback: Option<Py<PyAny>>,
+) -> PyResult<Option<RequestCallback>> {
+    let Some(callback) = callback else {
+        return Ok(None);
+    };
+
+    if !callback.bind(py).is_callable() {
+        return Err(to_pytype_err("callback must be callable"));
+    }
+
+    Ok(Some(Arc::new(move |request_id| {
+        Python::attach(|py| {
+            if let Err(e) = callback.call1(py, (request_id.to_string(),)) {
+                log::error!("Python request callback failed: {e}");
+            }
+        });
+    })))
 }
 
 fn state_to_pydict(py: Python<'_>, state: &IndexMap<String, Vec<u8>>) -> PyResult<Py<PyDict>> {
@@ -2188,7 +2211,7 @@ impl PyDataActor {
     }
 
     #[pyo3(name = "request_data")]
-    #[pyo3(signature = (data_type, client_id, start=None, end=None, limit=None, params=None))]
+    #[pyo3(signature = (data_type, client_id, start=None, end=None, limit=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_data(
         &mut self,
@@ -2199,9 +2222,11 @@ impl PyDataActor {
         end: Option<Timestamp>,
         limit: Option<usize>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
+        let callback = request_callback_from_py(py, callback)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_data(
             self.inner_mut(),
@@ -2211,13 +2236,15 @@ impl PyDataActor {
             end,
             limit,
             params,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_instrument")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, client_id=None, params=None, callback=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_request_instrument(
         &mut self,
         py: Python<'_>,
@@ -2226,9 +2253,11 @@ impl PyDataActor {
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
+        let callback = request_callback_from_py(py, callback)?;
         let request_id = DataActor::request_instrument(
             self.inner_mut(),
             instrument_id,
@@ -2236,13 +2265,15 @@ impl PyDataActor {
             end,
             client_id,
             params,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_instruments")]
-    #[pyo3(signature = (venue=None, start=None, end=None, client_id=None, params=None))]
+    #[pyo3(signature = (venue=None, start=None, end=None, client_id=None, params=None, callback=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_request_instruments(
         &mut self,
         py: Python<'_>,
@@ -2251,17 +2282,26 @@ impl PyDataActor {
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
-        let request_id =
-            DataActor::request_instruments(self.inner_mut(), venue, start, end, client_id, params)
-                .map_err(to_pyvalue_err)?;
+        let callback = request_callback_from_py(py, callback)?;
+        let request_id = DataActor::request_instruments(
+            self.inner_mut(),
+            venue,
+            start,
+            end,
+            client_id,
+            params,
+            callback,
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_book_snapshot")]
-    #[pyo3(signature = (instrument_id, depth=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, depth=None, client_id=None, params=None, callback=None))]
     fn py_request_book_snapshot(
         &mut self,
         py: Python<'_>,
@@ -2269,9 +2309,11 @@ impl PyDataActor {
         depth: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
+        let callback = request_callback_from_py(py, callback)?;
         let depth = depth.and_then(NonZeroUsize::new);
 
         let request_id = DataActor::request_book_snapshot(
@@ -2280,13 +2322,14 @@ impl PyDataActor {
             depth,
             client_id,
             params,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_book_deltas")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_book_deltas(
         &mut self,
@@ -2297,9 +2340,11 @@ impl PyDataActor {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
+        let callback = request_callback_from_py(py, callback)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_book_deltas(
             self.inner_mut(),
@@ -2309,13 +2354,14 @@ impl PyDataActor {
             limit,
             client_id,
             params,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_book_depth")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, depth=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, depth=None, client_id=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_book_depth(
         &mut self,
@@ -2327,9 +2373,11 @@ impl PyDataActor {
         depth: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
+        let callback = request_callback_from_py(py, callback)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let depth = depth.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_book_depth(
@@ -2341,13 +2389,14 @@ impl PyDataActor {
             depth,
             client_id,
             params,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_quotes")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_quotes(
         &mut self,
@@ -2358,9 +2407,11 @@ impl PyDataActor {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
+        let callback = request_callback_from_py(py, callback)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_quotes(
             self.inner_mut(),
@@ -2370,13 +2421,14 @@ impl PyDataActor {
             limit,
             client_id,
             params,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_trades")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_trades(
         &mut self,
@@ -2387,9 +2439,11 @@ impl PyDataActor {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
+        let callback = request_callback_from_py(py, callback)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_trades(
             self.inner_mut(),
@@ -2399,13 +2453,14 @@ impl PyDataActor {
             limit,
             client_id,
             params,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_funding_rates")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_funding_rates(
         &mut self,
@@ -2416,9 +2471,11 @@ impl PyDataActor {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
+        let callback = request_callback_from_py(py, callback)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_funding_rates(
             self.inner_mut(),
@@ -2428,13 +2485,14 @@ impl PyDataActor {
             limit,
             client_id,
             params,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_bars")]
-    #[pyo3(signature = (bar_type, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (bar_type, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_bars(
         &mut self,
@@ -2445,9 +2503,11 @@ impl PyDataActor {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
+        let callback = request_callback_from_py(py, callback)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let request_id = DataActor::request_bars(
             self.inner_mut(),
@@ -2457,6 +2517,7 @@ impl PyDataActor {
             limit,
             client_id,
             params,
+            callback,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
