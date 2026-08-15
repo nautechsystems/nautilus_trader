@@ -16,7 +16,7 @@
 //! Provides a `SimulatedExchange` venue for backtesting on historical data.
 
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque},
     fmt::Debug,
     rc::Rc,
@@ -134,6 +134,12 @@ pub struct SimulatedExchange {
     book_type: BookType,
     default_leverage: Decimal,
     exec_client: Option<Rc<dyn ExecutionClient>>,
+    event_handler: Option<Rc<dyn Fn(OrderEventAny)>>,
+    /// Set only while a trading command is being processed synchronously, which is the
+    /// window in which the execution engine holds a borrow and a re-entrant event would
+    /// panic. Outside it (market data, iteration, expiration, liquidation, open-order
+    /// loading) events dispatch directly, so immediate mode keeps its synchronous timing.
+    deferring_events: Rc<Cell<bool>>,
     fee_model: FeeModelHandle,
     fill_model: FillModelHandle,
     latency_model: Option<Box<dyn LatencyModel>>,
@@ -220,6 +226,8 @@ impl SimulatedExchange {
             book_type: config.book_type,
             default_leverage,
             exec_client: None,
+            event_handler: None,
+            deferring_events: Rc::new(Cell::new(false)),
             fee_model: config.fee_model,
             fill_model: config.fill_model,
             latency_model: config.latency_model,
@@ -422,7 +430,7 @@ impl SimulatedExchange {
             .checked_add(1)
             .ok_or_else(|| anyhow::anyhow!("matching engine raw ID exhausted at u32::MAX"))?;
         self.last_raw_id = raw_id;
-        let matching_engine = OrderMatchingEngine::new(
+        let mut matching_engine = OrderMatchingEngine::new(
             instrument.clone(),
             raw_id,
             self.fill_model.clone(),
@@ -434,11 +442,36 @@ impl SimulatedExchange {
             Rc::clone(&self.cache),
             matching_engine_config,
         );
+
+        if let Some(handler) = &self.event_handler {
+            matching_engine.set_event_handler(Rc::clone(handler));
+        }
         self.instruments.insert(instrument_id, instrument);
         self.matching_engines.insert(instrument_id, matching_engine);
 
         log::info!("Added instrument {instrument_id} and created matching engine");
         Ok(())
+    }
+
+    /// Sets the deferred event handler used while a trading command is processed
+    /// synchronously.
+    ///
+    /// The supplied handler is wrapped so it applies only inside that window; outside it
+    /// events go straight to the execution engine as before.
+    pub(crate) fn set_event_handler(&mut self, handler: Rc<dyn Fn(OrderEventAny)>) {
+        let deferring = Rc::clone(&self.deferring_events);
+        let gated: Rc<dyn Fn(OrderEventAny)> = Rc::new(move |event| {
+            if deferring.get() {
+                handler(event);
+            } else {
+                msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), event);
+            }
+        });
+
+        for matching_engine in self.matching_engines.values_mut() {
+            matching_engine.set_event_handler(Rc::clone(&gated));
+        }
+        self.event_handler = Some(gated);
     }
 
     /// Returns the best bid price for the given instrument, if available.
@@ -722,6 +755,7 @@ impl SimulatedExchange {
         }
 
         if !self.use_message_queue {
+            let _guard = DeferEventsGuard::new(Rc::clone(&self.deferring_events));
             self.process_trading_command(command);
         } else if self.latency_model.is_none() {
             self.message_queue.push_back(command);
@@ -1787,11 +1821,15 @@ impl SimulatedExchange {
             None,
             order.is_quote_quantity(),
         ));
-        Self::dispatch_order_event(event);
+        self.dispatch_order_event(event);
     }
 
-    fn dispatch_order_event(event: OrderEventAny) {
-        msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), event);
+    fn dispatch_order_event(&self, event: OrderEventAny) {
+        if let Some(handler) = &self.event_handler {
+            handler(event);
+        } else {
+            msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), event);
+        }
     }
 
     fn account_at_starting_balances(&self) -> bool {
@@ -1852,6 +1890,26 @@ impl SimulatedExchange {
 
             self.cache.borrow_mut().update_account(&account).unwrap();
         }
+    }
+}
+
+/// Marks the window in which order events are routed to the deferred handler, and clears
+/// it on drop so an unwind cannot leave the exchange deferring every later event.
+#[derive(Debug)]
+struct DeferEventsGuard {
+    deferring: Rc<Cell<bool>>,
+}
+
+impl DeferEventsGuard {
+    fn new(deferring: Rc<Cell<bool>>) -> Self {
+        deferring.set(true);
+        Self { deferring }
+    }
+}
+
+impl Drop for DeferEventsGuard {
+    fn drop(&mut self) {
+        self.deferring.set(false);
     }
 }
 
