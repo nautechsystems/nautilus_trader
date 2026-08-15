@@ -26,7 +26,7 @@ use indexmap::IndexMap;
 #[cfg(feature = "python")]
 use nautilus_common::{
     actor::data_actor::ImportableActorConfig,
-    python::actor::{PyDataActor, PyDataActorInner},
+    python::actor::{PyDataActor, PyDataActorInner, apply_class_derived_actor_id},
 };
 use nautilus_common::{
     actor::{DataActor, DataActorNative, registry::try_get_actor_unchecked},
@@ -2047,6 +2047,7 @@ fn create_python_actor(config: &ImportableActorConfig) -> anyhow::Result<(Py<PyA
         }
 
         py_data_actor_ref.set_python_instance(python_actor.clone().unbind());
+        apply_class_derived_actor_id(&mut py_data_actor_ref, &python_actor)?;
         let actor_id = py_data_actor_ref.actor_id();
 
         Ok((python_actor.unbind(), actor_id))

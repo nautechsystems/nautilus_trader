@@ -2782,6 +2782,31 @@ impl PyDataActor {
     }
 }
 
+/// Applies the runtime Python class of `actor_obj` as the actor ID when neither the config nor
+/// `DataActor.__init__` supplied one.
+///
+/// Registration paths call this so an actor whose subclass does not forward to
+/// `super().__init__()` still registers under its own class rather than the shared default.
+///
+/// # Errors
+///
+/// Returns an error if the class name is not a valid actor ID.
+pub fn apply_class_derived_actor_id(
+    actor: &mut PyRefMut<'_, PyDataActor>,
+    actor_obj: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    if actor.inner().core.config.actor_id.is_some() {
+        return Ok(());
+    }
+
+    let py_type = actor_obj.get_type();
+    let type_name = py_type.name()?;
+    let actor_id = ActorId::new_checked(type_name.to_str()?).map_err(to_pyvalue_err)?;
+    actor.set_actor_id(actor_id);
+
+    Ok(())
+}
+
 /// Returns whether the config retained by the actor supplies an actor ID.
 ///
 /// The config is read through Python rather than the extracted [`DataActorConfig`] so that a

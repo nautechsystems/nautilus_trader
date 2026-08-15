@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use nautilus_common::{
     actor::data_actor::ImportableActorConfig,
     python::{
-        actor::{PyDataActor, PyDataActorInner},
+        actor::{PyDataActor, PyDataActorInner, apply_class_derived_actor_id},
         cache::PyCache,
     },
 };
@@ -287,6 +287,7 @@ impl BacktestNode {
 
                 py_data_actor_ref.set_python_instance(python_actor.clone().unbind());
 
+                apply_class_derived_actor_id(&mut py_data_actor_ref, &python_actor)?;
                 let actor_id = py_data_actor_ref.actor_id();
 
                 Ok((python_actor.unbind(), actor_id))

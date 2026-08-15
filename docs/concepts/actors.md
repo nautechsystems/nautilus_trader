@@ -47,9 +47,8 @@ class MyActor(DataActor):
 
 Data actors can receive a `DataActorConfig` subclass. The base config accepts an optional `actor_id`.
 If supplied, the actor registers with that ID; otherwise a Python actor registers under its class
-name, which requires its `__init__` to call `super().__init__()`. Give each instance an explicit
-`actor_id` when running more than one instance of the same actor, because a duplicate ID is rejected
-at registration (a `RuntimeError` in Python).
+name. Give each instance an explicit `actor_id` when running more than one instance of the same
+actor, because a duplicate ID is rejected at registration (a `RuntimeError` in Python).
 
 Treat configuration as construction data for the actor. Read user‑supplied settings through
 `self.config`, and keep runtime state on the actor itself.

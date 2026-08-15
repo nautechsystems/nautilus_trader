@@ -25,7 +25,10 @@ use nautilus_common::{
     logging::logger::LoggerConfig,
     msgbus::MessageBusConfig,
     python::{
-        actor::{PyDataActor, PyDataActorInner, register_python_exec_algorithm_endpoint},
+        actor::{
+            PyDataActor, PyDataActorInner, apply_class_derived_actor_id,
+            register_python_exec_algorithm_endpoint,
+        },
         cache::{PyCache, get_global_cache_database_factory_registry},
         msgbus::get_global_msgbus_factory_registry,
     },
@@ -368,6 +371,7 @@ impl LiveNode {
 
                 py_data_actor_ref.set_python_instance(python_actor.clone().unbind());
 
+                apply_class_derived_actor_id(&mut py_data_actor_ref, &python_actor)?;
                 let actor_id = py_data_actor_ref.actor_id();
 
                 Ok((python_actor.unbind(), actor_id))

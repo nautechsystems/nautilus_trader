@@ -127,6 +127,18 @@ class SecondDefaultIdLiveActor(DefaultIdLiveActor):
     pass
 
 
+class NonForwardingLiveActor(DataActor):
+    instances = []
+
+    def __init__(self, config=None):
+        # Deliberately does not forward to `super().__init__()`
+        type(self).instances.append(self)
+
+
+class SecondNonForwardingLiveActor(NonForwardingLiveActor):
+    pass
+
+
 def test_importable_actor_config_construction():
     config = ImportableActorConfig(
         actor_path="tests.unit.common.actor:TestActor",
@@ -725,6 +737,34 @@ def test_add_actors_from_config_derive_distinct_class_derived_ids():
         assert first.actor_id == ActorId("DefaultIdLiveActor")
         assert first.state() == ComponentState.READY
         assert second.actor_id == ActorId("SecondDefaultIdLiveActor")
+        assert second.state() == ComponentState.READY
+    finally:
+        node.dispose()
+
+
+def test_add_actors_from_config_derive_ids_without_a_forwarding_constructor():
+    # Without class-derived IDs at registration both fall back to the shared `DataActor`
+    # default and the second registration is rejected as a duplicate
+    node = LiveNode.builder("TEST", TraderId("TESTER-023"), Environment.SANDBOX).build()
+    configs = [
+        ImportableActorConfig(
+            actor_path=f"tests.unit.test_live_node:{class_name}",
+            config_path="nautilus_trader.common:DataActorConfig",
+            config={},
+        )
+        for class_name in ("NonForwardingLiveActor", "SecondNonForwardingLiveActor")
+    ]
+
+    NonForwardingLiveActor.instances.clear()
+
+    try:
+        for config in configs:
+            node.add_actor_from_config(config)
+
+        first, second = NonForwardingLiveActor.instances
+        assert first.actor_id == ActorId("NonForwardingLiveActor")
+        assert second.actor_id == ActorId("SecondNonForwardingLiveActor")
+        assert first.state() == ComponentState.READY
         assert second.state() == ComponentState.READY
     finally:
         node.dispose()

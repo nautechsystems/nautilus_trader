@@ -80,6 +80,25 @@ class SecondRecordingActor(RecordingActor):
     pass
 
 
+class NonForwardingActor(DataActor):
+    def __init__(self, config=None):
+        # Deliberately does not forward to `super().__init__()`, so the ID and the Python self
+        # reference are both established by registration rather than construction
+        self.started = 0
+        self.quotes = 0
+
+    def on_start(self):
+        self.started += 1
+        self.subscribe_quotes(ETHUSDT.id)
+
+    def on_quote(self, quote):
+        self.quotes += 1
+
+
+class SecondNonForwardingActor(NonForwardingActor):
+    pass
+
+
 class RecordingStrategy(Strategy):
     """
     Overrides lifecycle and data handlers, submits one order per quote up to
@@ -192,6 +211,27 @@ def test_overridden_actor_subclasses_receive_data_under_class_derived_ids():
         assert second.started == 1
         assert first.stopped == 1
         assert second.stopped == 1
+        assert first.quotes == QUOTE_COUNT
+        assert second.quotes == QUOTE_COUNT
+    finally:
+        engine.dispose()
+
+
+def test_actor_subclasses_that_skip_super_init_still_derive_distinct_ids():
+    engine = _engine()
+    first = NonForwardingActor()
+    second = SecondNonForwardingActor()
+
+    try:
+        engine.add_actor(first)
+        engine.add_actor(second)
+        engine.add_data(_quotes())
+        engine.run()
+
+        assert first.actor_id == ActorId("NonForwardingActor")
+        assert second.actor_id == ActorId("SecondNonForwardingActor")
+        assert first.started == 1
+        assert second.started == 1
         assert first.quotes == QUOTE_COUNT
         assert second.quotes == QUOTE_COUNT
     finally:

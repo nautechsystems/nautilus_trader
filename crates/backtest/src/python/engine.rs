@@ -22,7 +22,10 @@ use nautilus_common::{
     actor::data_actor::ImportableActorConfig,
     enums::ComponentState,
     python::{
-        actor::{PyDataActor, PyDataActorInner, register_python_exec_algorithm_endpoint},
+        actor::{
+            PyDataActor, PyDataActorInner, apply_class_derived_actor_id,
+            register_python_exec_algorithm_endpoint,
+        },
         cache::PyCache,
         config_error_to_pyvalue_err,
     },
@@ -1027,6 +1030,7 @@ impl PyBacktestEngine {
             }
 
             py_data_actor_ref.set_python_instance(actor.clone_ref(py));
+            apply_class_derived_actor_id(&mut py_data_actor_ref, bound)?;
             let actor_id = py_data_actor_ref.actor_id();
 
             Ok(actor_id)
