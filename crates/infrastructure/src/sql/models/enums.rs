@@ -313,9 +313,88 @@ impl sqlx::Type<sqlx::Postgres> for PriceTypeModel {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::enums::{AccountType, BookAction, InstrumentClass, OrderStatus};
+    use regex::Regex;
     use rstest::rstest;
+    use strum::IntoEnumIterator;
 
     use super::*;
+
+    // Reads the shipped schema rather than a copy of it, so a type declared here can never
+    // drift from the Rust enum it mirrors.
+    fn types_sql() -> String {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql/types.sql");
+        std::fs::read_to_string(path).expect("failed to read types.sql")
+    }
+
+    fn sql_enum_labels(type_name: &str) -> Vec<String> {
+        let sql = types_sql();
+        let declaration = Regex::new(&format!(
+            r"(?s)CREATE\s+TYPE\s+{type_name}\s+AS\s+ENUM\s*\((.*?)\);"
+        ))
+        .expect("invalid declaration pattern")
+        .captures(&sql)
+        .unwrap_or_else(|| panic!("no CREATE TYPE found for {type_name}"))[1]
+            .to_string();
+
+        Regex::new("'([A-Z_0-9]+)'")
+            .expect("invalid label pattern")
+            .captures_iter(&declaration)
+            .map(|label| label[1].to_string())
+            .collect()
+    }
+
+    fn rust_enum_labels<T: IntoEnumIterator + AsRef<str>>() -> Vec<String> {
+        T::iter().map(|value| value.as_ref().to_string()).collect()
+    }
+
+    // The single source of truth for coverage, so a type declared in types.sql without an entry
+    // here fails `every_declared_sql_enum_type_is_guarded`.
+    fn guarded_sql_enum_types() -> Vec<(&'static str, Vec<String>)> {
+        vec![
+            ("ACCOUNT_TYPE", rust_enum_labels::<AccountType>()),
+            (
+                "AGGREGATION_SOURCE",
+                rust_enum_labels::<AggregationSource>(),
+            ),
+            ("AGGRESSOR_SIDE", rust_enum_labels::<AggressorSide>()),
+            ("ASSET_CLASS", rust_enum_labels::<AssetClass>()),
+            ("BAR_AGGREGATION", rust_enum_labels::<BarAggregation>()),
+            ("BOOK_ACTION", rust_enum_labels::<BookAction>()),
+            ("CURRENCY_TYPE", rust_enum_labels::<CurrencyType>()),
+            ("INSTRUMENT_CLASS", rust_enum_labels::<InstrumentClass>()),
+            ("ORDER_STATUS", rust_enum_labels::<OrderStatus>()),
+            ("PRICE_TYPE", rust_enum_labels::<PriceType>()),
+            (
+                "TRAILING_OFFSET_TYPE",
+                rust_enum_labels::<TrailingOffsetType>(),
+            ),
+        ]
+    }
+
+    #[rstest]
+    fn sql_enum_type_matches_rust_enum() {
+        for (type_name, expected) in guarded_sql_enum_types() {
+            assert_eq!(sql_enum_labels(type_name), expected, "{type_name}");
+        }
+    }
+
+    #[rstest]
+    fn every_declared_sql_enum_type_is_guarded() {
+        let mut declared: Vec<String> = Regex::new(r"CREATE\s+TYPE\s+(\w+)\s+AS\s+ENUM")
+            .expect("invalid type name pattern")
+            .captures_iter(&types_sql())
+            .map(|name| name[1].to_string())
+            .collect();
+        let mut guarded: Vec<String> = guarded_sql_enum_types()
+            .into_iter()
+            .map(|(type_name, _)| type_name.to_string())
+            .collect();
+        declared.sort();
+        guarded.sort();
+
+        assert_eq!(declared, guarded);
+    }
 
     #[rstest]
     #[case(AggressorSide::NoAggressor, "NO_AGGRESSOR")]
