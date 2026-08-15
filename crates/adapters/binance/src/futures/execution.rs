@@ -31,7 +31,12 @@ use dashmap::DashMap;
 use nautilus_common::{
     cache::fifo::FifoCache,
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
+    live::{
+        get_runtime,
+        runner::{get_exec_event_sender, try_get_data_event_sender},
+        task::TaskHandles,
+    },
+    messages::DataEvent,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -1361,6 +1366,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             return Ok(());
         }
 
+        // Capture the sender before awaiting so the thread-local lookup is not affected by
+        // Tokio task migration.
+        let data_event_sender = try_get_data_event_sender();
+
         // Reinitialize cancellation token in case of reconnection
         self.cancellation_token = CancellationToken::new();
 
@@ -1380,9 +1389,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         }
 
         // Load instruments if not already done
-        let _instruments = if self.core.instruments_initialized() {
-            Vec::new()
-        } else {
+        if !self.core.instruments_initialized() {
             let instruments = self
                 .http_client
                 .request_instruments_with_config(&self.config.instrument_provider)
@@ -1392,12 +1399,12 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             if instruments.is_empty() {
                 log::warn!("No instruments returned for Binance Futures");
             } else {
+                publish_instruments_to_data_cache(data_event_sender.as_ref(), &instruments);
                 log::debug!("Loaded {} Futures instruments", instruments.len());
             }
 
             self.core.set_instruments_initialized();
-            instruments
-        };
+        }
 
         // Apply configured leverage and margin types
         self.apply_futures_config()
@@ -1623,6 +1630,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         if refresh_secs > 0 {
             let http_client = self.http_client.clone();
             let provider = self.config.instrument_provider.clone();
+            let data_event_sender = try_get_data_event_sender();
             self.spawn_task("instrument_refresh", async move {
                 let mut interval = tokio::time::interval(Duration::from_secs(refresh_secs));
                 interval.tick().await;
@@ -1631,10 +1639,16 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     interval.tick().await;
 
                     match http_client.request_instruments_with_config(&provider).await {
-                        Ok(instruments) => log::debug!(
-                            "Refreshed Binance Futures execution instruments: count={}",
-                            instruments.len()
-                        ),
+                        Ok(instruments) => {
+                            publish_instruments_to_data_cache(
+                                data_event_sender.as_ref(),
+                                &instruments,
+                            );
+                            log::debug!(
+                                "Refreshed Binance Futures execution instruments: count={}",
+                                instruments.len()
+                            );
+                        }
                         Err(e) => {
                             log::warn!("Binance Futures execution instrument refresh failed: {e}");
                         }
@@ -2455,6 +2469,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         let http_client = self.http_client.clone();
         let provider = self.config.instrument_provider.clone();
+        let data_event_sender = try_get_data_event_sender();
 
         get_runtime().spawn(async move {
             match http_client.request_instruments_with_config(&provider).await {
@@ -2462,6 +2477,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     if instruments.is_empty() {
                         log::warn!("No instruments returned for Binance Futures");
                     } else {
+                        publish_instruments_to_data_cache(
+                            data_event_sender.as_ref(),
+                            &instruments,
+                        );
                         log::debug!("Loaded {} Futures instruments", instruments.len());
                     }
                 }
@@ -3149,6 +3168,43 @@ fn is_instrument_for_product(instrument: &InstrumentAny, product_type: BinancePr
     }
 }
 
+/// Publishes execution-discovered instruments to the live data route so the shared cache is
+/// populated even when no Binance data client is configured.
+fn publish_instruments_to_data_cache(
+    data_event_sender: Option<&tokio::sync::mpsc::UnboundedSender<DataEvent>>,
+    instruments: &[InstrumentAny],
+) {
+    let Some(sender) = data_event_sender else {
+        log::debug!(
+            "Data event sender unavailable; execution-discovered Binance Futures instruments were not published"
+        );
+        return;
+    };
+
+    let published = publish_instruments(sender, instruments);
+    if published != instruments.len() {
+        log::warn!(
+            "Failed to publish all Binance Futures instruments to the data route: published={}, total={}",
+            published,
+            instruments.len()
+        );
+    }
+}
+
+fn publish_instruments(
+    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    instruments: &[InstrumentAny],
+) -> usize {
+    instruments
+        .iter()
+        .take_while(|instrument| {
+            sender
+                .send(DataEvent::Instrument((**instrument).clone()))
+                .is_ok()
+        })
+        .count()
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
@@ -3484,5 +3540,21 @@ mod tests {
         ));
         assert!(!is_instrument_for_product(&spot, BinanceProductType::UsdM));
         assert!(!is_instrument_for_product(&spot, BinanceProductType::CoinM));
+    }
+
+    #[rstest]
+    fn test_publish_instruments_sends_each_instrument() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+
+        assert_eq!(
+            publish_instruments(&sender, std::slice::from_ref(&instrument)),
+            1
+        );
+
+        let event = receiver.try_recv().unwrap();
+        assert!(
+            matches!(event, DataEvent::Instrument(received) if received.id() == instrument.id())
+        );
     }
 }
