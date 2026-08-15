@@ -521,6 +521,64 @@ reports for reconciliation. They must support these boundaries consistently:
 Do not infer support from a venue API alone. Implement and test the Nautilus command and event
 semantics, then advertise the capability.
 
+#### Reconciliation reports
+
+Reconciliation reads venue state through five
+[`ExecutionClient`](../../crates/common/src/clients/execution.rs) report methods. They return
+reports rather than emitting order events, leaving the execution engine to decide what a difference
+between cached state and venue state means.
+
+| Method                             | Produces                                                                             | Driven by                                                            |
+| ---------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `generate_order_status_report`     | One optional [`OrderStatusReport`](../../crates/model/src/reports/order.rs).         | A targeted probe for one order the open‑order check left unresolved. |
+| `generate_order_status_reports`    | [`OrderStatusReport`](../../crates/model/src/reports/order.rs) values.               | Mass status and the periodic open‑order check.                       |
+| `generate_fill_reports`            | [`FillReport`](../../crates/model/src/reports/fill.rs) values.                       | Mass status.                                                         |
+| `generate_position_status_reports` | [`PositionStatusReport`](../../crates/model/src/reports/position.rs) values.         | Mass status and the periodic position check.                         |
+| `generate_mass_status`             | One optional [`ExecutionMassStatus`](../../crates/model/src/reports/mass_status.rs). | Startup reconciliation, once per execution client.                   |
+
+`generate_mass_status` runs once per execution client before trading starts. Its default
+implementation composes the three bulk methods concurrently from one `ts_init`, derives each
+command's `start` from `lookback_mins`, and requests full order history with `open_only=false`.
+Implementing the bulk methods is therefore enough for startup. Override the composition when the
+client declares a history bound, as described in
+[bounded mass‑status reports](#bounded-massstatus-reports), or when it does not use the realtime
+clock. Returning `Ok(None)` logs a warning and leaves that client unreconciled, while an error
+fails startup.
+
+The bulk methods take a filter command carrying `instrument_id`, `start`, and `end`, plus
+`open_only` for order reports and `venue_order_id` for fill reports. Apply every filter the venue
+endpoint supports and complete the rest locally. `open_only` separates the currently open orders a
+periodic check needs from the history a mass status needs. Log report counts at the command's
+`log_receipt_level` so periodic checks stay at debug while mass status logs at info.
+
+When a periodic check request fails, the engine marks that client failed for the cycle and stops
+inferring absence for the orders and positions it covers. Returning an error is therefore safer
+than returning an empty set.
+
+`generate_order_status_report` resolves a single order. The engine issues it after the open‑order
+check retries without confirming a cached order, which requires that check to run in full‑history
+mode (`open_check_open_only=false`). The command carries the queried `instrument_id` and
+`client_order_id`, plus `venue_order_id` when the order has one, so support a lookup that has no
+venue identifier yet. The engine discards a report whose identity does not match the query.
+
+Distinguish absence from failure in that probe, because the engine acts on the difference:
+
+- `Ok(None)` states that the venue answered and has no such order. The engine treats that as proof
+  and resolves an accepted, submitted, or partially filled order to a terminal state, while pending
+  cancel and update states stay unresolved.
+- An error states that the lookup did not answer, so the engine defers the missing‑order resolution
+  to a later cycle.
+
+A failed lookup returned as `Ok(None)` can therefore reject or cancel an order that is live at the
+venue. The trait default returns `Ok(None)` after logging that the handler is not implemented, so
+implement this method before an open‑order check runs in full‑history mode.
+
+[Execution reconciliation](../concepts/reconciliation.md) documents what the engine does with these
+reports, including the startup procedure, the runtime checks that drive the periodic and targeted
+requests, and their retry and throttling rules. Cases TC-E84 to TC-E87 and TC-E101 in the
+[execution testing specification](spec_exec_testing.md) exercise startup reconciliation against a
+venue.
+
 #### Bounded mass‑status reports
 
 When an execution client applies a lower time bound to historical reconciliation reports, record
