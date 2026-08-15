@@ -46,7 +46,7 @@ use ustr::Ustr;
 
 #[expect(
     clippy::struct_excessive_bools,
-    reason = "independent switches cover actor and strategy load and update failures"
+    reason = "independent switches cover lifecycle persistence failure modes"
 )]
 #[derive(Debug, Default)]
 struct TestCacheDatabaseState {
@@ -57,6 +57,7 @@ struct TestCacheDatabaseState {
     fail_load_strategy: bool,
     fail_update_actor: bool,
     fail_update_strategy: bool,
+    fail_update_position: bool,
 }
 
 /// Shared control and observation handle for [`TestCacheDatabase`].
@@ -153,6 +154,11 @@ impl TestCacheDatabaseControl {
     /// Configures strategy updates to fail.
     pub fn set_fail_update_strategy(&self, fail: bool) {
         self.state.lock().unwrap().fail_update_strategy = fail;
+    }
+
+    /// Configures position updates to fail.
+    pub fn set_fail_update_position(&self, fail: bool) {
+        self.state.lock().unwrap().fail_update_position = fail;
     }
 }
 
@@ -457,6 +463,9 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
     }
 
     fn update_position(&self, _position: &Position) -> anyhow::Result<()> {
+        if self.control.state.lock().unwrap().fail_update_position {
+            anyhow::bail!("test position update failure");
+        }
         Ok(())
     }
 

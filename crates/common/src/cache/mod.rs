@@ -5137,20 +5137,20 @@ impl Cache {
             self.index.positions_open.remove(&position.id);
         }
 
-        if let Some(database) = &mut self.database {
-            database.update_position(position)?;
-            // TODO: Implement order snapshots
-            // if self.snapshot_orders {
-            //     database.snapshot_order_state(order)?;
-            // }
-        }
-
         match self.positions.get(&position.id) {
             Some(position_cell) => *position_cell.borrow_mut() = position.clone(),
             None => {
                 self.positions
                     .insert(position.id, SharedCell::new(position.clone()));
             }
+        }
+
+        if let Some(database) = &mut self.database {
+            database.update_position(position)?;
+            // TODO: Implement order snapshots
+            // if self.snapshot_orders {
+            //     database.snapshot_order_state(order)?;
+            // }
         }
 
         Ok(())
