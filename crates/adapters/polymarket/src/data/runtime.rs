@@ -26,13 +26,34 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
     instruments::TokenMeta,
     subscriptions::{resolve_token_id_from, sync_ws_subscription_async},
 };
-use crate::resolve::ResolveWatchEntry;
+use crate::{providers::extract_condition_id, resolve::ResolveWatchEntry};
+
+pub(crate) fn is_condition_closed(
+    closed_condition_ids: &Arc<StdMutex<AHashSet<String>>>,
+    condition_id: &str,
+) -> bool {
+    closed_condition_ids
+        .lock()
+        .expect("closed_condition_ids mutex poisoned")
+        .contains(condition_id)
+}
+
+pub(crate) fn register_closed_condition(
+    closed_condition_ids: &Arc<StdMutex<AHashSet<String>>>,
+    condition_id: &str,
+) {
+    closed_condition_ids
+        .lock()
+        .expect("closed_condition_ids mutex poisoned")
+        .insert(condition_id.to_string());
+}
 
 pub(crate) fn is_instrument_expired(instrument: &InstrumentAny, now_ns: UnixNanos) -> bool {
     crate::filters::is_expired(instrument, now_ns)
@@ -175,6 +196,125 @@ pub(crate) async fn retire_local_instrument_state(
     let keep_local_metadata = is_watchlisted_instrument(resolve_poll_watchlist, instrument_id);
     if !keep_local_metadata {
         instruments.remove(&instrument_id);
+    }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "shared adapter state is held in Arcs"
+)]
+pub(crate) async fn retire_closed_condition_state(
+    condition_id: &str,
+    seed_ids: impl IntoIterator<Item = InstrumentId>,
+    closed_condition_ids: &Arc<StdMutex<AHashSet<String>>>,
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
+    order_books: &Arc<DashMap<InstrumentId, OrderBook>>,
+    last_quotes: &Arc<DashMap<InstrumentId, QuoteTick>>,
+    active_quote_subs: &Arc<AtomicSet<InstrumentId>>,
+    active_delta_subs: &Arc<AtomicSet<InstrumentId>>,
+    active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
+    resolve_poll_watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+    pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
+    pending_auto_loads: &Arc<StdMutex<AHashSet<InstrumentId>>>,
+    ws_open_tokens: &Arc<AtomicSet<Ustr>>,
+    ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
+    ws: &crate::websocket::pool::PolymarketMarketPoolHandle,
+    cancellation: Option<&CancellationToken>,
+) {
+    if cancellation.is_some_and(CancellationToken::is_cancelled) {
+        return;
+    }
+
+    // The terminal marker must be visible before state is inspected or any asynchronous
+    // WebSocket reconciliation begins.
+    register_closed_condition(closed_condition_ids, condition_id);
+
+    let matches_condition = |instrument_id: &InstrumentId| {
+        extract_condition_id(instrument_id).is_ok_and(|candidate| candidate == condition_id)
+    };
+    let mut retiring_ids = seed_ids
+        .into_iter()
+        .filter(matches_condition)
+        .collect::<AHashSet<_>>();
+
+    retiring_ids.extend(
+        instruments
+            .load()
+            .keys()
+            .filter(|id| matches_condition(id))
+            .copied(),
+    );
+
+    for subscriptions in [active_quote_subs, active_delta_subs, active_trade_subs] {
+        retiring_ids.extend(
+            subscriptions
+                .load()
+                .iter()
+                .filter(|id| matches_condition(id))
+                .copied(),
+        );
+    }
+    retiring_ids.extend(
+        pending_snapshot_after_tick_change
+            .load()
+            .iter()
+            .filter(|id| matches_condition(id))
+            .copied(),
+    );
+    retiring_ids.extend(
+        pending_auto_loads
+            .lock()
+            .expect("pending_auto_loads mutex poisoned")
+            .iter()
+            .filter(|id| matches_condition(id))
+            .copied(),
+    );
+    retiring_ids.extend(
+        token_meta
+            .iter()
+            .map(|entry| entry.value().instrument_id)
+            .filter(matches_condition),
+    );
+    retiring_ids.extend(
+        order_books
+            .iter()
+            .map(|entry| *entry.key())
+            .filter(matches_condition),
+    );
+    retiring_ids.extend(
+        last_quotes
+            .iter()
+            .map(|entry| *entry.key())
+            .filter(matches_condition),
+    );
+
+    for instrument_id in retiring_ids {
+        let retirement = retire_local_instrument_state(
+            instrument_id,
+            instruments,
+            token_meta,
+            order_books,
+            last_quotes,
+            active_quote_subs,
+            active_delta_subs,
+            active_trade_subs,
+            resolve_poll_watchlist,
+            pending_snapshot_after_tick_change,
+            pending_auto_loads,
+            ws_open_tokens,
+            ws_sub_mutex,
+            ws,
+        );
+
+        if let Some(cancellation) = cancellation {
+            tokio::select! {
+                () = cancellation.cancelled() => return,
+                () = retirement => {}
+            }
+        } else {
+            retirement.await;
+        }
     }
 }
 

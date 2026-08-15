@@ -137,6 +137,7 @@ pub struct PolymarketDataClient {
     ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
     pending_auto_loads: Arc<StdMutex<AHashSet<InstrumentId>>>,
     auto_load_scheduled: Arc<AtomicBool>,
+    closed_condition_ids: Arc<StdMutex<AHashSet<String>>>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
     rtds_feed: PolymarketRtdsFeed,
     socket_registry: SocketReconnectRegistry,
@@ -239,6 +240,7 @@ impl PolymarketDataClient {
             ws_sub_mutex: Arc::new(tokio::sync::Mutex::new(())),
             pending_auto_loads: Arc::new(StdMutex::new(AHashSet::new())),
             auto_load_scheduled: Arc::new(AtomicBool::new(false)),
+            closed_condition_ids: Arc::new(StdMutex::new(AHashSet::new())),
             position_event_handler: None,
             rtds_feed: PolymarketRtdsFeed::new_with_proxy_and_socket_control(
                 rtds_url,
@@ -340,6 +342,52 @@ impl PolymarketDataClient {
         }
 
         Ok(instrument)
+    }
+
+    fn add_live_subscription_intent(
+        &self,
+        instrument_id: InstrumentId,
+        subscriptions: &Arc<AtomicSet<InstrumentId>>,
+    ) -> bool {
+        self.add_live_subscription_intent_with_state(instrument_id, subscriptions, || {})
+    }
+
+    fn add_delta_subscription_intent(&self, instrument_id: InstrumentId) -> bool {
+        self.add_live_subscription_intent_with_state(instrument_id, &self.active_delta_subs, || {
+            if self.config.compute_effective_deltas {
+                self.order_books
+                    .entry(instrument_id)
+                    .or_insert_with(|| OrderBook::new(instrument_id, BookType::L2_MBP));
+            }
+        })
+    }
+
+    fn add_live_subscription_intent_with_state(
+        &self,
+        instrument_id: InstrumentId,
+        subscriptions: &Arc<AtomicSet<InstrumentId>>,
+        initialize_state: impl FnOnce(),
+    ) -> bool {
+        let Ok(condition_id) = crate::providers::extract_condition_id(&instrument_id) else {
+            subscriptions.insert(instrument_id);
+            initialize_state();
+            return true;
+        };
+        let closed = self
+            .closed_condition_ids
+            .lock()
+            .expect("closed_condition_ids mutex poisoned");
+
+        if closed.contains(&condition_id) {
+            log::debug!(
+                "Ignoring live subscription for terminally closed Polymarket condition {condition_id}"
+            );
+            return false;
+        }
+
+        subscriptions.insert(instrument_id);
+        initialize_state();
+        true
     }
 
     // Spawns an async task that reconciles the WS subscription for
@@ -512,12 +560,8 @@ impl DataClient for PolymarketDataClient {
         }
 
         // Mark intent before routing so unsubscribe can race-safely clear it.
-        self.active_delta_subs.insert(instrument_id);
-
-        if self.config.compute_effective_deltas {
-            self.order_books
-                .entry(instrument_id)
-                .or_insert_with(|| OrderBook::new(instrument_id, BookType::L2_MBP));
+        if !self.add_delta_subscription_intent(instrument_id) {
+            return Ok(());
         }
 
         if !cached {
@@ -546,7 +590,9 @@ impl DataClient for PolymarketDataClient {
             );
         }
 
-        self.active_quote_subs.insert(instrument_id);
+        if !self.add_live_subscription_intent(instrument_id, &self.active_quote_subs) {
+            return Ok(());
+        }
 
         if !cached {
             self.queue_pending_load(instrument_id);
@@ -568,7 +614,9 @@ impl DataClient for PolymarketDataClient {
             );
         }
 
-        self.active_trade_subs.insert(instrument_id);
+        if !self.add_live_subscription_intent(instrument_id, &self.active_trade_subs) {
+            return Ok(());
+        }
 
         if !cached {
             self.queue_pending_load(instrument_id);

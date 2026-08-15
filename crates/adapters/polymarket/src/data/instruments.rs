@@ -23,6 +23,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
 };
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{PolymarketDataClient, runtime::is_instrument_expired};
@@ -59,6 +60,43 @@ pub(crate) fn cache_instrument(
         TokenMeta::from_instrument(instrument),
     );
     instruments.insert(instrument_id, instrument.clone());
+}
+
+pub(super) fn publish_cached_condition_closed(
+    condition_id: &str,
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+) -> usize {
+    let mut updated = Vec::new();
+
+    instruments.rcu(|map| {
+        updated.clear();
+
+        for (instrument_id, instrument) in map.iter_mut() {
+            if !extract_condition_id(instrument_id).is_ok_and(|candidate| candidate == condition_id)
+            {
+                continue;
+            }
+
+            if let InstrumentAny::BinaryOption(binary) = instrument
+                && binary_market_closed(binary) != Some(true)
+            {
+                set_market_closed(binary, true);
+                updated.push(InstrumentAny::BinaryOption(binary.clone()));
+            }
+        }
+    });
+
+    for instrument in &updated {
+        let instrument_id = instrument.id();
+        if let Some(latest) = instruments.get_cloned(&instrument_id)
+            && let Err(e) = data_sender.send(DataEvent::Instrument(latest))
+        {
+            log::warn!("Failed to publish market closure update for {instrument_id}: {e}");
+        }
+    }
+
+    updated.len()
 }
 
 impl TokenMeta {
@@ -148,6 +186,32 @@ pub(super) async fn refresh_scoped_instruments(
     ))
 }
 
+// Queries Gamma's positive `closed=true` path and returns only conditions it confirms closed.
+pub(super) async fn query_positive_closed_condition_ids(
+    http: &PolymarketGammaHttpClient,
+    condition_ids: &[String],
+) -> anyhow::Result<Vec<String>> {
+    let requested = condition_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<AHashSet<_>>();
+    let markets = http
+        .request_markets_by_params(GetGammaMarketsParams {
+            condition_ids: Some(condition_ids.to_vec()),
+            closed: Some(true),
+            ..Default::default()
+        })
+        .await?;
+
+    Ok(markets
+        .into_iter()
+        .filter(|market| {
+            market.closed == Some(true) && requested.contains(market.condition_id.as_str())
+        })
+        .map(|market| market.condition_id)
+        .collect())
+}
+
 // Returns the condition IDs Gamma positively reports as `closed=true`.
 //
 // Condition IDs the unfiltered lookup does not return are re-queried with `closed=true`, so a
@@ -182,19 +246,7 @@ async fn probe_closed_condition_ids(
         return Ok(closed_ids);
     }
 
-    let closed = http
-        .request_markets_by_params(GetGammaMarketsParams {
-            condition_ids: Some(missing),
-            closed: Some(true),
-            ..Default::default()
-        })
-        .await?;
-    closed_ids.extend(
-        closed
-            .into_iter()
-            .filter(|market| market.closed == Some(true))
-            .map(|market| market.condition_id),
-    );
+    closed_ids.extend(query_positive_closed_condition_ids(http, &missing).await?);
 
     Ok(closed_ids)
 }
@@ -204,6 +256,8 @@ pub(super) async fn refresh_expired_market_closure(
     cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     now_ns: UnixNanos,
+    closed_condition_ids: &Arc<std::sync::Mutex<AHashSet<String>>>,
+    cancellation: Option<&CancellationToken>,
 ) -> anyhow::Result<usize> {
     let mut carried: AHashMap<String, Vec<InstrumentId>> = AHashMap::new();
 
@@ -242,6 +296,21 @@ pub(super) async fn refresh_expired_market_closure(
         .flatten()
         .copied()
         .collect::<Vec<_>>();
+
+    // Serialize terminal application with reset. If reset wins the boundary, this old generation
+    // must not mutate or publish from the cache it captured before the request.
+    let mut terminal_conditions = closed_condition_ids
+        .lock()
+        .expect("closed_condition_ids mutex poisoned");
+
+    if cancellation.is_some_and(CancellationToken::is_cancelled) {
+        return Ok(0);
+    }
+
+    // Positive Gamma closure evidence is terminal and must become visible before cache mutation.
+    for condition_id in &closed_ids {
+        terminal_conditions.insert(condition_id.clone());
+    }
     let mut updated = Vec::new();
 
     // Compose against the latest cached value, so a concurrent tick size change is not discarded.
@@ -373,7 +442,10 @@ impl PolymarketDataClient {
 mod tests {
     use std::{
         net::SocketAddr,
-        sync::atomic::{AtomicUsize, Ordering},
+        sync::{
+            Mutex as StdMutex,
+            atomic::{AtomicUsize, Ordering},
+        },
     };
 
     use axum::{
@@ -681,9 +753,16 @@ mod tests {
         )
         .unwrap();
 
-        let result =
-            refresh_expired_market_closure(&client, &instruments, &tx, UnixNanos::from(u64::MAX))
-                .await;
+        let closed_condition_ids = Arc::new(StdMutex::new(AHashSet::new()));
+        let result = refresh_expired_market_closure(
+            &client,
+            &instruments,
+            &tx,
+            UnixNanos::from(u64::MAX),
+            &closed_condition_ids,
+            None,
+        )
+        .await;
 
         if fail {
             assert!(result.is_err());
@@ -765,9 +844,16 @@ mod tests {
         )
         .unwrap();
 
-        let result =
-            refresh_expired_market_closure(&client, &instruments, &tx, UnixNanos::from(u64::MAX))
-                .await;
+        let closed_condition_ids = Arc::new(StdMutex::new(AHashSet::new()));
+        let result = refresh_expired_market_closure(
+            &client,
+            &instruments,
+            &tx,
+            UnixNanos::from(u64::MAX),
+            &closed_condition_ids,
+            None,
+        )
+        .await;
 
         assert!(result.is_err());
 
@@ -778,5 +864,12 @@ mod tests {
             .count();
 
         assert_eq!(closed, GAMMA_CONDITION_IDS_BATCH_SIZE);
+        assert_eq!(
+            closed_condition_ids
+                .lock()
+                .expect("closed_condition_ids mutex poisoned")
+                .len(),
+            GAMMA_CONDITION_IDS_BATCH_SIZE,
+        );
     }
 }

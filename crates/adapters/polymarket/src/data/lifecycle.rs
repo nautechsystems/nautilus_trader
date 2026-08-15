@@ -15,20 +15,23 @@
 
 use std::time::Duration;
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use dashmap::DashMap;
 use nautilus_common::{
     live::get_runtime,
     msgbus::{self, TypedHandler},
 };
-use nautilus_core::AtomicSet;
+use nautilus_core::{AtomicMap, AtomicSet};
 use nautilus_model::events::PositionEvent;
 
 use super::{
     PolymarketDataClient,
     dispatch::{WsMessageContext, handle_ws_message},
     instruments::refresh_expired_market_closure,
-    runtime::{retire_expired_local_instruments, seed_token_meta_from_live_instruments},
+    runtime::{
+        retire_closed_condition_state, retire_expired_local_instruments,
+        seed_token_meta_from_live_instruments,
+    },
 };
 use crate::{
     data_types::register_polymarket_custom_data,
@@ -150,6 +153,7 @@ impl PolymarketDataClient {
         let ws = self.ws_client.handle();
         let closure_client = gamma_client.clone();
         let closure_sender = self.data_sender.clone();
+        let closed_condition_ids = self.closed_condition_ids.clone();
 
         let ctx = WsMessageContext {
             clock: self.clock,
@@ -199,10 +203,54 @@ impl PolymarketDataClient {
 
                         // Runs on every tick so retirement never trails closure by more than one
                         // cycle. Without an expired instrument reported open, no request is sent.
-                        if let Err(e) = refresh_expired_market_closure(
-                            &closure_client, &instruments, &closure_sender, now_ns,
-                        ).await {
+                        let refresh_result = tokio::select! {
+                            result = refresh_expired_market_closure(
+                                &closure_client,
+                                &instruments,
+                                &closure_sender,
+                                now_ns,
+                                &closed_condition_ids,
+                                Some(&cancellation),
+                            ) => result,
+                            () = cancellation.cancelled() => break,
+                        };
+
+                        if let Err(e) = refresh_result {
                             log::warn!("Failed to refresh Polymarket market closure state: {e}");
+                        }
+
+                        if cancellation.is_cancelled() {
+                            break;
+                        }
+
+                        let terminal_conditions = closed_condition_ids
+                            .lock()
+                            .expect("closed_condition_ids mutex poisoned")
+                            .iter()
+                            .cloned()
+                            .collect::<Vec<_>>();
+
+                        for condition_id in terminal_conditions {
+                            retire_closed_condition_state(
+                                &condition_id,
+                                std::iter::empty(),
+                                &closed_condition_ids,
+                                &instruments,
+                                &token_meta,
+                                &order_books,
+                                &last_quotes,
+                                &active_quote_subs,
+                                &active_delta_subs,
+                                &active_trade_subs,
+                                &watchlist,
+                                &pending_snapshot_after_tick_change,
+                                &pending_auto_loads,
+                                &ws_open_tokens,
+                                &ws_sub_mutex,
+                                &ws,
+                                Some(&cancellation),
+                            )
+                            .await;
                         }
 
                         retire_expired_local_instruments(
@@ -329,10 +377,15 @@ impl PolymarketDataClient {
             handle.abort();
         }
 
-        self.instruments.store(AHashMap::new());
-        self.token_meta.clear();
-        self.order_books.clear();
-        self.last_quotes.clear();
+        let old_closed_condition_ids = self.closed_condition_ids.clone();
+        let _generation_guard = old_closed_condition_ids
+            .lock()
+            .expect("closed_condition_ids mutex poisoned");
+
+        self.instruments = std::sync::Arc::new(AtomicMap::new());
+        self.token_meta = std::sync::Arc::new(DashMap::new());
+        self.order_books = std::sync::Arc::new(DashMap::new());
+        self.last_quotes = std::sync::Arc::new(DashMap::new());
 
         self.active_quote_subs = std::sync::Arc::new(AtomicSet::new());
         self.active_delta_subs = std::sync::Arc::new(AtomicSet::new());
@@ -349,12 +402,9 @@ impl PolymarketDataClient {
             self.rtds_socket_control.clone(),
         );
 
-        self.pending_auto_loads
-            .lock()
-            .expect("pending_auto_loads mutex poisoned")
-            .clear();
-        self.auto_load_scheduled
-            .store(false, std::sync::atomic::Ordering::Release);
+        self.pending_auto_loads = std::sync::Arc::new(std::sync::Mutex::new(AHashSet::new()));
+        self.closed_condition_ids = std::sync::Arc::new(std::sync::Mutex::new(AHashSet::new()));
+        self.auto_load_scheduled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         self.cancellation_token = tokio_util::sync::CancellationToken::new();
     }
