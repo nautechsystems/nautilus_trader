@@ -26,7 +26,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::OrderAny,
     position::Position,
-    types::{AccountBalance, Currency, MarginBalance},
+    types::Currency,
 };
 use sqlx::{PgPool, Postgres, Row, Transaction};
 
@@ -1013,10 +1013,16 @@ impl DatabaseQueries {
         }
 
         let mut transaction = pool.begin().await?;
-        let balances = serde_json::to_value::<Vec<AccountBalance>>(account_event.balances)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize account balances: {e}"))?;
-        let margins = serde_json::to_value::<Vec<MarginBalance>>(account_event.margins)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize margin balances: {e}"))?;
+        let event = serde_json::to_value(&account_event)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize account event: {e}"))?;
+        let balances = event
+            .get("balances")
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Serialized account event has no balances"))?;
+        let margins = event
+            .get("margins")
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Serialized account event has no margins"))?;
 
         sqlx::query(
             r#"

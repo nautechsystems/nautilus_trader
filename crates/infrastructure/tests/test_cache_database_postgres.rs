@@ -58,7 +58,7 @@ mod serial_tests {
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
-        types::{Currency, Price, Quantity},
+        types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use nautilus_persistence::test_data::RustTestCustomData;
     use nautilus_serialization::ensure_custom_data_registered;
@@ -1059,6 +1059,16 @@ mod serial_tests {
 
         let mut init_state = wallet_account_state();
         init_state.account_id = AccountId::from("WALLET-001");
+        let token = Currency::new(
+            "ENG729P",
+            6,
+            0,
+            "Postgres wallet token",
+            CurrencyType::Crypto,
+        );
+        let total = Money::from_mantissa_exponent(123_456_789, -6, token);
+        init_state.balances[1] = AccountBalance::new(total, Money::zero(token), total);
+        assert!(Currency::try_from_str("ENG729P").is_none());
         let mut account = AccountAny::try_from_state(init_state).unwrap();
         pg_cache.add_account(&account).unwrap();
         wait_until_async(
@@ -1094,7 +1104,41 @@ mod serial_tests {
         let loaded = account_result.unwrap();
         assert!(matches!(loaded, AccountAny::Wallet(_)));
         assert_entirely_equal(loaded, account);
+        assert!(Currency::try_from_str("ENG729P").is_none());
 
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_load_wallet_account_rejects_malformed_balance() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+        pg_cache.flush().unwrap();
+
+        let mut event = wallet_account_state();
+        event.account_id = AccountId::from("WALLET-MALFORMED-001");
+        DatabaseQueries::add_account(&pg_cache.pool, false, event)
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE account_event SET balances = '[{\"currency\":\"USD\"}]'::jsonb \
+             WHERE account_id = 'WALLET-MALFORMED-001'",
+        )
+        .execute(&pg_cache.pool)
+        .await
+        .unwrap();
+
+        let error = DatabaseQueries::load_account_events(
+            &pg_cache.pool,
+            &AccountId::from("WALLET-MALFORMED-001"),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            error.to_string().contains("missing field `total`"),
+            "was: {error}"
+        );
         pg_cache.flush().unwrap();
         pg_cache.close().unwrap();
     }

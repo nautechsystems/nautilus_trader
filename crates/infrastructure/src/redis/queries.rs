@@ -1046,7 +1046,12 @@ mod tests {
 
     use nautilus_common::enums::SerializationEncoding;
     use nautilus_core::UnixNanos;
-    use nautilus_model::identifiers::InstrumentId;
+    use nautilus_model::{
+        enums::{AccountType, CurrencyType},
+        events::AccountState,
+        identifiers::{AccountId, InstrumentId},
+        types::{AccountBalance, Currency, Money},
+    };
     use rstest::rstest;
     use serde::Deserialize;
 
@@ -1082,6 +1087,49 @@ mod tests {
                 ts_init: UnixNanos::from(2_987_654_321),
             }
         );
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_wallet_account_state_round_trips_unregistered_currency(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let currency = Currency::new(
+            "ENG729C",
+            6,
+            0,
+            "Cache round-trip token",
+            CurrencyType::Crypto,
+        );
+        let total = Money::from_mantissa_exponent(123_456_789, -6, currency);
+        let state = AccountState::new(
+            AccountId::new("WALLET-CACHE-001"),
+            AccountType::Wallet,
+            vec![AccountBalance::new(total, Money::zero(currency), total)],
+            vec![],
+            true,
+            nautilus_core::UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+        );
+        assert!(Currency::try_from_str("ENG729C").is_none());
+
+        let payload = DatabaseQueries::serialize_payload(encoding, &state).unwrap();
+        let restored: AccountState =
+            DatabaseQueries::deserialize_payload(encoding, &payload).unwrap();
+        let restored = restored.balances[0];
+
+        assert_eq!(restored.total.raw, total.raw);
+        assert_eq!(restored.locked.raw, 0);
+        assert_eq!(restored.free.raw, total.raw);
+        assert_eq!(restored.currency.code, currency.code);
+        assert_eq!(restored.currency.precision, currency.precision);
+        assert_eq!(restored.currency.iso4217, currency.iso4217);
+        assert_eq!(restored.currency.name, currency.name);
+        assert_eq!(restored.currency.currency_type, currency.currency_type);
+        assert!(Currency::try_from_str("ENG729C").is_none());
     }
 
     #[rstest]
