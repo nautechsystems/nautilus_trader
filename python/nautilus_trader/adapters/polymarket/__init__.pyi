@@ -4,6 +4,7 @@ import datetime
 import enum
 import typing
 
+from nautilus_trader import execution
 from nautilus_trader import model
 from nautilus_trader import network
 
@@ -16,6 +17,7 @@ __all__ = [
     "PolymarketDataLoader",
     "PolymarketExecClientConfig",
     "PolymarketExecutionClientFactory",
+    "PolymarketFeeModel",
     "PolymarketInstrumentProviderConfig",
     "PolymarketRtdsCryptoPrice",
     "PolymarketRtdsEquityPrice",
@@ -169,6 +171,17 @@ class PolymarketExecClientConfig:
 class PolymarketExecutionClientFactory:
     def __init__(self) -> None: ...
     def name(self) -> str: ...
+
+@typing.final
+class PolymarketFeeModel(execution.FeeModel):
+    def __new__(cls) -> typing.Self: ...
+    def get_commission(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+    ) -> model.Money: ...
 
 @typing.final
 class PolymarketInstrumentProviderConfig:

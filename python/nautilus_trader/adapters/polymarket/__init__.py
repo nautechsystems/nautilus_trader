@@ -28,6 +28,7 @@ __all__ = [
     "PolymarketDataLoader",
     "PolymarketExecClientConfig",
     "PolymarketExecutionClientFactory",
+    "PolymarketFeeModel",
     "PolymarketInstrumentProviderConfig",
     "PolymarketRtdsCryptoPrice",
     "PolymarketRtdsEquityPrice",

@@ -261,10 +261,22 @@ pub struct GammaMarket {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeeSchedule {
-    pub exponent: f64,
-    pub rate: f64,
+    #[serde(
+        serialize_with = "serialize_decimal_as_json_number",
+        deserialize_with = "deserialize_decimal_from_json_number"
+    )]
+    pub exponent: Decimal,
+    #[serde(
+        serialize_with = "serialize_decimal_as_json_number",
+        deserialize_with = "deserialize_decimal_from_json_number"
+    )]
+    pub rate: Decimal,
     pub taker_only: bool,
-    pub rebate_rate: f64,
+    #[serde(
+        serialize_with = "serialize_decimal_as_json_number",
+        deserialize_with = "deserialize_decimal_from_json_number"
+    )]
+    pub rebate_rate: Decimal,
 }
 
 /// An event response from the Gamma API `GET /events`.
@@ -746,6 +758,17 @@ mod tests {
         // one market has no game_id
         assert!(map_handicap.game_id.is_none());
         assert_eq!(money_line.game_id, Some(1_427_074));
+    }
+
+    #[rstest]
+    fn test_fee_schedule_decimal_fields() {
+        let market: GammaMarket = load("gamma_market_sports_market_money_line.json");
+        let schedule = market.fee_schedule.unwrap();
+
+        assert_eq!(schedule.exponent, Decimal::ONE);
+        assert_eq!(schedule.rate, dec!(0.03));
+        assert!(schedule.taker_only);
+        assert_eq!(schedule.rebate_rate, dec!(0.25));
     }
 
     #[rstest]
