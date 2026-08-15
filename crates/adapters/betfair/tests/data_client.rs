@@ -76,15 +76,21 @@ async fn test_data_client_connect_disconnect() {
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, _rx) = create_test_data_client(addr, stream_port);
 
+    let (auth_done_tx, auth_done_rx) = tokio::sync::oneshot::channel();
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
         let (_reader, write_half) = accept_and_auth(&listener).await;
+        let _ = auth_done_tx.send(());
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
     client.connect().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), auth_done_rx)
+        .await
+        .expect("stream authentication should complete")
+        .expect("mock stream should remain available");
     assert!(client.is_connected());
     assert!(state.login_count.load(std::sync::atomic::Ordering::Relaxed) > 0);
 
