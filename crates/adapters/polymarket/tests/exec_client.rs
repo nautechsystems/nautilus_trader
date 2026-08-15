@@ -1036,13 +1036,21 @@ async fn test_connect_emits_user_socket_state_change() {
 }
 
 #[rstest]
+#[case::malformed_spender(json!({
+    "balance": "37506152",
+    "allowances": {"exchange": "1000"},
+}))]
+#[case::missing_allowance_metadata(json!({"balance": "37506152"}))]
+#[case::legacy_singular_allowance(json!({
+    "balance": "37506152",
+    "allowance": "1000",
+}))]
 #[tokio::test]
-async fn test_connect_checks_v2_before_websocket_and_uses_balance_projection() {
+async fn test_connect_checks_v2_before_websocket_and_uses_balance_projection(
+    #[case] balance_response: Value,
+) {
     let state = TestServerState::default();
-    *state.balance_response.lock().await = json!({
-        "balance": "37506152",
-        "allowances": {"exchange": "1000"},
-    });
+    *state.balance_response.lock().await = balance_response;
     let addr = start_mock_server(state.clone()).await;
     let (mut client, _rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));

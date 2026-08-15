@@ -512,7 +512,8 @@ impl PolymarketClobHttpClient {
     /// Fetches strict V2 balance and allowance evidence for the given parameters.
     ///
     /// The response must contain a plural spender map with canonical, unique EVM addresses.
-    /// A non-null legacy singular allowance is rejected as conflicting authority.
+    /// A non-null legacy singular allowance is rejected as conflicting authority. Internal
+    /// balance-only consumers use the private projection instead.
     pub async fn get_balance_allowance(
         &self,
         params: GetBalanceAllowanceParams,
@@ -521,7 +522,11 @@ impl PolymarketClobHttpClient {
             .await
     }
 
-    /// Fetches balance without requiring allowance evidence.
+    /// Fetches balance for internal account refresh and market-buy fee adjustment without consuming
+    /// allowance evidence.
+    ///
+    /// Allowance fields are intentionally ignored and cannot grant authority through this return
+    /// type.
     pub(crate) async fn get_balance(&self, params: GetBalanceAllowanceParams) -> Result<Decimal> {
         let response: BalanceResponse = self
             .send_get(PATH_BALANCE_ALLOWANCE, Some(&params), true)

@@ -99,11 +99,12 @@ pub enum AssetType {
     Conditional,
 }
 
-/// Strict balance and allowance response from `GET /balance-allowance`.
+/// Strict balance and allowance response for callers that require allowance evidence from
+/// `GET /balance-allowance`.
 ///
 /// The plural [`Self::allowances`] map is the sole allowance authority. The legacy singular
 /// [`Self::allowance`] field remains public for source compatibility, but non-null wire values are
-/// rejected.
+/// rejected. Internal adapter balance-only consumers do not use this type.
 #[derive(Clone, Debug, Deserialize)]
 pub struct BalanceAllowance {
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
@@ -175,8 +176,8 @@ where
         where
             A: MapAccess<'de>,
         {
-            let mut allowances = HashMap::with_capacity(map.size_hint().unwrap_or_default());
-            let mut seen_spenders = HashSet::with_capacity(map.size_hint().unwrap_or_default());
+            let mut allowances = HashMap::new();
+            let mut seen_spenders = HashSet::new();
             while let Some(spender) = map.next_key::<CanonicalSpenderKey>()? {
                 if !seen_spenders.insert(spender.address) {
                     return Err(A::Error::custom(format!(
@@ -706,6 +707,7 @@ pub struct PaginatedResponse<T> {
 mod tests {
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use serde::de::value::{Error as ValueError, MapDeserializer};
 
     use super::*;
     use crate::{
@@ -715,6 +717,23 @@ mod tests {
 
     const MAX_ALLOWANCE: &str =
         "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+
+    struct OversizedSizeHint<I>(I);
+
+    impl<I> Iterator for OversizedSizeHint<I>
+    where
+        I: Iterator,
+    {
+        type Item = I::Item;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            self.0.next()
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            (usize::MAX, Some(usize::MAX))
+        }
+    }
 
     fn load<T: serde::de::DeserializeOwned>(filename: &str) -> T {
         let path = format!("test_data/{filename}");
@@ -906,6 +925,18 @@ mod tests {
             balance_allowance.allowances.get(spender),
             Some(&"1000".to_string())
         );
+    }
+
+    #[rstest]
+    fn test_spender_allowances_ignores_untrusted_size_hint() {
+        let spender = "0xada2005600dec949baf300f4c6120000bdb6eaab";
+        let entries = [(spender, "1000")];
+        let deserializer =
+            MapDeserializer::<_, ValueError>::new(OversizedSizeHint(entries.into_iter()));
+
+        let allowances = deserialize_spender_allowances(deserializer).unwrap();
+
+        assert_eq!(allowances.get(spender).map(String::as_str), Some("1000"));
     }
 
     #[rstest]
