@@ -103,8 +103,8 @@ impl PoolPosition {
     pub fn update_fees(&mut self, fee_growth_inside_0: U256, fee_growth_inside_1: U256) {
         if self.liquidity > 0 {
             // Calculate fee deltas
-            let fee_delta_0 = fee_growth_inside_0.saturating_sub(self.fee_growth_inside_0_last);
-            let fee_delta_1 = fee_growth_inside_1.saturating_sub(self.fee_growth_inside_1_last);
+            let fee_delta_0 = fee_growth_inside_0.wrapping_sub(self.fee_growth_inside_0_last);
+            let fee_delta_1 = fee_growth_inside_1.wrapping_sub(self.fee_growth_inside_1_last);
 
             let tokens_owed_0_full =
                 FullMath::mul_div(fee_delta_0, U256::from(self.liquidity), Q128)
