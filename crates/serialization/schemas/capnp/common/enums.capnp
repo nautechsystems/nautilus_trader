@@ -144,13 +144,6 @@ enum BookType {
     marketByOrder @2;       # Level 3 Market by order
 }
 
-enum OrderBookDeltaType {
-    add @0;
-    update @1;
-    delete @2;
-    clear @3;
-}
-
 enum RecordFlag {
     fLast @0;       # Last message in book event (bit 7 = 128)
     fTob @1;        # Top-of-book message (bit 6 = 64)
