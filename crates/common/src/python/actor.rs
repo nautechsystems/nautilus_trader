@@ -886,6 +886,7 @@ impl PyDataActor {
         let inner = self.inner_mut();
         inner.core.config.actor_id = Some(actor_id);
         inner.core.actor_id = actor_id;
+        inner.logger = PyLogger::new(actor_id.as_str());
     }
 
     /// Updates the `log_events` setting in the core config.
@@ -1242,14 +1243,25 @@ impl PyDataActor {
     }
 
     #[pyo3(signature = (config=None))]
-    fn __init__(slf: &Bound<'_, Self>, config: Option<Py<PyAny>>) {
+    fn __init__(slf: &Bound<'_, Self>, config: Option<Py<PyAny>>) -> PyResult<()> {
         let py_self: Py<PyAny> = slf.clone().unbind().into_any();
-        let mut borrowed = slf.borrow_mut();
-        borrowed.set_python_instance(py_self);
-        // `__new__` retained the config; only a forwarded config overrides it
-        if config.is_some() {
-            borrowed.set_config(config);
+        {
+            let mut borrowed = slf.borrow_mut();
+            borrowed.set_python_instance(py_self);
+            // `__new__` retained the config; only a forwarded config overrides it
+            if config.is_some() {
+                borrowed.set_config(config);
+            }
         }
+
+        if !has_configured_actor_id(slf) {
+            let py_type = slf.get_type();
+            let type_name = py_type.name()?;
+            let actor_id = ActorId::new_checked(type_name.to_str()?).map_err(to_pyvalue_err)?;
+            slf.borrow_mut().set_actor_id(actor_id);
+        }
+
+        Ok(())
     }
 
     #[getter]
@@ -2768,6 +2780,28 @@ impl PyDataActor {
             ))
         }
     }
+}
+
+/// Returns whether the config retained by the actor supplies an actor ID.
+///
+/// The config is read through Python rather than the extracted [`DataActorConfig`] so that a
+/// custom subclass config which cannot be extracted still counts as configuring an ID. The actor
+/// borrow is released before the attribute lookup, which can run user code.
+fn has_configured_actor_id(slf: &Bound<'_, PyDataActor>) -> bool {
+    let py = slf.py();
+    let config = slf
+        .borrow()
+        .inner()
+        .config
+        .as_ref()
+        .map(|config| config.clone_ref(py));
+
+    config.is_some_and(|config| {
+        config
+            .bind(py)
+            .getattr("actor_id")
+            .is_ok_and(|actor_id| !actor_id.is_none())
+    })
 }
 
 #[cfg(test)]

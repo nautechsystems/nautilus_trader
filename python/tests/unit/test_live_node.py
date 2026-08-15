@@ -36,9 +36,11 @@ from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.live import PortfolioConfig
+from nautilus_trader.model import ActorId
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderStatus
+from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TraderId
 from nautilus_trader.portfolio import Portfolio
 from nautilus_trader.trading import ExecutionAlgorithm
@@ -46,6 +48,8 @@ from nautilus_trader.trading import ExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableControllerConfig
 from nautilus_trader.trading import ImportableExecAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
+from nautilus_trader.trading import Strategy
+from nautilus_trader.trading import StrategyConfig
 from tests.unit.common.actor import ControllerRegistrationProbe
 from tests.unit.common.actor import LifecycleProbeStrategy
 
@@ -92,6 +96,34 @@ class FirstDefaultLiveExecutionAlgorithm(ExecutionAlgorithm):
 
 
 class SecondDefaultLiveExecutionAlgorithm(ExecutionAlgorithm):
+    pass
+
+
+class FirstDefaultLiveStrategy(Strategy):
+    pass
+
+
+class SecondDefaultLiveStrategy(Strategy):
+    pass
+
+
+class DefaultIdLiveStrategy(Strategy):
+    instances = []
+
+    def __init__(self, config: StrategyConfig | None = None):
+        super().__init__(config)
+        type(self).instances.append(self)
+
+
+class DefaultIdLiveActor(DataActor):
+    instances = []
+
+    def __init__(self, config: DataActorConfig | None = None):
+        super().__init__(config)
+        type(self).instances.append(self)
+
+
+class SecondDefaultIdLiveActor(DefaultIdLiveActor):
     pass
 
 
@@ -635,6 +667,67 @@ def test_add_exec_algorithms_registers_distinct_class_derived_ids(live_node):
     assert first.is_registered() is True
     assert second.exec_algorithm_id == ExecAlgorithmId("SecondDefaultLiveExecutionAlgorithm")
     assert second.is_registered() is True
+
+
+def test_add_strategies_registers_distinct_class_derived_ids():
+    node = LiveNode.builder("TEST", TraderId("TESTER-020"), Environment.SANDBOX).build()
+    first = FirstDefaultLiveStrategy()
+    second = SecondDefaultLiveStrategy()
+
+    try:
+        node.add_strategy(first)
+        node.add_strategy(second)
+
+        assert first.strategy_id == StrategyId("FirstDefaultLiveStrategy-000")
+        assert first.state() == ComponentState.READY
+        assert second.strategy_id == StrategyId("SecondDefaultLiveStrategy-001")
+        assert second.state() == ComponentState.READY
+    finally:
+        node.dispose()
+
+
+def test_add_strategy_from_config_derives_class_derived_id():
+    node = LiveNode.builder("TEST", TraderId("TESTER-021"), Environment.SANDBOX).build()
+    DefaultIdLiveStrategy.instances.clear()
+    config = ImportableStrategyConfig(
+        strategy_path="tests.unit.test_live_node:DefaultIdLiveStrategy",
+        config_path="nautilus_trader.trading:StrategyConfig",
+        config={},
+    )
+
+    try:
+        node.add_strategy_from_config(config)
+
+        registered = DefaultIdLiveStrategy.instances[-1]
+        assert registered.strategy_id == StrategyId("DefaultIdLiveStrategy-000")
+        assert registered.state() == ComponentState.READY
+    finally:
+        node.dispose()
+
+
+def test_add_actors_from_config_derive_distinct_class_derived_ids():
+    node = LiveNode.builder("TEST", TraderId("TESTER-022"), Environment.SANDBOX).build()
+    DefaultIdLiveActor.instances.clear()
+    configs = [
+        ImportableActorConfig(
+            actor_path=f"tests.unit.test_live_node:{class_name}",
+            config_path="nautilus_trader.common:DataActorConfig",
+            config={},
+        )
+        for class_name in ("DefaultIdLiveActor", "SecondDefaultIdLiveActor")
+    ]
+
+    try:
+        for config in configs:
+            node.add_actor_from_config(config)
+
+        first, second = DefaultIdLiveActor.instances
+        assert first.actor_id == ActorId("DefaultIdLiveActor")
+        assert first.state() == ComponentState.READY
+        assert second.actor_id == ActorId("SecondDefaultIdLiveActor")
+        assert second.state() == ComponentState.READY
+    finally:
+        node.dispose()
 
 
 def test_add_exec_algorithm_rejects_running_node():

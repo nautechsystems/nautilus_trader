@@ -46,7 +46,10 @@ class MyActor(DataActor):
 ## Actor configuration and IDs
 
 Data actors can receive a `DataActorConfig` subclass. The base config accepts an optional `actor_id`.
-If supplied, the actor registers with that ID; otherwise, the system derives a runtime actor ID.
+If supplied, the actor registers with that ID; otherwise a Python actor registers under its class
+name, which requires its `__init__` to call `super().__init__()`. Give each instance an explicit
+`actor_id` when running more than one instance of the same actor, because a duplicate ID is rejected
+at registration (a `RuntimeError` in Python).
 
 Treat configuration as construction data for the actor. Read user‑supplied settings through
 `self.config`, and keep runtime state on the actor itself.
@@ -54,6 +57,8 @@ Treat configuration as construction data for the actor. Read user‑supplied set
 :::info Rust implementation
 Rust actors store runtime identity and state in `DataActorCore`. Read the runtime ID through
 `actor_id()` rather than expecting a generated ID to be written back into `DataActorConfig`.
+A Rust actor without a configured `actor_id` registers as `DataActor` whatever its type, so give
+each Rust actor an explicit `actor_id`.
 
 Rust authors implement `DataActor` and use the facade methods on `self`.
 `DataActorNative` is native‑only access for runtime wiring and borrowed

@@ -28,7 +28,7 @@ use nautilus_common::{
 };
 use nautilus_execution::order_manager::manager::OrderManager;
 use nautilus_model::identifiers::{
-    ActorId, ClientOrderId, StrategyId, TraderId, normalize_order_id_tag,
+    ActorId, ClientOrderId, StrategyId, TraderId, UNASSIGNED_ORDER_ID_TAG, normalize_order_id_tag,
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use ustr::Ustr;
@@ -151,7 +151,9 @@ impl StrategyCore {
             .or_else(|| configured_order_id_tag.map(str::to_string));
 
         let actor_config = DataActorConfig {
-            actor_id: strategy_id.map(|id| ActorId::from(id.inner().as_str())),
+            actor_id: Some(strategy_id.map_or_else(unassigned_strategy_actor_id, |id| {
+                ActorId::from(id.inner().as_str())
+            })),
             log_events: config.log_events,
             log_commands: config.log_commands,
         };
@@ -341,6 +343,17 @@ impl StrategyNative for StrategyCore {
     }
 }
 
+/// Returns the component identity for a strategy without a configured ID.
+///
+/// Registration replaces this with the class-derived ID and the assigned order ID tag. The
+/// unassigned tag keeps the identity convertible to a [`StrategyId`] until then.
+fn unassigned_strategy_actor_id() -> ActorId {
+    ActorId::from(format!(
+        "{}-{UNASSIGNED_ORDER_ID_TAG}",
+        stringify!(Strategy)
+    ))
+}
+
 fn strategy_id_with_order_id_tag(
     strategy_id: StrategyId,
     order_id_tag: Option<&str>,
@@ -397,6 +410,19 @@ mod tests {
         assert!(!core.is_exiting);
         assert!(!core.pending_stop);
         assert_eq!(core.market_exit_attempts, 0);
+    }
+
+    #[rstest]
+    fn test_strategy_core_new_without_configured_id_uses_the_unassigned_actor_id() {
+        let core = StrategyCore::new(StrategyConfig::default());
+
+        assert_eq!(core.actor_id(), ActorId::from("Strategy-None"));
+        assert_eq!(core.strategy_id(), None);
+        assert_eq!(core.order_id_tag(), None);
+        assert_eq!(
+            StrategyId::from(core.actor_id().inner().as_str()),
+            StrategyId::from("Strategy-None")
+        );
     }
 
     #[rstest]

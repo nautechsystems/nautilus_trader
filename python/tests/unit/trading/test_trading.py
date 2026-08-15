@@ -204,6 +204,185 @@ class HistoricalRequestProbeStrategy(Strategy):
         }
 
 
+class FirstDefaultStrategy(Strategy):
+    pass
+
+
+class SecondDefaultStrategy(Strategy):
+    pass
+
+
+class TaggedDefaultStrategy(Strategy):
+    pass
+
+
+class ConfiguredDefaultStrategy(Strategy):
+    pass
+
+
+class PlainStrategyConfig:
+    """
+    A config which cannot be extracted as a `StrategyConfig`, so its values only reach
+    the strategy at registration.
+    """
+
+    def __init__(self, strategy_id=None, order_id_tag=None):
+        self.strategy_id = strategy_id
+        self.order_id_tag = order_id_tag
+        self.log_events = True
+        self.log_commands = True
+
+
+class PlainConfigStrategy(Strategy):
+    pass
+
+
+class RepeatedDefaultStrategy(Strategy):
+    pass
+
+
+class NonForwardingStrategy(Strategy):
+    def __init__(self, config=None):
+        pass  # Deliberately does not forward to `super().__init__()`
+
+
+def test_strategy_derives_default_id_from_runtime_class():
+    base = Strategy()
+    first = FirstDefaultStrategy()
+    tagged = TaggedDefaultStrategy(StrategyConfig(order_id_tag="007"))
+    configured = ConfiguredDefaultStrategy(StrategyConfig(strategy_id=StrategyId("MINE-042")))
+
+    assert base.strategy_id == StrategyId("Strategy-None")
+    assert first.strategy_id == StrategyId("FirstDefaultStrategy-None")
+    assert first.log.name == "FirstDefaultStrategy-None"
+    assert tagged.strategy_id == StrategyId("TaggedDefaultStrategy-007")
+    assert configured.strategy_id == StrategyId("MINE-042")
+
+
+def test_registered_strategies_receive_class_derived_ids_and_positional_tags():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    first = FirstDefaultStrategy()
+    second = SecondDefaultStrategy()
+    tagged = TaggedDefaultStrategy(StrategyConfig(order_id_tag="007"))
+    configured = ConfiguredDefaultStrategy(StrategyConfig(strategy_id=StrategyId("MINE-042")))
+
+    try:
+        for strategy in (first, second, tagged, configured):
+            engine.add_strategy(strategy)
+
+        assert first.strategy_id == StrategyId("FirstDefaultStrategy-000")
+        assert second.strategy_id == StrategyId("SecondDefaultStrategy-001")
+        assert tagged.strategy_id == StrategyId("TaggedDefaultStrategy-007")
+        assert configured.strategy_id == StrategyId("MINE-042")
+        assert first.order_factory.generate_client_order_id() == ClientOrderId(
+            "O-19700101-000000-001-000-1",
+        )
+        assert tagged.order_factory.generate_client_order_id() == ClientOrderId(
+            "O-19700101-000000-001-007-1",
+        )
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("config", "expected_strategy_id", "expected_client_order_id"),
+    [
+        (
+            PlainStrategyConfig(order_id_tag="042"),
+            StrategyId("PlainConfigStrategy-042"),
+            ClientOrderId("O-19700101-000000-001-042-1"),
+        ),
+        (
+            PlainStrategyConfig(strategy_id=StrategyId("PLAIN-009")),
+            StrategyId("PLAIN-009"),
+            ClientOrderId("O-19700101-000000-001-009-1"),
+        ),
+    ],
+)
+def test_registered_strategy_applies_identity_from_unextractable_config(
+    config,
+    expected_strategy_id,
+    expected_client_order_id,
+):
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    strategy = PlainConfigStrategy(config)
+
+    try:
+        engine.add_strategy(strategy)
+
+        assert strategy.strategy_id == expected_strategy_id
+        assert strategy.order_factory.generate_client_order_id() == expected_client_order_id
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("order_id_tag", ["", "None"])
+def test_registered_strategy_retains_configured_id_with_an_unset_order_id_tag(order_id_tag):
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    strategy = ConfiguredDefaultStrategy(
+        StrategyConfig(strategy_id=StrategyId("MyStrategy-001"), order_id_tag=order_id_tag),
+    )
+
+    try:
+        engine.add_strategy(strategy)
+
+        assert strategy.strategy_id == StrategyId("MyStrategy-001")
+        assert strategy.order_factory.generate_client_order_id() == ClientOrderId(
+            "O-19700101-000000-001-001-1",
+        )
+    finally:
+        engine.dispose()
+
+
+def test_registered_instances_of_one_strategy_class_receive_sequential_tags():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    first = RepeatedDefaultStrategy()
+    second = RepeatedDefaultStrategy()
+
+    try:
+        engine.add_strategy(first)
+        engine.add_strategy(second)
+
+        assert first.strategy_id == StrategyId("RepeatedDefaultStrategy-000")
+        assert second.strategy_id == StrategyId("RepeatedDefaultStrategy-001")
+        assert first.order_factory.generate_client_order_id() == ClientOrderId(
+            "O-19700101-000000-001-000-1",
+        )
+        assert second.order_factory.generate_client_order_id() == ClientOrderId(
+            "O-19700101-000000-001-001-1",
+        )
+    finally:
+        engine.dispose()
+
+
+def test_registered_strategy_derives_its_id_from_the_runtime_class():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    strategy = NonForwardingStrategy()
+
+    try:
+        engine.add_strategy(strategy)
+
+        assert strategy.strategy_id == StrategyId("NonForwardingStrategy-000")
+    finally:
+        engine.dispose()
+
+
+def test_registering_the_same_strategy_twice_is_rejected():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    strategy = FirstDefaultStrategy()
+
+    try:
+        engine.add_strategy(strategy)
+
+        with pytest.raises(
+            RuntimeError,
+            match="Strategy FirstDefaultStrategy-000 is already registered",
+        ):
+            engine.add_strategy(strategy)
+    finally:
+        engine.dispose()
+
+
 def test_strategy_default_construction():
     strategy = Strategy()
 

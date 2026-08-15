@@ -818,52 +818,13 @@ impl Trader {
         &mut self,
         config: &ImportableStrategyConfig,
     ) -> anyhow::Result<StrategyId> {
+        // Checked before importing and constructing the Python class so a rejected addition never
+        // runs user constructor code
         self.validate_actor_or_strategy_registration()?;
 
-        let (python_strategy, strategy_id) = create_python_strategy(config)?;
-        if self.strategy_ids.contains(&strategy_id) {
-            anyhow::bail!("Strategy {strategy_id} is already registered");
-        }
-        let existing_order_id_tags: Vec<&str> =
-            self.strategy_ids.iter().map(StrategyId::get_tag).collect();
-        ensure_unique_order_id_tag(&existing_order_id_tags, strategy_id.get_tag())?;
+        let python_strategy = create_python_strategy(config)?;
 
-        let component_id = ComponentId::from(strategy_id);
-        let clock = self.create_component_clock(component_id);
-        let trader_id = self.trader_id;
-        let cache = self.cache.clone();
-        let portfolio = self.portfolio.clone();
-
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_strategy = python_strategy.bind(py);
-            let mut py_strategy_ref = py_strategy
-                .extract::<PyRefMut<PyStrategy>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
-
-            py_strategy_ref
-                .register(trader_id, clock, cache, portfolio)
-                .map_err(|e| anyhow::anyhow!("Failed to register PyStrategy: {e}"))?;
-
-            Ok(())
-        })?;
-
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_strategy = python_strategy.bind(py);
-            let py_strategy_ref = py_strategy
-                .cast::<PyStrategy>()
-                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyStrategy: {e}"))?;
-            py_strategy_ref.borrow().register_in_global_registries();
-            Ok(())
-        })?;
-
-        self.add_strategy_id_with_subscriptions::<PyStrategyInner>(strategy_id)?;
-
-        log::info!(
-            "Registered Python strategy {strategy_id} with trader {}",
-            self.trader_id
-        );
-        Ok(strategy_id)
+        self.add_python_strategy_instance(&python_strategy)
     }
 
     /// Adds a constructed Python strategy instance to the trader.
@@ -898,13 +859,18 @@ impl Trader {
     ) -> anyhow::Result<StrategyId> {
         self.validate_actor_or_strategy_registration()?;
 
-        let strategy_id = Python::attach(|py| -> anyhow::Result<StrategyId> {
+        let existing_order_id_tags: Vec<&str> =
+            self.strategy_ids.iter().map(StrategyId::get_tag).collect();
+
+        Python::attach(|py| -> anyhow::Result<StrategyId> {
             let bound = strategy.bind(py);
 
             let config_instance = bound
                 .getattr("config")
                 .ok()
                 .filter(|config| !config.is_none());
+
+            let class_name = bound.get_type().name()?.to_string();
 
             let mut py_strategy_ref = bound
                 .extract::<PyRefMut<PyStrategy>>()
@@ -915,19 +881,30 @@ impl Trader {
                 configure_py_strategy(&mut py_strategy_ref, config_obj)?;
             }
 
+            // Mirrors the native path: a configured ID is kept, otherwise the runtime class name
+            // takes the configured order ID tag, or the next positional tag
+            let runtime_order_id_tag = py_strategy_ref.order_id_tag();
+            let strategy_id = if let Some(strategy_id) = py_strategy_ref.configured_strategy_id() {
+                strategy_id
+            } else {
+                let order_id_tag = normalize_order_id_tag(runtime_order_id_tag.as_deref())
+                    .map_or_else(
+                        || format!("{:03}", existing_order_id_tags.len()),
+                        str::to_string,
+                    );
+                StrategyId::new_checked(format!("{class_name}-{order_id_tag}"))?
+            };
+
+            if self.strategy_ids.contains(&strategy_id) {
+                anyhow::bail!("Strategy {strategy_id} is already registered");
+            }
+            ensure_unique_order_id_tag(&existing_order_id_tags, strategy_id.get_tag())?;
+
+            py_strategy_ref.set_strategy_id(strategy_id)?;
             py_strategy_ref.set_python_instance(strategy.clone_ref(py));
+
             Ok(py_strategy_ref.strategy_id())
-        })?;
-
-        if self.strategy_ids.contains(&strategy_id) {
-            anyhow::bail!("Strategy {strategy_id} is already registered");
-        }
-
-        let existing_order_id_tags: Vec<&str> =
-            self.strategy_ids.iter().map(StrategyId::get_tag).collect();
-        ensure_unique_order_id_tag(&existing_order_id_tags, strategy_id.get_tag())?;
-
-        Ok(strategy_id)
+        })
     }
 
     /// Commits a previously prepared Python strategy instance.
@@ -2077,14 +2054,12 @@ fn create_python_actor(config: &ImportableActorConfig) -> anyhow::Result<(Py<PyA
 }
 
 #[cfg(feature = "python")]
-fn create_python_strategy(
-    config: &ImportableStrategyConfig,
-) -> anyhow::Result<(Py<PyAny>, StrategyId)> {
+fn create_python_strategy(config: &ImportableStrategyConfig) -> anyhow::Result<Py<PyAny>> {
     let (module_name, class_name) = split_import_path(&config.strategy_path, "strategy_path")?;
 
     log::info!("Importing strategy from module: {module_name} class: {class_name}");
 
-    Python::attach(|py| -> anyhow::Result<(Py<PyAny>, StrategyId)> {
+    Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
         let strategy_class = import_python_class(py, module_name, class_name)?;
         let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
 
@@ -2094,19 +2069,7 @@ fn create_python_strategy(
             strategy_class.call0()?
         };
 
-        let mut py_strategy_ref = python_strategy
-            .extract::<PyRefMut<PyStrategy>>()
-            .map_err(Into::<PyErr>::into)
-            .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
-
-        if let Some(config_obj) = config_instance.as_ref() {
-            configure_py_strategy(&mut py_strategy_ref, config_obj)?;
-        }
-
-        py_strategy_ref.set_python_instance(python_strategy.clone().unbind());
-        let strategy_id = py_strategy_ref.strategy_id();
-
-        Ok((python_strategy.unbind(), strategy_id))
+        Ok(python_strategy.unbind())
     })
 }
 

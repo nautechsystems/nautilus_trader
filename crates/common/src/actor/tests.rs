@@ -586,6 +586,15 @@ fn test_nautilus_actor_macro_custom_field_generates_native_core_access() {
 }
 
 #[rstest]
+fn test_data_actor_default_actor_id_is_the_type_name() {
+    let first = TestDataActor::new(DataActorConfig::default());
+    let second = TestDataActor::new(DataActorConfig::default());
+
+    assert_eq!(first.actor_id(), ActorId::from("DataActor"));
+    assert_eq!(second.actor_id(), ActorId::from("DataActor"));
+}
+
+#[rstest]
 fn test_data_actor_component_id_erases_actor_id() {
     let actor = TestDataActor::new(DataActorConfig {
         actor_id: Some(ActorId::from("COMPONENT-ID-ACTOR-001")),

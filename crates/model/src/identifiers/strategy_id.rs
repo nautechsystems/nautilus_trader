@@ -26,10 +26,13 @@ use ustr::Ustr;
 /// The identifier for all 'external' strategy IDs (not local to this system instance).
 const EXTERNAL_STRATEGY_ID: &str = "EXTERNAL";
 
+/// The order ID tag reported for a strategy which has not been assigned one.
+pub const UNASSIGNED_ORDER_ID_TAG: &str = "None";
+
 /// Returns a usable order ID tag, filtering unset sentinel values.
 #[must_use]
 pub fn normalize_order_id_tag(order_id_tag: Option<&str>) -> Option<&str> {
-    order_id_tag.filter(|tag| !tag.is_empty() && *tag != "None")
+    order_id_tag.filter(|tag| !tag.is_empty() && *tag != UNASSIGNED_ORDER_ID_TAG)
 }
 
 /// Represents a valid strategy ID.

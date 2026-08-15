@@ -69,8 +69,8 @@ use nautilus_model::{
         PositionEvent, PositionOpened,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId,
-        TraderId, Venue,
+        AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId,
+        StrategyId, TraderId, UNASSIGNED_ORDER_ID_TAG, Venue, normalize_order_id_tag,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
@@ -1352,12 +1352,23 @@ impl PyStrategy {
         self.inner().external_order_claims()
     }
 
+    /// Updates the runtime component identity used until a strategy ID is assigned.
+    ///
+    /// Must only be called before registration. See `PyDataActor::set_actor_id`.
+    pub fn set_actor_id(&mut self, actor_id: ActorId) {
+        let inner = self.inner_mut();
+        inner.core.actor.config.actor_id = Some(actor_id);
+        inner.core.actor.actor_id = actor_id;
+        inner.logger = PyLogger::new(actor_id.as_str());
+    }
+
     /// Updates the runtime strategy ID.
     ///
     /// Must only be called before registration. See `PyDataActor::set_actor_id`.
     pub fn set_strategy_id(&mut self, strategy_id: StrategyId) -> anyhow::Result<()> {
         let inner = self.inner_mut();
         inner.core.change_id(strategy_id);
+        inner.logger = PyLogger::new(inner.core.actor.actor_id.as_str());
         Ok(())
     }
 
@@ -1365,6 +1376,7 @@ impl PyStrategy {
     pub fn set_order_id_tag(&mut self, order_id_tag: &str) -> anyhow::Result<()> {
         let inner = self.inner_mut();
         inner.core.change_order_id_tag(order_id_tag);
+        inner.logger = PyLogger::new(inner.core.actor.actor_id.as_str());
         Ok(())
     }
 
@@ -1381,9 +1393,24 @@ impl PyStrategy {
     }
 
     /// Returns the strategy ID.
+    ///
+    /// Until registration assigns an order ID tag, an unconfigured strategy reports the
+    /// class-derived ID with the unassigned tag, such as `MyStrategy-None`.
     #[must_use]
     pub fn strategy_id(&self) -> StrategyId {
         StrategyId::from(self.inner().core.actor.actor_id.inner().as_str())
+    }
+
+    /// Returns the strategy ID once configured or assigned, otherwise `None`.
+    #[must_use]
+    pub fn configured_strategy_id(&self) -> Option<StrategyId> {
+        self.inner().core.strategy_id()
+    }
+
+    /// Returns the runtime order ID tag.
+    #[must_use]
+    pub fn order_id_tag(&self) -> Option<String> {
+        self.inner().core.order_id_tag().map(str::to_string)
     }
 
     /// Returns a value indicating whether the strategy has been registered with a trader.
@@ -1476,14 +1503,25 @@ impl PyStrategy {
 
     /// Captures the Python self reference for Rust→Python event dispatch.
     #[pyo3(signature = (config=None))]
-    fn __init__(slf: &Bound<'_, Self>, config: Option<Py<PyAny>>) {
+    fn __init__(slf: &Bound<'_, Self>, config: Option<Py<PyAny>>) -> PyResult<()> {
         let py_self: Py<PyAny> = slf.clone().unbind().into_any();
-        let mut borrowed = slf.borrow_mut();
-        borrowed.set_python_instance(py_self);
-        // `__new__` retained the config; only a forwarded config overrides it
-        if config.is_some() {
-            borrowed.set_config(config);
+        {
+            let mut borrowed = slf.borrow_mut();
+            borrowed.set_python_instance(py_self);
+            // `__new__` retained the config; only a forwarded config overrides it
+            if config.is_some() {
+                borrowed.set_config(config);
+            }
         }
+
+        if !has_configured_strategy_id(slf) {
+            let py_type = slf.get_type();
+            let type_name = py_type.name()?;
+            let actor_id = class_derived_actor_id(slf, type_name.to_str()?)?;
+            slf.borrow_mut().set_actor_id(actor_id);
+        }
+
+        Ok(())
     }
 
     #[getter]
@@ -1495,7 +1533,7 @@ impl PyStrategy {
     #[getter]
     #[pyo3(name = "strategy_id")]
     fn py_strategy_id(&self) -> StrategyId {
-        StrategyId::from(self.inner().core.actor.actor_id.inner().as_str())
+        self.strategy_id()
     }
 
     #[getter]
@@ -3369,6 +3407,40 @@ impl PyStrategy {
             ))
         }
     }
+}
+
+/// Returns the class-derived component identity, `<ClassName>-<order ID tag>`.
+///
+/// The ID must remain a valid [`StrategyId`], so a strategy without a configured order ID tag
+/// takes the unassigned tag until registration assigns the next one.
+fn class_derived_actor_id(slf: &Bound<'_, PyStrategy>, class_name: &str) -> PyResult<ActorId> {
+    let borrowed = slf.borrow();
+    let order_id_tag = normalize_order_id_tag(borrowed.inner().core.order_id_tag())
+        .unwrap_or(UNASSIGNED_ORDER_ID_TAG);
+
+    ActorId::new_checked(format!("{class_name}-{order_id_tag}")).map_err(to_pyvalue_err)
+}
+
+/// Returns whether the config retained by the strategy supplies a strategy ID.
+///
+/// The config is read through Python rather than the extracted [`StrategyConfig`] so that a
+/// custom subclass config which cannot be extracted still counts as configuring an ID. The
+/// strategy borrow is released before the attribute lookup, which can run user code.
+fn has_configured_strategy_id(slf: &Bound<'_, PyStrategy>) -> bool {
+    let py = slf.py();
+    let config = slf
+        .borrow()
+        .inner()
+        .config
+        .as_ref()
+        .map(|config| config.clone_ref(py));
+
+    config.is_some_and(|config| {
+        config
+            .bind(py)
+            .getattr("strategy_id")
+            .is_ok_and(|strategy_id| !strategy_id.is_none())
+    })
 }
 
 fn py_order_list_to_orders(py: Python<'_>, order_list: &Py<PyAny>) -> PyResult<Vec<OrderAny>> {

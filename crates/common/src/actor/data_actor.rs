@@ -3407,9 +3407,7 @@ impl DataActorCore {
 
     /// Creates a new [`DataActorCore`] instance.
     pub fn new(config: DataActorConfig) -> Self {
-        let actor_id = config
-            .actor_id
-            .unwrap_or_else(|| Self::default_actor_id(&config));
+        let actor_id = config.actor_id.unwrap_or_else(Self::default_actor_id);
 
         Self {
             actor_id,
@@ -3540,9 +3538,8 @@ impl DataActorCore {
         self.actor_id
     }
 
-    fn default_actor_id(config: &DataActorConfig) -> ActorId {
-        let memory_address = std::ptr::from_ref(config) as usize;
-        ActorId::from(format!("{}-{memory_address}", stringify!(DataActor)))
+    fn default_actor_id() -> ActorId {
+        ActorId::from(stringify!(DataActor))
     }
 
     /// Returns a UNIX nanoseconds timestamp from the actor's internal clock.

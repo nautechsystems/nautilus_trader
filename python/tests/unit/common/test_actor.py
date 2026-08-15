@@ -378,6 +378,50 @@ def _create_recording_actor_type():
 RecordingActor = _create_recording_actor_type()
 
 
+class FirstDefaultActor(DataActor):
+    pass
+
+
+class SecondDefaultActor(DataActor):
+    pass
+
+
+def test_data_actor_derives_default_id_from_runtime_class():
+    base = DataActor()
+    first = FirstDefaultActor()
+    second = SecondDefaultActor(TestActorConfig(actor_id=None))
+
+    assert base.actor_id == ActorId("DataActor")
+    assert first.actor_id == ActorId("FirstDefaultActor")
+    assert first.log.name == "FirstDefaultActor"
+    assert second.actor_id == ActorId("SecondDefaultActor")
+    assert second.log.name == "SecondDefaultActor"
+
+
+def test_data_actor_retains_configured_id_over_runtime_class():
+    actor = FirstDefaultActor(TestActorConfig(actor_id=ActorId("CONFIGURED-001")))
+
+    assert actor.actor_id == ActorId("CONFIGURED-001")
+    assert actor.log.name == "CONFIGURED-001"
+
+
+def test_backtest_engine_registers_distinct_default_actor_ids():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    first = FirstDefaultActor()
+    second = SecondDefaultActor()
+
+    try:
+        engine.add_actor(first)
+        engine.add_actor(second)
+
+        assert first.actor_id == ActorId("FirstDefaultActor")
+        assert first.state() == ComponentState.READY
+        assert second.actor_id == ActorId("SecondDefaultActor")
+        assert second.state() == ComponentState.READY
+    finally:
+        engine.dispose()
+
+
 def test_queue_state_changed_exposes_all_fields():
     trader_id = TraderId("TRADER-001")
     event_id = UUID4()

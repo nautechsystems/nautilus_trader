@@ -38,7 +38,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     enums::OmsType,
-    identifiers::{ActorId, ComponentId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId},
+    identifiers::{ActorId, ComponentId, ExecAlgorithmId, InstrumentId, TraderId},
 };
 use nautilus_portfolio::{config::PortfolioConfig, python::PyPortfolio};
 use nautilus_system::get_global_pyo3_registry;
@@ -557,89 +557,58 @@ impl LiveNode {
 
         log::info!("Importing strategy from module: {module_name} class: {class_name}");
 
-        // Phase 1: Create and configure the Python strategy, extract its strategy_id
-        let (python_strategy, strategy_id) =
-            Python::attach(|py| -> anyhow::Result<(Py<PyAny>, StrategyId)> {
-                let strategy_module = py
-                    .import(module_name)
-                    .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
-                let strategy_class = strategy_module
-                    .getattr(class_name)
-                    .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
+        // Phase 1: Create the Python strategy, then prepare it for registration so the strategy ID,
+        // order ID tag, and logging flags are sourced from the same config as the instance path
+        let python_strategy = Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
+            let strategy_module = py
+                .import(module_name)
+                .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
+            let strategy_class = strategy_module
+                .getattr(class_name)
+                .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
 
-                let config_instance =
-                    create_config_instance(py, &config.config_path, &config.config)?;
+            let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
 
-                let python_strategy = if let Some(config_obj) = config_instance.clone() {
-                    strategy_class.call1((config_obj,))?
-                } else {
-                    strategy_class.call0()?
-                };
+            let python_strategy = if let Some(config_obj) = config_instance {
+                strategy_class.call1((config_obj,))?
+            } else {
+                strategy_class.call0()?
+            };
 
-                log::debug!("Created Python strategy instance: {python_strategy:?}");
+            log::debug!("Created Python strategy instance: {python_strategy:?}");
 
-                let mut py_strategy_ref = python_strategy
-                    .extract::<PyRefMut<PyStrategy>>()
-                    .map_err(Into::<PyErr>::into)
-                    .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
+            Ok(python_strategy.unbind())
+        })
+        .map_err(to_pyruntime_err)?;
 
-                // Extract inherited config fields from the Python config
-                if let Some(config_obj) = config_instance.as_ref() {
-                    if let Ok(strategy_id) = config_obj.getattr("strategy_id")
-                        && !strategy_id.is_none()
-                    {
-                        let strategy_id_val = if let Ok(sid) = strategy_id.extract::<StrategyId>() {
-                            sid
-                        } else if let Ok(sid_str) = strategy_id.extract::<String>() {
-                            StrategyId::new_checked(&sid_str)?
-                        } else {
-                            anyhow::bail!("Invalid `strategy_id` type");
-                        };
-                        py_strategy_ref.set_strategy_id(strategy_id_val)?;
-                    }
-
-                    if let Ok(order_id_tag) = config_obj.getattr("order_id_tag")
-                        && !order_id_tag.is_none()
-                    {
-                        let order_id_tag_val = order_id_tag
-                            .extract::<String>()
-                            .map_err(|e| anyhow::anyhow!("Invalid `order_id_tag` type: {e}"))?;
-                        py_strategy_ref.set_order_id_tag(&order_id_tag_val)?;
-                    }
-
-                    if let Some(val) = extract_bool_config_attr(config_obj, "log_events") {
-                        py_strategy_ref.set_log_events(val);
-                    }
-
-                    if let Some(val) = extract_bool_config_attr(config_obj, "log_commands") {
-                        py_strategy_ref.set_log_commands(val);
-                    }
-
-                    if let Some(claims) = extract_external_order_claims_config_attr(config_obj)? {
-                        py_strategy_ref.set_external_order_claims(Some(claims));
-                    }
-                }
-
-                py_strategy_ref.set_python_instance(python_strategy.clone().unbind());
-
-                let strategy_id = py_strategy_ref.strategy_id();
-
-                Ok((python_strategy.unbind(), strategy_id))
-            })
+        let strategy_id = self
+            .kernel_mut()
+            .trader
+            .borrow_mut()
+            .prepare_python_strategy_instance(&python_strategy)
             .map_err(to_pyruntime_err)?;
 
-        // Validate no duplicate before any mutations
-        if self
-            .kernel()
-            .trader
-            .borrow()
-            .strategy_ids()
-            .contains(&strategy_id)
-        {
-            return Err(to_pyruntime_err(format!(
-                "Strategy '{strategy_id}' is already registered"
-            )));
-        }
+        Python::attach(|py| -> anyhow::Result<()> {
+            let bound = python_strategy.bind(py);
+            let config_obj = bound
+                .getattr("config")
+                .ok()
+                .filter(|config| !config.is_none());
+
+            let mut py_strategy_ref = bound
+                .extract::<PyRefMut<PyStrategy>>()
+                .map_err(Into::<PyErr>::into)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
+
+            if let Some(config_obj) = config_obj.as_ref()
+                && let Some(claims) = extract_external_order_claims_config_attr(config_obj)?
+            {
+                py_strategy_ref.set_external_order_claims(Some(claims));
+            }
+
+            Ok(())
+        })
+        .map_err(to_pyruntime_err)?;
 
         // Phase 2: Create per-component clock via the trader.
         // This requires `&mut self` access to the kernel, which cannot be held

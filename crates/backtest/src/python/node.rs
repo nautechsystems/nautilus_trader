@@ -27,17 +27,14 @@ use nautilus_common::{
 #[cfg(feature = "examples")]
 use nautilus_core::python::to_pytype_err;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use nautilus_model::identifiers::{AccountId, ActorId, ComponentId, StrategyId, Venue};
+use nautilus_model::identifiers::{AccountId, ActorId, ComponentId, Venue};
 use nautilus_portfolio::python::PyPortfolio;
+use nautilus_trading::ImportableStrategyConfig;
 #[cfg(feature = "examples")]
 use nautilus_trading::examples::strategies::{
     CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol, DeltaNeutralVolConfig,
     EmaCross, EmaCrossConfig, GridMarketMaker, GridMarketMakerConfig, HurstVpinDirectional,
     HurstVpinDirectionalConfig,
-};
-use nautilus_trading::{
-    ImportableStrategyConfig,
-    python::strategy::{PyStrategy, PyStrategyInner},
 };
 use pyo3::{prelude::*, types::PyDict};
 
@@ -364,10 +361,6 @@ impl BacktestNode {
         Ok(())
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "Required for Python strategy component registration"
-    )]
     #[pyo3(name = "add_strategy_from_config")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_strategy_from_config(
@@ -392,131 +385,25 @@ impl BacktestNode {
 
         log::info!("Importing strategy from module: {module_name} class: {class_name}");
 
-        // Phase 1: Create and configure the Python strategy, extract its strategy_id
-        let (python_strategy, strategy_id) =
-            Python::attach(|py| -> anyhow::Result<(Py<PyAny>, StrategyId)> {
-                let strategy_module = py
-                    .import(module_name)
-                    .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
-                let strategy_class = strategy_module
-                    .getattr(class_name)
-                    .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
+        let python_strategy = Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
+            let strategy_module = py
+                .import(module_name)
+                .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
+            let strategy_class = strategy_module
+                .getattr(class_name)
+                .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
 
-                let config_instance =
-                    create_config_instance(py, &config.config_path, &config.config)?;
+            let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
 
-                let python_strategy = if let Some(config_obj) = config_instance.clone() {
-                    strategy_class.call1((config_obj,))?
-                } else {
-                    strategy_class.call0()?
-                };
+            let python_strategy = if let Some(config_obj) = config_instance {
+                strategy_class.call1((config_obj,))?
+            } else {
+                strategy_class.call0()?
+            };
 
-                log::debug!("Created Python strategy instance: {python_strategy:?}");
+            log::debug!("Created Python strategy instance: {python_strategy:?}");
 
-                let mut py_strategy_ref = python_strategy
-                    .extract::<PyRefMut<PyStrategy>>()
-                    .map_err(Into::<PyErr>::into)
-                    .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
-
-                // Extract inherited config fields from the Python config
-                if let Some(config_obj) = config_instance.as_ref() {
-                    if let Ok(strategy_id) = config_obj.getattr("strategy_id")
-                        && !strategy_id.is_none()
-                    {
-                        let strategy_id_val = if let Ok(sid) = strategy_id.extract::<StrategyId>() {
-                            sid
-                        } else if let Ok(sid_str) = strategy_id.extract::<String>() {
-                            StrategyId::new_checked(&sid_str)?
-                        } else {
-                            anyhow::bail!("Invalid `strategy_id` type");
-                        };
-                        py_strategy_ref.set_strategy_id(strategy_id_val)?;
-                    }
-
-                    if let Ok(order_id_tag) = config_obj.getattr("order_id_tag")
-                        && !order_id_tag.is_none()
-                    {
-                        let order_id_tag_val = order_id_tag
-                            .extract::<String>()
-                            .map_err(|e| anyhow::anyhow!("Invalid `order_id_tag` type: {e}"))?;
-                        py_strategy_ref.set_order_id_tag(&order_id_tag_val)?;
-                    }
-
-                    if let Ok(log_events) = config_obj.getattr("log_events")
-                        && let Ok(log_events_val) = log_events.extract::<bool>()
-                    {
-                        py_strategy_ref.set_log_events(log_events_val);
-                    }
-
-                    if let Ok(log_commands) = config_obj.getattr("log_commands")
-                        && let Ok(log_commands_val) = log_commands.extract::<bool>()
-                    {
-                        py_strategy_ref.set_log_commands(log_commands_val);
-                    }
-                }
-
-                py_strategy_ref.set_python_instance(python_strategy.clone().unbind());
-
-                let strategy_id = py_strategy_ref.strategy_id();
-
-                Ok((python_strategy.unbind(), strategy_id))
-            })
-            .map_err(to_pyruntime_err)?;
-
-        // Validate no duplicate before any mutations
-        if engine
-            .kernel()
-            .trader
-            .borrow()
-            .strategy_ids()
-            .contains(&strategy_id)
-        {
-            return Err(to_pyruntime_err(format!(
-                "Strategy '{strategy_id}' is already registered"
-            )));
-        }
-
-        // Phase 2: Create per-component clock via the trader (individual
-        // TestClock in backtest so each strategy gets its own default timer handler)
-        let trader_id = engine.kernel().config.trader_id();
-        let cache = engine.kernel().cache.clone();
-        let portfolio = engine.kernel().portfolio.clone();
-        let component_id = ComponentId::from(strategy_id);
-        let clock = engine
-            .kernel_mut()
-            .trader
-            .borrow_mut()
-            .create_component_clock(component_id);
-
-        // Phase 3: Register the strategy with its dedicated clock
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_strategy = python_strategy.bind(py);
-            let mut py_strategy_ref = py_strategy
-                .extract::<PyRefMut<PyStrategy>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
-
-            py_strategy_ref
-                .register(trader_id, clock, cache, portfolio)
-                .map_err(|e| anyhow::anyhow!("Failed to register PyStrategy: {e}"))?;
-
-            log::debug!(
-                "Internal PyStrategy registered: {}",
-                py_strategy_ref.is_registered()
-            );
-
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        // Phase 4: Register in global registries and install event subscriptions
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_strategy = python_strategy.bind(py);
-            let py_strategy_ref = py_strategy
-                .cast::<PyStrategy>()
-                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyStrategy: {e}"))?;
-            py_strategy_ref.borrow().register_in_global_registries();
-            Ok(())
+            Ok(python_strategy.unbind())
         })
         .map_err(to_pyruntime_err)?;
 
@@ -524,10 +411,9 @@ impl BacktestNode {
             .kernel_mut()
             .trader
             .borrow_mut()
-            .add_strategy_id_with_subscriptions::<PyStrategyInner>(strategy_id)
+            .add_python_strategy_instance(&python_strategy)
             .map_err(to_pyruntime_err)?;
 
-        log::info!("Registered Python strategy {strategy_id}");
         Ok(())
     }
 

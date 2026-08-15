@@ -860,11 +860,9 @@ Supplying `order_id_tag` as well appends the tag to the runtime strategy ID, unl
 ends with that tag. For example, `strategy_id=StrategyId("MyStrategy-PRIMARY")` with
 `order_id_tag="ABC"` registers as `MyStrategy-PRIMARY-ABC`.
 
-:::warning
-A Python strategy registered without `strategy_id` receives an internal runtime ID, and
-`order_id_tag` on its own does not name it. Always set `strategy_id` when running more than one
-strategy.
-:::
+A strategy registered without `strategy_id` takes its base ID from the strategy type name. An
+`order_id_tag` becomes the suffix, so `MyStrategy` with `order_id_tag="ABC"` registers as
+`MyStrategy-ABC`; without a tag, registration assigns the next numeric tag, starting with `000`.
 
 :::note
 The platform has built-in safety measures. Registering a duplicated strategy ID raises a
@@ -877,10 +875,6 @@ Rust treats `StrategyConfig` as immutable construction input. The runtime
 `StrategyId` carries the order ID tag, matching the Python behavior. This keeps
 actor registration, client order ID generation, order list ID generation, and
 position ID generation aligned through `strategy_id.get_tag()`.
-
-A native Rust strategy registered without `strategy_id` takes its base ID from the strategy type
-name. An `order_id_tag` becomes the suffix, for example `MyStrategy-ABC`; without a tag,
-registration assigns the next numeric tag, starting with `000`.
 :::
 
 See the [`StrategyId` API Reference](/docs/python-api-latest/model/identifiers.html) for further details.
