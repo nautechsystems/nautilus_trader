@@ -205,9 +205,10 @@ caller‑owned.
 
 Application text and binary sends wait for their rate‑limit keys and for an active connection. The
 ordinary send methods return after enqueueing the frame, so success does not prove delivery. The
-writer keeps FIFO order for messages buffered during reconnect or after a failed write and replays
-them on a replacement connection. This in‑memory buffer provides reconnect continuity, not durable
-or exactly‑once delivery.
+writer keeps FIFO order for application messages buffered during reconnect or after a failed write
+and replays them on a replacement connection. A control frame belongs to the connection it was
+issued on, so a failed Ping, Pong, or Close is dropped rather than replayed. This in‑memory buffer
+provides reconnect continuity, not durable or exactly‑once delivery.
 
 Ownership‑bound text sends take an expected connection epoch and wait for the writer result. They
 fail if ownership changes and never replay on another connection. If a bound write times out after

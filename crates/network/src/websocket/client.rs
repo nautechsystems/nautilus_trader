@@ -1409,6 +1409,24 @@ impl WebSocketClientInner {
         })
     }
 
+    /// Queues a message for replay on the replacement connection.
+    ///
+    /// A control frame belongs to the connection it was issued on: a Pong answers that
+    /// connection's Ping, a heartbeat Ping probes it, and a Close terminates it. None carries
+    /// its meaning on a replacement connection, so control frames are dropped instead.
+    fn buffer_for_replay(buffer: &mut VecDeque<Message>, msg: Message) {
+        if msg.is_control() {
+            return;
+        }
+
+        log::debug!(
+            "Buffering message for replay (buffer size: {})",
+            buffer.len() + 1
+        );
+
+        buffer.push_back(msg);
+    }
+
     /// Attempts to send all buffered messages after reconnection.
     ///
     /// Returns `true` if a send error occurred (caller should trigger reconnection).
@@ -1659,12 +1677,7 @@ impl WebSocketClientInner {
                                 }
                             }
                             WriterCommand::Send(msg) if mode.is_reconnect() => {
-                                // Buffer messages during reconnection instead of dropping them
-                                log::debug!(
-                                    "Buffering message during reconnection (buffer size: {})",
-                                    reconnect_buffer.len() + 1
-                                );
-                                reconnect_buffer.push_back(msg);
+                                Self::buffer_for_replay(&mut reconnect_buffer, msg);
                             }
                             WriterCommand::SendOnConnection { response_tx, .. }
                                 if mode.is_reconnect() =>
@@ -1797,7 +1810,7 @@ impl WebSocketClientInner {
                                 };
 
                                 if send_failed {
-                                    reconnect_buffer.push_back(msg);
+                                    Self::buffer_for_replay(&mut reconnect_buffer, msg);
 
                                     // CAS: a disconnect landing mid-send must not be overwritten
                                     if request_websocket_reconnect(
@@ -7011,6 +7024,143 @@ mod rust_tests {
         write_task.await.unwrap();
 
         assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+    }
+
+    #[rstest]
+    #[case(Message::Ping(vec![1, 2, 3].into()))]
+    #[case(Message::Pong(vec![4, 5, 6].into()))]
+    #[case(Message::Close(None))]
+    #[tokio::test(start_paused = true)]
+    async fn test_stalled_control_frame_is_not_replayed(#[case] control: Message) {
+        // A control frame belongs to the connection it was issued on, so a failed write must
+        // drop it instead of replaying it onto the replacement connection.
+        let state = Arc::new(BlockingFailState::default());
+        let transport: BoxedWsTransport = Box::pin(BlockingFailTransport {
+            state: Arc::clone(&state),
+        });
+        let (writer, _reader) = transport.split();
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let write_task = WebSocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
+            writer,
+            writer_rx,
+            Arc::new(AtomicU64::new(0)),
+            Arc::new(OnceLock::new()),
+            Arc::new(AtomicBool::new(false)),
+            None,
+        );
+
+        writer_tx.send(WriterCommand::Send(control)).unwrap();
+        state.send_entered_notify.notified().await;
+
+        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let recording_state = Arc::new(RecordingState {
+            messages: Arc::clone(&recorded),
+            recorded_notify: tokio::sync::Notify::new(),
+        });
+        let transport: BoxedWsTransport = Box::pin(RecordingTransport {
+            state: recording_state,
+        });
+        let (new_writer, _reader) = transport.split();
+        let (update_tx, update_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send(WriterCommand::Update(new_writer, update_tx))
+            .unwrap();
+
+        tokio::time::advance(Duration::from_secs(WRITE_TIMEOUT_SECS)).await;
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), update_rx)
+                .await
+                .expect("writer update should not remain queued behind a stalled send")
+                .unwrap(),
+            1,
+            "the replacement sink should install as connection epoch 1"
+        );
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_state),
+            ConnectionMode::Reconnect,
+            "a failed control-frame write should still trigger a reconnect"
+        );
+
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+
+        // Each pass returns the writer to the loop top, where a buffered frame would drain
+        for _ in 0..5 {
+            tokio::time::advance(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
+        }
+
+        let replayed = recorded.lock().unwrap().clone();
+        assert!(
+            replayed.is_empty(),
+            "a failed control frame must not reach the replacement connection, was {replayed:?}"
+        );
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.await.unwrap();
+    }
+
+    #[rstest]
+    #[case(Message::Ping(vec![1, 2, 3].into()))]
+    #[case(Message::Pong(vec![4, 5, 6].into()))]
+    #[case(Message::Close(None))]
+    #[tokio::test(start_paused = true)]
+    async fn test_control_frame_enqueued_during_reconnect_is_not_replayed(
+        #[case] control: Message,
+    ) {
+        // `send_pong` and the heartbeat task check for an active connection before enqueueing,
+        // so a mode flip can land their frame on the writer's reconnect-mode branch instead.
+        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let recording_state = Arc::new(RecordingState {
+            messages: Arc::clone(&recorded),
+            recorded_notify: tokio::sync::Notify::new(),
+        });
+        let transport: BoxedWsTransport = Box::pin(RecordingTransport {
+            state: recording_state,
+        });
+        let (writer, _reader) = transport.split();
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let write_task = WebSocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
+            writer,
+            writer_rx,
+            Arc::new(AtomicU64::new(0)),
+            Arc::new(OnceLock::new()),
+            Arc::new(AtomicBool::new(false)),
+            None,
+        );
+
+        writer_tx.send(WriterCommand::Send(control)).unwrap();
+        tokio::time::advance(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
+
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+
+        // Each pass returns the writer to the loop top, where a buffered frame would drain
+        for _ in 0..5 {
+            tokio::time::advance(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
+        }
+
+        let replayed = recorded.lock().unwrap().clone();
+        assert!(
+            replayed.is_empty(),
+            "a control frame enqueued during reconnect must not reach the replacement connection, was {replayed:?}"
+        );
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.await.unwrap();
     }
 
     #[rstest]

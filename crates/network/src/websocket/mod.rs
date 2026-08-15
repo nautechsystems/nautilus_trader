@@ -50,9 +50,10 @@
 //!
 //! # Reconnection and sends
 //!
-//! The writer task serializes sends and is the sole owner of the active sink. Ordinary sends retain
-//! FIFO buffering and replay across reconnects. Ownership‑bound sends carry an expected connection
-//! epoch and never enter that replay buffer.
+//! The writer task serializes sends and is the sole owner of the active sink. Ordinary application
+//! sends retain FIFO buffering and replay across reconnects. A control frame belongs to the
+//! connection it was issued on, so a failed Ping, Pong, or Close is dropped instead of replayed.
+//! Ownership‑bound sends carry an expected connection epoch and never enter that replay buffer.
 //!
 //! The initial connection has epoch `0`. The writer advances the epoch when it installs a
 //! replacement sink. Epoch‑aware handlers receive that epoch on messages from the replacement

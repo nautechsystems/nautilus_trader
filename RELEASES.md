@@ -125,6 +125,7 @@ Released on TBD (UTC).
 - Improved indicator test tolerances across floating‑point magnitudes (#4718), thanks @mkzung
 - Improved published‑registry verifier tests to ignore fork metadata (#4715), thanks @xxxxxx-oss
 - Improved Coinbase request tests by removing redundant waits (#4637), thanks @pengpengyi92
+- Improved WebSocket reconnect replay to drop Ping, Pong, and Close frames instead of resending them
 - Improved network crate tests for retries, rate limits, mutual TLS, HTTP, socket reconnects, and WebSocket messages
 - Improved Polymarket order response tests for the `tradeIDs` matched shape and batch submission legs
 - Refactored the Redis cache adapter to delegate deletions and custom data writes to `RedisCacheDatabase`, removing duplicated implementations (Rust)
