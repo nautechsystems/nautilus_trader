@@ -16,11 +16,12 @@
 //! HTTP query and response model types for the Polymarket CLOB API.
 
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{HashMap, HashSet},
     fmt,
 };
 
 use ahash::{AHashMap, AHashSet};
+use alloy_primitives::Address;
 use derive_builder::Builder;
 use jiff::{Timestamp, civil::Date, tz::Offset};
 use rust_decimal::Decimal;
@@ -132,18 +133,18 @@ where
             A: MapAccess<'de>,
         {
             let mut allowances = HashMap::with_capacity(map.size_hint().unwrap_or_default());
-            while let Some((spender, allowance)) = map.next_entry::<String, String>()? {
-                match allowances.entry(spender) {
-                    Entry::Occupied(entry) => {
-                        return Err(A::Error::custom(format!(
-                            "duplicate spender `{}` in allowance evidence",
-                            entry.key()
-                        )));
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert(allowance);
-                    }
+            let mut seen_spenders = HashSet::with_capacity(map.size_hint().unwrap_or_default());
+            while let Some(spender) = map.next_key::<String>()? {
+                let address = spender.parse::<Address>().map_err(|_| {
+                    A::Error::custom(format!("invalid spender `{spender}` in allowance evidence"))
+                })?;
+                if !seen_spenders.insert(address) {
+                    return Err(A::Error::custom(format!(
+                        "duplicate spender `{spender}` in allowance evidence"
+                    )));
                 }
+                let allowance = map.next_value::<String>()?;
+                allowances.insert(spender, allowance);
             }
             Ok(allowances)
         }
@@ -769,6 +770,37 @@ mod tests {
         .expect_err("duplicate spender evidence must be rejected before map construction");
 
         assert!(duplicate.to_string().contains("duplicate spender"));
+    }
+
+    #[rstest]
+    fn test_balance_allowance_rejects_case_variant_spender_alias() {
+        let duplicate = serde_json::from_str::<BalanceAllowance>(
+            r#"{
+                "balance":"250.5",
+                "allowances":{
+                    "0xada2005600dec949baf300f4c6120000bdb6eaab":"0",
+                    "0xadA2005600Dec949baf300f4C6120000bDB6eAab":"115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                }
+            }"#,
+        )
+        .expect_err("case variants of one EVM spender must be rejected as duplicates");
+
+        assert!(duplicate.to_string().contains("duplicate spender"));
+    }
+
+    #[rstest]
+    fn test_balance_allowance_rejects_malformed_spender() {
+        let malformed = serde_json::from_str::<BalanceAllowance>(
+            r#"{
+                "balance":"250.5",
+                "allowances":{
+                    "exchange":"1000"
+                }
+            }"#,
+        )
+        .expect_err("allowance spender must be an EVM address");
+
+        assert!(malformed.to_string().contains("invalid spender"));
     }
 
     #[rstest]

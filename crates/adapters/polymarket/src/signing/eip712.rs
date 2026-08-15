@@ -59,7 +59,7 @@ pub const NEG_RISK_CTF_COLLATERAL_ADAPTER: Address =
     address!("0xadA2005600Dec949baf300f4C6120000bDB6eAab");
 
 /// Complete spender set requiring collateral approval for Polymarket CLOB V2 orders.
-pub const COLLATERAL_APPROVAL_TARGETS: [Address; 3] = [
+pub const COLLATERAL_APPROVAL_TARGETS: &[Address] = &[
     CTF_EXCHANGE,
     NEG_RISK_CTF_EXCHANGE,
     NEG_RISK_CTF_COLLATERAL_ADAPTER,
@@ -646,6 +646,18 @@ mod tests {
         assert_eq!(
             format!("{NEG_RISK_CTF_EXCHANGE:#x}"),
             "0xe2222d279d744050d28e00520010520000310f59"
+        );
+        assert_eq!(
+            format!("{NEG_RISK_CTF_COLLATERAL_ADAPTER:#x}"),
+            "0xada2005600dec949baf300f4c6120000bdb6eaab"
+        );
+        assert_eq!(
+            COLLATERAL_APPROVAL_TARGETS,
+            &[
+                CTF_EXCHANGE,
+                NEG_RISK_CTF_EXCHANGE,
+                NEG_RISK_CTF_COLLATERAL_ADAPTER,
+            ]
         );
     }
 

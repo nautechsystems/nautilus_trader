@@ -104,18 +104,21 @@ async fn run(private_key: &str, rpc_url: &str) -> Result<(), Box<dyn std::error:
 }
 
 fn approval_transactions() -> impl Iterator<Item = Approval> {
-    COLLATERAL_APPROVAL_TARGETS.into_iter().flat_map(|target| {
-        [
-            Approval::Collateral {
-                spender: target,
-                amount: U256::MAX,
-            },
-            Approval::Ctf {
-                operator: target,
-                approved: true,
-            },
-        ]
-    })
+    COLLATERAL_APPROVAL_TARGETS
+        .iter()
+        .copied()
+        .flat_map(|target| {
+            [
+                Approval::Collateral {
+                    spender: target,
+                    amount: U256::MAX,
+                },
+                Approval::Ctf {
+                    operator: target,
+                    approved: true,
+                },
+            ]
+        })
 }
 
 #[cfg(test)]
