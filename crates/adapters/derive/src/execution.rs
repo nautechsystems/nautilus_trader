@@ -199,6 +199,7 @@ impl DeriveExecutionClient {
             config.proxy_url.clone(),
             ws_credentials,
             config.max_matching_requests_per_second,
+            config.max_per_instrument_matching_requests_per_second,
         );
 
         if let Some(secs) = config.ws_timeout_secs {
@@ -983,11 +984,14 @@ impl ExecutionClient for DeriveExecutionClient {
             };
 
             let matching_reservation = match ws_exec
-                .reserve_matching_request(if is_trigger_order {
-                    "private/trigger_order"
-                } else {
-                    "private/order"
-                })
+                .reserve_matching_request(
+                    if is_trigger_order {
+                        "private/trigger_order"
+                    } else {
+                        "private/order"
+                    },
+                    &instrument.instrument_name,
+                )
                 .await
             {
                 Ok(reservation) => reservation,
@@ -1630,7 +1634,7 @@ impl ExecutionClient for DeriveExecutionClient {
             };
 
             let matching_reservation = match ws_exec
-                .reserve_matching_request("private/replace")
+                .reserve_matching_request("private/replace", &instrument.instrument_name)
                 .await
             {
                 Ok(reservation) => reservation,

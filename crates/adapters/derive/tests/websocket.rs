@@ -410,6 +410,7 @@ async fn test_connect_with_credentials_completes_login() {
         None,
         test_credentials(),
         None,
+        None,
     );
     client.connect().await.expect("connect failed");
     wait_for_active(&client, Duration::from_secs(2)).await;
@@ -449,6 +450,7 @@ async fn test_connect_accepts_venue_array_login_result() {
         None,
         test_credentials(),
         None,
+        None,
     );
     client.connect().await.expect("connect failed");
     wait_for_active(&client, Duration::from_secs(2)).await;
@@ -472,6 +474,7 @@ async fn test_connect_rejects_unsuccessful_login_result() {
         TransportBackend::default(),
         None,
         test_credentials(),
+        None,
         None,
     );
     let error = client
@@ -497,6 +500,7 @@ async fn test_connect_with_login_rejection_tears_down_transport() {
         TransportBackend::default(),
         None,
         test_credentials(),
+        None,
         None,
     );
     let err = client.connect().await.expect_err("login must reject");
@@ -854,6 +858,7 @@ async fn test_reconnect_retries_login_before_signaling_reconnected() {
         None,
         test_credentials(),
         None,
+        None,
     );
     let execution = client.execution_handle();
     client.connect().await.expect("connect failed");
@@ -1004,6 +1009,7 @@ async fn test_reconnect_surfaces_exhausted_login_retries_and_closes_transport() 
         None,
         test_credentials(),
         None,
+        None,
     );
     let execution = client.execution_handle();
     client.connect().await.expect("connect failed");
@@ -1064,6 +1070,7 @@ async fn test_reconnect_retries_complete_session_after_subscription_failure() {
         TransportBackend::default(),
         None,
         test_credentials(),
+        None,
         None,
     );
     let execution = client.execution_handle();
@@ -1131,6 +1138,7 @@ async fn test_reconnect_retries_complete_session_after_subscription_timeout() {
         None,
         test_credentials(),
         None,
+        None,
     );
     client.set_request_timeout(Duration::from_millis(100));
     client.connect().await.expect("connect failed");
@@ -1177,6 +1185,7 @@ async fn test_reconnect_retries_session_after_second_connection_loss() {
         TransportBackend::default(),
         None,
         test_credentials(),
+        None,
         None,
     );
     let execution = client.execution_handle();
@@ -1225,6 +1234,7 @@ async fn test_reconnect_recovers_loss_after_replay_ack() {
         TransportBackend::default(),
         None,
         test_credentials(),
+        None,
         None,
     );
     let execution = client.execution_handle();
@@ -1282,6 +1292,7 @@ async fn test_reconnect_does_not_replay_acknowledged_unsubscribe() {
         TransportBackend::default(),
         None,
         test_credentials(),
+        None,
         None,
     );
     client.set_request_timeout(Duration::from_millis(100));
@@ -1423,6 +1434,7 @@ async fn test_reconnect_does_not_replay_pending_private_request() {
         None,
         test_credentials(),
         None,
+        None,
     );
     let execution = client.execution_handle();
     client.connect().await.expect("connect failed");
@@ -1480,6 +1492,7 @@ async fn test_reconnect_surfaces_exhausted_subscription_retries() {
         TransportBackend::default(),
         None,
         test_credentials(),
+        None,
         None,
     );
     let execution = client.execution_handle();

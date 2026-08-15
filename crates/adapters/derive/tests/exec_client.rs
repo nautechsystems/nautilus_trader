@@ -383,14 +383,19 @@ async fn handle_get_instrument(
     body: axum::body::Bytes,
 ) -> Response {
     let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
-    state.get_instrument_calls.lock().await.push(parsed);
+    state.get_instrument_calls.lock().await.push(parsed.clone());
     let response = state.get_instrument_response.lock().await.clone();
-    let body = if response.is_null() {
-        json!({"id": 1, "result": sample_instrument_json()})
+    let mut result = if response.is_null() {
+        sample_instrument_json()
     } else {
-        json!({"id": 1, "result": response})
+        response
     };
-    (StatusCode::OK, Json(body)).into_response()
+    // Echo the requested name so a fetch for any instrument returns a
+    // definition whose name matches the order that triggered it.
+    if let Some(requested) = parsed.get("instrument_name").and_then(Value::as_str) {
+        result["instrument_name"] = Value::String(requested.to_string());
+    }
+    (StatusCode::OK, Json(json!({"id": 1, "result": result}))).into_response()
 }
 
 async fn start_rest_server(state: RestState) -> SocketAddr {
@@ -1069,6 +1074,7 @@ fn test_config(rest: SocketAddr, ws: SocketAddr) -> DeriveExecClientConfig {
         signature_expiry_secs: 600,
         market_order_slippage_bps: 50,
         max_matching_requests_per_second: None,
+        max_per_instrument_matching_requests_per_second: None,
     }
 }
 
@@ -1573,6 +1579,9 @@ async fn test_submit_order_accepts_signature_ttl_above_minimum() {
 async fn test_deeply_paced_submit_builds_signature_after_matching_quota_wait() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
+    // The fixed window is aligned to client construction, so measure from
+    // before the build to bound the reset wait.
+    let started = std::time::Instant::now();
     let mut tc = build_client_with_config(rest_state, ws_state.clone(), |mut config| {
         config.signature_expiry_secs = MIN_SIGNATURE_TTL.as_secs() + 1;
         config.max_matching_requests_per_second = Some(1);
@@ -1582,7 +1591,6 @@ async fn test_deeply_paced_submit_builds_signature_after_matching_quota_wait() {
     tc.client.connect().await.expect("connect succeeds");
 
     let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
-    let started = std::time::Instant::now();
 
     for sequence in 0..7 {
         let order = build_limit_order(
@@ -1601,12 +1609,14 @@ async fn test_deeply_paced_submit_builds_signature_after_matching_quota_wait() {
             .expect("submit Ok");
     }
 
-    wait_until(
+    // The fixed-window reset departs the last two writes at the ~5s boundary;
+    // bound the wait from order submission so it cannot race the reset.
+    wait_until_async(
         || {
             let state = ws_state.clone();
             async move { state.submitted_orders.lock().await.len() == 7 }
         },
-        "seven private/order requests posted",
+        Duration::from_secs(15),
     )
     .await;
     let elapsed = started.elapsed();
@@ -1616,8 +1626,9 @@ async fn test_deeply_paced_submit_builds_signature_after_matching_quota_wait() {
     assert_eq!(posts.len(), 7);
     assert_eq!(received_at_secs.len(), 7);
     assert!(
-        elapsed >= Duration::from_millis(1_500),
-        "seven writes must exhaust the five-request burst, elapsed {elapsed:?}",
+        elapsed >= Duration::from_secs(4),
+        "writes past the five-request burst must wait for the discrete window \
+         reset (~5s), elapsed {elapsed:?}",
     );
 
     for (body, received_at_secs) in posts.iter().zip(received_at_secs.iter()) {
@@ -1633,6 +1644,105 @@ async fn test_deeply_paced_submit_builds_signature_after_matching_quota_wait() {
     }
     drop(received_at_secs);
     drop(posts);
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_global_matching_allowance_gates_distinct_instrument_until_window_reset() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    // The fixed window is aligned to client construction, so measure from
+    // before the build to bound the reset wait.
+    let started = std::time::Instant::now();
+    let started_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time is after unix epoch")
+        .as_secs();
+    let mut tc = build_client_with_config(rest_state, ws_state.clone(), |config| config).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    // Five ETH-PERP writes exhaust the Trader account-wide matching window
+    // (and ETH-PERP's own per-instrument window) without touching BTC-PERP's.
+    for sequence in 0..5 {
+        let order = build_limit_order(
+            InstrumentId::from("ETH-PERP.DERIVE"),
+            ClientOrderId::from(format!("STRAT-GLOBAL-ETH-{sequence}")),
+            OrderSide::Buy,
+            Price::from("3500.00"),
+            Quantity::from("1.000"),
+        );
+        tc.cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .expect("cache insert");
+        tc.client
+            .submit_order(submit_cmd(&order))
+            .expect("submit Ok");
+    }
+    wait_until_async(
+        || {
+            let state = ws_state.clone();
+            async move { state.submitted_orders.lock().await.len() == 5 }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    // A BTC-PERP write has a fresh per-instrument allowance, but the global
+    // bucket is drained: it must wait for the discrete window reset.
+    let btc_order = build_limit_order(
+        InstrumentId::from("BTC-PERP.DERIVE"),
+        ClientOrderId::from("STRAT-GLOBAL-BTC-0"),
+        OrderSide::Buy,
+        Price::from("50000.00"),
+        Quantity::from("1.000"),
+    );
+    tc.cache
+        .borrow_mut()
+        .add_order(btc_order.clone(), None, None, false)
+        .expect("cache insert");
+    tc.client
+        .submit_order(submit_cmd(&btc_order))
+        .expect("submit Ok");
+
+    wait_until_async(
+        || {
+            let state = ws_state.clone();
+            async move { state.submitted_orders.lock().await.len() == 6 }
+        },
+        Duration::from_secs(15),
+    )
+    .await;
+
+    let posts = ws_state.submitted_orders.lock().await;
+    let received_at_secs = ws_state.submitted_order_received_at_secs.lock().await;
+    assert_eq!(posts.len(), 6);
+    assert_eq!(posts[5]["instrument_name"].as_str(), Some("BTC-PERP"));
+
+    let btc_received_secs = received_at_secs[5];
+    let eth_received_secs = received_at_secs[..5].to_vec();
+    assert!(
+        btc_received_secs >= started_secs + 4,
+        "global bucket must gate the BTC-PERP write until the ~5s window reset, \
+         started {started_secs}, BTC-PERP received {btc_received_secs}",
+    );
+    assert!(
+        eth_received_secs
+            .iter()
+            .all(|&secs| secs <= btc_received_secs),
+        "the five ETH-PERP writes must depart within the first window",
+    );
+    drop(received_at_secs);
+    drop(posts);
+    drop(eth_received_secs);
+
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < Duration::from_secs(12),
+        "smoke bound: the reset wait must be one window, elapsed {elapsed:?}",
+    );
 
     tc.client.disconnect().await.expect("disconnect");
 }

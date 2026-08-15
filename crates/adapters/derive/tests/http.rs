@@ -437,6 +437,9 @@ async fn test_paced_http_writes_build_auth_headers_after_waiting() {
         "result": {"order": load_json("perps/http_order_eth_partially_filled.json")},
     });
     let addr = start_mock_server(state.clone()).await;
+    // The fixed window is aligned to client construction, so measure from
+    // before the build to bound the reset wait.
+    let started = Instant::now();
     let client =
         DeriveHttpClient::with_credentials(base_url(addr), test_credentials(), Some(5), None, None)
             .unwrap();
@@ -464,7 +467,6 @@ async fn test_paced_http_writes_build_auth_headers_after_waiting() {
         trigger_type: None,
     };
 
-    let started = Instant::now();
     let requests = (0..7).map(|sequence| {
         let client = client.clone();
         let mut payload = payload.clone();
@@ -478,8 +480,9 @@ async fn test_paced_http_writes_build_auth_headers_after_waiting() {
     assert!(outcomes.iter().all(Result::is_ok));
     assert_eq!(captured.len(), 7);
     assert!(
-        elapsed >= Duration::from_millis(1_500),
-        "seven writes must exhaust the five-request burst, elapsed {elapsed:?}",
+        elapsed >= Duration::from_secs(4),
+        "writes past the five-request burst must wait for the discrete window \
+         reset (~5s), elapsed {elapsed:?}",
     );
 
     for request in captured {
