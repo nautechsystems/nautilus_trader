@@ -202,13 +202,7 @@ pub fn parse_derive_trade_to_fill_report(
     let order_side = derive_order_side_to_nautilus(trade.direction);
     let last_qty = quantity_from_decimal(trade.trade_amount, "trade_amount")?;
     let last_px = price_from_decimal(trade.trade_price, "trade_price")?;
-    let commission = Money::new(
-        trade
-            .trade_fee
-            .try_into()
-            .with_context(|| format!("trade_fee {} out of f64 range", trade.trade_fee))?,
-        fee_currency,
-    );
+    let commission = commission_from_decimal(trade.trade_fee, fee_currency)?;
     let liquidity_side = match trade.liquidity_role {
         DeriveLiquidityRole::Maker => LiquiditySide::Maker,
         DeriveLiquidityRole::Taker => LiquiditySide::Taker,
@@ -353,6 +347,11 @@ fn price_from_decimal(value: Decimal, field: &str) -> anyhow::Result<Price> {
 
 fn quantity_from_decimal(value: Decimal, field: &str) -> anyhow::Result<Quantity> {
     Quantity::from_decimal(value.normalize()).with_context(|| format!("invalid Derive {field}"))
+}
+
+fn commission_from_decimal(value: Decimal, currency: Currency) -> anyhow::Result<Money> {
+    Money::from_decimal(value, currency)
+        .with_context(|| format!("trade_fee {value} cannot be represented at {currency} precision"))
 }
 
 fn ms_to_nanos(value: i64) -> UnixNanos {
@@ -704,6 +703,67 @@ mod tests {
         assert_eq!(report.last_px, Price::from("3505"));
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.commission.as_decimal(), dec!(0.5));
+    }
+
+    #[rstest]
+    #[case(DeriveLiquidityRole::Taker, LiquiditySide::Taker)]
+    #[case(DeriveLiquidityRole::Maker, LiquiditySide::Maker)]
+    fn test_parse_trade_report_preserves_exact_decimal_commission(
+        #[case] liquidity_role: DeriveLiquidityRole,
+        #[case] expected_liquidity_side: LiquiditySide,
+    ) {
+        let mut trade = sample_trade();
+        trade.trade_fee = dec!(0.12345678);
+        trade.liquidity_role = liquidity_role;
+        let account_id = AccountId::new("DERIVE-001");
+        let usdc = Currency::USDC();
+        let report =
+            parse_derive_trade_to_fill_report(&trade, account_id, usdc, UnixNanos::from(2))
+                .unwrap()
+                .expect("exact USDC-precision fee must emit the fill");
+        assert_eq!(report.commission.as_decimal(), dec!(0.12345678));
+        assert_eq!(report.commission.currency, usdc);
+        assert_eq!(report.liquidity_side, expected_liquidity_side);
+    }
+
+    #[rstest]
+    #[case(dec!(0.000000025), dec!(0.00000002))]
+    #[case(dec!(0.000000015), dec!(0.00000002))]
+    fn test_parse_trade_report_rounds_half_unit_commission_from_decimal(
+        #[case] trade_fee: Decimal,
+        #[case] expected: Decimal,
+    ) {
+        // These half-unit values are where the old f64 path diverged
+        let mut trade = sample_trade();
+        trade.trade_fee = trade_fee;
+        let account_id = AccountId::new("DERIVE-001");
+        let report = parse_derive_trade_to_fill_report(
+            &trade,
+            account_id,
+            Currency::USDC(),
+            UnixNanos::from(2),
+        )
+        .unwrap()
+        .expect("sub-precision fee must still emit the fill");
+        assert_eq!(report.commission.as_decimal(), expected);
+    }
+
+    #[rstest]
+    fn test_parse_trade_report_errors_on_out_of_range_commission() {
+        let mut trade = sample_trade();
+        trade.trade_fee = Decimal::MAX;
+        let account_id = AccountId::new("DERIVE-001");
+        let err = parse_derive_trade_to_fill_report(
+            &trade,
+            account_id,
+            Currency::USDC(),
+            UnixNanos::from(2),
+        )
+        .expect_err("out-of-range fee must error instead of panicking");
+        assert!(
+            err.to_string().contains("trade_fee"),
+            "unexpected error: {err}",
+        );
     }
 
     #[rstest]

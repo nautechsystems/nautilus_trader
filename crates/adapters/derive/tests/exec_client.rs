@@ -5817,6 +5817,116 @@ async fn test_generate_fill_reports_does_not_mark_unconsumed_trades_emitted() {
 
 #[rstest]
 #[tokio::test]
+async fn test_ws_trades_failed_commission_conversion_does_not_record_dedup() {
+    // The failed construction must not poison dedup for the same trade_id
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    wait_until(
+        || {
+            let state = ws_state.clone();
+            async move { !state.subscribe_frames.lock().await.is_empty() }
+        },
+        "subscribe acknowledged",
+    )
+    .await;
+    let _ = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Account(_)),
+        "initial AccountState",
+    )
+    .await;
+
+    let channel = format!("{TEST_SUBACCOUNT}.trades");
+    let mut bad_fee = sample_trade_json("trade-fee-ws-1", "ord-fee-ws-1", "ETH-PERP");
+    bad_fee["trade_fee"] = json!("79228162514264337593543950335");
+    ws_state.push_notification(make_subscription_frame(&channel, &json!([bad_fee])));
+    ws_state.push_notification(make_subscription_frame(
+        &channel,
+        &json!([sample_trade_json(
+            "trade-fee-ws-1",
+            "ord-fee-ws-1",
+            "ETH-PERP"
+        )]),
+    ));
+
+    let event = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Report(ExecutionReport::Fill(_))),
+        "FillReport after failed commission conversion",
+    )
+    .await;
+
+    if let ExecutionEvent::Report(ExecutionReport::Fill(report)) = event {
+        assert_eq!(report.trade_id.as_str(), "trade-fee-ws-1");
+        assert_eq!(report.commission.as_decimal(), dec!(0.5));
+    } else {
+        unreachable!();
+    }
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_skips_unrepresentable_commission_and_retries() {
+    // The failed row is skipped, not marked processed, so a later poll
+    // re-fetches it
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut bad_fee = sample_trade_json("trade-fee-rest-1", "ord-1", "ETH-PERP");
+    bad_fee["trade_fee"] = json!("79228162514264337593543950335");
+    *rest_state.trade_history_response.lock().await = json!({
+        "trades": [
+            bad_fee,
+            sample_trade_json("trade-fee-rest-2", "ord-2", "ETH-PERP"),
+        ],
+        "pagination": {"count": 2, "num_pages": 1},
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut tc = build_client(rest_state.clone(), ws_state).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let generate = || {
+        GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(InstrumentId::from("ETH-PERP.DERIVE")),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    };
+    let reports = tc
+        .client
+        .generate_fill_reports(generate())
+        .await
+        .expect("fill generation survives the unrepresentable fee row");
+    assert_eq!(reports.len(), 1, "failed row must be skipped");
+    assert_eq!(reports[0].trade_id.as_str(), "trade-fee-rest-2");
+
+    *rest_state.trade_history_response.lock().await = json!({
+        "trades": [sample_trade_json("trade-fee-rest-1", "ord-1", "ETH-PERP")],
+        "pagination": {"count": 1, "num_pages": 1},
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let retried = tc
+        .client
+        .generate_fill_reports(generate())
+        .await
+        .expect("retry fill generation succeeds");
+    assert_eq!(retried.len(), 1);
+    assert_eq!(retried[0].trade_id.as_str(), "trade-fee-rest-1");
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_ws_dispatch_tracked_order_open_emits_order_accepted_once() {
     // Submit an order so its identity is registered, then push the venue's
     // `.orders` Open notice twice (the second simulates a reconnect replay).

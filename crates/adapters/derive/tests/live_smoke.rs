@@ -30,6 +30,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use nautilus_core::UnixNanos;
 use nautilus_derive::{
     common::{
         consts::{ACTION_TYPEHASH, DOMAIN_SEPARATOR_MAINNET, TRADE_MODULE_ADDRESS_MAINNET},
@@ -38,16 +39,20 @@ use nautilus_derive::{
     },
     http::{
         DeriveCredentials, DeriveHttpClient,
-        query::{DeriveCancelParams, DeriveGetTriggerOrdersParams, order_to_derive_payload},
+        parse::parse_derive_trade_to_fill_report,
+        query::{
+            DeriveCancelParams, DeriveGetTradeHistoryParams, DeriveGetTriggerOrdersParams,
+            order_to_derive_payload,
+        },
     },
     signing::nonce::NonceManager,
     websocket::{DeriveWebSocketClient, DeriveWsCredentials},
 };
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
-    identifiers::InstrumentId,
+    identifiers::{AccountId, InstrumentId},
     orders::{OrderAny, OrderTestBuilder},
-    types::{Price, Quantity},
+    types::{Currency, Price, Quantity},
 };
 use rstest::rstest;
 use rust_decimal_macros::dec;
@@ -140,6 +145,53 @@ async fn test_live_ws_login_and_private_read() {
     );
 
     client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "live network call against api.lyra.finance; run with --include-ignored"]
+async fn test_live_rest_trade_history_commissions_construct_exactly() {
+    let creds = live_credentials();
+    let http = DeriveHttpClient::with_credentials(
+        urls::rest_url(DeriveEnvironment::Mainnet),
+        DeriveCredentials::new(&creds.wallet_address, &creds.session_key).unwrap(),
+        None,
+        None,
+        None,
+    )
+    .expect("http client builds");
+
+    let result = http
+        .get_private_trade_history(&DeriveGetTradeHistoryParams::new(
+            creds.subaccount_id,
+            1,
+            100,
+        ))
+        .await
+        .expect("private/get_trade_history succeeds");
+
+    let account_id = AccountId::new("DERIVE-SMOKE");
+    let mut commissions = 0;
+
+    for trade in &result.trades {
+        let report = parse_derive_trade_to_fill_report(
+            trade,
+            account_id,
+            Currency::USDC(),
+            UnixNanos::from(0),
+        )
+        .unwrap_or_else(|e| panic!("live trade_fee must construct exactly: {e}"));
+        if let Some(report) = report {
+            assert_eq!(report.commission.currency, Currency::USDC());
+            commissions += 1;
+        }
+    }
+
+    log::info!(
+        "live trade history parsed {} trades, {} commissions",
+        result.trades.len(),
+        commissions,
+    );
 }
 
 #[rstest]
