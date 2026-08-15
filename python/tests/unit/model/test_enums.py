@@ -16,6 +16,7 @@
 import pytest
 
 from nautilus_trader.model import AccountType
+from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import BookType
 from nautilus_trader.model import InstrumentClass
 from nautilus_trader.model import MarketStatus
@@ -51,6 +52,39 @@ def test_model_enums_from_str(enum_type, member, name):
 
 def test_pool_liquidity_update_type_from_str():
     assert PoolLiquidityUpdateType.from_str("Mint") == PoolLiquidityUpdateType.MINT
+
+
+@pytest.mark.parametrize(
+    ("member", "name"),
+    [
+        (AggressorSide.NO_AGGRESSOR, "NO_AGGRESSOR"),
+        (AggressorSide.BUY, "BUY"),
+        (AggressorSide.SELL, "SELL"),
+    ],
+)
+def test_aggressor_side_canonical_names(member, name):
+    assert member.name == name
+    assert str(member) == name
+
+
+@pytest.mark.parametrize(
+    ("text", "member"),
+    [
+        ("BUY", AggressorSide.BUY),
+        ("SELL", AggressorSide.SELL),
+        ("BUYER", AggressorSide.BUY),
+        ("SELLER", AggressorSide.SELL),
+    ],
+)
+def test_aggressor_side_from_str_accepts_historical(text, member):
+    assert AggressorSide.from_str(text) == member
+
+
+def test_aggressor_side_has_no_alias_members():
+    with pytest.raises(AttributeError):
+        _ = AggressorSide.BUYER
+    with pytest.raises(AttributeError):
+        _ = AggressorSide.SELLER
 
 
 @pytest.mark.parametrize("enum_type", [BookType, OrderSide, OrderType])

@@ -3161,9 +3161,9 @@ fn parse_futures_trade_tick(
     let ts_event = parse_millis(trade.time, "Futures trade time")?;
 
     let aggressor_side = if trade.is_buyer_maker {
-        AggressorSide::Seller
+        AggressorSide::Sell
     } else {
-        AggressorSide::Buyer
+        AggressorSide::Buy
     };
 
     Ok(TradeTick::new(

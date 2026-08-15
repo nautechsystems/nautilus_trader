@@ -899,7 +899,7 @@ mod tests {
         assert_eq!(trade.instrument_id, instrument_id);
         assert_eq!(trade.price, Price::from("7996"));
         assert_eq!(trade.size, Quantity::from(50));
-        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.aggressor_side, AggressorSide::Sell);
         assert_eq!(trade.ts_event, UnixNanos::from(1571826769669000000));
         assert_eq!(trade.ts_init, UnixNanos::from(1571826769740000000));
     }

@@ -306,8 +306,8 @@ pub fn parse_optional_datetime_to_unix_nanos(value: &Option<Timestamp>, field: &
 #[must_use]
 pub const fn parse_aggressor_side(side: &Option<BitmexSide>) -> AggressorSide {
     match side {
-        Some(BitmexSide::Buy) => AggressorSide::Buyer,
-        Some(BitmexSide::Sell) => AggressorSide::Seller,
+        Some(BitmexSide::Buy) => AggressorSide::Buy,
+        Some(BitmexSide::Sell) => AggressorSide::Sell,
         None => AggressorSide::NoAggressor,
     }
 }

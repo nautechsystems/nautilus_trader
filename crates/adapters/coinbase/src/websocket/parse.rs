@@ -475,7 +475,7 @@ mod tests {
                 assert_eq!(tick.instrument_id, instrument.id());
                 assert_eq!(tick.price, Price::from("68900.50"));
                 assert_eq!(tick.size, Quantity::from("0.00150000"));
-                assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+                assert_eq!(tick.aggressor_side, AggressorSide::Buy);
                 assert_eq!(tick.trade_id.as_str(), "995098700");
                 assert!(tick.ts_event.as_u64() > 0);
             }
@@ -495,7 +495,7 @@ mod tests {
                 let trade_data = &events[0].trades[1];
                 let tick = parse_ws_trade(trade_data, &instrument, ts_init).unwrap();
 
-                assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+                assert_eq!(tick.aggressor_side, AggressorSide::Sell);
                 assert_eq!(tick.price, Price::from("68900.00"));
                 assert_eq!(tick.size, Quantity::from("0.05000000"));
             }

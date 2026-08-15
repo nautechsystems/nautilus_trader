@@ -634,9 +634,9 @@ fn generate_trades(instrument_id: InstrumentId, count: usize) -> Vec<TradeTick> 
                 price_from_cents(149_005 + i as i64 % 100),
                 Quantity::from("1.000"),
                 if i.is_multiple_of(2) {
-                    AggressorSide::Buyer
+                    AggressorSide::Buy
                 } else {
-                    AggressorSide::Seller
+                    AggressorSide::Sell
                 },
                 TradeId::from(format!("T-{i}").as_str()),
                 ts,

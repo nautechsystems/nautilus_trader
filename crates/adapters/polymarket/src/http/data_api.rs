@@ -606,8 +606,8 @@ mod tests {
 
         // Should filter out the third trade (different asset)
         assert_eq!(ticks.len(), 2);
-        assert_eq!(ticks[0].aggressor_side, AggressorSide::Buyer);
-        assert_eq!(ticks[1].aggressor_side, AggressorSide::Seller);
+        assert_eq!(ticks[0].aggressor_side, AggressorSide::Buy);
+        assert_eq!(ticks[1].aggressor_side, AggressorSide::Sell);
     }
 
     #[rstest]
@@ -765,7 +765,7 @@ mod tests {
         let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2).unwrap();
 
         assert_eq!(trades.len(), 1);
-        assert_eq!(trades[0].aggressor_side, AggressorSide::Buyer);
+        assert_eq!(trades[0].aggressor_side, AggressorSide::Buy);
     }
 
     #[rstest]

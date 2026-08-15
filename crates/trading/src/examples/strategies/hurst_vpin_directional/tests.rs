@@ -179,7 +179,7 @@ fn test_buyer_aggressor_adds_to_buy_volume() {
         .on_trade(&trade(
             strategy.config.instrument_id,
             "5.0",
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             1,
         ))
         .unwrap();
@@ -196,7 +196,7 @@ fn test_seller_aggressor_adds_to_sell_volume() {
         .on_trade(&trade(
             strategy.config.instrument_id,
             "7.0",
-            AggressorSide::Seller,
+            AggressorSide::Sell,
             1,
         ))
         .unwrap();
@@ -277,7 +277,7 @@ fn test_bar_finalizes_bucket_and_resets_accumulators() {
         .on_trade(&trade(
             strategy.config.instrument_id,
             "7.0",
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             1,
         ))
         .unwrap();
@@ -285,7 +285,7 @@ fn test_bar_finalizes_bucket_and_resets_accumulators() {
         .on_trade(&trade(
             strategy.config.instrument_id,
             "3.0",
-            AggressorSide::Seller,
+            AggressorSide::Sell,
             2,
         ))
         .unwrap();

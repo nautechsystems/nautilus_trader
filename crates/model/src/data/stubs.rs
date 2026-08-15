@@ -58,7 +58,7 @@ impl Default for TradeTick {
             instrument_id: InstrumentId::from("AUDUSD.SIM"),
             price: Price::from("1.00000"),
             size: Quantity::from(100_000),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             trade_id: TradeId::new("123456789"),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
@@ -302,12 +302,12 @@ pub fn quote_audusd() -> QuoteTick {
 }
 
 #[fixture]
-pub fn stub_trade_ethusdt_buyer() -> TradeTick {
+pub fn stub_trade_ethusdt_buy() -> TradeTick {
     TradeTick {
         instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
         price: Price::from("10000.0000"),
         size: Quantity::from("1.00000000"),
-        aggressor_side: AggressorSide::Buyer,
+        aggressor_side: AggressorSide::Buy,
         trade_id: TradeId::new("123456789"),
         ts_event: UnixNanos::default(),
         ts_init: UnixNanos::from(1),

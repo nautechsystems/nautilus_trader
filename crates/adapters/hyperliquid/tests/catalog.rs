@@ -63,7 +63,7 @@ fn public_trade_catalog_round_trip_preserves_counterparties() {
         instrument_id,
         Price::from("100000.50"),
         Quantity::from("0.123"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         "123456".to_string(),
         "0xbuyer".to_string(),
         "0xseller".to_string(),

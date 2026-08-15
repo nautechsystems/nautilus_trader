@@ -412,7 +412,7 @@ mod tests {
             InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
             Price::from("100000.50"),
             Quantity::from("0.123"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             "123456".to_string(),
             "0xbuyer".to_string(),
             "0xseller".to_string(),

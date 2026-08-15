@@ -64,8 +64,8 @@ impl BitmexSide {
     #[must_use]
     pub const fn as_aggressor_side(&self) -> AggressorSide {
         match self {
-            Self::Buy => AggressorSide::Buyer,
-            Self::Sell => AggressorSide::Seller,
+            Self::Buy => AggressorSide::Buy,
+            Self::Sell => AggressorSide::Sell,
         }
     }
 }

@@ -593,7 +593,7 @@ mod tests {
             instrument_id,
             Price::from("1.0001"),
             Quantity::from("100"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::from("T-1"),
             UnixNanos::from(ts_init),
             UnixNanos::from(ts_init),

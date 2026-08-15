@@ -2819,7 +2819,7 @@ mod tests {
         assert_eq!(trade.instrument_id, InstrumentId::from("BTC-USDT.OKX"));
         assert_eq!(trade.price, Price::from("42219.9"));
         assert_eq!(trade.size, Quantity::from("0.12060306"));
-        assert_eq!(trade.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(trade.aggressor_side, AggressorSide::Buy);
         assert_eq!(trade.trade_id, TradeId::from("130639474"));
         assert_eq!(trade.ts_event, UnixNanos::from(1630048897897000000));
         assert_eq!(trade.ts_init, UnixNanos::default());
@@ -7697,7 +7697,7 @@ mod tests {
         assert_eq!(trade.instrument_id, instrument_id);
         assert_eq!(trade.price.as_decimal(), dec!(16.9));
         assert_eq!(trade.size.as_decimal(), dec!(100));
-        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.aggressor_side, AggressorSide::Sell);
     }
 
     #[rstest]

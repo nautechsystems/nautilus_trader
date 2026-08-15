@@ -1953,7 +1953,7 @@ def _make_trade(instrument_id):
         instrument_id,
         Price.from_str("1.00000"),
         Quantity.from_int(10),
-        AggressorSide.BUYER,
+        AggressorSide.BUY,
         TradeId("T-001"),
         1,
         2,

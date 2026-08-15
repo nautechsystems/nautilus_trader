@@ -286,8 +286,8 @@ impl TryFrom<OrderSide> for PolymarketOrderSide {
 impl From<PolymarketOrderSide> for AggressorSide {
     fn from(value: PolymarketOrderSide) -> Self {
         match value {
-            PolymarketOrderSide::Buy => Self::Buyer,
-            PolymarketOrderSide::Sell => Self::Seller,
+            PolymarketOrderSide::Buy => Self::Buy,
+            PolymarketOrderSide::Sell => Self::Sell,
         }
     }
 }
@@ -504,8 +504,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(PolymarketOrderSide::Buy, AggressorSide::Buyer)]
-    #[case(PolymarketOrderSide::Sell, AggressorSide::Seller)]
+    #[case(PolymarketOrderSide::Buy, AggressorSide::Buy)]
+    #[case(PolymarketOrderSide::Sell, AggressorSide::Sell)]
     fn test_order_side_to_aggressor(
         #[case] poly: PolymarketOrderSide,
         #[case] expected: AggressorSide,

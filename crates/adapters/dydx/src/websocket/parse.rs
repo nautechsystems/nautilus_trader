@@ -756,8 +756,8 @@ pub fn parse_trade_ticks(
 
     for trade in &contents.trades {
         let aggressor_side = match trade.side {
-            OrderSide::Buy => AggressorSide::Buyer,
-            OrderSide::Sell => AggressorSide::Seller,
+            OrderSide::Buy => AggressorSide::Buy,
+            OrderSide::Sell => AggressorSide::Sell,
             _ => continue,
         };
 
@@ -1948,7 +1948,7 @@ mod tests {
             assert_eq!(tick.instrument_id, instrument_id);
             assert_eq!(tick.price.to_string(), "43250.00");
             assert_eq!(tick.size.to_string(), "0.50000000");
-            assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+            assert_eq!(tick.aggressor_side, AggressorSide::Buy);
             assert_eq!(tick.trade_id.to_string(), "trade-001");
         } else {
             panic!("Expected Trade data");

@@ -167,7 +167,7 @@ fn sample_trade() -> TradeTick {
         instrument_id: InstrumentId::from("EUR/USD.SIM"),
         price: Price::from("1.10000"),
         size: Quantity::from(100_000),
-        aggressor_side: AggressorSide::Buyer,
+        aggressor_side: AggressorSide::Buy,
         trade_id: TradeId::from("123456"),
         ts_event: UnixNanos::default(),
         ts_init: UnixNanos::default(),

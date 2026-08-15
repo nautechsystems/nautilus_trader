@@ -276,8 +276,8 @@ pub fn parse_order_side(value: &str) -> OrderSide {
 #[must_use]
 pub fn parse_aggressor_side(value: &str) -> AggressorSide {
     match value {
-        "buy" => AggressorSide::Buyer,
-        "sell" => AggressorSide::Seller,
+        "buy" => AggressorSide::Buy,
+        "sell" => AggressorSide::Sell,
         _ => AggressorSide::NoAggressor,
     }
 }
@@ -541,8 +541,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case("buy", AggressorSide::Buyer)]
-    #[case("sell", AggressorSide::Seller)]
+    #[case("buy", AggressorSide::Buy)]
+    #[case("sell", AggressorSide::Sell)]
     #[case("unknown", AggressorSide::NoAggressor)]
     #[case("", AggressorSide::NoAggressor)]
     #[case("random", AggressorSide::NoAggressor)]

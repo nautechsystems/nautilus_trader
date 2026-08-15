@@ -106,8 +106,8 @@ pub fn precision_from_increment(increment: &str) -> u8 {
 /// Converts a Coinbase order side to a Nautilus aggressor side.
 pub fn coinbase_side_to_aggressor(side: &CoinbaseOrderSide) -> AggressorSide {
     match side {
-        CoinbaseOrderSide::Buy => AggressorSide::Buyer,
-        CoinbaseOrderSide::Sell => AggressorSide::Seller,
+        CoinbaseOrderSide::Buy => AggressorSide::Buy,
+        CoinbaseOrderSide::Sell => AggressorSide::Sell,
         CoinbaseOrderSide::Unknown => AggressorSide::NoAggressor,
     }
 }
@@ -1428,10 +1428,10 @@ mod tests {
             let trade = parse_trade_tick(trade_data, instrument_id, 2, 8, ts_init).unwrap();
             match trade_data.side {
                 CoinbaseOrderSide::Buy => {
-                    assert_eq!(trade.aggressor_side, AggressorSide::Buyer);
+                    assert_eq!(trade.aggressor_side, AggressorSide::Buy);
                 }
                 CoinbaseOrderSide::Sell => {
-                    assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+                    assert_eq!(trade.aggressor_side, AggressorSide::Sell);
                 }
                 _ => {}
             }

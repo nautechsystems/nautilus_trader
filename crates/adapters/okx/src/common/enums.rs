@@ -106,8 +106,8 @@ impl From<OrderSideSpecified> for OKXSide {
 impl From<OKXSide> for AggressorSide {
     fn from(value: OKXSide) -> Self {
         match value {
-            OKXSide::Buy => Self::Buyer,
-            OKXSide::Sell => Self::Seller,
+            OKXSide::Buy => Self::Buy,
+            OKXSide::Sell => Self::Sell,
         }
     }
 }

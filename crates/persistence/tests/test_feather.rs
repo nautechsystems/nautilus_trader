@@ -101,7 +101,7 @@ async fn test_write_data_enum_all_types() {
         instrument_id,
         Price::from("1.0"),
         Quantity::from("1000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::from("1"),
         UnixNanos::from(2000),
         UnixNanos::from(2000),

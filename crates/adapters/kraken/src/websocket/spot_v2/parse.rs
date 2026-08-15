@@ -106,8 +106,8 @@ pub fn parse_trade_tick(
         .with_context(|| format!("Failed to construct Quantity with precision {size_precision}"))?;
 
     let aggressor = match trade.side {
-        KrakenOrderSide::Buy => AggressorSide::Buyer,
-        KrakenOrderSide::Sell => AggressorSide::Seller,
+        KrakenOrderSide::Buy => AggressorSide::Buy,
+        KrakenOrderSide::Sell => AggressorSide::Sell,
     };
 
     let trade_id = TradeId::new_checked(trade.trade_id.to_string())?;
@@ -743,7 +743,7 @@ mod tests {
         assert_eq!(trade_tick.size, Quantity::from("0.00027625"));
         assert!(matches!(
             trade_tick.aggressor_side,
-            AggressorSide::Buyer | AggressorSide::Seller
+            AggressorSide::Buy | AggressorSide::Sell
         ));
         assert_eq!(
             trade_tick.ts_event,

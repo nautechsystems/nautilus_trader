@@ -70,8 +70,8 @@ pub fn parse_trade_tick(
     ts_init: UnixNanos,
 ) -> anyhow::Result<TradeTick> {
     let aggressor_side = match trade.side {
-        OrderSide::Buy => AggressorSide::Buyer,
-        OrderSide::Sell => AggressorSide::Seller,
+        OrderSide::Buy => AggressorSide::Buy,
+        OrderSide::Sell => AggressorSide::Sell,
         OrderSide::NoOrderSide => AggressorSide::NoAggressor,
     };
 
@@ -1053,7 +1053,7 @@ mod tests {
         assert_eq!(tick.instrument_id, instrument_id);
         assert_eq!(tick.price.to_string(), "89942");
         assert_eq!(tick.size.to_string(), "0.0001");
-        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
         assert_eq!(tick.trade_id.to_string(), "03f89a550000000200000002");
         assert_eq!(tick.ts_init, ts_init);
     }

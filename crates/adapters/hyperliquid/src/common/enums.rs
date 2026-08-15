@@ -150,8 +150,8 @@ impl From<HyperliquidSide> for OrderSide {
 impl From<HyperliquidSide> for AggressorSide {
     fn from(value: HyperliquidSide) -> Self {
         match value {
-            HyperliquidSide::Buy => Self::Buyer,
-            HyperliquidSide::Sell => Self::Seller,
+            HyperliquidSide::Buy => Self::Buy,
+            HyperliquidSide::Sell => Self::Sell,
         }
     }
 }
@@ -1145,11 +1145,11 @@ mod tests {
         // Test conversion from HyperliquidSide to AggressorSide
         assert_eq!(
             AggressorSide::from(HyperliquidSide::Buy),
-            AggressorSide::Buyer
+            AggressorSide::Buy
         );
         assert_eq!(
             AggressorSide::from(HyperliquidSide::Sell),
-            AggressorSide::Seller
+            AggressorSide::Sell
         );
     }
 

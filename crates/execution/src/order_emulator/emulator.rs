@@ -1963,7 +1963,7 @@ mod tests {
             instrument.id(),
             Price::from(price),
             Quantity::from(1),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::from("T-001"),
             0.into(),
             0.into(),

@@ -870,7 +870,7 @@ async fn domain_client_request_trades_fills_market_id_and_parses_ticks() {
     assert_eq!(ticks[0].instrument_id, instrument.id());
     assert_eq!(ticks[0].price, Price::from("2361.31"));
     assert_eq!(ticks[0].size, Quantity::from("0.0005"));
-    assert_eq!(ticks[0].aggressor_side, AggressorSide::Seller);
+    assert_eq!(ticks[0].aggressor_side, AggressorSide::Sell);
     assert_eq!(ticks[0].trade_id.to_string(), "19211490282");
 }
 

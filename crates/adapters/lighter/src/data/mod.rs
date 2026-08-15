@@ -2480,7 +2480,7 @@ mod tests {
                 assert_eq!(tick.instrument_id, instrument_id);
                 assert_eq!(tick.price, Price::from("2361.31"));
                 assert_eq!(tick.size, Quantity::from("0.0005"));
-                assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+                assert_eq!(tick.aggressor_side, AggressorSide::Sell);
                 assert_eq!(tick.trade_id.to_string(), "19211490282");
             }
             event => panic!("expected trades response, was {event:?}"),
@@ -2663,7 +2663,7 @@ mod tests {
                 instrument_id,
                 Price::from("1.0"),
                 Quantity::from("1.0"),
-                AggressorSide::Buyer,
+                AggressorSide::Buy,
                 TradeId::new(trade_id),
                 UnixNanos::from(ts_event),
                 UnixNanos::from(ts_event + 1),

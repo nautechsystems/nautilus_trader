@@ -70,7 +70,7 @@ pub fn stub_trade() -> TradeTick {
         instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
         price: Price::from("1500.0000"),
         size: Quantity::from("1.00000000"),
-        aggressor_side: AggressorSide::Buyer,
+        aggressor_side: AggressorSide::Buy,
         trade_id: TradeId::from("123456789"),
         ts_event: 1.into(),
         ts_init: 0.into(),

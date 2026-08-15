@@ -1912,13 +1912,13 @@ fn test_last_price_stop_style_order_waits_for_trade(
             Price::from("1505.00"),
             Price::from("1504.00"),
             Price::from("1506.00"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
         ),
         OrderType::MarketIfTouched => (
             Price::from("1495.00"),
             Price::from("1494.00"),
             Price::from("1495.00"),
-            AggressorSide::Seller,
+            AggressorSide::Sell,
         ),
         _ => unreachable!("unsupported stop-style order type: {order_type}"),
     };
@@ -2243,7 +2243,7 @@ fn test_passive_stop_limit_trigger_emits_triggered_before_fill(
         instrument_eth_usdt.id(),
         Price::from("1505.00"),
         Quantity::from("1.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("trigger-1"),
         UnixNanos::from(2u64),
         UnixNanos::from(2u64),
@@ -2309,7 +2309,7 @@ fn test_passive_post_only_stop_limit_rejected_when_triggered_as_taker(
         instrument_eth_usdt.id(),
         Price::from("1505.00"),
         Quantity::from("1.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("trigger-1"),
         UnixNanos::from(2u64),
         UnixNanos::from(2u64),
@@ -2439,7 +2439,7 @@ fn test_passive_stop_limit_rekeys_to_limit_after_trigger(
         instrument_eth_usdt.id(),
         Price::from("1505.00"),
         Quantity::from("1.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("trigger-1"),
         UnixNanos::from(2u64),
         UnixNanos::from(2u64),
@@ -3143,7 +3143,7 @@ fn test_expire_order(
         instrument_eth_usdt.id(),
         Price::from("1500.00"),
         Quantity::from("1.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("1"),
         UnixNanos::from(tick_time as u64),
         UnixNanos::from(tick_time as u64),
@@ -3340,7 +3340,7 @@ fn test_rejected_post_only_modify_preserves_queue_position(
         instrument_eth_usdt.id(),
         Price::from("100.00"),
         Quantity::from("10.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("DRAIN"),
         UnixNanos::from(1u64),
         UnixNanos::from(1u64),
@@ -3398,7 +3398,7 @@ fn test_rejected_post_only_modify_preserves_queue_position(
         instrument_eth_usdt.id(),
         Price::from("100.00"),
         Quantity::from("1.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("FILL"),
         UnixNanos::from(4u64),
         UnixNanos::from(4u64),
@@ -4260,7 +4260,7 @@ fn test_updating_of_trailing_stop_market_order_with_no_trigger_price_set(
         instrument_eth_usdt.id(),
         Price::from("1480.00"),
         Quantity::from("1.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::from("1"),
         UnixNanos::default(),
         UnixNanos::default(),
@@ -4331,7 +4331,7 @@ fn test_trailing_stop_market_activates_at_market_and_materializes_trigger(
         instrument_eth_usdt.id(),
         Price::from("1480.00"),
         Quantity::from("1.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::from("1"),
         UnixNanos::default(),
         UnixNanos::default(),
@@ -4401,7 +4401,7 @@ fn test_trailing_stop_limit_activates_at_market_and_materializes_prices(
         instrument_eth_usdt.id(),
         Price::from("1480.00"),
         Quantity::from("1.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::from("1"),
         UnixNanos::default(),
         UnixNanos::default(),
@@ -8108,8 +8108,8 @@ fn test_gtc_order_not_canceled_when_liquidity_consumption_exhausts_fills(
 }
 
 #[rstest]
-#[case(OrderSide::Buy, AggressorSide::Seller)]
-#[case(OrderSide::Sell, AggressorSide::Buyer)]
+#[case(OrderSide::Buy, AggressorSide::Sell)]
+#[case(OrderSide::Sell, AggressorSide::Buy)]
 fn test_trade_execution_fill_model_at_limit_with_prob_zero_does_not_fill(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
@@ -8193,8 +8193,8 @@ fn test_trade_execution_fill_model_at_limit_with_prob_zero_does_not_fill(
 }
 
 #[rstest]
-#[case(OrderSide::Buy, AggressorSide::Seller)]
-#[case(OrderSide::Sell, AggressorSide::Buyer)]
+#[case(OrderSide::Buy, AggressorSide::Sell)]
+#[case(OrderSide::Sell, AggressorSide::Buy)]
 fn test_trade_execution_fill_model_at_limit_with_prob_one_fills(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
@@ -8283,8 +8283,8 @@ fn test_trade_execution_fill_model_at_limit_with_prob_one_fills(
 }
 
 #[rstest]
-#[case(OrderSide::Buy, AggressorSide::Seller, "1005.00", "1000.00")]
-#[case(OrderSide::Sell, AggressorSide::Buyer, "1005.00", "1010.00")]
+#[case(OrderSide::Buy, AggressorSide::Sell, "1005.00", "1000.00")]
+#[case(OrderSide::Sell, AggressorSide::Buy, "1005.00", "1010.00")]
 fn test_trade_execution_crossing_limit_fills_regardless_of_fill_model(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
@@ -8456,8 +8456,8 @@ fn test_no_aggressor_trade_fills_resting_limit_at_trade_price(
 }
 
 #[rstest]
-#[case(OrderSide::Buy, AggressorSide::Seller)]
-#[case(OrderSide::Sell, AggressorSide::Buyer)]
+#[case(OrderSide::Buy, AggressorSide::Sell)]
+#[case(OrderSide::Sell, AggressorSide::Buy)]
 fn test_trade_execution_fill_model_rejection_still_applies_liquidity_consumption(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
@@ -8932,7 +8932,7 @@ fn test_trailing_stop_market_updated_then_triggered(
         instrument_eth_usdt.id(),
         Price::from("1480.00"),
         Quantity::from("1.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("1"),
         UnixNanos::from(1u64),
         UnixNanos::from(1u64),
@@ -8944,7 +8944,7 @@ fn test_trailing_stop_market_updated_then_triggered(
         instrument_eth_usdt.id(),
         Price::from("1490.00"),
         Quantity::from("1.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("2"),
         UnixNanos::from(2u64),
         UnixNanos::from(2u64),
@@ -9404,7 +9404,7 @@ fn test_trade_tick_seeds_liquidity_consumption_for_stop_market_fill(
         instrument_eth_usdt.id(),
         Price::from("1001.00"),
         Quantity::from("8.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("1"),
         UnixNanos::from(2u64),
         UnixNanos::from(2u64),
@@ -9532,7 +9532,7 @@ fn test_trade_tick_seeds_consumption_with_stale_entry_reconciles(
         instrument_eth_usdt.id(),
         Price::from("1001.00"),
         Quantity::from("6.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("1"),
         UnixNanos::from(2u64),
         UnixNanos::from(2u64),
@@ -9636,7 +9636,7 @@ fn test_trade_tick_skips_seeding_when_book_already_updated(
         instrument_eth_usdt.id(),
         Price::from("1000.00"),
         Quantity::from("8.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("1"),
         UnixNanos::from(2u64),
         UnixNanos::from(2u64),
@@ -9745,7 +9745,7 @@ fn test_trade_tick_seeds_consumption_when_book_ts_equals_trade_ts(
         instrument_eth_usdt.id(),
         Price::from("1001.00"),
         Quantity::from("8.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("1"),
         UnixNanos::from(1u64),
         UnixNanos::from(1u64),
@@ -9849,7 +9849,7 @@ fn test_trade_tick_seeds_consumption_for_seller_side(
         instrument_eth_usdt.id(),
         Price::from("999.00"),
         Quantity::from("8.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("1"),
         UnixNanos::from(2u64),
         UnixNanos::from(2u64),
@@ -9990,7 +9990,7 @@ fn test_l1_queue_position_deep_order_deferred_snapshot(
         instrument_eth_usdt.id(),
         Price::from("54.59"),
         Quantity::from("37.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("1"),
         UnixNanos::from(1),
         UnixNanos::from(1),
@@ -10014,7 +10014,7 @@ fn test_l1_queue_position_deep_order_deferred_snapshot(
         instrument_eth_usdt.id(),
         Price::from("54.59"),
         Quantity::from("200.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("2"),
         UnixNanos::from(3),
         UnixNanos::from(3),
@@ -10025,7 +10025,7 @@ fn test_l1_queue_position_deep_order_deferred_snapshot(
         instrument_eth_usdt.id(),
         Price::from("54.59"),
         Quantity::from("363.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("3"),
         UnixNanos::from(4),
         UnixNanos::from(4),
@@ -10060,7 +10060,7 @@ fn test_l1_queue_position_deep_order_deferred_snapshot(
         instrument_eth_usdt.id(),
         Price::from("54.57"),
         Quantity::from("200.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("4"),
         UnixNanos::from(6),
         UnixNanos::from(6),
@@ -10116,7 +10116,7 @@ fn test_l1_queue_position_at_bbo_trades_decrement_queue(
         instrument_eth_usdt.id(),
         Price::from("54.59"),
         Quantity::from("37.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("1"),
         UnixNanos::from(1),
         UnixNanos::from(1),
@@ -10146,7 +10146,7 @@ fn test_l1_queue_position_at_bbo_trades_decrement_queue(
         instrument_eth_usdt.id(),
         Price::from("54.59"),
         Quantity::from("200.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("2"),
         UnixNanos::from(3),
         UnixNanos::from(3),
@@ -10164,7 +10164,7 @@ fn test_l1_queue_position_at_bbo_trades_decrement_queue(
         instrument_eth_usdt.id(),
         Price::from("54.59"),
         Quantity::from("363.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("3"),
         UnixNanos::from(4),
         UnixNanos::from(4),
@@ -10182,7 +10182,7 @@ fn test_l1_queue_position_at_bbo_trades_decrement_queue(
         instrument_eth_usdt.id(),
         Price::from("54.59"),
         Quantity::from("100.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("4"),
         UnixNanos::from(5),
         UnixNanos::from(5),
@@ -10204,8 +10204,8 @@ fn test_l1_queue_position_at_bbo_trades_decrement_queue(
 // queue. With `queue_ahead > 0` the order does not fill even when the
 // trade price crosses through.
 #[rstest]
-#[case::buy(OrderSide::Buy, "99.00", "98.00", AggressorSide::Seller)]
-#[case::sell(OrderSide::Sell, "101.00", "102.00", AggressorSide::Buyer)]
+#[case::buy(OrderSide::Buy, "99.00", "98.00", AggressorSide::Sell)]
+#[case::sell(OrderSide::Sell, "101.00", "102.00", AggressorSide::Buy)]
 fn test_l1_queue_position_cross_through_with_queue_ahead_does_not_fill(
     account_id: AccountId,
     instrument_eth_usdt: InstrumentAny,
@@ -10296,7 +10296,7 @@ fn test_l1_queue_position_trade_partial_does_not_fill(
         instrument_eth_usdt.id(),
         Price::from("100.00"),
         Quantity::from("5.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("1"),
         UnixNanos::from(1),
         UnixNanos::from(1),
@@ -10346,7 +10346,7 @@ fn test_l1_queue_position_full_example(account_id: AccountId, instrument_eth_usd
         instrument_eth_usdt.id(),
         Price::from("100.00"),
         Quantity::from("3.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("1"),
         UnixNanos::from(1),
         UnixNanos::from(1),
@@ -10375,7 +10375,7 @@ fn test_l1_queue_position_full_example(account_id: AccountId, instrument_eth_usd
         instrument_eth_usdt.id(),
         Price::from("100.00"),
         Quantity::from("4.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("2"),
         UnixNanos::from(3),
         UnixNanos::from(3),
@@ -10404,7 +10404,7 @@ fn test_l1_queue_position_full_example(account_id: AccountId, instrument_eth_usd
         instrument_eth_usdt.id(),
         Price::from("100.00"),
         Quantity::from("2.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("3"),
         UnixNanos::from(5),
         UnixNanos::from(5),
@@ -10421,7 +10421,7 @@ fn test_l1_queue_position_full_example(account_id: AccountId, instrument_eth_usd
         instrument_eth_usdt.id(),
         Price::from("100.00"),
         Quantity::from("3.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("4"),
         UnixNanos::from(6),
         UnixNanos::from(6),
@@ -10486,7 +10486,7 @@ fn test_l1_queue_position_bid_price_drop_clears_queue(
         instrument_eth_usdt.id(),
         Price::from("100.00"),
         Quantity::from("2.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("1"),
         UnixNanos::from(2),
         UnixNanos::from(2),
@@ -10563,7 +10563,7 @@ fn test_l1_queue_position_pending_not_stuck_after_zero_size_quote(
         instrument_eth_usdt.id(),
         Price::from("99.00"),
         Quantity::from("5.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("1"),
         UnixNanos::from(3),
         UnixNanos::from(3),
@@ -10621,7 +10621,7 @@ fn test_l1_queue_position_pending_resolved_by_any_side_trade(
         instrument_eth_usdt.id(),
         Price::from("98.00"),
         Quantity::from("5.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("1"),
         UnixNanos::from(1),
         UnixNanos::from(1),
@@ -10641,7 +10641,7 @@ fn test_l1_queue_position_pending_resolved_by_any_side_trade(
         instrument_eth_usdt.id(),
         Price::from("99.00"),
         Quantity::from("5.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("2"),
         UnixNanos::from(2),
         UnixNanos::from(2),
@@ -10725,7 +10725,7 @@ fn process_buyer_trade(
         instrument_id,
         Price::from("100.00"),
         Quantity::from(size),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new(trade_id),
         UnixNanos::from(ts),
         UnixNanos::from(ts),
@@ -11371,7 +11371,7 @@ fn test_triggered_stop_market_removed_from_matching_core_after_trade_trigger(
         instrument_eth_usdt.id(),
         Price::from("1001.00"),
         Quantity::from("8.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("repro-1"),
         UnixNanos::from(2u64),
         UnixNanos::from(2u64),
@@ -11610,7 +11610,7 @@ fn test_triggered_stop_limit_removed_from_core_after_fill(
         instrument_eth_usdt.id(),
         Price::from("1005.00"),
         Quantity::from("10.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("trigger-1"),
         UnixNanos::from(2u64),
         UnixNanos::from(2u64),
@@ -11713,7 +11713,7 @@ fn test_l1_ask_tracks_decreasing_seller_trade_prices(
             instrument_eth_usdt.id(),
             Price::from(*price_str),
             Quantity::from("10.000"),
-            AggressorSide::Seller,
+            AggressorSide::Sell,
             TradeId::new(format!("{}", i + 1)),
             UnixNanos::from((i + 1) as u64),
             UnixNanos::from((i + 1) as u64),
@@ -11780,7 +11780,7 @@ fn test_l1_bid_tracks_increasing_buyer_trade_prices(
             instrument_eth_usdt.id(),
             Price::from(*price_str),
             Quantity::from("10.000"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::new(format!("{}", i + 1)),
             UnixNanos::from((i + 1) as u64),
             UnixNanos::from((i + 1) as u64),
@@ -11842,10 +11842,10 @@ fn test_l1_sequential_trades_alternating_aggressors(
     engine.process_quote_tick(&quote);
 
     let trades: Vec<(&str, AggressorSide)> = vec![
-        ("1000.00", AggressorSide::Seller),
-        ("1020.00", AggressorSide::Buyer),
-        ("980.00", AggressorSide::Seller),
-        ("950.00", AggressorSide::Buyer),
+        ("1000.00", AggressorSide::Sell),
+        ("1020.00", AggressorSide::Buy),
+        ("980.00", AggressorSide::Sell),
+        ("950.00", AggressorSide::Buy),
     ];
 
     for (i, (price_str, side)) in trades.iter().enumerate() {
@@ -11924,7 +11924,7 @@ fn test_l1_trade_only_no_initial_quote_ask_tracks_price(
             instrument_eth_usdt.id(),
             Price::from(*price_str),
             Quantity::from("10.000"),
-            AggressorSide::Seller,
+            AggressorSide::Sell,
             TradeId::new(format!("{}", i + 1)),
             UnixNanos::from((i + 1) as u64),
             UnixNanos::from((i + 1) as u64),
@@ -12059,7 +12059,7 @@ fn test_stale_trade_tick_does_not_mutate_book(instrument_eth_usdt: InstrumentAny
         instrument_eth_usdt.id(),
         Price::from("1100.00"),
         Quantity::from("1.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("1"),
         UnixNanos::from(1),
         UnixNanos::from(1),
@@ -12092,7 +12092,7 @@ fn test_stale_quote_tick_does_not_mutate_book(instrument_eth_usdt: InstrumentAny
         instrument_eth_usdt.id(),
         Price::from("1000.00"),
         Quantity::from("1.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("1"),
         UnixNanos::from(2),
         UnixNanos::from(2),
@@ -12438,7 +12438,7 @@ fn test_fallback_target_restore_preserves_core_last_after_maker_fill(
         instrument_eth_usdt.id(),
         Price::from("1500.00"),
         Quantity::from("1.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::from("seed"),
         UnixNanos::from(1u64),
         UnixNanos::from(1u64),
@@ -12500,7 +12500,7 @@ fn test_trailing_stop_recompute_after_maker_fill_uses_mutated_core(
         instrument_eth_usdt.id(),
         Price::from("1500.00"),
         Quantity::from("1.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::from("seed"),
         UnixNanos::from(1u64),
         UnixNanos::from(1u64),
@@ -12691,7 +12691,7 @@ fn test_update_instrument_normalizes_tick_compatible_resting_order_fill(
         updated_instrument.id(),
         Price::from("999.000"),
         Quantity::from("10.000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("1"),
         UnixNanos::from(1),
         UnixNanos::from(1),

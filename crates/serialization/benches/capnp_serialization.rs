@@ -49,7 +49,7 @@ fn create_trade_tick() -> TradeTick {
         instrument_id: InstrumentId::from("ETHUSDT.BINANCE"),
         price: Price::from("2500.75"),
         size: Quantity::from("1.5"),
-        aggressor_side: AggressorSide::Buyer,
+        aggressor_side: AggressorSide::Buy,
         trade_id: TradeId::from("12345"),
         ts_event: 1_609_459_200_000_000_000.into(),
         ts_init: 1_609_459_200_000_000_000.into(),

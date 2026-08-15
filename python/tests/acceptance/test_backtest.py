@@ -1640,7 +1640,7 @@ def test_synthetic_run_with_synthetic_trades():
                 instrument_id=ethusdt.id,
                 price=Price(price, precision=2),
                 size=Quantity(1.0, precision=5),
-                aggressor_side=AggressorSide.BUYER if i % 2 == 0 else AggressorSide.SELLER,
+                aggressor_side=AggressorSide.BUY if i % 2 == 0 else AggressorSide.SELL,
                 trade_id=TradeId(str(i)),
                 ts_event=ts,
                 ts_init=ts,

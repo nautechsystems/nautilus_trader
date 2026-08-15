@@ -313,7 +313,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        data::{TradeTick, stubs::stub_trade_ethusdt_buyer},
+        data::{TradeTick, stubs::stub_trade_ethusdt_buy},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},
@@ -324,7 +324,7 @@ mod tests {
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let price = Price::from("10000.00");
         let zero_size = Quantity::from(0);
-        let aggressor_side = AggressorSide::Buyer;
+        let aggressor_side = AggressorSide::Buy;
         let trade_id = TradeId::from("123456789");
         let ts_event = 1;
         let ts_init = 2;
@@ -343,20 +343,20 @@ mod tests {
     }
 
     #[rstest]
-    fn test_to_dict(stub_trade_ethusdt_buyer: TradeTick) {
-        let trade = stub_trade_ethusdt_buyer;
+    fn test_to_dict(stub_trade_ethusdt_buy: TradeTick) {
+        let trade = stub_trade_ethusdt_buy;
 
         Python::initialize();
         Python::attach(|py| {
             let dict_string = trade.py_to_dict(py).unwrap().to_string();
-            let expected_string = "{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 0, 'ts_init': 1}";
+            let expected_string = "{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUY', 'trade_id': '123456789', 'ts_event': 0, 'ts_init': 1}";
             assert_eq!(dict_string, expected_string);
         });
     }
 
     #[rstest]
-    fn test_from_dict(stub_trade_ethusdt_buyer: TradeTick) {
-        let trade = stub_trade_ethusdt_buyer;
+    fn test_from_dict(stub_trade_ethusdt_buy: TradeTick) {
+        let trade = stub_trade_ethusdt_buy;
 
         Python::initialize();
         Python::attach(|py| {

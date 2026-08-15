@@ -1211,7 +1211,7 @@ def _audusd_trades(instrument, count: int) -> list[TradeTick]:
                 instrument_id=instrument.id,
                 price=Price.from_decimal_dp(price, instrument.price_precision),
                 size=Quantity.from_int(100_000),
-                aggressor_side=AggressorSide.BUYER if i % 2 == 0 else AggressorSide.SELLER,
+                aggressor_side=AggressorSide.BUY if i % 2 == 0 else AggressorSide.SELL,
                 trade_id=TradeId(f"T-{i}"),
                 ts_event=base_ns + (i * 1_000_000_000),
                 ts_init=base_ns + (i * 1_000_000_000),

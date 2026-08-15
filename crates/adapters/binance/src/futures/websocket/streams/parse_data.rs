@@ -78,9 +78,9 @@ pub fn parse_agg_trade(
         .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
 
     let aggressor_side = if msg.is_buyer_maker {
-        AggressorSide::Seller
+        AggressorSide::Sell
     } else {
-        AggressorSide::Buyer
+        AggressorSide::Buy
     };
 
     let ts_event = parse_millis_or_init(msg.trade_time, "Futures aggregate trade time", ts_init);
@@ -121,9 +121,9 @@ pub fn parse_trade(
         .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
 
     let aggressor_side = if msg.is_buyer_maker {
-        AggressorSide::Seller
+        AggressorSide::Sell
     } else {
-        AggressorSide::Buyer
+        AggressorSide::Buy
     };
 
     let ts_event = parse_millis_or_init(msg.trade_time, "Futures trade time", ts_init);
@@ -613,7 +613,7 @@ mod tests {
         assert_eq!(trade.instrument_id, instrument.id());
         assert_eq!(trade.price, Price::new(0.001, PRICE_PRECISION));
         assert_eq!(trade.size, Quantity::new(100.0, SIZE_PRECISION));
-        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.aggressor_side, AggressorSide::Sell);
         assert_eq!(trade.trade_id, TradeId::new("5933014"));
         assert_eq!(trade.ts_event, UnixNanos::from(123_456_785_000_000u64));
         assert_eq!(trade.ts_init, ts_init);
@@ -645,7 +645,7 @@ mod tests {
         assert_eq!(trade.instrument_id, instrument.id());
         assert_eq!(trade.price, Price::new(0.001, PRICE_PRECISION));
         assert_eq!(trade.size, Quantity::new(100.0, SIZE_PRECISION));
-        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.aggressor_side, AggressorSide::Sell);
         assert_eq!(trade.trade_id, TradeId::new("5933014"));
         assert_eq!(trade.ts_event, UnixNanos::from(123_456_785_000_000u64));
         assert_eq!(trade.ts_init, ts_init);

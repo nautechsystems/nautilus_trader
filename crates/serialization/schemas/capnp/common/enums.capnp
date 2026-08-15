@@ -13,8 +13,8 @@ enum AccountType {
 
 enum AggressorSide {
     noAggressor @0;
-    buyer @1;
-    seller @2;
+    buy @1;
+    sell @2;
 }
 
 enum AssetClass {

@@ -1402,7 +1402,7 @@ mod tests {
         assert_eq!(trade.instrument_id, instrument_id);
         assert_eq!(trade.price, Price::from("98570.9"));
         assert_eq!(trade.size, Quantity::from(100));
-        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.aggressor_side, AggressorSide::Sell);
         assert_eq!(
             trade.trade_id.to_string(),
             "00000000-006d-1000-0000-000e8737d536"

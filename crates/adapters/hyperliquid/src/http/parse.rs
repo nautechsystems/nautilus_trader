@@ -1466,7 +1466,7 @@ mod tests {
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.price.as_decimal(), dec!(50000));
         assert_eq!(tick.size.as_decimal(), dec!(0.5));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(tick.trade_id.to_string(), "987654321");
         assert_eq!(
             tick.ts_event,

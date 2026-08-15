@@ -292,8 +292,8 @@ pub fn parse_trade_tick(
     let price = parse_price(&trade.price, price_precision)?;
     let size = parse_quantity(&trade.size, size_precision)?;
     let aggressor_side = match trade.side {
-        PolymarketOrderSide::Buy => AggressorSide::Buyer,
-        PolymarketOrderSide::Sell => AggressorSide::Seller,
+        PolymarketOrderSide::Buy => AggressorSide::Buy,
+        PolymarketOrderSide::Sell => AggressorSide::Sell,
     };
     let ts_event = parse_timestamp_ms(&trade.timestamp)?;
 
@@ -685,7 +685,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(tick.instrument_id, instrument.id());
-        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
         assert_eq!(tick.ts_event, UnixNanos::from(1_703_875_202_000_000_000u64));
     }
 

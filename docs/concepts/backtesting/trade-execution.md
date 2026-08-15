@@ -29,8 +29,8 @@ later quote or executable bar can run that maintenance.
 
 The engine temporarily moves its matching references to the trade price:
 
-- A `SELLER` trade can match resting BUY orders.
-- A `BUYER` trade can match resting SELL orders.
+- A `SELL` trade can match resting BUY orders.
+- A `BUY` trade can match resting SELL orders.
 - A `NO_AGGRESSOR` trade can affect both sides because the passive side is unknown.
 
 The historical order book remains unchanged. Only the matching core's transient bid, ask, and last
@@ -49,7 +49,7 @@ With `liquidity_consumption=False`, the same trade size can support more than on
 iteration. With `liquidity_consumption=True`, trade-driven fills share a consumption counter, so
 their total cannot exceed the unconsumed trade size.
 
-For example, a `SELLER` trade at 100.00 can fill a BUY LIMIT at 100.05. If no book level represents
+For example, a `SELL` trade at 100.00 can fill a BUY LIMIT at 100.05. If no book level represents
 that fill, the engine uses 100.05 rather than granting the better trade price.
 
 ### Matching-state restoration
@@ -69,13 +69,13 @@ non-aggressor side of the latest quote.
 
 The aggressor is the participant that crossed the spread:
 
-- `SELLER`: A seller hit the bid. The trade can fill a resting BUY order.
-- `BUYER`: A buyer lifted the ask. The trade can fill a resting SELL order.
+- `SELL`: A seller hit the bid. The trade can fill a resting BUY order.
+- `BUY`: A buyer lifted the ask. The trade can fill a resting SELL order.
 - `NO_AGGRESSOR`: The data does not identify the aggressor. The engine considers both sides where
   the feature requires a side.
 
-A BUYER trade provides evidence for passive SELL orders, not BUY orders. A SELLER trade provides
-evidence for passive BUY orders, not SELL orders.
+A trade with aggressor side `BUY` provides evidence for passive `SELL` orders, not `BUY` orders. A
+trade with aggressor side `SELL` provides evidence for passive `BUY` orders, not `SELL` orders.
 
 ## Combining book and trade data
 
@@ -119,8 +119,8 @@ For example:
 
 1. The bid at 100.00 contains 100 units.
 1. A BUY LIMIT for 50 units joins with 100 units ahead.
-1. A `SELLER` trade for 80 units reduces the queue ahead to 20.
-1. A `SELLER` trade for 30 units clears the queue and leaves 10 units available to fill.
+1. A `SELL` trade for 80 units reduces the queue ahead to 20.
+1. A `SELL` trade for 30 units clears the queue and leaves 10 units available to fill.
 1. The next correct-side trade can fill the remaining order quantity.
 
 ### Book changes

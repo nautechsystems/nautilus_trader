@@ -3768,7 +3768,7 @@ class IndicatorEventStrategy:
             instrument.id,
             Price::from("1.00000"),
             Quantity::from(100_000),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::new("123456"),
             UnixNanos::default(),
             UnixNanos::default(),

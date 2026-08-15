@@ -88,8 +88,8 @@ fn test_parse_order_side(#[case] input: c_char, #[case] expected: OrderSide) {
 }
 
 #[rstest]
-#[case('A' as c_char, AggressorSide::Seller)]
-#[case('B' as c_char, AggressorSide::Buyer)]
+#[case('A' as c_char, AggressorSide::Sell)]
+#[case('B' as c_char, AggressorSide::Buy)]
 #[case('X' as c_char, AggressorSide::NoAggressor)]
 fn test_parse_aggressor_side(#[case] input: c_char, #[case] expected: AggressorSide) {
     assert_eq!(parse_aggressor_side(input), expected);
@@ -1046,7 +1046,7 @@ fn test_decode_trade_msg() {
     assert_eq!(trade.instrument_id, instrument_id);
     assert_eq!(trade.price, Price::from("3720.25"));
     assert_eq!(trade.size, quantity_from_str("5"));
-    assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+    assert_eq!(trade.aggressor_side, AggressorSide::Sell);
     assert_eq!(trade.trade_id.to_string(), "1170380");
     assert_eq!(trade.ts_event, msg.ts_recv);
     assert_eq!(trade.ts_event, 1_609_160_400_099_150_057);
@@ -1077,7 +1077,7 @@ fn test_decode_tbbo_msg() {
     assert_eq!(trade.instrument_id, instrument_id);
     assert_eq!(trade.price, Price::from("3720.25"));
     assert_eq!(trade.size, quantity_from_str("5"));
-    assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+    assert_eq!(trade.aggressor_side, AggressorSide::Sell);
     assert_eq!(trade.trade_id.to_string(), "1170380");
     assert_eq!(trade.ts_event, msg.ts_recv);
     assert_eq!(trade.ts_event, 1_609_160_400_099_150_057);

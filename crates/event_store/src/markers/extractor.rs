@@ -407,7 +407,7 @@ mod tests {
             InstrumentId::from("ETHUSDT.BINANCE"),
             Price::from("3000.18"),
             Quantity::from("0.75"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::new("T-ABC-123"),
             UnixNanos::from(1_700_000_000_000_000_300),
             UnixNanos::from(1_700_000_000_000_000_400),
@@ -670,7 +670,7 @@ mod tests {
     #[rstest]
     #[case::price(|t: &mut TradeTick| t.price = Price::from("3000.19"))]
     #[case::size(|t: &mut TradeTick| t.size = Quantity::from("0.76"))]
-    #[case::aggressor_side(|t: &mut TradeTick| t.aggressor_side = AggressorSide::Seller)]
+    #[case::aggressor_side(|t: &mut TradeTick| t.aggressor_side = AggressorSide::Sell)]
     #[case::trade_id(|t: &mut TradeTick| t.trade_id = TradeId::new("T-ABC-124"))]
     #[case::ts_event(|t: &mut TradeTick| t.ts_event = UnixNanos::from(1))]
     fn trade_fingerprint_changes_when_hashed_field_changes(#[case] mutate: fn(&mut TradeTick)) {

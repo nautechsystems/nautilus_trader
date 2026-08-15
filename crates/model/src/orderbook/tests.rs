@@ -1243,7 +1243,7 @@ fn test_book_update_trade_tick_l1() {
         instrument_id,
         price,
         size,
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("123456789"),
         0.into(),
         0.into(),
@@ -1319,7 +1319,7 @@ fn test_book_update_trade_tick_advances_sequence() {
         instrument_id,
         Price::from("15000.000"),
         Quantity::from("10.00000000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("123456789"),
         UnixNanos::from(5000),
         UnixNanos::from(6000),
@@ -1337,7 +1337,7 @@ fn test_book_update_trade_tick_advances_sequence() {
         instrument_id,
         Price::from("15100.000"),
         Quantity::from("20.00000000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("987654321"),
         UnixNanos::from(7000),
         UnixNanos::from(8000),
@@ -1380,7 +1380,7 @@ fn test_book_update_stale_trade_tick_does_not_mutate_l1() {
         instrument_id,
         Price::from("11.000"),
         Quantity::from("1.00000000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("1"),
         UnixNanos::from(1),
         UnixNanos::from(1),
@@ -1401,7 +1401,7 @@ fn test_book_update_stale_quote_tick_does_not_mutate_l1() {
         instrument_id,
         Price::from("10.000"),
         Quantity::from("1.00000000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("1"),
         UnixNanos::from(2),
         UnixNanos::from(2),
@@ -7649,7 +7649,7 @@ fn l1_operation_strategy() -> impl Strategy<Value = L1Operation> {
         3 => (
             (1i64..=10000i64).prop_map(move |base| Price::from_raw(PriceRaw::from(base) * price_scale, 2)),
             (1u64..=10000u64).prop_map(move |base| Quantity::from_raw(QuantityRaw::from(base) * qty_scale, 2)),
-            prop::sample::select(vec![AggressorSide::Buyer, AggressorSide::Seller])
+            prop::sample::select(vec![AggressorSide::Buy, AggressorSide::Sell])
         ).prop_map(|(price, size, aggressor)| {
             L1Operation::TradeUpdate(price, size, aggressor)
         }),

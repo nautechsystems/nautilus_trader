@@ -2469,7 +2469,7 @@ fn test_submit_market_order_preserves_price_precedence(
             instrument_audusd.id(),
             Price::from("0.50000"),
             Quantity::from("1"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::new("T-001"),
             UnixNanos::from(2),
             UnixNanos::from(2),

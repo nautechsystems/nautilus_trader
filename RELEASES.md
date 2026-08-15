@@ -2,6 +2,11 @@
 
 Released on TBD (UTC).
 
+> [!NOTE]
+> Some renames in this release, such as `AggressorSide` `Buyer`/`Seller` becoming `Buy`/`Sell`, restore
+> the most correct naming conventions. The Cython-era C API shared one enum namespace across types,
+> which ruled out these names; since the removal of Cython, that limitation no longer applies.
+
 ### Enhancements
 
 - Added canonical Rust backtest results with normalized projections, content digests, and stable ordering
@@ -41,6 +46,9 @@ Released on TBD (UTC).
 - Renamed `Portfolio.margins_maint` to `instrument_maintenance_margins`
 - Renamed `Portfolio.is_flat` to `is_net_flat`
 - Renamed `Portfolio.is_completely_flat` to `is_completely_net_flat`
+- Renamed `AggressorSide` `Buyer`/`Seller` variants to `Buy`/`Sell` and `BUYER`/`SELLER` members to `BUY`/`SELL`
+- Renamed Cap'n Proto `AggressorSide` symbols to `buy`/`sell`, preserving ordinals
+- Renamed PostgreSQL `AGGRESSOR_SIDE` labels to `BUY`/`SELL`; migrate with `ALTER TYPE ... RENAME VALUE`
 - Changed Rust `OrderMatchingEngine` import to `nautilus_execution::matching_engine::OrderMatchingEngine`
 - Changed Rust `QueryResult` and `DataQueryResult` to iterate `Result` items carrying a new `QueryError`; collect with `collect::<Result<Vec<_>, _>>()` to surface query failures
 - Changed `DataQueryResult` iteration to return Python object lists instead of `DataFFI` capsules
@@ -48,6 +56,7 @@ Released on TBD (UTC).
 - Changed the cache actor APIs to use `ActorId` instead of `ComponentId`, covering the Rust `CacheDatabaseAdapter` actor state methods
 - Changed Interactive Brokers historical tick responses and Tardis batch streams to provide typed model objects
 - Changed portfolio statistic `calculate_from_positions` to require `Position` objects instead of arbitrary objects with an `entry` attribute
+- Changed `AggressorSide` string output from `BUYER`/`SELLER` to `BUY`/`SELL` for display, serde, and SQL encoding
 - Changed Bybit `bybit_bar_spec_to_interval` to take a `BarAggregation` instead of an integer
 - Changed Hyperliquid `subscribe_book_deltas` and `subscribe_book_snapshots` to take a `BookType` instead of an integer
 - Changed Polymarket `HeartbeatResponse::Acknowledged` to carry a required chained ID
@@ -158,6 +167,10 @@ Released on TBD (UTC).
 - Documented external Redis message fields and Python custom-data registration
 - Documented the transient startup position-check race in the Lighter integration guide
 - Fixed broken README links on PyPI (#4644, #4648), thanks for reporting @ZhongxuanWang; thanks @xxxjqm
+
+### Deprecations
+
+- Deprecated `BUYER`/`SELLER` serialization input for `AggressorSide`; use `BUY`/`SELL`. The old values will be removed in a future release
 
 ---
 

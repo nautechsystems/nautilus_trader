@@ -1627,7 +1627,7 @@ mod tests {
         );
         assert_eq!(tick.price, Price::from("1.1719"));
         assert_eq!(tick.size, Quantity::from(400));
-        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
         assert_eq!(tick.ts_event, UnixNanos::from(1_766_193_240_334_589_144u64));
         assert_eq!(tick.ts_init, UnixNanos::from(7u64));
     }

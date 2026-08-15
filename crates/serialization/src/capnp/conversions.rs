@@ -559,8 +559,8 @@ pub fn account_type_from_capnp(value: enums_capnp::AccountType) -> AccountType {
 pub fn aggressor_side_to_capnp(value: AggressorSide) -> enums_capnp::AggressorSide {
     match value {
         AggressorSide::NoAggressor => enums_capnp::AggressorSide::NoAggressor,
-        AggressorSide::Buyer => enums_capnp::AggressorSide::Buyer,
-        AggressorSide::Seller => enums_capnp::AggressorSide::Seller,
+        AggressorSide::Buy => enums_capnp::AggressorSide::Buy,
+        AggressorSide::Sell => enums_capnp::AggressorSide::Sell,
     }
 }
 
@@ -568,8 +568,8 @@ pub fn aggressor_side_to_capnp(value: AggressorSide) -> enums_capnp::AggressorSi
 pub fn aggressor_side_from_capnp(value: enums_capnp::AggressorSide) -> AggressorSide {
     match value {
         enums_capnp::AggressorSide::NoAggressor => AggressorSide::NoAggressor,
-        enums_capnp::AggressorSide::Buyer => AggressorSide::Buyer,
-        enums_capnp::AggressorSide::Seller => AggressorSide::Seller,
+        enums_capnp::AggressorSide::Buy => AggressorSide::Buy,
+        enums_capnp::AggressorSide::Sell => AggressorSide::Sell,
     }
 }
 
@@ -5225,7 +5225,7 @@ mod tests {
     );
     capnp_simple_roundtrip_test!(
         trade_tick_capnp_roundtrip,
-        stub_trade_ethusdt_buyer(),
+        stub_trade_ethusdt_buy(),
         market_capnp::trade_tick::Builder,
         market_capnp::trade_tick::Reader,
         TradeTick

@@ -669,7 +669,7 @@ mod tests {
     use crate::data::{
         OrderBookDeltas, OrderBookDepth10,
         stubs::{
-            quote_audusd, stub_bar, stub_delta, stub_deltas, stub_depth10, stub_trade_ethusdt_buyer,
+            quote_audusd, stub_bar, stub_delta, stub_deltas, stub_depth10, stub_trade_ethusdt_buy,
         },
     };
 
@@ -686,7 +686,7 @@ mod tests {
         let expected_deltas = stub_deltas();
         let expected_depth = stub_depth10();
         let expected_quote = quote_audusd();
-        let expected_trade = stub_trade_ethusdt_buyer();
+        let expected_trade = stub_trade_ethusdt_buy();
         let expected_bar = stub_bar();
 
         Python::attach(|py| {

@@ -137,8 +137,8 @@ pub fn create_architect_trade_id(
 
     let side = match aggressor_side {
         AggressorSide::NoAggressor => b'N',
-        AggressorSide::Buyer => b'B',
-        AggressorSide::Seller => b'S',
+        AggressorSide::Buy => b'B',
+        AggressorSide::Sell => b'S',
     };
 
     let mut hasher = blake3::Hasher::new();
@@ -248,7 +248,7 @@ mod tests {
             UnixNanos::from(CAPTURED_TS_EVENT),
             Price::from_decimal_dp(dec!(1.1719), 4).unwrap(),
             Quantity::from_decimal_dp(dec!(400), 0).unwrap(),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
         )
         .unwrap()
     }
@@ -277,7 +277,7 @@ mod tests {
             UnixNanos::from(CAPTURED_TS_EVENT),
             Price::from_decimal_dp(dec!(1.17190000), 4).unwrap(),
             Quantity::from_decimal_dp(dec!(400.00), 0).unwrap(),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
         )
         .unwrap();
 
@@ -292,7 +292,7 @@ mod tests {
             UnixNanos::from(CAPTURED_TS_EVENT),
             Price::from_decimal_dp(dec!(1.1719), 6).unwrap(),
             Quantity::from_decimal_dp(dec!(400), 2).unwrap(),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
         )
         .unwrap();
 
@@ -300,9 +300,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case(dec!(1.1720), dec!(400), AggressorSide::Buyer)]
-    #[case(dec!(1.1719), dec!(100), AggressorSide::Buyer)]
-    #[case(dec!(1.1719), dec!(400), AggressorSide::Seller)]
+    #[case(dec!(1.1720), dec!(400), AggressorSide::Buy)]
+    #[case(dec!(1.1719), dec!(100), AggressorSide::Buy)]
+    #[case(dec!(1.1719), dec!(400), AggressorSide::Sell)]
     #[case(dec!(1.1719), dec!(400), AggressorSide::NoAggressor)]
     fn test_create_architect_trade_id_separates_prints_within_one_timestamp(
         #[case] price: Decimal,
@@ -327,7 +327,7 @@ mod tests {
             UnixNanos::from(u64::MAX),
             Price::from_decimal_dp(dec!(1.1719), 4).unwrap(),
             Quantity::from_decimal_dp(dec!(400), 0).unwrap(),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
         )
         .unwrap_err();
 

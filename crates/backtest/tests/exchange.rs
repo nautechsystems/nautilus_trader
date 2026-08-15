@@ -720,7 +720,7 @@ fn test_exchange_process_trade_tick(crypto_perpetual_ethusdt: CryptoPerpetual) {
         crypto_perpetual_ethusdt.id,
         Price::from("1000.00"),
         Quantity::from("1.000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::from("1"),
         UnixNanos::default(),
         UnixNanos::default(),

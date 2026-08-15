@@ -457,8 +457,8 @@ pub fn parse_fee_currency(
 /// Parses OKX side to Nautilus aggressor side.
 pub fn parse_aggressor_side(side: &Option<OKXSide>) -> AggressorSide {
     match side {
-        Some(OKXSide::Buy) => AggressorSide::Buyer,
-        Some(OKXSide::Sell) => AggressorSide::Seller,
+        Some(OKXSide::Buy) => AggressorSide::Buy,
+        Some(OKXSide::Sell) => AggressorSide::Sell,
         None => AggressorSide::NoAggressor,
     }
 }
@@ -4395,7 +4395,7 @@ mod tests {
         assert_eq!(trade_tick.instrument_id, instrument_id);
         assert_eq!(trade_tick.price, Price::from("102537.90"));
         assert_eq!(trade_tick.size, Quantity::from("0.00013669"));
-        assert_eq!(trade_tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade_tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(trade_tick.trade_id, TradeId::new("734864333"));
     }
 
@@ -4523,11 +4523,11 @@ mod tests {
     fn test_parse_aggressor_side() {
         assert_eq!(
             parse_aggressor_side(&Some(OKXSide::Buy)),
-            AggressorSide::Buyer
+            AggressorSide::Buy
         );
         assert_eq!(
             parse_aggressor_side(&Some(OKXSide::Sell)),
-            AggressorSide::Seller
+            AggressorSide::Sell
         );
         assert_eq!(parse_aggressor_side(&None), AggressorSide::NoAggressor);
     }

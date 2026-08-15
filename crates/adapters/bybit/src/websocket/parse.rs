@@ -1192,7 +1192,7 @@ mod tests {
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.price, instrument.make_price(27451.00));
         assert_eq!(tick.size, instrument.make_qty(0.010, None));
-        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
         assert_eq!(
             tick.trade_id.to_string(),
             "9dc75fca-4bdd-4773-9f78-6f5d7ab2a110"

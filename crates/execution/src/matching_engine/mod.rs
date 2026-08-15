@@ -385,18 +385,18 @@ impl OrderMatchingEngine {
         }
 
         let consumption = match aggressor_side {
-            AggressorSide::Buyer => &mut self.ask_consumption,
-            AggressorSide::Seller => &mut self.bid_consumption,
+            AggressorSide::Buy => &mut self.ask_consumption,
+            AggressorSide::Sell => &mut self.bid_consumption,
             AggressorSide::NoAggressor => return,
         };
 
         let levels: Vec<_> = match aggressor_side {
-            AggressorSide::Buyer => self
+            AggressorSide::Buy => self
                 .book
                 .asks(None)
                 .take_while(|l| l.price.value.raw <= trade_price_raw)
                 .collect(),
-            AggressorSide::Seller => self
+            AggressorSide::Sell => self
                 .book
                 .bids(None)
                 .take_while(|l| l.price.value.raw >= trade_price_raw)
@@ -542,8 +542,8 @@ impl OrderMatchingEngine {
             }
 
             let should_decrement = matches!(aggressor_side, AggressorSide::NoAggressor)
-                || (aggressor_side == AggressorSide::Buyer && order_side == OrderSide::Sell)
-                || (aggressor_side == AggressorSide::Seller && order_side == OrderSide::Buy);
+                || (aggressor_side == AggressorSide::Buy && order_side == OrderSide::Sell)
+                || (aggressor_side == AggressorSide::Sell && order_side == OrderSide::Buy);
 
             if should_decrement {
                 entries.push((client_order_id, ahead_raw, leaves_raw));
@@ -1691,9 +1691,9 @@ impl OrderMatchingEngine {
         let sizes = BarTickSizes::from_volume(bar.volume, self.instrument.size_increment());
 
         let aggressor_side = if self.core.last.is_none_or(|last| bar.open > last) {
-            AggressorSide::Buyer
+            AggressorSide::Buy
         } else {
-            AggressorSide::Seller
+            AggressorSide::Sell
         };
 
         // Open: fill at market price (gap from previous bar)
@@ -1744,9 +1744,9 @@ impl OrderMatchingEngine {
             self.fill_at_market = false;
 
             let aggressor_side = if bar.close > self.core.last.unwrap() {
-                AggressorSide::Buyer
+                AggressorSide::Buy
             } else {
-                AggressorSide::Seller
+                AggressorSide::Sell
             };
 
             if !self.process_bar_trade_tick(
@@ -1773,7 +1773,7 @@ impl OrderMatchingEngine {
                 bar,
                 bar.high,
                 size,
-                AggressorSide::Buyer,
+                AggressorSide::Buy,
                 "bar high trade tick",
             ) {
                 return;
@@ -1791,7 +1791,7 @@ impl OrderMatchingEngine {
                 bar,
                 bar.low,
                 size,
-                AggressorSide::Seller,
+                AggressorSide::Sell,
                 "bar low trade tick",
             ) {
                 return;
@@ -2108,7 +2108,7 @@ impl OrderMatchingEngine {
         let aggressor_side = trade.aggressor_side;
 
         match aggressor_side {
-            AggressorSide::Buyer => {
+            AggressorSide::Buy => {
                 // Buyer lifted the ask: ask was at trade.price, post-trade
                 // ask is at least this level (only widen)
                 if self.core.ask.is_none() || price_raw > self.core.ask.map_or(0, |p| p.raw) {
@@ -2120,7 +2120,7 @@ impl OrderMatchingEngine {
                     self.core.set_bid_raw(trade.price);
                 }
             }
-            AggressorSide::Seller => {
+            AggressorSide::Sell => {
                 // Seller hit the bid: bid was at trade.price, post-trade
                 // bid is at most this level (only narrow)
                 if self.core.bid.is_none()
@@ -2151,12 +2151,12 @@ impl OrderMatchingEngine {
         let original_ask = self.core.ask;
 
         match aggressor_side {
-            AggressorSide::Seller => {
+            AggressorSide::Sell => {
                 if original_ask.is_some_and(|ask| price_raw < ask.raw) {
                     self.core.set_ask_raw(trade.price);
                 }
             }
-            AggressorSide::Buyer => {
+            AggressorSide::Buy => {
                 if original_bid.is_some_and(|bid| price_raw > bid.raw) {
                     self.core.set_bid_raw(trade.price);
                 }
@@ -2190,12 +2190,12 @@ impl OrderMatchingEngine {
         // so the core tracks the latest trade price.
         if self.book_type == BookType::L1_MBP {
             match aggressor_side {
-                AggressorSide::Seller => {
+                AggressorSide::Sell => {
                     if let Some(ask) = self.last_quote_ask {
                         self.core.ask = Some(ask);
                     }
                 }
-                AggressorSide::Buyer => {
+                AggressorSide::Buy => {
                     if let Some(bid) = self.last_quote_bid {
                         self.core.bid = Some(bid);
                     }
@@ -2204,14 +2204,14 @@ impl OrderMatchingEngine {
             }
         } else {
             match aggressor_side {
-                AggressorSide::Seller => {
+                AggressorSide::Sell => {
                     if let Some(ask) = original_ask
                         && price_raw < ask.raw
                     {
                         self.core.ask = Some(ask);
                     }
                 }
-                AggressorSide::Buyer => {
+                AggressorSide::Buy => {
                     if let Some(bid) = original_bid
                         && price_raw > bid.raw
                     {
@@ -7313,8 +7313,8 @@ mod tests {
                 QueueEvent::Trade { size, aggressor } => {
                     self.sequence += 1;
                     let aggressor_side = match aggressor {
-                        0 => AggressorSide::Buyer,
-                        1 => AggressorSide::Seller,
+                        0 => AggressorSide::Buy,
+                        1 => AggressorSide::Sell,
                         _ => AggressorSide::NoAggressor,
                     };
                     let trade = TradeTick::new(

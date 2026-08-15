@@ -83,8 +83,8 @@ pub fn parse_trade_msg(
     let size = Quantity::from_decimal_dp(msg.amount.abs(), size_precision)?;
 
     let aggressor_side = match msg.direction.as_str() {
-        "buy" => AggressorSide::Buyer,
-        "sell" => AggressorSide::Seller,
+        "buy" => AggressorSide::Buy,
+        "sell" => AggressorSide::Sell,
         _ => AggressorSide::NoAggressor,
     };
 
@@ -1332,7 +1332,7 @@ mod tests {
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.price, instrument.make_price(92294.5));
         assert_eq!(tick.size, instrument.make_qty(10.0, None));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(tick.trade_id.to_string(), "403691824");
         assert_eq!(tick.ts_event, UnixNanos::new(1_765_531_356_452_000_000));
     }
@@ -1351,7 +1351,7 @@ mod tests {
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.price, instrument.make_price(92288.5));
         assert_eq!(tick.size, instrument.make_qty(750.0, None));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(tick.trade_id.to_string(), "403691825");
     }
 
@@ -1459,7 +1459,7 @@ mod tests {
         // so a regression in price/size precision is caught here too.
         assert_eq!(tick.price, Price::from("0.0639"));
         assert_eq!(tick.size, Quantity::from("0.1"));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(tick.trade_id.to_string(), "244365193");
     }
 

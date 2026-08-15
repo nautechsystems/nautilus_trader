@@ -111,9 +111,9 @@ pub fn parse_trades_event(
                 price,
                 size,
                 if t.is_buyer_maker {
-                    AggressorSide::Seller
+                    AggressorSide::Sell
                 } else {
-                    AggressorSide::Buyer
+                    AggressorSide::Buy
                 },
                 TradeId::new(t.id.to_string()),
                 ts_event,
@@ -541,7 +541,7 @@ mod tests {
                 assert_eq!(trade.instrument_id, instrument.id());
                 assert_eq!(trade.price, Price::new(123.45, 2));
                 assert_eq!(trade.size, Quantity::new(2.5, 4));
-                assert_eq!(trade.aggressor_side, AggressorSide::Buyer);
+                assert_eq!(trade.aggressor_side, AggressorSide::Buy);
                 assert_eq!(trade.trade_id, TradeId::new("1"));
                 assert_eq!(
                     trade.ts_event,
@@ -554,7 +554,7 @@ mod tests {
 
         match &data[1] {
             Data::Trade(trade) => {
-                assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+                assert_eq!(trade.aggressor_side, AggressorSide::Sell);
                 assert_eq!(trade.ts_init, ts_init);
             }
             other => panic!("Expected trade data, was {other:?}"),

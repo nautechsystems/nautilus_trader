@@ -623,8 +623,8 @@ impl BarAggregator for TickImbalanceBarAggregator {
             .apply_update(trade.price, trade.size, trade.ts_init);
 
         let delta = match trade.aggressor_side {
-            AggressorSide::Buyer => 1,
-            AggressorSide::Seller => -1,
+            AggressorSide::Buy => 1,
+            AggressorSide::Sell => -1,
             AggressorSide::NoAggressor => 0,
         };
 
@@ -712,8 +712,8 @@ impl BarAggregator for TickRunsBarAggregator {
         }
 
         let side = match trade.aggressor_side {
-            AggressorSide::Buyer => Some(AggressorSide::Buyer),
-            AggressorSide::Seller => Some(AggressorSide::Seller),
+            AggressorSide::Buy => Some(AggressorSide::Buy),
+            AggressorSide::Sell => Some(AggressorSide::Sell),
             AggressorSide::NoAggressor => None,
         };
 
@@ -936,8 +936,8 @@ impl BarAggregator for VolumeImbalanceBarAggregator {
         }
 
         let side = match trade.aggressor_side {
-            AggressorSide::Buyer => 1,
-            AggressorSide::Seller => -1,
+            AggressorSide::Buy => 1,
+            AggressorSide::Sell => -1,
             AggressorSide::NoAggressor => {
                 self.core
                     .apply_update(trade.price, trade.size, trade.ts_init);
@@ -1041,8 +1041,8 @@ impl BarAggregator for VolumeRunsBarAggregator {
         }
 
         let side = match trade.aggressor_side {
-            AggressorSide::Buyer => Some(AggressorSide::Buyer),
-            AggressorSide::Seller => Some(AggressorSide::Seller),
+            AggressorSide::Buy => Some(AggressorSide::Buy),
+            AggressorSide::Sell => Some(AggressorSide::Sell),
             AggressorSide::NoAggressor => None,
         };
 
@@ -1324,8 +1324,8 @@ impl BarAggregator for ValueImbalanceBarAggregator {
         }
 
         let (side_sign, side_is_buy) = match trade.aggressor_side {
-            AggressorSide::Buyer => (Decimal::ONE, true),
-            AggressorSide::Seller => (Decimal::NEGATIVE_ONE, false),
+            AggressorSide::Buy => (Decimal::ONE, true),
+            AggressorSide::Sell => (Decimal::NEGATIVE_ONE, false),
             AggressorSide::NoAggressor => {
                 self.core
                     .apply_update(trade.price, trade.size, trade.ts_init);
@@ -1492,8 +1492,8 @@ impl BarAggregator for ValueRunsBarAggregator {
         }
 
         let side = match trade.aggressor_side {
-            AggressorSide::Buyer => Some(AggressorSide::Buyer),
-            AggressorSide::Seller => Some(AggressorSide::Seller),
+            AggressorSide::Buy => Some(AggressorSide::Buy),
+            AggressorSide::Sell => Some(AggressorSide::Sell),
             AggressorSide::NoAggressor => None,
         };
 
@@ -3643,7 +3643,7 @@ mod tests {
             instrument_id,
             price: Price::from(price),
             size: Quantity::from(size),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ts_event: UnixNanos::from(ts),
             ts_init: UnixNanos::from(ts),
             ..TradeTick::default()
@@ -3918,7 +3918,7 @@ mod tests {
         );
 
         let sell = TradeTick {
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ..TradeTick::default()
         };
 
@@ -3948,7 +3948,7 @@ mod tests {
 
         let buy = TradeTick::default();
         let sell = TradeTick {
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ..buy
         };
 
@@ -3984,7 +3984,7 @@ mod tests {
             ..TradeTick::default()
         };
         let sell = TradeTick {
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             size: Quantity::from(1),
             ..buy
         };
@@ -4158,14 +4158,14 @@ mod tests {
         let first = TradeTick {
             price: Price::from("100.00"),
             size: Quantity::from(1),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ts_init: UnixNanos::from(1_000),
             ..TradeTick::default()
         };
         let stale = TradeTick {
             price: Price::from("200.00"),
             size: Quantity::from(2),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ts_init: UnixNanos::from(500),
             ..TradeTick::default()
         };
@@ -4268,7 +4268,7 @@ mod tests {
             ..TradeTick::default()
         };
         let sell = TradeTick {
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ..buy
         };
 
@@ -4665,7 +4665,7 @@ mod tests {
         let sell = TradeTick {
             price: Price::from("5.0"),
             size: Quantity::from(2), // value 10, should emit another bar
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             instrument_id: instrument.id(),
             ..buy
         };
@@ -4738,7 +4738,7 @@ mod tests {
         let sell = TradeTick {
             price: Price::from("10.0"),
             size: Quantity::from(10),
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ..buy
         }; // value 100
 
@@ -5882,11 +5882,11 @@ mod tests {
         );
 
         let buy = TradeTick {
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         let sell = TradeTick {
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ..TradeTick::default()
         };
 
@@ -5917,7 +5917,7 @@ mod tests {
         );
 
         let buy = TradeTick {
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         let no_aggressor = TradeTick {
@@ -5952,11 +5952,11 @@ mod tests {
         );
 
         let buy = TradeTick {
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         let sell = TradeTick {
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ..TradeTick::default()
         };
 
@@ -5989,7 +5989,7 @@ mod tests {
 
         let large_trade = TradeTick {
             size: Quantity::from(25),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
 
@@ -6021,7 +6021,7 @@ mod tests {
 
         let buy = TradeTick {
             size: Quantity::from(5),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         let no_aggressor = TradeTick {
@@ -6058,7 +6058,7 @@ mod tests {
 
         let large_trade = TradeTick {
             size: Quantity::from(25),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
 
@@ -6089,7 +6089,7 @@ mod tests {
         let large_trade = TradeTick {
             price: Price::from("5.00"),
             size: Quantity::from(25),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
 
@@ -6122,7 +6122,7 @@ mod tests {
         let first = TradeTick {
             price: Price::from("10.00"),
             size: Quantity::from(15),
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ts_event: UnixNanos::from(1_000),
             ts_init: UnixNanos::from(1_000),
             ..TradeTick::default()
@@ -6133,7 +6133,7 @@ mod tests {
         let second = TradeTick {
             price: Price::from("10.00"),
             size: Quantity::from(5),
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ts_event: UnixNanos::from(2_000),
             ts_init: UnixNanos::from(2_000),
             ..TradeTick::default()
@@ -6200,7 +6200,7 @@ mod tests {
         let trade = TradeTick {
             price: Price::from("1000.00"),
             size: Quantity::from(3),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             instrument_id: instrument.id(),
             ..TradeTick::default()
         };
@@ -6236,7 +6236,7 @@ mod tests {
         let sell_tick = TradeTick {
             price: Price::from("10.00"),
             size: Quantity::from(5),
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             instrument_id: instrument.id(),
             ..TradeTick::default()
         };
@@ -6246,7 +6246,7 @@ mod tests {
         let buy_tick = TradeTick {
             price: Price::from("1000.00"),
             size: Quantity::from(1),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             instrument_id: instrument.id(),
             ts_init: UnixNanos::from(1),
             ts_event: UnixNanos::from(1),
@@ -6282,7 +6282,7 @@ mod tests {
         let trade = TradeTick {
             price: Price::from("1000.00"),
             size: Quantity::from(3),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             instrument_id: instrument.id(),
             ..TradeTick::default()
         };
@@ -6319,7 +6319,7 @@ mod tests {
             instrument_id,
             price: Price::from("1"),
             size: Quantity::from("9007199253.999999999"),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         aggregator.handle_trade(below_step);
@@ -6336,7 +6336,7 @@ mod tests {
             instrument_id,
             price: Price::from("1"),
             size: Quantity::from("0.000000001"),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ts_event: UnixNanos::from(1),
             ts_init: UnixNanos::from(1),
             ..TradeTick::default()
@@ -6372,7 +6372,7 @@ mod tests {
             instrument_id,
             price: Price::from("1"),
             size: input,
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         aggregator.handle_trade(trade);
@@ -6414,7 +6414,7 @@ mod tests {
             instrument_id,
             price: Price::from("1"),
             size: Quantity::from("9007199253.999999999"),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         aggregator.handle_trade(below_step);
@@ -6431,7 +6431,7 @@ mod tests {
             instrument_id,
             price: Price::from("1"),
             size: Quantity::from("0.000000001"),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ts_event: UnixNanos::from(1),
             ts_init: UnixNanos::from(1),
             ..TradeTick::default()
@@ -6467,7 +6467,7 @@ mod tests {
             instrument_id,
             price: Price::from("1"),
             size: input,
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         aggregator.handle_trade(trade);
@@ -6514,7 +6514,7 @@ mod tests {
             instrument_id,
             price: Price::from("0.00"),
             size: Quantity::from(4),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ts_event: UnixNanos::from(1),
             ts_init: UnixNanos::from(1),
             ..TradeTick::default()
@@ -6551,7 +6551,7 @@ mod tests {
             instrument_id,
             price: Price::from("0.00"),
             size: Quantity::from(4),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ts_event: UnixNanos::from(1),
             ts_init: UnixNanos::from(1),
             ..TradeTick::default()
@@ -6584,7 +6584,7 @@ mod tests {
             instrument_id,
             price: Price::from("3.00"),
             size: input,
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         aggregator.handle_trade(trade);
@@ -6624,7 +6624,7 @@ mod tests {
             instrument_id,
             price: Price::from("3.00"),
             size: input,
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         aggregator.handle_trade(trade);
@@ -6672,7 +6672,7 @@ mod tests {
 
         let trade = TradeTick {
             size: Quantity::from(step * 2),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
 
@@ -6712,7 +6712,7 @@ mod tests {
 
             let trade = TradeTick {
                 size: Quantity::from(total_volume),
-                aggressor_side: AggressorSide::Buyer,
+                aggressor_side: AggressorSide::Buy,
                 ..TradeTick::default()
             };
 
@@ -6753,7 +6753,7 @@ mod tests {
 
         let trade = TradeTick {
             size: Quantity::from(step * 2),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
 
@@ -6792,7 +6792,7 @@ mod tests {
 
             let trade = TradeTick {
                 size: Quantity::from(total_volume),
-                aggressor_side: AggressorSide::Buyer,
+                aggressor_side: AggressorSide::Buy,
                 ..TradeTick::default()
             };
 
@@ -8898,7 +8898,7 @@ mod property_tests {
                 },
             );
 
-            let side = if buyer { AggressorSide::Buyer } else { AggressorSide::Seller };
+            let side = if buyer { AggressorSide::Buy } else { AggressorSide::Sell };
             let mut total_input: u64 = 0;
 
             for (i, size) in sizes.iter().enumerate() {
@@ -8953,7 +8953,7 @@ mod property_tests {
                 },
             );
 
-            let side = if buyer { AggressorSide::Buyer } else { AggressorSide::Seller };
+            let side = if buyer { AggressorSide::Buy } else { AggressorSide::Sell };
             let mut total_input: u64 = 0;
 
             for (i, size) in sizes.iter().enumerate() {

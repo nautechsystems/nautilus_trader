@@ -281,8 +281,8 @@ pub enum AxOrderSide {
 impl From<AxOrderSide> for AggressorSide {
     fn from(side: AxOrderSide) -> Self {
         match side {
-            AxOrderSide::Buy => Self::Buyer,
-            AxOrderSide::Sell => Self::Seller,
+            AxOrderSide::Buy => Self::Buy,
+            AxOrderSide::Sell => Self::Sell,
         }
     }
 }

@@ -36,7 +36,7 @@ mod serial_tests {
         accounts::{AccountAny, CashAccount},
         data::{
             CustomData, DataType,
-            stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buyer},
+            stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buy},
         },
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
         events::{
@@ -1164,7 +1164,7 @@ mod serial_tests {
         pg_cache.add_instrument(&instrument).unwrap();
 
         // Add trade
-        let trade = stub_trade_ethusdt_buyer();
+        let trade = stub_trade_ethusdt_buy();
         pg_cache.add_trade(&trade).unwrap();
         wait_until_async(
             || async {

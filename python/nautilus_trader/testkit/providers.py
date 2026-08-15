@@ -519,7 +519,7 @@ class TestDataProvider:
                     break
                 ts_ns = _parse_iso_to_ns(row[0])
                 buyer_maker = row[4].strip().lower() == "true"
-                aggressor = AggressorSide.SELLER if buyer_maker else AggressorSide.BUYER
+                aggressor = AggressorSide.SELL if buyer_maker else AggressorSide.BUY
                 trades.append(
                     TradeTick(
                         instrument_id=instrument.id,

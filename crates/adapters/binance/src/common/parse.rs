@@ -908,9 +908,9 @@ pub fn parse_spot_trades_sbe(
 
         // is_buyer_maker means the buyer was the maker, so the aggressor was selling
         let aggressor_side = if trade.is_buyer_maker {
-            AggressorSide::Seller
+            AggressorSide::Sell
         } else {
-            AggressorSide::Buyer
+            AggressorSide::Buy
         };
 
         // SBE trade timestamps are in microseconds
@@ -2156,14 +2156,14 @@ mod tests {
         assert_eq!(result[0].instrument_id, instrument.id());
         assert_eq!(result[0].price.as_f64(), 123.45);
         assert_eq!(result[0].size.as_f64(), 2.5);
-        assert_eq!(result[0].aggressor_side, AggressorSide::Buyer);
+        assert_eq!(result[0].aggressor_side, AggressorSide::Buy);
         assert_eq!(result[0].trade_id, TradeId::new("1"));
         assert_eq!(
             result[0].ts_event,
             UnixNanos::from(1_700_000_000_000_000_000u64)
         );
         assert_eq!(result[0].ts_init, ts_init);
-        assert_eq!(result[1].aggressor_side, AggressorSide::Seller);
+        assert_eq!(result[1].aggressor_side, AggressorSide::Sell);
     }
 
     #[rstest]

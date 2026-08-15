@@ -1223,7 +1223,7 @@ deribit,BTC-9JUN20-9875-P,1591574399413000,1591574400196008,put,9875,15916896000
         assert_eq!(trades[0].instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
         assert_eq!(trades[0].price, Price::from("8531.5"));
         assert_eq!(trades[0].size, Quantity::from("2152"));
-        assert_eq!(trades[0].aggressor_side, AggressorSide::Seller);
+        assert_eq!(trades[0].aggressor_side, AggressorSide::Sell);
         assert_eq!(
             trades[0].trade_id,
             TradeId::new("ccc3c1fa-212c-e8b0-1706-9b9c4f3d5ecf")

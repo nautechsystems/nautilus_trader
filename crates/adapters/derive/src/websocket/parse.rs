@@ -257,8 +257,8 @@ pub fn parse_trade_tick(
     let size = Quantity::from_decimal_dp(trade.trade_amount, size_precision)
         .with_context(|| format!("invalid trade amount for {}", trade.instrument_name))?;
     let aggressor_side = match trade.direction {
-        DeriveOrderSide::Buy => AggressorSide::Buyer,
-        DeriveOrderSide::Sell => AggressorSide::Seller,
+        DeriveOrderSide::Buy => AggressorSide::Buy,
+        DeriveOrderSide::Sell => AggressorSide::Sell,
     };
     let trade_id = TradeId::new(&trade.trade_id);
     let timestamp = u64::try_from(trade.timestamp).context("negative Derive trade timestamp")?;
@@ -825,7 +825,7 @@ mod tests {
         assert_eq!(tick.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
         assert_eq!(tick.price, price("3500.2"));
         assert_eq!(tick.size, quantity("0.25"));
-        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
         assert_eq!(tick.trade_id, TradeId::from("trade-1"));
         assert_eq!(tick.ts_event, UnixNanos::from(1_700_000_000_001_000_000));
     }
@@ -906,7 +906,7 @@ mod tests {
         assert_eq!(tick.instrument_id, InstrumentId::from("ETH-USDC.DERIVE"));
         assert_eq!(tick.price, price("2050"));
         assert_eq!(tick.size, quantity("0.1"));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(
             tick.trade_id,
             TradeId::from("0445f96a-10fb-4fdc-a0f9-eed94a2f32e1")
@@ -1151,7 +1151,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
     }
 
     #[rstest]

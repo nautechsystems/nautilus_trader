@@ -602,8 +602,8 @@ pub enum BybitOrderSide {
 impl From<BybitOrderSide> for AggressorSide {
     fn from(value: BybitOrderSide) -> Self {
         match value {
-            BybitOrderSide::Buy => Self::Buyer,
-            BybitOrderSide::Sell => Self::Seller,
+            BybitOrderSide::Buy => Self::Buy,
+            BybitOrderSide::Sell => Self::Sell,
             BybitOrderSide::Unknown => Self::NoAggressor,
         }
     }

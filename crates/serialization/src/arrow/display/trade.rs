@@ -152,8 +152,8 @@ mod tests {
     #[rstest]
     fn test_encode_trades_values() {
         let trades = vec![
-            make_trade("AAPL.XNAS", "100.10", AggressorSide::Buyer, "T-1", 1_000),
-            make_trade("AAPL.XNAS", "100.20", AggressorSide::Seller, "T-2", 2_000),
+            make_trade("AAPL.XNAS", "100.10", AggressorSide::Buy, "T-1", 1_000),
+            make_trade("AAPL.XNAS", "100.20", AggressorSide::Sell, "T-2", 2_000),
         ];
         let batch = encode_trades(&trades).unwrap();
 
@@ -199,8 +199,8 @@ mod tests {
         assert!((price_col.value(0) - 100.10).abs() < 1e-9);
         assert!((price_col.value(1) - 100.20).abs() < 1e-9);
         assert!((size_col.value(0) - 1_000.0).abs() < 1e-9);
-        assert_eq!(aggressor_col.value(0), format!("{}", AggressorSide::Buyer));
-        assert_eq!(aggressor_col.value(1), format!("{}", AggressorSide::Seller));
+        assert_eq!(aggressor_col.value(0), format!("{}", AggressorSide::Buy));
+        assert_eq!(aggressor_col.value(1), format!("{}", AggressorSide::Sell));
         assert_eq!(trade_id_col.value(0), "T-1");
         assert_eq!(trade_id_col.value(1), "T-2");
         assert_eq!(ts_event_col.value(0), 1_000);
@@ -216,8 +216,8 @@ mod tests {
     #[rstest]
     fn test_encode_trades_mixed_instruments() {
         let trades = vec![
-            make_trade("AAPL.XNAS", "100.10", AggressorSide::Buyer, "A-1", 1),
-            make_trade("MSFT.XNAS", "250.00", AggressorSide::Seller, "M-1", 2),
+            make_trade("AAPL.XNAS", "100.10", AggressorSide::Buy, "A-1", 1),
+            make_trade("MSFT.XNAS", "250.00", AggressorSide::Sell, "M-1", 2),
         ];
         let batch = encode_trades(&trades).unwrap();
         let instrument_id_col = batch

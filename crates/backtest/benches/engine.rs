@@ -569,9 +569,9 @@ fn generate_market_data(instrument_id: InstrumentId, quote_count: usize) -> Vec<
         let ask = price_from_cents(mid_cents + 5);
         let trade_price = price_from_cents(mid_cents);
         let aggressor_side = if i % 2 == 0 {
-            AggressorSide::Buyer
+            AggressorSide::Buy
         } else {
-            AggressorSide::Seller
+            AggressorSide::Sell
         };
 
         data.push(Data::Quote(QuoteTick::new(
@@ -840,7 +840,7 @@ fn generate_order_trigger_data(instrument_id: InstrumentId, quote_count: usize) 
             instrument_id,
             Price::from(trade_price.as_str()),
             Quantity::from("1.000"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::from(format!("OT-{i}").as_str()),
             trade_ts.into(),
             trade_ts.into(),

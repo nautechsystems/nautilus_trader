@@ -163,8 +163,8 @@ impl sqlx::Encode<'_, sqlx::Postgres> for AggressorSideModel {
     ) -> Result<IsNull, BoxDynError> {
         let aggressor_side_str = match self.0 {
             AggressorSide::NoAggressor => "NO_AGGRESSOR",
-            AggressorSide::Buyer => "BUYER",
-            AggressorSide::Seller => "SELLER",
+            AggressorSide::Buy => "BUY",
+            AggressorSide::Sell => "SELL",
         };
         <&str as sqlx::Encode<sqlx::Postgres>>::encode(aggressor_side_str, buf)
     }
@@ -308,5 +308,25 @@ impl sqlx::Type<sqlx::Postgres> for PriceTypeModel {
 
     fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
         *ty == Self::type_info() || <&str as Type<sqlx::Postgres>>::compatible(ty)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(AggressorSide::NoAggressor, "NO_AGGRESSOR")]
+    #[case(AggressorSide::Buy, "BUY")]
+    #[case(AggressorSide::Sell, "SELL")]
+    fn aggressor_side_model_encodes_postgres_labels(
+        #[case] value: AggressorSide,
+        #[case] expected: &str,
+    ) {
+        let mut buf = sqlx::postgres::PgArgumentBuffer::default();
+        let _ = sqlx::Encode::<sqlx::Postgres>::encode(AggressorSideModel(value), &mut buf);
+        assert_eq!(&buf[..], expected.as_bytes());
     }
 }

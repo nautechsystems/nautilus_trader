@@ -2810,7 +2810,7 @@ mod tests {
             btc_perp_id(),
             Price::from("104300.0"),
             Quantity::from("0.01000"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::new(tid.to_string()),
             UnixNanos::from(ts_ns),
             UnixNanos::from(ts_ns),
