@@ -2397,6 +2397,14 @@ fn regular_order_detail_response(params: &HashMap<String, String>) -> serde_json
                 "filled",
                 "850.00",
             ),
+            "missed-accept-child-venue-id" => (
+                "OQUERYMISSEDACCEPT1",
+                "",
+                "missed-accept-child-venue-id",
+                "limit",
+                "filled",
+                "825.00",
+            ),
             "single-child-venue-id" => (
                 "OQUERYSINGLECHILD1",
                 "",
@@ -2465,6 +2473,13 @@ fn algo_order_detail_response(params: &HashMap<String, String>) -> serde_json::V
             order["ordId"] = json!("missed-child-venue-id");
             order["ordIdList"] = json!(["missed-child-venue-id"]);
             order["slOrdPx"] = json!("850.00");
+            order["state"] = json!("effective");
+        }
+        Some("OQUERYMISSEDACCEPT1") => {
+            order["algoId"] = json!("parent-missed-accept-algo-id");
+            order["ordId"] = json!("missed-accept-child-venue-id");
+            order["ordIdList"] = json!(["missed-accept-child-venue-id"]);
+            order["slOrdPx"] = json!("825.00");
             order["state"] = json!("effective");
         }
         Some("OQUERYSINGLECHILD1") => {
@@ -3294,6 +3309,53 @@ async fn test_query_order_recovers_fill_when_child_event_was_completely_missed()
 
 #[rstest]
 #[tokio::test]
+async fn test_query_order_recovers_fill_when_acceptance_and_child_events_were_missed() {
+    let (client, mut rx, cache, state) = create_query_order_test_client().await;
+
+    let client_order_id = ClientOrderId::from("OQUERYMISSEDACCEPT1");
+    let child_venue_order_id = VenueOrderId::from("missed-accept-child-venue-id");
+    let order = build_test_submitted_conditional_order(client_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+
+    client
+        .query_order(query_order_command(client_order_id, None))
+        .unwrap();
+    let report = recv_query_order_report(&mut rx, Some(client_order_id)).await;
+
+    assert_eq!(report.order_type, OrderType::Limit);
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.filled_qty, Quantity::from("1"));
+    assert_eq!(report.venue_order_id, child_venue_order_id);
+
+    let regular_queries = state.regular_queries.lock().await;
+    let algo_queries = state.algo_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+    assert_eq!(regular_queries.len(), 1);
+    assert_eq!(
+        regular_queries[0].get("ordId").map(String::as_str),
+        Some("missed-accept-child-venue-id")
+    );
+    assert!(!regular_queries[0].contains_key("clOrdId"));
+    assert_eq!(algo_queries.len(), 1);
+    assert_eq!(
+        algo_queries[0].get("algoClOrdId").map(String::as_str),
+        Some("OQUERYMISSEDACCEPT1")
+    );
+    assert!(!algo_queries[0].contains_key("algoId"));
+    assert_eq!(
+        sequence.as_slice(),
+        [
+            "algo:OQUERYMISSEDACCEPT1",
+            "regular:missed-accept-child-venue-id",
+        ]
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_query_order_recovers_fill_when_only_cached_id_is_child() {
     let (client, mut rx, cache, state) = create_query_order_test_client().await;
 
@@ -3543,6 +3605,29 @@ fn build_test_conditional_order_with_single_venue_id(
     let strategy_id = StrategyId::from("STRATEGY-001");
     let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
     let account_id = AccountId::from("OKX-001");
+    let mut order = build_test_submitted_conditional_order(client_order_id);
+    let accepted = OrderAcceptedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .build();
+
+    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+    assert_eq!(order.is_triggered(), Some(false));
+    assert_eq!(order.venue_order_ids(), vec![&venue_order_id]);
+    assert_eq!(order.venue_order_id(), Some(venue_order_id));
+    order
+}
+
+fn build_test_submitted_conditional_order(client_order_id: ClientOrderId) -> OrderAny {
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+    let account_id = AccountId::from("OKX-001");
     let mut order = OrderTestBuilder::new(OrderType::StopLimit)
         .trader_id(trader_id)
         .strategy_id(strategy_id)
@@ -3562,21 +3647,12 @@ fn build_test_conditional_order_with_single_venue_id(
         .client_order_id(client_order_id)
         .account_id(account_id)
         .build();
-    let accepted = OrderAcceptedSpec::builder()
-        .trader_id(trader_id)
-        .strategy_id(strategy_id)
-        .instrument_id(instrument_id)
-        .client_order_id(client_order_id)
-        .venue_order_id(venue_order_id)
-        .account_id(account_id)
-        .build();
 
     order.apply(OrderEventAny::Submitted(submitted)).unwrap();
-    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
 
     assert_eq!(order.is_triggered(), Some(false));
-    assert_eq!(order.venue_order_ids(), vec![&venue_order_id]);
-    assert_eq!(order.venue_order_id(), Some(venue_order_id));
+    assert_eq!(order.status(), OrderStatus::Submitted);
+    assert_eq!(order.venue_order_id(), None);
     order
 }
 

@@ -1361,7 +1361,10 @@ impl ExecutionClient for OKXExecutionClient {
                     .await
                 {
                     Ok(algo_reports) => {
-                        if route == QueryOrderRoute::RegularAndAlgo {
+                        if matches!(
+                            route,
+                            QueryOrderRoute::Algo | QueryOrderRoute::RegularAndAlgo
+                        ) {
                             regular_child_venue_order_id = algo_reports
                                 .iter()
                                 .find(|report| {
