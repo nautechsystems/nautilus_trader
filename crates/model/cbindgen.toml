@@ -17,7 +17,7 @@ rename_variants = "ScreamingSnakeCase"
 prefix_with_name = true
 
 [export]
-exclude = ["BarAggregation", "OrderId", "OrderSideSpecified"]
+exclude = ["OrderId"]
 
 [export.rename]
 "u128" = "uint128_t"
@@ -27,12 +27,10 @@ exclude = ["BarAggregation", "OrderId", "OrderSideSpecified"]
 "Ustr" = "char*"
 "AccountId" = "AccountId_t"
 "Bar" = "Bar_t"
-"BarAggregation" = "uint8_t"
 "BarSpecification" = "BarSpecification_t"
 "BarType" = "BarType_t"
 "BookOrder" = "BookOrder_t"
 "OwnBookOrder" = "OwnBookOrder_t"
-"OrderSideSpecified" = "OrderSide"
 "ClientId" = "ClientId_t"
 "ClientOrderId" = "ClientOrderId_t"
 "ComponentId" = "ComponentId_t"
