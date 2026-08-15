@@ -989,89 +989,6 @@ impl SocketReconnectHandle {
     }
 }
 
-#[cfg(test)]
-mod reconnect_request_tests {
-    use std::sync::{Arc, Mutex, atomic::AtomicU8};
-
-    use rstest::rstest;
-
-    use super::*;
-    use crate::SocketState;
-
-    fn handle(
-        mode: ConnectionMode,
-    ) -> (
-        SocketReconnectHandle,
-        Arc<tokio::sync::Notify>,
-        Arc<Mutex<Vec<SocketState>>>,
-    ) {
-        let controller_notify = Arc::new(tokio::sync::Notify::new());
-        let states = Arc::new(Mutex::new(Vec::new()));
-        let states_callback = Arc::clone(&states);
-        let state_sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
-        });
-        let handle = SocketReconnectHandle {
-            connection_mode: Arc::new(AtomicU8::new(mode.as_u8())),
-            state_sink: Some(state_sink),
-            controller_lifecycle: Arc::new(ControllerLifecycle::new()),
-            controller_notify: Arc::clone(&controller_notify),
-        };
-        (handle, controller_notify, states)
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn accepted_request_reports_loss_and_wakes_controller_once() {
-        let (handle, controller_notify, states) = handle(ConnectionMode::Active);
-
-        assert_eq!(
-            handle.request_reconnect(),
-            ReconnectRequestOutcome::Accepted
-        );
-        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
-        tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
-            .await
-            .expect("accepted request should notify controller");
-
-        assert_eq!(
-            handle.request_reconnect(),
-            ReconnectRequestOutcome::AlreadyReconnecting
-        );
-        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
-        assert!(
-            tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
-                .await
-                .is_err(),
-            "duplicate request should not notify controller",
-        );
-    }
-
-    #[rstest]
-    #[case(
-        ConnectionMode::Reconnect,
-        ReconnectRequestOutcome::AlreadyReconnecting
-    )]
-    #[case(ConnectionMode::Disconnect, ReconnectRequestOutcome::Disconnected)]
-    #[case(ConnectionMode::Closed, ReconnectRequestOutcome::Closed)]
-    #[tokio::test]
-    async fn rejected_request_preserves_state_and_does_not_wake_controller(
-        #[case] mode: ConnectionMode,
-        #[case] expected: ReconnectRequestOutcome,
-    ) {
-        let (handle, controller_notify, states) = handle(mode);
-
-        assert_eq!(handle.request_reconnect(), expected);
-        assert!(states.lock().unwrap().is_empty());
-        assert!(
-            tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
-                .await
-                .is_err(),
-            "rejected request should not notify controller",
-        );
-    }
-}
-
 impl Debug for SocketClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(SocketClient)).finish()
@@ -3606,6 +3523,89 @@ mod rust_tests {
         assert!(
             err_msg.contains("suffix cannot be empty"),
             "Error should mention empty suffix, was: {err_msg}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod reconnect_request_tests {
+    use std::sync::{Arc, Mutex, atomic::AtomicU8};
+
+    use rstest::rstest;
+
+    use super::*;
+    use crate::SocketState;
+
+    fn handle(
+        mode: ConnectionMode,
+    ) -> (
+        SocketReconnectHandle,
+        Arc<tokio::sync::Notify>,
+        Arc<Mutex<Vec<SocketState>>>,
+    ) {
+        let controller_notify = Arc::new(tokio::sync::Notify::new());
+        let states = Arc::new(Mutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let state_sink = SocketStateSink::new(move |state| {
+            states_callback.lock().unwrap().push(state);
+        });
+        let handle = SocketReconnectHandle {
+            connection_mode: Arc::new(AtomicU8::new(mode.as_u8())),
+            state_sink: Some(state_sink),
+            controller_lifecycle: Arc::new(ControllerLifecycle::new()),
+            controller_notify: Arc::clone(&controller_notify),
+        };
+        (handle, controller_notify, states)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn accepted_request_reports_loss_and_wakes_controller_once() {
+        let (handle, controller_notify, states) = handle(ConnectionMode::Active);
+
+        assert_eq!(
+            handle.request_reconnect(),
+            ReconnectRequestOutcome::Accepted
+        );
+        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+        tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+            .await
+            .expect("accepted request should notify controller");
+
+        assert_eq!(
+            handle.request_reconnect(),
+            ReconnectRequestOutcome::AlreadyReconnecting
+        );
+        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+                .await
+                .is_err(),
+            "duplicate request should not notify controller",
+        );
+    }
+
+    #[rstest]
+    #[case(
+        ConnectionMode::Reconnect,
+        ReconnectRequestOutcome::AlreadyReconnecting
+    )]
+    #[case(ConnectionMode::Disconnect, ReconnectRequestOutcome::Disconnected)]
+    #[case(ConnectionMode::Closed, ReconnectRequestOutcome::Closed)]
+    #[tokio::test]
+    async fn rejected_request_preserves_state_and_does_not_wake_controller(
+        #[case] mode: ConnectionMode,
+        #[case] expected: ReconnectRequestOutcome,
+    ) {
+        let (handle, controller_notify, states) = handle(mode);
+
+        assert_eq!(handle.request_reconnect(), expected);
+        assert!(states.lock().unwrap().is_empty());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+                .await
+                .is_err(),
+            "rejected request should not notify controller",
         );
     }
 }
