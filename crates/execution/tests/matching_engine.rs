@@ -14693,6 +14693,99 @@ fn test_check_instrument_expiration_uses_close_price_fallback(account_id: Accoun
 }
 
 #[rstest]
+fn test_check_instrument_expiration_restored_position_closes_without_prior_order(
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let instrument = InstrumentAny::FuturesContract(futures_contract_es(
+        Some(UnixNanos::from(1)),
+        Some(expiration_ns),
+    ));
+
+    // Simulate a position restored from a cache database: the opening order and
+    // position exist in the cache, but no order was processed by this engine in
+    // the current session, so the engine has no indexed account ID.
+    let position = open_long_option_position_with_ids(
+        &cache,
+        &instrument,
+        account_id,
+        Quantity::from(1),
+        Price::from("4500.00"),
+        ClientOrderId::from("RESTORED-1"),
+        VenueOrderId::from("RESTORED-1"),
+        PositionId::from("P-RESTORED-1"),
+        TradeId::from("RESTORED-1"),
+    );
+
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    clock
+        .borrow_mut()
+        .set_time(UnixNanos::from(expiration_ns.as_u64() + 1));
+
+    let mut engine = OrderMatchingEngine::new(
+        instrument.clone(),
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::default().into(),
+        BookType::L2_MBP,
+        OmsType::Netting,
+        AccountType::Margin,
+        clock,
+        cache,
+        OrderMatchingEngineConfig {
+            use_position_ids: true,
+            ..Default::default()
+        },
+    );
+
+    let close_price = Price::from("4550.00");
+    let close = InstrumentClose::new(
+        instrument.id(),
+        close_price,
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    engine.process_instrument_close(close);
+
+    let messages = get_order_event_handler_messages(&order_event_handler);
+    let accepted = messages
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Accepted(a) if a.client_order_id.as_str().starts_with("EXPIRATION-") => {
+                Some(a)
+            }
+            _ => None,
+        })
+        .expect("Expected OrderAccepted for the EXPIRATION close order");
+    assert_eq!(accepted.account_id, account_id);
+
+    let fill = messages
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) if f.client_order_id.as_str().starts_with("EXPIRATION-") => {
+                Some(f)
+            }
+            _ => None,
+        })
+        .expect("Expected OrderFilled for the EXPIRATION close order");
+    assert_eq!(fill.account_id, account_id);
+    assert_eq!(fill.order_side, OrderSide::Sell);
+    assert_eq!(fill.last_qty, position.quantity);
+    assert_eq!(fill.last_px, close_price);
+
+    // The matching engine emits the closing events; the position record is
+    // updated downstream by the execution engine. Applying the emitted fill
+    // proves the event stream closes the restored position.
+    let mut closed_position = position;
+    closed_position.apply(fill);
+    assert!(closed_position.is_closed());
+}
+
+#[rstest]
 fn test_binary_option_pending_resolution_then_instrument_close_settles_position(
     account_id: AccountId,
 ) {
