@@ -151,6 +151,17 @@ fn release_preparing_slot(in_flight: &Mutex<Option<InFlightSlot>>) {
     }
 }
 
+#[derive(Debug)]
+struct TransactionLimits {
+    allowed_token_pairs: HashSet<(Address, Address)>,
+    slippage_bps: u32,
+    max_slippage_bps: u32,
+    max_order_amount: u64,
+    deadline_seconds: u64,
+    max_quote_age_blocks: u64,
+    receipt_timeout_secs: u64,
+}
+
 /// Execution client for blockchain interactions including balance tracking and order execution.
 #[derive(Debug)]
 pub struct BlockchainExecutionClient {
@@ -170,8 +181,8 @@ pub struct BlockchainExecutionClient {
     signer: Option<PrivateKeySigner>,
     /// Validated allowlist of SwapRouter addresses.
     router_addresses: Vec<Address>,
-    /// Validated allowlist of (input token, output token) pairs for swaps.
-    allowed_token_pairs: HashSet<(Address, Address)>,
+    /// Validated transaction limits required before execution can start.
+    transaction_limits: TransactionLimits,
     /// Validated wrapped native token address for wrap operations.
     weth_address: Address,
     /// The transaction currently awaiting finality, occupying the single in-flight slot.
@@ -191,13 +202,15 @@ impl BlockchainExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the wallet address, any token address, any router address, any
-    /// allowed token pair address, or the WETH address in the config is invalid, if the router
-    /// allowlist is empty, or if the slippage bounds are inconsistent or not below 100%.
+    /// Returns an error if any transaction limit is missing, if the wallet address, any token
+    /// address, any router address, any allowed token pair address, or the WETH address in the
+    /// config is invalid, if the router allowlist is empty, or if the slippage bounds are
+    /// inconsistent or not below 100%.
     pub fn new(
         core_client: ExecutionClientCore,
         config: BlockchainExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        let transaction_limits = Self::transaction_limits(&config)?;
         let chain = Arc::new(config.chain.clone());
         let cache = BlockchainCache::new(chain.clone());
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
@@ -221,29 +234,6 @@ impl BlockchainExecutionClient {
             anyhow::bail!("`router_addresses` must contain at least one router address");
         }
         let weth_address = validate_address(config.weth_address.as_str())?;
-
-        let mut allowed_token_pairs = HashSet::with_capacity(config.allowed_token_pairs.len());
-        for (token_in, token_out) in &config.allowed_token_pairs {
-            allowed_token_pairs.insert((
-                validate_address(token_in.as_str())?,
-                validate_address(token_out.as_str())?,
-            ));
-        }
-
-        if config.slippage_bps > config.max_slippage_bps {
-            anyhow::bail!(
-                "`slippage_bps` {} exceeds `max_slippage_bps` {}",
-                config.slippage_bps,
-                config.max_slippage_bps
-            );
-        }
-
-        if config.max_slippage_bps >= BPS_DENOMINATOR {
-            anyhow::bail!(
-                "`max_slippage_bps` {} must be below {BPS_DENOMINATOR}",
-                config.max_slippage_bps
-            );
-        }
 
         // Initialize token universe, so we can fetch them from the blockchain later.
         let mut token_universe = HashSet::new();
@@ -272,13 +262,68 @@ impl BlockchainExecutionClient {
             config,
             signer: None,
             router_addresses,
-            allowed_token_pairs,
+            transaction_limits,
             weth_address,
             in_flight: Arc::new(Mutex::new(None)),
             erc20_contract,
             http_rpc_client,
             wallet_address,
             pending_tasks: Arc::new(TaskHandles::default()),
+        })
+    }
+
+    fn transaction_limits(
+        config: &BlockchainExecutionClientConfig,
+    ) -> anyhow::Result<TransactionLimits> {
+        let (
+            Some(allowed_token_pairs),
+            Some(slippage_bps),
+            Some(max_slippage_bps),
+            Some(max_order_amount),
+            Some(deadline_seconds),
+            Some(max_quote_age_blocks),
+            Some(receipt_timeout_secs),
+        ) = (
+            &config.allowed_token_pairs,
+            config.slippage_bps,
+            config.max_slippage_bps,
+            config.max_order_amount,
+            config.deadline_seconds,
+            config.max_quote_age_blocks,
+            config.receipt_timeout_secs,
+        )
+        else {
+            anyhow::bail!(
+                "Blockchain execution transaction limits are required: allowed_token_pairs, slippage_bps, max_slippage_bps, max_order_amount, deadline_seconds, max_quote_age_blocks, receipt_timeout_secs"
+            );
+        };
+
+        let mut parsed_pairs = HashSet::with_capacity(allowed_token_pairs.len());
+        for (token_in, token_out) in allowed_token_pairs {
+            parsed_pairs.insert((
+                validate_address(token_in.as_str())?,
+                validate_address(token_out.as_str())?,
+            ));
+        }
+
+        if slippage_bps > max_slippage_bps {
+            anyhow::bail!(
+                "`slippage_bps` {slippage_bps} exceeds `max_slippage_bps` {max_slippage_bps}"
+            );
+        }
+
+        if max_slippage_bps >= BPS_DENOMINATOR {
+            anyhow::bail!("`max_slippage_bps` {max_slippage_bps} must be below {BPS_DENOMINATOR}");
+        }
+
+        Ok(TransactionLimits {
+            allowed_token_pairs: parsed_pairs,
+            slippage_bps,
+            max_slippage_bps,
+            max_order_amount,
+            deadline_seconds,
+            max_quote_age_blocks,
+            receipt_timeout_secs,
         })
     }
 
@@ -711,8 +756,8 @@ impl BlockchainExecutionClient {
             base_fee_buffer_bps: self.config.base_fee_buffer_bps,
             gas_limit: self.config.gas_limit,
             gas_buffer_bps: self.config.gas_buffer_bps,
-            receipt_timeout: receipt_timeout(self.config.receipt_timeout_secs),
-            receipt_max_polls: receipt_max_polls(self.config.receipt_timeout_secs),
+            receipt_timeout: receipt_timeout(self.transaction_limits.receipt_timeout_secs),
+            receipt_max_polls: receipt_max_polls(self.transaction_limits.receipt_timeout_secs),
         })
     }
 
@@ -1031,6 +1076,7 @@ impl BlockchainExecutionClient {
         )?;
 
         if !self
+            .transaction_limits
             .allowed_token_pairs
             .contains(&(base_token.address, quote_token.address))
         {
@@ -1042,10 +1088,10 @@ impl BlockchainExecutionClient {
         }
 
         let amount_in = quantity_to_raw_amount(order.quantity(), base_token.decimals)?;
-        if amount_in > U256::from(self.config.max_order_amount) {
+        if amount_in > U256::from(self.transaction_limits.max_order_amount) {
             anyhow::bail!(
                 "Order amount {amount_in} exceeds the configured `max_order_amount` {}",
-                self.config.max_order_amount
+                self.transaction_limits.max_order_amount
             );
         }
 
@@ -1057,13 +1103,13 @@ impl BlockchainExecutionClient {
             Some(value) => u32::try_from(value).map_err(|_| {
                 anyhow::anyhow!("slippage_bps parameter {value} exceeds the u32 range")
             })?,
-            None => self.config.slippage_bps,
+            None => self.transaction_limits.slippage_bps,
         };
 
-        if slippage_bps > self.config.max_slippage_bps {
+        if slippage_bps > self.transaction_limits.max_slippage_bps {
             anyhow::bail!(
                 "Slippage {slippage_bps} bps exceeds the configured `max_slippage_bps` {}",
-                self.config.max_slippage_bps
+                self.transaction_limits.max_slippage_bps
             );
         }
 
@@ -2430,8 +2476,8 @@ impl ExecutionClient for BlockchainExecutionClient {
         };
 
         let emitter = self.emitter.clone();
-        let max_quote_age_blocks = self.config.max_quote_age_blocks;
-        let deadline_seconds = self.config.deadline_seconds;
+        let max_quote_age_blocks = self.transaction_limits.max_quote_age_blocks;
+        let deadline_seconds = self.transaction_limits.deadline_seconds;
         let client_order_id = order.client_order_id();
 
         let handle = get_runtime().spawn(async move {
@@ -3625,7 +3671,7 @@ mod tests {
     #[tokio::test]
     async fn submit_order_denies_token_pair_outside_allowlist() {
         let mut config = test_config("http://127.0.0.1:1".to_string());
-        config.allowed_token_pairs = Vec::new();
+        config.allowed_token_pairs = Some(Vec::new());
         let (mut client, _) = swap_client_with_cache(config);
         let order = test_market_sell_order(test_pool().instrument_id);
         let mut receiver = start_with_events(&mut client);
@@ -3650,7 +3696,7 @@ mod tests {
     #[tokio::test]
     async fn submit_order_denies_amount_above_max_order_amount() {
         let mut config = test_config("http://127.0.0.1:1".to_string());
-        config.max_order_amount = 999_999_999_999_999; // 0.001 WETH in raw units minus one
+        config.max_order_amount = Some(999_999_999_999_999); // 0.001 WETH in raw units minus one
         let (mut client, _) = swap_client_with_cache(config);
         let order = test_market_sell_order(test_pool().instrument_id);
         let mut receiver = start_with_events(&mut client);
@@ -3946,8 +3992,8 @@ mod tests {
             plan,
             client.transaction_executor().unwrap(),
             client.emitter.clone(),
-            client.config.max_quote_age_blocks,
-            client.config.deadline_seconds,
+            client.transaction_limits.max_quote_age_blocks,
+            client.transaction_limits.deadline_seconds,
         )
         .await
         .unwrap();
@@ -4141,8 +4187,8 @@ mod tests {
             plan,
             client.transaction_executor().unwrap(),
             client.emitter.clone(),
-            client.config.max_quote_age_blocks,
-            client.config.deadline_seconds,
+            client.transaction_limits.max_quote_age_blocks,
+            client.transaction_limits.deadline_seconds,
         )
         .await
         .unwrap_err();
@@ -4387,7 +4433,7 @@ mod tests {
         else {
             return;
         };
-        client.config.deadline_seconds = u64::MAX;
+        client.transaction_limits.deadline_seconds = u64::MAX;
         let order = test_market_sell_order(test_pool().instrument_id);
         let mut receiver = start_with_events(&mut client);
 
@@ -4662,6 +4708,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn execution_fresh_schema_preserves_nullable_wallet_address() {
+        let Some((admin_pool, _)) = connect_test_postgres("fresh execution schema").await else {
+            return;
+        };
+        let schema = format!("execution_fresh_test_{}", std::process::id());
+        let mut transaction = admin_pool.begin().await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!("CREATE SCHEMA {schema}")))
+            .execute(&mut *transaction)
+            .await
+            .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "SET LOCAL search_path TO {schema}"
+        )))
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+        sqlx::query("CREATE TABLE chain (chain_id INTEGER PRIMARY KEY)")
+            .execute(&mut *transaction)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO chain (chain_id) VALUES (42161)")
+            .execute(&mut *transaction)
+            .await
+            .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(execution_transaction_create_sql()))
+            .execute(&mut *transaction)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO execution_transaction \
+             (chain_id, nonce, transaction_hash, purpose, status) \
+             VALUES (42161, 7, '0xfresh-legacy', 'wrap', 'rejected')",
+        )
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+
+        let is_nullable: String = sqlx::query_scalar(
+            "SELECT is_nullable FROM information_schema.columns \
+             WHERE table_schema = $1 AND table_name = 'execution_transaction' \
+             AND column_name = 'wallet_address'",
+        )
+        .bind(&schema)
+        .fetch_one(&mut *transaction)
+        .await
+        .unwrap();
+        let wallet_address: Option<String> = sqlx::query_scalar(
+            "SELECT wallet_address FROM execution_transaction \
+             WHERE transaction_hash = '0xfresh-legacy'",
+        )
+        .fetch_one(&mut *transaction)
+        .await
+        .unwrap();
+
+        assert_eq!(is_nullable, "YES");
+        assert_eq!(wallet_address, None);
+        transaction.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn execution_schema_migration_preserves_existing_rows() {
         let Some((admin_pool, pg_config)) =
             connect_test_postgres("execution schema migration").await
@@ -4695,6 +4801,15 @@ mod tests {
         assert_eq!(legacy.status, "rejected");
         assert_eq!(legacy.client_order_id, None);
         assert_eq!(legacy.wallet_address, None);
+        let is_nullable: String = sqlx::query_scalar(
+            "SELECT is_nullable FROM information_schema.columns \
+             WHERE table_schema = $1 AND table_name = 'execution_transaction' \
+             AND column_name = 'wallet_address'",
+        )
+        .bind(&schema)
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
         let fence_error = database
             .add_execution_transaction(
                 42161,
@@ -4713,7 +4828,60 @@ mod tests {
                 .contains("Legacy execution writer refused"),
             "was: {fence_error}"
         );
+        assert_eq!(is_nullable, "YES");
 
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn execution_schema_migration_drops_legacy_wallet_not_null() {
+        let Some((admin_pool, pg_config)) =
+            connect_test_postgres("legacy wallet address schema migration").await
+        else {
+            return;
+        };
+        let schema = format!("execution_wallet_migration_test_{}", std::process::id());
+        setup_execution_schema(&admin_pool, &schema).await;
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "ALTER TABLE {schema}.execution_transaction \
+             ADD COLUMN wallet_address TEXT NOT NULL"
+        )))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "INSERT INTO {schema}.execution_transaction \
+             (chain_id, wallet_address, nonce, transaction_hash, purpose, status) \
+             VALUES (42161, '{WALLET}', 7, '0xlegacy-wallet', 'wrap', 'rejected')"
+        )))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+
+        let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
+        let db_options = db_options.options([("search_path", schema.clone())]);
+        let database = BlockchainCacheDatabase::connect(db_options).await.unwrap();
+        database
+            .ensure_execution_transaction_schema()
+            .await
+            .unwrap();
+        let legacy = database
+            .get_execution_transaction(42161, "0xlegacy-wallet")
+            .await
+            .unwrap()
+            .unwrap();
+        let is_nullable: String = sqlx::query_scalar(
+            "SELECT is_nullable FROM information_schema.columns \
+             WHERE table_schema = $1 AND table_name = 'execution_transaction' \
+             AND column_name = 'wallet_address'",
+        )
+        .bind(&schema)
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+
+        assert_eq!(legacy.wallet_address.as_deref(), Some(WALLET));
+        assert_eq!(is_nullable, "YES");
         drop_execution_schema(&admin_pool, &schema).await;
     }
 
@@ -5171,7 +5339,7 @@ mod tests {
             return;
         };
         // The wall-clock timeout must cap a stalled receipt RPC.
-        client.config.receipt_timeout_secs = 1;
+        client.transaction_limits.receipt_timeout_secs = 1;
         let order = test_market_sell_order(test_pool().instrument_id);
         let mut receiver = start_with_events(&mut client);
         let started = tokio::time::Instant::now();
@@ -5222,7 +5390,7 @@ mod tests {
         else {
             return;
         };
-        client.config.receipt_timeout_secs = 1;
+        client.transaction_limits.receipt_timeout_secs = 1;
 
         let error = client
             .wrap(U256::from(1_000_000_000_000_000_u64))
@@ -5564,6 +5732,35 @@ mod tests {
         let error = client.resolve_pool(&pool.instrument_id).unwrap_err();
 
         assert!(error.to_string().contains("ambiguous"), "was: {error}");
+    }
+
+    #[rstest]
+    #[case::allowed_token_pairs("allowed_token_pairs")]
+    #[case::slippage_bps("slippage_bps")]
+    #[case::max_slippage_bps("max_slippage_bps")]
+    #[case::max_order_amount("max_order_amount")]
+    #[case::deadline_seconds("deadline_seconds")]
+    #[case::max_quote_age_blocks("max_quote_age_blocks")]
+    #[case::receipt_timeout_secs("receipt_timeout_secs")]
+    fn new_rejects_each_missing_transaction_limit(#[case] missing: &str) {
+        let mut config = test_config("http://127.0.0.1:1".to_string());
+        match missing {
+            "allowed_token_pairs" => config.allowed_token_pairs = None,
+            "slippage_bps" => config.slippage_bps = None,
+            "max_slippage_bps" => config.max_slippage_bps = None,
+            "max_order_amount" => config.max_order_amount = None,
+            "deadline_seconds" => config.deadline_seconds = None,
+            "max_quote_age_blocks" => config.max_quote_age_blocks = None,
+            "receipt_timeout_secs" => config.receipt_timeout_secs = None,
+            _ => unreachable!(),
+        }
+
+        let error = test_client_result(config, test_pool()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Blockchain execution transaction limits are required: allowed_token_pairs, slippage_bps, max_slippage_bps, max_order_amount, deadline_seconds, max_quote_age_blocks, receipt_timeout_secs"
+        );
     }
 
     #[rstest]
@@ -6855,7 +7052,7 @@ mod tests {
         else {
             return;
         };
-        client.config.receipt_timeout_secs = 2;
+        client.transaction_limits.receipt_timeout_secs = 2;
 
         let error = client
             .wrap(U256::from(1_000_000_000_000_000_u64))
@@ -6922,7 +7119,7 @@ mod tests {
         else {
             return;
         };
-        client.config.receipt_timeout_secs = 2;
+        client.transaction_limits.receipt_timeout_secs = 2;
 
         let error = client
             .wrap(U256::from(1_000_000_000_000_000_u64))
@@ -6980,7 +7177,7 @@ mod tests {
         else {
             return;
         };
-        client.config.receipt_timeout_secs = 2;
+        client.transaction_limits.receipt_timeout_secs = 2;
         let original_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000_u64)).await;
 
         let observed_hash = client
@@ -7380,7 +7577,7 @@ mod tests {
             return;
         };
         client.config.unlimited_approval = true;
-        client.config.receipt_timeout_secs = 3;
+        client.transaction_limits.receipt_timeout_secs = 3;
 
         let wrap_hash = client
             .wrap(U256::from(1_000_000_000_000_000u64))
@@ -7576,5 +7773,19 @@ mod tests {
                 .await
                 .unwrap();
         }
+    }
+
+    fn execution_transaction_create_sql() -> &'static str {
+        const TABLES_SQL: &str = include_str!("../../../../../schema/sql/tables.sql");
+        const START: &str = "CREATE TABLE IF NOT EXISTS \"execution_transaction\"";
+        let start = TABLES_SQL
+            .find(START)
+            .expect("execution_transaction table is missing from tables.sql");
+        let statement = &TABLES_SQL[start..];
+        let end = statement
+            .find(";\n")
+            .expect("execution_transaction CREATE TABLE is unterminated")
+            + 1;
+        &statement[..end]
     }
 }

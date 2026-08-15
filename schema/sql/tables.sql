@@ -656,7 +656,7 @@ CREATE TABLE IF NOT EXISTS "pool_tick" (
 CREATE TABLE IF NOT EXISTS "execution_transaction" (
     id BIGSERIAL PRIMARY KEY,
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
-    wallet_address TEXT NOT NULL,
+    wallet_address TEXT,
     nonce BIGINT NOT NULL,
     transaction_hash TEXT NOT NULL,
     purpose TEXT NOT NULL,
@@ -666,6 +666,7 @@ CREATE TABLE IF NOT EXISTS "execution_transaction" (
 );
 ALTER TABLE "execution_transaction" ADD COLUMN IF NOT EXISTS client_order_id TEXT;
 ALTER TABLE "execution_transaction" ADD COLUMN IF NOT EXISTS wallet_address TEXT;
+ALTER TABLE "execution_transaction" ALTER COLUMN wallet_address DROP NOT NULL;
 
 CREATE TABLE IF NOT EXISTS "execution_schema_version" (
     component TEXT PRIMARY KEY,

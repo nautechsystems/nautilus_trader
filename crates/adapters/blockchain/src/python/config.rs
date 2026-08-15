@@ -168,7 +168,7 @@ impl BlockchainExecutionClientConfig {
     /// Configuration for blockchain execution clients.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (trader_id, client_id, chain, wallet_address, http_rpc_url, signer_private_key_env, router_addresses, weth_address, max_fee_per_gas_wei, base_fee_buffer_bps, gas_limit, gas_buffer_bps, allowed_token_pairs, slippage_bps, max_slippage_bps, max_order_amount, deadline_seconds, max_quote_age_blocks, receipt_timeout_secs, tokens=None, rpc_requests_per_second=None, unlimited_approval=false, postgres_cache_database_config=None, transport_backend=None))]
+    #[pyo3(signature = (trader_id, client_id, chain, wallet_address, http_rpc_url, signer_private_key_env, router_addresses, weth_address, max_fee_per_gas_wei, base_fee_buffer_bps, gas_limit, gas_buffer_bps, tokens=None, rpc_requests_per_second=None, unlimited_approval=false, postgres_cache_database_config=None, transport_backend=None, *, allowed_token_pairs=None, slippage_bps=None, max_slippage_bps=None, max_order_amount=None, deadline_seconds=None, max_quote_age_blocks=None, receipt_timeout_secs=None))]
     fn py_new(
         trader_id: TraderId,
         client_id: AccountId,
@@ -188,13 +188,6 @@ impl BlockchainExecutionClientConfig {
         base_fee_buffer_bps: u32,
         gas_limit: u64,
         gas_buffer_bps: u32,
-        allowed_token_pairs: Vec<(String, String)>,
-        slippage_bps: u32,
-        max_slippage_bps: u32,
-        max_order_amount: u64,
-        deadline_seconds: u64,
-        max_quote_age_blocks: u64,
-        receipt_timeout_secs: u64,
         tokens: Option<Vec<String>>,
         rpc_requests_per_second: Option<u32>,
         unlimited_approval: bool,
@@ -206,6 +199,13 @@ impl BlockchainExecutionClientConfig {
         )]
         postgres_cache_database_config: Option<PostgresConnectOptions>,
         transport_backend: Option<TransportBackend>,
+        allowed_token_pairs: Option<Vec<(String, String)>>,
+        slippage_bps: Option<u32>,
+        max_slippage_bps: Option<u32>,
+        max_order_amount: Option<u64>,
+        deadline_seconds: Option<u64>,
+        max_quote_age_blocks: Option<u64>,
+        receipt_timeout_secs: Option<u64>,
     ) -> Self {
         Self::builder()
             .trader_id(trader_id)
@@ -220,13 +220,13 @@ impl BlockchainExecutionClientConfig {
             .base_fee_buffer_bps(base_fee_buffer_bps)
             .gas_limit(gas_limit)
             .gas_buffer_bps(gas_buffer_bps)
-            .allowed_token_pairs(allowed_token_pairs)
-            .slippage_bps(slippage_bps)
-            .max_slippage_bps(max_slippage_bps)
-            .max_order_amount(max_order_amount)
-            .deadline_seconds(deadline_seconds)
-            .max_quote_age_blocks(max_quote_age_blocks)
-            .receipt_timeout_secs(receipt_timeout_secs)
+            .maybe_allowed_token_pairs(allowed_token_pairs)
+            .maybe_slippage_bps(slippage_bps)
+            .maybe_max_slippage_bps(max_slippage_bps)
+            .maybe_max_order_amount(max_order_amount)
+            .maybe_deadline_seconds(deadline_seconds)
+            .maybe_max_quote_age_blocks(max_quote_age_blocks)
+            .maybe_receipt_timeout_secs(receipt_timeout_secs)
             .maybe_tokens(tokens)
             .maybe_rpc_requests_per_second(rpc_requests_per_second)
             .unlimited_approval(unlimited_approval)
@@ -237,8 +237,8 @@ impl BlockchainExecutionClientConfig {
 
     /// Returns the allowed (input token, output token) address pairs.
     #[getter]
-    #[gen_stub(override_return_type(type_repr = "list[tuple[str, str]]",))]
-    fn allowed_token_pairs(&self) -> Vec<(String, String)> {
+    #[gen_stub(override_return_type(type_repr = "list[tuple[str, str]] | None",))]
+    fn allowed_token_pairs(&self) -> Option<Vec<(String, String)>> {
         self.allowed_token_pairs.clone()
     }
 

@@ -3063,6 +3063,10 @@ impl BlockchainCacheDatabase {
             ADD COLUMN IF NOT EXISTS wallet_address TEXT
             ",
             "
+            ALTER TABLE execution_transaction
+            ALTER COLUMN wallet_address DROP NOT NULL
+            ",
+            "
             CREATE TABLE IF NOT EXISTS execution_schema_version (
                 component TEXT PRIMARY KEY,
                 version SMALLINT NOT NULL CHECK (version > 0)

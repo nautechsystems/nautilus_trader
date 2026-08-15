@@ -33,8 +33,8 @@ use nautilus_model::{
 use nautilus_network::{python as network_python, websocket::TransportBackend};
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::{
-    Bound, Py, Python,
-    types::{PyAnyMethods, PyDict, PyDictMethods, PyModule},
+    Bound, IntoPyObjectExt, Py, Python,
+    types::{PyAny, PyAnyMethods, PyDict, PyDictMethods, PyModule, PyTuple},
 };
 use rstest::rstest;
 
@@ -53,6 +53,7 @@ fn test_blockchain_python_module_contract() {
             &network_module,
         );
         assert_execution_config_constructs_from_python(py, &blockchain_module);
+        assert_execution_legacy_config_constructs_from_python(py, &blockchain_module);
     });
 }
 
@@ -205,17 +206,17 @@ fn assert_execution_config_constructs_from_python(
         .expect("signer_private_key_env getter should return a string");
     assert_eq!(getter_value, "BLOCKCHAIN_PRIVATE_KEY");
 
-    let getter_pairs: Vec<(String, String)> = config
+    let getter_pairs: Option<Vec<(String, String)>> = config
         .getattr("allowed_token_pairs")
         .expect("allowed_token_pairs getter should exist")
         .extract()
-        .expect("allowed_token_pairs getter should return a list of pairs");
+        .expect("allowed_token_pairs getter should return optional pairs");
     assert_eq!(
         getter_pairs,
-        vec![(
+        Some(vec![(
             "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
             "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
-        )]
+        )])
     );
 
     let extracted = config
@@ -245,19 +246,79 @@ fn assert_execution_config_constructs_from_python(
     assert_eq!(extracted.gas_buffer_bps, 2_000);
     assert_eq!(
         extracted.allowed_token_pairs,
-        vec![(
+        Some(vec![(
             "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
             "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
-        )]
+        )])
     );
-    assert_eq!(extracted.slippage_bps, 50);
-    assert_eq!(extracted.max_slippage_bps, 200);
-    assert_eq!(extracted.max_order_amount, 1_000_000_000_000_000_000);
-    assert_eq!(extracted.deadline_seconds, 300);
-    assert_eq!(extracted.max_quote_age_blocks, 100);
-    assert_eq!(extracted.receipt_timeout_secs, 60);
+    assert_eq!(extracted.slippage_bps, Some(50));
+    assert_eq!(extracted.max_slippage_bps, Some(200));
+    assert_eq!(extracted.max_order_amount, Some(1_000_000_000_000_000_000));
+    assert_eq!(extracted.deadline_seconds, Some(300));
+    assert_eq!(extracted.max_quote_age_blocks, Some(100));
+    assert_eq!(extracted.receipt_timeout_secs, Some(60));
     assert!(extracted.postgres_cache_database_config.is_none());
     assert_eq!(extracted.transport_backend, TransportBackend::default());
+}
+
+fn assert_execution_legacy_config_constructs_from_python(
+    py: Python<'_>,
+    blockchain_module: &Bound<'_, PyModule>,
+) {
+    let config_type = blockchain_module
+        .getattr("BlockchainExecutionClientConfig")
+        .expect("BlockchainExecutionClientConfig should be available");
+    let args = PyTuple::new(
+        py,
+        [
+            py_object(py, TraderId::from("TRADER-001")),
+            py_object(py, AccountId::from("BLOCKCHAIN-001")),
+            py_object(py, chains::ARBITRUM.clone()),
+            py_object(py, "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
+            py_object(py, "https://rpc.example.com"),
+            py_object(py, "BLOCKCHAIN_PRIVATE_KEY"),
+            py_object(py, vec!["0xE592427A0AEce92De3Edee1F18E0157C05861564"]),
+            py_object(py, "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+            py_object(py, 1_000_000_000_u64),
+            py_object(py, 2_000_u32),
+            py_object(py, 1_000_000_u64),
+            py_object(py, 2_000_u32),
+            py_object(py, vec!["0x1111111111111111111111111111111111111111"]),
+            py_object(py, 42_u32),
+            py_object(py, true),
+        ],
+    )
+    .expect("legacy execution config args should build");
+    let config = config_type
+        .call1(args)
+        .expect("legacy BlockchainExecutionClientConfig should construct from Python");
+    let extracted = config
+        .extract::<BlockchainExecutionClientConfig>()
+        .expect("legacy execution config should extract");
+
+    assert_eq!(
+        extracted.tokens,
+        Some(vec![
+            "0x1111111111111111111111111111111111111111".to_string()
+        ])
+    );
+    assert_eq!(extracted.rpc_requests_per_second, Some(42));
+    assert!(extracted.unlimited_approval);
+    assert!(extracted.postgres_cache_database_config.is_none());
+    assert_eq!(extracted.transport_backend, TransportBackend::default());
+    assert!(extracted.allowed_token_pairs.is_none());
+    assert!(extracted.slippage_bps.is_none());
+    assert!(extracted.max_slippage_bps.is_none());
+    assert!(extracted.max_order_amount.is_none());
+    assert!(extracted.deadline_seconds.is_none());
+    assert!(extracted.max_quote_age_blocks.is_none());
+    assert!(extracted.receipt_timeout_secs.is_none());
+}
+
+fn py_object<'py>(py: Python<'py>, value: impl IntoPyObjectExt<'py>) -> Py<PyAny> {
+    value
+        .into_py_any(py)
+        .expect("value should convert to a Python object")
 }
 
 fn assert_data_config_extracts_transport_backend_from_python_constructor(
