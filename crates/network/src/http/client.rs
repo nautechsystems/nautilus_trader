@@ -669,6 +669,7 @@ impl Default for InnerHttpClient {
 /// Returns `Cow::Borrowed` when no parameters need appending (zero-alloc fast path).
 /// Parameters can have multiple values per key (for doseq=True behavior).
 /// Preserves existing query strings in the URL by appending with '&' instead of '?'.
+/// The query is inserted before any fragment, which is preserved unchanged.
 fn encode_url_params<'a>(
     url: &'a str,
     params: Option<&HashMap<String, Vec<String>>>,
@@ -693,8 +694,73 @@ fn encode_url_params<'a>(
     let query_string = serde_urlencoded::to_string(pairs)
         .map_err(|e| HttpClientError::Error(format!("Failed to encode params: {e}")))?;
 
-    let separator = if url.contains('?') { '&' } else { '?' };
-    Ok(Cow::Owned(format!("{url}{separator}{query_string}")))
+    // The first literal '#' starts the fragment per RFC 3986 section 3.5.
+    // A data '#' in an earlier component must be percent-encoded as "%23".
+    let (base, fragment) = match url.split_once('#') {
+        Some((base, fragment)) => (base, Some(fragment)),
+        None => (url, None),
+    };
+    let separator = if base.contains('?') { '&' } else { '?' };
+
+    Ok(Cow::Owned(match fragment {
+        Some(fragment) => format!("{base}{separator}{query_string}#{fragment}"),
+        None => format!("{base}{separator}{query_string}"),
+    }))
+}
+
+#[cfg(test)]
+mod encode_url_params_tests {
+    use std::{borrow::Cow, collections::HashMap};
+
+    use rstest::rstest;
+
+    use super::encode_url_params;
+
+    fn params(pairs: &[(&str, &str)]) -> HashMap<String, Vec<String>> {
+        let mut map: HashMap<String, Vec<String>> = HashMap::new();
+
+        for (key, value) in pairs {
+            map.entry((*key).to_string())
+                .or_default()
+                .push((*value).to_string());
+        }
+
+        map
+    }
+
+    #[rstest]
+    #[case("https://x/y", "https://x/y?a=b")]
+    #[case("https://x/y?old=1", "https://x/y?old=1&a=b")]
+    #[case("https://x/y#frag", "https://x/y?a=b#frag")]
+    #[case("https://x/y?old=1#frag", "https://x/y?old=1&a=b#frag")]
+    #[case(
+        "https://x/y#section?display=full",
+        "https://x/y?a=b#section?display=full"
+    )]
+    #[case("https://x/y#", "https://x/y?a=b#")]
+    fn test_query_is_inserted_before_the_fragment(#[case] url: &str, #[case] expected: &str) {
+        let params = params(&[("a", "b")]);
+
+        assert_eq!(encode_url_params(url, Some(&params)).unwrap(), expected);
+    }
+
+    #[rstest]
+    fn test_url_is_borrowed_when_no_params_are_supplied() {
+        assert!(matches!(
+            encode_url_params("https://x/y#frag", None).unwrap(),
+            Cow::Borrowed("https://x/y#frag")
+        ));
+    }
+
+    #[rstest]
+    fn test_url_is_borrowed_when_params_are_empty() {
+        let params = HashMap::new();
+
+        assert!(matches!(
+            encode_url_params("https://x/y#frag", Some(&params)).unwrap(),
+            Cow::Borrowed("https://x/y#frag")
+        ));
+    }
 }
 
 #[cfg(test)]
