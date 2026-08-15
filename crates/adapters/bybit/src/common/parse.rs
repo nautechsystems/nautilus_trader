@@ -79,25 +79,49 @@ pub mod bool_or_int {
     }
 }
 
+/// Deserializes an integer from either a JSON integer or base-10 integer string.
+///
+/// Bybit responses can encode the same integer field in both forms.
+pub(crate) fn deserialize_int_or_string<'de, T, D>(d: D) -> Result<T, D::Error>
+where
+    T: serde::Deserialize<'de> + std::str::FromStr,
+    T::Err: std::fmt::Display,
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum IntOrString<T> {
+        Int(T),
+        Str(String),
+    }
+
+    match IntOrString::<T>::deserialize(d)? {
+        IntOrString::Int(value) => Ok(value),
+        IntOrString::Str(value) => value.parse().map_err(|e| {
+            D::Error::custom(format!(
+                "expected {}, received {value:?}: {e}",
+                std::any::type_name::<T>()
+            ))
+        }),
+    }
+}
+
 /// Deserializes an `i32` from either a JSON integer or base-10 integer string.
 ///
 /// Bybit order responses can encode `smpGroup` in both forms.
 pub(crate) fn deserialize_i32_or_string<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<i32, D::Error> {
-    #[derive(serde::Deserialize)]
-    #[serde(untagged)]
-    enum I32OrString {
-        Int(i32),
-        String(String),
-    }
+    deserialize_int_or_string(d)
+}
 
-    match I32OrString::deserialize(d)? {
-        I32OrString::Int(value) => Ok(value),
-        I32OrString::String(value) => value
-            .parse()
-            .map_err(|e| D::Error::custom(format!("expected i32, received {value:?}: {e}"))),
-    }
+/// Deserializes an `i64` from either a JSON integer or base-10 integer string.
+///
+/// Bybit position responses can encode `riskId` in both forms.
+pub(crate) fn deserialize_i64_or_string<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<i64, D::Error> {
+    deserialize_int_or_string(d)
 }
 
 /// Round-trips `Option<bool>` as `0`/`1` integers for Bybit request bodies
