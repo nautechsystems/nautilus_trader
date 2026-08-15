@@ -1663,7 +1663,7 @@ impl PositionSide {
     }
 }
 
-/// The market side for a specific position, or action related to positions.
+/// The specified position side (FLAT, LONG, or SHORT).
 #[repr(C)]
 #[derive(
     Copy,
