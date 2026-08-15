@@ -241,7 +241,7 @@ impl sqlx::Encode<'_, sqlx::Postgres> for BarAggregationModel {
             BarAggregation::Value => "VALUE",
             BarAggregation::ValueImbalance => "VALUE_IMBALANCE",
             BarAggregation::ValueRuns => "VALUE_RUNS",
-            BarAggregation::Millisecond => "TIME",
+            BarAggregation::Millisecond => "MILLISECOND",
             BarAggregation::Second => "SECOND",
             BarAggregation::Minute => "MINUTE",
             BarAggregation::Hour => "HOUR",
@@ -328,5 +328,34 @@ mod tests {
         let mut buf = sqlx::postgres::PgArgumentBuffer::default();
         let _ = sqlx::Encode::<sqlx::Postgres>::encode(AggressorSideModel(value), &mut buf);
         assert_eq!(&buf[..], expected.as_bytes());
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Millisecond, "MILLISECOND")]
+    #[case(BarAggregation::Second, "SECOND")]
+    #[case(BarAggregation::Month, "MONTH")]
+    #[case(BarAggregation::Year, "YEAR")]
+    #[case(BarAggregation::Renko, "RENKO")]
+    fn bar_aggregation_model_encodes_postgres_labels(
+        #[case] value: BarAggregation,
+        #[case] expected: &str,
+    ) {
+        let mut buf = sqlx::postgres::PgArgumentBuffer::default();
+        let _ = sqlx::Encode::<sqlx::Postgres>::encode(BarAggregationModel(value), &mut buf);
+        assert_eq!(&buf[..], expected.as_bytes());
+        assert_eq!(BarAggregation::from_str(expected), Ok(value));
+    }
+
+    #[rstest]
+    #[case(PriceType::Bid, "BID")]
+    #[case(PriceType::Ask, "ASK")]
+    #[case(PriceType::Mid, "MID")]
+    #[case(PriceType::Last, "LAST")]
+    #[case(PriceType::Mark, "MARK")]
+    fn price_type_model_encodes_postgres_labels(#[case] value: PriceType, #[case] expected: &str) {
+        let mut buf = sqlx::postgres::PgArgumentBuffer::default();
+        let _ = sqlx::Encode::<sqlx::Postgres>::encode(PriceTypeModel(value), &mut buf);
+        assert_eq!(&buf[..], expected.as_bytes());
+        assert_eq!(PriceType::from_str(expected), Ok(value));
     }
 }
