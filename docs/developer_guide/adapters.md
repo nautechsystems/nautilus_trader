@@ -690,6 +690,19 @@ strategy‑facing reason only at the execution event boundary, after the outcome
 | Diagnostic error       | Classification, retry control, logs, and operators | Typed source plus available status, venue code, endpoint, backoff, transport, and decode context.        |
 | Strategy‑facing reason | Rejection events consumed by strategies            | Bounded venue meaning without HTTP prefixes, response envelopes, markup, control characters, or secrets. |
 
+Format standardized local denial messages from
+[`OrderDeniedReason`](../../crates/model/src/events/order/denied_reason.rs) with the minimum suffix
+needed to identify the diagnostic context:
+
+- Emit `CODE` when the denial needs no diagnostic suffix.
+- Use `CODE: value` for one typed value or a free‑text diagnostic. The code already identifies a
+  single value, so do not repeat its name.
+- Use `CODE: key=value, key=value` only when multiple typed values need disambiguation.
+- Use `CODE: value; free text` when one typed value precedes a free‑text diagnostic.
+
+Only the leading code is canonical. Do not parse the diagnostic suffix to recover classification,
+retryability, or command outcome.
+
 Apply these rules at the boundary:
 
 - Classify from typed or structured evidence. Never recover status, retryability, or command

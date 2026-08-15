@@ -14178,10 +14178,7 @@ fn test_submit_order_list_denies_cached_orders_when_missing_order_has_no_init(
 
     assert_eq!(cached_entry.status(), OrderStatus::Denied);
     if let OrderEventAny::Denied(denied) = cached_entry.last_event() {
-        assert_eq!(
-            denied.reason.as_str(),
-            "ORDER_LIST_INCOMPLETE: order_list_id=1",
-        );
+        assert_eq!(denied.reason.as_str(), "ORDER_LIST_INCOMPLETE: 1",);
     } else {
         panic!("Expected OrderDenied event");
     }
@@ -14320,7 +14317,7 @@ fn test_submit_order_with_no_client_denies_order(execution_engine: ExecutionEngi
     if let OrderEventAny::Denied(denied) = cached_order.last_event() {
         assert_eq!(
             denied.reason.as_str(),
-            "NO_EXECUTION_CLIENT: client_id=None, routing_context=venue=SIM",
+            "NO_EXECUTION_CLIENT: client_id=NONE, venue=SIM",
         );
     } else {
         panic!("Expected OrderDenied event");
@@ -14435,7 +14432,7 @@ fn test_submit_order_list_with_no_client_denies_all_orders(execution_engine: Exe
         if let OrderEventAny::Denied(denied) = cached.last_event() {
             assert_eq!(
                 denied.reason.as_str(),
-                "NO_EXECUTION_CLIENT: client_id=None, routing_context=venue=SIM",
+                "NO_EXECUTION_CLIENT: client_id=NONE, venue=SIM",
             );
         } else {
             panic!("Expected OrderDenied event");

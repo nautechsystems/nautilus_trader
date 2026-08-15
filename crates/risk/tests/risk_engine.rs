@@ -58,7 +58,7 @@ use nautilus_model::{
     },
     events::{
         AccountState, OrderAccepted, OrderDeniedReason, OrderEventAny, OrderEventType, OrderFilled,
-        OrderSubmitted, PositionEvent, PositionOpened,
+        OrderPriceField, OrderSubmitted, PositionEvent, PositionOpened,
         account::stubs::cash_account_state_million_usd,
         order::spec::{OrderAcceptedSpec, OrderFilledSpec, OrderSubmittedSpec},
     },
@@ -1638,7 +1638,7 @@ fn test_submit_order_reduce_only_order_with_custom_position_id_not_open_then_den
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from("POSITION_NOT_FOUND: position_id=CUSTOM-001")
+        Ustr::from("POSITION_NOT_FOUND: CUSTOM-001")
     );
 }
 
@@ -1702,7 +1702,7 @@ fn test_submit_order_when_instrument_not_in_cache_then_denies(
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from("INSTRUMENT_NOT_FOUND: instrument_id=AUD/USD.SIM")
+        Ustr::from("INSTRUMENT_NOT_FOUND: AUD/USD.SIM")
     );
 }
 
@@ -1768,13 +1768,17 @@ fn test_submit_order_when_invalid_price_precision_then_denies(
         saved_process_messages.first().unwrap().event_type(),
         OrderEventType::Denied
     );
-    assert!(
-        saved_process_messages
-            .first()
-            .unwrap()
-            .message()
-            .unwrap()
-            .starts_with("PRICE_PRECISION_EXCEEDS_MAXIMUM:")
+    assert_eq!(
+        saved_process_messages.first().unwrap().message().unwrap(),
+        Ustr::from(
+            &OrderDeniedReason::PricePrecisionExceedsMaximum {
+                field: OrderPriceField::Price,
+                price: order.price().unwrap(),
+                price_precision: order.price().unwrap().precision,
+                max_precision: instrument_audusd.price_precision(),
+            }
+            .to_string()
+        )
     );
 }
 
@@ -1842,7 +1846,7 @@ fn test_submit_order_when_invalid_negative_price_and_not_option_then_denies(
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from("PRICE_NOT_POSITIVE: price_type=ORDER, price=-0.1")
+        Ustr::from("PRICE_NOT_POSITIVE: field=PRICE, price=-0.1")
     );
 }
 
@@ -2149,13 +2153,17 @@ fn test_submit_order_when_invalid_trigger_price_then_denies(
         saved_process_messages.first().unwrap().event_type(),
         OrderEventType::Denied
     );
-    assert!(
-        saved_process_messages
-            .first()
-            .unwrap()
-            .message()
-            .unwrap()
-            .starts_with("PRICE_PRECISION_EXCEEDS_MAXIMUM: price_type=TRIGGER")
+    assert_eq!(
+        saved_process_messages.first().unwrap().message().unwrap(),
+        Ustr::from(
+            &OrderDeniedReason::PricePrecisionExceedsMaximum {
+                field: OrderPriceField::TriggerPrice,
+                price: order.trigger_price().unwrap(),
+                price_precision: order.trigger_price().unwrap().precision,
+                max_precision: instrument_audusd.price_precision(),
+            }
+            .to_string()
+        )
     );
 }
 
@@ -2223,7 +2231,7 @@ fn test_submit_order_when_invalid_quantity_precision_then_denies(
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
         Ustr::from(
-            "QUANTITY_PRECISION_EXCEEDS_MAXIMUM: quantity=0.1, quantity_precision=1, max_precision=0",
+            "QUANTITY_PRECISION_EXCEEDS_MAXIMUM: quantity=0.1, precision=1, max_precision=0",
         )
     );
 }
@@ -2291,7 +2299,7 @@ fn test_submit_order_when_invalid_quantity_exceeds_maximum_then_denies(
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from("QUANTITY_EXCEEDS_MAXIMUM: effective_quantity=100000000, max_quantity=1000000",)
+        Ustr::from("QUANTITY_EXCEEDS_MAXIMUM: effective=100000000, max=1000000")
     );
 }
 
@@ -2358,7 +2366,7 @@ fn test_submit_order_when_invalid_quantity_less_than_minimum_then_denies(
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from("QUANTITY_BELOW_MINIMUM: effective_quantity=1, min_quantity=100")
+        Ustr::from("QUANTITY_BELOW_MINIMUM: effective=1, min=100")
     );
 }
 
@@ -2664,9 +2672,9 @@ fn test_submit_market_order_without_price_checks_cash_asset_balance(
     assert_eq!(
         process_messages[0].message().unwrap(),
         Ustr::from(
-            &OrderDeniedReason::CumNotionalExceedsFreeBalance {
-                free: Money::from("0 ETH"),
-                cum_notional: Money::from("1 ETH"),
+            &OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+                free_balance: Money::from("0 ETH"),
+                cumulative_notional: Money::from("1 ETH"),
             }
             .to_string()
         )
@@ -2739,9 +2747,9 @@ fn test_submit_market_order_wallet_sell_exceeds_free_balance_without_price_denie
     assert_eq!(
         process_messages[0].message().unwrap(),
         Ustr::from(
-            &OrderDeniedReason::CumNotionalExceedsFreeBalance {
-                free: Money::from("10 ETH"),
-                cum_notional: Money::from("11 ETH"),
+            &OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+                free_balance: Money::from("10 ETH"),
+                cumulative_notional: Money::from("11 ETH"),
             }
             .to_string()
         )
@@ -2837,9 +2845,9 @@ fn test_submit_market_order_wallet_sell_exceeds_free_balance_with_price_denies(
     assert_eq!(
         process_messages[0].message().unwrap(),
         Ustr::from(
-            &OrderDeniedReason::CumNotionalExceedsFreeBalance {
-                free: Money::from("10 ETH"),
-                cum_notional: Money::from("11 ETH"),
+            &OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+                free_balance: Money::from("10 ETH"),
+                cumulative_notional: Money::from("11 ETH"),
             }
             .to_string()
         )
@@ -2939,7 +2947,7 @@ fn test_submit_market_order_wallet_buy_missing_quote_balance_denies(
         process_messages[0].message().unwrap(),
         Ustr::from(
             &OrderDeniedReason::NotionalExceedsFreeBalance {
-                free: Money::from("0 USDT"),
+                free_balance: Money::from("0 USDT"),
                 notional: Money::from("3001 USDT"),
             }
             .to_string()
@@ -3011,9 +3019,9 @@ fn test_submit_reduce_only_wallet_sell_still_checks_asset_balance(
     assert_eq!(
         process_messages[0].message().unwrap(),
         Ustr::from(
-            &OrderDeniedReason::CumNotionalExceedsFreeBalance {
-                free: Money::from("10 ETH"),
-                cum_notional: Money::from("11 ETH"),
+            &OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+                free_balance: Money::from("10 ETH"),
+                cumulative_notional: Money::from("11 ETH"),
             }
             .to_string()
         )
@@ -3275,9 +3283,7 @@ fn test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from(
-            "NOTIONAL_BELOW_MINIMUM: min_notional=Money(1.00, USD), notional=Money(0.90, USD)"
-        )
+        Ustr::from("NOTIONAL_BELOW_MINIMUM: min=1.00 USD, notional=0.90 USD")
     );
 }
 
@@ -3406,7 +3412,8 @@ fn test_submit_order_below_min_notional_respects_reduce_only(
         assert_eq!(
             saved_process_messages[0].message().unwrap(),
             Ustr::from(
-                "NOTIONAL_BELOW_MINIMUM: min_notional=Money(10.00000000, USDT), notional=Money(5.00000000, USDT)"
+                "NOTIONAL_BELOW_MINIMUM: min=10.00000000 USDT, \
+                 notional=5.00000000 USDT"
             )
         );
         assert!(saved_execute_messages.is_empty());
@@ -3500,7 +3507,8 @@ fn test_submit_order_when_greater_than_max_notional_for_instrument_then_denies(
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
         Ustr::from(
-            "NOTIONAL_EXCEEDS_MAXIMUM: max_notional=Money(10000000.00, USD), notional=Money(10000001.00, USD)"
+            "NOTIONAL_EXCEEDS_MAXIMUM: max=10000000.00 USD, \
+             notional=10000001.00 USD"
         )
     );
 }
@@ -3580,9 +3588,7 @@ fn test_submit_order_when_buy_market_order_and_over_max_notional_then_denies(
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from(
-            "NOTIONAL_EXCEEDS_MAX_PER_ORDER: max_notional=Money(100000.00, USD), notional=Money(750050.00, USD)"
-        )
+        Ustr::from("NOTIONAL_EXCEEDS_MAX_PER_ORDER: max=100000.00 USD, notional=750050.00 USD")
     );
 }
 
@@ -3732,9 +3738,7 @@ fn test_submit_order_when_sell_market_order_and_over_max_notional_then_denies(
     );
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
-        Ustr::from(
-            "NOTIONAL_EXCEEDS_MAX_PER_ORDER: max_notional=Money(100000.00, USD), notional=Money(750000.00, USD)"
-        )
+        Ustr::from("NOTIONAL_EXCEEDS_MAX_PER_ORDER: max=100000.00 USD, notional=750000.00 USD")
     );
 }
 
@@ -3802,7 +3806,8 @@ fn test_submit_order_when_market_order_and_over_free_balance_then_denies(
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
         Ustr::from(
-            "NOTIONAL_EXCEEDS_FREE_BALANCE: free=Money(1000000.00, USD), notional=Money(10100000.00, USD)"
+            "NOTIONAL_EXCEEDS_FREE_BALANCE: free=1000000.00 USD, \
+             notional=10100000.00 USD"
         )
     );
 }
@@ -3872,7 +3877,8 @@ fn test_submit_order_reduce_only_buy_over_free_balance_then_denies(
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
         Ustr::from(
-            "NOTIONAL_EXCEEDS_FREE_BALANCE: free=Money(1000000.00, USD), notional=Money(10100000.00, USD)"
+            "NOTIONAL_EXCEEDS_FREE_BALANCE: free=1000000.00 USD, \
+             notional=10100000.00 USD"
         )
     );
 }
@@ -4093,7 +4099,8 @@ fn test_submit_order_list_buys_when_over_free_balance_then_denies(
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
         Ustr::from(
-            "CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free=1000000.00 USD, cum_notional=1067873.00 USD"
+            "CUMULATIVE_NOTIONAL_EXCEEDS_FREE_BALANCE: free=1000000.00 USD, \
+             notional=1067873.00 USD"
         )
     );
 }
@@ -4183,7 +4190,8 @@ fn test_submit_order_list_sells_when_over_free_balance_then_denies(
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
         Ustr::from(
-            "CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free=1000000.00 USD, cum_notional=1057300.00 USD"
+            "CUMULATIVE_NOTIONAL_EXCEEDS_FREE_BALANCE: free=1000000.00 USD, \
+             notional=1057300.00 USD"
         )
     );
 }
@@ -4570,7 +4578,7 @@ fn test_submit_order_list_denies_when_representative_instrument_not_in_list(
         assert_eq!(event.event_type(), OrderEventType::Denied);
         assert_eq!(
             event.message().unwrap(),
-            Ustr::from("INSTRUMENT_NOT_FOUND: instrument_id=USD/JPY.SIM")
+            Ustr::from("INSTRUMENT_NOT_FOUND: USD/JPY.SIM")
         );
     }
 }
@@ -5062,7 +5070,7 @@ fn test_submit_bracket_order_when_instrument_not_in_cache_then_denies(
         assert_eq!(event.event_type(), OrderEventType::Denied);
         assert_eq!(
             event.message().unwrap(),
-            Ustr::from("INSTRUMENT_NOT_FOUND: instrument_id=AUD/USD.SIM")
+            Ustr::from("INSTRUMENT_NOT_FOUND: AUD/USD.SIM")
         );
     }
 }
@@ -5794,7 +5802,7 @@ fn test_submit_order_when_betting_back_order_liability_exceeds_free_balance_then
 }
 
 #[rstest]
-fn test_submit_order_when_betting_balance_calculation_fails_then_denies(
+fn test_submit_order_when_betting_balance_locked_calculation_fails_then_denies(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
@@ -5867,7 +5875,7 @@ fn test_submit_order_when_betting_balance_calculation_fails_then_denies(
             .message()
             .unwrap()
             .as_str()
-            .starts_with("BETTING_BALANCE_CALCULATION_FAILED:")
+            .starts_with("BETTING_BALANCE_LOCKED_CALCULATION_FAILED: ")
     );
 }
 
@@ -7162,9 +7170,9 @@ fn test_submit_order_cash_account_sell_checks_asset_balance(
             assert_eq!(
                 process_messages[0].message().unwrap(),
                 Ustr::from(
-                    &OrderDeniedReason::CumNotionalExceedsFreeBalance {
-                        free: Money::from(expected_free),
-                        cum_notional: Money::from(expected_cum_notional),
+                    &OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+                        free_balance: Money::from(expected_free),
+                        cumulative_notional: Money::from(expected_cum_notional),
                     }
                     .to_string()
                 )
@@ -7691,7 +7699,7 @@ fn test_submit_order_margin_account_position_reducing_buy_passes(
 }
 
 #[rstest]
-fn test_submit_order_list_margin_account_cum_margin_exceeds_free_balance(
+fn test_submit_order_list_when_cumulative_initial_margin_exceeds_free_balance(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
@@ -7704,9 +7712,9 @@ fn test_submit_order_list_margin_account_cum_margin_exceeds_free_balance(
         .unwrap();
 
     // Free = $500 USDT, 10x leverage
-    // Each 1 ETH @ $3000 -> margin = $300
-    // First order (1 ETH): cum_margin = $300 < $500 -> passes
-    // Second order (1 ETH): cum_margin = $600 > $500 -> denied
+    // Each 1 ETH @ $3000.01 ask -> margin = $300.001
+    // First order (1 ETH): cumulative initial margin = $300.001 < $500 -> passes
+    // Second order (1 ETH): cumulative initial margin = $600.002 > $500 -> denied
     let mut margin_acct = margin_account_with_usdt_balance("500 USDT", "0 USDT", "500 USDT");
     margin_acct.set_default_leverage(dec!(10));
     simple_cache
@@ -7778,13 +7786,24 @@ fn test_submit_order_list_margin_account_cum_margin_exceeds_free_balance(
     let saved_process_messages =
         get_process_order_event_handler_messages(&process_order_event_handler);
     assert_eq!(saved_process_messages.len(), 3);
+    assert_eq!(
+        saved_process_messages[0].message().unwrap(),
+        Ustr::from(
+            &OrderDeniedReason::CumulativeInitialMarginExceedsFreeBalance {
+                free_balance: Money::from("500 USDT"),
+                cumulative_initial_margin: Money::from("600.002 USDT"),
+            }
+            .to_string()
+        )
+    );
+
     for event in &saved_process_messages {
         assert_eq!(event.event_type(), OrderEventType::Denied);
     }
 }
 
 #[rstest]
-fn test_submit_order_list_when_cumulative_margin_is_unrepresentable_then_denies(
+fn test_submit_order_list_when_cumulative_initial_margin_is_unrepresentable_then_denies(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
@@ -7877,12 +7896,9 @@ fn test_submit_order_list_when_cumulative_margin_is_unrepresentable_then_denies(
     let saved = get_process_order_event_handler_messages(&process_order_event_handler);
     assert_eq!(saved.len(), 3);
     assert_eq!(saved[0].event_type(), OrderEventType::Denied);
-    assert!(
-        saved[0]
-            .message()
-            .unwrap()
-            .as_str()
-            .starts_with("CUMULATIVE_MARGIN_CALCULATION_FAILED:")
+    assert_eq!(
+        saved[0].message().unwrap(),
+        Ustr::from("CUMULATIVE_INITIAL_MARGIN_CALCULATION_FAILED: total exceeds Money bounds")
     );
 }
 
@@ -8633,11 +8649,15 @@ fn test_submit_order_with_zero_price_on_non_spread_instrument_then_denies(
         saved_process_messages[0].event_type(),
         OrderEventType::Denied
     );
-    assert!(
-        saved_process_messages[0]
-            .message()
-            .unwrap()
-            .starts_with("PRICE_NOT_POSITIVE:")
+    assert_eq!(
+        saved_process_messages[0].message().unwrap(),
+        Ustr::from(
+            &OrderDeniedReason::PriceNotPositive {
+                field: OrderPriceField::Price,
+                price: order.price().unwrap(),
+            }
+            .to_string()
+        )
     );
 }
 
@@ -8802,11 +8822,11 @@ fn test_modify_order_with_invalid_price_precision_then_rejects(
         saved_process_messages[0].event_type(),
         OrderEventType::ModifyRejected
     );
-    assert!(
-        saved_process_messages[0]
-            .message()
-            .unwrap()
-            .starts_with("PRICE_PRECISION_EXCEEDS_MAXIMUM:")
+    assert_eq!(
+        saved_process_messages[0].message().unwrap(),
+        Ustr::from(
+            "PRICE_PRECISION_EXCEEDS_MAXIMUM: field=PRICE, price=1.000001, precision=6, max_precision=5"
+        )
     );
 }
 
@@ -8883,11 +8903,11 @@ fn test_modify_order_with_invalid_quantity_precision_then_rejects(
         saved_process_messages[0].event_type(),
         OrderEventType::ModifyRejected
     );
-    assert!(
-        saved_process_messages[0]
-            .message()
-            .unwrap()
-            .starts_with("QUANTITY_PRECISION_EXCEEDS_MAXIMUM:")
+    assert_eq!(
+        saved_process_messages[0].message().unwrap(),
+        Ustr::from(
+            "QUANTITY_PRECISION_EXCEEDS_MAXIMUM: quantity=100.1, precision=1, max_precision=0",
+        )
     );
 }
 

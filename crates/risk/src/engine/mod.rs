@@ -46,7 +46,7 @@ use nautilus_model::{
         TradingState, TrailingOffsetType, TriggerType,
     },
     events::{
-        OrderDenied, OrderDeniedReason, OrderEventAny, OrderModifyRejected, OrderPriceType,
+        OrderDenied, OrderDeniedReason, OrderEventAny, OrderModifyRejected, OrderPriceField,
         PositionEvent,
     },
     identifiers::{AccountId, InstrumentId},
@@ -875,14 +875,19 @@ impl RiskEngine {
         };
 
         // Check Price
-        let mut reason = Self::check_price(&instrument, command.price, OrderPriceType::Order);
+        let mut reason = Self::check_price(&instrument, command.price, OrderPriceField::Price);
         if let Some(reason) = reason {
             self.reject_modify_order(&order, &reason.to_string());
             return false;
         }
 
         // Check Trigger
-        reason = Self::check_price(&instrument, command.trigger_price, OrderPriceType::Trigger);
+        reason = Self::check_price(
+            &instrument,
+            command.trigger_price,
+            OrderPriceField::TriggerPrice,
+        );
+
         if let Some(reason) = reason {
             self.reject_modify_order(&order, &reason.to_string());
             return false;
@@ -953,7 +958,7 @@ impl RiskEngine {
 
     fn check_order_price(&self, instrument: &InstrumentAny, order: &OrderAny) -> bool {
         if order.price().is_some() {
-            let reason = Self::check_price(instrument, order.price(), OrderPriceType::Order);
+            let reason = Self::check_price(instrument, order.price(), OrderPriceField::Price);
             if let Some(reason) = reason {
                 self.deny_order(order, &reason.to_string());
                 return false; // Denied
@@ -961,8 +966,11 @@ impl RiskEngine {
         }
 
         if order.trigger_price().is_some() {
-            let reason =
-                Self::check_price(instrument, order.trigger_price(), OrderPriceType::Trigger);
+            let reason = Self::check_price(
+                instrument,
+                order.trigger_price(),
+                OrderPriceField::TriggerPrice,
+            );
 
             if let Some(reason) = reason {
                 self.deny_order(order, &reason.to_string());
@@ -1346,7 +1354,7 @@ impl RiskEngine {
                             Err(e) => {
                                 self.deny_order(
                                     order,
-                                    &OrderDeniedReason::TrailingStopCalcFailed { detail: e }
+                                    &OrderDeniedReason::TrailingStopCalculationFailed { detail: e }
                                         .to_string(),
                                 );
                                 return false;
@@ -1564,9 +1572,9 @@ impl RiskEngine {
                 if margin_req > margin_free_val {
                     self.deny_order(
                         order,
-                        &OrderDeniedReason::MarginExceedsFreeBalance {
-                            free: margin_free_val,
-                            margin_required: margin_req,
+                        &OrderDeniedReason::InitialMarginExceedsFreeBalance {
+                            free_balance: margin_free_val,
+                            initial_margin: margin_req,
                         }
                         .to_string(),
                     );
@@ -1579,7 +1587,7 @@ impl RiskEngine {
                         let Some(total) = cum.checked_add(margin_req) else {
                             self.deny_order(
                                 order,
-                                &OrderDeniedReason::CumulativeMarginCalculationFailed {
+                                &OrderDeniedReason::CumulativeInitialMarginCalculationFailed {
                                     detail: "total exceeds Money bounds".to_string(),
                                 }
                                 .to_string(),
@@ -1600,9 +1608,9 @@ impl RiskEngine {
                 {
                     self.deny_order(
                         order,
-                        &OrderDeniedReason::CumMarginExceedsFreeBalance {
-                            free: margin_free_val,
-                            cum_margin,
+                        &OrderDeniedReason::CumulativeInitialMarginExceedsFreeBalance {
+                            free_balance: margin_free_val,
+                            cumulative_initial_margin: cum_margin,
                         }
                         .to_string(),
                     );
@@ -1643,7 +1651,7 @@ impl RiskEngine {
                                 Err(e) => {
                                     self.deny_order(
                                         order,
-                                        &OrderDeniedReason::BettingBalanceCalculationFailed {
+                                        &OrderDeniedReason::BettingBalanceLockedCalculationFailed {
                                             detail: e.to_string(),
                                         }
                                         .to_string(),
@@ -1705,7 +1713,7 @@ impl RiskEngine {
                     self.deny_order(
                         order,
                         &OrderDeniedReason::NotionalExceedsFreeBalance {
-                            free: free_val,
+                            free_balance: free_val,
                             notional,
                         }
                         .to_string(),
@@ -1740,9 +1748,9 @@ impl RiskEngine {
                     {
                         self.deny_order(
                             order,
-                            &OrderDeniedReason::CumNotionalExceedsFreeBalance {
-                                free,
-                                cum_notional: cum_notional_buy,
+                            &OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+                                free_balance: free,
+                                cumulative_notional: cum_notional_buy,
                             }
                             .to_string(),
                         );
@@ -1772,9 +1780,9 @@ impl RiskEngine {
                         {
                             self.deny_order(
                                 order,
-                                &OrderDeniedReason::CumNotionalExceedsFreeBalance {
-                                    free,
-                                    cum_notional: cum_notional_sell,
+                                &OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+                                    free_balance: free,
+                                    cumulative_notional: cum_notional_sell,
                                 }
                                 .to_string(),
                             );
@@ -1814,9 +1822,9 @@ impl RiskEngine {
                         {
                             self.deny_order(
                                 order,
-                                &OrderDeniedReason::CumNotionalExceedsFreeBalance {
-                                    free,
-                                    cum_notional: cum_notional_sell,
+                                &OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+                                    free_balance: free,
+                                    cumulative_notional: cum_notional_sell,
                                 }
                                 .to_string(),
                             );
@@ -1939,9 +1947,9 @@ impl RiskEngine {
         {
             self.deny_order(
                 order,
-                &OrderDeniedReason::CumNotionalExceedsFreeBalance {
-                    free: base_free,
-                    cum_notional: cum_notional_sell,
+                &OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+                    free_balance: base_free,
+                    cumulative_notional: cum_notional_sell,
                 }
                 .to_string(),
             );
@@ -1965,13 +1973,13 @@ impl RiskEngine {
     fn check_price(
         instrument: &InstrumentAny,
         price: Option<Price>,
-        price_type: OrderPriceType,
+        field: OrderPriceField,
     ) -> Option<OrderDeniedReason> {
         let price_val = price?;
 
         if price_val.precision > instrument.price_precision() {
             return Some(OrderDeniedReason::PricePrecisionExceedsMaximum {
-                price_type,
+                field,
                 price: price_val,
                 price_precision: price_val.precision,
                 max_precision: instrument.price_precision(),
@@ -1980,7 +1988,7 @@ impl RiskEngine {
 
         if !instrument.allows_negative_price() && price_val.raw <= 0 {
             return Some(OrderDeniedReason::PriceNotPositive {
-                price_type,
+                field,
                 price: price_val,
             });
         }
