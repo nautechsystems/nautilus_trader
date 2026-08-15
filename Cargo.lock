@@ -2158,25 +2158,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
-name = "cbindgen"
-version = "0.29.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ecb53484c9c167ba674026b656d8a27d7657a58e6066aa902bfb1a4aa00ae20"
-dependencies = [
- "clap",
- "heck",
- "indexmap 2.14.0",
- "log",
- "proc-macro2",
- "quote",
- "serde",
- "serde_json",
- "syn 2.0.119",
- "tempfile",
- "toml 0.9.12+spec-1.1.0",
-]
-
-[[package]]
 name = "cc"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6025,7 +6006,6 @@ dependencies = [
  "anyhow",
  "arc-swap",
  "bytes",
- "cbindgen",
  "criterion",
  "dashmap",
  "iai",
@@ -6625,7 +6605,6 @@ dependencies = [
  "anyhow",
  "arrow 58.4.0",
  "bon",
- "cbindgen",
  "criterion",
  "dashmap",
  "derive_builder",

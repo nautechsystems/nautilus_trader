@@ -24,12 +24,11 @@ crate-type = ["rlib", "staticlib"]
 default = []
 simulation = ["madsim"]
 extension-module = ["python", "pyo3/extension-module"]
-ffi = ["cbindgen"]
+ffi = []
 python = ["pyo3", "pyo3-stub-gen", "strum"]
 
 [package.metadata.cargo-machete]
 ignored = [
-  "cbindgen", # Used by build.rs when the `ffi` feature is enabled
   "toml", # Used by build.rs to read pyproject.toml version metadata
 ]
 
@@ -69,7 +68,6 @@ rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 
 [build-dependencies]
-cbindgen = { workspace = true, optional = true }
 toml = { workspace = true }
 
 [[bench]]

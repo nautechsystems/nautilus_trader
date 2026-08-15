@@ -28,18 +28,13 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-ffi = ["cbindgen", "nautilus-core/ffi"]
+ffi = ["nautilus-core/ffi"]
 python = ["nautilus-core/python", "pyo3", "pyo3-stub-gen"]
 python-arrow = ["python", "arrow"]
 stubs = ["rstest"]
 high-precision = []
 # DeFi domain model requires 18-decimal wei precision, implying `high-precision`
 defi = ["alloy-primitives", "high-precision"]
-
-[package.metadata.cargo-machete]
-ignored = [
-  "cbindgen", # Used by build.rs when the `ffi` feature is enabled
-]
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
@@ -80,9 +75,6 @@ criterion = { workspace = true }
 iai = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
-
-[build-dependencies]
-cbindgen = { workspace = true, optional = true }
 
 [[bench]]
 name = "greeks_criterion"
