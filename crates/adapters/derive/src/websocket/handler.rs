@@ -38,6 +38,7 @@ use serde_json::Value;
 use tokio_tungstenite::tungstenite::Message;
 
 use super::{
+    client::UNAUTHENTICATED_CONNECTION_EPOCH,
     error::DeriveWsError,
     messages::{DeriveWsChannel, DeriveWsFrame, WsSubscribeParams, WsSubscriptionPayload},
 };
@@ -54,6 +55,7 @@ pub(super) enum HandlerCommand {
     Request {
         method: &'static str,
         params: Value,
+        connection_epoch: Option<u64>,
         response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
     },
     /// Gracefully tear down the WebSocket connection.
@@ -79,6 +81,7 @@ pub enum DeriveWsMessage {
 struct SendCommand {
     id: u64,
     token: u64,
+    connection_epoch: u64,
     payload: String,
 }
 
@@ -111,6 +114,7 @@ pub(super) struct FeedHandler {
     send_failure_rx: tokio::sync::mpsc::UnboundedReceiver<SendFailure>,
     send_task: Option<tokio::task::JoinHandle<()>>,
     auth_tracker: AuthTracker,
+    authenticated_epoch: Arc<AtomicU64>,
 }
 
 impl FeedHandler {
@@ -120,6 +124,7 @@ impl FeedHandler {
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
         next_id: Arc<AtomicU64>,
         auth_tracker: AuthTracker,
+        authenticated_epoch: Arc<AtomicU64>,
     ) -> Self {
         let (_, send_failure_rx) = tokio::sync::mpsc::unbounded_channel();
         Self {
@@ -136,6 +141,7 @@ impl FeedHandler {
             send_failure_rx,
             send_task: None,
             auth_tracker,
+            authenticated_epoch,
         }
     }
 
@@ -164,8 +170,13 @@ impl FeedHandler {
                             self.start_send_worker(Arc::clone(&client));
                             self.client = Some(client);
                         }
-                        Some(HandlerCommand::Request { method, params, response_tx }) => {
-                            self.dispatch_request(method, params, response_tx);
+                        Some(HandlerCommand::Request {
+                            method,
+                            params,
+                            connection_epoch,
+                            response_tx,
+                        }) => {
+                            self.dispatch_request(method, params, connection_epoch, response_tx);
                         }
                         Some(HandlerCommand::Disconnect) => {
                             log::debug!("Derive handler received disconnect command");
@@ -198,6 +209,10 @@ impl FeedHandler {
                             if text.as_str() == RECONNECTED {
                                 log::info!("Derive WebSocket reconnected sentinel received");
                                 self.auth_tracker.invalidate();
+                                self.authenticated_epoch.store(
+                                    UNAUTHENTICATED_CONNECTION_EPOCH,
+                                    Ordering::Release,
+                                );
                                 self.restart_send_worker(
                                     "WebSocket reconnected before response was received",
                                 );
@@ -275,6 +290,43 @@ impl FeedHandler {
         &mut self,
         method: &'static str,
         params: Value,
+        connection_epoch: Option<u64>,
+        response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
+    ) {
+        let Some(client) = self.client.as_ref() else {
+            let _ = response_tx.send(Err(DeriveWsError::NotConnected));
+            return;
+        };
+        let current_epoch = client.connection_epoch();
+        let connection_epoch = if method.starts_with("private/") {
+            let authenticated_epoch = self.authenticated_epoch.load(Ordering::Acquire);
+            if !client.connection_mode().is_active() || authenticated_epoch != current_epoch {
+                let _ = response_tx.send(Err(DeriveWsError::Authentication {
+                    operation: method.to_string(),
+                    reason: "WebSocket session is not authenticated".to_string(),
+                }));
+                return;
+            }
+            authenticated_epoch
+        } else {
+            connection_epoch.unwrap_or(current_epoch)
+        };
+
+        if !client.connection_mode().is_active() || connection_epoch != current_epoch {
+            let _ = response_tx.send(Err(DeriveWsError::transport(format!(
+                "connection changed before `{method}` was sent",
+            ))));
+            return;
+        }
+
+        self.enqueue_request(method, params, connection_epoch, response_tx);
+    }
+
+    fn enqueue_request(
+        &mut self,
+        method: &'static str,
+        params: Value,
+        connection_epoch: u64,
         response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
     ) {
         let Some(send_tx) = self.send_tx.clone() else {
@@ -295,11 +347,15 @@ impl FeedHandler {
         self.pending
             .insert(id, PendingRequest { token, response_tx });
         log::debug!("Derive WebSocket sending `{method}` id={id}");
-        if let Err(e) = send_tx.send(SendCommand { id, token, payload })
-            && self
-                .pending
-                .get(&id)
-                .is_some_and(|pending| pending.token == token)
+        if let Err(e) = send_tx.send(SendCommand {
+            id,
+            token,
+            connection_epoch,
+            payload,
+        }) && self
+            .pending
+            .get(&id)
+            .is_some_and(|pending| pending.token == token)
             && let Some(pending) = self.pending.remove(&id)
         {
             let _ = pending
@@ -405,7 +461,9 @@ async fn run_send_worker(
     failure_tx: tokio::sync::mpsc::UnboundedSender<SendFailure>,
 ) {
     while let Some(command) = send_rx.recv().await {
-        if let Err(e) = client.send_text(command.payload, None).await
+        if let Err(e) = client
+            .send_text_on_connection(command.payload, None, command.connection_epoch)
+            .await
             && failure_tx
                 .send(SendFailure {
                     id: command.id,
@@ -459,6 +517,10 @@ mod tests {
 
     use super::*;
 
+    fn unauthenticated_epoch() -> Arc<AtomicU64> {
+        Arc::new(AtomicU64::new(u64::MAX))
+    }
+
     #[rstest]
     fn test_subscribe_params_carries_single_channel() {
         let params = subscribe_params(DeriveWsChannel::ticker_slim("ETH-PERP", "1000"));
@@ -504,11 +566,18 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, next_id, auth_tracker);
+        let mut handler = FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            next_id,
+            auth_tracker,
+            unauthenticated_epoch(),
+        );
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         let params = serde_json::to_value(WsSubscribeParams { channels: vec![] }).unwrap();
-        handler.dispatch_request("public/login", params, response_tx);
+        handler.dispatch_request("public/login", params, None, response_tx);
 
         let outcome = response_rx.await.expect("oneshot resolved");
         match outcome {
@@ -525,14 +594,21 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, next_id, auth_tracker);
+        let mut handler = FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            next_id,
+            auth_tracker,
+            unauthenticated_epoch(),
+        );
         let (send_tx, mut send_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.send_tx = Some(send_tx);
 
         let (first_tx, _first_rx) = tokio::sync::oneshot::channel();
         let (second_tx, _second_rx) = tokio::sync::oneshot::channel();
-        handler.dispatch_request("first", json!({"sequence": 1}), first_tx);
-        handler.dispatch_request("second", json!({"sequence": 2}), second_tx);
+        handler.enqueue_request("first", json!({"sequence": 1}), 0, first_tx);
+        handler.enqueue_request("second", json!({"sequence": 2}), 0, second_tx);
 
         let first = send_rx.recv().await.expect("first queued send");
         let second = send_rx.recv().await.expect("second queued send");
@@ -555,13 +631,19 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler =
-            FeedHandler::new(signal, cmd_rx, raw_rx, Arc::clone(&next_id), auth_tracker);
+        let mut handler = FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            Arc::clone(&next_id),
+            auth_tracker,
+            unauthenticated_epoch(),
+        );
         let (send_tx, mut send_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.send_tx = Some(send_tx);
 
         let (old_tx, old_rx) = tokio::sync::oneshot::channel();
-        handler.dispatch_request("first", json!({}), old_tx);
+        handler.enqueue_request("first", json!({}), 0, old_tx);
         let old_send = send_rx.recv().await.expect("old queued send");
         let old_pending = handler.pending.remove(&old_send.id).unwrap();
         old_pending.response_tx.send(Ok(Value::Null)).unwrap();
@@ -569,7 +651,7 @@ mod tests {
 
         next_id.store(old_send.id, Ordering::Relaxed);
         let (new_tx, new_rx) = tokio::sync::oneshot::channel();
-        handler.dispatch_request("second", json!({}), new_tx);
+        handler.enqueue_request("second", json!({}), 0, new_tx);
         let new_send = send_rx.recv().await.expect("new queued send");
         handler.handle_send_failure(SendFailure {
             id: old_send.id,
@@ -601,7 +683,14 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, next_id, auth_tracker);
+        let mut handler = FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            next_id,
+            auth_tracker,
+            unauthenticated_epoch(),
+        );
         let (send_tx, _send_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.send_tx = Some(send_tx);
 
@@ -611,8 +700,8 @@ mod tests {
 
         let (first_tx, first_rx) = tokio::sync::oneshot::channel();
         let (second_tx, second_rx) = tokio::sync::oneshot::channel();
-        handler.dispatch_request("first", json!({}), first_tx);
-        handler.dispatch_request("second", json!({}), second_tx);
+        handler.enqueue_request("first", json!({}), 0, first_tx);
+        handler.enqueue_request("second", json!({}), 0, second_tx);
         handler.shutdown_send_path("disconnect requested");
         tokio::task::yield_now().await;
 
@@ -634,7 +723,14 @@ mod tests {
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, next_id, auth_tracker);
+        let mut handler = FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            next_id,
+            auth_tracker,
+            unauthenticated_epoch(),
+        );
         let (_failure_tx, failure_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.send_failure_rx = failure_rx;
         drop(cmd_tx);
@@ -655,11 +751,18 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, next_id, auth_tracker);
+        let mut handler = FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            next_id,
+            auth_tracker,
+            unauthenticated_epoch(),
+        );
         let (send_tx, _send_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.send_tx = Some(send_tx);
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-        handler.dispatch_request("private/order", json!({}), response_tx);
+        handler.enqueue_request("request", json!({}), 0, response_tx);
 
         handler.fail_uncorrelated_error(crate::http::models::JsonRpcError {
             code: -32700,
@@ -691,13 +794,20 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, next_id, auth_tracker);
+        let mut handler = FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            next_id,
+            auth_tracker,
+            unauthenticated_epoch(),
+        );
         let (send_tx, _send_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.send_tx = Some(send_tx);
         let (first_tx, first_rx) = tokio::sync::oneshot::channel();
         let (second_tx, second_rx) = tokio::sync::oneshot::channel();
-        handler.dispatch_request("first", json!({}), first_tx);
-        handler.dispatch_request("second", json!({}), second_tx);
+        handler.enqueue_request("first", json!({}), 0, first_tx);
+        handler.enqueue_request("second", json!({}), 0, second_tx);
 
         handler.fail_uncorrelated_error(crate::http::models::JsonRpcError {
             code: -32600,

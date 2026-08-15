@@ -2314,6 +2314,7 @@ mod tests {
     use std::{
         cell::{Cell, RefCell},
         rc::Rc,
+        sync::Arc,
     };
 
     use nautilus_common::{
@@ -2325,22 +2326,35 @@ mod tests {
         cache::Cache,
         clock::TestClock,
         enums::{ComponentState, Environment},
+        messages::execution::SubmitOrder,
         msgbus,
-        msgbus::{MessageBus, TypedHandler, switchboard::get_event_order_topic},
+        msgbus::{
+            MessageBus, MessagingSwitchboard, TypedHandler, set_message_bus,
+            switchboard::get_event_order_topic,
+        },
         nautilus_actor,
+        runner::{
+            SyncTradingCommandSender, drain_trading_cmd_queue, replace_exec_cmd_sender,
+            trading_cmd_queue_is_empty,
+        },
     };
     use nautilus_core::UUID4;
     use nautilus_data::engine::{DataEngine, config::DataEngineConfig};
     use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
     use nautilus_model::{
-        enums::{OrderType, PositionAdjustmentType},
+        enums::{OrderSide, OrderStatus, OrderType, PositionAdjustmentType},
         events::{
-            OrderAccepted, OrderFilled, OrderRejected, OrderUpdated, PositionAdjusted,
-            order::spec::{OrderFilledSpec, OrderRejectedSpec, OrderUpdatedSpec},
+            OrderAccepted, OrderDenied, OrderFilled, OrderRejected, OrderUpdated, PositionAdjusted,
+            order::spec::{
+                OrderAcceptedSpec, OrderFilledSpec, OrderRejectedSpec, OrderSubmittedSpec,
+                OrderUpdatedSpec,
+            },
         },
         identifiers::{
             AccountId, ActorId, ClientOrderId, ComponentId, InstrumentId, PositionId, TraderId,
+            VenueOrderId,
         },
+        instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
         orders::{OrderAny, OrderTestBuilder},
         stubs::TestDefault,
         types::Quantity,
@@ -2384,6 +2398,9 @@ mod tests {
     struct TestExecAlgorithm {
         core: ExecutionAlgorithmCore,
         fail_start: bool,
+        submit_on_accept: Option<OrderAny>,
+        accepted_events: usize,
+        denied_events: usize,
         rejected_events: usize,
         updated_events: usize,
         filled_events: usize,
@@ -2395,6 +2412,9 @@ mod tests {
             Self {
                 core: ExecutionAlgorithmCore::new(config),
                 fail_start: false,
+                submit_on_accept: None,
+                accepted_events: 0,
+                denied_events: 0,
                 rejected_events: 0,
                 updated_events: 0,
                 filled_events: 0,
@@ -2419,6 +2439,18 @@ mod tests {
 
         fn on_order_rejected(&mut self, _event: OrderRejected) {
             self.rejected_events += 1;
+        }
+
+        fn on_order_accepted(&mut self, _event: OrderAccepted) {
+            self.accepted_events += 1;
+
+            if let Some(order) = self.submit_on_accept.take() {
+                self.submit_order(order, None, None).unwrap();
+            }
+        }
+
+        fn on_order_denied(&mut self, _event: OrderDenied) {
+            self.denied_events += 1;
         }
 
         fn on_order_updated(&mut self, _event: OrderUpdated) {
@@ -2996,6 +3028,183 @@ mod tests {
         assert_eq!(trader.exec_algorithm_count(), 1);
         assert_eq!(trader.component_count(), 1);
         assert!(trader.exec_algorithm_ids().contains(&exec_algorithm_id));
+    }
+
+    #[rstest]
+    fn test_exec_algorithm_submit_from_order_event_defers_risk_denial() {
+        std::thread::spawn(|| {
+            msgbus::get_message_bus().borrow_mut().dispose();
+            replace_exec_cmd_sender(Arc::new(SyncTradingCommandSender));
+
+            let trader_id = TraderId::test_default();
+            let instance_id = UUID4::new();
+            let strategy_id = StrategyId::from("Callback-001");
+            let exec_algorithm_id = ExecAlgorithmId::from("CALLBACK");
+            let account_id = AccountId::from("SIM-001");
+            let venue_order_id = VenueOrderId::from("V-PRIMARY-001");
+            let parent_order_id = ClientOrderId::from("O-PRIMARY-001");
+            let child_order_id = ClientOrderId::from("O-CHILD-001");
+            let clock_factory = ClockFactory::test_default();
+            let clock = clock_factory.clock();
+            let msgbus = Rc::new(RefCell::new(MessageBus::new(
+                trader_id,
+                instance_id,
+                Some("test".to_string()),
+                None,
+            )));
+            set_message_bus(msgbus);
+
+            let cache = Rc::new(RefCell::new(Cache::default()));
+            let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+            let instrument_id = instrument.id();
+            cache.borrow_mut().add_instrument(instrument).unwrap();
+            let portfolio = Rc::new(RefCell::new(Portfolio::new(
+                clock.clone(),
+                cache.clone(),
+                None,
+            )));
+            let risk_engine = Rc::new(RefCell::new(RiskEngine::new(
+                RiskEngineConfig::default(),
+                portfolio.borrow().clone_shallow(),
+                clock.clone(),
+                cache.clone(),
+            )));
+            let exec_engine = Rc::new(RefCell::new(ExecutionEngine::new(
+                clock.clone(),
+                cache.clone(),
+                Some(ExecutionEngineConfig::default()),
+            )));
+            RiskEngine::register_msgbus_handlers(&risk_engine);
+            ExecutionEngine::register_msgbus_handlers(&exec_engine);
+
+            let parent = OrderTestBuilder::new(OrderType::Market)
+                .trader_id(trader_id)
+                .strategy_id(strategy_id)
+                .instrument_id(instrument_id)
+                .client_order_id(parent_order_id)
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from("1000"))
+                .exec_algorithm_id(exec_algorithm_id)
+                .exec_spawn_id(parent_order_id)
+                .build();
+            let child = OrderTestBuilder::new(OrderType::Market)
+                .trader_id(trader_id)
+                .strategy_id(strategy_id)
+                .instrument_id(instrument_id)
+                .client_order_id(child_order_id)
+                .side(OrderSide::NoOrderSide)
+                .quantity(Quantity::from("100"))
+                .exec_algorithm_id(exec_algorithm_id)
+                .exec_spawn_id(child_order_id)
+                .build();
+
+            let config = ExecutionAlgorithmConfig {
+                exec_algorithm_id: Some(exec_algorithm_id),
+                ..Default::default()
+            };
+            let mut exec_algorithm = TestExecAlgorithm::new(config);
+            exec_algorithm.submit_on_accept = Some(child);
+            let mut trader = Trader::new(
+                trader_id,
+                instance_id,
+                Environment::Backtest,
+                clock_factory,
+                cache.clone(),
+                portfolio,
+            );
+            trader.add_exec_algorithm(exec_algorithm).unwrap();
+            trader.start_components().unwrap();
+
+            cache
+                .borrow_mut()
+                .add_order(parent.clone(), None, None, false)
+                .unwrap();
+            let submit = SubmitOrder::new(
+                trader_id,
+                None,
+                strategy_id,
+                instrument_id,
+                parent.client_order_id(),
+                parent.init_event().clone(),
+                Some(exec_algorithm_id),
+                None,
+                None,
+                UUID4::new(),
+                clock.borrow().timestamp_ns(),
+                None,
+            );
+            get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner())
+                .execute(TradingCommand::SubmitOrder(submit))
+                .unwrap();
+
+            let submitted = OrderEventAny::Submitted(
+                OrderSubmittedSpec::builder()
+                    .trader_id(trader_id)
+                    .strategy_id(strategy_id)
+                    .instrument_id(instrument_id)
+                    .client_order_id(parent.client_order_id())
+                    .account_id(account_id)
+                    .build(),
+            );
+            let accepted = OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder()
+                    .trader_id(trader_id)
+                    .strategy_id(strategy_id)
+                    .instrument_id(instrument_id)
+                    .client_order_id(parent.client_order_id())
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .build(),
+            );
+            msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), submitted);
+            msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), accepted);
+
+            {
+                let cache = cache.borrow();
+                let parent = cache.order(&parent.client_order_id()).unwrap();
+                let child = cache.order(&child_order_id).unwrap();
+                let exec_algorithm =
+                    get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner());
+
+                assert!(!trading_cmd_queue_is_empty());
+                assert_eq!(risk_engine.borrow().command_count(), 0);
+                assert_eq!(exec_engine.borrow().event_count(), 2);
+                assert_eq!(parent.status(), OrderStatus::Accepted);
+                assert_eq!(parent.event_count(), 3);
+                assert_eq!(child.status(), OrderStatus::Initialized);
+                assert_eq!(child.event_count(), 1);
+                assert_eq!(exec_algorithm.accepted_events, 1);
+                assert_eq!(exec_algorithm.denied_events, 0);
+                assert!(exec_algorithm.submit_on_accept.is_none());
+            }
+
+            drain_trading_cmd_queue();
+
+            {
+                let cache = cache.borrow();
+                let parent = cache.order(&parent.client_order_id()).unwrap();
+                let child = cache.order(&child_order_id).unwrap();
+                let exec_algorithm =
+                    get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner());
+
+                assert!(trading_cmd_queue_is_empty());
+                assert_eq!(risk_engine.borrow().command_count(), 1);
+                assert_eq!(exec_engine.borrow().event_count(), 3);
+                assert_eq!(parent.status(), OrderStatus::Accepted);
+                assert_eq!(parent.event_count(), 3);
+                assert_eq!(child.status(), OrderStatus::Denied);
+                assert_eq!(child.event_count(), 2);
+                assert_eq!(
+                    child.last_event().message(),
+                    Some("INVALID_ORDER_SIDE: NO_ORDER_SIDE".into())
+                );
+                assert_eq!(exec_algorithm.accepted_events, 1);
+                assert_eq!(exec_algorithm.denied_events, 1);
+                assert!(exec_algorithm.submit_on_accept.is_none());
+            }
+        })
+        .join()
+        .unwrap();
     }
 
     #[rstest]

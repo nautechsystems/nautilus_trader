@@ -93,11 +93,14 @@ Released on TBD (UTC).
 - Fixed `f32` exponential approximation outside its normal exponent range (#4709), thanks @folknor
 - Fixed orderless position cache indexes and replayed flips (#4688), thanks @pengpengyi92
 - Fixed portfolio Greeks failing on closed positions (#4700), thanks @folknor
+- Fixed Betfair stream reauthentication and subscription replay after session replacement
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
 - Fixed Databento MBO snapshots advancing the incremental sequence (#4686), thanks @faysou
 - Fixed Derive cancel‑only replacements and reused labels during order reconciliation
+- Fixed Derive WebSocket recovery, subscription replay, and silent connection detection
 - Fixed Hyperliquid historical candle timestamps and unfinished candle filtering (#4727), thanks @HKOWL
+- Fixed Hyperliquid order and position reconciliation across standard and HIP‑3 dexes
 - Fixed Interactive Brokers continuous futures historical bar requests (#4664), thanks @dfjmax
 - Fixed Interactive Brokers deactivated open‑order processing
 - Fixed Interactive Brokers delayed market data not emitting `QuoteTick` values (#4719), thanks @faysou
@@ -122,6 +125,7 @@ Released on TBD (UTC).
 - Improved indicator test tolerances across floating‑point magnitudes (#4718), thanks @mkzung
 - Improved published‑registry verifier tests to ignore fork metadata (#4715), thanks @xxxxxx-oss
 - Improved Coinbase request tests by removing redundant waits (#4637), thanks @pengpengyi92
+- Improved WebSocket reconnect replay to drop Ping, Pong, and Close frames instead of resending them
 - Improved network crate tests for retries, rate limits, mutual TLS, HTTP, socket reconnects, and WebSocket messages
 - Improved Polymarket order response tests for the `tradeIDs` matched shape and batch submission legs
 - Refactored the Redis cache adapter to delegate deletions and custom data writes to `RedisCacheDatabase`, removing duplicated implementations (Rust)

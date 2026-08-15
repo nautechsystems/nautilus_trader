@@ -1064,7 +1064,7 @@ mod tests {
             }
         });
         msgbus::register_trading_command_endpoint(
-            MessagingSwitchboard::risk_engine_execute(),
+            MessagingSwitchboard::risk_engine_queue_execute(),
             handler,
         );
 
@@ -1361,7 +1361,7 @@ mod tests {
             }
         });
         msgbus::register_trading_command_endpoint(
-            MessagingSwitchboard::risk_engine_execute(),
+            MessagingSwitchboard::risk_engine_queue_execute(),
             handler,
         );
 
@@ -1398,7 +1398,7 @@ mod tests {
             }
         });
         msgbus::register_trading_command_endpoint(
-            MessagingSwitchboard::risk_engine_execute(),
+            MessagingSwitchboard::risk_engine_queue_execute(),
             handler,
         );
 
@@ -1437,7 +1437,7 @@ mod tests {
             }
         });
         msgbus::register_trading_command_endpoint(
-            MessagingSwitchboard::risk_engine_execute(),
+            MessagingSwitchboard::risk_engine_queue_execute(),
             handler,
         );
 

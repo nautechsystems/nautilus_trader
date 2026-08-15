@@ -4,7 +4,7 @@ A data actor receives requested and subscribed data, handles system events, and 
 state. In Python, extend the `DataActor` class; in Rust, implement the `DataActor` trait. A strategy
 adds order‑management capabilities.
 
-**Key capabilities**:
+**Capabilities**:
 
 - Market and custom data subscriptions and requests.
 - Custom data and signal publishing.

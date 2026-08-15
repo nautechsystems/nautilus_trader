@@ -791,6 +791,7 @@ impl LighterExecutionClient {
                                 } else {
                                     dispatch.replace_positions_except(&reports, &retained_positions)
                                 };
+                                dispatch.record_position_snapshot(&skipped_market_ids);
                                 log::debug!(
                                     "Lighter position snapshot: positions={position_count}, skipped_markets={}, removed={}",
                                     skipped_market_ids.len(),
@@ -852,6 +853,7 @@ impl LighterExecutionClient {
                                 emitter.send_account_state(*state);
                             }
                             Some(NautilusWsMessage::Reconnected { connection_epoch }) => {
+                                dispatch.invalidate_position_snapshot();
                                 nonce_ready_connection_epoch.store(
                                     NONCE_CONNECTION_EPOCH_UNAVAILABLE,
                                     Ordering::Release,
@@ -4210,29 +4212,48 @@ impl ExecutionClient for LighterExecutionClient {
             {
                 Ok(response) => response,
                 Err(e) => {
-                    log::warn!(
-                        "Lighter active orders fetch failed for market_index={market_index}: {}",
-                        scrub_auth(&format!("{e:#}")),
-                    );
-                    continue;
+                    if cmd.open_only {
+                        log::warn!(
+                            "Lighter active orders fetch failed for market_index={market_index}: {}",
+                            scrub_auth(&format!("{e:#}")),
+                        );
+                        continue;
+                    }
+                    return Err(anyhow::Error::new(e).context(format!(
+                        "failed to fetch Lighter active orders for market_index={market_index}"
+                    )));
                 }
             };
 
             for order in &active.orders {
                 self.dispatch.note_active_market(order.market_index);
 
-                if let Some(report) =
-                    parse_http_order_to_report(order, &self.registry, self.core.account_id, ts_init)
-                {
-                    restore_reconciled_order(
-                        &self.core,
-                        &self.dispatch,
-                        order,
-                        report.order_status.is_closed(),
+                let Some(report) = parse_http_order_to_report(
+                    order,
+                    &self.registry,
+                    self.core.account_id,
+                    ts_init,
+                ) else {
+                    if cmd.open_only {
+                        log::warn!(
+                            "Failed to parse Lighter active order {} for market_index={market_index}",
+                            order.order_id,
+                        );
+                        continue;
+                    }
+                    anyhow::bail!(
+                        "failed to parse Lighter active order {} for market_index={market_index}",
+                        order.order_id,
                     );
-                    let report = self.dispatch.translate_order_cloid(report);
-                    reports.push(self.dispatch.preserve_pending_order_status(report));
-                }
+                };
+                restore_reconciled_order(
+                    &self.core,
+                    &self.dispatch,
+                    order,
+                    report.order_status.is_closed(),
+                );
+                let report = self.dispatch.translate_order_cloid(report);
+                reports.push(self.dispatch.preserve_pending_order_status(report));
             }
         }
 
@@ -4289,7 +4310,10 @@ impl ExecutionClient for LighterExecutionClient {
                                     self.core.account_id,
                                     ts_init,
                                 ) else {
-                                    continue;
+                                    anyhow::bail!(
+                                        "failed to parse Lighter inactive order {} for market_index={market_id}",
+                                        order.order_id,
+                                    );
                                 };
 
                                 if cmd.start.is_some_and(|start| report.ts_last < start)
@@ -4321,11 +4345,9 @@ impl ExecutionClient for LighterExecutionClient {
                             }
                         }
                         Err(e) => {
-                            log::warn!(
-                                "Lighter inactive orders fetch failed for market_index={market_id}: {}",
-                                scrub_auth(&format!("{e:#}")),
-                            );
-                            break;
+                            return Err(anyhow::Error::new(e).context(format!(
+                                "failed to fetch Lighter inactive orders for market_index={market_id}"
+                            )));
                         }
                     }
                 }
@@ -4407,10 +4429,13 @@ impl ExecutionClient for LighterExecutionClient {
 
             for trade in &response.trades {
                 let Some(instrument_id) = self.registry.instrument_id(trade.market_id) else {
-                    continue;
+                    anyhow::bail!(
+                        "no Lighter instrument registered for fill market_index={}",
+                        trade.market_id,
+                    );
                 };
                 let Some(instrument) = self.core.cache().instrument(&instrument_id).cloned() else {
-                    continue;
+                    anyhow::bail!("Lighter fill instrument {instrument_id} missing from cache");
                 };
 
                 match parse_ws_fill_report(
@@ -4454,7 +4479,7 @@ impl ExecutionClient for LighterExecutionClient {
                         reports.push(report);
                     }
                     Ok(None) => {}
-                    Err(e) => log::warn!("Lighter fill parse failed: {e}"),
+                    Err(e) => return Err(e).context("failed to parse Lighter fill report"),
                 }
             }
 
@@ -4542,15 +4567,35 @@ impl ExecutionClient for LighterExecutionClient {
         let position_cmd =
             GeneratePositionStatusReports::new(UUID4::new(), ts_init, None, None, None, None, None);
 
-        // Each sub-call degrades independently; see `unwrap_reports_or_warn`.
-        let mut order_reports = unwrap_reports_or_warn(
-            "order",
-            self.generate_order_status_reports(&order_cmd).await,
-        );
-        let mut fill_reports =
-            unwrap_reports_or_warn("fill", self.generate_fill_reports(fill_cmd).await);
+        // Preserve active orders if the combined active and historical request fails after its
+        // active leg. The bounded historical contract remains incomplete in that case.
+        let order_result = self.generate_order_status_reports(&order_cmd).await;
+        let (mut order_reports, mut reports_complete) = match order_result {
+            Ok(reports) => (reports, true),
+            Err(e) => {
+                log::warn!(
+                    "Lighter order report generation failed: {}",
+                    scrub_auth(&format!("{e:#}")),
+                );
+                let active_cmd = GenerateOrderStatusReports::new(
+                    UUID4::new(),
+                    ts_init,
+                    true,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                );
+                let active_result = self.generate_order_status_reports(&active_cmd).await;
+                (unwrap_reports_or_warn("active order", active_result), false)
+            }
+        };
+        let fill_result = self.generate_fill_reports(fill_cmd).await;
+        reports_complete &= fill_result.is_ok();
+        let mut fill_reports = unwrap_reports_or_warn("fill", fill_result);
 
-        let reported_orders: AHashSet<VenueOrderId> = order_reports
+        let mut reported_orders: AHashSet<VenueOrderId> = order_reports
             .iter()
             .map(|report| report.venue_order_id)
             .collect();
@@ -4565,6 +4610,7 @@ impl ExecutionClient for LighterExecutionClient {
 
         for market_index in fill_markets {
             let Some(instrument_id) = self.registry.instrument_id(market_index) else {
+                reports_complete = false;
                 continue;
             };
             let order_cmd = GenerateOrderStatusReports::new(
@@ -4577,10 +4623,18 @@ impl ExecutionClient for LighterExecutionClient {
                 None,
                 None,
             );
-            order_reports.extend(unwrap_reports_or_warn(
-                "order",
-                self.generate_order_status_reports(&order_cmd).await,
-            ));
+            let order_result = self.generate_order_status_reports(&order_cmd).await;
+            reports_complete &= order_result.is_ok();
+            let reports = unwrap_reports_or_warn("order", order_result);
+            reported_orders.extend(reports.iter().map(|report| report.venue_order_id));
+            order_reports.extend(reports);
+        }
+
+        if fill_reports
+            .iter()
+            .any(|report| !reported_orders.contains(&report.venue_order_id))
+        {
+            reports_complete = false;
         }
 
         for fill_report in &mut fill_reports {
@@ -4593,10 +4647,61 @@ impl ExecutionClient for LighterExecutionClient {
             }
         }
 
-        let position_reports = unwrap_reports_or_warn(
-            "position",
-            self.generate_position_status_reports(&position_cmd).await,
-        );
+        let position_result = self.generate_position_status_reports(&position_cmd).await;
+        reports_complete &= position_result.is_ok();
+        let mut position_reports = unwrap_reports_or_warn("position", position_result);
+
+        if lookback_start.is_some() {
+            let touched_instruments: AHashSet<InstrumentId> = order_reports
+                .iter()
+                .map(|report| report.instrument_id)
+                .chain(fill_reports.iter().map(|report| report.instrument_id))
+                .collect();
+            let position_instruments: AHashSet<InstrumentId> = position_reports
+                .iter()
+                .map(|report| report.instrument_id)
+                .collect();
+            let cache = self.core.cache();
+            let mut touched_instruments: Vec<InstrumentId> =
+                touched_instruments.into_iter().collect();
+            touched_instruments.sort_unstable();
+
+            for instrument_id in touched_instruments {
+                let Some(instrument) = cache.instrument(&instrument_id) else {
+                    reports_complete = false;
+                    continue;
+                };
+
+                if !matches!(instrument, InstrumentAny::CryptoPerpetual(_)) {
+                    continue;
+                }
+                let Some(market_id) = self.registry.market_index(&instrument_id) else {
+                    reports_complete = false;
+                    continue;
+                };
+
+                if !self.dispatch.position_snapshot_covers(market_id) {
+                    reports_complete = false;
+                    continue;
+                }
+
+                if position_instruments.contains(&instrument_id) {
+                    continue;
+                }
+
+                position_reports.push(PositionStatusReport::new(
+                    self.core.account_id,
+                    instrument_id,
+                    PositionSideSpecified::Flat,
+                    Quantity::zero(instrument.size_precision()),
+                    ts_init,
+                    ts_init,
+                    Some(UUID4::new()),
+                    None,
+                    None,
+                ));
+            }
+        }
 
         let mut mass_status = ExecutionMassStatus::new(
             self.core.client_id,
@@ -4605,6 +4710,7 @@ impl ExecutionClient for LighterExecutionClient {
             ts_init,
             None,
         );
+        mass_status.set_report_window(lookback_start, reports_complete);
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);

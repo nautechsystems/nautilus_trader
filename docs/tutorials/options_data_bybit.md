@@ -261,7 +261,7 @@ This aggregation happens inside NautilusTrader. Bybit publishes
 per-contract option market data and does not expose a native option
 chain stream in the V5 public WebSocket docs.
 
-### Key types
+### Chain types
 
 **`OptionSeriesId`** identifies a single expiry series:
 

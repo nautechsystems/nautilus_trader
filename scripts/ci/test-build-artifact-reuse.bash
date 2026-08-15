@@ -109,6 +109,30 @@ grep -Fq -- "- id: python-test-collection" "$REPO_ROOT/.pre-commit-config.yaml" 
   fail "Python collection is not registered with pre-commit"
 grep -Fq "entry: make pytest-collect-fast" "$REPO_ROOT/.pre-commit-config.yaml" ||
   fail "Pre-commit does not use fast Python collection"
+
+pre_flight_recipe=$(sed -n '/^pre-flight:  /,/^\t\$(call timer_end,Pre-flight)/p' "$REPO_ROOT/Makefile")
+[[ "$pre_flight_recipe" == *'check-code-sim'*'cargo-test-doc'*'cargo-test-sim'*'cargo-test-extras'* ]] ||
+  fail "Pre-flight Rust checks do not preserve early DST linting and doctest disk safety"
+
+: > "$CARGO_LOG"
+PATH="$MOCK_BIN:$PATH" \
+  CARGO_LOG="$CARGO_LOG" \
+  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory \
+  CARGO_CI_PROFILE=nextest \
+  NEXTEST_PROFILE=ci \
+  cargo-test-sim > /dev/null
+[[ "$(grep -Fc 'nextest run ' "$CARGO_LOG")" -eq 2 ]] ||
+  fail "DST smoke tests did not use two feature-coherent nextest runs"
+if grep -Eq '^build ' "$CARGO_LOG"; then
+  fail "DST smoke tests used a redundant Cargo build"
+fi
+grep -Fq \
+  'nextest run -p nautilus-common -p nautilus-core -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
+  "$CARGO_LOG" || fail "Standard-precision DST tests did not compile the full package scope together"
+grep -Fq \
+  'nextest run -p nautilus-common -p nautilus-execution --lib --tests --features simulation,high-precision' \
+  "$CARGO_LOG" || fail "High-precision DST tests did not share one feature-coherent build"
+
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   '' \

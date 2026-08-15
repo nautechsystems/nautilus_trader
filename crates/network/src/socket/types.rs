@@ -37,6 +37,8 @@ pub type TcpMessageHandler = Arc<dyn Fn(&[u8]) + Send + Sync>;
 pub enum WriterCommand<W = TcpWriter> {
     /// Replaces the writer after reconnection and reports whether buffered messages were drained.
     Update(W, tokio::sync::oneshot::Sender<bool>),
+    /// Replaces the writer, sends reconnect replay first, then drains buffered messages.
+    UpdateWithReplay(W, Vec<Bytes>, tokio::sync::oneshot::Sender<bool>),
     /// Sends data to the server.
     Send(Bytes),
 }

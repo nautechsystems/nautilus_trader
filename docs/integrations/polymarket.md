@@ -183,7 +183,7 @@ public data client does not require these credentials.
 
 When setting up NautilusTrader to work with Polymarket, it's crucial to properly configure the necessary parameters, particularly the private key.
 
-**Key parameters**:
+**Parameters**:
 
 - `private_key`: The private key for your wallet used to sign orders. The interpretation depends on your `signature_type` configuration. If not explicitly provided in the configuration, it will automatically source the `POLYMARKET_PK` environment variable.
 - `funder`: The **pUSD** funding wallet address used for funding trades. If not provided,
@@ -620,18 +620,41 @@ For the latest public schedule, see Polymarket's
 
 ### Backtest fee model
 
-Use `ProbabilityPriceFeeModel` for the current exponent `1` schedule. It reads maker and taker rates
-from the binary option instrument and applies the same probability‑price curve:
+Use `PolymarketFeeModel` for backtests that include taker fees and maker rebates. The model reads
+`rate`, `rebateRate`, `exponent`, and `takerOnly` from each binary option instrument's
+`fee_schedule`. It requires a maker or taker liquidity side, a fill price in `[0, 1]`, and a
+taker‑only schedule with exponent `1`. Unsupported instruments and invalid inputs return an error;
+an instrument without a fee schedule produces zero commission.
 
-```python
-from nautilus_trader.execution import ProbabilityPriceFeeModel
+```rust tab="Rust"
+use nautilus_execution::models::fee::FeeModelHandle;
+use nautilus_polymarket::models::PolymarketFeeModel;
 
-fee_model = ProbabilityPriceFeeModel()
+let fee_model = FeeModelHandle::new(PolymarketFeeModel);
 ```
 
-Pass this object to `BacktestVenueConfig.fee_model`. It does not support other fee exponents or
-future maker‑rebate distributions, so state those assumptions explicitly in the backtest
-configuration.
+```python tab="Python"
+from nautilus_trader.adapters.polymarket import PolymarketFeeModel
+
+fee_model = PolymarketFeeModel()
+```
+
+Pass the Rust handle through
+`nautilus_backtest::config::SimulatedVenueConfig::builder().fee_model(...)`. In Python, pass the model
+to `BacktestEngine.add_venue` as `fee_model`. `BacktestVenueConfig.fee_model` accepts built‑in fee
+models only.
+
+:::note
+For maker fills, `fee_equivalent` is the platform fee formula above using the schedule's taker
+`rate`. The model credits `fee_equivalent * rebateRate` as negative commission. This approximates
+Polymarket's daily pool allocation because a backtest does not know the total fee equivalent from
+other makers in that market.
+
+Live maker fills have zero commission; Polymarket pays the actual pUSD rebate separately each day.
+The model does not represent that payment as a separate event, and it does not model competition
+between makers, daily aggregation, or the minimum payout threshold. See Polymarket's
+[Maker Rebates Program](https://docs.polymarket.com/programs/maker-rebates) for the venue formula.
+:::
 
 ## Reconciliation
 

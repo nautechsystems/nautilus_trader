@@ -53,9 +53,7 @@ use nautilus_common::{
         DataEvent, ExecutionReport,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateFillReportsBuilder, GenerateOrderStatusReports,
-            GenerateOrderStatusReportsBuilder, ModifyOrder, QueryOrder, SubmitOrder,
-            SubmitOrderList,
+            GenerateOrderStatusReports, ModifyOrder, QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
 };
@@ -1199,24 +1197,34 @@ impl ExecutionClient for BetfairExecutionClient {
             loop {
                 tokio::time::sleep(interval).await;
 
-                match keep_alive_client.keep_alive().await {
-                    Ok(()) => {}
+                let (_, session_replaced) = match keep_alive_client.keep_alive_with_token().await {
+                    Ok(token) => (token, false),
                     Err(ref e) if e.is_login_failed() => {
                         log::warn!("Betfair execution session expired, attempting re-login: {e}");
-                        if let Err(e) = keep_alive_client.reconnect().await {
-                            log::warn!("Betfair execution re-login failed: {e}");
-                            continue;
+
+                        match keep_alive_client.reconnect_with_token().await {
+                            Ok(token) => (token, true),
+                            Err(e) => {
+                                log::warn!("Betfair execution re-login failed: {e}");
+                                continue;
+                            }
                         }
                     }
                     Err(e) => {
                         log::warn!("Betfair execution keep-alive failed (transient): {e}");
                         continue;
                     }
-                }
-
-                if let Some(token) = keep_alive_client.session_token().await {
-                    keep_alive_stream.update_auth(&keep_alive_app_key, token);
-                }
+                };
+                apply_stream_session_refresh(
+                    keep_alive_client.as_ref(),
+                    Some(&keep_alive_stream),
+                    &keep_alive_app_key,
+                    SessionRefresh {
+                        refreshed: true,
+                        replaced: session_replaced,
+                    },
+                )
+                .await;
                 log::debug!("Betfair execution session keep-alive sent");
             }
         }));
@@ -1289,26 +1297,36 @@ impl ExecutionClient for BetfairExecutionClient {
                 // by the previous iteration.
                 reconnect_is_reconciling.store(true, Ordering::Release);
 
+                let mut session_refresh = SessionRefresh::default();
+
                 // Inner async block so early returns still hit the clear below.
                 let () = async {
-                    match reconnect_http.keep_alive().await {
-                        Ok(()) => {}
+                    let (_, session_replaced) = match reconnect_http.keep_alive_with_token().await {
+                        Ok(token) => (token, false),
                         Err(ref e) if e.is_login_failed() => {
                             log::warn!("Session expired on reconnect, attempting re-login: {e}",);
-                            if let Err(e) = reconnect_http.reconnect().await {
-                                log::warn!("Re-login failed on reconnect: {e}");
-                                return;
+
+                            match reconnect_http.reconnect_with_token().await {
+                                Ok(token) => (token, true),
+                                Err(e) => {
+                                    log::warn!("Re-login failed on reconnect: {e}");
+                                    return;
+                                }
                             }
                         }
                         Err(e) => {
                             log::warn!("Keep-alive failed on reconnect (transient): {e}");
                             return;
                         }
-                    }
+                    };
 
-                    if let Some(token) = reconnect_http.session_token().await {
-                        reconnect_stream.update_auth(&reconnect_app_key, token);
-                    }
+                    session_refresh.refreshed = true;
+                    session_refresh.replaced = session_replaced;
+                    let stream_session = StreamSession {
+                        client: Some(&reconnect_stream),
+                        app_key: &reconnect_app_key,
+                    };
+                    stream_session.publish(&reconnect_http).await;
 
                     match reconnect_http
                         .send_accounts::<AccountFundsResponse, _>(
@@ -1347,6 +1365,8 @@ impl ExecutionClient for BetfairExecutionClient {
                         reconnect_market_ids.clone(),
                         reconnect_lookback_mins,
                         &reconnect_ocm_state,
+                        stream_session,
+                        &mut session_refresh,
                     )
                     .await
                     {
@@ -1370,6 +1390,14 @@ impl ExecutionClient for BetfairExecutionClient {
                         }
                     }
                 }
+                .await;
+
+                apply_stream_session_refresh(
+                    reconnect_http.as_ref(),
+                    Some(&reconnect_stream),
+                    &reconnect_app_key,
+                    session_refresh,
+                )
                 .await;
 
                 // Fail-open: a failed iteration must not deny submits indefinitely.
@@ -1414,8 +1442,15 @@ impl ExecutionClient for BetfairExecutionClient {
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
         let instrument_id = cmd.instrument_id;
+        let stream_client = self.stream_client.as_ref().map(Arc::clone);
+        let app_key = self.credential.app_key().to_string();
 
         self.spawn_task("query_order", async move {
+            let mut session_refresh = SessionRefresh::default();
+            let stream_session = StreamSession {
+                client: stream_client.as_ref(),
+                app_key: &app_key,
+            };
             let mut candidates: Vec<CurrentOrderSummary> = Vec::new();
             let mut seen_bet_ids: AHashSet<String> = AHashSet::new();
 
@@ -1424,7 +1459,15 @@ impl ExecutionClient for BetfairExecutionClient {
             // live replacement even when the cached bet_id is stale.
             let rfo = make_customer_order_ref(client_order_id.as_str());
             let rfo_params = list_current_orders_filter_ref(rfo.clone());
-            match list_current_orders_with_retry(&http_client, &rfo_params).await {
+
+            match list_current_orders_with_retry(
+                &http_client,
+                &rfo_params,
+                stream_session,
+                &mut session_refresh,
+            )
+            .await
+            {
                 Ok(r) => extend_unique(&mut candidates, &mut seen_bet_ids, r.current_orders),
                 Err(e) => log::warn!("Betfair query_order ref lookup failed: {e}"),
             }
@@ -1433,7 +1476,15 @@ impl ExecutionClient for BetfairExecutionClient {
                 let rfo_legacy = make_customer_order_ref_legacy(client_order_id.as_str());
                 if rfo_legacy != rfo {
                     let legacy_params = list_current_orders_filter_ref(rfo_legacy);
-                    match list_current_orders_with_retry(&http_client, &legacy_params).await {
+
+                    match list_current_orders_with_retry(
+                        &http_client,
+                        &legacy_params,
+                        stream_session,
+                        &mut session_refresh,
+                    )
+                    .await
+                    {
                         Ok(r) => {
                             extend_unique(&mut candidates, &mut seen_bet_ids, r.current_orders);
                         }
@@ -1447,50 +1498,65 @@ impl ExecutionClient for BetfairExecutionClient {
             // ref-based results came back as foreign-market collisions only.
             if let Some(ref bet_id) = venue_order_id {
                 let params = list_current_orders_filter_bet_id(bet_id.to_string());
-                match list_current_orders_with_retry(&http_client, &params).await {
+
+                match list_current_orders_with_retry(
+                    &http_client,
+                    &params,
+                    stream_session,
+                    &mut session_refresh,
+                )
+                .await
+                {
                     Ok(r) => extend_unique(&mut candidates, &mut seen_bet_ids, r.current_orders),
                     Err(e) => log::warn!("Betfair query_order bet_id lookup failed: {e}"),
                 }
             }
 
-            if candidates.is_empty() {
+            let order = if candidates.is_empty() {
                 log::warn!(
                     "Betfair query_order found no order for client_order_id={client_order_id}, venue_order_id={venue_order_id:?}",
                 );
-                return Ok(());
-            }
-
-            let Some(order) = select_order_for_query(
-                &candidates,
-                instrument_id,
-                client_order_id,
-                venue_order_id,
-            ) else {
-                return Ok(());
+                None
+            } else {
+                select_order_for_query(
+                    &candidates,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                )
             };
 
-            let ts_init = clock.get_time_ns();
-            let mut report = match parse_current_order_report(order, account_id, ts_init) {
-                Ok(r) => r,
-                Err(e) => {
-                    log::warn!("Failed to parse order report for {}: {e}", order.bet_id);
-                    return Ok(());
+            if let Some(order) = order {
+                let ts_init = clock.get_time_ns();
+                match parse_current_order_report(order, account_id, ts_init) {
+                    Ok(mut report) => {
+                        if report.client_order_id.is_none()
+                            && let Some(rfo) = order.customer_order_ref.as_deref()
+                            && let Ok(state) = ocm_state.lock()
+                            && let Some(full_id) = state.resolve_client_order_id(Some(rfo))
+                        {
+                            report.client_order_id = Some(full_id);
+                        }
+
+                        if report.client_order_id.is_none() {
+                            report.client_order_id = Some(client_order_id);
+                        }
+
+                        emitter.send_order_status_report(report);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to parse order report for {}: {e}", order.bet_id);
+                    }
                 }
-            };
-
-            if report.client_order_id.is_none()
-                && let Some(rfo) = order.customer_order_ref.as_deref()
-                && let Ok(state) = ocm_state.lock()
-                && let Some(full_id) = state.resolve_client_order_id(Some(rfo))
-            {
-                report.client_order_id = Some(full_id);
             }
 
-            if report.client_order_id.is_none() {
-                report.client_order_id = Some(client_order_id);
-            }
-
-            emitter.send_order_status_report(report);
+            apply_stream_session_refresh(
+                http_client.as_ref(),
+                stream_client.as_ref(),
+                &app_key,
+                session_refresh,
+            )
+            .await;
             Ok(())
         });
 
@@ -1513,23 +1579,53 @@ impl ExecutionClient for BetfairExecutionClient {
             UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
         });
 
-        let order_cmd = GenerateOrderStatusReportsBuilder::default()
-            .ts_init(ts_now)
-            .open_only(false)
-            .start(start)
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let date_range = start.map(|start| TimeRange {
+            from: Some(start.to_rfc3339()),
+            to: None,
+        });
+        let market_ids = self.reconcile_market_ids();
+        let mut order_refresh = SessionRefresh::default();
+        let mut fill_refresh = SessionRefresh::default();
+        let stream_session = StreamSession {
+            client: self.stream_client.as_ref(),
+            app_key: self.credential.app_key(),
+        };
+        let (order_reports, fill_reports) = tokio::join!(
+            fetch_order_status_reports_via_http(
+                &self.http_client,
+                self.core.account_id,
+                self.clock.get_time_ns(),
+                market_ids.clone(),
+                false,
+                &self.ocm_state,
+                stream_session,
+                &mut order_refresh,
+            ),
+            fetch_fill_reports_via_http(
+                &self.http_client,
+                self.core.account_id,
+                self.currency,
+                self.clock.get_time_ns(),
+                market_ids,
+                date_range,
+                &self.ocm_state,
+                stream_session,
+                &mut fill_refresh,
+            ),
+        );
 
-        let fill_cmd = GenerateFillReportsBuilder::default()
-            .ts_init(ts_now)
-            .start(start)
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let mut session_refresh = order_refresh;
+        session_refresh.merge(&fill_refresh);
+        apply_stream_session_refresh(
+            self.http_client.as_ref(),
+            self.stream_client.as_ref(),
+            self.credential.app_key(),
+            session_refresh,
+        )
+        .await;
 
-        let (order_reports, fill_reports) = tokio::try_join!(
-            self.generate_order_status_reports(&order_cmd),
-            self.generate_fill_reports(fill_cmd),
-        )?;
+        let order_reports = order_reports?;
+        let fill_reports = fill_reports?;
 
         log::info!("Received {} OrderStatusReports", order_reports.len());
         log::info!("Received {} FillReports", fill_reports.len());
@@ -1554,15 +1650,31 @@ impl ExecutionClient for BetfairExecutionClient {
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         self.process_pending_resync();
 
-        let reports = fetch_order_status_reports_via_http(
+        let mut session_refresh = SessionRefresh::default();
+        let stream_session = StreamSession {
+            client: self.stream_client.as_ref(),
+            app_key: self.credential.app_key(),
+        };
+        let result = fetch_order_status_reports_via_http(
             &self.http_client,
             self.core.account_id,
             self.clock.get_time_ns(),
             self.reconcile_market_ids(),
             cmd.open_only,
             &self.ocm_state,
+            stream_session,
+            &mut session_refresh,
         )
-        .await?;
+        .await;
+
+        apply_stream_session_refresh(
+            self.http_client.as_ref(),
+            self.stream_client.as_ref(),
+            self.credential.app_key(),
+            session_refresh,
+        )
+        .await;
+        let reports = result?;
 
         log::debug!("Generated {} order status reports", reports.len());
         Ok(reports)
@@ -1590,7 +1702,12 @@ impl ExecutionClient for BetfairExecutionClient {
             (None, None) => None,
         };
 
-        let reports = fetch_fill_reports_via_http(
+        let mut session_refresh = SessionRefresh::default();
+        let stream_session = StreamSession {
+            client: self.stream_client.as_ref(),
+            app_key: self.credential.app_key(),
+        };
+        let result = fetch_fill_reports_via_http(
             &self.http_client,
             self.core.account_id,
             self.currency,
@@ -1598,8 +1715,19 @@ impl ExecutionClient for BetfairExecutionClient {
             self.reconcile_market_ids(),
             date_range,
             &self.ocm_state,
+            stream_session,
+            &mut session_refresh,
         )
-        .await?;
+        .await;
+
+        apply_stream_session_refresh(
+            self.http_client.as_ref(),
+            self.stream_client.as_ref(),
+            self.credential.app_key(),
+            session_refresh,
+        )
+        .await;
+        let reports = result?;
 
         log::debug!("Generated {} fill reports", reports.len());
         Ok(reports)
@@ -2782,6 +2910,10 @@ struct UnmatchedOrderContext<'a> {
 
 /// Paginates `list_current_orders` into `OrderStatusReport`s without touching
 /// the engine cache, so it is callable from any tokio task.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "report context and stream session state remain explicit at the HTTP boundary"
+)]
 async fn fetch_order_status_reports_via_http(
     http_client: &Arc<BetfairHttpClient>,
     account_id: AccountId,
@@ -2789,6 +2921,8 @@ async fn fetch_order_status_reports_via_http(
     market_ids: Option<Vec<String>>,
     open_only: bool,
     ocm_state: &Arc<Mutex<OcmState>>,
+    stream_session: StreamSession<'_>,
+    session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<Vec<OrderStatusReport>> {
     let order_projection = if open_only {
         Some(OrderProjection::Executable)
@@ -2817,7 +2951,9 @@ async fn fetch_order_status_reports_via_http(
             record_count: None,
         };
 
-        let response = list_current_orders_with_retry(http_client, &params).await?;
+        let response =
+            list_current_orders_with_retry(http_client, &params, stream_session, session_refresh)
+                .await?;
         let page_size = response.current_orders.len() as u32;
 
         for order in &response.current_orders {
@@ -2847,6 +2983,10 @@ async fn fetch_order_status_reports_via_http(
 
 /// Paginates `list_current_orders` into `FillReport`s without touching the
 /// engine cache, so it is callable from any tokio task.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "report context and session refresh state remain explicit at the HTTP boundary"
+)]
 async fn fetch_fill_reports_via_http(
     http_client: &Arc<BetfairHttpClient>,
     account_id: AccountId,
@@ -2855,6 +2995,8 @@ async fn fetch_fill_reports_via_http(
     market_ids: Option<Vec<String>>,
     date_range: Option<TimeRange>,
     ocm_state: &Arc<Mutex<OcmState>>,
+    stream_session: StreamSession<'_>,
+    session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<Vec<FillReport>> {
     let mut orders = Vec::new();
     let mut from_record: u32 = 0;
@@ -2877,7 +3019,9 @@ async fn fetch_fill_reports_via_http(
             record_count: None,
         };
 
-        let response = list_current_orders_with_retry(http_client, &params).await?;
+        let response =
+            list_current_orders_with_retry(http_client, &params, stream_session, session_refresh)
+                .await?;
         let page_size = response.current_orders.len() as u32;
 
         orders.extend(response.current_orders);
@@ -2988,6 +3132,8 @@ async fn fetch_post_reconnect_mass_status(
     market_ids: Option<Vec<String>>,
     lookback_mins: u64,
     ocm_state: &Arc<Mutex<OcmState>>,
+    stream_session: StreamSession<'_>,
+    session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<ExecutionMassStatus> {
     let ts_now = clock.get_time_ns();
     let lookback_ns = lookback_mins
@@ -3000,7 +3146,9 @@ async fn fetch_post_reconnect_mass_status(
         to: None,
     };
 
-    let (order_reports, fill_reports) = tokio::try_join!(
+    let mut order_refresh = SessionRefresh::default();
+    let mut fill_refresh = SessionRefresh::default();
+    let (order_reports, fill_reports) = tokio::join!(
         fetch_order_status_reports_via_http(
             http_client,
             account_id,
@@ -3008,6 +3156,8 @@ async fn fetch_post_reconnect_mass_status(
             market_ids.clone(),
             false,
             ocm_state,
+            stream_session,
+            &mut order_refresh,
         ),
         fetch_fill_reports_via_http(
             http_client,
@@ -3017,8 +3167,15 @@ async fn fetch_post_reconnect_mass_status(
             market_ids,
             Some(date_range),
             ocm_state,
+            stream_session,
+            &mut fill_refresh,
         ),
-    )?;
+    );
+
+    session_refresh.merge(&order_refresh);
+    session_refresh.merge(&fill_refresh);
+    let order_reports = order_reports?;
+    let fill_reports = fill_reports?;
 
     let mut mass_status =
         ExecutionMassStatus::new(client_id, account_id, *BETFAIR_VENUE, ts_now, None);
@@ -3124,6 +3281,8 @@ fn select_order_for_query(
 async fn list_current_orders_with_retry(
     http_client: &Arc<BetfairHttpClient>,
     params: &ListCurrentOrdersParams,
+    stream_session: StreamSession<'_>,
+    session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<CurrentOrderSummaryReport> {
     const RATE_LIMIT_RETRY_DELAY_SECS: u64 = 5;
 
@@ -3142,8 +3301,15 @@ async fn list_current_orders_with_retry(
             } else {
                 log::warn!("Session error, refreshing session");
 
-                if http_client.keep_alive().await.is_err() {
-                    let _ = http_client.reconnect().await;
+                let refreshed = match http_client.keep_alive_with_token().await {
+                    Ok(_) => Some(false),
+                    Err(_) => http_client.reconnect_with_token().await.ok().map(|_| true),
+                };
+
+                if let Some(session_replaced) = refreshed {
+                    session_refresh.refreshed = true;
+                    session_refresh.replaced |= session_replaced;
+                    stream_session.publish(http_client).await;
                 }
             }
             http_client
@@ -3153,6 +3319,62 @@ async fn list_current_orders_with_retry(
         }
         Err(e) => Err(anyhow::anyhow!("{e}")),
     }
+}
+
+#[derive(Default)]
+struct SessionRefresh {
+    refreshed: bool,
+    replaced: bool,
+}
+
+impl SessionRefresh {
+    fn merge(&mut self, other: &Self) {
+        self.refreshed |= other.refreshed;
+        self.replaced |= other.replaced;
+    }
+}
+
+#[derive(Clone, Copy)]
+struct StreamSession<'a> {
+    client: Option<&'a Arc<BetfairStreamClient>>,
+    app_key: &'a str,
+}
+
+impl StreamSession<'_> {
+    async fn publish(self, http_client: &BetfairHttpClient) {
+        let Some(client) = self.client else {
+            return;
+        };
+
+        let _ = http_client
+            .with_session_token(|token| {
+                client.update_auth(self.app_key, token.to_string());
+            })
+            .await;
+    }
+}
+
+async fn apply_stream_session_refresh(
+    http_client: &BetfairHttpClient,
+    stream_client: Option<&Arc<BetfairStreamClient>>,
+    app_key: &str,
+    session_refresh: SessionRefresh,
+) {
+    if !session_refresh.refreshed {
+        return;
+    }
+    let Some(stream_client) = stream_client else {
+        return;
+    };
+
+    let _ = http_client
+        .with_session_token(|token| {
+            stream_client.update_auth(app_key, token.to_string());
+            if session_refresh.replaced {
+                let _ = stream_client.request_reconnect();
+            }
+        })
+        .await;
 }
 
 // Claims and emits the HTTP place acceptance while holding the `OcmState` lock. The OCM

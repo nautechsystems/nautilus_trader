@@ -606,7 +606,7 @@ The adapter supports the following data subscriptions:
 dYdX supports multiple subaccounts per wallet address, allowing segregation of trading strategies
 and risk management within a single wallet.
 
-### Key concepts
+### Concepts
 
 - Each wallet address can have multiple numbered subaccounts (0, 1, 2, ..., 127). Numbers 128 and
   above are the venue's isolated-margin child subaccounts, which this adapter does not support.

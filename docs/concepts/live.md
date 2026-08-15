@@ -52,6 +52,11 @@ At startup, reconciliation aligns cached order and position state with venue rep
 components start. Continuous checks can then monitor in‑flight orders, open orders, positions, and
 own order books while the node runs.
 
+When an adapter declares bounded historical reports, startup reconciliation applies their fill
+economics only when the report set and retained state prove a coherent position transition.
+Incomplete or ambiguous history can still recover exact order state without changing positions or
+portfolio economics.
+
 See [Execution reconciliation](reconciliation.md) for configuration, recovery procedures,
 runtime checks, scenarios, and invariants.
 

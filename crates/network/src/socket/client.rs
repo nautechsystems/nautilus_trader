@@ -63,7 +63,10 @@ use crate::{
     dst,
     error::{SendError, is_connection_drop_io_error},
     logging::{log_task_aborted, log_task_started, log_task_stopped},
-    mode::{ConnectionMode, ReadSessionFence, ReconnectOutcome},
+    mode::{
+        ConnectionMode, ControllerLifecycle, ReadSessionFence, ReconnectOutcome,
+        ReconnectRequestOutcome,
+    },
     net::TcpStream,
     tls::{create_tls_config_from_certs_dir, tcp_tls},
 };
@@ -76,6 +79,9 @@ const WRITE_TIMEOUT_SECS: u64 = 5;
 
 // Maximum buffer size for read operations (10 MB)
 const MAX_READ_BUFFER_BYTES: usize = 10 * 1024 * 1024;
+
+/// Produces protocol messages that must precede buffered application writes after reconnect.
+pub type SocketReconnectReplay = Arc<dyn Fn() -> Vec<Bytes> + Send + Sync>;
 
 struct SocketClientInner {
     config: SocketConfig,
@@ -359,7 +365,10 @@ impl SocketClientInner {
     /// so buffered messages can never drain into a connection that lost its
     /// reader to a timeout; the writer task bounds both the old-writer
     /// shutdown and the buffer drain with its graceful-shutdown timeout.
-    async fn reconnect(&mut self) -> Result<ReconnectOutcome, Error> {
+    async fn reconnect(
+        &mut self,
+        reconnect_replay: Option<&SocketReconnectReplay>,
+    ) -> Result<ReconnectOutcome, Error> {
         log::info!("Reconnecting");
 
         if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
@@ -397,7 +406,13 @@ impl SocketClientInner {
         // We must verify that the buffer was successfully drained before transitioning to ACTIVE
         // to prevent silent message loss if the new connection drops immediately.
         let (tx, rx) = tokio::sync::oneshot::channel();
-        if let Err(e) = self.writer_tx.send(WriterCommand::Update(new_writer, tx)) {
+        let command = if let Some(reconnect_replay) = reconnect_replay {
+            WriterCommand::UpdateWithReplay(new_writer, reconnect_replay(), tx)
+        } else {
+            WriterCommand::Update(new_writer, tx)
+        };
+
+        if let Err(e) = self.writer_tx.send(command) {
             log::error!("{e}");
             return Err(Error::Io(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
@@ -658,6 +673,54 @@ impl SocketClientInner {
         false
     }
 
+    async fn replace_writer<W>(
+        active_writer: &mut W,
+        new_writer: W,
+        replay: Vec<Bytes>,
+        reconnect_buffer: &mut VecDeque<Bytes>,
+        suffix: &[u8],
+    ) -> bool
+    where
+        W: AsyncWrite + Unpin,
+    {
+        log::debug!("Received new writer");
+        dst::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
+
+        _ = dst::time::timeout(
+            Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
+            active_writer.shutdown(),
+        )
+        .await;
+
+        *active_writer = new_writer;
+        log::debug!("Updated writer");
+
+        let drain_result =
+            dst::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
+                for replay_msg in replay {
+                    let mut framed = Vec::with_capacity(replay_msg.len() + suffix.len());
+                    framed.extend_from_slice(&replay_msg);
+                    framed.extend_from_slice(suffix);
+                    if let Err(e) = active_writer.write_all(&framed).await {
+                        log::warn!("Failed to send reconnect replay: {e}");
+                        return true;
+                    }
+                }
+
+                Self::drain_reconnect_buffer(reconnect_buffer, active_writer, suffix).await
+            })
+            .await;
+
+        let send_error = drain_result.unwrap_or_else(|_| {
+            log::warn!(
+                "Timed out sending reconnect replay and buffered messages, {} buffered messages remain",
+                reconnect_buffer.len()
+            );
+            true
+        });
+        !send_error
+    }
+
     fn spawn_write_task<W>(
         connection_state: Arc<AtomicU8>,
         state_notify: Arc<tokio::sync::Notify>,
@@ -697,43 +760,32 @@ impl SocketClientInner {
 
                         match msg {
                             WriterCommand::Update(new_writer, tx) => {
-                                log::debug!("Received new writer");
-
-                                // Delay before closing connection
-                                dst::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS))
-                                    .await;
-
-                                // Attempt to shutdown the writer gracefully before updating,
-                                // we ignore any error as the writer may already be closed.
-                                _ = dst::time::timeout(
-                                    Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
-                                    active_writer.shutdown(),
+                                let sent = Self::replace_writer(
+                                    &mut active_writer,
+                                    new_writer,
+                                    Vec::new(),
+                                    &mut reconnect_buffer,
+                                    &suffix,
                                 )
                                 .await;
 
-                                active_writer = new_writer;
-                                log::debug!("Updated writer");
-
-                                // Bound the drain: a peer that accepts the connection but stops
-                                // reading must not wedge the writer task.
-                                let drain_result = dst::time::timeout(
-                                    Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
-                                    Self::drain_reconnect_buffer(
-                                        &mut reconnect_buffer,
-                                        &mut active_writer,
-                                        &suffix,
-                                    ),
-                                )
-                                .await;
-                                let send_error = drain_result.unwrap_or_else(|_| {
-                                    log::warn!(
-                                        "Timed out draining reconnect buffer, {} messages remain",
-                                        reconnect_buffer.len()
+                                if let Err(e) = tx.send(sent) {
+                                    log::error!(
+                                        "Failed to report drain status to controller: {e:?}"
                                     );
-                                    true
-                                });
+                                }
+                            }
+                            WriterCommand::UpdateWithReplay(new_writer, replay, tx) => {
+                                let sent = Self::replace_writer(
+                                    &mut active_writer,
+                                    new_writer,
+                                    replay,
+                                    &mut reconnect_buffer,
+                                    &suffix,
+                                )
+                                .await;
 
-                                if let Err(e) = tx.send(!send_error) {
+                                if let Err(e) = tx.send(sent) {
                                     log::error!(
                                         "Failed to report drain status to controller: {e:?}"
                                     );
@@ -889,6 +941,52 @@ pub struct SocketClient {
     pub(crate) state_notify: Arc<tokio::sync::Notify>,
     pub(crate) reconnect_timeout: Duration,
     pub writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+    state_sink: Option<SocketStateSink>,
+    controller_lifecycle: Arc<ControllerLifecycle>,
+    controller_notify: Arc<tokio::sync::Notify>,
+}
+
+/// Cloneable controller handle for requesting one raw socket reconnect.
+#[derive(Clone)]
+pub struct SocketReconnectHandle {
+    connection_mode: Arc<AtomicU8>,
+    state_sink: Option<SocketStateSink>,
+    controller_lifecycle: Arc<ControllerLifecycle>,
+    controller_notify: Arc<tokio::sync::Notify>,
+}
+
+impl Debug for SocketReconnectHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(SocketReconnectHandle))
+            .field(
+                "connection_mode",
+                &ConnectionMode::from_atomic(&self.connection_mode),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+impl SocketReconnectHandle {
+    /// Requests that the controller replace the active transport.
+    ///
+    /// An accepted request reports the transport unavailable and wakes the controller. Rejected
+    /// requests leave the transport state unchanged.
+    #[must_use]
+    pub fn request_reconnect(&self) -> ReconnectRequestOutcome {
+        let Some(_request) = self.controller_lifecycle.enter_request() else {
+            return ReconnectRequestOutcome::Closed;
+        };
+
+        let outcome = ConnectionMode::request_reconnect_outcome_with_sink(
+            &self.connection_mode,
+            self.state_sink.as_ref(),
+        );
+
+        if outcome == ReconnectRequestOutcome::Accepted {
+            self.controller_notify.notify_one();
+        }
+        outcome
+    }
 }
 
 impl Debug for SocketClient {
@@ -911,7 +1009,19 @@ impl SocketClient {
         config: SocketConfig,
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
     ) -> anyhow::Result<Self> {
-        Self::connect_with_state_sink(config, post_reconnection, None).await
+        Self::connect_with_options(config, post_reconnection, None, None).await
+    }
+
+    /// Connects and sends protocol replay before messages buffered during each reconnect.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error connecting to the server.
+    pub async fn connect_with_reconnect_replay(
+        config: SocketConfig,
+        reconnect_replay: SocketReconnectReplay,
+    ) -> anyhow::Result<Self> {
+        Self::connect_with_options(config, None, None, Some(reconnect_replay)).await
     }
 
     /// Connects to the server and reports semantic transport availability changes.
@@ -924,17 +1034,33 @@ impl SocketClient {
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
         state_sink: Option<SocketStateSink>,
     ) -> anyhow::Result<Self> {
+        Self::connect_with_options(config, post_reconnection, state_sink, None).await
+    }
+
+    async fn connect_with_options(
+        config: SocketConfig,
+        post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
+        state_sink: Option<SocketStateSink>,
+        reconnect_replay: Option<SocketReconnectReplay>,
+    ) -> anyhow::Result<Self> {
         let inner = SocketClientInner::connect_url(config, state_sink).await?;
         let writer_tx = inner.writer_tx.clone();
         let connection_mode = inner.connection_mode.clone();
         let state_notify = inner.state_notify.clone();
         let reconnect_timeout = inner.reconnect_timeout;
+        let state_sink = inner.state_sink.clone();
+        let controller_lifecycle = Arc::new(ControllerLifecycle::new());
+        let controller_notify = Arc::new(tokio::sync::Notify::new());
         let controller_task = Self::spawn_controller_task(
             inner,
             connection_mode.clone(),
             state_notify.clone(),
+            Arc::clone(&controller_lifecycle),
+            Arc::clone(&controller_notify),
             post_reconnection,
+            reconnect_replay,
         );
+        controller_lifecycle.set_abort_handle(controller_task.abort_handle());
 
         Ok(Self {
             controller_task,
@@ -942,7 +1068,30 @@ impl SocketClient {
             state_notify,
             reconnect_timeout,
             writer_tx,
+            state_sink,
+            controller_lifecycle,
+            controller_notify,
         })
+    }
+
+    /// Returns a cloneable handle to this client's reconnect controller.
+    #[must_use]
+    pub fn reconnect_handle(&self) -> SocketReconnectHandle {
+        SocketReconnectHandle {
+            connection_mode: Arc::clone(&self.connection_mode),
+            state_sink: self.state_sink.clone(),
+            controller_lifecycle: Arc::clone(&self.controller_lifecycle),
+            controller_notify: Arc::clone(&self.controller_notify),
+        }
+    }
+
+    /// Requests that the controller replace the active transport.
+    ///
+    /// Returns `true` only when this call transitions the client from active to reconnecting.
+    /// Duplicate, disconnecting, and closed requests return `false`.
+    #[must_use]
+    pub fn request_reconnect(&self) -> bool {
+        self.reconnect_handle().request_reconnect() == ReconnectRequestOutcome::Accepted
     }
 
     /// Returns the current connection mode.
@@ -1107,11 +1256,15 @@ impl SocketClient {
         mut inner: SocketClientInner,
         connection_mode: Arc<AtomicU8>,
         state_notify: Arc<tokio::sync::Notify>,
+        controller_lifecycle: Arc<ControllerLifecycle>,
+        controller_notify: Arc<tokio::sync::Notify>,
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
+        reconnect_replay: Option<SocketReconnectReplay>,
     ) -> tokio::task::JoinHandle<()> {
         const CONTROLLER_FALLBACK_INTERVAL_MS: u64 = 100;
 
         tokio::task::spawn(async move {
+            let _activity = controller_lifecycle.activity();
             log_task_started("controller");
 
             let fallback_interval = Duration::from_millis(CONTROLLER_FALLBACK_INTERVAL_MS);
@@ -1120,6 +1273,7 @@ impl SocketClient {
             loop {
                 tokio::select! {
                     biased;
+                    () = controller_notify.notified() => {}
                     () = state_notify.notified() => {}
                     () = dst::time::sleep(fallback_interval) => {}
                 }
@@ -1251,7 +1405,7 @@ impl SocketClient {
                     // Race reconnect against disconnect notification
                     let reconnect_result = tokio::select! {
                         biased;
-                        result = inner.reconnect() => Some(result),
+                        result = inner.reconnect(reconnect_replay.as_ref()) => Some(result),
                         () = async {
                             loop {
                                 // Enable before the check so a disconnect notify between iterations is not missed
@@ -1324,8 +1478,10 @@ impl SocketClient {
 // Dropping cancels background work without reporting a terminal socket state transition.
 impl Drop for SocketClient {
     fn drop(&mut self) {
-        if !self.controller_task.is_finished() {
-            self.controller_task.abort();
+        let controller_running = !self.controller_task.is_finished();
+        self.controller_lifecycle.close_and_abort();
+
+        if controller_running {
             log_task_aborted("controller");
         }
     }
@@ -1793,7 +1949,7 @@ mod tests {
 mod rust_tests {
     use std::{
         pin::Pin,
-        sync::{Arc, Condvar, Mutex as StdMutex},
+        sync::{Arc, Condvar, Mutex as StdMutex, atomic::AtomicUsize},
         task::{Context, Poll, Waker},
     };
 
@@ -1901,7 +2057,7 @@ mod rust_tests {
             .connection_mode
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
 
-        let outcome = inner.reconnect().await.unwrap();
+        let outcome = inner.reconnect(None).await.unwrap();
 
         assert_eq!(outcome, ReconnectOutcome::Aborted);
         server.abort();
@@ -1924,7 +2080,7 @@ mod rust_tests {
             .connection_mode
             .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
 
-        let outcome = inner.reconnect().await.unwrap();
+        let outcome = inner.reconnect(None).await.unwrap();
 
         assert_eq!(outcome, ReconnectOutcome::Reconnected);
         assert_eq!(
@@ -2026,6 +2182,8 @@ mod rust_tests {
         controller_task: tokio::task::JoinHandle<()>,
     ) -> SocketClient {
         let (writer_tx, _writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let controller_lifecycle = Arc::new(ControllerLifecycle::new());
+        controller_lifecycle.set_abort_handle(controller_task.abort_handle());
 
         SocketClient {
             controller_task,
@@ -2033,7 +2191,211 @@ mod rust_tests {
             state_notify,
             reconnect_timeout: Duration::from_secs(1),
             writer_tx,
+            controller_lifecycle,
+            controller_notify: Arc::new(tokio::sync::Notify::new()),
+            state_sink: None,
         }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_handle_is_closed_after_client_drop() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let controller_task = tokio::spawn(std::future::pending::<()>());
+        let client = test_socket_client(connection_state, state_notify, controller_task);
+        let handle = client.reconnect_handle();
+
+        drop(client);
+
+        assert_eq!(handle.request_reconnect(), ReconnectRequestOutcome::Closed);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_concurrent_drop_defers_controller_abort_until_request_completes() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+
+        let controller_task = tokio::spawn(std::future::pending::<()>());
+        let controller_abort = controller_task.abort_handle();
+        let mut client = test_socket_client(connection_state, state_notify, controller_task);
+        let callback_release = Arc::new((StdMutex::new(false), Condvar::new()));
+        let callback_release_guard = CondvarReleaseGuard::new(Arc::clone(&callback_release));
+        let callback_release_clone = Arc::clone(&callback_release);
+        let (callback_entered_tx, callback_entered_rx) = std::sync::mpsc::channel();
+        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states_clone = Arc::clone(&states);
+        client.state_sink = Some(SocketStateSink::new(move |state| {
+            states_clone.lock().unwrap().push(state);
+            callback_entered_tx.send(()).unwrap();
+            let (lock, condvar) = callback_release_clone.as_ref();
+            let mut released = lock.lock().unwrap();
+
+            while !*released {
+                released = condvar.wait(released).unwrap();
+            }
+        }));
+        let handle = client.reconnect_handle();
+        let surviving_handle = handle.clone();
+        let controller_notify = Arc::clone(&handle.controller_notify);
+        let request_thread = std::thread::spawn(move || handle.request_reconnect());
+
+        recv_rendezvous(callback_entered_rx, "socket state callback entry").await;
+        let (drop_finished_tx, drop_finished_rx) = std::sync::mpsc::channel();
+        let drop_thread = std::thread::spawn(move || {
+            drop(client);
+            drop_finished_tx.send(()).unwrap();
+        });
+
+        recv_rendezvous(drop_finished_rx, "client drop").await;
+        drop_thread.join().unwrap();
+        assert!(!controller_abort.is_finished());
+
+        callback_release_guard.release();
+        assert_eq!(
+            request_thread.join().unwrap(),
+            ReconnectRequestOutcome::Accepted
+        );
+        tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+            .await
+            .expect("accepted request should notify before deferred controller abort");
+        wait_until_async(|| async { controller_abort.is_finished() }, TEST_TIMEOUT).await;
+
+        assert_eq!(
+            surviving_handle.request_reconnect(),
+            ReconnectRequestOutcome::Closed
+        );
+        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+                .await
+                .is_err(),
+            "closed request should not notify controller",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_state_callback_can_drop_client() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+
+        let controller_task = tokio::spawn(std::future::pending::<()>());
+        let controller_abort = controller_task.abort_handle();
+        let mut client = test_socket_client(connection_state, state_notify, controller_task);
+        let client_slot = Arc::new(StdMutex::new(None));
+        let client_slot_callback = Arc::clone(&client_slot);
+        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        client.state_sink = Some(SocketStateSink::new(move |state| {
+            states_callback.lock().unwrap().push(state);
+            drop(client_slot_callback.lock().unwrap().take());
+        }));
+        let handle = client.reconnect_handle();
+        let controller_notify = Arc::clone(&handle.controller_notify);
+        *client_slot.lock().unwrap() = Some(client);
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || result_tx.send(handle.request_reconnect()).unwrap());
+
+        assert_eq!(
+            recv_rendezvous(result_rx, "reconnect request").await,
+            ReconnectRequestOutcome::Accepted
+        );
+        tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+            .await
+            .expect("accepted request should notify before deferred controller abort");
+        wait_until_async(|| async { controller_abort.is_finished() }, TEST_TIMEOUT).await;
+
+        assert!(client_slot.lock().unwrap().is_none());
+        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_manual_reconnect_uses_controller_path() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (first_accepted_tx, first_accepted_rx) = oneshot::channel();
+        let (second_accepted_tx, second_accepted_rx) = oneshot::channel();
+        let (payload_tx, payload_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+
+        let server = task::spawn(async move {
+            let (_first, _) = listener.accept().await.unwrap();
+            first_accepted_tx.send(()).unwrap();
+
+            let (mut second, _) = listener.accept().await.unwrap();
+            second_accepted_tx.send(()).unwrap();
+            let mut payload = [0_u8; 8];
+            second.read_exact(&mut payload).await.unwrap();
+            payload_tx.send(payload).unwrap();
+            let _ = release_rx.await;
+        });
+        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().unwrap().push(state);
+        });
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = Arc::clone(&callback_count);
+        let post_reconnection = Arc::new(move || {
+            callback_count_clone.fetch_add(1, Ordering::SeqCst);
+        });
+        let client = SocketClient::connect_with_state_sink(
+            reconnect_test_config(port),
+            Some(post_reconnection),
+            Some(sink),
+        )
+        .await
+        .unwrap();
+        first_accepted_rx.await.unwrap();
+        let handle = client.reconnect_handle();
+
+        assert!(client.request_reconnect());
+        assert_eq!(
+            handle.request_reconnect(),
+            ReconnectRequestOutcome::AlreadyReconnecting
+        );
+        assert!(!client.request_reconnect());
+        assert_eq!(
+            *states.lock().unwrap(),
+            vec![SocketState::Connected, SocketState::Disconnected]
+        );
+
+        tokio::time::timeout(TEST_TIMEOUT, second_accepted_rx)
+            .await
+            .expect("controller should establish a replacement connection")
+            .unwrap();
+        wait_until_async(
+            || async { client.is_active() && callback_count.load(Ordering::SeqCst) == 1 },
+            TEST_TIMEOUT,
+        )
+        .await;
+        client.send_bytes(b"manual".to_vec()).await.unwrap();
+
+        assert_eq!(
+            tokio::time::timeout(TEST_TIMEOUT, payload_rx)
+                .await
+                .expect("replacement connection should receive the framed payload")
+                .unwrap(),
+            *b"manual\r\n"
+        );
+        assert_eq!(callback_count.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            *states.lock().unwrap(),
+            vec![
+                SocketState::Connected,
+                SocketState::Disconnected,
+                SocketState::Connected,
+            ]
+        );
+
+        client.close().await;
+        release_tx.send(()).unwrap();
+        server.await.unwrap();
+        assert_eq!(callback_count.load(Ordering::SeqCst), 1);
+        assert_eq!(states.lock().unwrap().len(), 3);
     }
 
     #[rstest]
@@ -2352,7 +2714,7 @@ mod rust_tests {
 
     #[rstest]
     #[tokio::test(start_paused = true)]
-    async fn test_stalled_socket_write_reconnects_and_replays_complete_message() {
+    async fn test_stalled_socket_write_sends_reconnect_replay_before_buffer() {
         type TestWriter = Pin<Box<dyn AsyncWrite + Send>>;
 
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
@@ -2390,7 +2752,11 @@ mod rust_tests {
         });
         let (update_tx, update_rx) = oneshot::channel();
         writer_tx
-            .send(WriterCommand::Update(new_writer, update_tx))
+            .send(WriterCommand::UpdateWithReplay(
+                new_writer,
+                vec![Bytes::from_static(b"authentication")],
+                update_tx,
+            ))
             .unwrap();
 
         tokio::time::advance(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS)).await;
@@ -2407,7 +2773,10 @@ mod rust_tests {
             ConnectionMode::from_atomic(&connection_state),
             ConnectionMode::Reconnect
         );
-        assert_eq!(recorded.lock().unwrap().as_slice(), b"complete-message\r\n");
+        assert_eq!(
+            recorded.lock().unwrap().as_slice(),
+            b"authentication\r\ncomplete-message\r\n"
+        );
 
         connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
         state_notify.notify_waiters();
@@ -3154,6 +3523,89 @@ mod rust_tests {
         assert!(
             err_msg.contains("suffix cannot be empty"),
             "Error should mention empty suffix, was: {err_msg}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod reconnect_request_tests {
+    use std::sync::{Arc, Mutex, atomic::AtomicU8};
+
+    use rstest::rstest;
+
+    use super::*;
+    use crate::SocketState;
+
+    fn handle(
+        mode: ConnectionMode,
+    ) -> (
+        SocketReconnectHandle,
+        Arc<tokio::sync::Notify>,
+        Arc<Mutex<Vec<SocketState>>>,
+    ) {
+        let controller_notify = Arc::new(tokio::sync::Notify::new());
+        let states = Arc::new(Mutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let state_sink = SocketStateSink::new(move |state| {
+            states_callback.lock().unwrap().push(state);
+        });
+        let handle = SocketReconnectHandle {
+            connection_mode: Arc::new(AtomicU8::new(mode.as_u8())),
+            state_sink: Some(state_sink),
+            controller_lifecycle: Arc::new(ControllerLifecycle::new()),
+            controller_notify: Arc::clone(&controller_notify),
+        };
+        (handle, controller_notify, states)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn accepted_request_reports_loss_and_wakes_controller_once() {
+        let (handle, controller_notify, states) = handle(ConnectionMode::Active);
+
+        assert_eq!(
+            handle.request_reconnect(),
+            ReconnectRequestOutcome::Accepted
+        );
+        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+        tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+            .await
+            .expect("accepted request should notify controller");
+
+        assert_eq!(
+            handle.request_reconnect(),
+            ReconnectRequestOutcome::AlreadyReconnecting
+        );
+        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+                .await
+                .is_err(),
+            "duplicate request should not notify controller",
+        );
+    }
+
+    #[rstest]
+    #[case(
+        ConnectionMode::Reconnect,
+        ReconnectRequestOutcome::AlreadyReconnecting
+    )]
+    #[case(ConnectionMode::Disconnect, ReconnectRequestOutcome::Disconnected)]
+    #[case(ConnectionMode::Closed, ReconnectRequestOutcome::Closed)]
+    #[tokio::test]
+    async fn rejected_request_preserves_state_and_does_not_wake_controller(
+        #[case] mode: ConnectionMode,
+        #[case] expected: ReconnectRequestOutcome,
+    ) {
+        let (handle, controller_notify, states) = handle(mode);
+
+        assert_eq!(handle.request_reconnect(), expected);
+        assert!(states.lock().unwrap().is_empty());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+                .await
+                .is_err(),
+            "rejected request should not notify controller",
         );
     }
 }

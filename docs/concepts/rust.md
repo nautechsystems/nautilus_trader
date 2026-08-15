@@ -140,10 +140,8 @@ places (e.g. `0.00000001`).
 
 ### Memory allocator
 
-The `nautilus` CLI and Python wheels on Linux and Windows use
-[mimalloc](https://crates.io/crates/mimalloc) for Rust allocations. macOS Python wheels use the
-system allocator to remain compatible with Python packages that embed their own allocator. A Rust
-binary chooses its own allocator, so add mimalloc to yours to match:
+The `nautilus` CLI and Python wheels use [mimalloc](https://crates.io/crates/mimalloc) for Rust
+allocations. A Rust binary chooses its own allocator, so add mimalloc to yours to match:
 
 ```toml
 [dependencies]

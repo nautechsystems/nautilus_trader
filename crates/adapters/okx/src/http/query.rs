@@ -703,7 +703,8 @@ pub struct GetPositionsHistoryParams {
 #[builder(setter(into, strip_option))]
 #[serde(rename_all = "camelCase")]
 pub struct GetOrderParams {
-    /// Instrument type: SPOT, MARGIN, SWAP, FUTURES, OPTION.
+    /// Instrument type retained for API compatibility; not accepted by this endpoint.
+    #[serde(skip_serializing)]
     pub inst_type: OKXInstrumentType,
     /// Instrument ID, e.g. "BTC-USDT".
     pub inst_id: String,
@@ -713,8 +714,8 @@ pub struct GetOrderParams {
     /// User-assigned client order ID (optional if order ID is provided).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cl_ord_id: Option<String>,
-    /// Position side (optional).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Position side retained for API compatibility; not accepted by this endpoint.
+    #[serde(skip_serializing)]
     pub pos_side: Option<OKXPositionSide>,
 }
 

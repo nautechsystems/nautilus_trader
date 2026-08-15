@@ -62,12 +62,12 @@ API level.
 The online documentation shows a subset of examples. For the full set, see the
 repository on GitHub:
 
-| Directory                                                                            | Contains                                                    |
-| :----------------------------------------------------------------------------------- | :---------------------------------------------------------- |
-| [examples/](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples) | Runnable Python examples organized by environment           |
-| [docs/tutorials/](../tutorials/)                                                     | Tutorials demonstrating common workflows                    |
-| [docs/concepts/](../concepts/)                                                       | Concept guides with code snippets illustrating key features |
-| [python/tests/unit/](../../python/tests/unit/)                                       | Unit tests covering core functionality and edge cases       |
+| Directory                                                                            | Contains                                              |
+| :----------------------------------------------------------------------------------- | :---------------------------------------------------- |
+| [examples/](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples) | Runnable Python examples organized by environment     |
+| [docs/tutorials/](../tutorials/)                                                     | Tutorials demonstrating common workflows              |
+| [docs/concepts/](../concepts/)                                                       | Concept guides with illustrative code snippets        |
+| [python/tests/unit/](../../python/tests/unit/)                                       | Unit tests covering core functionality and edge cases |
 
 ## Running in Docker
 

@@ -128,10 +128,7 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
     // Only takers pay; makers are always zero.
     // Reference: https://docs.polymarket.com/trading/fees
     let maker_fee: Option<Decimal> = market.fee_schedule.as_ref().map(|_| Decimal::ZERO);
-    let taker_fee: Option<Decimal> = market
-        .fee_schedule
-        .as_ref()
-        .and_then(|fs| Decimal::try_from(fs.rate).ok());
+    let taker_fee: Option<Decimal> = market.fee_schedule.as_ref().map(|fs| fs.rate);
 
     let min_size = market.order_min_size;
 

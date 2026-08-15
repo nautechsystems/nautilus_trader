@@ -53,6 +53,7 @@ pub mod execution;
 pub mod factories;
 pub mod filters;
 pub mod http;
+pub mod models;
 pub mod providers;
 pub mod signing;
 pub mod websocket;

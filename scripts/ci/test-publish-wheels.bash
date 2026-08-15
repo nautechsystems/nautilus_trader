@@ -608,6 +608,7 @@ test_orphan_purge_index_order() {
   local orphan="nautilus_trader-1.221.0.dev20251026+11610-cp311-cp311-macosx_15_0_arm64.whl"
   local output="${case_dir}/output"
   local prefix="simple/test-nautilus-trader"
+  local status
 
   mkdir -p "${case_dir}/r2"
   create_r2_mocks "$mock_bin"
@@ -615,7 +616,8 @@ test_orphan_purge_index_order() {
   printf 'release\n' > "${case_dir}/r2/nautilus_trader-2.0.0-cp313-cp313-manylinux_2_34_x86_64.whl"
   write_index "${case_dir}/r2"
 
-  run_expect_failure "$output" env \
+  set +e
+  env \
     PATH="${mock_bin}:$PATH" \
     AWS_ACCESS_KEY_ID=mock \
     AWS_SECRET_ACCESS_KEY=mock \
@@ -625,7 +627,14 @@ test_orphan_purge_index_order() {
     CLOUDFLARE_R2_PREFIX="$prefix" \
     CLOUDFLARE_R2_URL=https://r2.invalid \
     REPO_ROOT="$repo_root" \
-    bash "${repo_root}/scripts/purge-orphan-dev-wheels.sh" --apply
+    bash "${repo_root}/scripts/purge-orphan-dev-wheels.sh" --apply > "$output" 2>&1
+  status=$?
+  set -e
+
+  if [[ "$status" -ne 94 ]]; then
+    cat "$output" >&2
+    fail "Orphan purge returned status ${status}, expected delete failure status 94"
+  fi
 
   assert_file "${case_dir}/r2/${orphan}"
   if grep -Fq "$orphan" "${case_dir}/r2/index.html"; then

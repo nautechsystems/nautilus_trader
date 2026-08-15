@@ -106,6 +106,12 @@ def test_execution_mass_status_adds_reports_and_roundtrips(audusd_id):
     restored = ExecutionMassStatus.from_dict(data)
 
     assert data["type"] == "ExecutionMassStatus"
+    assert data["lookback_start"] is None
+    assert data["reports_complete"] is True
+    assert status.lookback_start is None
+    assert status.reports_complete is True
+    assert restored.lookback_start is None
+    assert restored.reports_complete is True
     assert list(data["order_reports"].keys()) == ["1"]
     assert list(data["fill_reports"].keys()) == ["1"]
     assert list(data["position_reports"].keys()) == ["AUD/USD.SIM"]

@@ -80,6 +80,13 @@ const UNSTABLE_RECONNECT_DELAY_MS: u64 = 750;
 const HEARTBEAT_PING_SEED: u64 = 0x57EB_3010;
 const SERVER_PING_PONG_SEED: u64 = 0x57EB_3011;
 const SERVER_CLOSE_FRAME_SEED: u64 = 0x57EB_3012;
+const MISSING_PONG_SEED: u64 = 0x57EB_3013;
+const HEARTBEAT_TEXT_NO_RESPONSE_SEED: u64 = 0x57EB_3014;
+const HEARTBEAT_NON_PONG_TRAFFIC_SEED: u64 = 0x57EB_3015;
+const HEARTBEAT_PROTOCOL_NO_TIMEOUT_SEED: u64 = 0x57EB_3016;
+const TEXT_HEARTBEAT: &str = "heartbeat";
+const NON_PONG_FRAME: &str = "server-activity";
+const NON_PONG_FRAME_COUNT: usize = 6;
 const LARGE_WEBSOCKET_MESSAGE_LEN: usize = 16 * 1024;
 const BACKPRESSURE_TCP_CAPACITY: usize = 4;
 const BACKPRESSURE_MESSAGE_COUNT: usize = 16;
@@ -1090,6 +1097,82 @@ fn test_turmoil_websocket_sockudo_heartbeat_pings_reach_server() {
 }
 
 #[rstest]
+fn test_turmoil_websocket_missing_pong_reconnects() {
+    run_websocket_missing_pong_reconnects(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        MISSING_PONG_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_protocol_heartbeat_has_no_implicit_timeout() {
+    run_websocket_protocol_heartbeat_has_no_implicit_timeout(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        HEARTBEAT_PROTOCOL_NO_TIMEOUT_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_protocol_heartbeat_has_no_implicit_timeout() {
+    run_websocket_protocol_heartbeat_has_no_implicit_timeout(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        HEARTBEAT_PROTOCOL_NO_TIMEOUT_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_missing_pong_reconnects() {
+    run_websocket_missing_pong_reconnects(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        MISSING_PONG_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_text_heartbeat_does_not_timeout() {
+    run_websocket_text_heartbeat_does_not_timeout(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        HEARTBEAT_TEXT_NO_RESPONSE_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_text_heartbeat_does_not_timeout() {
+    run_websocket_text_heartbeat_does_not_timeout(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        HEARTBEAT_TEXT_NO_RESPONSE_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_non_pong_frames_prevent_heartbeat_timeout() {
+    run_websocket_non_pong_frames_prevent_heartbeat_timeout(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        HEARTBEAT_NON_PONG_TRAFFIC_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_non_pong_frames_prevent_heartbeat_timeout() {
+    run_websocket_non_pong_frames_prevent_heartbeat_timeout(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        HEARTBEAT_NON_PONG_TRAFFIC_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
 fn test_turmoil_websocket_server_ping_gets_pong() {
     run_websocket_server_ping_gets_pong(
         websocket_config_for_backend(TransportBackend::Tungstenite),
@@ -1167,10 +1250,18 @@ fn run_websocket_heartbeat_pings_reach_server(
     });
 
     sim.client("client", async move {
-        let (handler, _rx) = channel_message_handler();
-        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
-            .await
-            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
+        let client = WebSocketClient::connect_with_heartbeat_timeout(
+            websocket_config,
+            Duration::from_secs(2),
+            Some(handler),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         // Heartbeat cadence is 1s; allow up to 10s of simulated time for 3 pings
         let mut received_enough = false;
@@ -1187,6 +1278,256 @@ fn run_websocket_heartbeat_pings_reach_server(
             received_enough,
             "{label} seed {seed:#018x} server should receive heartbeat pings, received {}",
             pings.load(Ordering::SeqCst)
+        );
+        assert!(
+            client.is_active(),
+            "{label} seed {seed:#018x} should stay active when the quiet peer returns pongs"
+        );
+        assert!(
+            !reconnected.load(Ordering::SeqCst),
+            "{label} seed {seed:#018x} should not reconnect while pongs arrive"
+        );
+
+        client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_protocol_heartbeat_has_no_implicit_timeout(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.heartbeat = Some(1);
+
+    let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
+    let first_connection_held = Arc::new(AtomicBool::new(false));
+    let release_first_connection = Arc::new(AtomicBool::new(false));
+    let server_first_connection_held = Arc::clone(&first_connection_held);
+    let server_release_first_connection = Arc::clone(&release_first_connection);
+
+    sim.host("server", move || {
+        let server_first_connection_held = Arc::clone(&server_first_connection_held);
+        let server_release_first_connection = Arc::clone(&server_release_first_connection);
+        async move {
+            ws_hold_first_connection_until_release_then_echo_server(
+                server_first_connection_held,
+                server_release_first_connection,
+            )
+            .await
+        }
+    });
+
+    sim.client("client", async move {
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        assert!(
+            wait_for(|| first_connection_held.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should hold the first connection without reads"
+        );
+
+        for _ in 0..400 {
+            tokio::time::sleep(POLL_STEP).await;
+        }
+
+        assert!(
+            client.is_active(),
+            "{label} seed {seed:#018x} should stay active without an explicit heartbeat timeout"
+        );
+        assert!(
+            !reconnected.load(Ordering::SeqCst),
+            "{label} seed {seed:#018x} should preserve send-only protocol heartbeat behavior"
+        );
+        release_first_connection.store(true, Ordering::SeqCst);
+        client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_missing_pong_reconnects(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.heartbeat = Some(1);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+
+    let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
+    let first_connection_held = Arc::new(AtomicBool::new(false));
+    let release_first_connection = Arc::new(AtomicBool::new(false));
+    let server_first_connection_held = Arc::clone(&first_connection_held);
+    let server_release_first_connection = Arc::clone(&release_first_connection);
+
+    sim.host("server", move || {
+        let server_first_connection_held = Arc::clone(&server_first_connection_held);
+        let server_release_first_connection = Arc::clone(&server_release_first_connection);
+        async move {
+            ws_hold_first_connection_until_release_then_echo_server(
+                server_first_connection_held,
+                server_release_first_connection,
+            )
+            .await
+        }
+    });
+
+    sim.client("client", async move {
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
+        let client = WebSocketClient::connect_with_heartbeat_timeout(
+            websocket_config,
+            Duration::from_secs(2),
+            Some(handler),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        assert!(
+            wait_for(|| first_connection_held.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should hold the first connection without reads"
+        );
+
+        let mut recovered = false;
+
+        for _ in 0..500 {
+            if reconnected.load(Ordering::SeqCst) && client.is_active() {
+                recovered = true;
+                break;
+            }
+            tokio::time::sleep(POLL_STEP).await;
+        }
+
+        assert!(
+            recovered,
+            "{label} seed {seed:#018x} should reconnect when heartbeat pongs stop"
+        );
+        release_first_connection.store(true, Ordering::SeqCst);
+        client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_text_heartbeat_does_not_timeout(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.heartbeat = Some(1);
+    websocket_config.heartbeat_msg = Some(TEXT_HEARTBEAT.to_string());
+
+    let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
+    let heartbeats = Arc::new(AtomicUsize::new(0));
+    let server_heartbeats = Arc::clone(&heartbeats);
+
+    sim.host("server", move || {
+        let server_heartbeats = Arc::clone(&server_heartbeats);
+        async move { ws_text_heartbeat_counting_server(server_heartbeats).await }
+    });
+
+    sim.client("client", async move {
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        let mut received_enough = false;
+
+        for _ in 0..1_000 {
+            if heartbeats.load(Ordering::SeqCst) >= 3 {
+                received_enough = true;
+                break;
+            }
+            tokio::time::sleep(POLL_STEP).await;
+        }
+
+        assert!(
+            received_enough,
+            "{label} seed {seed:#018x} server should receive three text heartbeats, received {}",
+            heartbeats.load(Ordering::SeqCst)
+        );
+        assert!(
+            client.is_active(),
+            "{label} seed {seed:#018x} should stay active without text-heartbeat responses"
+        );
+        assert!(
+            !reconnected.load(Ordering::SeqCst),
+            "{label} seed {seed:#018x} should not apply a heartbeat timeout to text heartbeats"
+        );
+
+        client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_non_pong_frames_prevent_heartbeat_timeout(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.heartbeat = Some(1);
+
+    let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
+    sim.host("server", ws_send_text_without_reading_server);
+
+    sim.client("client", async move {
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let (handler, mut rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
+        let client = WebSocketClient::connect_with_heartbeat_timeout(
+            websocket_config,
+            Duration::from_secs(2),
+            Some(handler),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let mut received = Vec::with_capacity(NON_PONG_FRAME_COUNT);
+
+        for _ in 0..NON_PONG_FRAME_COUNT {
+            if let Some(message) = recv_application_text(&mut rx).await {
+                received.push(message);
+            }
+        }
+
+        assert_eq!(
+            received,
+            vec![NON_PONG_FRAME.to_string(); NON_PONG_FRAME_COUNT],
+            "{label} seed {seed:#018x} should receive non-Pong frames across the timeout window"
+        );
+        assert!(
+            client.is_active(),
+            "{label} seed {seed:#018x} should stay active while non-Pong frames arrive"
+        );
+        assert!(
+            !reconnected.load(Ordering::SeqCst),
+            "{label} seed {seed:#018x} should count every frame as heartbeat activity"
         );
 
         client.disconnect().await;
@@ -3115,6 +3456,59 @@ async fn ws_ping_counting_server(
                 _ => {}
             }
         }
+    }
+}
+
+async fn ws_text_heartbeat_counting_server(
+    heartbeats: Arc<AtomicUsize>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let heartbeats = Arc::clone(&heartbeats);
+
+        tokio::spawn(async move {
+            if let Ok(mut websocket) = accept_async(stream).await {
+                while let Some(message) = websocket.next().await {
+                    match message {
+                        Ok(Message::Text(text)) if text == TEXT_HEARTBEAT => {
+                            heartbeats.fetch_add(1, Ordering::SeqCst);
+                        }
+                        Ok(Message::Close(_)) => {
+                            let _ = websocket.close(None).await;
+                            break;
+                        }
+                        Ok(_) => {}
+                        Err(_) => break,
+                    }
+                }
+            }
+        });
+    }
+}
+
+async fn ws_send_text_without_reading_server() -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+
+        tokio::spawn(async move {
+            if let Ok(mut websocket) = accept_async(stream).await {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+
+                    if websocket
+                        .send(Message::Text(NON_PONG_FRAME.into()))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            }
+        });
     }
 }
 

@@ -26,6 +26,7 @@ examples = ["nautilus-live/node", "nautilus-network/transport-sockudo"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
+  "nautilus-execution/extension-module",
   "nautilus-live/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
@@ -36,6 +37,7 @@ python = [
   "dep:nautilus-system",
   "nautilus-common/python",
   "nautilus-core/python",
+  "nautilus-execution/python",
   "nautilus-live/python",
   "nautilus-model/python",
   "nautilus-network/python",
@@ -54,6 +56,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
+nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
@@ -96,7 +99,6 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
-nautilus-execution = { workspace = true }
 nautilus-sandbox = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",

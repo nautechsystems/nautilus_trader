@@ -76,21 +76,130 @@ async fn test_data_client_connect_disconnect() {
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, _rx) = create_test_data_client(addr, stream_port);
 
+    let (auth_done_tx, auth_done_rx) = tokio::sync::oneshot::channel();
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
         let (_reader, write_half) = accept_and_auth(&listener).await;
+        let _ = auth_done_tx.send(());
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
     client.connect().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), auth_done_rx)
+        .await
+        .expect("stream authentication should complete")
+        .expect("mock stream should remain available");
     assert!(client.is_connected());
     assert!(state.login_count.load(std::sync::atomic::Ordering::Relaxed) > 0);
 
     client.disconnect().await.unwrap();
     assert!(client.is_disconnected());
 
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_stream_relogin_requests_one_follow_up_reconnect() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, _rx) = create_test_data_client(addr, stream_port);
+    let server_state = state.clone();
+    let (verified_tx, verified_rx) = tokio::sync::oneshot::channel();
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (reader, write_half) = accept_and_auth(&listener).await;
+        drop(reader);
+        drop(write_half);
+
+        let (socket, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
+            .await
+            .expect("dropped data stream must reconnect")
+            .unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = tokio::io::BufReader::new(read_half);
+        let mut auth = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut auth)
+            .await
+            .unwrap();
+        let auth_json: Value = serde_json::from_str(&auth).unwrap();
+        assert_eq!(auth_json["session"], "SESSION_TOKEN");
+
+        let mut login_response: Value =
+            serde_json::from_str(&load_fixture("rest/login_success.json")).unwrap();
+        login_response["token"] = Value::String("REFRESHED_SESSION_TOKEN".to_string());
+        *server_state.login_response_override.lock().unwrap() =
+            Some(serde_json::to_string(&login_response).unwrap());
+        *server_state.keep_alive_response_override.lock().unwrap() =
+            Some(load_fixture("rest/login_failure.json"));
+
+        tokio::io::AsyncWriteExt::write_all(
+            &mut write_half,
+            b"{\"op\":\"connection\",\"connectionId\":\"replacement-1\"}\r\n",
+        )
+        .await
+        .unwrap();
+
+        let (socket, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
+            .await
+            .expect("full re-login must request a replacement data stream")
+            .unwrap();
+        let (read_half, mut final_write_half) = socket.into_split();
+        let mut final_reader = tokio::io::BufReader::new(read_half);
+        let mut final_auth = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut final_reader, &mut final_auth)
+            .await
+            .unwrap();
+        let final_auth_json: Value = serde_json::from_str(&final_auth).unwrap();
+        assert_eq!(final_auth_json["session"], "REFRESHED_SESSION_TOKEN");
+
+        *server_state.keep_alive_response_override.lock().unwrap() = None;
+        tokio::io::AsyncWriteExt::write_all(
+            &mut final_write_half,
+            b"{\"op\":\"connection\",\"connectionId\":\"replacement-2\"}\r\n",
+        )
+        .await
+        .unwrap();
+
+        wait_until_async(
+            || {
+                let state = server_state.clone();
+                async move {
+                    state
+                        .keep_alive_count
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                        >= 2
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(300), listener.accept())
+                .await
+                .is_err(),
+            "the successful post-reconnect keep-alive must not request another reconnect"
+        );
+
+        let _ = verified_tx.send(());
+        let _ = server_done_rx.await;
+    });
+
+    client.connect().await.unwrap();
+    verified_rx.await.unwrap();
+
+    assert_eq!(
+        state.login_count.load(std::sync::atomic::Ordering::Relaxed),
+        2,
+        "stream recovery must perform exactly one full re-login"
+    );
+
+    client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
     server.await.unwrap();
 }

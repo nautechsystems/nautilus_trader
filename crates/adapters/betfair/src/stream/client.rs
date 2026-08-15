@@ -25,7 +25,12 @@ use std::sync::{
 };
 
 use bytes::Bytes;
-use nautilus_network::socket::{SocketClient, SocketConfig, TcpMessageHandler, WriterCommand};
+use nautilus_network::{
+    mode::ReconnectRequestOutcome,
+    socket::{
+        SocketClient, SocketConfig, SocketReconnectHandle, SocketReconnectReplay, TcpMessageHandler,
+    },
+};
 use tokio::sync::watch; // tokio-import-ok
 use tokio_tungstenite::tungstenite::stream::Mode;
 
@@ -64,7 +69,8 @@ pub struct BetfairStreamClient {
     market_active_sub_id: Arc<AtomicU64>,
     order_active_sub_id: Arc<AtomicU64>,
     request_id: AtomicU64,
-    auth_bytes_tx: watch::Sender<Bytes>,
+    auth_tx: watch::Sender<StreamAuth>,
+    reconnect_auth: Arc<ReconnectAuthState>,
     closed: AtomicBool,
 }
 
@@ -83,7 +89,11 @@ impl BetfairStreamClient {
         let auth = Authentication::new(credential.app_key().to_string(), session_token);
         let auth_bytes_vec = serde_json::to_vec(&auth)?;
         let auth_bytes = Bytes::from(auth_bytes_vec.clone());
-        let (auth_bytes_tx, auth_bytes_rx) = watch::channel(auth_bytes);
+        let reconnect_auth = Arc::new(ReconnectAuthState::default());
+        let (auth_tx, auth_rx) = watch::channel(StreamAuth {
+            generation: 0,
+            bytes: auth_bytes,
+        });
         let mode = if config.use_tls {
             Mode::Tls
         } else {
@@ -97,10 +107,6 @@ impl BetfairStreamClient {
         let (market_sub_tx, market_sub_rx) = watch::channel(None::<MarketSubscription>);
         let (order_sub_tx, order_sub_rx) = watch::channel(None::<OrderSubscription>);
 
-        // Populated after connect() returns; OnceLock gives lock-free reads thereafter.
-        let shared_tx: Arc<OnceLock<tokio::sync::mpsc::UnboundedSender<WriterCommand>>> =
-            Arc::new(OnceLock::new());
-
         // Clone senders for the handler; struct keeps originals to reset on re-subscribe.
         let (market_clk_tx_h, market_initial_clk_tx_h) =
             (market_clk_tx.clone(), market_initial_clk_tx.clone());
@@ -111,6 +117,7 @@ impl BetfairStreamClient {
         let order_active_sub_id = Arc::new(AtomicU64::new(0));
         let market_active_sub_id_h = Arc::clone(&market_active_sub_id);
         let order_active_sub_id_h = Arc::clone(&order_active_sub_id);
+        let reconnect_auth_h = Arc::clone(&reconnect_auth);
 
         let message_handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
             if let Ok(msg) = stream_decode(data) {
@@ -173,28 +180,30 @@ impl BetfairStreamClient {
                     }
                     _ => {}
                 }
+
+                if matches!(msg, StreamMessage::Connection(_)) {
+                    reconnect_auth_h.request_pending();
+                }
             }
             handler(data);
         });
 
-        let auth_bytes_reconnect = auth_bytes_rx;
-        let shared_tx_reconnect = Arc::clone(&shared_tx);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            let Some(tx) = shared_tx_reconnect.get() else {
-                return;
-            };
-
-            let auth = auth_bytes_reconnect.borrow().clone();
+        let auth_reconnect = auth_rx;
+        let reconnect_auth_replay = Arc::clone(&reconnect_auth);
+        let reconnect_replay: SocketReconnectReplay = Arc::new(move || {
+            let mut replay = Vec::with_capacity(3);
+            let auth = auth_reconnect.borrow().clone();
+            reconnect_auth_replay.record_replay(auth.generation);
             let market_sub = market_sub_rx.borrow().clone();
             let order_sub = order_sub_rx.borrow().clone();
 
-            let _ = tx.send(WriterCommand::Send(auth));
+            replay.push(auth.bytes);
 
             if let Some(mut sub) = market_sub {
                 sub.clk = market_clk_rx.borrow().clone();
                 sub.initial_clk = market_initial_clk_rx.borrow().clone();
                 if let Ok(sub_bytes) = serde_json::to_vec(&sub) {
-                    let _ = tx.send(WriterCommand::Send(Bytes::from(sub_bytes)));
+                    replay.push(Bytes::from(sub_bytes));
                 }
             }
 
@@ -202,9 +211,11 @@ impl BetfairStreamClient {
                 sub.clk = order_clk_rx.borrow().clone();
                 sub.initial_clk = order_initial_clk_rx.borrow().clone();
                 if let Ok(sub_bytes) = serde_json::to_vec(&sub) {
-                    let _ = tx.send(WriterCommand::Send(Bytes::from(sub_bytes)));
+                    replay.push(Bytes::from(sub_bytes));
                 }
             }
+
+            replay
         });
 
         let url = format!("{}:{}", config.host, config.port);
@@ -229,12 +240,10 @@ impl BetfairStreamClient {
             certs_dir: None,
         };
 
-        let socket = SocketClient::connect(socket_config, Some(post_reconnection))
+        let socket = SocketClient::connect_with_reconnect_replay(socket_config, reconnect_replay)
             .await
             .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
-
-        // Set once, then use lock-free reads
-        let _ = shared_tx.set(socket.writer_tx.clone());
+        reconnect_auth.set_handle(socket.reconnect_handle());
 
         socket
             .send_bytes(auth_bytes_vec)
@@ -252,7 +261,8 @@ impl BetfairStreamClient {
             market_active_sub_id,
             order_active_sub_id,
             request_id: AtomicU64::new(1),
-            auth_bytes_tx,
+            auth_tx,
+            reconnect_auth,
             closed: AtomicBool::new(false),
         })
     }
@@ -361,8 +371,31 @@ impl BetfairStreamClient {
     pub fn update_auth(&self, app_key: &str, session_token: String) {
         let auth = Authentication::new(app_key.to_string(), session_token);
         if let Ok(bytes) = serde_json::to_vec(&auth) {
-            let _ = self.auth_bytes_tx.send(Bytes::from(bytes));
+            let bytes = Bytes::from(bytes);
+            self.auth_tx.send_if_modified(|current| {
+                if current.bytes == bytes {
+                    return false;
+                }
+                *current = StreamAuth {
+                    generation: current.generation.wrapping_add(1),
+                    bytes,
+                };
+                true
+            });
         }
+    }
+
+    /// Requests replacement of the active stream transport.
+    ///
+    /// Returns `true` only when this call starts a reconnect. Duplicate requests and requests after
+    /// close return `false`.
+    #[must_use]
+    pub fn request_reconnect(&self) -> bool {
+        if self.closed.load(Ordering::SeqCst) {
+            return false;
+        }
+        self.reconnect_auth
+            .request(self.auth_tx.borrow().generation)
     }
 
     /// Closes the stream connection.
@@ -380,7 +413,8 @@ impl BetfairStreamClient {
 #[derive(Debug)]
 pub struct BetfairRaceStreamClient {
     socket: SocketClient,
-    auth_bytes_tx: watch::Sender<Bytes>,
+    auth_tx: watch::Sender<StreamAuth>,
+    reconnect_auth: Arc<ReconnectAuthState>,
     closed: AtomicBool,
 }
 
@@ -457,7 +491,11 @@ impl BetfairRaceStreamClient {
         let auth = Authentication::new(credential.app_key().to_string(), session_token);
         let auth_bytes_vec = serde_json::to_vec(&auth)?;
         let auth_bytes = Bytes::from(auth_bytes_vec.clone());
-        let (auth_bytes_tx, auth_bytes_rx) = watch::channel(auth_bytes.clone());
+        let reconnect_auth = Arc::new(ReconnectAuthState::default());
+        let (auth_tx, auth_rx) = watch::channel(StreamAuth {
+            generation: 0,
+            bytes: auth_bytes,
+        });
 
         let mode = if config.use_tls {
             Mode::Tls
@@ -465,53 +503,55 @@ impl BetfairRaceStreamClient {
             Mode::Plain
         };
 
-        let shared_tx: Arc<OnceLock<tokio::sync::mpsc::UnboundedSender<WriterCommand>>> =
-            Arc::new(OnceLock::new());
-
+        let reconnect_auth_h = Arc::clone(&reconnect_auth);
         let message_handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
-            if let Ok(StreamMessage::Status(status)) = stream_decode(data) {
-                if let Some(ref code) = status.error_code
-                    && code.is_race_stream_fatal()
-                {
-                    log::error!(
-                        "Betfair {label} stream fatal error: {:?} - {:?} ({fatal_hint})",
-                        status.error_code,
-                        status.error_message,
-                    );
-                    let _ = fatal_tx.send(());
-                    return;
+            if let Ok(msg) = stream_decode(data) {
+                if let StreamMessage::Status(status) = &msg {
+                    if let Some(ref code) = status.error_code
+                        && code.is_race_stream_fatal()
+                    {
+                        log::error!(
+                            "Betfair {label} stream fatal error: {:?} - {:?} ({fatal_hint})",
+                            status.error_code,
+                            status.error_message,
+                        );
+                        let _ = fatal_tx.send(());
+                        return;
+                    }
+
+                    if status.connection_closed {
+                        log::warn!(
+                            "Betfair {label} stream closed: {:?} - {:?}",
+                            status.error_code,
+                            status.error_message,
+                        );
+                    } else if status.error_code.is_some() {
+                        log::warn!(
+                            "Betfair {label} stream status: {:?} - {:?}",
+                            status.error_code,
+                            status.error_message,
+                        );
+                    }
                 }
 
-                if status.connection_closed {
-                    log::warn!(
-                        "Betfair {label} stream closed: {:?} - {:?}",
-                        status.error_code,
-                        status.error_message,
-                    );
-                } else if status.error_code.is_some() {
-                    log::warn!(
-                        "Betfair {label} stream status: {:?} - {:?}",
-                        status.error_code,
-                        status.error_message,
-                    );
+                if matches!(msg, StreamMessage::Connection(_)) {
+                    reconnect_auth_h.request_pending();
                 }
             }
             handler(data);
         });
 
-        let auth_bytes_reconnect = auth_bytes_rx;
+        let auth_reconnect = auth_rx;
+        let reconnect_auth_replay = Arc::clone(&reconnect_auth);
         let sub_reconnect = sub_bytes.clone();
-        let shared_tx_reconnect = Arc::clone(&shared_tx);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            let Some(tx) = shared_tx_reconnect.get() else {
-                return;
-            };
-            let auth = auth_bytes_reconnect.borrow().clone();
-            let mut combined = Vec::with_capacity(auth.len() + 2 + sub_reconnect.len());
-            combined.extend_from_slice(&auth);
+        let reconnect_replay: SocketReconnectReplay = Arc::new(move || {
+            let auth = auth_reconnect.borrow().clone();
+            reconnect_auth_replay.record_replay(auth.generation);
+            let mut combined = Vec::with_capacity(auth.bytes.len() + 2 + sub_reconnect.len());
+            combined.extend_from_slice(&auth.bytes);
             combined.extend_from_slice(b"\r\n");
             combined.extend_from_slice(&sub_reconnect);
-            let _ = tx.send(WriterCommand::Send(Bytes::from(combined)));
+            vec![Bytes::from(combined)]
         });
 
         let url = format!("{}:{}", config.host, config.port);
@@ -535,11 +575,10 @@ impl BetfairRaceStreamClient {
             certs_dir: None,
         };
 
-        let socket = SocketClient::connect(socket_config, Some(post_reconnection))
+        let socket = SocketClient::connect_with_reconnect_replay(socket_config, reconnect_replay)
             .await
             .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
-
-        let _ = shared_tx.set(socket.writer_tx.clone());
+        reconnect_auth.set_handle(socket.reconnect_handle());
 
         let mut combined = Vec::with_capacity(auth_bytes_vec.len() + 2 + sub_bytes.len());
         combined.extend_from_slice(&auth_bytes_vec);
@@ -552,7 +591,8 @@ impl BetfairRaceStreamClient {
 
         Ok(Self {
             socket,
-            auth_bytes_tx,
+            auth_tx,
+            reconnect_auth,
             closed: AtomicBool::new(false),
         })
     }
@@ -568,8 +608,31 @@ impl BetfairRaceStreamClient {
     pub fn update_auth(&self, app_key: &str, session_token: String) {
         let auth = Authentication::new(app_key.to_string(), session_token);
         if let Ok(bytes) = serde_json::to_vec(&auth) {
-            let _ = self.auth_bytes_tx.send(Bytes::from(bytes));
+            let bytes = Bytes::from(bytes);
+            self.auth_tx.send_if_modified(|current| {
+                if current.bytes == bytes {
+                    return false;
+                }
+                *current = StreamAuth {
+                    generation: current.generation.wrapping_add(1),
+                    bytes,
+                };
+                true
+            });
         }
+    }
+
+    /// Requests replacement of the active stream transport.
+    ///
+    /// Returns `true` only when this call starts a reconnect. Duplicate requests and requests after
+    /// close return `false`.
+    #[must_use]
+    pub fn request_reconnect(&self) -> bool {
+        if self.closed.load(Ordering::SeqCst) {
+            return false;
+        }
+        self.reconnect_auth
+            .request(self.auth_tx.borrow().generation)
     }
 
     /// Closes the race stream connection.
@@ -584,6 +647,89 @@ struct AuxiliaryStreamSubscription {
     label: &'static str,
     fatal_hint: &'static str,
     fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
+}
+
+#[derive(Clone, Debug)]
+struct StreamAuth {
+    generation: u64,
+    bytes: Bytes,
+}
+
+#[derive(Debug, Default)]
+struct ReconnectAuthState {
+    replay_generation: AtomicU64,
+    pending_generation: AtomicU64,
+    reconnect_handle: OnceLock<SocketReconnectHandle>,
+}
+
+impl ReconnectAuthState {
+    fn set_handle(&self, handle: SocketReconnectHandle) {
+        let result = self.reconnect_handle.set(handle);
+        debug_assert!(result.is_ok(), "reconnect handle is set only once");
+    }
+
+    fn record_replay(&self, generation: u64) {
+        self.replay_generation.store(generation, Ordering::SeqCst);
+        let _ =
+            self.pending_generation
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |pending| {
+                    if pending != 0 && pending <= generation {
+                        Some(0)
+                    } else {
+                        None
+                    }
+                });
+    }
+
+    fn request(&self, auth_generation: u64) -> bool {
+        let Some(handle) = self.reconnect_handle.get() else {
+            return false;
+        };
+
+        match handle.request_reconnect() {
+            ReconnectRequestOutcome::Accepted => true,
+            ReconnectRequestOutcome::AlreadyReconnecting => {
+                if auth_generation > self.replay_generation.load(Ordering::SeqCst) {
+                    self.pending_generation
+                        .fetch_max(auth_generation, Ordering::SeqCst);
+                }
+                false
+            }
+            ReconnectRequestOutcome::Disconnected
+            | ReconnectRequestOutcome::Closed
+            | ReconnectRequestOutcome::Unsupported => false,
+        }
+    }
+
+    fn request_pending(&self) {
+        let pending_generation = self.pending_generation.load(Ordering::SeqCst);
+        if pending_generation == 0
+            || pending_generation <= self.replay_generation.load(Ordering::SeqCst)
+        {
+            return;
+        }
+
+        let Some(handle) = self.reconnect_handle.get() else {
+            return;
+        };
+
+        match handle.request_reconnect() {
+            ReconnectRequestOutcome::Accepted => {
+                let _ = self.pending_generation.compare_exchange(
+                    pending_generation,
+                    0,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                );
+            }
+            ReconnectRequestOutcome::AlreadyReconnecting => {}
+            ReconnectRequestOutcome::Disconnected
+            | ReconnectRequestOutcome::Closed
+            | ReconnectRequestOutcome::Unsupported => {
+                self.pending_generation.store(0, Ordering::SeqCst);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -713,8 +859,6 @@ mod tests {
             watch::channel(Some("ocm-iclk1".to_string()));
         let (market_sub_tx, market_sub_rx) = watch::channel(None::<MarketSubscription>);
         let (order_sub_tx, order_sub_rx) = watch::channel(None::<OrderSubscription>);
-        let shared_tx: Arc<OnceLock<tokio::sync::mpsc::UnboundedSender<WriterCommand>>> =
-            Arc::new(OnceLock::new());
 
         let auth = Authentication::new("key".to_string(), "token".to_string());
         let auth_bytes = Bytes::from(serde_json::to_vec(&auth).unwrap());
@@ -741,27 +885,19 @@ mod tests {
             segmentation_enabled: None,
         }));
 
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
-        let _ = shared_tx.set(tx);
-
-        // Build and invoke the reconnect closure (mirrors the logic in connect())
         let auth_bytes_reconnect = auth_bytes;
-        let shared_tx_reconnect = Arc::clone(&shared_tx);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            let Some(tx) = shared_tx_reconnect.get() else {
-                return;
-            };
-
+        let reconnect_replay: SocketReconnectReplay = Arc::new(move || {
+            let mut replay = Vec::with_capacity(3);
             let market_sub = market_sub_rx.borrow().clone();
             let order_sub = order_sub_rx.borrow().clone();
 
-            let _ = tx.send(WriterCommand::Send(auth_bytes_reconnect.clone()));
+            replay.push(auth_bytes_reconnect.clone());
 
             if let Some(mut sub) = market_sub {
                 sub.clk = market_clk_rx.borrow().clone();
                 sub.initial_clk = market_initial_clk_rx.borrow().clone();
                 if let Ok(sub_bytes) = serde_json::to_vec(&sub) {
-                    let _ = tx.send(WriterCommand::Send(Bytes::from(sub_bytes)));
+                    replay.push(Bytes::from(sub_bytes));
                 }
             }
 
@@ -769,9 +905,11 @@ mod tests {
                 sub.clk = order_clk_rx.borrow().clone();
                 sub.initial_clk = order_initial_clk_rx.borrow().clone();
                 if let Ok(sub_bytes) = serde_json::to_vec(&sub) {
-                    let _ = tx.send(WriterCommand::Send(Bytes::from(sub_bytes)));
+                    replay.push(Bytes::from(sub_bytes));
                 }
             }
+
+            replay
         });
 
         drop(market_clk_tx);
@@ -779,26 +917,14 @@ mod tests {
         drop(order_clk_tx);
         drop(order_initial_clk_tx);
 
-        post_reconnection();
-
-        let auth_cmd = rx.try_recv().expect("auth replay message");
-        let market_cmd = rx.try_recv().expect("market subscription message");
-        let order_cmd = rx.try_recv().expect("order subscription message");
-        assert!(rx.try_recv().is_err(), "no further messages expected");
-
-        let WriterCommand::Send(auth_bytes) = auth_cmd else {
-            panic!("expected Send");
-        };
-        let WriterCommand::Send(market_bytes) = market_cmd else {
-            panic!("expected Send");
-        };
-        let WriterCommand::Send(order_bytes) = order_cmd else {
-            panic!("expected Send");
+        let replay = reconnect_replay();
+        let [auth_bytes, market_bytes, order_bytes] = replay.as_slice() else {
+            panic!("expected auth, market, and order replay messages");
         };
 
-        let auth_str = std::str::from_utf8(&auth_bytes).unwrap();
-        let market_str = std::str::from_utf8(&market_bytes).unwrap();
-        let order_str = std::str::from_utf8(&order_bytes).unwrap();
+        let auth_str = std::str::from_utf8(auth_bytes).unwrap();
+        let market_str = std::str::from_utf8(market_bytes).unwrap();
+        let order_str = std::str::from_utf8(order_bytes).unwrap();
 
         assert!(auth_str.contains("\"op\":\"authentication\""));
         assert!(market_str.contains("\"op\":\"marketSubscription\""));
@@ -809,6 +935,105 @@ mod tests {
         assert!(order_str.contains("\"op\":\"orderSubscription\""));
         assert!(order_str.contains("\"clk\":\"ocm-clk1\""));
         assert!(order_str.contains("\"initialClk\":\"ocm-iclk1\""));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_auth_update_after_replay_snapshot_requests_follow_up() {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let (read_half, _write_half) = socket.into_split();
+            let mut reader = BufReader::new(read_half);
+            let mut line = String::new();
+            reader.read_line(&mut line).await.unwrap();
+            line.clear();
+            reader.read_line(&mut line).await.unwrap();
+
+            let (socket, _) = listener.accept().await.unwrap();
+            let (read_half, mut write_half) = socket.into_split();
+            let mut reader = BufReader::new(read_half);
+            line.clear();
+            reader.read_line(&mut line).await.unwrap();
+            let auth: serde_json::Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(auth["session"], "replacement-1");
+            line.clear();
+            reader.read_line(&mut line).await.unwrap();
+            write_half
+                .write_all(b"{\"op\":\"connection\",\"connectionId\":\"replacement-1\"}\r\n")
+                .await
+                .unwrap();
+
+            let (socket, _) = listener.accept().await.unwrap();
+            let (read_half, _write_half) = socket.into_split();
+            let mut reader = BufReader::new(read_half);
+            line.clear();
+            reader.read_line(&mut line).await.unwrap();
+            let auth: serde_json::Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(auth["session"], "replacement-2");
+            line.clear();
+            reader.read_line(&mut line).await.unwrap();
+            let subscription: serde_json::Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(subscription["op"], "orderSubscription");
+        });
+
+        let credential = BetfairCredential::new(
+            "testuser".to_string(),
+            "testpass".to_string(),
+            "test-app-key".to_string(),
+        );
+        let config = BetfairStreamConfig {
+            host: "127.0.0.1".to_string(),
+            port,
+            heartbeat_ms: 5_000,
+            idle_timeout_ms: 60_000,
+            reconnect_delay_initial_ms: 200,
+            reconnect_delay_max_ms: 1_000,
+            use_tls: false,
+        };
+        let client = BetfairStreamClient::connect(
+            &credential,
+            "initial".to_string(),
+            Arc::new(|_| {}),
+            config,
+        )
+        .await
+        .unwrap();
+        client.subscribe_orders(None, Some(5_000)).await.unwrap();
+
+        client.update_auth("test-app-key", "replacement-1".to_string());
+        assert!(client.request_reconnect());
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while client
+                .reconnect_auth
+                .replay_generation
+                .load(Ordering::SeqCst)
+                < 1
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        client.update_auth("test-app-key", "replacement-2".to_string());
+        assert!(!client.request_reconnect());
+        assert_eq!(
+            client
+                .reconnect_auth
+                .pending_generation
+                .load(Ordering::SeqCst),
+            2,
+        );
+
+        tokio::time::timeout(std::time::Duration::from_secs(5), server)
+            .await
+            .unwrap()
+            .unwrap();
+        client.close().await;
     }
 
     #[rstest]
@@ -834,36 +1059,22 @@ mod tests {
         let race_sub = RaceSubscription::new(1);
         let race_sub_bytes = Bytes::from(serde_json::to_vec(&race_sub).unwrap());
 
-        let shared_tx: Arc<OnceLock<tokio::sync::mpsc::UnboundedSender<WriterCommand>>> =
-            Arc::new(OnceLock::new());
-
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
-        let _ = shared_tx.set(tx);
-
         let auth_reconnect = auth_bytes;
         let sub_reconnect = race_sub_bytes;
-        let shared_tx_reconnect = Arc::clone(&shared_tx);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            let Some(tx) = shared_tx_reconnect.get() else {
-                return;
-            };
+        let reconnect_replay: SocketReconnectReplay = Arc::new(move || {
             let mut combined = Vec::with_capacity(auth_reconnect.len() + 2 + sub_reconnect.len());
             combined.extend_from_slice(&auth_reconnect);
             combined.extend_from_slice(b"\r\n");
             combined.extend_from_slice(&sub_reconnect);
-            let _ = tx.send(WriterCommand::Send(Bytes::from(combined)));
+            vec![Bytes::from(combined)]
         });
 
-        post_reconnection();
-
-        let cmd = rx.try_recv().expect("auth+race subscription message");
-        assert!(rx.try_recv().is_err(), "no further messages expected");
-
-        let WriterCommand::Send(bytes) = cmd else {
-            panic!("expected Send");
+        let replay = reconnect_replay();
+        let [bytes] = replay.as_slice() else {
+            panic!("expected one combined replay message");
         };
 
-        let text = std::str::from_utf8(&bytes).unwrap();
+        let text = std::str::from_utf8(bytes).unwrap();
         let (auth_part, sub_part) = text
             .split_once("\r\n")
             .expect("CRLF separator in combined message");
