@@ -956,7 +956,7 @@ pub enum LiquiditySide {
 pub enum MarketStatus {
     /// The instrument is trading.
     Open = 1,
-    /// The instrument is in a pre-open period.
+    /// Trading in the instrument has closed.
     Closed = 2,
     /// Trading in the instrument has been paused.
     Paused = 3,
