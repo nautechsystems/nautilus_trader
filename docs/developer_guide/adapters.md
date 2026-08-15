@@ -31,6 +31,82 @@ This guide distinguishes four kinds of guidance:
 - **Examples** show one sound implementation without making it mandatory.
 - **Exceptions** are valid when venue semantics or protocol boundaries require them.
 
+## Conformance
+
+An adapter conforms when it satisfies each rule below that applies to it, or documents an exception.
+Name the venue behavior that forces the exception, keep it inside the adapter, and cover it with a
+test that fails if the venue stops requiring it. [Phase 7](#phase-7-prove-conformance) sequences the
+work that proves conformance.
+
+| Rule                                                                                          | Applies to                       |
+| --------------------------------------------------------------------------------------------- | -------------------------------- |
+| [Repository and Python wiring](#repository-and-python-wiring)                                 | New adapter crates               |
+| [Credentials and secret handling](#credentials-and-secret-handling)                           | Every adapter                    |
+| [Configurations](#configurations-configrs)                                                    | Every adapter                    |
+| [Symbols and instrument identity](#symbols-and-instrument-identity)                           | Every adapter                    |
+| [Venue payload modeling and precision](#modeling-venue-payloads)                              | Every adapter                    |
+| [Client traits and factories](#client-traits-and-factories-datars-executionrs-factoriesrs)    | Every adapter                    |
+| [Connection lifecycle](#connection-lifecycle-connect)                                         | Data and execution clients       |
+| [Data events and request freshness](#data-client)                                             | Data clients                     |
+| [Execution client boundaries](#execution-client)                                              | Execution clients                |
+| [Reconciliation reports](#reconciliation-reports)                                             | Execution clients                |
+| [Bounded mass‑status reports](#bounded-massstatus-reports)                                    | Execution clients                |
+| [Instrument resolution during reconciliation](#instrument-resolution-during-reconciliation)   | Execution clients                |
+| [Tracked and external execution updates](#tracked-and-external-execution-updates)             | Execution clients                |
+| [Event ordering and deduplication](#event-ordering-and-deduplication)                         | Execution clients                |
+| [Order command outcome policy](#order-command-outcome-policy)                                 | Execution clients                |
+| [Naming the evidence classes](#naming-the-evidence-classes)                                   | Execution clients                |
+| [Diagnostics and strategy‑facing reasons](#separate-diagnostics-from-strategy-facing-reasons) | Execution clients                |
+| [Request flow](#request-flow)                                                                 | HTTP clients                     |
+| [Request signing and authentication](#request-signing-and-authentication)                     | HTTP and WebSocket request paths |
+| [Error handling and retry logic](#error-handling-and-retry-logic)                             | HTTP and WebSocket request paths |
+| [Rate limiting](#rate-limiting)                                                               | HTTP and WebSocket clients       |
+| [Handler initialization handshake](#handler-initialization-handshake-setclient)               | WebSocket clients                |
+| [Authentication](#authentication)                                                             | WebSocket clients                |
+| [Subscription management](#subscription-management)                                           | WebSocket clients                |
+| [Message routing](#message-routing)                                                           | WebSocket clients                |
+| [Reconnection and shutdown](#reconnection-and-shutdown)                                       | WebSocket clients                |
+| [Backpressure](#backpressure)                                                                 | Every adapter                    |
+| [Task management](#task-management)                                                           | Every adapter                    |
+
+The [data testing specification](spec_data_testing.md) and
+[execution testing specification](spec_exec_testing.md) hold the scenarios that prove these
+contracts against a venue.
+
+### Shared baseline
+
+Leverage the shared implementation of each piece below, then use any state structure that satisfies
+the contract it implements. The shared type carries that contract with it and keeps behavior
+comparable across venues, so a local structure has to prove the same contract on its own terms.
+
+Two execution clients implement the same trait without trading through a venue API, so the baseline
+does not apply to them: [sandbox](../../crates/adapters/sandbox/src/execution.rs) simulates fills
+locally, and [blockchain](../../crates/adapters/blockchain/src/execution/client.rs) executes
+on‑chain behind the `defi` feature. Deterministic simulation eligibility also sits outside the
+baseline, as an optional capability proven per adapter rather than a requirement.
+
+| Target                     | Shared piece                                                                     | Contract                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Command outcome evidence   | [`CommandFailure`](../../crates/live/src/execution/failure.rs)                   | [Naming the evidence classes](#naming-the-evidence-classes)                   |
+| Order identity and context | [`OrderIdentity` and `OrderContext`](../../crates/live/src/execution/context.rs) | [Tracked and external updates](#tracked-and-external-execution-updates)       |
+| Replay deduplication       | [`FifoCache` and `FifoCacheMap`](../../crates/common/src/cache/fifo.rs)          | [Event ordering and deduplication](#event-ordering-and-deduplication)         |
+| Order denial reasons       | [`OrderDeniedReason`](../../crates/model/src/events/order/denied_reason.rs)      | [Diagnostics and reasons](#separate-diagnostics-from-strategy-facing-reasons) |
+| Task lifecycle             | [`TaskHandles`](../../crates/common/src/live/task.rs)                            | [Task management](#task-management)                                           |
+| Ingestion precision        | [Domain numeric types](rust.md#domain-numeric-types)                             | [Venue payload modeling](#modeling-venue-payloads)                            |
+| HTTP transport             | [`HttpClient`](../../crates/network/src/http/client.rs)                          | [Request flow](#request-flow)                                                 |
+| Authentication state       | [`AuthTracker`](../../crates/network/src/websocket/auth.rs)                      | [Authentication](#authentication)                                             |
+| Subscription identity      | [`SubscriptionState`](../../crates/network/src/websocket/subscription.rs)        | [Subscription management](#subscription-management)                           |
+| Reconnect requests         | [`request_reconnect`](../../crates/network/src/websocket/client.rs)              | [Reconnection and shutdown](#reconnection-and-shutdown)                       |
+| Retry machinery            | [`RetryManager`](../../crates/network/src/retry.rs)                              | [Error handling and retry logic](#error-handling-and-retry-logic)             |
+
+Where a venue transmits a discrete value as an IEEE‑754 field rather than a decimal string or JSON
+number, contain that at the parsing boundary as a documented exception instead of letting `f64`
+spread inward from it.
+
+Retry classification is the exception to this table: it stays adapter‑owned because venue status
+codes and rate‑limit semantics differ. The shared machinery around it is not. See
+[error handling and retry logic](#error-handling-and-retry-logic) for both halves.
+
 ## Structure of an adapter
 
 The Rust crate is the source of truth for protocol behavior. An adapter commonly separates these
@@ -666,6 +742,10 @@ events without accessing the engine cache, such as quantity, price and trigger d
 force, and execution flags. Keep venue order bindings, request correlation, cumulative fills, and
 replace state in adapter‑owned context around that common surface.
 
+[`OrderIdentity` and `OrderContext`](../../crates/live/src/execution/context.rs) provide that
+surface. Start from them, and keep an adapter‑local structure only where it proves the same routing
+decision.
+
 Register the order context before sending or spawning work that can produce an inbound update.
 Restore context for active local orders before processing their live updates, and retain it while
 the order can still produce owned updates. Do not evict active context merely to bound replay state.
@@ -1193,13 +1273,20 @@ Reconnection must restore protocol state, not only the socket:
 Support both WebSocket control frames and venue text heartbeats when applicable. Let the shared
 client handle protocol control frames; keep application heartbeat messages in the venue handler.
 
+A handler‑mode client requests a reconnect through the shared client rather than a private
+reconnect loop. Its `request_reconnect` returns `true` only when the call moves an active client
+into reconnecting. Take the reconnect handle's `request_reconnect` when the adapter must
+distinguish the `ReconnectRequestOutcome` variants, since an already reconnecting, disconnecting,
+closed, or unsupported transport each warrant a different response. Stream‑mode clients own their
+reconnect loop, and their handles report `Unsupported`.
+
 Shutdown signals tasks, asks the transport to close, and then joins or aborts owned work according
 to a bounded policy. Make repeated shutdown safe. Do not assume a handler `JoinHandle` has one
 owner when client objects can be cloned.
 
 ### Backpressure
 
-Shared WebSocket transport and adapter event paths use unbounded Tokio channels so receive
+Shared WebSocket transport and adapter event paths use **unbounded** Tokio channels so receive
 loops do not wait for queue capacity. Preserve that convention for live event paths. Introducing a
 bounded channel, coalescing, dropping, or disconnect‑on‑full policy changes platform semantics and
 needs an explicit shared design, not an adapter‑local change.
