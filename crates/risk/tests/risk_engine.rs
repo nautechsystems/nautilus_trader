@@ -41,7 +41,7 @@ use nautilus_common::{
     },
     throttler::RateLimit,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
 use nautilus_model::{
     accounts::{
@@ -9010,4 +9010,201 @@ fn test_submit_sell_cash_account_with_long_position_reduces_then_passes(
     let saved_execute_messages =
         get_execute_order_event_handler_messages(&execute_order_event_handler);
     assert_eq!(saved_execute_messages.len(), 1);
+}
+
+#[rstest]
+fn test_submit_order_close_position_exempt_from_notional_and_quantity_bounds(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    let btc_usdt = InstrumentAny::CurrencyPair(CurrencyPair::new(
+        InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+        Symbol::from("BTCUSDT"),
+        Currency::BTC(),
+        Currency::USDT(),
+        1,
+        6,
+        Price::from("0.1"),
+        Quantity::from("0.000001"),
+        Some(Quantity::from("1")),
+        Some(Quantity::from("0.000001")),
+        Some(Quantity::from("10")),      // max_quantity
+        Some(Quantity::from("0.01")),    // min_quantity
+        Some(Money::from("10000 USDT")), // max_notional
+        Some(Money::from("50 USDT")),    // min_notional
+        None,
+        None,
+        Some(dec!(0.1)),
+        Some(dec!(0.1)),
+        Some(dec!(-0.00005)),
+        Some(dec!(0.00015)),
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    ));
+
+    simple_cache.add_instrument(btc_usdt.clone()).unwrap();
+
+    let margin_account = margin_account_with_usdt_balance("10000 USDT", "0 USDT", "10000 USDT");
+    simple_cache
+        .add_account(AccountAny::Margin(margin_account))
+        .unwrap();
+
+    let cache = Rc::new(RefCell::new(simple_cache));
+    let mut risk_engine = get_risk_engine(Some(cache), None, None, false);
+
+    // StopMarket order with placeholder quantity 0.001 BTC (< min_qty 0.01) and trigger price 40000 USDT -> notional 40 USDT (< min_notional 50 USDT)
+    let order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(btc_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.001"))
+        .trigger_price(Price::from("40000.0"))
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let mut params = Params::new();
+    params.insert("close_position".to_string(), true.into());
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        btc_usdt.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        Some(params),
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    assert_eq!(
+        process_messages.len(),
+        0,
+        "Order should not be denied when close_position is true"
+    );
+
+    let saved_execute_messages =
+        get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(
+        saved_execute_messages.len(),
+        1,
+        "close_position order must be forwarded to execution"
+    );
+}
+
+#[rstest]
+fn test_submit_order_close_position_still_enforces_quantity_precision(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    mut simple_cache: Cache,
+) {
+    let btc_usdt = InstrumentAny::CurrencyPair(CurrencyPair::new(
+        InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+        Symbol::from("BTCUSDT"),
+        Currency::BTC(),
+        Currency::USDT(),
+        1,
+        6, // size_precision = 6
+        Price::from("0.1"),
+        Quantity::from("0.000001"),
+        Some(Quantity::from("1")),
+        Some(Quantity::from("0.000001")),
+        Some(Quantity::from("10")),
+        Some(Quantity::from("0.01")),
+        Some(Money::from("10000 USDT")),
+        Some(Money::from("50 USDT")),
+        None,
+        None,
+        Some(dec!(0.1)),
+        Some(dec!(0.1)),
+        Some(dec!(-0.00005)),
+        Some(dec!(0.00015)),
+        None,
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    ));
+
+    simple_cache.add_instrument(btc_usdt.clone()).unwrap();
+
+    let margin_account = margin_account_with_usdt_balance("10000 USDT", "0 USDT", "10000 USDT");
+    simple_cache
+        .add_account(AccountAny::Margin(margin_account))
+        .unwrap();
+
+    let cache = Rc::new(RefCell::new(simple_cache));
+    let mut risk_engine = get_risk_engine(Some(cache), None, None, false);
+
+    // Quantity precision 8 exceeds instrument size_precision 6
+    let order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(btc_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.00100000"))
+        .trigger_price(Price::from("40000.0"))
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let mut params = Params::new();
+    params.insert("close_position".to_string(), true.into());
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        btc_usdt.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        Some(params),
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    assert_eq!(
+        process_messages.len(),
+        1,
+        "Order must be denied when placeholder quantity precision exceeds instrument precision"
+    );
+
+    if let OrderEventAny::Denied(denied) = &process_messages[0] {
+        assert_eq!(
+            denied.reason,
+            OrderDeniedReason::QuantityPrecisionExceedsMaximum {
+                quantity: Quantity::from("0.00100000"),
+                quantity_precision: 8,
+                max_precision: 6,
+            }
+            .to_string()
+        );
+    } else {
+        panic!("Expected OrderDenied event");
+    }
 }

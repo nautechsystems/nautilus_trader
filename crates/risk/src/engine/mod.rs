@@ -639,11 +639,17 @@ impl RiskEngine {
             return; // Denied
         };
 
-        if !self.check_order(&instrument, &order) {
+        let close_position = command
+            .params
+            .as_ref()
+            .and_then(|p| p.get_bool("close_position"))
+            .unwrap_or(false);
+
+        if !self.check_order(&instrument, &order, close_position) {
             return; // Denied
         }
 
-        if !self.check_orders_risk(&instrument, &[order]) {
+        if !self.check_orders_risk(&instrument, &[order], close_position) {
             return; // Denied
         }
 
@@ -694,6 +700,12 @@ impl RiskEngine {
             instruments.insert(instrument_id, instrument);
         }
 
+        let close_position = command
+            .params
+            .as_ref()
+            .and_then(|p| p.get_bool("close_position"))
+            .unwrap_or(false);
+
         for order in &orders {
             let Some(instrument) = instruments.get(&order.instrument_id()) else {
                 self.deny_order(
@@ -706,7 +718,7 @@ impl RiskEngine {
                 return; // Denied
             };
 
-            if !self.check_order(instrument, order) {
+            if !self.check_order(instrument, order, close_position) {
                 return; // Denied
             }
         }
@@ -724,7 +736,7 @@ impl RiskEngine {
             return; // Denied
         };
 
-        if !self.check_orders_risk(&representative, &orders) {
+        if !self.check_orders_risk(&representative, &orders, close_position) {
             self.deny_order_list(
                 &orders,
                 &OrderDeniedReason::OrderListDenied {
@@ -894,7 +906,12 @@ impl RiskEngine {
         }
 
         // Check Quantity
-        reason = Self::check_quantity(&instrument, command.quantity, order.is_quote_quantity());
+        reason = Self::check_quantity(
+            &instrument,
+            command.quantity,
+            order.is_quote_quantity(),
+            false,
+        );
         if let Some(reason) = reason {
             self.reject_modify_order(&order, &reason.to_string());
             return false;
@@ -928,9 +945,14 @@ impl RiskEngine {
         true
     }
 
-    fn check_order(&self, instrument: &InstrumentAny, order: &OrderAny) -> bool {
+    fn check_order(
+        &self,
+        instrument: &InstrumentAny,
+        order: &OrderAny,
+        close_position: bool,
+    ) -> bool {
         if !self.check_order_price(instrument, order)
-            || !self.check_order_quantity(instrument, order)
+            || !self.check_order_quantity(instrument, order, close_position)
         {
             return false; // Denied
         }
@@ -981,11 +1003,17 @@ impl RiskEngine {
         true
     }
 
-    fn check_order_quantity(&self, instrument: &InstrumentAny, order: &OrderAny) -> bool {
+    fn check_order_quantity(
+        &self,
+        instrument: &InstrumentAny,
+        order: &OrderAny,
+        close_position: bool,
+    ) -> bool {
         let reason = Self::check_quantity(
             instrument,
             Some(order.quantity()),
             order.is_quote_quantity(),
+            close_position,
         );
 
         if let Some(reason) = reason {
@@ -996,7 +1024,12 @@ impl RiskEngine {
         true
     }
 
-    fn check_orders_risk(&self, instrument: &InstrumentAny, orders: &[OrderAny]) -> bool {
+    fn check_orders_risk(
+        &self,
+        instrument: &InstrumentAny,
+        orders: &[OrderAny],
+        close_position: bool,
+    ) -> bool {
         let mut orders_by_account: AHashMap<Option<AccountId>, Vec<&OrderAny>> = AHashMap::new();
         for order in orders {
             orders_by_account
@@ -1006,7 +1039,12 @@ impl RiskEngine {
         }
 
         for (account_id, account_orders) in &orders_by_account {
-            if !self.check_orders_risk_for_account(instrument, account_orders, *account_id) {
+            if !self.check_orders_risk_for_account(
+                instrument,
+                account_orders,
+                *account_id,
+                close_position,
+            ) {
                 return false;
             }
         }
@@ -1023,6 +1061,7 @@ impl RiskEngine {
         instrument: &InstrumentAny,
         orders: &[&OrderAny],
         account_id: Option<AccountId>,
+        close_position: bool,
     ) -> bool {
         let mut max_notional: Option<Money> = None;
 
@@ -1209,6 +1248,7 @@ impl RiskEngine {
                     let Some(price) = market_price else {
                         let is_reducing = !is_wallet
                             && (order.is_reduce_only()
+                                || close_position
                                 || (order.is_sell()
                                     && (cum_sell_qty_raw + order.quantity().raw)
                                         <= available_long_qty_raw));
@@ -1403,7 +1443,7 @@ impl RiskEngine {
             // price and may differ from the venue fill, and some venues enforce
             // distinct per-order-type minimums. The venue is authoritative for
             // quote-denominated sizing; rely on `min_notional`/`max_notional` below.
-            if !order.is_quote_quantity() {
+            if !order.is_quote_quantity() && !close_position {
                 if let Some(max_quantity) = instrument.max_quantity()
                     && effective_quantity > max_quantity
                 {
@@ -1456,7 +1496,8 @@ impl RiskEngine {
             }
 
             // Check MAX notional per order limit
-            if let Some(max_notional_value) = max_notional
+            if !close_position
+                && let Some(max_notional_value) = max_notional
                 && notional > max_notional_value
             {
                 self.deny_order(
@@ -1470,8 +1511,9 @@ impl RiskEngine {
                 return false; // Denied
             }
 
-            // Reduce-only orders may close residual positions below venue minimum
+            // Reduce-only or close-position orders may close residual positions below venue minimum
             if !order.is_reduce_only()
+                && !close_position
                 && let Some(min_notional) = instrument.min_notional()
                 && notional.currency == min_notional.currency
                 && notional < min_notional
@@ -1488,7 +1530,8 @@ impl RiskEngine {
             }
 
             // Check MAX notional instrument limit
-            if let Some(max_notional) = instrument.max_notional()
+            if !close_position
+                && let Some(max_notional) = instrument.max_notional()
                 && notional.currency == max_notional.currency
                 && notional > max_notional
             {
@@ -1533,6 +1576,7 @@ impl RiskEngine {
 
                 // Determine if order is position-reducing
                 let is_reducing = order.is_reduce_only()
+                    || close_position
                     || (order.is_sell()
                         && (cum_sell_qty_raw + effective_quantity.raw) <= available_long_qty_raw)
                     || (order.is_buy()
@@ -1685,12 +1729,13 @@ impl RiskEngine {
 
                 // Check if order reduces an existing position
                 let is_position_reducing = if order.is_buy() {
-                    let reducing =
-                        (cum_buy_qty_raw + effective_quantity.raw) <= available_short_qty_raw;
+                    let reducing = close_position
+                        || (cum_buy_qty_raw + effective_quantity.raw) <= available_short_qty_raw;
                     cum_buy_qty_raw += effective_quantity.raw;
                     reducing
                 } else if order.is_sell() {
                     let reducing = order.is_reduce_only()
+                        || close_position
                         || (cum_sell_qty_raw + effective_quantity.raw) <= available_long_qty_raw;
                     cum_sell_qty_raw += effective_quantity.raw;
                     reducing
@@ -2000,6 +2045,7 @@ impl RiskEngine {
         instrument: &InstrumentAny,
         quantity: Option<Quantity>,
         is_quote_quantity: bool,
+        close_position: bool,
     ) -> Option<OrderDeniedReason> {
         let quantity_val = quantity?;
 
@@ -2012,10 +2058,10 @@ impl RiskEngine {
             });
         }
 
-        // Base-quantity bounds are deliberately not applied to quote-denominated orders here,
+        // Base-quantity bounds are deliberately not applied to quote-denominated or close-position orders here,
         // and they are not applied later either: `check_orders_risk_for_account` skips the same
         // comparisons for them. Applicable notional limits are checked during account risk.
-        if is_quote_quantity {
+        if is_quote_quantity || close_position {
             return None;
         }
 
