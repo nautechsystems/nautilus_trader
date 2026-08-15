@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use alloy::primitives::B256;
-use nautilus_model::defi::{Block, DexType};
+use alloy::primitives::{Address, B256, Bytes, U256};
+use nautilus_model::defi::{Block, DexType, rpc::RpcLog};
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::events::{
     burn::BurnEvent, collect::CollectEvent, fee_protocol_collect::FeeProtocolCollectEvent,
@@ -59,12 +60,44 @@ pub struct RpcBlock {
     /// The block number.
     #[serde(deserialize_with = "deserialize_hex_u64")]
     pub number: u64,
+    /// The canonical hash of the block.
+    pub hash: B256,
     /// The block timestamp in seconds since the Unix epoch.
     #[serde(deserialize_with = "deserialize_hex_u64")]
     pub timestamp: u64,
     /// The block base fee per gas in wei (`None` on pre-London chains).
     #[serde(default, deserialize_with = "deserialize_hex_u128_opt")]
     pub base_fee_per_gas: Option<u128>,
+    /// Full transactions when requested, otherwise empty.
+    #[serde(skip)]
+    pub transactions: Vec<RpcTransaction>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct RpcBlockResponse {
+    #[serde(flatten)]
+    pub block: RpcBlock,
+    #[serde(default)]
+    pub transactions: Vec<Value>,
+}
+
+/// Represents the transaction identity required for signer-nonce reconciliation.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RpcTransaction {
+    /// The transaction hash.
+    pub hash: B256,
+    /// The signer address.
+    pub from: Address,
+    /// The signer nonce.
+    #[serde(deserialize_with = "deserialize_hex_u64")]
+    pub nonce: u64,
+    /// The destination address, or `None` for contract creation.
+    pub to: Option<Address>,
+    /// The transaction calldata.
+    pub input: Bytes,
+    /// The native value in wei.
+    pub value: U256,
 }
 
 /// Represents the minimal transaction receipt view required for inclusion observation.
@@ -73,15 +106,25 @@ pub struct RpcBlock {
 pub struct RpcTransactionReceipt {
     /// The transaction hash.
     pub transaction_hash: B256,
+    /// The canonical block hash reported with the receipt.
+    pub block_hash: B256,
     /// The block number that included the transaction.
     #[serde(deserialize_with = "deserialize_hex_u64")]
     pub block_number: u64,
     /// The gas used by the transaction.
     #[serde(deserialize_with = "deserialize_hex_u64")]
     pub gas_used: u64,
+    /// The effective gas price charged in wei.
+    pub effective_gas_price: U256,
+    /// The transaction index within the block.
+    #[serde(deserialize_with = "deserialize_hex_u64")]
+    pub transaction_index: u64,
     /// Whether the transaction executed successfully (status `0x1`).
     #[serde(deserialize_with = "deserialize_hex_bool")]
     pub status: bool,
+    /// Logs emitted by the transaction.
+    #[serde(default)]
+    pub logs: Vec<RpcLog>,
 }
 
 fn deserialize_hex_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>

@@ -27,7 +27,7 @@ use serde::de::DeserializeOwned;
 
 use crate::rpc::{
     error::{BlockchainRpcClientError, BroadcastError},
-    types::{RpcBlock, RpcTransactionReceipt},
+    types::{RpcBlock, RpcBlockResponse, RpcTransactionReceipt},
 };
 
 /// Per-request timeout for execution RPC calls, in seconds.
@@ -423,6 +423,22 @@ impl BlockchainHttpRpcClient {
             .and_then(|v| u64::try_from(v).map_err(Into::into))
     }
 
+    /// Returns the latest mined nonce for an address.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the result is missing or malformed.
+    pub async fn get_transaction_count_latest(&self, address: &Address) -> anyhow::Result<u64> {
+        let result: Option<String> = self
+            .execute_execution_rpc_call(
+                "eth_getTransactionCount",
+                serde_json::json!([address, "latest"]),
+            )
+            .await?;
+        parse_hex_quantity_result("eth_getTransactionCount", result)
+            .and_then(|v| u64::try_from(v).map_err(Into::into))
+    }
+
     /// Estimates the gas required for a transaction via `eth_estimateGas`.
     ///
     /// # Errors
@@ -468,13 +484,62 @@ impl BlockchainHttpRpcClient {
     ///
     /// Returns an error if the RPC call fails or the result is missing or malformed.
     pub async fn latest_block(&self) -> anyhow::Result<RpcBlock> {
-        let result: Option<RpcBlock> = self
+        self.block_by_tag("latest", false).await
+    }
+
+    /// Returns the consensus finalized block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the endpoint does not support the `finalized` tag, the RPC call
+    /// fails, or the result is missing or malformed.
+    pub async fn finalized_block(&self) -> anyhow::Result<RpcBlock> {
+        self.block_by_tag("finalized", false).await.map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to read the consensus finalized block; the execution endpoint must support the finalized tag: {e}"
+            )
+        })
+    }
+
+    /// Returns a numbered canonical block, optionally with full transactions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the result is missing or malformed.
+    pub async fn block_by_number(
+        &self,
+        number: u64,
+        full_transactions: bool,
+    ) -> anyhow::Result<RpcBlock> {
+        self.block_by_tag(&format!("0x{number:x}"), full_transactions)
+            .await
+    }
+
+    async fn block_by_tag(&self, tag: &str, full_transactions: bool) -> anyhow::Result<RpcBlock> {
+        let result: Option<RpcBlockResponse> = self
             .execute_execution_rpc_call(
                 "eth_getBlockByNumber",
-                serde_json::json!(["latest", false]),
+                serde_json::json!([tag, full_transactions]),
             )
             .await?;
-        result.ok_or_else(|| anyhow::anyhow!("eth_getBlockByNumber returned no result"))
+        let response = result.ok_or_else(|| {
+            anyhow::anyhow!("eth_getBlockByNumber returned no result for block tag {tag}")
+        })?;
+        let mut block = response.block;
+        if full_transactions {
+            block.transactions = response
+                .transactions
+                .into_iter()
+                .map(|transaction| {
+                    serde_json::from_value(transaction).map_err(|_| {
+                        anyhow::anyhow!(
+                            "Failed to parse full transaction in eth_getBlockByNumber response"
+                        )
+                    })
+                })
+                .collect::<anyhow::Result<_>>()?;
+        }
+        Ok(block)
     }
 
     /// Returns the receipt for the given transaction hash via `eth_getTransactionReceipt`.
@@ -607,11 +672,15 @@ pub(crate) mod tests {
         use axum::{Router, extract::State, routing::post};
         use serde_json::Value;
 
+        type ResponseSequences<K> = Arc<Mutex<HashMap<K, VecDeque<String>>>>;
+
         /// State for the mock JSON-RPC server: canned responses per method plus a request log.
         #[derive(Clone, Default)]
         pub(crate) struct MockRpcState {
             responses: HashMap<String, String>,
-            response_sequences: Arc<Mutex<HashMap<String, VecDeque<String>>>>,
+            parameter_responses: HashMap<(String, String), String>,
+            parameter_response_sequences: ResponseSequences<(String, String)>,
+            response_sequences: ResponseSequences<String>,
             call_responses: HashMap<String, String>,
             sleep_methods: HashMap<String, Duration>,
             requests: Arc<Mutex<Vec<Value>>>,
@@ -625,6 +694,38 @@ pub(crate) mod tests {
             pub(crate) fn with_response(mut self, method: &str, response_json: &str) -> Self {
                 self.responses
                     .insert(method.to_string(), response_json.to_string());
+                self
+            }
+
+            /// Serves a response for a method whose first parameter exactly matches `parameter`.
+            #[cfg(feature = "hypersync")]
+            #[must_use]
+            pub(crate) fn with_parameter_response(
+                mut self,
+                method: &str,
+                parameter: &str,
+                response_json: &str,
+            ) -> Self {
+                self.parameter_responses.insert(
+                    (method.to_string(), parameter.to_string()),
+                    response_json.to_string(),
+                );
+                self
+            }
+
+            /// Serves responses in order for a method whose first parameter exactly matches.
+            #[cfg(feature = "hypersync")]
+            #[must_use]
+            pub(crate) fn with_parameter_response_sequence(
+                self,
+                method: &str,
+                parameter: &str,
+                responses: &[&str],
+            ) -> Self {
+                self.parameter_response_sequences.lock().unwrap().insert(
+                    (method.to_string(), parameter.to_string()),
+                    responses.iter().map(ToString::to_string).collect(),
+                );
                 self
             }
 
@@ -711,8 +812,26 @@ pub(crate) mod tests {
                 .get_mut(method)
                 .and_then(VecDeque::pop_front);
 
+            let parameter = request["params"].get(0).and_then(Value::as_str);
+            let queued_parameter_response = parameter.and_then(|parameter| {
+                state
+                    .parameter_response_sequences
+                    .lock()
+                    .unwrap()
+                    .get_mut(&(method.to_string(), parameter.to_string()))
+                    .and_then(VecDeque::pop_front)
+            });
+            let parameter_response = parameter.and_then(|parameter| {
+                state
+                    .parameter_responses
+                    .get(&(method.to_string(), parameter.to_string()))
+            });
             let response = if let Some(response) = queued_response {
                 response
+            } else if let Some(response) = queued_parameter_response {
+                response
+            } else if let Some(response) = parameter_response {
+                response.clone()
             } else if let Some(response) = state.responses.get(method) {
                 response.clone()
             } else if method == "eth_sendRawTransaction" && state.send_raw_echo {
@@ -966,10 +1085,34 @@ pub(crate) mod tests {
         let block = client.latest_block().await.unwrap();
 
         assert_eq!(block.number, 30_346_560);
+        assert_eq!(
+            block.hash,
+            b256!("1111111111111111111111111111111111111111111111111111111111111111")
+        );
         assert_eq!(block.timestamp, 1_761_888_800);
         assert_eq!(block.base_fee_per_gas, Some(100_000_000));
+        assert!(block.transactions.is_empty());
         let requests = state.recorded_requests();
         assert_eq!(requests[0]["params"][0], "latest");
+        assert_eq!(requests[0]["params"][1], false);
+    }
+
+    #[tokio::test]
+    async fn finalized_block_uses_finalized_tag_without_transactions() {
+        let (client, state) = client_for(
+            MockRpcState::default().with_response("eth_getBlockByNumber", BLOCK_BY_NUMBER),
+        )
+        .await;
+
+        let block = client.finalized_block().await.unwrap();
+
+        assert_eq!(block.number, 30_346_560);
+        let requests = state.recorded_requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            requests[0]["params"],
+            serde_json::json!(["finalized", false])
+        );
     }
 
     #[tokio::test]
@@ -1009,8 +1152,15 @@ pub(crate) mod tests {
             b256!("9da4b71be3336357259f56bda5cfbd3803c211ce09b510c43e6fb2af84088c6a")
         );
         assert_eq!(receipt.block_number, 30_346_561);
+        assert_eq!(
+            receipt.block_hash,
+            b256!("2222222222222222222222222222222222222222222222222222222222222222")
+        );
         assert_eq!(receipt.gas_used, 50_112);
+        assert_eq!(receipt.effective_gas_price, U256::from(100_000_000_u64));
+        assert_eq!(receipt.transaction_index, 2);
         assert!(receipt.status);
+        assert!(receipt.logs.is_empty());
     }
 
     #[tokio::test]
@@ -1033,8 +1183,15 @@ pub(crate) mod tests {
             b256!("9da4b71be3336357259f56bda5cfbd3803c211ce09b510c43e6fb2af84088c6a")
         );
         assert_eq!(receipt.block_number, 30_346_561);
+        assert_eq!(
+            receipt.block_hash,
+            b256!("2222222222222222222222222222222222222222222222222222222222222222")
+        );
         assert_eq!(receipt.gas_used, 50_112);
+        assert_eq!(receipt.effective_gas_price, U256::from(100_000_000_u64));
+        assert_eq!(receipt.transaction_index, 2);
         assert!(!receipt.status);
+        assert!(receipt.logs.is_empty());
     }
 
     #[tokio::test]

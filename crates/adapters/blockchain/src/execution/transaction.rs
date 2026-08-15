@@ -25,6 +25,9 @@ use anyhow::Context;
 
 const BPS_DENOMINATOR: u128 = 10_000;
 
+/// Current version of the durable execution-intent schema.
+pub const EXECUTION_SCHEMA_VERSION: i16 = 2;
+
 /// The purpose of an execution transaction, persisted with the transaction record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransactionPurpose {
@@ -46,19 +49,50 @@ impl TransactionPurpose {
             Self::Swap => "swap",
         }
     }
+
+    /// Parses a persisted transaction purpose.
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "wrap" => Some(Self::Wrap),
+            "approve" => Some(Self::Approve),
+            "swap" => Some(Self::Swap),
+            _ => None,
+        }
+    }
 }
 
 /// The observation status of a persisted execution transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransactionStatus {
+    /// Intent persisted before nonce reservation or signing.
+    Prepared,
+    /// Signed hash persisted before a broadcast attempt.
+    Signed,
+    /// Broadcast attempted or accepted, awaiting chain inclusion.
+    Broadcast,
     /// Broadcast accepted (or possibly accepted), awaiting inclusion.
+    ///
+    /// Retained for records written by execution schema version 1.
     Pending,
     /// Definitively rejected by the RPC node before acceptance.
+    ///
+    /// Retained for records written by execution schema version 1.
     Rejected,
-    /// Included on-chain with a successful receipt.
+    /// Receipt observed in a canonical block, but not yet finalized.
     Included,
-    /// Included on-chain with a reverted receipt.
+    /// Successful receipt proved canonical at the finalized boundary.
+    Finalized,
+    /// Failed receipt proved canonical at the finalized boundary.
     Reverted,
+    /// A different transaction hash consumed the owned signer nonce.
+    Replaced,
+    /// No canonical receipt was found in the bounded observation window.
+    Dropped,
+    /// A previously observed inclusion is no longer canonical.
+    Reorged,
+    /// No signed or possibly broadcast transaction remains and ownership may be released.
+    Recoverable,
 }
 
 impl TransactionStatus {
@@ -66,10 +100,18 @@ impl TransactionStatus {
     #[must_use]
     pub const fn as_str(&self) -> &'static str {
         match self {
+            Self::Prepared => "prepared",
+            Self::Signed => "signed",
+            Self::Broadcast => "broadcast",
             Self::Pending => "pending",
             Self::Rejected => "rejected",
             Self::Included => "included",
+            Self::Finalized => "finalized",
             Self::Reverted => "reverted",
+            Self::Replaced => "replaced",
+            Self::Dropped => "dropped",
+            Self::Reorged => "reorged",
+            Self::Recoverable => "recoverable",
         }
     }
 }

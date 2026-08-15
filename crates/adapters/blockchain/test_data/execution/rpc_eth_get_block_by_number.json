@@ -1,1 +1,1 @@
-{"jsonrpc":"2.0","id":1,"result":{"number":"0x1cf0d40","timestamp":"0x69044a20","baseFeePerGas":"0x5f5e100"}}
+{"jsonrpc":"2.0","id":1,"result":{"number":"0x1cf0d40","hash":"0x1111111111111111111111111111111111111111111111111111111111111111","timestamp":"0x69044a20","baseFeePerGas":"0x5f5e100","transactions":["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}}
