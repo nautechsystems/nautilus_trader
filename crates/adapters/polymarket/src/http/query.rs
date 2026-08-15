@@ -24,7 +24,7 @@ use jiff::{Timestamp, civil::Date, tz::Offset};
 use rust_decimal::Decimal;
 use serde::{
     Deserialize, Deserializer, Serialize,
-    de::{Error, MapAccess, Visitor},
+    de::{Error, IgnoredAny, MapAccess, Visitor},
 };
 
 use crate::{
@@ -99,15 +99,36 @@ pub enum AssetType {
     Conditional,
 }
 
-/// Balance and allowance response from `GET /balance-allowance`.
+/// Strict balance and allowance response from `GET /balance-allowance`.
+///
+/// The plural [`Self::allowances`] map is the sole allowance authority. The legacy singular
+/// [`Self::allowance`] field remains public for source compatibility, but non-null wire values are
+/// rejected.
 #[derive(Clone, Debug, Deserialize)]
 pub struct BalanceAllowance {
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub balance: Decimal,
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    /// Legacy singular field retained for Rust source compatibility.
+    ///
+    /// Deserialization accepts only an absent or null value; use [`Self::allowances`] for evidence.
+    #[serde(default, deserialize_with = "deserialize_rejected_legacy_allowance")]
     pub allowance: Option<Decimal>,
     #[serde(deserialize_with = "deserialize_spender_allowances")]
     pub allowances: HashMap<String, String>,
+}
+
+fn deserialize_rejected_legacy_allowance<'de, D>(
+    deserializer: D,
+) -> Result<Option<Decimal>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match Option::<IgnoredAny>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(_) => Err(D::Error::custom(
+            "legacy singular `allowance` is not accepted; use plural `allowances` evidence",
+        )),
+    }
 }
 
 struct CanonicalSpenderKey {
@@ -770,7 +791,49 @@ mod tests {
         let result =
             serde_json::from_str::<BalanceAllowance>(r#"{"balance":"250.5","allowance":"1000"}"#);
 
-        assert!(result.unwrap_err().to_string().contains("missing field"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("legacy singular `allowance`")
+        );
+    }
+
+    #[rstest]
+    fn test_balance_allowance_rejects_conflicting_singular_and_plural_allowances() {
+        let result = serde_json::from_str::<BalanceAllowance>(
+            r#"{
+                "balance":"250.5",
+                "allowance":"0",
+                "allowances":{
+                    "0xe111180000d2663c0091e4f400237545b87b996b":"115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                }
+            }"#,
+        );
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("legacy singular `allowance`")
+        );
+    }
+
+    #[rstest]
+    fn test_balance_allowance_accepts_null_legacy_marker() {
+        let result = serde_json::from_str::<BalanceAllowance>(
+            r#"{
+                "balance":"250.5",
+                "allowance":null,
+                "allowances":{
+                    "0xe111180000d2663c0091e4f400237545b87b996b":"1000"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert!(result.allowance.is_none());
+        assert_eq!(result.allowances.len(), 1);
     }
 
     #[rstest]

@@ -509,7 +509,10 @@ impl PolymarketClobHttpClient {
         Ok(all)
     }
 
-    /// Fetches balance and allowance for the given parameters.
+    /// Fetches strict V2 balance and allowance evidence for the given parameters.
+    ///
+    /// The response must contain a plural spender map with canonical, unique EVM addresses.
+    /// A non-null legacy singular allowance is rejected as conflicting authority.
     pub async fn get_balance_allowance(
         &self,
         params: GetBalanceAllowanceParams,
