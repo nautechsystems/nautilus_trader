@@ -178,7 +178,6 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::OrderType>()?;
     m.add_class::<crate::enums::PositionAdjustmentType>()?;
     m.add_class::<crate::enums::PositionSide>()?;
-    m.add_class::<crate::enums::PositionSideSpecified>()?;
     m.add_class::<crate::enums::PriceType>()?;
     m.add_class::<crate::enums::RecordFlag>()?;
     m.add_class::<crate::enums::TimeInForce>()?;
