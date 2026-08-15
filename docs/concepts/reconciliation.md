@@ -64,6 +64,28 @@ fills still follow the [bounded history safety](#bounded-history-safety) rules w
 For all live trading options, see the `LiveExecEngineConfig`
 [API reference](/docs/python-api-latest/config.html#nautilus_trader.live.LiveExecEngineConfig).
 
+### Instrument availability
+
+Adapters parse reconciliation reports using the instrument, so every instrument a report references
+must already be loaded. Adapters do not fetch missing instruments from the venue during
+reconciliation.
+
+Instrument scope comes from the adapter's provider config rather than the engine.
+`InstrumentProviderConfig.load_ids` decides which instruments the adapter holds, while
+`reconciliation_instrument_ids` filters reports only after the adapter has produced them.
+
+Reports for instruments outside an explicit `load_ids` scope are expected: they are dropped at debug
+level, so a node scoped to one instrument stays quiet about the rest of the venue. An in‑scope
+instrument that does not resolve means something is wrong, whether it was named in `load_ids` or
+covered by `load_all=True`, and the outcome depends on what the report describes:
+
+- An open order or position report fails reconciliation, so the system does not start. A live
+  position that cannot be priced is never silently dropped.
+- A closed or historical record logs a warning instead of aborting startup. When the adapter
+  declares a bounded history, the record also marks the report set incomplete, applying the
+  [bounded history safety](#bounded-history-safety) rules. Expiries routinely retire instruments
+  that older fills still reference.
+
 ## Reconciliation procedure
 
 All adapter execution clients follow the same reconciliation procedure, calling three methods
@@ -188,23 +210,24 @@ The tables below cover startup reconciliation (mass status) and runtime checks
 
 ### Startup reconciliation
 
-| Scenario                               | Description                                                                     | System behavior                                                                           |
-| -------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| **Order state discrepancy**            | Local state differs from venue (e.g., local `SUBMITTED`, venue `REJECTED`).     | Updates local order to match venue state, emits missing events.                           |
-| **Missed fills**                       | Complete venue history contains a fill the engine missed.                       | Generates the missing `OrderFilled` event and applies its economics.                      |
-| **Multiple fills**                     | A complete, coherent report set contains several fills for an order.            | Reconstructs the reported fill history in event order.                                    |
-| **Incomplete bounded history**         | A required order, fill, or position source failed or could not be mapped.       | Recovers order state but projects historical fills without position or portfolio effects. |
-| **Ambiguous bounded lifecycle**        | The bounded reports do not prove one coherent NETTING position transition.      | Preserves order state and leaves current position alignment to position reconciliation.   |
-| **External orders**                    | Orders exist on venue but not in local cache.                                   | Creates unclaimed orders with strategy ID `EXTERNAL` and tag `VENUE`.                     |
-| **Partially filled then canceled**     | Order partially filled then canceled by venue.                                  | Updates state to `CANCELED`, preserves fill history.                                      |
-| **Different fill data**                | Venue reports different fill price/commission than cached.                      | Preserves cached data, logs discrepancies.                                                |
-| **Filtered orders**                    | Orders marked for filtering via config.                                         | Skips based on `filtered_client_order_ids` or instrument filters.                         |
-| **Duplicate order reports**            | Multiple orders share the same identifier.                                      | Deduplicates with warning logged.                                                         |
-| **Position quantity mismatch (long)**  | Internal long position differs from venue (e.g., 100 vs 150).                   | Generates BUY LIMIT with calculated price when `generate_missing_orders=True`.            |
-| **Position quantity mismatch (short)** | Internal short position differs from venue (e.g., -100 vs -150).                | Generates SELL LIMIT with calculated price when `generate_missing_orders=True`.           |
-| **Position reduction**                 | Venue position smaller than internal (e.g., internal 150 long, venue 100 long). | Generates opposite‑side LIMIT order with calculated price.                                |
-| **Position side flip**                 | Internal position opposite of venue (e.g., internal 100 long, venue 50 short).  | Generates LIMIT order to close internal and open external position.                       |
-| **Internal reconciliation orders**     | Orders generated to align position discrepancies.                               | Uses a claim when configured; otherwise `EXTERNAL` + `RECONCILIATION`.                    |
+| Scenario                               | Description                                                                     | System behavior                                                                                          |
+| -------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Order state discrepancy**            | Local state differs from venue (e.g., local `SUBMITTED`, venue `REJECTED`).     | Updates local order to match venue state, emits missing events.                                          |
+| **Missed fills**                       | Complete venue history contains a fill the engine missed.                       | Generates the missing `OrderFilled` event and applies its economics.                                     |
+| **Multiple fills**                     | A complete, coherent report set contains several fills for an order.            | Reconstructs the reported fill history in event order.                                                   |
+| **Incomplete bounded history**         | A required order, fill, or position source failed or could not be mapped.       | Recovers order state but projects historical fills without position or portfolio effects.                |
+| **Ambiguous bounded lifecycle**        | The bounded reports do not prove one coherent NETTING position transition.      | Preserves order state and leaves current position alignment to position reconciliation.                  |
+| **External orders**                    | Orders exist on venue but not in local cache.                                   | Creates unclaimed orders with strategy ID `EXTERNAL` and tag `VENUE`.                                    |
+| **Partially filled then canceled**     | Order partially filled then canceled by venue.                                  | Updates state to `CANCELED`, preserves fill history.                                                     |
+| **Different fill data**                | Venue reports different fill price/commission than cached.                      | Preserves cached data, logs discrepancies.                                                               |
+| **Filtered orders**                    | Orders marked for filtering via config.                                         | Skips based on `filtered_client_order_ids` or instrument filters.                                        |
+| **Unresolved instrument**              | A report references an in‑scope instrument the adapter has not loaded.          | Fails startup for open order and position reports; warns and marks bounded history incomplete otherwise. |
+| **Duplicate order reports**            | Multiple orders share the same identifier.                                      | Deduplicates with warning logged.                                                                        |
+| **Position quantity mismatch (long)**  | Internal long position differs from venue (e.g., 100 vs 150).                   | Generates BUY LIMIT with calculated price when `generate_missing_orders=True`.                           |
+| **Position quantity mismatch (short)** | Internal short position differs from venue (e.g., -100 vs -150).                | Generates SELL LIMIT with calculated price when `generate_missing_orders=True`.                          |
+| **Position reduction**                 | Venue position smaller than internal (e.g., internal 150 long, venue 100 long). | Generates opposite‑side LIMIT order with calculated price.                                               |
+| **Position side flip**                 | Internal position opposite of venue (e.g., internal 100 long, venue 50 short).  | Generates LIMIT order to close internal and open external position.                                      |
+| **Internal reconciliation orders**     | Orders generated to align position discrepancies.                               | Uses a claim when configured; otherwise `EXTERNAL` + `RECONCILIATION`.                                   |
 
 ### Runtime checks
 
@@ -309,6 +332,9 @@ handles bulk query failures across hundreds of orders without overwhelming the v
   strategy per NETTING account/instrument pair when resuming external state.
 - **Duplicate order IDs**: Deduplicated with warnings logged. Frequent duplicates may indicate
   venue data integrity issues.
+- **Unresolved instruments**: A report references an instrument the adapter never loaded. Add it to
+  `load_ids` or set `load_all=True`. Reports outside an explicit `load_ids` scope are dropped by
+  design and need no action.
 - **Precision differences**: Small decimal differences are handled using instrument precision.
   Large discrepancies may indicate missing orders.
 - **Out-of-order reports**: Fill reports arriving before order status reports are deferred until

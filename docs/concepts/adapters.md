@@ -132,9 +132,11 @@ symbols.
 Instrument‑loading settings, defaults, and filters vary by integration. Check the relevant
 integration guide before copying a config between adapters.
 
-Subscriptions and order submission do not load instruments by themselves. Configure the adapter
-to load each required instrument at startup, or request it explicitly and wait until it reaches the
-cache before using it.
+Subscriptions, order submission, and execution reconciliation do not load instruments by themselves.
+Configure the adapter to load each required instrument at startup, or request it explicitly and wait
+until it reaches the cache before using it. For how reconciliation treats a report whose instrument
+is not loaded, see
+[instrument availability](reconciliation.md#instrument-availability).
 
 ## Data clients
 

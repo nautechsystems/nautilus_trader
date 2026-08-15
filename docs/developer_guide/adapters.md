@@ -546,6 +546,47 @@ can distinguish a coherent lifecycle from ambiguous history. See
 [Bounded history safety](../concepts/reconciliation.md#bounded-history-safety) for the engine's
 economic application rules.
 
+#### Instrument resolution during reconciliation
+
+Report generation resolves each record's instrument to parse venue payloads at the correct price and
+size precision. Resolve it from the instruments the adapter loaded during connect, and classify a
+miss by whether the record was in scope.
+
+Do not request an instrument from the venue while generating reports:
+
+- Per‑record requests multiply the bulk queries that startup reconciliation already issues against
+  the venue's rate limits.
+- Hidden requests make reconciliation timing and results irreproducible.
+- A failed request cannot be distinguished from an instrument the venue does not have.
+
+Load what the adapter needs during connect instead.
+
+An in‑scope record whose instrument is missing is never dropped silently. A discarded open order
+report is indistinguishable from an order the venue never had, which leads the engine to resolve a
+live order as missing at the venue. Scope decides whether a miss is expected, so evaluate it before
+classifying the record:
+
+| Record                                         | Outcome                                 | Report set                         |
+| ---------------------------------------------- | --------------------------------------- | ---------------------------------- |
+| Out of scope for `load_ids`                    | Log at debug and drop                   | Unaffected                         |
+| In scope, open order or position status report | Return an error from the report request | Not returned                       |
+| In scope, closed or historical record          | Log a warning naming the instrument     | Incomplete when history is bounded |
+
+`InstrumentProviderConfig.load_ids` defines that scope. When it names an explicit set, records for
+instruments outside it are expected absences rather than errors, so a node scoped to one instrument
+neither fails nor warns because the venue returned records for the rest.
+
+Historical queries reach past the loaded instrument set routinely, because expiries retire
+instruments that earlier fills still reference. Failing a bounded‑history query for one expired
+instrument would withhold every other record it returned, so record the incompleteness through
+`set_report_window` and let the engine apply its bounded‑history rules. The engine acts on that
+incompleteness only for a mass status that declares `lookback_start`; an adapter that declares no
+bound follows the compatibility fill‑adjustment path instead.
+
+`reconciliation_instrument_ids` filters reports after the execution engine receives them, so it
+cannot prevent a resolution failure inside an adapter. Keep the adapter's scope in its instrument
+provider configuration.
+
 #### Tracked and external execution updates
 
 Route execution updates according to order ownership, independent of the dispatch module layout:
