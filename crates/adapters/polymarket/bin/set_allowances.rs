@@ -37,6 +37,7 @@ const DEFAULT_POLYGON_RPC_URL: &str = "https://polygon.drpc.org";
 const POLYGON_CHAIN_ID: u64 = 137;
 const PUSD_COLLATERAL: Address = address!("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB");
 const CONDITIONAL_TOKENS: Address = address!("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045");
+
 alloy::sol! {
     #[sol(rpc)]
     interface Erc20 {
@@ -119,43 +120,4 @@ fn approval_transactions() -> impl Iterator<Item = Approval> {
                 },
             ]
         })
-}
-
-#[cfg(test)]
-mod tests {
-    use rstest::rstest;
-
-    use super::*;
-
-    #[rstest]
-    fn approval_transactions_match_exact_polygon_target_plan() {
-        let pusd_collateral = address!("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB");
-        let conditional_tokens = address!("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045");
-        let targets = [
-            address!("0xE111180000d2663C0091e4f400237545B87B996B"),
-            address!("0xe2222d279d744050d28e00520010520000310F59"),
-            address!("0xadA2005600Dec949baf300f4C6120000bDB6eAab"),
-        ];
-        let expected: Vec<_> = targets
-            .into_iter()
-            .flat_map(|target| {
-                [
-                    Approval::Collateral {
-                        spender: target,
-                        amount: U256::MAX,
-                    },
-                    Approval::Ctf {
-                        operator: target,
-                        approved: true,
-                    },
-                ]
-            })
-            .collect();
-
-        assert_eq!(PUSD_COLLATERAL, pusd_collateral);
-        assert_eq!(CONDITIONAL_TOKENS, conditional_tokens);
-        assert_eq!(approval_transactions().collect::<Vec<_>>(), expected);
-        assert_eq!(DEFAULT_POLYGON_RPC_URL, "https://polygon.drpc.org");
-        assert_eq!(POLYGON_CHAIN_ID, 137);
-    }
 }

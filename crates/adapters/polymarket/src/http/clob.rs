@@ -31,10 +31,14 @@ use nautilus_network::{
     http::{HttpClient, HttpClientError, Method, USER_AGENT},
     websocket::proxy::ProxyUrl,
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
-    common::{credential::Credential, enums::PolymarketOrderType, urls::clob_http_url},
+    common::{
+        credential::Credential, enums::PolymarketOrderType, parse::deserialize_decimal_from_str,
+        urls::clob_http_url,
+    },
     http::{
         error::{Error, Result},
         models::{
@@ -91,6 +95,12 @@ struct HeartbeatRequest<'a> {
 #[derive(Deserialize)]
 struct HeartbeatWireResponse {
     heartbeat_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct BalanceResponse {
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    balance: Decimal,
 }
 
 /// Outcome from an authenticated CLOB order-safety heartbeat.
@@ -504,22 +514,16 @@ impl PolymarketClobHttpClient {
         &self,
         params: GetBalanceAllowanceParams,
     ) -> Result<BalanceAllowance> {
-        let headers = Some(self.auth_headers("GET", PATH_BALANCE_ALLOWANCE, ""));
-        let url = self.url(PATH_BALANCE_ALLOWANCE);
-        let response = self
-            .client
-            .request_with_params(Method::GET, url, Some(&params), headers, None, None, None)
+        self.send_get(PATH_BALANCE_ALLOWANCE, Some(&params), true)
             .await
-            .map_err(Error::from_http_client)?;
+    }
 
-        if response.status.is_success() {
-            serde_json::from_slice(&response.body).map_err(Error::Serde)
-        } else {
-            Err(Error::from_status_code(
-                response.status.as_u16(),
-                &response.body,
-            ))
-        }
+    /// Fetches balance without requiring allowance evidence.
+    pub(crate) async fn get_balance(&self, params: GetBalanceAllowanceParams) -> Result<Decimal> {
+        let response: BalanceResponse = self
+            .send_get(PATH_BALANCE_ALLOWANCE, Some(&params), true)
+            .await?;
+        Ok(response.balance)
     }
 
     /// Refreshes the CLOB backend's cached balance and allowance data.

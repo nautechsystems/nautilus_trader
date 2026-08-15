@@ -15,10 +15,7 @@
 
 //! HTTP query and response model types for the Polymarket CLOB API.
 
-use std::{
-    collections::{HashMap, HashSet},
-    fmt,
-};
+use std::collections::{HashMap, HashSet};
 
 use ahash::{AHashMap, AHashSet};
 use alloy_primitives::Address;
@@ -109,8 +106,33 @@ pub struct BalanceAllowance {
     pub balance: Decimal,
     #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
     pub allowance: Option<Decimal>,
-    #[serde(default, deserialize_with = "deserialize_spender_allowances")]
+    #[serde(deserialize_with = "deserialize_spender_allowances")]
     pub allowances: HashMap<String, String>,
+}
+
+struct CanonicalSpenderKey {
+    raw: String,
+    address: Address,
+}
+
+impl<'de> Deserialize<'de> for CanonicalSpenderKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        let invalid_spender = format!("invalid spender `{raw}` in allowance evidence");
+        let address = raw
+            .parse::<Address>()
+            .map_err(|_| D::Error::custom(&invalid_spender))?;
+        let is_canonical = [format!("{address:#x}"), address.to_checksum(None)]
+            .into_iter()
+            .any(|candidate| candidate == raw);
+
+        is_canonical
+            .then_some(Self { raw, address })
+            .ok_or_else(|| D::Error::custom(invalid_spender))
+    }
 }
 
 fn deserialize_spender_allowances<'de, D>(
@@ -124,7 +146,7 @@ where
     impl<'de> Visitor<'de> for SpenderAllowancesVisitor {
         type Value = HashMap<String, String>;
 
-        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             formatter.write_str("a spender-to-allowance map without duplicate spenders")
         }
 
@@ -134,17 +156,15 @@ where
         {
             let mut allowances = HashMap::with_capacity(map.size_hint().unwrap_or_default());
             let mut seen_spenders = HashSet::with_capacity(map.size_hint().unwrap_or_default());
-            while let Some(spender) = map.next_key::<String>()? {
-                let address = spender.parse::<Address>().map_err(|_| {
-                    A::Error::custom(format!("invalid spender `{spender}` in allowance evidence"))
-                })?;
-                if !seen_spenders.insert(address) {
+            while let Some(spender) = map.next_key::<CanonicalSpenderKey>()? {
+                if !seen_spenders.insert(spender.address) {
                     return Err(A::Error::custom(format!(
-                        "duplicate spender `{spender}` in allowance evidence"
+                        "duplicate spender `{}` in allowance evidence",
+                        spender.raw,
                     )));
                 }
                 let allowance = map.next_value::<String>()?;
-                allowances.insert(spender, allowance);
+                allowances.insert(spender.raw, allowance);
             }
             Ok(allowances)
         }
@@ -736,24 +756,21 @@ mod tests {
     }
 
     #[rstest]
-    fn test_balance_allowance_without_allowances() {
-        // Constructed compatibility case retained from the legacy balance-only shape
-        let ba: BalanceAllowance = load("http_balance_allowance_no_allowance.json");
+    fn test_balance_allowance_rejects_missing_allowances() {
+        let result = serde_json::from_str::<BalanceAllowance>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test_data/http_balance_allowance_no_allowance.json"
+        )));
 
-        assert_eq!(ba.balance, dec!(250.500000));
-        assert!(ba.allowance.is_none());
-        assert!(ba.allowances.is_empty());
+        assert!(result.unwrap_err().to_string().contains("missing field"));
     }
 
     #[rstest]
-    fn test_balance_allowance_legacy_singular() {
-        // Constructed compatibility case for the previously modeled singular field
-        let ba: BalanceAllowance =
-            serde_json::from_str(r#"{"balance":"250.5","allowance":"1000"}"#).unwrap();
+    fn test_balance_allowance_rejects_legacy_singular_without_allowances() {
+        let result =
+            serde_json::from_str::<BalanceAllowance>(r#"{"balance":"250.5","allowance":"1000"}"#);
 
-        assert_eq!(ba.balance, dec!(250.5));
-        assert_eq!(ba.allowance, Some(dec!(1000)));
-        assert!(ba.allowances.is_empty());
+        assert!(result.unwrap_err().to_string().contains("missing field"));
     }
 
     #[rstest]
@@ -801,6 +818,31 @@ mod tests {
         .expect_err("allowance spender must be an EVM address");
 
         assert!(malformed.to_string().contains("invalid spender"));
+    }
+
+    #[rstest]
+    #[case::missing_prefix("ada2005600dec949baf300f4c6120000bdb6eaab")]
+    #[case::uppercase_prefix("0Xada2005600dec949baf300f4c6120000bdb6eaab")]
+    #[case::invalid_checksum("0xAdA2005600Dec949baf300f4C6120000bDB6eAab")]
+    fn test_balance_allowance_rejects_noncanonical_spender(#[case] spender: &str) {
+        let payload = format!(r#"{{"balance":"250.5","allowances":{{"{spender}":"1000"}}}}"#,);
+
+        let result = serde_json::from_str::<BalanceAllowance>(&payload);
+
+        assert!(result.unwrap_err().to_string().contains("invalid spender"));
+    }
+
+    #[rstest]
+    fn test_balance_allowance_preserves_checksummed_spender() {
+        let spender = "0xadA2005600Dec949baf300f4C6120000bDB6eAab";
+        let payload = format!(r#"{{"balance":"250.5","allowances":{{"{spender}":"1000"}}}}"#,);
+
+        let balance_allowance = serde_json::from_str::<BalanceAllowance>(&payload).unwrap();
+
+        assert_eq!(
+            balance_allowance.allowances.get(spender),
+            Some(&"1000".to_string())
+        );
     }
 
     #[rstest]
