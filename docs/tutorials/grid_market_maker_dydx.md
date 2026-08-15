@@ -567,7 +567,7 @@ DYDX_LOG=/tmp/dydx_main.log \
 
 ## Monitoring and understanding output
 
-### Key log messages
+### Log messages
 
 | Log message                                         | Meaning                                                 |
 | --------------------------------------------------- | ------------------------------------------------------- |

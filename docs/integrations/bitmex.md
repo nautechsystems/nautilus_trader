@@ -550,7 +550,7 @@ self.submit_order(order, params={"submit_tries": 2})
 self.submit_order(order, params={"submit_tries": 3})
 ```
 
-**Key points**:
+**Behavior**:
 
 - `submit_tries` must be a positive integer.
 - Broadcasting only occurs when `submit_tries > 1`. Default submits go through a single HTTP client.

@@ -36,7 +36,7 @@ leveraged crypto perps. They track account balances, reserve margin for open
 orders and positions, and apply a configurable leverage per instrument. Margin
 is tracked in two scopes; see [Margin scopes](#margin-scopes) below.
 
-**Key terms**:
+**Terms**:
 
 - **Leverage**: amplifies exposure relative to account equity. Higher leverage
   raises both potential returns and risk.

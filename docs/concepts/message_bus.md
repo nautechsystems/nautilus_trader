@@ -93,7 +93,7 @@ The `MessageBus` is the central hub for all messages in NautilusTrader. Rust com
 typed messages to named topics and subscribe handlers to those topics. This low‑level interface is
 not part of the Python actor or strategy surface.
 
-#### Key benefits and use cases
+#### Benefits and use cases
 
 Direct message-bus access is for native components that need:
 
@@ -117,7 +117,7 @@ Custom data exchanges structured values between data actors and strategies. A `C
 carries a `DataType`, payload, event timestamp, and initialization timestamp for routing and event
 ordering.
 
-#### Key benefits and use cases
+#### Benefits and use cases
 
 The Data publish/subscribe approach works well when you need:
 
@@ -178,7 +178,7 @@ See [Custom data](custom_data.md) for registration and persistence.
 **Signals** are a lightweight way to publish and subscribe to simple notifications within the actor framework.
 This is the simplest messaging approach, requiring no custom class definitions.
 
-#### Key benefits and use cases
+#### Benefits and use cases
 
 The Signal messaging approach works well when you need:
 

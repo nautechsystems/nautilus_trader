@@ -205,7 +205,7 @@ request and subscription methods with their corresponding callbacks.
 Execution clients handle order management for a venue. They translate Nautilus order commands
 into venue‑specific API calls and process execution reports back into Nautilus events.
 
-Key responsibilities:
+Responsibilities:
 
 - Submit, modify, and cancel orders.
 - Process fills and execution reports.

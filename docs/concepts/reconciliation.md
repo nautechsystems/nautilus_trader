@@ -305,7 +305,7 @@ from fills and adjusts to reconstruct positions accurately.
 | **Flat position**                         | Venue reports FLAT regardless of fill history.                 | No adjustment.                                           |
 | **No fills**                              | Window contains no fill reports.                               | No adjustment, empty result.                             |
 
-**Key concepts:**
+**Concepts:**
 
 - **Zero-crossing**: position quantity crosses through zero (FLAT), marking a lifecycle boundary.
 - **Lifecycle**: a sequence of fills between zero-crossings representing one open-close cycle.

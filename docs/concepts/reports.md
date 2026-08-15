@@ -42,7 +42,7 @@ orders_report = engine.generate_orders_report()
 orders_report = ReportProvider.generate_orders_report(cache.orders())
 ```
 
-**Returns `pd.DataFrame`. Key columns include:**
+**Returns `pd.DataFrame`. Columns include:**
 
 | Column            | Description                                        |
 | ----------------- | -------------------------------------------------- |
@@ -94,7 +94,7 @@ fills_report = engine.generate_fills_report()
 fills_report = ReportProvider.generate_fills_report(cache.orders())
 ```
 
-**Returns `pd.DataFrame`. Key columns include:**
+**Returns `pd.DataFrame`. Columns include:**
 
 | Column            | Description                              |
 | ----------------- | ---------------------------------------- |
@@ -132,7 +132,7 @@ positions_report = ReportProvider.generate_positions_report(
 )
 ```
 
-**Returns `pd.DataFrame`. Key columns include:**
+**Returns `pd.DataFrame`. Columns include:**
 
 | Column             | Description                                           |
 | ------------------ | ----------------------------------------------------- |

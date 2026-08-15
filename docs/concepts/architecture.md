@@ -62,7 +62,7 @@ NautilusTrader draws on [crash‑only design](https://en.wikipedia.org/wiki/Cras
 handling unrecoverable faults. Repository release builds abort on panic, allowing an external
 supervisor to restart the process instead of letting it continue with potentially invalid state.
 
-Key principles:
+Principles:
 
 - **Startup recovery**: Configured cache and event‑store recovery run through normal startup rather
   than through a separate crash‑only entry point. Ordinary startup and focused recovery tests

@@ -183,7 +183,7 @@ public data client does not require these credentials.
 
 When setting up NautilusTrader to work with Polymarket, it's crucial to properly configure the necessary parameters, particularly the private key.
 
-**Key parameters**:
+**Parameters**:
 
 - `private_key`: The private key for your wallet used to sign orders. The interpretation depends on your `signature_type` configuration. If not explicitly provided in the configuration, it will automatically source the `POLYMARKET_PK` environment variable.
 - `funder`: The **pUSD** funding wallet address used for funding trades. If not provided,

@@ -501,7 +501,7 @@ flowchart TB
 
 ## Monitoring and understanding output
 
-### Key log messages
+### Log messages
 
 | Log message                                                     | Meaning                                                   |
 | --------------------------------------------------------------- | --------------------------------------------------------- |
