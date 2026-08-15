@@ -91,6 +91,20 @@ impl ExecutionMassStatus {
         self.ts_init.as_u64()
     }
 
+    /// Returns the lower timestamp bound applied to historical reports.
+    #[getter]
+    #[pyo3(name = "lookback_start")]
+    fn py_lookback_start(&self) -> Option<u64> {
+        self.lookback_start().map(|timestamp| timestamp.as_u64())
+    }
+
+    /// Returns whether every report source required for this mass status completed.
+    #[getter]
+    #[pyo3(name = "reports_complete")]
+    const fn py_reports_complete(&self) -> bool {
+        self.reports_complete()
+    }
+
     /// Get a copy of the order reports map.
     #[getter]
     #[pyo3(name = "order_reports")]
@@ -150,6 +164,11 @@ impl ExecutionMassStatus {
         dict.set_item("venue", self.venue.to_string())?;
         dict.set_item("report_id", self.report_id.to_string())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
+        dict.set_item(
+            "lookback_start",
+            self.lookback_start().map(|timestamp| timestamp.as_u64()),
+        )?;
+        dict.set_item("reports_complete", self.reports_complete())?;
 
         let order_reports_dict = PyDict::new(py);
         for (key, value) in &self.order_reports() {

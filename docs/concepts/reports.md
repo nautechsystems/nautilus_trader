@@ -311,7 +311,7 @@ The backtest result provides performance metrics:
 result = engine.get_result()
 
 # Get different categories of statistics
-stats_pnls = result.stats_pnls        # Keyed by currency code, then statistic name
+stats_pnls = result.stats_pnls  # Keyed by currency code, then statistic name
 stats_returns = result.stats_returns  # Keyed by statistic name
 stats_general = result.stats_general  # Keyed by statistic name
 ```

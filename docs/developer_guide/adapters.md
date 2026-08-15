@@ -521,6 +521,31 @@ reports for reconciliation. They must support these boundaries consistently:
 Do not infer support from a venue API alone. Implement and test the Nautilus command and event
 semantics, then advertise the capability.
 
+#### Bounded mass‑status reports
+
+When an execution client applies a lower time bound to historical reconciliation reports, record
+the contract with `ExecutionMassStatus::set_report_window(Some(lookback_start),
+reports_complete)`. Capture one cutoff for the mass‑status request and use it for every historical
+order and fill query. A moving cutoff can omit records at different boundaries and produce a report
+set that never existed at the venue.
+
+Set `reports_complete=true` only when every source needed to interpret the bounded history
+completed and all required records were parsed, mapped, and linked to their orders. A failed
+required source, required row that cannot be parsed or mapped, or historical fill without its
+required order report makes the set incomplete. Preserve successful legs and authoritative active
+orders, but do not represent a failed historical query as a successful empty result.
+
+When positions come from a cached stream, absence proves flat only when a complete snapshot from
+the current connection epoch positively covers that instrument. Invalidate snapshot coverage on
+reconnect, and keep a row uncovered when it could not be parsed or mapped. Emit an explicit flat
+report for an absent touched instrument only after that coverage is established.
+
+Preserve stable venue order and trade identities across live dispatch and mass status. Include
+client order linkage and `venue_position_id` where the venue supplies them so the execution engine
+can distinguish a coherent lifecycle from ambiguous history. See
+[Bounded history safety](../concepts/reconciliation.md#bounded-history-safety) for the engine's
+economic application rules.
+
 #### Tracked and external execution updates
 
 Route execution updates according to order ownership, independent of the dispatch module layout:
@@ -1237,6 +1262,11 @@ Execution tests cover each advertised command and report, plus:
 - Partial and per‑order batch results.
 - Duplicate or out‑of‑order stream updates.
 - Account state, open orders, fills, positions, and startup reconciliation.
+- One fixed cutoff across bounded order and fill queries, including records on the boundary.
+- Complete and incomplete mass statuses for each independently failing report source.
+- Position snapshot coverage after reconnect, skipped rows, explicit flats, and absent instruments.
+- Exact order recovery without position or portfolio effects when bounded history is incomplete or
+  ambiguous.
 - Idempotent stop, reset, and disposal.
 
 Keep adapter tests focused on adapter behavior. The

@@ -87,6 +87,8 @@ static TAG_RECONCILIATION: LazyLock<Ustr> = LazyLock::new(|| Ustr::from("RECONCI
 /// throttles, venue report lookups) so that multiple accounts holding the same
 /// instrument do not share the same tracking entry.
 pub type InstrumentAccountKey = (InstrumentId, AccountId);
+type AccountInstrumentKey = (AccountId, InstrumentId);
+type AccountInstrumentStrategyKey = (AccountId, InstrumentId, StrategyId);
 type FillKey = (AccountId, InstrumentId, TradeId);
 
 #[expect(clippy::too_many_arguments)]
@@ -219,7 +221,19 @@ struct RetainedFillState {
     fill_keys: IndexSet<(AccountId, InstrumentId, TradeId)>,
     missing_order_ids: IndexSet<(AccountId, InstrumentId, ClientOrderId)>,
     missing_venue_order_ids: IndexSet<(AccountId, InstrumentId, VenueOrderId)>,
-    netting_lifecycle_starts: IndexMap<(AccountId, InstrumentId, StrategyId), UnixNanos>,
+    netting_lifecycle_starts: IndexMap<AccountInstrumentStrategyKey, UnixNanos>,
+}
+
+struct HistoricalFillGroup {
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    strategy_id: StrategyId,
+    order_side: OrderSide,
+    quantity: Decimal,
+    reduce_only: bool,
+    ts_event: UnixNanos,
+    ts_last: UnixNanos,
 }
 
 #[derive(Default)]
@@ -543,6 +557,12 @@ impl ExecutionManager {
             .collect();
         let (adjusted_order_reports, adjusted_fill_reports) =
             self.adjust_mass_status_fills(&mass_status);
+        let order_only_venue_order_ids = self.order_only_venue_order_ids(
+            &mass_status,
+            &adjusted_order_reports,
+            &adjusted_fill_reports,
+            &retained_fill_state,
+        );
 
         let mut events = Vec::new();
         let mut external_orders = Vec::new();
@@ -893,26 +913,12 @@ impl ExecutionManager {
 
         for event in &events {
             if let OrderEventAny::Filled(fill) = event
-                && (retained_fill_state.fill_keys.contains(&(
-                    fill.account_id,
-                    fill.instrument_id,
-                    fill.trade_id,
-                )) || ((retained_fill_state.missing_order_ids.contains(&(
-                    fill.account_id,
-                    fill.instrument_id,
-                    fill.client_order_id,
-                )) || retained_fill_state.missing_venue_order_ids.contains(&(
-                    fill.account_id,
-                    fill.instrument_id,
-                    fill.venue_order_id,
-                ))) && !reported_fill_keys.contains(&(
-                    fill.account_id,
-                    fill.instrument_id,
-                    fill.trade_id,
-                ))) || retained_fill_state
-                    .netting_lifecycle_starts
-                    .get(&(fill.account_id, fill.instrument_id, fill.strategy_id))
-                    .is_some_and(|ts_opened| fill.ts_event < *ts_opened))
+                && Self::should_project_reconciliation_fill(
+                    fill,
+                    &retained_fill_state,
+                    &reported_fill_keys,
+                    &order_only_venue_order_ids,
+                )
             {
                 exec_engine.borrow_mut().project_reconciliation_fill(fill);
             } else {
@@ -1009,6 +1015,39 @@ impl ExecutionManager {
         }
     }
 
+    fn should_project_reconciliation_fill(
+        fill: &OrderFilled,
+        retained_fill_state: &RetainedFillState,
+        reported_fill_keys: &IndexSet<FillKey>,
+        order_only_venue_order_ids: &IndexSet<VenueOrderId>,
+    ) -> bool {
+        let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
+        if retained_fill_state.fill_keys.contains(&fill_key)
+            || order_only_venue_order_ids.contains(&fill.venue_order_id)
+        {
+            return true;
+        }
+
+        let order_missing = retained_fill_state.missing_order_ids.contains(&(
+            fill.account_id,
+            fill.instrument_id,
+            fill.client_order_id,
+        )) || retained_fill_state.missing_venue_order_ids.contains(&(
+            fill.account_id,
+            fill.instrument_id,
+            fill.venue_order_id,
+        ));
+
+        if order_missing && !reported_fill_keys.contains(&fill_key) {
+            return true;
+        }
+
+        retained_fill_state
+            .netting_lifecycle_starts
+            .get(&(fill.account_id, fill.instrument_id, fill.strategy_id))
+            .is_some_and(|ts_opened| fill.ts_event < *ts_opened)
+    }
+
     fn retained_fill_state(&self) -> RetainedFillState {
         let cache = self.cache.borrow();
         let positions = cache.positions(None, None, None, None, None);
@@ -1052,6 +1091,348 @@ impl ExecutionManager {
             missing_venue_order_ids,
             netting_lifecycle_starts,
         }
+    }
+
+    fn order_only_venue_order_ids(
+        &self,
+        mass_status: &ExecutionMassStatus,
+        order_reports: &IndexMap<VenueOrderId, OrderStatusReport>,
+        fill_reports: &IndexMap<VenueOrderId, Vec<FillReport>>,
+        retained_fill_state: &RetainedFillState,
+    ) -> IndexSet<VenueOrderId> {
+        if mass_status.lookback_start().is_none() {
+            return IndexSet::new();
+        }
+
+        let expected_quantities: IndexMap<AccountInstrumentKey, Decimal> =
+            if mass_status.reports_complete() {
+                mass_status
+                    .position_reports()
+                    .into_iter()
+                    .filter_map(|(instrument_id, reports)| {
+                        let [report] = reports.as_slice() else {
+                            return None;
+                        };
+                        report.venue_position_id.is_none().then_some((
+                            (report.account_id, instrument_id),
+                            report.signed_decimal_qty,
+                        ))
+                    })
+                    .collect()
+            } else {
+                IndexMap::new()
+            };
+        let candidate_instruments: IndexSet<InstrumentId> = order_reports
+            .values()
+            .filter(|report| !report.filled_qty.is_zero())
+            .map(|report| report.instrument_id)
+            .chain(
+                fill_reports
+                    .values()
+                    .flatten()
+                    .map(|fill| fill.instrument_id),
+            )
+            .collect();
+
+        if candidate_instruments.is_empty() {
+            return IndexSet::new();
+        }
+
+        let mut venue_order_ids: IndexSet<VenueOrderId> = order_reports
+            .iter()
+            .filter(|(_, report)| {
+                candidate_instruments.contains(&report.instrument_id)
+                    && !report.filled_qty.is_zero()
+            })
+            .map(|(venue_order_id, _)| *venue_order_id)
+            .collect();
+        venue_order_ids.extend(fill_reports.iter().filter_map(|(venue_order_id, fills)| {
+            fills
+                .first()
+                .is_some_and(|fill| candidate_instruments.contains(&fill.instrument_id))
+                .then_some(*venue_order_id)
+        }));
+
+        let mut order_only = IndexSet::new();
+        let mut groups = Vec::new();
+
+        for venue_order_id in venue_order_ids {
+            let report = order_reports.get(&venue_order_id);
+            let fills = fill_reports.get(&venue_order_id);
+            if report.and_then(|report| report.venue_position_id).is_some()
+                || fills.is_some_and(|fills| fills.iter().any(FillReport::has_venue_position_id))
+            {
+                continue;
+            }
+
+            let cached_order = report
+                .and_then(|report| report.client_order_id)
+                .and_then(|client_order_id| self.get_order(client_order_id))
+                .or_else(|| self.get_order_by_venue_order_id(venue_order_id));
+            let account_id = report
+                .map(|report| report.account_id)
+                .or_else(|| fills.and_then(|fills| fills.first().map(|fill| fill.account_id)));
+            let instrument_id = report
+                .map(|report| report.instrument_id)
+                .or_else(|| fills.and_then(|fills| fills.first().map(|fill| fill.instrument_id)));
+            let order_side = report
+                .map(|report| report.order_side)
+                .or_else(|| fills.and_then(|fills| fills.first().map(|fill| fill.order_side)));
+            let (Some(account_id), Some(instrument_id), Some(order_side)) =
+                (account_id, instrument_id, order_side)
+            else {
+                order_only.insert(venue_order_id);
+                continue;
+            };
+            let coherent_fills = fills.is_none_or(|fills| {
+                fills.iter().all(|fill| {
+                    fill.account_id == account_id
+                        && fill.instrument_id == instrument_id
+                        && fill.order_side == order_side
+                })
+            });
+            let coherent_cached_order = cached_order.as_ref().is_none_or(|order| {
+                order.instrument_id() == instrument_id
+                    && order.order_side() == order_side
+                    && order.account_id().is_none_or(|id| id == account_id)
+            });
+
+            if !coherent_fills
+                || !coherent_cached_order
+                || (report.is_none() && cached_order.is_none())
+            {
+                order_only.insert(venue_order_id);
+                continue;
+            }
+            let strategy_id = cached_order.as_ref().map_or_else(
+                || {
+                    self.external_order_claims
+                        .get(&instrument_id)
+                        .copied()
+                        .unwrap_or_else(|| StrategyId::from("EXTERNAL"))
+                },
+                Order::strategy_id,
+            );
+            let reduce_only = report.is_some_and(|report| report.reduce_only)
+                || cached_order.as_ref().is_some_and(Order::is_reduce_only);
+            let cached_filled_qty = cached_order
+                .as_ref()
+                .map_or(Decimal::ZERO, |order| order.filled_qty().as_decimal());
+            let reported_fill_qty = fills.map_or(Decimal::ZERO, |fills| {
+                fills.iter().map(|fill| fill.last_qty.as_decimal()).sum()
+            });
+            let unretained_fills: Vec<&FillReport> = fills
+                .into_iter()
+                .flatten()
+                .filter(|fill| {
+                    !retained_fill_state.fill_keys.contains(&(
+                        fill.account_id,
+                        fill.instrument_id,
+                        fill.trade_id,
+                    ))
+                })
+                .collect();
+            let unretained_fill_qty: Decimal = unretained_fills
+                .iter()
+                .map(|fill| fill.last_qty.as_decimal())
+                .sum();
+            let inferred_qty = report.map_or(Decimal::ZERO, |report| {
+                (report.filled_qty.as_decimal() - cached_filled_qty - reported_fill_qty)
+                    .max(Decimal::ZERO)
+            });
+            let quantity = unretained_fill_qty + inferred_qty;
+            if quantity.is_zero() {
+                continue;
+            }
+            let inferred_ts = (!inferred_qty.is_zero())
+                .then(|| report.map(|report| report.ts_last))
+                .flatten();
+            let ts_event = unretained_fills
+                .iter()
+                .map(|fill| fill.ts_event)
+                .chain(inferred_ts)
+                .min()
+                .unwrap_or(mass_status.ts_init);
+            let ts_last = unretained_fills
+                .iter()
+                .map(|fill| fill.ts_event)
+                .chain(inferred_ts)
+                .max()
+                .unwrap_or(mass_status.ts_init);
+            groups.push(HistoricalFillGroup {
+                venue_order_id,
+                account_id,
+                instrument_id,
+                strategy_id,
+                order_side,
+                quantity,
+                reduce_only,
+                ts_event,
+                ts_last,
+            });
+        }
+
+        groups.sort_by_key(|group| group.ts_event);
+        if !mass_status.reports_complete() {
+            order_only.extend(groups.iter().map(|group| group.venue_order_id));
+            log::error!(
+                "Bounded reconciliation report set is incomplete; projecting {} historical order(s) without position or portfolio effects",
+                order_only.len(),
+            );
+            return order_only;
+        }
+
+        let mut quantities: IndexMap<AccountInstrumentStrategyKey, Option<Decimal>> =
+            IndexMap::new();
+        let mut group_ids: IndexMap<AccountInstrumentStrategyKey, Vec<VenueOrderId>> =
+            IndexMap::new();
+        let mut interval_ends: IndexMap<AccountInstrumentStrategyKey, UnixNanos> = IndexMap::new();
+        let mut ambiguous_keys = IndexSet::new();
+
+        for group in &groups {
+            let key = (group.account_id, group.instrument_id, group.strategy_id);
+            if interval_ends
+                .get(&key)
+                .is_some_and(|end| group.ts_event <= *end)
+            {
+                ambiguous_keys.insert(key);
+            }
+            interval_ends
+                .entry(key)
+                .and_modify(|end| *end = (*end).max(group.ts_last))
+                .or_insert(group.ts_last);
+        }
+
+        if !ambiguous_keys.is_empty() {
+            log::error!(
+                "Bounded reconciliation contains interleaved order fills for {} position key(s); projecting their historical order state only",
+                ambiguous_keys.len(),
+            );
+        }
+
+        for group in groups {
+            let key = (group.account_id, group.instrument_id, group.strategy_id);
+            group_ids.entry(key).or_default().push(group.venue_order_id);
+            if ambiguous_keys.contains(&key) {
+                order_only.insert(group.venue_order_id);
+                continue;
+            }
+            let current_qty = quantities.entry(key).or_insert_with(|| {
+                let cache = self.cache.borrow();
+                let positions = cache.positions_open(
+                    None,
+                    Some(&group.instrument_id),
+                    Some(&group.strategy_id),
+                    Some(&group.account_id),
+                    None,
+                );
+
+                if positions.len() > 1
+                    || positions.first().is_some_and(|position| {
+                        cache.oms_type(&position.id) != Some(OmsType::Netting)
+                    })
+                {
+                    None
+                } else {
+                    Some(
+                        positions
+                            .first()
+                            .map_or(Decimal::ZERO, |position| position.signed_decimal_qty()),
+                    )
+                }
+            });
+            let Some(current_qty) = current_qty else {
+                order_only.insert(group.venue_order_id);
+                continue;
+            };
+            let signed_fill_qty = match group.order_side {
+                OrderSide::Buy => group.quantity,
+                OrderSide::Sell => -group.quantity,
+                OrderSide::NoOrderSide => {
+                    order_only.insert(group.venue_order_id);
+                    continue;
+                }
+            };
+            let reduces = !current_qty.is_zero()
+                && current_qty.is_sign_negative() != signed_fill_qty.is_sign_negative()
+                && group.quantity <= current_qty.abs();
+            if group.reduce_only && !reduces {
+                log::error!(
+                    "Cannot apply bounded reduce-only order {} for {} without a coherent predecessor; projecting order state only",
+                    group.venue_order_id,
+                    group.instrument_id,
+                );
+                order_only.insert(group.venue_order_id);
+                continue;
+            }
+            *current_qty += signed_fill_qty;
+        }
+
+        let mut keys_by_position: IndexMap<
+            AccountInstrumentKey,
+            Vec<AccountInstrumentStrategyKey>,
+        > = IndexMap::new();
+
+        for key in quantities.keys() {
+            keys_by_position
+                .entry((key.0, key.1))
+                .or_default()
+                .push(*key);
+        }
+
+        for (position_key, keys) in keys_by_position {
+            let expected_qty = expected_quantities.get(&position_key).copied();
+            let matches_report = if expected_qty.is_some_and(|quantity| quantity.is_zero()) {
+                keys.iter().all(|key| {
+                    quantities
+                        .get(key)
+                        .copied()
+                        .flatten()
+                        .is_some_and(|quantity| quantity.is_zero())
+                })
+            } else if let (Some(expected_qty), [key]) = (expected_qty, keys.as_slice()) {
+                let cache = self.cache.borrow();
+                let positions = cache.positions_open(
+                    None,
+                    Some(&position_key.1),
+                    None,
+                    Some(&position_key.0),
+                    None,
+                );
+                let cache_is_unambiguous = positions.len() <= 1
+                    && positions.first().is_none_or(|position| {
+                        position.strategy_id == key.2
+                            && cache.oms_type(&position.id) == Some(OmsType::Netting)
+                    });
+                cache_is_unambiguous
+                    && quantities
+                        .get(key)
+                        .copied()
+                        .flatten()
+                        .is_some_and(|quantity| quantity == expected_qty)
+            } else {
+                false
+            };
+
+            if matches_report {
+                continue;
+            }
+
+            let venue_order_ids: Vec<VenueOrderId> = keys
+                .iter()
+                .filter_map(|key| group_ids.get(key))
+                .flatten()
+                .copied()
+                .collect();
+            log::error!(
+                "Bounded reconciliation does not explain the reported position for {}; projecting {} historical order(s) without position or portfolio effects",
+                position_key.1,
+                venue_order_ids.len(),
+            );
+            order_only.extend(venue_order_ids);
+        }
+
+        order_only
     }
 
     /// Checks inflight orders and returns terminal events and intermediate venue queries.
@@ -3746,6 +4127,10 @@ impl ExecutionManager {
         let mut final_orders: IndexMap<VenueOrderId, OrderStatusReport> =
             mass_status.order_reports();
         let mut final_fills: IndexMap<VenueOrderId, Vec<FillReport>> = mass_status.fill_reports();
+
+        if mass_status.lookback_start().is_some() {
+            return (final_orders, final_fills);
+        }
 
         let mut instruments_to_adjust = Vec::new();
 

@@ -212,6 +212,12 @@ Responsibilities:
 - Reconcile order state with the venue.
 - Handle account and position updates.
 
+Execution clients can declare the lower time limit applied to historical reconciliation and whether
+the required order, fill, and position sources completed. When an adapter supplies this contract,
+the engine can recover authoritative order state without applying historical position or portfolio
+economics that the available evidence cannot support. See
+[Bounded history safety](reconciliation.md#bounded-history-safety).
+
 Order commands and venue results are asynchronous. `OrderSubmitted` means that the adapter has
 started the submission path, not that the venue has accepted the order. A transport failure can
 leave the outcome unknown, so adapters use stream updates, queries, or reconciliation rather than
