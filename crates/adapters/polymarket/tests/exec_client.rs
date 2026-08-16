@@ -184,6 +184,7 @@ struct TestServerState {
     version_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     startup_request_paths: Arc<tokio::sync::Mutex<Vec<String>>>,
     balance_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
+    balance_response: Arc<tokio::sync::Mutex<Value>>,
     order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     order_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     order_post_count: Arc<tokio::sync::Mutex<usize>>,
@@ -242,6 +243,9 @@ impl Default for TestServerState {
             version_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             startup_request_paths: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             balance_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
+            balance_response: Arc::new(tokio::sync::Mutex::new(load_json(
+                "http_balance_allowance_collateral.json",
+            ))),
             order_response: Arc::new(tokio::sync::Mutex::new(None)),
             order_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             order_post_count: Arc::new(tokio::sync::Mutex::new(0)),
@@ -482,11 +486,8 @@ async fn handle_get_balance(
         .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
         .collect();
     let status = *state.balance_response_status.lock().await;
-    (
-        status,
-        Json(load_json("http_balance_allowance_collateral.json")),
-    )
-        .into_response()
+    let response = state.balance_response.lock().await.clone();
+    (status, Json(response)).into_response()
 }
 
 async fn handle_get_version(State(state): State<TestServerState>, uri: Uri) -> Response {
@@ -1035,9 +1036,21 @@ async fn test_connect_emits_user_socket_state_change() {
 }
 
 #[rstest]
+#[case::malformed_spender(json!({
+    "balance": "37506152",
+    "allowances": {"exchange": "1000"},
+}))]
+#[case::missing_allowance_metadata(json!({"balance": "37506152"}))]
+#[case::legacy_singular_allowance(json!({
+    "balance": "37506152",
+    "allowance": "1000",
+}))]
 #[tokio::test]
-async fn test_connect_checks_v2_before_websocket_and_account_initialization() {
+async fn test_connect_checks_v2_before_websocket_and_uses_balance_projection(
+    #[case] balance_response: Value,
+) {
     let state = TestServerState::default();
+    *state.balance_response.lock().await = balance_response;
     let addr = start_mock_server(state.clone()).await;
     let (mut client, _rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
@@ -2645,8 +2658,12 @@ async fn test_submit_market_order_posts_order_type_from_time_in_force(
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_market_order_buy_accepted() {
+async fn test_submit_market_order_buy_uses_balance_projection() {
     let state = TestServerState::default();
+    *state.balance_response.lock().await = json!({
+        "balance": "37506152",
+        "allowances": {"exchange": "1000"},
+    });
     *state.order_response.lock().await = Some(constructed_order_response("live"));
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);

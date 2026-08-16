@@ -90,6 +90,7 @@ struct TestServerState {
     heartbeat_response: Arc<tokio::sync::Mutex<Value>>,
     version_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     version_response: Arc<tokio::sync::Mutex<Value>>,
+    balance_response: Arc<tokio::sync::Mutex<Value>>,
     rate_limit_after: Arc<AtomicUsize>,
     rate_limit_response_headers: Arc<tokio::sync::Mutex<HeaderMap>>,
     /// Delay before `handle_get_orders` responds. Used by the timeout test.
@@ -133,6 +134,9 @@ impl Default for TestServerState {
             version_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             version_response: Arc::new(tokio::sync::Mutex::new(load_json(
                 "http_version_response.json",
+            ))),
+            balance_response: Arc::new(tokio::sync::Mutex::new(load_json(
+                "http_balance_allowance_collateral.json",
             ))),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
             rate_limit_response_headers: Arc::new(tokio::sync::Mutex::new(HeaderMap::new())),
@@ -291,7 +295,7 @@ async fn handle_get_balance(State(state): State<TestServerState>, headers: Heade
         return r;
     }
     *state.last_headers.lock().await = extract_headers(&headers);
-    Json(load_json("http_balance_allowance_collateral.json")).into_response()
+    Json(state.balance_response.lock().await.clone()).into_response()
 }
 
 async fn handle_update_balance(
@@ -830,6 +834,24 @@ async fn test_get_balance_allowance_returns_data() {
     assert!(balance.allowances.values().all(|value| {
         value == "115792089237316195423570985008687907853269984665640564039457584007913129639935"
     }));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_balance_allowance_rejects_malformed_spender() {
+    let state = TestServerState::default();
+    *state.balance_response.lock().await = json!({
+        "balance": "37506152",
+        "allowances": {"exchange": "1000"},
+    });
+    let addr = start_mock_server(state).await;
+    let client = create_clob_client(&addr);
+    let error = client
+        .get_balance_allowance(GetBalanceAllowanceParams::default())
+        .await
+        .expect_err("strict allowance evidence must reject the malformed spender");
+
+    assert!(error.to_string().contains("invalid spender"));
 }
 
 #[rstest]

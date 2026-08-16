@@ -653,14 +653,14 @@ pub(super) async fn fetch_and_emit_account_state(
         ..Default::default()
     };
 
-    let balance_allowance = http_client
-        .get_balance_allowance(params)
+    let balance = http_client
+        .get_balance(params)
         .await
-        .context("failed to fetch balance allowance")?;
+        .context("failed to fetch balance")?;
 
     let pusd = get_pusd_currency();
-    let account_balance = parse_balance_allowance(balance_allowance.balance, pusd)
-        .context("failed to parse balance allowance")?;
+    let account_balance =
+        parse_balance_allowance(balance, pusd).context("failed to parse balance")?;
 
     let ts_event = clock.get_time_ns();
     log::debug!(
@@ -681,13 +681,13 @@ pub(super) async fn fetch_collateral_balance_pusd(
         ..Default::default()
     };
 
-    let balance_allowance = http_client
-        .get_balance_allowance(params)
+    let balance = http_client
+        .get_balance(params)
         .await
-        .context("failed to fetch balance allowance")?;
+        .context("failed to fetch balance")?;
 
     let usdc_scale = Decimal::from(1_000_000u32);
-    Ok(balance_allowance.balance / usdc_scale)
+    Ok(balance / usdc_scale)
 }
 
 #[cfg(test)]
