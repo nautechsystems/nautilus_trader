@@ -71,7 +71,6 @@ pub mod collections;
 pub mod consts;
 pub mod correctness;
 pub mod datetime;
-pub mod drop;
 pub mod env;
 pub mod hex;
 pub mod math;
@@ -103,7 +102,6 @@ compile_error!("Unsupported platform: Nautilus supports only Linux, macOS, Windo
 pub use crate::params::from_pydict;
 pub use crate::{
     collections::{AtomicMap, AtomicSet},
-    drop::CleanDrop,
     nanos::UnixNanos,
     params::Params,
     shared::{SharedCell, WeakCell},

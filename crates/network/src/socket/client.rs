@@ -51,7 +51,6 @@ use std::{
 };
 
 use bytes::Bytes;
-use nautilus_core::CleanDrop;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::{Error, client::IntoClientRequest, stream::Mode};
@@ -901,14 +900,6 @@ impl SocketClientInner {
 
 impl Drop for SocketClientInner {
     fn drop(&mut self) {
-        // Delegate to explicit cleanup handler
-        self.clean_drop();
-    }
-}
-
-/// Cleanup on drop: invalidates the read session and aborts background tasks.
-impl CleanDrop for SocketClientInner {
-    fn clean_drop(&mut self) {
         self.read_fence.invalidate();
 
         if !self.read_task.is_finished() {
@@ -2086,6 +2077,62 @@ mod rust_tests {
         assert_eq!(
             ConnectionMode::from_atomic(&inner.connection_mode),
             ConnectionMode::Active
+        );
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_inner_drop_invalidates_read_fence_and_aborts_tasks() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (_socket, _) = listener.accept().await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        let mut config = reconnect_test_config(port);
+        config.heartbeat = Some((60, b"ping\r\n".to_vec()));
+        let inner = SocketClientInner::connect_url(config, None).await.unwrap();
+        let read_fence = inner.read_fence.clone();
+        let read_abort = inner.read_task.abort_handle();
+        let write_abort = inner.write_task.abort_handle();
+        let heartbeat_abort = inner
+            .heartbeat_task
+            .as_ref()
+            .expect("heartbeat task should be spawned for a configured heartbeat")
+            .abort_handle();
+
+        assert!(read_fence.is_valid(), "read fence should start valid");
+        assert!(
+            !read_abort.is_finished(),
+            "read task should be running before drop"
+        );
+        assert!(
+            !write_abort.is_finished(),
+            "write task should be running before drop"
+        );
+        assert!(
+            !heartbeat_abort.is_finished(),
+            "heartbeat task should be running before drop"
+        );
+
+        drop(inner);
+        wait_until_async(
+            || async {
+                read_abort.is_finished()
+                    && write_abort.is_finished()
+                    && heartbeat_abort.is_finished()
+            },
+            TEST_TIMEOUT,
+        )
+        .await;
+
+        assert!(!read_fence.is_valid(), "read fence was not invalidated");
+        assert!(read_abort.is_finished(), "read task was not aborted");
+        assert!(write_abort.is_finished(), "write task was not aborted");
+        assert!(
+            heartbeat_abort.is_finished(),
+            "heartbeat task was not aborted"
         );
         server.abort();
     }

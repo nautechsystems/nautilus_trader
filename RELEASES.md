@@ -41,6 +41,7 @@ Released on TBD (UTC).
 - Removed duck-typed object conversion from `BacktestEngine.add_data`; pass model objects such as `QuoteTick`, `TradeTick`, and `Bar`
 - Removed Rust `from_pyobject` constructors from `nautilus_model` data types; use `Bound::extract` for the target type
 - Removed `Cache.actor_ids()`, which always returned an empty set because no data flowing through the cache carries an actor ID; the Rust `Trader::actor_ids()` still lists registered actors
+- Removed Rust `nautilus_core::CleanDrop` and its `drop` module; implement `Drop` directly
 - Replaced Rust `nautilus_model::python::data::data_to_pycapsule` with `data_to_pyobject`
 - Renamed `Portfolio.margins_init` to `instrument_initial_margins`
 - Renamed `Portfolio.margins_maint` to `instrument_maintenance_margins`

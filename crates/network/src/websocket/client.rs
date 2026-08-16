@@ -60,7 +60,6 @@ use std::{
 
 use futures_util::{SinkExt, StreamExt};
 use http::HeaderName;
-use nautilus_core::CleanDrop;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 #[cfg(any(feature = "turmoil", feature = "transport-sockudo"))]
 use rustls::ClientConfig;
@@ -1927,14 +1926,6 @@ fn idle_timeout_exceeded(
 
 impl Drop for WebSocketClientInner {
     fn drop(&mut self) {
-        // Delegate to explicit cleanup handler
-        self.clean_drop();
-    }
-}
-
-/// Cleanup on drop: aborts background tasks and clears handlers to break reference cycles.
-impl CleanDrop for WebSocketClientInner {
-    fn clean_drop(&mut self) {
         if let Some(read_fence) = self.read_fence.take() {
             read_fence.invalidate();
         }
@@ -1957,10 +1948,6 @@ impl CleanDrop for WebSocketClientInner {
             handle.abort();
             log_task_aborted("heartbeat");
         }
-
-        // Clear handlers to break potential reference cycles
-        self.handler = None;
-        self.ping_handler = None;
     }
 }
 
@@ -4688,6 +4675,73 @@ mod rust_tests {
             .expect("epoch handler channel closed");
         assert_eq!(epoch, 1);
         assert_eq!(message, WsMessage::Text("replacement".into()));
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_inner_drop_invalidates_read_fence_and_aborts_tasks() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let _websocket = accept_async(stream).await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        let mut config = reconnect_test_config(port);
+        config.heartbeat = Some(60);
+        let (handler, _handler_rx) = channel_message_handler();
+        let inner = WebSocketClientInner::connect_url(config, Some(handler), None)
+            .await
+            .unwrap();
+        let read_fence = inner
+            .read_fence
+            .clone()
+            .expect("read fence should exist in handler mode");
+        let read_abort = inner
+            .read_task
+            .as_ref()
+            .expect("read task should be spawned in handler mode")
+            .abort_handle();
+        let write_abort = inner.write_task.abort_handle();
+        let heartbeat_abort = inner
+            .heartbeat_task
+            .as_ref()
+            .expect("heartbeat task should be spawned for a configured heartbeat")
+            .abort_handle();
+
+        assert!(read_fence.is_valid(), "read fence should start valid");
+        assert!(
+            !read_abort.is_finished(),
+            "read task should be running before drop"
+        );
+        assert!(
+            !write_abort.is_finished(),
+            "write task should be running before drop"
+        );
+        assert!(
+            !heartbeat_abort.is_finished(),
+            "heartbeat task should be running before drop"
+        );
+
+        drop(inner);
+        wait_until_async(
+            || async {
+                read_abort.is_finished()
+                    && write_abort.is_finished()
+                    && heartbeat_abort.is_finished()
+            },
+            TEST_TIMEOUT,
+        )
+        .await;
+
+        assert!(!read_fence.is_valid(), "read fence was not invalidated");
+        assert!(read_abort.is_finished(), "read task was not aborted");
+        assert!(write_abort.is_finished(), "write task was not aborted");
+        assert!(
+            heartbeat_abort.is_finished(),
+            "heartbeat task was not aborted"
+        );
         server.abort();
     }
 
