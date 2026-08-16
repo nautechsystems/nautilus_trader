@@ -50,6 +50,7 @@ pub use messages::{
     WsSubscriptionPayload, WsUnsubscribeParams, WsUnsubscribeResult, balances_channel, methods,
     orderbook_channel, orders_channel, private_trades_channel, ticker_channel, trades_channel,
 };
+pub(crate) use parse::ticker_ts_event;
 pub use parse::{
     bar_spec_to_derive_period, parse_candle_record, parse_funding_rate,
     parse_funding_rate_history_record, parse_index_price, parse_mark_price, parse_option_greeks,

@@ -88,7 +88,7 @@ use crate::{
         parse_funding_rate_history_record, parse_index_price, parse_mark_price,
         parse_option_greeks, parse_orderbook_deltas, parse_orderbook_depth10, parse_public_ws_data,
         parse_ticker_quote, parse_ticker_quote_from_rest, parse_trade_tick,
-        parse_trade_tick_from_rest, ticker_channel, trades_channel,
+        parse_trade_tick_from_rest, ticker_channel, ticker_ts_event, trades_channel,
     },
 };
 
@@ -1485,16 +1485,21 @@ impl DataClient for DeriveDataClient {
             // bootstrap when the REST ticker is unavailable or non-option.
             let forwards: Vec<ForwardPrice> = match http_client.get_ticker(&venue_symbol).await {
                 Ok(ticker) => match ticker.option_pricing.as_ref() {
-                    Some(pricing) => {
-                        let ts_event = clock.get_time_ns();
-                        vec![ForwardPrice::new(
+                    Some(pricing) => match ticker_ts_event(ticker.timestamp) {
+                        Ok(ts_event) => vec![ForwardPrice::new(
                             instrument_id,
                             pricing.forward_price,
                             Some(underlying.to_string()),
                             ts_event,
-                            ts_event,
-                        )]
-                    }
+                            clock.get_time_ns(),
+                        )],
+                        Err(e) => {
+                            log::warn!(
+                                "Derive ticker for {instrument_id} has an invalid timestamp: {e:?}; emitting empty forward prices",
+                            );
+                            Vec::new()
+                        }
+                    },
                     None => {
                         log::warn!(
                             "Derive ticker for {instrument_id} has no option_pricing; emitting empty forward prices",

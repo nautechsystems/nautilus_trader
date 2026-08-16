@@ -53,7 +53,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_derive::{
     common::{
         consts::{DERIVE_CLIENT_ID, DERIVE_VENUE},
@@ -2289,11 +2289,14 @@ async fn test_request_forward_prices_emits_response_with_record() {
     let client = connect_with_eth_currency(rest_addr, ws_addr).await;
     let instrument_id = InstrumentId::from("ETH-20260627-3500-C.DERIVE");
 
+    let clock = get_atomic_clock_realtime();
+    let before_ns = clock.get_time_ns();
     client
         .request_forward_prices(request_forward_prices("ETH", Some(instrument_id)))
         .unwrap();
 
     let response = recv_response(&mut rx).await;
+    let after_ns = clock.get_time_ns();
     let DataResponse::ForwardPrices(forward) = response else {
         panic!("expected forward prices response");
     };
@@ -2302,6 +2305,17 @@ async fn test_request_forward_prices_emits_response_with_record() {
     assert_eq!(forward.data[0].instrument_id, instrument_id);
     assert_eq!(forward.data[0].forward_price.to_string(), "3505");
     assert_eq!(forward.data[0].underlying_index.as_deref(), Some("ETH"));
+    // The event time comes from the venue ticker snapshot; the init time comes
+    // from the local realtime clock, bracketed by the reads around the request.
+    assert_eq!(
+        forward.data[0].ts_event,
+        UnixNanos::from(1_700_000_000_000_000_000)
+    );
+    assert_ne!(forward.data[0].ts_init, forward.data[0].ts_event);
+    assert!(
+        forward.data[0].ts_init >= before_ns && forward.data[0].ts_init <= after_ns,
+        "ts_init must come from the local realtime clock"
+    );
 
     let calls = rest_state.ticker_calls().await;
     assert_eq!(calls.len(), 1);
@@ -2478,6 +2492,42 @@ async fn test_request_forward_prices_emits_empty_response_when_ticker_lacks_opti
     assert!(
         forward.data.is_empty(),
         "must emit empty data when option_pricing is absent"
+    );
+}
+
+#[rstest]
+#[case::negative(-1)]
+#[case::overflowing(i64::MAX)]
+#[tokio::test]
+async fn test_request_forward_prices_emits_empty_response_for_invalid_ticker_timestamp(
+    #[case] timestamp: i64,
+) {
+    // A venue timestamp that cannot become a UNIX nanoseconds event time
+    // degrades to the empty response without fabricating venue time.
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut ticker = load_json("options/http_ticker_eth_snapshot.json");
+    ticker["timestamp"] = json!(timestamp);
+    *rest_state.ticker_response.lock().await = ticker;
+    let rest_addr = start_rest_server(rest_state.clone()).await;
+    let ws_addr = start_ws_server(ws_state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+
+    let client = connect_with_eth_currency(rest_addr, ws_addr).await;
+    let instrument_id = InstrumentId::from("ETH-20260627-3500-C.DERIVE");
+
+    client
+        .request_forward_prices(request_forward_prices("ETH", Some(instrument_id)))
+        .unwrap();
+
+    let response = recv_response(&mut rx).await;
+    let DataResponse::ForwardPrices(forward) = response else {
+        panic!("expected forward prices response");
+    };
+    assert!(
+        forward.data.is_empty(),
+        "must emit empty data for ticker timestamp {timestamp}"
     );
 }
 

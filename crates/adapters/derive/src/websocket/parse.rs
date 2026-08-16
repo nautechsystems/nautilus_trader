@@ -500,7 +500,7 @@ fn timestamp_millis_to_nanos(value: u64, field: &str) -> anyhow::Result<UnixNano
     Ok(UnixNanos::from(nanos))
 }
 
-fn ticker_ts_event(timestamp_ms: i64) -> anyhow::Result<UnixNanos> {
+pub(crate) fn ticker_ts_event(timestamp_ms: i64) -> anyhow::Result<UnixNanos> {
     let timestamp = u64::try_from(timestamp_ms).context("negative Derive ticker timestamp")?;
     timestamp_millis_to_nanos(timestamp, "timestamp")
 }
