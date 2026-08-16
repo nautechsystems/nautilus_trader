@@ -317,11 +317,7 @@ fn parse_derivative_ticker_record(
     };
 
     let rate = Decimal::try_from(funding_rate).ok()?;
-    let next_funding_ns = if data.predicted_funding_rate.is_some() {
-        data.funding_timestamp.map(parse_timestamp)
-    } else {
-        None
-    };
+    let next_funding_ns = data.funding_timestamp.map(parse_timestamp);
     let ts_event = parse_timestamp(data.timestamp);
     let ts_init = parse_timestamp(data.local_timestamp);
 

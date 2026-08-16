@@ -759,8 +759,8 @@ pub fn load_trades<P: AsRef<Path>>(
 /// Loads [`FundingRateUpdate`]s from a Tardis format derivative ticker CSV at the given `filepath`,
 /// automatically applying `GZip` decompression for files ending in ".gz".
 ///
-/// This function parses the `funding_rate`, `predicted_funding_rate`, and `funding_timestamp`
-/// fields from derivative ticker data to create funding rate updates.
+/// This function parses the `funding_rate` and `funding_timestamp` fields from derivative ticker
+/// data to create funding rate updates.
 ///
 /// # Errors
 ///
@@ -890,6 +890,7 @@ mod tests {
     };
     use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
     use rstest::*;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::common::{parse::parse_price, testing::get_test_data_path};
@@ -1310,6 +1311,119 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         assert_eq!(deltas[0].action, BookAction::Clear);
         assert_eq!(deltas[1].order.price, Price::from("6421.5"));
         assert_eq!(deltas[2].order.size, Quantity::from("10000"));
+    }
+
+    #[rstest]
+    fn test_load_funding_rates_okex_xperp() {
+        let filepath = get_test_data_path("csv/okex_futures_xperp_derivative_ticker.csv");
+        let funding_rates = load_funding_rates(filepath, None, None).unwrap();
+
+        let instrument_id = InstrumentId::from("BTC-USD_UM_XPERP-310404.OKEX");
+
+        assert_eq!(funding_rates.len(), 8);
+        assert!(
+            funding_rates
+                .iter()
+                .all(|f| f.instrument_id == instrument_id)
+        );
+
+        // OKX X-Perps publish no predicted rate, so the funding timestamp is the only forward
+        // reference Tardis carries, and the interval is not representable in a derivative ticker
+        assert!(
+            funding_rates
+                .iter()
+                .all(|f| f.next_funding_ns.is_some() && f.interval.is_none())
+        );
+
+        let first = &funding_rates[0];
+        let rolled = &funding_rates[3];
+
+        assert_eq!(first.rate, dec!(-0.0003972900658902));
+        assert_eq!(
+            first.next_funding_ns,
+            Some(UnixNanos::from(1_786_320_000_000_000_000))
+        );
+        assert_eq!(first.ts_event, UnixNanos::from(1_786_320_006_952_000_000));
+        assert_eq!(first.ts_init, UnixNanos::from(1_786_320_006_971_532_000));
+
+        assert_eq!(rolled.rate, dec!(-0.0003962534258591));
+        assert_eq!(
+            rolled.next_funding_ns,
+            Some(UnixNanos::from(1_786_348_800_000_000_000))
+        );
+        assert_eq!(rolled.ts_event, UnixNanos::from(1_786_320_007_369_000_000));
+        assert_eq!(rolled.ts_init, UnixNanos::from(1_786_320_007_402_423_000));
+    }
+
+    #[rstest]
+    fn test_load_funding_rates_without_funding_timestamp() {
+        let filepath = get_test_data_path("csv/deribit_derivative_ticker.csv");
+        let funding_rates = load_funding_rates(filepath, None, None).unwrap();
+
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+
+        assert_eq!(funding_rates.len(), 3);
+        assert!(
+            funding_rates
+                .iter()
+                .all(|f| f.instrument_id == instrument_id)
+        );
+
+        // Deribit publishes no funding timestamp, so there is no forward reference to carry
+        assert!(
+            funding_rates
+                .iter()
+                .all(|f| f.next_funding_ns.is_none() && f.interval.is_none())
+        );
+
+        let first = &funding_rates[0];
+        let changed = &funding_rates[2];
+
+        assert_eq!(first.rate, dec!(0.00000459));
+        assert_eq!(first.ts_event, UnixNanos::from(1_786_320_665_523_000_000));
+        assert_eq!(first.ts_init, UnixNanos::from(1_786_320_665_533_324_000));
+
+        assert_eq!(changed.rate, dec!(0.00000452));
+        assert_eq!(changed.ts_event, UnixNanos::from(1_786_320_665_645_000_000));
+        assert_eq!(changed.ts_init, UnixNanos::from(1_786_320_665_661_106_000));
+    }
+
+    #[rstest]
+    fn test_load_funding_rates_okex_usdc_across_index_migration() {
+        let filepath = get_test_data_path("csv/okex_swap_usdc_index_migration.csv");
+        let funding_rates = load_funding_rates(filepath, None, None).unwrap();
+
+        let instrument_id = InstrumentId::from("BTC-USDC-SWAP.OKEX");
+
+        assert_eq!(funding_rates.len(), 6);
+
+        // Tardis remaps USDC-margined contracts to the USDC index after 2023-04-10T08:40Z, which
+        // changes the index price feed but never the contract symbol, so replaying across the
+        // migration must resolve to one instrument
+        assert!(
+            funding_rates
+                .iter()
+                .all(|f| f.instrument_id == instrument_id)
+        );
+
+        let pre = &funding_rates[0];
+        let post = &funding_rates[3];
+
+        assert_eq!(pre.rate, dec!(0.0001035718476117));
+        assert_eq!(
+            pre.next_funding_ns,
+            Some(UnixNanos::from(1_680_336_000_000_000_000))
+        );
+        assert_eq!(pre.ts_event, UnixNanos::from(1_680_309_048_427_000_000));
+        assert_eq!(pre.ts_init, UnixNanos::from(1_680_309_048_450_728_000));
+
+        assert_eq!(post.rate, dec!(-0.000055804472025));
+        assert_eq!(
+            post.next_funding_ns,
+            Some(UnixNanos::from(1_682_928_000_000_000_000))
+        );
+        assert_eq!(post.ts_event, UnixNanos::from(1_682_900_658_676_000_000));
+        assert_eq!(post.ts_init, UnixNanos::from(1_682_900_658_698_855_000));
     }
 
     #[rstest]

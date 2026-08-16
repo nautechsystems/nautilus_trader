@@ -1,0 +1,14 @@
+{
+  "type": "derivative_ticker",
+  "symbol": "BTC-USDC-SWAP",
+  "exchange": "okex-swap",
+  "lastPrice": 28528.2,
+  "openInterest": 2150215,
+  "fundingRate": 0.0001309027042856,
+  "fundingTimestamp": "2023-05-01T16:00:00.000Z",
+  "predictedFundingRate": -0.0000017645915956,
+  "indexPrice": 28525.1,
+  "markPrice": 28519,
+  "timestamp": "2023-05-01T12:00:29.347Z",
+  "localTimestamp": "2023-05-01T12:00:29.548Z"
+}

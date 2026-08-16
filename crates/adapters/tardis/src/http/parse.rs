@@ -1013,4 +1013,65 @@ mod tests {
         assert!(info_params.get("listing").is_none());
         assert!(info_params.get("expiry").is_none());
     }
+
+    #[rstest]
+    fn test_parse_okex_xperp_instrument() {
+        let json_data = load_test_json("okex_futures_xperp_instrument.json");
+        let info: TardisInstrumentInfo = serde_json::from_str(&json_data).unwrap();
+
+        let instruments = parse_instrument_any(&info, None, Some(UnixNanos::default()), false);
+        let instrument = instruments.first().unwrap().clone();
+
+        assert_eq!(instruments.len(), 1);
+        assert_eq!(info.instrument_type, TardisInstrumentType::Future);
+        assert_eq!(
+            instrument.id(),
+            InstrumentId::from("BTC-USD_UM_XPERP-310404.OKEX")
+        );
+        assert_eq!(
+            instrument.raw_symbol(),
+            Symbol::from("BTC-USD_UM_XPERP-310404")
+        );
+        assert_eq!(instrument.underlying().unwrap().as_str(), "BTC");
+        assert_eq!(instrument.base_currency(), Some(Currency::BTC()));
+        assert_eq!(instrument.quote_currency().code.as_str(), "USD_UM_XPERP");
+        assert_eq!(
+            instrument.settlement_currency().code.as_str(),
+            "USD_UM_XPERP"
+        );
+        assert!(!instrument.is_inverse());
+        assert_eq!(instrument.price_precision(), 1);
+        assert_eq!(instrument.size_precision(), 0);
+        assert_eq!(instrument.price_increment(), Price::from("0.1"));
+        assert_eq!(instrument.size_increment(), Quantity::from(1));
+        assert_eq!(instrument.multiplier(), Quantity::from("0.0001"));
+        assert_eq!(
+            instrument.activation_ns(),
+            Some(UnixNanos::from("2026-03-30T00:00:00Z"))
+        );
+        assert_eq!(
+            instrument.expiration_ns(),
+            Some(UnixNanos::from("2031-04-04T08:00:00Z"))
+        );
+        assert_eq!(instrument.lot_size(), Some(Quantity::from(1)));
+        assert_eq!(instrument.min_quantity(), Some(Quantity::from(1)));
+        assert_eq!(instrument.max_quantity(), None);
+        assert_eq!(instrument.maker_fee(), dec!(0.0002));
+        assert_eq!(instrument.taker_fee(), dec!(0.0005));
+        assert_eq!(
+            instrument.ts_event(),
+            UnixNanos::from("2026-03-30T00:00:00Z")
+        );
+
+        let InstrumentAny::CryptoFuture(future) = instrument else {
+            panic!("Expected CryptoFuture variant");
+        };
+
+        let info_params = future.info.expect("info should be populated");
+
+        // X-Perp contract metadata added by tardis-node 17.2.0 is unmodeled and preserved
+        assert_eq!(info_params.get_str("contractType"), Some("linear_xperp"));
+        assert_eq!(info_params.get_str("underlyingType"), Some("native"));
+        assert_eq!(info_params.get_str("underlyingIndex"), Some("BTC-USD"));
+    }
 }

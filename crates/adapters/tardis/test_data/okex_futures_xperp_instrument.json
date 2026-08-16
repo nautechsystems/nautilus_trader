@@ -1,0 +1,22 @@
+{
+  "id": "BTC-USD_UM_XPERP-310404",
+  "exchange": "okex-futures",
+  "type": "future",
+  "active": true,
+  "availableSince": "2026-03-30T00:00:00.000Z",
+  "datasetId": "BTC-USD_UM_XPERP-310404",
+  "baseCurrency": "BTC",
+  "quoteCurrency": "USD_UM_XPERP",
+  "priceIncrement": 0.1,
+  "amountIncrement": 1,
+  "minTradeAmount": 1,
+  "makerFee": 0.0002,
+  "takerFee": 0.0005,
+  "inverse": false,
+  "contractType": "linear_xperp",
+  "contractMultiplier": 0.0001,
+  "expiry": "2031-04-04T08:00:00.000Z",
+  "listing": "2026-03-30T04:30:00.428Z",
+  "underlyingIndex": "BTC-USD",
+  "underlyingType": "native"
+}

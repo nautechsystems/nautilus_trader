@@ -642,12 +642,16 @@ pub fn parse_derivative_ticker_msg(
     let (ts_event, ts_init) = parse_derivative_ticker_timestamps(msg)?;
     let rate = rust_decimal::Decimal::try_from(funding_rate)
         .with_context(|| format!("failed to convert funding rate {funding_rate} to Decimal"))?;
+    let next_funding_ns = msg
+        .funding_timestamp
+        .map(|ts| timestamp_to_unix_nanos(ts, "funding timestamp"))
+        .transpose()?;
 
     Ok(Some(FundingRateUpdate::new(
         instrument_id,
         rate,
         None,
-        None,
+        next_funding_ns,
         ts_event,
         ts_init,
     )))
@@ -707,9 +711,12 @@ pub fn parse_derivative_ticker_index_price(
 mod tests {
     use nautilus_model::enums::AggressorSide;
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::common::{enums::TardisExchange, testing::load_test_json};
+    use crate::common::{
+        enums::TardisExchange, parse::parse_instrument_id, testing::load_test_json,
+    };
 
     #[rstest]
     fn test_parse_book_change_message() {
@@ -1373,7 +1380,7 @@ mod tests {
         let instrument_id = InstrumentId::from("BTCUSD.BITMEX");
 
         let funding = parse_derivative_ticker_msg(&msg, instrument_id).unwrap();
-        assert!(funding.is_some());
+        assert_eq!(funding.unwrap().next_funding_ns, None);
 
         let mark = parse_derivative_ticker_mark_price(&msg, instrument_id, 1).unwrap();
         assert!(mark.is_none());
@@ -1397,5 +1404,85 @@ mod tests {
         assert_eq!(funding.unwrap().rate.to_string(), "0.0001");
         assert_eq!(mark.unwrap().value, Price::new(61235.2, 1));
         assert_eq!(index.unwrap().value, Price::new(61230.1, 1));
+    }
+
+    #[rstest]
+    fn test_parse_okex_xperp_derivative_ticker() {
+        let json_data = load_test_json("okex_futures_xperp_derivative_ticker.json");
+        let msg: DerivativeTickerMsg = serde_json::from_str(&json_data).unwrap();
+
+        let instrument_id = parse_instrument_id(&msg.exchange, msg.symbol);
+        let funding = parse_derivative_ticker_msg(&msg, instrument_id)
+            .unwrap()
+            .unwrap();
+        let mark = parse_derivative_ticker_mark_price(&msg, instrument_id, 1)
+            .unwrap()
+            .unwrap();
+        let index = parse_derivative_ticker_index_price(&msg, instrument_id, 1)
+            .unwrap()
+            .unwrap();
+
+        // OKX X-Perps publish no predicted rate, so the funding timestamp is the only forward
+        // reference carried through normalization
+        assert_eq!(msg.exchange, TardisExchange::OkexFutures);
+        assert_eq!(
+            instrument_id,
+            InstrumentId::from("BTC-USD_UM_XPERP-310404.OKEX")
+        );
+        assert_eq!(funding.rate, dec!(-0.0004050736802759));
+        assert_eq!(
+            funding.next_funding_ns,
+            Some(UnixNanos::from("2026-08-10T16:00:00Z"))
+        );
+        assert_eq!(funding.interval, None);
+        assert_eq!(
+            funding.ts_event,
+            UnixNanos::from("2026-08-10T12:00:13.061Z")
+        );
+        assert_eq!(funding.ts_init, UnixNanos::from("2026-08-10T12:00:13.093Z"));
+        assert_eq!(mark.value, Price::new(65014.7, 1));
+        assert_eq!(index.value, Price::new(65066.1, 1));
+    }
+
+    #[rstest]
+    fn test_parse_okex_usdc_derivative_ticker_across_index_migration() {
+        let pre_json = load_test_json("okex_swap_derivative_ticker_pre_index_migration.json");
+        let post_json = load_test_json("okex_swap_derivative_ticker_post_index_migration.json");
+        let pre: DerivativeTickerMsg = serde_json::from_str(&pre_json).unwrap();
+        let post: DerivativeTickerMsg = serde_json::from_str(&post_json).unwrap();
+
+        let pre_id = parse_instrument_id(&pre.exchange, pre.symbol);
+        let post_id = parse_instrument_id(&post.exchange, post.symbol);
+        let pre_index = parse_derivative_ticker_index_price(&pre, pre_id, 1)
+            .unwrap()
+            .unwrap();
+        let post_index = parse_derivative_ticker_index_price(&post, post_id, 1)
+            .unwrap()
+            .unwrap();
+        let pre_funding = parse_derivative_ticker_msg(&pre, pre_id).unwrap().unwrap();
+        let post_funding = parse_derivative_ticker_msg(&post, post_id)
+            .unwrap()
+            .unwrap();
+
+        // Captured either side of the 2023-04-10T08:40Z index migration, which switches the index
+        // feed Tardis reads from BTC-USD to BTC-USDC but leaves the contract symbol alone, so both
+        // must still resolve to one instrument. The index prices are a month apart and only pin
+        // each capture, they do not themselves demonstrate the switch.
+        assert_eq!(pre.exchange, TardisExchange::OkexSwap);
+        assert_eq!(post.exchange, TardisExchange::OkexSwap);
+        assert_eq!(pre_id, InstrumentId::from("BTC-USDC-SWAP.OKEX"));
+        assert_eq!(post_id, pre_id);
+        assert_eq!(pre_index.value, Price::new(28379.9, 1));
+        assert_eq!(post_index.value, Price::new(28525.1, 1));
+        assert_eq!(pre_funding.rate, dec!(-0.0001546799749051));
+        assert_eq!(post_funding.rate, dec!(0.0001309027042856));
+        assert_eq!(
+            pre_funding.next_funding_ns,
+            Some(UnixNanos::from("2023-04-01T16:00:00Z"))
+        );
+        assert_eq!(
+            post_funding.next_funding_ns,
+            Some(UnixNanos::from("2023-05-01T16:00:00Z"))
+        );
     }
 }

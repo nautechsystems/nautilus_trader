@@ -129,6 +129,8 @@ Released on TBD (UTC).
 - Fixed Polymarket order book snapshots accepting divergent data with invalid venue hashes
 - Fixed Polymarket compact book snapshots being dropped when hash preimage fields are absent
 - Fixed Polymarket open markets being removed from live state after `endDate` (#4706), thanks @mystic-io
+- Fixed Tardis CSV funding rates dropping `next_funding_ns` without a predicted rate
+- Fixed Tardis Machine funding rates omitting `next_funding_ns`
 
 ### Internal Improvements
 
@@ -140,6 +142,7 @@ Released on TBD (UTC).
 - Improved WebSocket reconnect replay to drop Ping, Pong, and Close frames instead of resending them
 - Improved network crate tests for retries, rate limits, mutual TLS, HTTP, socket reconnects, and WebSocket messages
 - Improved Polymarket order response tests for the `tradeIDs` matched shape and batch submission legs
+- Improved Tardis tests with OKX X‑Perp and USDC index migration fixtures
 - Refactored the Redis cache adapter to delegate deletions and custom data writes to `RedisCacheDatabase`, removing duplicated implementations (Rust)
 - Refined CI, build, and dependency configuration after the v1 removal
 - Replaced Chrono and Chrono-TZ with Jiff and bundled TZDB data (#4639), thanks @sunlei

@@ -1692,8 +1692,8 @@ impl Iterator for FundingRateStreamIterator {
 /// Streams [`FundingRateUpdate`]s from a Tardis derivative ticker CSV file,
 /// yielding chunks of the specified size.
 ///
-/// This function parses the `funding_rate`, `predicted_funding_rate`, and `funding_timestamp`
-/// fields from derivative ticker data to create funding rate updates.
+/// This function parses the `funding_rate` and `funding_timestamp` fields from derivative ticker
+/// data to create funding rate updates.
 ///
 /// # Errors
 ///

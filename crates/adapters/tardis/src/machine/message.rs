@@ -117,6 +117,8 @@ pub struct DerivativeTickerMsg {
     pub open_interest: Option<f64>,
     /// The last funding rate if provided by exchange.
     pub funding_rate: Option<f64>,
+    /// The timestamp of the next funding if provided by exchange.
+    pub funding_timestamp: Option<Timestamp>,
     /// The last index price if provided by exchange.
     pub index_price: Option<f64>,
     /// The last mark price if provided by exchange.
