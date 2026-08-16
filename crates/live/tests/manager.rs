@@ -7912,6 +7912,167 @@ async fn test_adjust_fills_creates_synthetic_for_partial_window() {
 }
 
 #[tokio::test]
+async fn test_adjust_fills_skips_instrument_with_retained_position() {
+    // Regression test for a warm restart: when an instrument already has a retained,
+    // correct NETTING position in the cache, `adjust_mass_status_fills` must skip that
+    // instrument entirely, even if the re-delivered fill history for the mass status
+    // does not sum to exactly the reported venue quantity (e.g. a venue's fill-history
+    // endpoint over-reporting the trade history for an order). Without the retained-
+    // position guard, the partial-window adjustment logic would synthesize a backdated
+    // opposite fill to reconcile the (illusory) discrepancy and apply it directly on
+    // top of the already-correct position, corrupting it.
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    ctx.add_instrument(instrument.clone());
+
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    ctx.manager
+        .claim_external_orders(instrument_id, strategy_id)
+        .unwrap();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Netting);
+
+    // Seed a correct, already-reconciled NETTING position: LONG 5.0 @ 3000.00
+    let retained_venue_order_id = VenueOrderId::from("V-ORIG-001");
+    let mut retained_order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(ClientOrderId::from("O-ORIG-001"))
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("5.000"))
+        .price(Price::from("3000.00"))
+        .build();
+    apply_submitted_and_accepted(&mut retained_order, retained_venue_order_id);
+    let position_id = PositionId::new(format!("{instrument_id}-{strategy_id}"));
+    let retained_fill = TestOrderEventStubs::filled(
+        &retained_order,
+        &instrument,
+        Some(TradeId::from("T-ORIG-001")),
+        Some(position_id),
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("5.000")),
+        Some(LiquiditySide::Maker),
+        Some(Money::from("2.50 USDT")),
+        Some(UnixNanos::from(1_000_000)),
+        Some(test_account_id()),
+    );
+    let retained_position = Position::new(&instrument, retained_fill.into());
+    ctx.cache
+        .borrow_mut()
+        .add_position(&retained_position, OmsType::Netting)
+        .unwrap();
+
+    // Warm restart: the venue confirms the SAME correct position (LONG 5.0), but its
+    // fill-history endpoint re-delivers the ORIGINAL order/trade with an over-reported
+    // filled quantity (10.0 instead of the actual 5.0) - the kind of discrepancy that
+    // used to make the partial-window adjustment logic synthesize an equal-and-opposite
+    // backdated fill to force the reconstructed quantity to match the venue position.
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+
+    let position_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.000"),
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+        None, // Netting mode
+        Some(dec!(3000.00)),
+    );
+    mass_status.add_position_reports(vec![position_report]);
+
+    let redelivered_order_report = OrderStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        Some(ClientOrderId::from("O-ORIG-001")),
+        retained_venue_order_id,
+        OrderSide::Buy,
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        UnixNanos::from(5_000_000),
+        UnixNanos::from(5_000_000),
+        UnixNanos::from(5_000_000),
+        None,
+    )
+    .with_price(Price::from("3000.00"))
+    .with_avg_px(dec!(3000.00));
+    mass_status.add_order_reports(vec![redelivered_order_report]);
+
+    let redelivered_fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        retained_venue_order_id,
+        TradeId::from("T-ORIG-001"),
+        OrderSide::Buy,
+        Quantity::from("10.000"),
+        Price::from("3000.00"),
+        Money::from("2.50 USDT"),
+        LiquiditySide::Maker,
+        Some(ClientOrderId::from("O-ORIG-001")),
+        None,
+        UnixNanos::from(5_000_000),
+        UnixNanos::from(5_000_000),
+        None,
+    );
+    mass_status.add_fill_reports(vec![redelivered_fill]);
+
+    ctx.manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    // The retained position must be left completely untouched: still carrying only
+    // its original fill, at its original open time and quantity. Without the guard,
+    // the over-reported re-delivered fill combined with the resulting synthetic
+    // opposite fill flattens the position and a subsequent position-reconciliation
+    // pass reopens it from scratch, replacing the original trade history with a
+    // brand-new synthetic reconciliation trade even though the final quantity
+    // happens to net back out to 5.0.
+    let cache = ctx.cache.borrow();
+    let position = cache
+        .position(&position_id)
+        .expect("Retained position should still exist");
+    assert_eq!(
+        position.trade_ids.len(),
+        1,
+        "Retained position should still have exactly 1 fill, was {}",
+        position.trade_ids.len()
+    );
+    assert!(
+        position.trade_ids.contains(&TradeId::from("T-ORIG-001")),
+        "Retained position should still be tracking its original fill T-ORIG-001, was {:?}",
+        position.trade_ids
+    );
+    assert_eq!(
+        position.ts_opened,
+        UnixNanos::from(1_000_000),
+        "Retained position must not be flattened and reopened, was ts_opened={}",
+        position.ts_opened
+    );
+    assert_eq!(
+        position.quantity,
+        Quantity::from("5.000"),
+        "Retained position quantity should be unchanged, was {}",
+        position.quantity
+    );
+    assert!(
+        position.is_open(),
+        "Retained position must remain open, not corrupted by a synthetic/re-delivered fill"
+    );
+}
+
+#[tokio::test]
 async fn test_external_order_has_venue_tag() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
