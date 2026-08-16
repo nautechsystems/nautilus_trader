@@ -81,6 +81,7 @@ use nautilus_model::{
         AccountBalance, Currency, MarginBalance, Money, Price, Quantity, money::MONEY_RAW_MAX,
     },
 };
+use nautilus_testkit::cache::TestCacheDatabaseControl;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -1791,6 +1792,96 @@ fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: Cry
     assert_eq!(adjustment.adjustment_type, PositionAdjustmentType::Funding);
     assert_eq!(adjustment.pnl_change, Some(Money::from("-1 USDT")));
     assert_eq!(account_state.balances[0].total, Money::from("999 USDT"));
+}
+
+#[rstest]
+fn test_process_funding_rate_restores_position_when_database_update_fails(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let account_id = AccountId::from("BINANCE-001");
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let (database, database_control) = TestCacheDatabaseControl::create();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    pre_populate_margin_account_with_balance(&mut cache, "BINANCE-001", Money::from("1000 USDT"));
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(crypto_perpetual_ethusdt.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-001")),
+        None,
+        Some(Price::from("1000.00")),
+        Some(Quantity::from("1.000")),
+        None,
+        Some(Money::from("0 USDT")),
+        Some(UnixNanos::from(1)),
+        Some(account_id),
+    );
+    let position = Position::new(&instrument, fill.into());
+    let position_id = position.id;
+    let adjustments_before = position.adjustments.clone();
+    let realized_pnl_before = position.realized_pnl;
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    cache
+        .add_mark_price(MarkPriceUpdate::new(
+            crypto_perpetual_ethusdt.id,
+            Price::from("1000.00"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    let cache = Rc::new(RefCell::new(cache));
+    let (position_handler, position_saver) =
+        get_typed_message_saving_handler::<PositionEvent>(None);
+    msgbus::subscribe_position_events("events.position.*".into(), position_handler, None);
+    let (settlement_handler, settlement_saver) = get_any_saving_handler::<FundingSettlement>(None);
+    msgbus::subscribe_any(
+        "events.funding_settlements.*".into(),
+        settlement_handler,
+        None,
+    );
+    let exchange = build_exchange_with_options(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        false,
+        false,
+        cache.clone(),
+    );
+    exchange.borrow_mut().add_instrument(instrument).unwrap();
+    let settlement_ns = UnixNanos::from(3);
+    exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            crypto_perpetual_ethusdt.id,
+            Decimal::from_str("0.001").unwrap(),
+            Some(480),
+            Some(settlement_ns),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ));
+    database_control.set_fail_update_position(true);
+
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns);
+
+    let cached_position = cache.borrow().position_owned(&position_id).unwrap();
+    assert_eq!(cached_position.adjustments, adjustments_before);
+    assert_eq!(cached_position.realized_pnl, realized_pnl_before);
+    assert!(position_saver.get_messages().is_empty());
+    assert!(settlement_saver.get_messages().is_empty());
+
+    database_control.set_fail_update_position(false);
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns);
+    assert_eq!(settlement_saver.get_messages().len(), 1);
 }
 
 #[rstest]

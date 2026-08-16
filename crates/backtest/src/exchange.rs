@@ -1374,7 +1374,10 @@ impl SimulatedExchange {
                         adjusted.id
                     );
 
-                    for (original, _, _) in adjusted_positions[..index].iter().rev() {
+                    // Inclusive of `index`: the failed update commits the adjusted position
+                    // to the cache before attempting to persist it, so the position whose
+                    // update returned the error also needs restoring.
+                    for (original, _, _) in adjusted_positions[..=index].iter().rev() {
                         if let Err(rollback_error) = cache.update_position(original) {
                             log::error!(
                                 "Cannot roll back position {} after failed funding settlement: {rollback_error}",

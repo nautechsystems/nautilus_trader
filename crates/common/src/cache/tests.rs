@@ -7242,6 +7242,7 @@ struct SnapshotBlobTestDatabase {
     order_positions: AHashMap<ClientOrderId, PositionId>,
     fail_add: bool,
     fail_update_order: bool,
+    fail_update_position: bool,
 }
 
 impl SnapshotBlobTestDatabase {
@@ -7278,6 +7279,13 @@ impl SnapshotBlobTestDatabase {
     fn fail_update_order() -> Self {
         Self {
             fail_update_order: true,
+            ..Default::default()
+        }
+    }
+
+    fn fail_update_position() -> Self {
+        Self {
+            fail_update_position: true,
             ..Default::default()
         }
     }
@@ -7550,6 +7558,9 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn update_position(&self, _position: &Position) -> anyhow::Result<()> {
+        if self.fail_update_position {
+            anyhow::bail!("update position failed");
+        }
         Ok(())
     }
 
@@ -7590,6 +7601,67 @@ fn test_update_order_commits_canonical_state_when_database_update_fails() {
     let canonical = cache.order(&client_order_id).unwrap();
     assert_eq!(canonical.status(), OrderStatus::Submitted);
     assert_eq!(canonical.last_event(), &submitted);
+}
+
+#[rstest]
+fn test_update_position_commits_canonical_state_when_database_update_fails() {
+    let database = SnapshotBlobTestDatabase::fail_update_position();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-DATABASE-OPEN")),
+        Some(PositionId::new("P-DATABASE-FAILURE")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let mut closed = Position::new(&instrument, fill.into());
+    let position_id = closed.id;
+    cache.add_position(&closed, OmsType::Netting).unwrap();
+    let closing_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let closing_fill = TestOrderEventStubs::filled(
+        &closing_order,
+        &instrument,
+        Some(TradeId::new("T-DATABASE-CLOSE")),
+        Some(position_id),
+        Some(Price::from("1.00010")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    closed.apply(&closing_fill.into());
+
+    let error = cache.update_position(&closed).unwrap_err();
+
+    assert_eq!(error.to_string(), "update position failed");
+
+    // `Position` equality compares only the ID, so the canonical value is pinned by
+    // structural comparison. Fields such as `quantity`, `realized_pnl` and `adjustments`
+    // can otherwise change without adding an event or reopening the position.
+    let cached = cache.position(&position_id).unwrap();
+    assert_eq!(
+        serde_json::to_value(&*cached).unwrap(),
+        serde_json::to_value(&closed).unwrap(),
+    );
+    assert!(cached.is_closed());
+    assert!(cache.is_position_closed(&position_id));
+    assert!(!cache.is_position_open(&position_id));
 }
 
 #[rstest]
