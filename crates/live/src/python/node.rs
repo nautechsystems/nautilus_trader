@@ -369,7 +369,7 @@ impl LiveNode {
                     }
                 }
 
-                py_data_actor_ref.set_python_instance(python_actor.clone().unbind());
+                py_data_actor_ref.set_python_instance(&python_actor)?;
 
                 apply_class_derived_actor_id(&mut py_data_actor_ref, &python_actor)?;
                 let actor_id = py_data_actor_ref.actor_id();
@@ -441,6 +441,8 @@ impl LiveNode {
             .borrow_mut()
             .add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)
             .map_err(to_pyruntime_err)?;
+
+        self.retain_python_component(ComponentId::from(actor_id), &python_actor);
 
         log::info!("Registered Python actor {actor_id}");
         Ok(())
@@ -681,6 +683,8 @@ impl LiveNode {
             .add_strategy_id_with_subscriptions::<PyStrategyInner>(strategy_id)
             .map_err(to_pyruntime_err)?;
 
+        self.retain_python_component(component_id, &python_strategy);
+
         log::info!("Registered Python strategy {strategy_id}");
         Ok(())
     }
@@ -725,7 +729,7 @@ impl LiveNode {
                 py_exec_algorithm_ref.configure_from_py_config(config)?;
             }
 
-            py_exec_algorithm_ref.set_python_instance(exec_algorithm.clone_ref(py));
+            py_exec_algorithm_ref.set_python_instance(bound)?;
             Ok(py_exec_algorithm_ref.clone())
         })
         .map_err(to_pyruntime_err)?;
@@ -733,6 +737,8 @@ impl LiveNode {
         let exec_algorithm_id = py_exec_algorithm.exec_algorithm_id();
         self.add_exec_algorithm(py_exec_algorithm)
             .map_err(to_pyruntime_err)?;
+
+        self.retain_python_component(ComponentId::from(exec_algorithm_id), &exec_algorithm);
 
         log::info!("Registered Python exec algorithm {exec_algorithm_id}");
         Ok(())
@@ -795,8 +801,7 @@ impl LiveNode {
                         py_exec_algorithm_ref.configure_from_py_config(config_obj)?;
                     }
 
-                    py_exec_algorithm_ref
-                        .set_python_instance(python_exec_algorithm.clone().unbind());
+                    py_exec_algorithm_ref.set_python_instance(&python_exec_algorithm)?;
                     let actor_id =
                         ActorId::from(py_exec_algorithm_ref.exec_algorithm_id().inner().as_str());
 
@@ -842,7 +847,7 @@ impl LiveNode {
                     }
                 }
 
-                py_data_actor_ref.set_python_instance(python_exec_algorithm.clone().unbind());
+                py_data_actor_ref.set_python_instance(&python_exec_algorithm)?;
 
                 let actor_id = py_data_actor_ref.actor_id();
 
@@ -855,6 +860,11 @@ impl LiveNode {
             let exec_algorithm_id = py_execution_algorithm.exec_algorithm_id();
             self.add_exec_algorithm(py_execution_algorithm)
                 .map_err(to_pyruntime_err)?;
+
+            self.retain_python_component(
+                ComponentId::from(exec_algorithm_id),
+                &python_exec_algorithm,
+            );
 
             log::info!("Registered Python exec algorithm {exec_algorithm_id}");
             return Ok(());
@@ -927,6 +937,8 @@ impl LiveNode {
             .add_exec_algorithm_id_for_lifecycle(exec_algorithm_id)
             .map_err(to_pyruntime_err)?;
 
+        self.retain_python_component(ComponentId::from(exec_algorithm_id), &python_exec_algorithm);
+
         log::info!("Registered Python exec algorithm {exec_algorithm_id}");
         Ok(())
     }
@@ -996,6 +1008,18 @@ impl LiveNode {
             self.environment(),
             self.is_running()
         )
+    }
+}
+
+impl LiveNode {
+    /// Hands the trader the strong reference which keeps a registered wrapper alive.
+    fn retain_python_component(&mut self, component_id: ComponentId, wrapper: &Py<PyAny>) {
+        Python::attach(|py| {
+            self.kernel_mut()
+                .trader
+                .borrow_mut()
+                .retain_python_component(component_id, wrapper.clone_ref(py));
+        });
     }
 }
 

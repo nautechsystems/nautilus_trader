@@ -1029,7 +1029,7 @@ impl PyBacktestEngine {
                 }
             }
 
-            py_data_actor_ref.set_python_instance(actor.clone_ref(py));
+            py_data_actor_ref.set_python_instance(bound)?;
             apply_class_derived_actor_id(&mut py_data_actor_ref, bound)?;
             let actor_id = py_data_actor_ref.actor_id();
 
@@ -1091,6 +1091,8 @@ impl PyBacktestEngine {
             .borrow_mut()
             .add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)
             .map_err(to_pyruntime_err)?;
+
+        self.retain_python_component(ComponentId::from(actor_id), actor);
 
         log::info!("Registered Python actor {actor_id}");
         Ok(())
@@ -1158,7 +1160,7 @@ impl PyBacktestEngine {
                 }
             }
 
-            py_data_actor_ref.set_python_instance(exec_algorithm.clone_ref(py));
+            py_data_actor_ref.set_python_instance(bound)?;
             let actor_id = py_data_actor_ref.actor_id();
 
             Ok(actor_id)
@@ -1224,6 +1226,8 @@ impl PyBacktestEngine {
             .add_exec_algorithm_id_for_lifecycle(exec_algorithm_id)
             .map_err(to_pyruntime_err)?;
 
+        self.retain_python_component(ComponentId::from(actor_id), exec_algorithm);
+
         log::info!("Registered Python exec algorithm {exec_algorithm_id}");
         Ok(())
     }
@@ -1248,7 +1252,7 @@ impl PyBacktestEngine {
                     py_exec_algorithm_ref.configure_from_py_config(config_obj)?;
                 }
 
-                py_exec_algorithm_ref.set_python_instance(exec_algorithm.clone_ref(py));
+                py_exec_algorithm_ref.set_python_instance(bound)?;
 
                 Ok(Some(py_exec_algorithm_ref.clone()))
             })
@@ -1263,8 +1267,21 @@ impl PyBacktestEngine {
             .add_exec_algorithm(py_exec_algorithm)
             .map_err(to_pyruntime_err)?;
 
+        self.retain_python_component(ComponentId::from(exec_algorithm_id), exec_algorithm);
+
         log::info!("Registered Python exec algorithm {exec_algorithm_id}");
         Ok(true)
+    }
+
+    /// Hands the trader the strong reference which keeps a registered wrapper alive.
+    fn retain_python_component(&mut self, component_id: ComponentId, wrapper: &Py<PyAny>) {
+        Python::attach(|py| {
+            self.0
+                .kernel_mut()
+                .trader
+                .borrow_mut()
+                .retain_python_component(component_id, wrapper.clone_ref(py));
+        });
     }
 
     /// Rejects adding an execution algorithm when the trader is running or disposed.

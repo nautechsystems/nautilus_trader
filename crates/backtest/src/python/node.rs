@@ -285,7 +285,7 @@ impl BacktestNode {
                     }
                 }
 
-                py_data_actor_ref.set_python_instance(python_actor.clone().unbind());
+                py_data_actor_ref.set_python_instance(&python_actor)?;
 
                 apply_class_derived_actor_id(&mut py_data_actor_ref, &python_actor)?;
                 let actor_id = py_data_actor_ref.actor_id();
@@ -357,6 +357,14 @@ impl BacktestNode {
             .borrow_mut()
             .add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)
             .map_err(to_pyruntime_err)?;
+
+        Python::attach(|py| {
+            engine
+                .kernel_mut()
+                .trader
+                .borrow_mut()
+                .retain_python_component(ComponentId::from(actor_id), python_actor.clone_ref(py));
+        });
 
         log::info!("Registered Python actor {actor_id}");
         Ok(())

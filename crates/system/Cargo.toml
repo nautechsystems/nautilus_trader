@@ -80,5 +80,6 @@ nautilus-testkit = { workspace = true, default-features = false, features = [
 
 async-trait = { workspace = true }
 bytes = { workspace = true }
+proptest = { workspace = true }
 rstest = { workspace = true }
 toml = { workspace = true }

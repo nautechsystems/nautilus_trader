@@ -7003,6 +7003,7 @@ dependencies = [
  "nautilus-risk",
  "nautilus-testkit",
  "nautilus-trading",
+ "proptest",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",

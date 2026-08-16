@@ -53,7 +53,7 @@ use nautilus_core::{
     Params, UnixNanos,
     correctness::{CorrectnessResult, CorrectnessResultExt, FAILED},
     from_pydict,
-    python::{to_pyruntime_err, to_pyvalue_err},
+    python::{to_pyruntime_err, to_pyvalue_err, upgrade_py_weakref},
 };
 use nautilus_model::{
     data::{
@@ -88,7 +88,7 @@ use nautilus_portfolio::{portfolio::Portfolio, python::PyPortfolio};
 use pyo3::{
     IntoPyObjectExt,
     prelude::*,
-    types::{PyBytes, PyDict, PyList},
+    types::{PyBytes, PyDict, PyList, PyWeakrefReference},
 };
 use ustr::Ustr;
 
@@ -305,7 +305,7 @@ impl ImportableStrategyConfig {
 /// Inner state of `PyStrategy`, shared between Python wrapper and Rust registries.
 pub struct PyStrategyInner {
     core: StrategyCore,
-    py_self: Option<Py<PyAny>>,
+    py_self: Option<Py<PyWeakrefReference>>,
     config: Option<Py<PyAny>>,
     clock: PyClock,
     logger: PyLogger,
@@ -315,7 +315,10 @@ impl Debug for PyStrategyInner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(PyStrategyInner))
             .field("core", &self.core)
-            .field("py_self", &self.py_self.as_ref().map(|_| "<Py<PyAny>>"))
+            .field(
+                "py_self",
+                &self.py_self.as_ref().map(|_| "<Py<PyWeakrefReference>>"),
+            )
             .field("config", &self.config.as_ref().map(|_| "<Py<PyAny>>"))
             .field("clock", &self.clock)
             .field("logger", &self.logger)
@@ -329,56 +332,56 @@ impl Debug for PyStrategyInner {
 )]
 impl PyStrategyInner {
     fn dispatch_on_start(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_start"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_stop(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_stop"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_resume(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_resume"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_reset(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_reset"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_dispose(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_dispose"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_degrade(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_degrade"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_fault(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_fault"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_save(&self) -> PyResult<IndexMap<String, Vec<u8>>> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_state = py_self.call_method0(py, "on_save")?;
                 let py_state: &Bound<'_, PyDict> = py_state.cast_bound::<PyDict>(py)?;
@@ -390,7 +393,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_load(&self, state: &IndexMap<String, Vec<u8>>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| -> PyResult<()> {
                 let py_state = state_to_pydict(py, state)?;
                 py_self.call_method1(py, "on_load", (py_state,))?;
@@ -401,21 +404,21 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_market_exit(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_market_exit"))?;
         }
         Ok(())
     }
 
     fn dispatch_post_market_exit(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "post_market_exit"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_time_event(&self, event: &TimeEvent) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_time_event", (event.clone().into_py_any(py)?,))
             })?;
@@ -424,7 +427,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_initialized(&self, event: OrderInitialized) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_initialized", (event.into_py_any(py)?,))
             })?;
@@ -433,7 +436,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_event(&self, event: OrderEventAny) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_event = order_event_to_pyobject(py, event)?;
                 py_self.call_method1(py, "on_order_event", (py_event,))
@@ -443,7 +446,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_denied(&self, event: OrderDenied) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_denied", (event.into_py_any(py)?,))
             })?;
@@ -452,7 +455,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_emulated(&self, event: OrderEmulated) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_emulated", (event.into_py_any(py)?,))
             })?;
@@ -461,7 +464,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_released(&self, event: OrderReleased) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_released", (event.into_py_any(py)?,))
             })?;
@@ -470,7 +473,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_submitted(&self, event: OrderSubmitted) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_submitted", (event.into_py_any(py)?,))
             })?;
@@ -479,7 +482,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_rejected(&self, event: OrderRejected) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_rejected", (event.into_py_any(py)?,))
             })?;
@@ -488,7 +491,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_accepted(&self, event: OrderAccepted) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_accepted", (event.into_py_any(py)?,))
             })?;
@@ -497,7 +500,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_expired(&self, event: OrderExpired) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_expired", (event.into_py_any(py)?,))
             })?;
@@ -506,7 +509,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_triggered(&self, event: OrderTriggered) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_triggered", (event.into_py_any(py)?,))
             })?;
@@ -515,7 +518,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_pending_update(&self, event: OrderPendingUpdate) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_pending_update", (event.into_py_any(py)?,))
             })?;
@@ -524,7 +527,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_pending_cancel(&self, event: OrderPendingCancel) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_pending_cancel", (event.into_py_any(py)?,))
             })?;
@@ -533,7 +536,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_modify_rejected(&self, event: OrderModifyRejected) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_modify_rejected", (event.into_py_any(py)?,))
             })?;
@@ -542,7 +545,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_cancel_rejected(&self, event: OrderCancelRejected) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_cancel_rejected", (event.into_py_any(py)?,))
             })?;
@@ -551,7 +554,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_updated(&self, event: &OrderUpdated) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_updated", ((*event).into_py_any(py)?,))
             })?;
@@ -560,7 +563,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_canceled(&self, event: OrderCanceled) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_canceled", (event.into_py_any(py)?,))
             })?;
@@ -569,7 +572,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_filled(&self, event: &OrderFilled) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_filled", (event.clone().into_py_any(py)?,))
             })?;
@@ -578,7 +581,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_fill_voided(&self, event: &OrderFillVoided) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(
                     py,
@@ -591,7 +594,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_position_opened(&self, event: PositionOpened) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_position_opened", (event.into_py_any(py)?,))
             })?;
@@ -600,7 +603,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_position_event(&self, event: PositionEvent) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_event = match event {
                     PositionEvent::PositionOpened(event) => event.into_py_any(py)?,
@@ -615,7 +618,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_position_changed(&self, event: PositionChanged) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_position_changed", (event.into_py_any(py)?,))
             })?;
@@ -624,7 +627,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_position_closed(&self, event: PositionClosed) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_position_closed", (event.into_py_any(py)?,))
             })?;
@@ -633,14 +636,14 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_data(&mut self, data: Py<PyAny>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method1(py, "on_data", (data,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_signal(&mut self, signal: &Signal) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_signal", (signal.clone().into_py_any(py)?,))
             })?;
@@ -649,7 +652,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_queue_state(&mut self, event: &QueueStateChanged) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_queue_state", (event.clone().into_py_any(py)?,))
             })?;
@@ -658,7 +661,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_socket_state(&mut self, event: &SocketStateChanged) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_socket_state", (event.clone().into_py_any(py)?,))
             })?;
@@ -667,35 +670,35 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_instrument(&mut self, instrument: Py<PyAny>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method1(py, "on_instrument", (instrument,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_quote(&mut self, quote: QuoteTick) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method1(py, "on_quote", (quote.into_py_any(py)?,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_trade(&mut self, trade: TradeTick) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method1(py, "on_trade", (trade.into_py_any(py)?,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_bar(&mut self, bar: Bar) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method1(py, "on_bar", (bar.into_py_any(py)?,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_book_deltas", (deltas.clone().into_py_any(py)?,))
             })?;
@@ -704,7 +707,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_book_depth(&mut self, depth: &OrderBookDepth10) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_book_depth", ((*depth).into_py_any(py)?,))
             })?;
@@ -713,7 +716,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_book(&mut self, book: &OrderBook) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_book", (book.clone().into_py_any(py)?,))
             })?;
@@ -722,7 +725,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_mark_price(&mut self, mark_price: MarkPriceUpdate) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_mark_price", (mark_price.into_py_any(py)?,))
             })?;
@@ -731,7 +734,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_index_price(&mut self, index_price: IndexPriceUpdate) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_index_price", (index_price.into_py_any(py)?,))
             })?;
@@ -740,7 +743,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_funding_rate(&mut self, funding_rate: FundingRateUpdate) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_funding_rate", (funding_rate.into_py_any(py)?,))
             })?;
@@ -749,7 +752,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_instrument_status(&mut self, data: InstrumentStatus) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_instrument_status", (data.into_py_any(py)?,))
             })?;
@@ -758,7 +761,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_instrument_close(&mut self, update: InstrumentClose) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_instrument_close", (update.into_py_any(py)?,))
             })?;
@@ -767,7 +770,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_option_greeks(&mut self, greeks: OptionGreeks) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_option_greeks", (greeks.into_py_any(py)?,))
             })?;
@@ -776,7 +779,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_option_chain(&mut self, slice: &OptionChainSlice) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_option_chain", (slice.clone().into_py_any(py)?,))
             })?;
@@ -785,14 +788,14 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_historical_data(&mut self, data: Py<PyAny>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method1(py, "on_historical_data", (data,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_historical_book_deltas(&mut self, deltas: Vec<OrderBookDelta>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_deltas = deltas
                     .into_iter()
@@ -805,7 +808,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_historical_book_depth(&mut self, depths: Vec<OrderBookDepth10>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_depths = depths
                     .into_iter()
@@ -818,7 +821,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_historical_quotes(&mut self, quotes: Vec<QuoteTick>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_quotes = quotes
                     .into_iter()
@@ -831,7 +834,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_historical_trades(&mut self, trades: Vec<TradeTick>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_trades = trades
                     .into_iter()
@@ -847,7 +850,7 @@ impl PyStrategyInner {
         &mut self,
         funding_rates: Vec<FundingRateUpdate>,
     ) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_funding_rates = funding_rates
                     .into_iter()
@@ -860,7 +863,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_historical_bars(&mut self, bars: Vec<Bar>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_bars = bars
                     .into_iter()
@@ -876,7 +879,7 @@ impl PyStrategyInner {
         &mut self,
         mark_prices: Vec<MarkPriceUpdate>,
     ) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_mark_prices = mark_prices
                     .into_iter()
@@ -892,7 +895,7 @@ impl PyStrategyInner {
         &mut self,
         index_prices: Vec<IndexPriceUpdate>,
     ) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_index_prices = index_prices
                     .into_iter()
@@ -902,6 +905,15 @@ impl PyStrategyInner {
             })?;
         }
         Ok(())
+    }
+
+    // The trader owns the wrapper for as long as the strategy stays registered, so a collected
+    // wrapper propagates as an error rather than a skipped callback.
+    fn python_instance(&self) -> PyResult<Option<Py<PyAny>>> {
+        upgrade_py_weakref(
+            self.py_self.as_ref(),
+            &DataActorNative::core(&self.core).actor_id,
+        )
     }
 }
 
@@ -1275,7 +1287,8 @@ fn pydict_to_state(state: &Bound<'_, PyDict>) -> PyResult<IndexMap<String, Vec<u
     module = "nautilus_trader.trading",
     name = "Strategy",
     unsendable,
-    subclass
+    subclass,
+    weakref
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")]
 pub struct PyStrategy {
@@ -1344,8 +1357,16 @@ impl PyStrategy {
     }
 
     /// Sets the Python instance reference for method dispatch.
-    pub fn set_python_instance(&mut self, py_obj: Py<PyAny>) {
-        self.inner_mut().py_self = Some(py_obj);
+    ///
+    /// Only a weak reference is stored, so the caller keeps ownership of `py_obj`. The trader
+    /// owns registered wrappers; an unregistered strategy stays collectable.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `py_obj` cannot be weakly referenced.
+    pub fn set_python_instance(&mut self, py_obj: &Bound<'_, PyAny>) -> PyResult<()> {
+        self.inner_mut().py_self = Some(PyWeakrefReference::new(py_obj)?.unbind());
+        Ok(())
     }
 
     /// Stores the original Python config object passed at construction.
@@ -1523,10 +1544,9 @@ impl PyStrategy {
     /// Captures the Python self reference for Rust→Python event dispatch.
     #[pyo3(signature = (config=None))]
     fn __init__(slf: &Bound<'_, Self>, config: Option<Py<PyAny>>) -> PyResult<()> {
-        let py_self: Py<PyAny> = slf.clone().unbind().into_any();
         {
             let mut borrowed = slf.borrow_mut();
-            borrowed.set_python_instance(py_self);
+            borrowed.set_python_instance(slf.as_any())?;
             // `__new__` retained the config; only a forwarded config overrides it
             if config.is_some() {
                 borrowed.set_config(config);
@@ -3550,7 +3570,7 @@ mod tests {
     use pyo3::{
         Bound, Py, PyAny, PyResult, Python,
         ffi::c_str,
-        types::{PyAnyMethods, PyBytes, PyDict, PyList},
+        types::{PyAnyMethods, PyBytes, PyDict, PyList, PyWeakrefMethods, PyWeakrefReference},
     };
     use serde_json::Value;
     use ustr::Ustr;
@@ -4112,7 +4132,9 @@ class IndicatorEventStrategy:
     ) -> (Py<PyAny>, PyStrategy) {
         let py_strategy = create_tracking_python_strategy(py).unwrap();
         let mut rust_strategy = PyStrategy::new(config);
-        rust_strategy.set_python_instance(py_strategy.clone_ref(py));
+        rust_strategy
+            .set_python_instance(py_strategy.bind(py))
+            .unwrap();
 
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
@@ -4332,7 +4354,9 @@ class IndicatorEventStrategy:
             let indicator = create_event_tracking_python_indicator(py, &events).unwrap();
 
             let mut rust_strategy = PyStrategy::new(None);
-            rust_strategy.set_python_instance(py_strategy.clone_ref(py));
+            rust_strategy
+                .set_python_instance(py_strategy.bind(py))
+                .unwrap();
 
             let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
             let cache = Rc::new(RefCell::new(Cache::new(None, None)));
@@ -5581,6 +5605,29 @@ class IndicatorEventStrategy:
             assert_eq!(
                 &call_names[call_names.len() - 2..],
                 ["on_position_opened", "on_position_event"],
+            );
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_self_is_weak() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let instance = py
+                .get_type::<PyStrategy>()
+                .call0()
+                .expect("Strategy should construct");
+            let weakref =
+                PyWeakrefReference::new(&instance).expect("Strategy should be weak-referenceable");
+            assert!(weakref.upgrade().is_some());
+
+            drop(instance);
+
+            // A strong `py_self` would form an untraceable Rust-Python cycle and keep this alive
+            assert!(
+                weakref.upgrade().is_none(),
+                "an unregistered Strategy must be collected once its last Python owner is dropped",
             );
         });
     }

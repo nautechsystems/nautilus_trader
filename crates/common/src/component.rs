@@ -222,6 +222,18 @@ pub trait Component {
     /// # Errors
     ///
     /// Returns an error if the component fails to dispose.
+    ///
+    /// # Notes
+    ///
+    /// A failing `on_dispose` leaves the component in `Disposing`, and `dispose` can never
+    /// recover it: `Dispose` is only valid from `Ready` or `Stopped`, while `Disposing` accepts
+    /// only `DisposeCompleted`, which `dispose` emits after a successful `on_dispose`. Resources,
+    /// subscriptions, registry entries, and any owner a trader holds are deliberately retained,
+    /// so the component stays inspectable but can no longer be retired through this path.
+    ///
+    /// Forcing [`Component::transition_state`] with `DisposeCompleted` does reach `Disposed` and
+    /// makes the component retirable again, at the cost of skipping
+    /// [`Component::release_subscriptions`] and leaving its message bus handlers installed.
     fn dispose(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Dispose)?; // -> Disposing
 
@@ -230,10 +242,17 @@ pub trait Component {
             return Err(e); // Halt state transition
         }
 
+        self.release_subscriptions();
         self.transition_state(ComponentTrigger::DisposeCompleted)?;
 
         Ok(())
     }
+
+    /// Releases the message bus registrations this component installed.
+    ///
+    /// Runs on disposal after `on_dispose`, so a component the trader then deregisters leaves
+    /// behind no handler which would resolve an actor that is no longer registered.
+    fn release_subscriptions(&mut self) {}
 
     /// Actions to be performed on start.
     ///
@@ -408,6 +427,11 @@ impl ComponentRegistry {
 
     pub fn get(&self, id: &Ustr) -> Option<Rc<UnsafeCell<dyn Component>>> {
         self.components.borrow().get(id).cloned()
+    }
+
+    /// Removes the component with `id`, returning it when it was registered.
+    pub fn remove(&self, id: &Ustr) -> Option<Rc<UnsafeCell<dyn Component>>> {
+        self.components.borrow_mut().remove(id)
     }
 
     /// Checks if a component is currently borrowed.
@@ -653,6 +677,14 @@ pub fn dispose_component(id: &Ustr) -> anyhow::Result<()> {
 /// Returns a component from the global registry by ID.
 pub fn get_component(id: &Ustr) -> Option<Rc<UnsafeCell<dyn Component>>> {
     with_component_registry(|registry| registry.get(id))
+}
+
+/// Removes the component with `id` from the global registry.
+///
+/// Only the exact ID is removed, so unrelated components sharing the thread-local registry
+/// are untouched.
+pub fn deregister_component(id: &Ustr) {
+    with_component_registry(|registry| registry.remove(id));
 }
 
 #[cfg(test)]
