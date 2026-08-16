@@ -207,7 +207,12 @@ SIM_FILTERSET := package(nautilus-common) + package(nautilus-network) + \
 	(package(nautilus-live) & test(test_startup_reconciliation_times_out_waiting_for_mass_status)) + \
 	(package(nautilus-core) & test(~virtual_time))
 SIM_HIGH_PRECISION_PACKAGES := -p nautilus-common -p nautilus-execution
-SIM_RUSTFLAGS := --cfg madsim
+
+# Pass the simulation cfg through `--config` rather than RUSTFLAGS, because the env var replaces
+# the .cargo/config.toml rustflags while this joins with them, keeping -Dwarnings and the Linux
+# link flags. It must sit on each subcommand's own command line, since cargo does not inherit a
+# global `--config` into external subcommands such as clippy and nextest.
+SIM_CARGO_CONFIG := --config 'target."cfg(all())".rustflags=["--cfg","madsim"]'
 
 CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug build-wheel py-stubs check-code \
 	check-code-sim check-code-standard-precision \
@@ -433,10 +438,9 @@ check-code-standard-precision:  #-- Run clippy on lib/test targets with standard
 	@printf "$(GREEN)Standard-precision checks passed$(RESET)\n"
 
 .PHONY: check-code-sim
-check-code-sim: export RUSTFLAGS=$(SIM_RUSTFLAGS)
 check-code-sim:  #-- Run clippy on DST simulation lib/test targets
 	$(info $(M) Running DST simulation code quality checks...)
-	@cargo clippy $(SIM_PACKAGES) --lib --tests --features simulation --profile nextest -- -D warnings
+	@cargo clippy $(SIM_CARGO_CONFIG) $(SIM_PACKAGES) --lib --tests --features simulation --profile nextest -- -D warnings
 	@printf "$(GREEN)DST simulation checks passed$(RESET)\n"
 
 .PHONY: check-all-targets
@@ -995,13 +999,12 @@ endif
 # DST scope.
 .PHONY: cargo-test-sim
 cargo-test-sim: export RUST_BACKTRACE=1
-cargo-test-sim: export RUSTFLAGS=$(SIM_RUSTFLAGS)
 cargo-test-sim: check-nextest-installed
 cargo-test-sim:  #-- Run DST simulation smoke tests (cfg madsim + simulation feature)
 	$(info $(M) Running in-scope DST tests under simulation...)
-	cargo nextest run $(SIM_PACKAGES) --lib --tests --features simulation -E '$(SIM_FILTERSET)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
+	cargo nextest run $(SIM_CARGO_CONFIG) $(SIM_PACKAGES) --lib --tests --features simulation -E '$(SIM_FILTERSET)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
 	$(info $(M) Running precision-sensitive DST tests under simulation + high-precision...)
-	cargo nextest run $(SIM_HIGH_PRECISION_PACKAGES) --lib --tests --features "simulation,high-precision" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
+	cargo nextest run $(SIM_CARGO_CONFIG) $(SIM_HIGH_PRECISION_PACKAGES) --lib --tests --features "simulation,high-precision" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
 
 .PHONY: cargo-test-core-debug
 cargo-test-core-debug: export RUST_BACKTRACE=1

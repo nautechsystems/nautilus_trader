@@ -127,10 +127,10 @@ if grep -Eq '^build ' "$CARGO_LOG"; then
   fail "DST smoke tests used a redundant Cargo build"
 fi
 grep -Fq \
-  'nextest run -p nautilus-common -p nautilus-core -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
+  'nextest run --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-core -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
   "$CARGO_LOG" || fail "Standard-precision DST tests did not compile the full package scope together"
 grep -Fq \
-  'nextest run -p nautilus-common -p nautilus-execution --lib --tests --features simulation,high-precision' \
+  'nextest run --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-execution --lib --tests --features simulation,high-precision' \
   "$CARGO_LOG" || fail "High-precision DST tests did not share one feature-coherent build"
 
 printf '%s\n' \
