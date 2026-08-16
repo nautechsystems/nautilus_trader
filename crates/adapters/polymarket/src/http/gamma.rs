@@ -435,7 +435,7 @@ fn flatten_event_markets(events: Vec<GammaEvent>) -> Vec<GammaMarket> {
             let event_game_id = event.game_id;
             event.markets.into_iter().map(move |mut market| {
                 if market.game_id.is_none() {
-                    market.game_id = event_game_id;
+                    market.game_id.clone_from(&event_game_id);
                 }
                 market
             })

@@ -249,11 +249,12 @@ pub struct GammaMarket {
     pub neg_risk_market_id: Option<String>,
     /// Fee schedule for this market.
     pub fee_schedule: Option<FeeSchedule>,
-    /// Game ID for sport markets. `null` and `-1` both mean "no game" and
-    /// surface as `None`. Reference shape:
+    /// Game ID for sport markets, kept verbatim because Gamma emits both
+    /// numeric and composite `<uuid>:<away>:<home>` forms. `null` and `-1`
+    /// both mean "no game" and surface as `None`. Reference shape:
     /// <https://github.com/Polymarket/rs-clob-client/blob/main/src/gamma/types/response.rs>.
     #[serde(default, deserialize_with = "deserialize_optional_polymarket_game_id")]
-    pub game_id: Option<u64>,
+    pub game_id: Option<String>,
     /// Events linked to this gamma market.
     pub events: Option<Vec<GammaEvent>>,
 }
@@ -316,11 +317,12 @@ pub struct GammaEvent {
     pub neg_risk_market_id: Option<String>,
     /// Whether event is featured.
     pub featured: Option<bool>,
-    /// Game ID for sport markets. `null` and `-1` both mean "no game" and
-    /// surface as `None`. Reference shape:
+    /// Game ID for sport markets, kept verbatim because Gamma emits both
+    /// numeric and composite `<uuid>:<away>:<home>` forms. `null` and `-1`
+    /// both mean "no game" and surface as `None`. Reference shape:
     /// <https://github.com/Polymarket/rs-clob-client/blob/main/src/gamma/types/response.rs>.
     #[serde(default, deserialize_with = "deserialize_optional_polymarket_game_id")]
-    pub game_id: Option<u64>,
+    pub game_id: Option<String>,
 }
 
 /// A tag from the Gamma API `GET /tags`.
@@ -757,7 +759,39 @@ mod tests {
 
         // one market has no game_id
         assert!(map_handicap.game_id.is_none());
-        assert_eq!(money_line.game_id, Some(1_427_074));
+        assert_eq!(money_line.game_id.as_deref(), Some("1427074"));
+    }
+
+    #[rstest]
+    fn test_gamma_event_composite_sports_game_id() {
+        // Live Gamma record from issue #4771: the event carries a numeric
+        // `gameId` while its first market carries a composite one.
+        let events: Vec<GammaEvent> = load("gamma_event_sports_composite_game_id.json");
+
+        assert_eq!(events.len(), 1);
+
+        let event = &events[0];
+
+        assert_eq!(event.id, "835109");
+        assert_eq!(event.game_id.as_deref(), Some("287011684"));
+        assert_eq!(event.markets.len(), 2);
+        assert_eq!(event.markets[0].id, "3524358");
+        assert_eq!(
+            event.markets[0].game_id.as_deref(),
+            Some("dd80aae9-52f9-4c7b-a1cf-7b4ab63cd281:STL:TEX")
+        );
+        assert_eq!(event.markets[1].id, "3554041");
+        assert_eq!(event.markets[1].game_id, None);
+
+        // Re-serialization feeds the Python loader, so the key stays a string
+        // even where Gamma sent a number.
+        let encoded = serde_json::to_value(event).unwrap();
+
+        assert_eq!(encoded["gameId"], serde_json::json!("287011684"));
+        assert_eq!(
+            encoded["markets"][0]["gameId"],
+            serde_json::json!("dd80aae9-52f9-4c7b-a1cf-7b4ab63cd281:STL:TEX")
+        );
     }
 
     #[rstest]

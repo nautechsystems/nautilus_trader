@@ -3274,6 +3274,77 @@ async fn test_request_instruments_by_event_params() {
 
 #[rstest]
 #[tokio::test]
+async fn test_request_events_by_params_accepts_composite_sports_game_id() {
+    // Issue #4771: a single sports market carrying a composite `gameId` failed
+    // the whole paginated event walk, discarding every page fetched so far.
+    let state = TestServerState::default();
+    *state.gamma_events_response.lock().await =
+        Some(load_json("gamma_event_sports_composite_game_id.json"));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let events = client
+        .request_events_by_params(GetGammaEventsParams::default())
+        .await
+        .unwrap();
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].game_id.as_deref(), Some("287011684"));
+    assert_eq!(events[0].markets.len(), 2);
+    assert_eq!(
+        events[0].markets[0].game_id.as_deref(),
+        Some("dd80aae9-52f9-4c7b-a1cf-7b4ab63cd281:STL:TEX")
+    );
+    assert_eq!(events[0].markets[1].game_id, None);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_instruments_by_event_params_carries_composite_sports_game_id() {
+    let state = TestServerState::default();
+    *state.gamma_events_response.lock().await =
+        Some(load_json("gamma_event_sports_composite_game_id.json"));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let instruments = client
+        .request_instruments_by_event_params(GetGammaEventsParams::default())
+        .await
+        .unwrap();
+
+    // Two markets, each producing a Yes and a No instrument. The first market
+    // keeps its own composite game ID; the second has none and inherits the
+    // event's.
+    let game_ids: Vec<Option<String>> = instruments
+        .iter()
+        .map(|instrument| {
+            let InstrumentAny::BinaryOption(binary) = instrument else {
+                panic!("Expected BinaryOption, was {instrument:?}");
+            };
+            binary
+                .info
+                .as_ref()
+                .expect("info should be present")
+                .get_str("game_id")
+                .map(str::to_string)
+        })
+        .collect();
+
+    assert_eq!(
+        game_ids,
+        vec![
+            Some("dd80aae9-52f9-4c7b-a1cf-7b4ab63cd281:STL:TEX".to_string()),
+            Some("dd80aae9-52f9-4c7b-a1cf-7b4ab63cd281:STL:TEX".to_string()),
+            Some("287011684".to_string()),
+            Some("287011684".to_string()),
+        ]
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_request_instruments_by_search() {
     let state = TestServerState::default();
     *state.gamma_search_response.lock().await = Some(load_json("search_response.json"));

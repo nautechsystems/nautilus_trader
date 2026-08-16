@@ -81,8 +81,9 @@ pub struct PolymarketInstrumentDef {
     pub neg_risk: Option<bool>,
     /// Fee schedule for this market.
     pub fee_schedule: Option<FeeSchedule>,
-    /// Game ID for sport markets.
-    pub game_id: Option<u64>,
+    /// Game ID for sport markets, kept verbatim because Gamma emits both
+    /// numeric and composite `<uuid>:<away>:<home>` forms.
+    pub game_id: Option<String>,
 }
 
 /// Parses a Gamma market response into instrument definitions.
@@ -90,12 +91,12 @@ pub struct PolymarketInstrumentDef {
 /// Each market produces two definitions: one for the Yes outcome
 /// and one for the No outcome.
 pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<PolymarketInstrumentDef>> {
-    let game_id = market.game_id.or_else(|| {
+    let game_id = market.game_id.clone().or_else(|| {
         market
             .events
             .as_ref()?
             .iter()
-            .find_map(|event| event.game_id)
+            .find_map(|event| event.game_id.clone())
     });
 
     let token_ids: Vec<String> = serde_json::from_str(&market.clob_token_ids).map_err(|e| {
@@ -166,7 +167,7 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
             market_slug: market.market_slug.clone(),
             neg_risk,
             fee_schedule: market.fee_schedule.clone(),
-            game_id,
+            game_id: game_id.clone(),
         });
     }
 
@@ -364,8 +365,11 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
         map.insert("fee_schedule".to_string(), value);
     }
 
-    if let Some(game_id) = def.game_id {
-        map.insert("game_id".to_string(), serde_json::Value::from(game_id));
+    if let Some(game_id) = &def.game_id {
+        map.insert(
+            "game_id".to_string(),
+            serde_json::Value::String(game_id.clone()),
+        );
     }
 
     serde_json::Value::Object(map)
@@ -491,8 +495,8 @@ mod tests {
         let money_line_defs = parse_gamma_market(&money_line).unwrap();
         let map_handicap_defs = parse_gamma_market(&map_handicap).unwrap();
 
-        assert_eq!(money_line_defs[0].game_id, Some(1_427_074));
-        assert_eq!(map_handicap_defs[0].game_id, Some(1_427_074));
+        assert_eq!(money_line_defs[0].game_id.as_deref(), Some("1427074"));
+        assert_eq!(map_handicap_defs[0].game_id.as_deref(), Some("1427074"));
         assert_eq!(money_line_defs[0].fee_schedule, money_line.fee_schedule);
         assert_eq!(map_handicap_defs[0].fee_schedule, map_handicap.fee_schedule);
 
@@ -635,7 +639,7 @@ mod tests {
             info.get_str("market_slug"),
             Some("btc-updown-5m-1773307200")
         );
-        assert_eq!(info.get_u64("game_id"), None);
+        assert_eq!(info.get_str("game_id"), None);
         assert_eq!(info.get_str("min_order_size"), Some("5"));
         assert_eq!(info.get_bool("neg_risk"), Some(false));
         assert_eq!(info.get("fee_schedule"), None);
@@ -698,7 +702,7 @@ mod tests {
         };
 
         let info = binary.info.as_ref().expect("info should be Some");
-        assert_eq!(info.get_u64("game_id"), Some(1_427_074));
+        assert_eq!(info.get_str("game_id"), Some("1427074"));
         assert!(info.get("fee_schedule").is_some());
     }
 

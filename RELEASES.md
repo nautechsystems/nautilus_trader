@@ -60,6 +60,7 @@ Released on TBD (UTC).
 - Changed Bybit `bybit_bar_spec_to_interval` to take a `BarAggregation` instead of an integer
 - Changed Hyperliquid `subscribe_book_deltas` and `subscribe_book_snapshots` to take a `BookType` instead of an integer
 - Changed Polymarket `HeartbeatResponse::Acknowledged` to carry a required chained ID
+- Changed Polymarket Gamma `game_id` to a string on `GammaMarket`, `GammaEvent`, and instrument `info`
 
 ### Security
 
@@ -130,6 +131,7 @@ Released on TBD (UTC).
 - Fixed Polymarket order book snapshots accepting divergent data with invalid venue hashes
 - Fixed Polymarket compact book snapshots being dropped when hash preimage fields are absent
 - Fixed Polymarket open markets being removed from live state after `endDate` (#4706), thanks @mystic-io
+- Fixed Polymarket Gamma pagination failing on sports markets with a composite `gameId` (#4771), thanks for reporting @jamesjklin
 - Fixed Tardis CSV funding rates dropping `next_funding_ns` without a predicted rate
 - Fixed Tardis Machine funding rates omitting `next_funding_ns`
 
