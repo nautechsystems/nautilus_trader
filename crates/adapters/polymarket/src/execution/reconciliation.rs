@@ -104,7 +104,7 @@ pub(crate) fn build_fill_reports_from_trades(
                 if !mo.is_owned_by(ctx.user_address, ctx.api_key) {
                     continue;
                 }
-                let token_id = Ustr::from(mo.asset_id.as_str());
+                let token_id = mo.asset_id;
                 let instrument = instruments.get_cloned(&token_id);
                 let (instrument_id, price_prec, size_prec) = match instrument {
                     Some(i) => (i.id(), i.price_precision(), i.size_precision()),
@@ -140,7 +140,7 @@ pub(crate) fn build_fill_reports_from_trades(
                 reports.push(report);
             }
         } else {
-            let token_id = Ustr::from(trade.asset_id.as_str());
+            let token_id = trade.asset_id;
             let instrument = instruments.get_cloned(&token_id);
             let (instrument_id, price_prec, size_prec, taker_fee_rate, fee_exponent) =
                 match instrument {
@@ -194,7 +194,7 @@ pub(crate) fn build_order_reports_from_orders(
     let mut filtered = 0usize;
 
     for order in orders {
-        let token_id = Ustr::from(order.asset_id.as_str());
+        let token_id = order.asset_id;
         let instrument = instruments.get_cloned(&token_id);
         let (instrument_id, price_prec, size_prec) = match instrument {
             Some(i) => (i.id(), i.price_precision(), i.size_precision()),

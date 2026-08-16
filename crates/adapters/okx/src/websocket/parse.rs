@@ -2376,7 +2376,7 @@ pub fn parse_ws_message_data(
     match channel {
         OKXWsChannel::Instruments => {
             if let Ok(msg) = serde_json::from_value::<OKXInstrument>(data) {
-                let inst_key = Ustr::from(&msg.inst_id);
+                let inst_key = msg.inst_id;
                 let cached_instrument = instruments_cache.get(&inst_key);
                 let (margin_init, margin_maint, maker_fee, taker_fee) = cached_instrument.map_or(
                     (None, None, None, None),

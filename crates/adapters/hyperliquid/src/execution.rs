@@ -3029,8 +3029,7 @@ impl PostRejectionRoute {
         for child in staged_children {
             self.emitter.emit_order_canceled(&child, None, ts_event);
         }
-        self.dispatch_state
-            .insert_terminal_cloid(Ustr::from(cloid_hex.as_str()));
+        self.dispatch_state.insert_terminal_cloid(*cloid_hex);
         self.dispatch_state.cleanup_terminal(&client_order_id);
         self.ws_client.remove_cloid_mapping(cloid_hex);
         self.http_client

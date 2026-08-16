@@ -23,7 +23,6 @@ use nautilus_core::{
 };
 use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::http::{HttpClient, USER_AGENT};
-use ustr::Ustr;
 
 use super::{
     error::{Error, TardisErrorResponse},
@@ -282,7 +281,7 @@ impl TardisHttpClient {
 
                 let info = TardisInstrumentMiniInfo::new(
                     instrument_id,
-                    Some(Ustr::from(&inst.id)),
+                    Some(inst.id),
                     *exchange,
                     price_precision,
                     size_precision,

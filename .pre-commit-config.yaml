@@ -244,6 +244,14 @@ repos:
         files: "\\.rs$"
         pass_filenames: false
 
+      - id: check-ustr-conventions
+        name: check ustr conventions
+        description: Enforces Ustr interning conventions (no redundant re-interning)
+        entry: bash .pre-commit-hooks/check_ustr_conventions.sh
+        language: system
+        files: "\\.rs$"
+        pass_filenames: false
+
       - id: check-testing-conventions
         name: check testing conventions
         description: Enforces testing standardizations and conventions

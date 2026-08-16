@@ -664,7 +664,7 @@ impl OKXDataClient {
                 let ts_init = clock.get_time_ns();
 
                 for okx_inst in okx_instruments {
-                    let inst_key = Ustr::from(&okx_inst.inst_id);
+                    let inst_key = okx_inst.inst_id;
                     let (margin_init, margin_maint, maker_fee, taker_fee) =
                         instruments_by_symbol.get(&inst_key).map_or(
                             (None, None, None, None),

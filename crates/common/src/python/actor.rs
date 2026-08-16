@@ -962,7 +962,7 @@ impl PyDataActor {
 }
 
 pub fn register_python_exec_algorithm_endpoint(exec_algorithm_id: ExecAlgorithmId) {
-    let actor_id = Ustr::from(exec_algorithm_id.inner().as_str());
+    let actor_id = exec_algorithm_id.inner();
     let endpoint: Ustr = format!("{exec_algorithm_id}.execute").into();
     let handler = ShareableMessageHandler::from_typed(move |command: &TradingCommand| {
         if let Some(mut algo) = try_get_actor_unchecked::<PyDataActorInner>(&actor_id) {

@@ -277,7 +277,7 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
     let open_ok = match open_orders_result {
         Ok(orders) => {
             for order in orders {
-                let symbol_ustr = ustr::Ustr::from(order.symbol.as_str());
+                let symbol_ustr = order.symbol;
                 let (instrument_id, price_precision, size_precision) =
                     resolve_precision(&instruments, &symbol_ustr, product_type);
 
@@ -312,7 +312,7 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
     let algo_ok = match algo_orders_result {
         Ok(algo_orders) => {
             for algo_order in algo_orders {
-                let symbol_ustr = ustr::Ustr::from(algo_order.symbol.as_str());
+                let symbol_ustr = algo_order.symbol;
                 let (instrument_id, price_precision, size_precision) =
                     resolve_precision(&instruments, &symbol_ustr, product_type);
 

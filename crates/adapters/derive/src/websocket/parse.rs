@@ -31,7 +31,6 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use rust_decimal::prelude::ToPrimitive;
-use ustr::Ustr;
 
 use super::messages::{
     DeriveOrderbookData, DeriveOrderbookLevel, DeriveOrderbookMsg, DerivePublicWsData,
@@ -77,7 +76,7 @@ pub fn parse_orderbook_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<De
     let data = serde_json::from_str::<DeriveOrderbookData>(payload.data.get())
         .context("failed to decode Derive orderbook data")?;
     Ok(DeriveOrderbookMsg {
-        channel: Ustr::from(payload.channel.as_str()),
+        channel: payload.channel,
         data,
     })
 }
@@ -91,7 +90,7 @@ pub fn parse_trades_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<Deriv
     let trades = serde_json::from_str::<Vec<DerivePublicTrade>>(payload.data.get())
         .context("failed to decode Derive trades data")?;
     Ok(DeriveTradesMsg {
-        channel: Ustr::from(payload.channel.as_str()),
+        channel: payload.channel,
         trades,
     })
 }
@@ -107,7 +106,7 @@ pub fn parse_ticker_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<Deriv
     data.apply_channel_context(payload.channel.as_str())
         .map_err(anyhow::Error::msg)?;
     Ok(DeriveTickerMsg {
-        channel: Ustr::from(payload.channel.as_str()),
+        channel: payload.channel,
         data,
     })
 }
@@ -680,6 +679,7 @@ mod tests {
     use rstest::rstest;
     use rust_decimal::Decimal;
     use serde_json::{Value, json};
+    use ustr::Ustr;
 
     use super::*;
     use crate::websocket::messages::DeriveWsFrame;

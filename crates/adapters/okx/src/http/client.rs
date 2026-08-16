@@ -5080,7 +5080,7 @@ impl OKXHttpClient {
 
         for inst in candidates {
             if let Some(base) = inst.base_currency() {
-                let base_code = Ustr::from(base.code.as_str());
+                let base_code = base.code;
                 by_base
                     .entry(base_code)
                     .or_insert_with(|| (inst.id(), inst.size_precision()));

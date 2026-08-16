@@ -423,7 +423,7 @@ impl BinanceSpotDataClient {
 
         match msg {
             BinanceSpotWsMessage::Trades(ref event) => {
-                let symbol = Ustr::from(&event.symbol);
+                let symbol = event.symbol;
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol) {
                     let trades = parse_trades_event(event, instrument, ts_init);
@@ -433,7 +433,7 @@ impl BinanceSpotDataClient {
                 }
             }
             BinanceSpotWsMessage::BestBidAsk(ref event) => {
-                let symbol = Ustr::from(&event.symbol);
+                let symbol = event.symbol;
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol) {
                     let quote = parse_bbo_event(event, instrument, ts_init);
@@ -446,7 +446,7 @@ impl BinanceSpotDataClient {
                 }
             }
             BinanceSpotWsMessage::DepthSnapshot(ref event) => {
-                let symbol = Ustr::from(&event.symbol);
+                let symbol = event.symbol;
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol)
                     && let Some(deltas) = parse_depth_snapshot(event, instrument, ts_init)
@@ -455,7 +455,7 @@ impl BinanceSpotDataClient {
                 }
             }
             BinanceSpotWsMessage::DepthDiff(ref event) => {
-                let symbol = Ustr::from(&event.symbol);
+                let symbol = event.symbol;
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol)
                     && let Some(deltas) = parse_depth_diff(event, instrument, ts_init)

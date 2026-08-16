@@ -838,6 +838,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash .pre-commit-hooks/test_check_logging_conventions.sh
 	$Q bash .pre-commit-hooks/test_check_pyo3_conventions.sh
 	$Q bash .pre-commit-hooks/test_check_unicode_typography.sh
+	$Q bash .pre-commit-hooks/test_check_ustr_conventions.sh
 	$Q bash scripts/ci/test-build-artifact-reuse.bash
 	$Q bash scripts/ci/test-check-docker-toolchain-pins.bash
 	$Q bash scripts/ci/test-check-miri-toolchain.bash

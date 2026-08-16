@@ -2476,7 +2476,7 @@ fn handle_instruments(
     let ts_init = clock.get_time_ns();
 
     for okx_inst in okx_instruments {
-        let inst_key = Ustr::from(&okx_inst.inst_id);
+        let inst_key = okx_inst.inst_id;
         let (margin_init, margin_maint, maker_fee, taker_fee) =
             instruments_by_symbol.get(&inst_key).map_or(
                 (None, None, None, None),
@@ -2669,7 +2669,7 @@ fn handle_positions(
         let ts_init = clock.get_time_ns();
 
         for position in positions {
-            let inst_key = Ustr::from(&position.inst_id);
+            let inst_key = position.inst_id;
             if let Some(instrument) = instruments_by_symbol.get(&inst_key) {
                 match parse_position_status_report(
                     &position,

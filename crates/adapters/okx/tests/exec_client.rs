@@ -237,7 +237,7 @@ fn make_spread_order_msg(
     OKXSpreadOrder {
         sprd_id: Ustr::from("BCH-USDT_BCH-USDT-SWAP"),
         ord_id: Ustr::from(venue_order_id),
-        cl_ord_id: Ustr::from(client_order_id.as_str()),
+        cl_ord_id: client_order_id.inner(),
         tag: String::new(),
         side: OKXSide::Buy,
         ord_type: OKXOrderType::Limit,

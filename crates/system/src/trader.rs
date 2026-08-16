@@ -565,7 +565,7 @@ impl Trader {
             self.strategy_ids.iter().map(StrategyId::get_tag).collect();
         ensure_unique_order_id_tag(&existing_order_id_tags, strategy_id.get_tag())?;
 
-        let actor_id = Ustr::from(strategy_id.inner().as_str());
+        let actor_id = strategy_id.inner();
 
         // Subscribe to order events for this strategy
         let order_topic = get_event_order_topic(strategy_id);
@@ -1011,7 +1011,7 @@ impl Trader {
 
         // Register the {id}.execute endpoint so the order manager can
         // route TradingCommands to this algorithm via msgbus::send_any
-        let actor_id = Ustr::from(exec_algorithm_id.inner().as_str());
+        let actor_id = exec_algorithm_id.inner();
         let restore_actor_id = actor_id;
         let restore_fn: ExecAlgorithmSubscriptionFn = Box::new(move || {
             let Some(mut algo) = try_get_actor_unchecked::<T>(&restore_actor_id) else {

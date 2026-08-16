@@ -76,7 +76,7 @@ impl InstrumentCache {
     /// This populates the primary storage and all lookup indices.
     pub fn insert(&self, instrument: InstrumentAny, market: PerpetualMarket) {
         let instrument_id = instrument.id();
-        let ticker = Ustr::from(&market.ticker);
+        let ticker = market.ticker;
         let clob_pair_id = market.clob_pair_id;
 
         // Primary storage

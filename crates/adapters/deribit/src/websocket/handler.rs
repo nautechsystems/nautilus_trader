@@ -1137,8 +1137,7 @@ impl DeribitWsFeedHandler {
                                                 .terminal_order_contexts
                                                 .contains_key(&venue_order_id)
                                         {
-                                            let instrument_name_ustr =
-                                                Ustr::from(order_msg.instrument_name.as_str());
+                                            let instrument_name_ustr = order_msg.instrument_name;
 
                                             if let Some(instrument) =
                                                 self.instruments_cache.get(&instrument_name_ustr)

@@ -303,7 +303,7 @@ pub(crate) fn dispatch_order_update(
     seen_trade_ids: &Arc<Mutex<FifoCache<(ustr::Ustr, i64), 10_000>>>,
 ) {
     let order = &msg.order;
-    let symbol_ustr = ustr::Ustr::from(order.symbol.as_str());
+    let symbol_ustr = order.symbol;
     let ts_init = clock.get_time_ns();
     let ts_event =
         parse_millis_or_init(msg.event_time, "Futures order dispatch event time", ts_init);
@@ -983,7 +983,7 @@ pub(crate) fn dispatch_trade_lite(
     clock: &'static AtomicTime,
     dispatch_state: &WsDispatchState,
 ) {
-    let symbol_ustr = ustr::Ustr::from(msg.symbol.as_str());
+    let symbol_ustr = msg.symbol;
     let ts_init = clock.get_time_ns();
     let ts_event = parse_millis_or_init(msg.event_time, "Futures TRADE_LITE event time", ts_init);
 
@@ -1317,7 +1317,7 @@ pub(crate) fn dispatch_algo_update(
         }
     };
 
-    let symbol_ustr = ustr::Ustr::from(algo_data.symbol.as_str());
+    let symbol_ustr = algo_data.symbol;
     let (instrument_id, _price_precision, _size_precision) =
         if let Some(inst) = http_client.instruments_cache().get(&symbol_ustr) {
             (
