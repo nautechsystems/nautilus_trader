@@ -71,6 +71,7 @@ Released on TBD (UTC).
 - Fixed Rust network and WebSocket adapter logs that could expose credentials and payload contents
 - Fixed `CashAccount` aborts when reserving negative‑price buy orders (#4725), thanks @folknor
 - Fixed `OrderBookDeltas::new_checked` accepting child instrument mismatches (#4710), thanks @folknor
+- Fixed Python `MessageBus` endpoint panics from empty, whitespace, or wildcard addresses
 - Removed `OrderBookDeltas.from_pycapsule`, which reinterpreted unvalidated capsule pointers and could cause invalid memory access
 
 ### Fixes

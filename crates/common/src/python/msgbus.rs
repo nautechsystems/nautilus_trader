@@ -20,7 +20,10 @@
 use std::{any::Any, fmt::Debug, rc::Rc, sync::LazyLock};
 
 use ahash::AHashMap;
-use nautilus_core::{UUID4, python::to_pyruntime_err};
+use nautilus_core::{
+    UUID4,
+    python::{to_pyruntime_err, to_pyvalue_err},
+};
 use nautilus_model::identifiers::TraderId;
 use pyo3::{Py, Python, prelude::*, types::PyBytes};
 use ustr::Ustr;
@@ -601,8 +604,8 @@ impl PyMessageBus {
     /// Registers a handler at the given endpoint address.
     #[pyo3(name = "register")]
     fn py_register(&self, py: Python<'_>, endpoint: &str, handler: Py<PyAny>) -> PyResult<()> {
+        let endpoint = parse_endpoint(endpoint)?;
         let handler = make_handler(py, handler)?;
-        let endpoint = MStr::<Endpoint>::from(endpoint);
         msgbus_api::register_any(endpoint, handler);
         Ok(())
     }
@@ -611,24 +614,27 @@ impl PyMessageBus {
     #[pyo3(name = "deregister")]
     #[pyo3(signature = (endpoint, handler=None))]
     #[expect(clippy::needless_pass_by_value)]
-    fn py_deregister(&self, endpoint: &str, handler: Option<Py<PyAny>>) {
+    fn py_deregister(&self, endpoint: &str, handler: Option<Py<PyAny>>) -> PyResult<()> {
         let _ = handler;
-        let endpoint = MStr::<Endpoint>::from(endpoint);
+        let endpoint = parse_endpoint(endpoint)?;
         msgbus_api::deregister_any(endpoint);
+        Ok(())
     }
 
     /// Sends a message to the given endpoint address.
     #[pyo3(name = "send")]
-    fn py_send(&mut self, endpoint: &str, msg: Py<PyAny>) {
-        let endpoint = MStr::<Endpoint>::from(endpoint);
+    fn py_send(&mut self, endpoint: &str, msg: Py<PyAny>) -> PyResult<()> {
+        let endpoint = parse_endpoint(endpoint)?;
         let py_msg = PyMessage(msg);
         msgbus_api::send_any(endpoint, &py_msg);
         self.sent_count += 1;
+        Ok(())
     }
 
     /// Sends a request to the given endpoint with correlation tracking.
     #[pyo3(name = "request")]
     fn py_request(&mut self, py: Python<'_>, endpoint: &str, request: Py<PyAny>) -> PyResult<()> {
+        let endpoint = parse_endpoint(endpoint)?;
         let request_ref = request.bind(py);
 
         let request_id: UUID4 = request_ref.getattr("id")?.extract()?;
@@ -645,7 +651,6 @@ impl PyMessageBus {
             self.correlation_index.insert(request_id, callback.unbind());
         }
 
-        let endpoint = MStr::<Endpoint>::from(endpoint);
         let py_msg = PyMessage(request);
         msgbus_api::send_any(endpoint, &py_msg);
         self.req_count += 1;
@@ -793,6 +798,10 @@ impl PyMessageBus {
 
         Ok(())
     }
+}
+
+fn parse_endpoint(endpoint: &str) -> PyResult<MStr<Endpoint>> {
+    MStr::<Endpoint>::endpoint(endpoint).map_err(to_pyvalue_err)
 }
 
 #[cfg(test)]

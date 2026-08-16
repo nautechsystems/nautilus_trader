@@ -83,6 +83,14 @@ def test_send_multiple_increments_count(bus):
     assert bus.sent_count == 2
 
 
+def test_deregister_and_send_return_none(bus):
+    handler = [].append
+    bus.register("mailbox", handler)
+
+    assert bus.send("mailbox", "msg") is None
+    assert bus.deregister("mailbox", handler) is None
+
+
 def test_topics_empty(bus):
     assert bus.topics() == []
 
@@ -304,6 +312,96 @@ def test_duplicate_request_id_rejected(bus):
 
 def test_is_pending_request_false_when_empty(bus):
     assert not bus.is_pending_request(UUID4())
+
+
+INVALID_ENDPOINTS = [
+    pytest.param("", "was empty", id="empty"),
+    pytest.param("   ", "was all whitespace", id="spaces"),
+    pytest.param("\t\n", "was all whitespace", id="tab-newline"),
+    pytest.param("*", "contained invalid characters", id="star"),
+    pytest.param("mailbox.*", "contained invalid characters", id="trailing-star"),
+    pytest.param("mail?ox", "contained invalid characters", id="question-mark"),
+]
+
+
+@pytest.mark.parametrize(("endpoint", "message"), INVALID_ENDPOINTS)
+def test_register_invalid_endpoint_raises(bus, endpoint, message):
+    with pytest.raises(ValueError, match=message) as exc_info:
+        bus.register(endpoint, [].append)
+
+    assert type(exc_info.value) is ValueError
+    assert bus.endpoints() == []
+
+
+@pytest.mark.parametrize(("endpoint", "message"), INVALID_ENDPOINTS)
+def test_deregister_invalid_endpoint_raises(bus, endpoint, message):
+    handler = [].append
+    bus.register("mailbox", handler)
+
+    with pytest.raises(ValueError, match=message) as exc_info:
+        bus.deregister(endpoint, handler)
+
+    assert type(exc_info.value) is ValueError
+    assert bus.endpoints() == ["mailbox"]
+
+
+@pytest.mark.parametrize(("endpoint", "message"), INVALID_ENDPOINTS)
+def test_send_invalid_endpoint_raises(bus, endpoint, message):
+    received = []
+    bus.register("mailbox", received.append)
+
+    with pytest.raises(ValueError, match=message) as exc_info:
+        bus.send(endpoint, "msg")
+
+    assert type(exc_info.value) is ValueError
+    assert bus.sent_count == 0
+    assert received == []
+
+
+@pytest.mark.parametrize(("endpoint", "message"), INVALID_ENDPOINTS)
+def test_request_invalid_endpoint_raises(bus, endpoint, message):
+    class FakeRequest:
+        def __init__(self, req_id, callback):
+            self.id = req_id
+            self.callback = callback
+
+    received = []
+    bus.register("service", received.append)
+    req_id = UUID4()
+
+    with pytest.raises(ValueError, match=message) as exc_info:
+        bus.request(endpoint, FakeRequest(req_id, [].append))
+
+    assert type(exc_info.value) is ValueError
+    assert bus.req_count == 0
+    assert not bus.is_pending_request(req_id)
+    assert received == []
+
+
+def test_register_validates_endpoint_before_building_handler(bus):
+    class ExplodingRepr:
+        def __repr__(self):
+            raise AssertionError("handler must not be built for an invalid endpoint")
+
+        def __call__(self, msg):
+            pass
+
+    with pytest.raises(ValueError, match="was empty") as exc_info:
+        bus.register("", ExplodingRepr())
+
+    assert type(exc_info.value) is ValueError
+    assert bus.endpoints() == []
+
+
+def test_request_validates_endpoint_before_reading_request(bus):
+    class RequestWithoutId:
+        pass
+
+    with pytest.raises(ValueError, match="was empty") as exc_info:
+        bus.request("", RequestWithoutId())
+
+    assert type(exc_info.value) is ValueError
+    assert bus.req_count == 0
 
 
 def test_streaming_type_registration(bus):
