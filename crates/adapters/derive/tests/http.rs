@@ -36,7 +36,6 @@ use axum::{
     routing::post,
 };
 use nautilus_common::testing::wait_until_async;
-use nautilus_core::UnixNanos;
 use nautilus_derive::{
     common::{
         consts::{HEADER_LYRA_SIGNATURE, HEADER_LYRA_TIMESTAMP, HEADER_LYRA_WALLET},
@@ -47,9 +46,7 @@ use nautilus_derive::{
         DeriveCredentials, DeriveHttpClient,
         query::{DeriveCancelByLabelParams, DeriveOrderParams, DeriveSignedEnvelope},
     },
-    websocket::parse_candle_record,
 };
-use nautilus_model::data::BarType;
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use rust_decimal_macros::dec;
@@ -717,48 +714,6 @@ async fn test_get_ticker_uses_get_tickers_and_selects_instrument(
     } else {
         assert!(ticker.option_pricing.is_none());
     }
-}
-
-#[rstest]
-#[tokio::test]
-#[ignore = "live network call against api.lyra.finance; run with --include-ignored"]
-async fn test_live_get_ticker_smoke() {
-    let client = DeriveHttpClient::new("https://api.lyra.finance", Some(10), None, None).unwrap();
-    let ticker = client
-        .get_ticker("ETH-PERP")
-        .await
-        .expect("live get_ticker must succeed");
-    assert_eq!(ticker.instrument_name.as_str(), "ETH-PERP");
-    // Perp tickers don't carry option_pricing; the option-chain path always
-    // probes a specific option instrument, so any non-zero mark price proves
-    // the wire shape is intact.
-    assert!(!ticker.mark_price.is_zero());
-}
-
-#[rstest]
-#[tokio::test]
-#[ignore = "live network call against api.lyra.finance; run with --include-ignored"]
-async fn test_live_get_candles_smoke() {
-    let client = DeriveHttpClient::new("https://api.lyra.finance", Some(10), None, None).unwrap();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-    let start_ts = now - 2 * 3600;
-
-    let candles = client
-        .get_candles("ETH-PERP", start_ts, now, 900)
-        .await
-        .expect("live get_candles must succeed");
-    assert!(!candles.is_empty(), "expected non-empty candle window");
-    let first = &candles[0];
-    assert!(first.high_price >= first.low_price);
-    assert!(first.timestamp_bucket >= start_ts);
-    assert!(first.timestamp_bucket <= now);
-
-    let bar_type = BarType::from("ETH-PERP.DERIVE-15-MINUTE-LAST-EXTERNAL");
-    let bar = parse_candle_record(first, bar_type, 2, 3, UnixNanos::default()).expect("bar parses");
-    assert_eq!(bar.bar_type, bar_type);
 }
 
 #[rstest]

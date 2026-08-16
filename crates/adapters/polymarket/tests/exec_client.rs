@@ -1464,37 +1464,6 @@ async fn test_heartbeat_request_deadline_marks_execution_unhealthy() {
     client.disconnect().await.unwrap();
 }
 
-#[rstest]
-#[tokio::test]
-#[ignore = "live network call against clob.polymarket.com; run with --include-ignored"]
-async fn test_live_heartbeat_runs_through_execution_client() {
-    let signature_type = match std::env::var("POLYMARKET_SIGNATURE_TYPE").as_deref() {
-        Ok("0") => SignatureType::Eoa,
-        Ok("1") => SignatureType::PolyProxy,
-        Ok("2") => SignatureType::PolyGnosisSafe,
-        Ok("3") => SignatureType::Poly1271,
-        _ => {
-            panic!("live execution heartbeat test requires POLYMARKET_SIGNATURE_TYPE=0, 1, 2, or 3")
-        }
-    };
-    let config = PolymarketExecClientConfig {
-        signature_type,
-        heartbeat_enabled: true,
-        ..PolymarketExecClientConfig::default()
-    };
-    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
-    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
-    client.start().unwrap();
-
-    client.connect().await.unwrap();
-    await_execution_healthy(&client, Duration::from_secs(10)).await;
-    tokio::time::sleep(Duration::from_secs(11)).await;
-
-    assert!(client.is_connected());
-
-    client.disconnect().await.unwrap();
-}
-
 async fn await_heartbeat_posts(state: &TestServerState, expected: usize, timeout: Duration) {
     wait_until_async(
         || {

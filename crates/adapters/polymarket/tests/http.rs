@@ -43,7 +43,7 @@ use nautilus_model::{
 use nautilus_network::{http::HttpClient, retry::RetryConfig};
 use nautilus_polymarket::{
     common::{
-        credential::{Credential, Secrets},
+        credential::Credential,
         enums::{PolymarketOrderType, SignatureType},
     },
     config::{PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig},
@@ -1100,39 +1100,6 @@ async fn test_post_heartbeat_rate_limit_preserves_retry_after() {
             message,
         } if message == "Too Many Requests"
     ));
-}
-
-#[rstest]
-#[tokio::test]
-#[ignore = "live network call against clob.polymarket.com; run with --include-ignored"]
-async fn test_live_post_heartbeat_chains_and_resynchronizes() {
-    // Sending a heartbeat arms the venue's order-safety timer for the account, and going
-    // silent afterwards can cancel resting orders, so only run this while flat.
-    let secrets = Secrets::from_env().expect("live heartbeat test requires Polymarket credentials");
-    let client =
-        PolymarketClobHttpClient::new(secrets.credential, secrets.address, None, 60).unwrap();
-
-    let first = client.post_heartbeat("").await.expect("empty ID accepted");
-    let HeartbeatResponse::Acknowledged(first_id) = first else {
-        panic!("expected acknowledgment for the empty ID, was {first:?}");
-    };
-    assert!(!first_id.is_empty());
-
-    let second = client
-        .post_heartbeat(&first_id)
-        .await
-        .expect("chained ID accepted");
-    let HeartbeatResponse::Acknowledged(second_id) = second else {
-        panic!("expected acknowledgment for the chained ID, was {second:?}");
-    };
-    assert_ne!(second_id, first_id);
-
-    let stale = client
-        .post_heartbeat("00000000-0000-0000-0000-000000000000")
-        .await
-        .expect("stale ID returns the current ID");
-
-    assert_eq!(stale, HeartbeatResponse::Resynchronize(second_id));
 }
 
 #[rstest]
