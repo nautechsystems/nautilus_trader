@@ -348,22 +348,17 @@ impl PolymarketDataClient {
                             {
                                 return;
                             }
-                            {
-                                let closed = closed_condition_ids
-                                    .lock()
-                                    .expect("closed_condition_ids mutex poisoned");
 
-                                if cancellation.is_cancelled() {
-                                    return;
-                                }
-
-                                debug_assert!(closed.contains(condition_id));
-                                publish_cached_condition_closed(
-                                    condition_id,
-                                    &instruments,
-                                    &data_sender,
-                                );
+                            if cancellation.is_cancelled() {
+                                return;
                             }
+
+                            // Registration above made the marker visible, so hold no guard here
+                            publish_cached_condition_closed(
+                                condition_id,
+                                &instruments,
+                                &data_sender,
+                            );
 
                             retire_closed_condition_state(
                                 condition_id,

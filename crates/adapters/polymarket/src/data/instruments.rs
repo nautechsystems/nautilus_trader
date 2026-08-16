@@ -45,7 +45,7 @@ pub(crate) struct TokenMeta {
     pub(crate) neg_risk: Option<bool>,
 }
 
-fn cache_instrument_unchecked(
+pub(super) fn cache_instrument_unchecked(
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
     instrument: &InstrumentAny,
@@ -67,28 +67,23 @@ pub(crate) fn apply_live_instrument(
     instrument: &InstrumentAny,
     apply: impl FnOnce(&InstrumentAny),
 ) -> bool {
-    let terminal_conditions = closed_condition_ids
-        .lock()
-        .expect("closed_condition_ids mutex poisoned");
-    let is_terminal = extract_condition_id(&instrument.id())
-        .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id));
+    // Guard scopes the check and cache write; holding it across `apply` would span dispatch
+    {
+        let terminal_conditions = closed_condition_ids
+            .lock()
+            .expect("closed_condition_ids mutex poisoned");
+        let is_terminal = extract_condition_id(&instrument.id())
+            .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id));
 
-    if is_terminal {
-        return false;
+        if is_terminal {
+            return false;
+        }
+
+        cache_instrument_unchecked(instruments, token_meta, instrument);
     }
 
-    cache_instrument_unchecked(instruments, token_meta, instrument);
     apply(instrument);
     true
-}
-
-#[cfg(test)]
-pub(crate) fn cache_instrument(
-    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
-    instrument: &InstrumentAny,
-) {
-    cache_instrument_unchecked(instruments, token_meta, instrument);
 }
 
 pub(super) fn publish_cached_condition_closed(
@@ -364,18 +359,10 @@ pub(super) async fn refresh_expired_market_closure(
         }
     }
 
-    let terminal_conditions = closed_condition_ids
-        .lock()
-        .expect("closed_condition_ids mutex poisoned");
-
     if cancellation.is_some_and(CancellationToken::is_cancelled) {
         return Ok(0);
     }
 
-    // Positive Gamma closure evidence is terminal before cache mutation.
-    for condition_id in &closed_ids {
-        debug_assert!(terminal_conditions.contains(condition_id));
-    }
     let mut updated = Vec::new();
 
     // Compose against the latest cached value, so a concurrent tick size change is not discarded.
@@ -676,7 +663,7 @@ mod tests {
         let expected_price_precision = price_increment.precision;
         let expected_size_precision = size_increment.precision;
 
-        cache_instrument(&instruments, &token_meta, &inst);
+        cache_instrument_unchecked(&instruments, &token_meta, &inst);
 
         let loaded = instruments.load();
         let cached = loaded
@@ -700,10 +687,10 @@ mod tests {
         let raw_symbol = "token-overwrite";
 
         let first = stub_instrument(raw_symbol, Price::from("0.01"), Quantity::from("0.1"));
-        cache_instrument(&instruments, &token_meta, &first);
+        cache_instrument_unchecked(&instruments, &token_meta, &first);
 
         let second = stub_instrument(raw_symbol, Price::from("0.0001"), Quantity::from("0.001"));
-        cache_instrument(&instruments, &token_meta, &second);
+        cache_instrument_unchecked(&instruments, &token_meta, &second);
 
         let meta = token_meta
             .get(&Ustr::from(raw_symbol))
@@ -726,7 +713,7 @@ mod tests {
         ];
 
         for inst in &samples {
-            cache_instrument(&instruments, &token_meta, inst);
+            cache_instrument_unchecked(&instruments, &token_meta, inst);
         }
 
         let loaded = instruments.load();

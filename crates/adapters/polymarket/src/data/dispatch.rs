@@ -116,18 +116,11 @@ pub(super) struct WsMessageContext {
     pub(super) cancellation_token: CancellationToken,
 }
 
-fn lock_live_condition<'a>(
-    ctx: &'a WsMessageContext,
-    instrument_id: InstrumentId,
-) -> Option<std::sync::MutexGuard<'a, AHashSet<String>>> {
-    let terminal_conditions = ctx
-        .closed_condition_ids
-        .lock()
-        .expect("closed_condition_ids mutex poisoned");
-    let is_terminal = crate::providers::extract_condition_id(&instrument_id)
-        .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id));
-
-    (!is_terminal).then_some(terminal_conditions)
+// The lock releases before the caller dispatches, so no adapter state spans publication
+fn is_terminal_condition(ctx: &WsMessageContext, instrument_id: InstrumentId) -> bool {
+    crate::providers::extract_condition_id(&instrument_id).is_ok_and(|condition_id| {
+        crate::data::runtime::is_condition_closed(&ctx.closed_condition_ids, &condition_id)
+    })
 }
 
 impl WsMessageContext {
@@ -205,9 +198,9 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 }
             };
             let instrument_id = meta.instrument_id;
-            let Some(_terminal_guard) = lock_live_condition(ctx, instrument_id) else {
+            if is_terminal_condition(ctx, instrument_id) {
                 return;
-            };
+            }
 
             if let Err(e) =
                 verify_book_snapshot_hash(&snap, meta.min_order_size.as_deref(), meta.neg_risk)
@@ -351,9 +344,9 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
 
             for (group_index, meta, change) in resolved {
                 let instrument_id = meta.instrument_id;
-                let Some(_terminal_guard) = lock_live_condition(ctx, instrument_id) else {
+                if is_terminal_condition(ctx, instrument_id) {
                     continue;
-                };
+                }
                 let changes = std::mem::take(&mut groups[group_index].1);
 
                 if !changes.is_empty() && ctx.active_delta_subs.contains(&instrument_id) {
@@ -446,9 +439,9 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 }
             };
             let instrument_id = meta.instrument_id;
-            let Some(_terminal_guard) = lock_live_condition(ctx, instrument_id) else {
+            if is_terminal_condition(ctx, instrument_id) {
                 return;
-            };
+            }
 
             if ctx.active_trade_subs.contains(&instrument_id) {
                 let ts_init = ctx.clock.get_time_ns();
@@ -482,9 +475,10 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     return;
                 }
             };
-            let Some(_terminal_guard) = lock_live_condition(ctx, meta.instrument_id) else {
+
+            if is_terminal_condition(ctx, meta.instrument_id) {
                 return;
-            };
+            }
 
             let tick_size: rust_decimal::Decimal = match change.new_tick_size.parse() {
                 Ok(d) => d,
@@ -888,7 +882,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::{
-        super::{PolymarketDataClient, instruments::cache_instrument},
+        super::{PolymarketDataClient, instruments::cache_instrument_unchecked},
         *,
     };
     use crate::{
@@ -1110,7 +1104,7 @@ mod tests {
         size_increment: Quantity,
     ) -> InstrumentAny {
         let inst = stub_instrument(raw_symbol, price_increment, size_increment);
-        cache_instrument(&ctx.instruments, &ctx.token_meta, &inst);
+        cache_instrument_unchecked(&ctx.instruments, &ctx.token_meta, &inst);
         inst
     }
 
@@ -1182,7 +1176,7 @@ mod tests {
             binary.info = Some(info);
         }
 
-        cache_instrument(&ctx.instruments, &ctx.token_meta, &inst);
+        cache_instrument_unchecked(&ctx.instruments, &ctx.token_meta, &inst);
         inst
     }
 
@@ -1609,10 +1603,11 @@ mod tests {
         let (client, mut data_rx) = create_test_client(addr);
         let mut ctx = make_client_ws_ctx(&client);
         ctx.subscribe_new_markets = true;
-        crate::data::runtime::register_closed_condition(
-            &client.closed_condition_ids,
-            TEST_CONDITION_ID,
-        );
+        client
+            .closed_condition_ids
+            .lock()
+            .unwrap()
+            .insert(TEST_CONDITION_ID.to_string());
 
         handle_market_message(
             make_new_market_with_condition("terminal-condition", TEST_CONDITION_ID, true),
@@ -1649,12 +1644,13 @@ mod tests {
         let (client, mut data_rx) = create_test_client(addr);
         let instrument = instrument_from_gamma_fixture(gamma_market_recheck_fixture_value());
         let instrument_id = instrument.id();
-        cache_instrument(&client.instruments, &client.token_meta, &instrument);
+        cache_instrument_unchecked(&client.instruments, &client.token_meta, &instrument);
         client.active_delta_subs.insert(instrument_id);
-        crate::data::runtime::register_closed_condition(
-            &client.closed_condition_ids,
-            TEST_CONDITION_ID,
-        );
+        client
+            .closed_condition_ids
+            .lock()
+            .unwrap()
+            .insert(TEST_CONDITION_ID.to_string());
         let ctx = make_client_ws_ctx(&client);
 
         handle_market_message(
@@ -1680,15 +1676,16 @@ mod tests {
         let instrument = instrument_from_gamma_fixture(gamma_market_recheck_fixture_value());
         let instrument_id = instrument.id();
         let token_id = Ustr::from(instrument.raw_symbol().as_str());
-        cache_instrument(&client.instruments, &client.token_meta, &instrument);
+        cache_instrument_unchecked(&client.instruments, &client.token_meta, &instrument);
         client.active_quote_subs.insert(instrument_id);
 
         let guard = client.ws_sub_mutex.lock().await;
         client.sync_ws_subscription(instrument_id);
-        crate::data::runtime::register_closed_condition(
-            &client.closed_condition_ids,
-            TEST_CONDITION_ID,
-        );
+        client
+            .closed_condition_ids
+            .lock()
+            .unwrap()
+            .insert(TEST_CONDITION_ID.to_string());
         drop(guard);
 
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -1707,10 +1704,11 @@ mod tests {
         );
         let addr = start_scripted_auto_load_test_server(state).await;
         let (client, mut data_rx) = create_test_client(addr);
-        crate::data::runtime::register_closed_condition(
-            &client.closed_condition_ids,
-            TEST_CONDITION_ID,
-        );
+        client
+            .closed_condition_ids
+            .lock()
+            .unwrap()
+            .insert(TEST_CONDITION_ID.to_string());
         let instrument_id = fixture_yes_instrument_id();
 
         client
@@ -3817,7 +3815,7 @@ mod tests {
             .find(|instrument| instrument.id() == fixture_no_instrument_id())
             .expect("No sibling instrument");
         let sibling_id = sibling.id();
-        cache_instrument(&client.instruments, &client.token_meta, &sibling);
+        cache_instrument_unchecked(&client.instruments, &client.token_meta, &sibling);
         client
             .subscribe_quotes(SubscribeQuotes::new(
                 sibling_id,
@@ -3974,7 +3972,7 @@ mod tests {
 
         let instrument = instrument_from_gamma_fixture(gamma_market_recheck_fixture_value());
         let instrument_id = instrument.id();
-        cache_instrument(&client.instruments, &client.token_meta, &instrument);
+        cache_instrument_unchecked(&client.instruments, &client.token_meta, &instrument);
         client.ws_open_tokens.insert(Ustr::from(TEST_TOKEN_ID_YES));
 
         let closed_condition_ids = client.closed_condition_ids.clone();
@@ -4320,7 +4318,7 @@ mod tests {
 
         client.reset_client();
         let new_instrument = instrument_from_gamma_fixture(gamma_market_recheck_fixture_value());
-        cache_instrument(&client.instruments, &client.token_meta, &new_instrument);
+        cache_instrument_unchecked(&client.instruments, &client.token_meta, &new_instrument);
         client.active_quote_subs.insert(instrument_id);
         pending_release_tx
             .send(())
@@ -5437,7 +5435,7 @@ mod tests {
             (instrument, "P-CLOSED-WATCH-YES"),
             (sibling, "P-CLOSED-WATCH-NO"),
         ] {
-            cache_instrument(&client.instruments, &client.token_meta, instrument);
+            cache_instrument_unchecked(&client.instruments, &client.token_meta, instrument);
             upsert_resolve_watch_entry_from_instrument(
                 &client.resolve_poll_watchlist,
                 instrument,

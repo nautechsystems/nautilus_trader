@@ -45,17 +45,6 @@ pub(crate) fn is_condition_closed(
         .contains(condition_id)
 }
 
-#[cfg(test)]
-pub(crate) fn register_closed_condition(
-    closed_condition_ids: &Arc<StdMutex<AHashSet<String>>>,
-    condition_id: &str,
-) {
-    closed_condition_ids
-        .lock()
-        .expect("closed_condition_ids mutex poisoned")
-        .insert(condition_id.to_string());
-}
-
 pub(crate) async fn register_closed_condition_for_live_data(
     closed_condition_ids: &Arc<StdMutex<AHashSet<String>>>,
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
@@ -70,15 +59,22 @@ pub(crate) async fn register_closed_condition_for_live_data(
     } else {
         ws_sub_mutex.lock().await
     };
-    let mut terminal_conditions = closed_condition_ids
-        .lock()
-        .expect("closed_condition_ids mutex poisoned");
+    let newly_closed = {
+        let mut terminal_conditions = closed_condition_ids
+            .lock()
+            .expect("closed_condition_ids mutex poisoned");
 
-    if cancellation.is_some_and(CancellationToken::is_cancelled) {
-        return false;
+        if cancellation.is_some_and(CancellationToken::is_cancelled) {
+            return false;
+        }
+
+        terminal_conditions.insert(condition_id.to_string())
+    };
+
+    if newly_closed {
+        log::info!("Market closed for condition {condition_id}, retiring live data state");
     }
 
-    terminal_conditions.insert(condition_id.to_string());
     true
 }
 
@@ -229,6 +225,9 @@ pub(crate) async fn retire_local_instrument_state(
 
     if let Some(token_id) = token_id {
         token_meta.remove(&Ustr::from(token_id.as_str()));
+    } else {
+        // Without a cache entry the token id is unresolvable, so match on the routing value
+        token_meta.retain(|_, meta| meta.instrument_id != instrument_id);
     }
 
     let keep_local_metadata = is_watchlisted_instrument(resolve_poll_watchlist, instrument_id);
@@ -259,9 +258,9 @@ pub(crate) async fn retire_closed_condition_state(
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
     ws: &crate::websocket::pool::PolymarketMarketPoolHandle,
     cancellation: Option<&CancellationToken>,
-) {
+) -> bool {
     if cancellation.is_some_and(CancellationToken::is_cancelled) {
-        return;
+        return false;
     }
 
     // The terminal marker must be visible before state is inspected or any asynchronous
@@ -274,67 +273,75 @@ pub(crate) async fn retire_closed_condition_state(
     )
     .await
     {
-        return;
+        return false;
     }
 
     let matches_condition = |instrument_id: &InstrumentId| {
         extract_condition_id(instrument_id).is_ok_and(|candidate| candidate == condition_id)
+    };
+    let collect_live_ids = || {
+        let mut ids = AHashSet::<InstrumentId>::new();
+
+        ids.extend(
+            instruments
+                .load()
+                .keys()
+                .filter(|id| matches_condition(id))
+                .copied(),
+        );
+
+        for subscriptions in [active_quote_subs, active_delta_subs, active_trade_subs] {
+            ids.extend(
+                subscriptions
+                    .load()
+                    .iter()
+                    .filter(|id| matches_condition(id))
+                    .copied(),
+            );
+        }
+
+        ids.extend(
+            pending_snapshot_after_tick_change
+                .load()
+                .iter()
+                .filter(|id| matches_condition(id))
+                .copied(),
+        );
+        ids.extend(
+            pending_auto_loads
+                .lock()
+                .expect("pending_auto_loads mutex poisoned")
+                .iter()
+                .filter(|id| matches_condition(id))
+                .copied(),
+        );
+        ids.extend(
+            token_meta
+                .iter()
+                .map(|entry| entry.value().instrument_id)
+                .filter(matches_condition),
+        );
+        ids.extend(
+            order_books
+                .iter()
+                .map(|entry| *entry.key())
+                .filter(matches_condition),
+        );
+        ids.extend(
+            last_quotes
+                .iter()
+                .map(|entry| *entry.key())
+                .filter(matches_condition),
+        );
+
+        ids
     };
     let mut retiring_ids = seed_ids
         .into_iter()
         .filter(matches_condition)
         .collect::<AHashSet<_>>();
 
-    retiring_ids.extend(
-        instruments
-            .load()
-            .keys()
-            .filter(|id| matches_condition(id))
-            .copied(),
-    );
-
-    for subscriptions in [active_quote_subs, active_delta_subs, active_trade_subs] {
-        retiring_ids.extend(
-            subscriptions
-                .load()
-                .iter()
-                .filter(|id| matches_condition(id))
-                .copied(),
-        );
-    }
-    retiring_ids.extend(
-        pending_snapshot_after_tick_change
-            .load()
-            .iter()
-            .filter(|id| matches_condition(id))
-            .copied(),
-    );
-    retiring_ids.extend(
-        pending_auto_loads
-            .lock()
-            .expect("pending_auto_loads mutex poisoned")
-            .iter()
-            .filter(|id| matches_condition(id))
-            .copied(),
-    );
-    retiring_ids.extend(
-        token_meta
-            .iter()
-            .map(|entry| entry.value().instrument_id)
-            .filter(matches_condition),
-    );
-    retiring_ids.extend(
-        order_books
-            .iter()
-            .map(|entry| *entry.key())
-            .filter(matches_condition),
-    );
-    retiring_ids.extend(
-        last_quotes
-            .iter()
-            .map(|entry| *entry.key())
-            .filter(matches_condition),
-    );
+    retiring_ids.extend(collect_live_ids());
 
     for instrument_id in retiring_ids {
         let retirement = retire_local_instrument_state(
@@ -356,13 +363,16 @@ pub(crate) async fn retire_closed_condition_state(
 
         if let Some(cancellation) = cancellation {
             tokio::select! {
-                () = cancellation.cancelled() => return,
+                () = cancellation.cancelled() => return false,
                 () = retirement => {}
             }
         } else {
             retirement.await;
         }
     }
+
+    // State can reappear after the scan above, so report whether anything is left
+    collect_live_ids().is_empty()
 }
 
 #[allow(
@@ -454,6 +464,7 @@ mod tests {
 
     use ahash::AHashSet;
     use dashmap::DashMap;
+    use log::{Level, LevelFilter, Log, Metadata, Record};
     use nautilus_core::{AtomicMap, AtomicSet, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_model::{
         data::QuoteTick,
@@ -470,6 +481,66 @@ mod tests {
         resolve::upsert_resolve_watch_entry_from_instrument,
         websocket::{handler::HandlerCommand, pool::PolymarketMarketPoolHandle},
     };
+
+    struct ClosureLogCapture {
+        messages: StdMutex<Vec<String>>,
+    }
+
+    static CLOSURE_LOG_CAPTURE: ClosureLogCapture = ClosureLogCapture {
+        messages: StdMutex::new(Vec::new()),
+    };
+
+    impl Log for ClosureLogCapture {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            metadata.level() == Level::Info
+                && metadata.target() == "nautilus_polymarket::data::runtime"
+        }
+
+        fn log(&self, record: &Record<'_>) {
+            if self.enabled(record.metadata()) {
+                self.messages
+                    .lock()
+                    .unwrap()
+                    .push(record.args().to_string());
+            }
+        }
+
+        fn flush(&self) {}
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn register_closed_condition_logs_once_per_condition() {
+        log::set_logger(&CLOSURE_LOG_CAPTURE).expect("test logger already installed");
+        log::set_max_level(LevelFilter::Info);
+
+        let closed_condition_ids = Arc::new(StdMutex::new(AHashSet::new()));
+        let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
+
+        for condition_id in ["0xCOND-A", "0xCOND-A", "0xCOND-B"] {
+            assert!(
+                register_closed_condition_for_live_data(
+                    &closed_condition_ids,
+                    &ws_sub_mutex,
+                    condition_id,
+                    None,
+                )
+                .await
+            );
+        }
+
+        assert_eq!(
+            *CLOSURE_LOG_CAPTURE.messages.lock().unwrap(),
+            vec![
+                "Market closed for condition 0xCOND-A, retiring live data state".to_string(),
+                "Market closed for condition 0xCOND-B, retiring live data state".to_string(),
+            ],
+        );
+        assert_eq!(
+            *closed_condition_ids.lock().unwrap(),
+            AHashSet::from_iter(["0xCOND-A".to_string(), "0xCOND-B".to_string()]),
+        );
+    }
 
     fn seed_expired_instrument(raw_symbol: &str, condition_id: &str) -> InstrumentAny {
         let clock = get_atomic_clock_realtime();
@@ -589,6 +660,54 @@ mod tests {
             &pending_auto_loads,
             &ws_open_tokens,
         ));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn retire_local_instrument_state_removes_orphaned_token_meta() {
+        let instruments = Arc::new(AtomicMap::new());
+        let token_meta = Arc::new(DashMap::new());
+        let order_books = Arc::new(DashMap::new());
+        let last_quotes = Arc::new(DashMap::new());
+        let active_quote_subs = Arc::new(AtomicSet::new());
+        let active_delta_subs = Arc::new(AtomicSet::new());
+        let active_trade_subs = Arc::new(AtomicSet::new());
+        let resolve_poll_watchlist = Arc::new(AtomicMap::new());
+        let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
+        let pending_auto_loads = Arc::new(StdMutex::new(AHashSet::new()));
+        let ws_open_tokens = Arc::new(AtomicSet::new());
+        let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let ws = PolymarketMarketPoolHandle::test_single_shard(tx, &["0xTOKEN_ORPHAN"]);
+
+        // A handler can re-insert routing after retirement dropped the cache entry
+        let inst = seed_expired_instrument("0xTOKEN_ORPHAN", "0xCOND-ORPHAN");
+        let instrument_id = inst.id();
+        let token_id = Ustr::from(inst.raw_symbol().as_str());
+        token_meta.insert(token_id, TokenMeta::from_instrument(&inst));
+
+        assert!(!instruments.load().contains_key(&instrument_id));
+
+        retire_local_instrument_state(
+            instrument_id,
+            &instruments,
+            &token_meta,
+            &order_books,
+            &last_quotes,
+            &active_quote_subs,
+            &active_delta_subs,
+            &active_trade_subs,
+            &resolve_poll_watchlist,
+            &pending_snapshot_after_tick_change,
+            &pending_auto_loads,
+            &ws_open_tokens,
+            &ws_sub_mutex,
+            &ws,
+        )
+        .await;
+
+        assert!(!token_meta.contains_key(&token_id));
+        assert!(token_meta.is_empty());
     }
 
     #[rstest]

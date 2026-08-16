@@ -197,6 +197,7 @@ impl PolymarketDataClient {
         let handle = get_runtime().spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut retired_condition_ids: AHashSet<String> = AHashSet::new();
 
             loop {
                 tokio::select! {
@@ -227,15 +228,20 @@ impl PolymarketDataClient {
                             break;
                         }
 
-                        let terminal_conditions = closed_condition_ids
-                            .lock()
-                            .expect("closed_condition_ids mutex poisoned")
-                            .iter()
-                            .cloned()
-                            .collect::<Vec<_>>();
+                        // A set-wide sweep never converges and grows for the process lifetime
+                        let pending_retirement = {
+                            let terminal_conditions = closed_condition_ids
+                                .lock()
+                                .expect("closed_condition_ids mutex poisoned");
 
-                        for condition_id in terminal_conditions {
-                            retire_closed_condition_state(
+                            terminal_conditions
+                                .difference(&retired_condition_ids)
+                                .cloned()
+                                .collect::<Vec<_>>()
+                        };
+
+                        for condition_id in pending_retirement {
+                            let converged = retire_closed_condition_state(
                                 &condition_id,
                                 std::iter::empty(),
                                 &closed_condition_ids,
@@ -255,6 +261,15 @@ impl PolymarketDataClient {
                                 Some(&cancellation),
                             )
                             .await;
+
+                            if cancellation.is_cancelled() {
+                                break;
+                            }
+
+                            // Watchlisted or recreated state survives a pass, so retry until clear
+                            if converged {
+                                retired_condition_ids.insert(condition_id);
+                            }
                         }
 
                         retire_expired_local_instruments(
@@ -526,7 +541,10 @@ mod tests {
     use crate::{
         common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE, WS_DEFAULT_SUBSCRIPTIONS},
         config::PolymarketDataClientConfig,
-        data::{instruments::cache_instrument, runtime::retire_local_instrument_state},
+        data::{
+            instruments::{apply_live_instrument, cache_instrument_unchecked},
+            runtime::retire_local_instrument_state,
+        },
         http::{
             clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
             gamma::PolymarketGammaHttpClient,
@@ -676,7 +694,7 @@ mod tests {
         binary.info = Some(info);
 
         let inst = InstrumentAny::BinaryOption(binary);
-        cache_instrument(&client.instruments, &client.token_meta, &inst);
+        cache_instrument_unchecked(&client.instruments, &client.token_meta, &inst);
         inst
     }
 
@@ -1180,6 +1198,123 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn resolve_poll_task_retires_each_terminal_condition_once() {
+        let mut client = make_client_for_reset_test();
+        client.config.resolve_poll_enabled = false;
+        client.config.resolve_poll_interval_secs = 1;
+
+        // Unexpired, so only the terminal sweep can retire it
+        let expiration_ns = UnixNanos::from(u64::MAX);
+        let inst = seed_instrument(
+            &client,
+            "0xCOND-ONCE-0xTOKEN_ONCE",
+            "0xCOND-ONCE",
+            expiration_ns,
+        );
+        let instrument_id = inst.id();
+        client.active_quote_subs.insert(instrument_id);
+        client
+            .closed_condition_ids
+            .lock()
+            .unwrap()
+            .insert("0xCOND-ONCE".to_string());
+
+        client.spawn_resolve_poll_task();
+
+        wait_until_async(
+            || async { !client.instruments.load().contains_key(&instrument_id) },
+            tokio::time::Duration::from_secs(5),
+        )
+        .await;
+
+        assert!(!client.active_quote_subs.contains(&instrument_id));
+
+        // The live boundary refuses re-application, so no production path recreates this
+        let republished = apply_live_instrument(
+            &client.closed_condition_ids,
+            &client.instruments,
+            &client.token_meta,
+            &inst,
+            |_| {},
+        );
+        assert!(!republished);
+
+        // Retirement is one-shot: a later sweep must not walk the whole terminal set again
+        cache_instrument_unchecked(&client.instruments, &client.token_meta, &inst);
+        tokio::time::sleep(tokio::time::Duration::from_millis(2500)).await;
+
+        client.cancellation_token.cancel();
+        client
+            .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
+            .await;
+
+        assert!(client.instruments.load().contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resolve_poll_task_reretires_watchlisted_terminal_condition_until_settled() {
+        let mut client = make_client_for_reset_test();
+        client.config.resolve_poll_enabled = false;
+        client.config.resolve_poll_interval_secs = 1;
+
+        let expiration_ns = UnixNanos::from(u64::MAX);
+        let inst = seed_instrument(
+            &client,
+            "0xCOND-WATCH-0xTOKEN_WATCH",
+            "0xCOND-WATCH",
+            expiration_ns,
+        );
+        let instrument_id = inst.id();
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst,
+            PositionId::new("P-WATCH"),
+        );
+        client.active_quote_subs.insert(instrument_id);
+        client
+            .closed_condition_ids
+            .lock()
+            .unwrap()
+            .insert("0xCOND-WATCH".to_string());
+
+        client.spawn_resolve_poll_task();
+
+        // Live subscription retires, but settlement metadata is kept
+        wait_until_async(
+            || async { !client.active_quote_subs.contains(&instrument_id) },
+            tokio::time::Duration::from_secs(5),
+        )
+        .await;
+
+        assert!(client.instruments.load().contains_key(&instrument_id));
+
+        // Settlement drops the watch entry, so the next cycle must revisit the condition
+        client
+            .resolve_poll_watchlist
+            .remove(&"0xCOND-WATCH".to_string());
+
+        wait_until_async(
+            || async { !client.instruments.load().contains_key(&instrument_id) },
+            tokio::time::Duration::from_secs(5),
+        )
+        .await;
+
+        client.cancellation_token.cancel();
+        client
+            .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
+            .await;
+
+        assert!(!client.instruments.load().contains_key(&instrument_id));
+        assert!(
+            !client
+                .token_meta
+                .contains_key(&Ustr::from("0xCOND-WATCH-0xTOKEN_WATCH"))
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn resolve_poll_task_bulk_retirement_keeps_only_watchlist_required_state() {
         let mut client = make_client_for_reset_test();
         client.config.resolve_poll_enabled = false;
@@ -1333,10 +1468,11 @@ mod tests {
         );
         let token_id = Ustr::from(inst.raw_symbol().as_str());
 
-        crate::data::runtime::register_closed_condition(
-            &client.closed_condition_ids,
-            "0xCOND-TERMINAL",
-        );
+        client
+            .closed_condition_ids
+            .lock()
+            .unwrap()
+            .insert("0xCOND-TERMINAL".to_string());
         client.token_meta.clear();
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<PolymarketWsMessage>();
