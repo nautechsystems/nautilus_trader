@@ -174,6 +174,15 @@ impl StrategyConfig {
             ),
         );
 
+        let time_in_force = self.market_exit_time_in_force;
+        errors.check(
+            time_in_force != TimeInForce::Gtd,
+            ConfigError::unsupported_value(
+                "market_exit_time_in_force",
+                format!("{time_in_force} is not supported for market orders"),
+            ),
+        );
+
         errors.into_result()
     }
 }
@@ -216,6 +225,7 @@ impl Default for StrategyConfig {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use strum::IntoEnumIterator;
 
     use super::*;
 
@@ -275,15 +285,58 @@ mod tests {
     }
 
     #[rstest]
+    fn test_gtd_market_exit_time_in_force_rejected() {
+        let result = StrategyConfig::builder()
+            .market_exit_time_in_force(TimeInForce::Gtd)
+            .build();
+        let Err(ConfigError::UnsupportedValue { field, reason }) = result else {
+            panic!("expected ConfigError::UnsupportedValue");
+        };
+        assert_eq!(field, "market_exit_time_in_force");
+        assert_eq!(reason, "GTD is not supported for market orders");
+    }
+
+    // Iterates the enum rather than listing cases, so a variant added later is covered
+    // without editing this test: the invariant is that every time in force except GTD
+    // is accepted, mirroring `MarketOrder::new_checked`.
+    #[rstest]
+    fn test_non_gtd_market_exit_time_in_force_accepted() {
+        for time_in_force in TimeInForce::iter().filter(|t| *t != TimeInForce::Gtd) {
+            assert!(
+                StrategyConfig::builder()
+                    .market_exit_time_in_force(time_in_force)
+                    .build()
+                    .is_ok(),
+                "{time_in_force} should be accepted"
+            );
+        }
+    }
+
+    #[rstest]
     fn test_multiple_violations_collected() {
         let result = StrategyConfig::builder()
             .market_exit_interval_ms(0)
             .market_exit_max_attempts(0)
+            .market_exit_time_in_force(TimeInForce::Gtd)
             .build();
         let ConfigError::Multiple { errors } = result.unwrap_err() else {
             panic!("expected ConfigError::Multiple");
         };
-        assert_eq!(errors.len(), 2);
+        // Asserted by index, not membership: the collector preserves insertion order, so
+        // checking position also pins that the new check runs after the two numeric ones.
+        assert_eq!(errors.len(), 3);
+        assert!(matches!(
+            &errors[0],
+            ConfigError::Range { field, .. } if field == "market_exit_interval_ms"
+        ));
+        assert!(matches!(
+            &errors[1],
+            ConfigError::Range { field, .. } if field == "market_exit_max_attempts"
+        ));
+        assert!(matches!(
+            &errors[2],
+            ConfigError::UnsupportedValue { field, .. } if field == "market_exit_time_in_force"
+        ));
     }
 
     #[rstest]
