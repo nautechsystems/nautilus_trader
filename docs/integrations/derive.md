@@ -145,10 +145,12 @@ practical floors for the smallest viable test:
   option, multiply the contract size by mark price, then add the option-specific IM
   (visible on the instrument response) before sizing the deposit.
 
-Use the `private/get_subaccount` endpoint after funding to confirm
-`initial_margin`/`maintenance_margin` headroom against the order you plan to submit; the
-adapter's `query_account` command emits this snapshot as an `AccountState` event so the
-strategy layer can gate trading on it.
+Use the `private/get_subaccount` endpoint after funding to confirm `initial_margin` stays positive
+once the intended order's initial margin is applied: `initial_margin` and `maintenance_margin` are
+the subaccount's signed net health (collateral credit minus the corresponding requirement), the
+venue rejects risk-increasing orders that would drive `initial_margin` negative, and a negative
+`maintenance_margin` exposes the subaccount to liquidation. The adapter's `query_account` command
+emits this snapshot as an `AccountState` event so the strategy layer can gate trading on it.
 
 ## Mainnet onboarding
 
@@ -170,8 +172,8 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
    exploratory tester runs.
 5. **Fund the subaccount.** Deposit USDC (or supported collateral) into the subaccount via
    the dashboard's deposit flow. Confirm via `private/get_subaccount` (or the adapter's
-   `query_account`) that `collaterals_value` and `initial_margin` headroom cover the
-   intended order before submitting.
+   `query_account`) that the deposit lands in `collaterals_value` and `initial_margin` stays
+   positive after the intended order.
 6. **Set the environment variables.** Export the three mainnet values (or pass them on
    `DeriveExecClientConfig`, where the config field wins):
 
@@ -277,6 +279,21 @@ Market orders require a cached quote before submission; without one the adapter 
 `OrderDenied` and never signs. After the async submit task resolves the instrument, it refreshes
 the current ticker snapshot and derives the signed slippage-bound `limit_price` from that
 refreshed quote.
+
+#### Account state
+
+Derive holds margin at the subaccount level, so the `AccountState` mapping is:
+
+- Balances: `total` is the collateral `amount` (for example USDC or ETH) in its native units and
+  `locked` is zero, because the venue reports no per-collateral reservation.
+  `collaterals[].initial_margin` is USD credit contributed by that collateral, not locked funds.
+- Margins: one account-wide `MarginBalance` where `initial = positions_initial_margin +
+  open_orders_margin` and `maintenance = positions_maintenance_margin`. These venue fields are
+  USD requirements, stamped with the subaccount currency.
+- Info: the subaccount's signed net health is not a margin requirement, so it travels in the
+  `AccountState.info` map as `net_initial_margin` and `net_maintenance_margin` alongside
+  `positions_initial_margin`, `positions_maintenance_margin`, `open_orders_margin`, and
+  `is_under_liquidation`. Decimal values are JSON strings.
 
 #### Conditional orders
 

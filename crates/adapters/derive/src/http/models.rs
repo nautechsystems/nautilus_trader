@@ -786,7 +786,7 @@ pub struct DeriveSubaccount {
     pub collaterals_value: Decimal,
     /// Subaccount currency (e.g. `"USDC"`).
     pub currency: Ustr,
-    /// USD initial margin requirement.
+    /// Signed net initial margin health; negative blocks risk-increasing trades.
     #[serde(deserialize_with = "deserialize_decimal")]
     pub initial_margin: Decimal,
     /// Whether the subaccount is mid-liquidation.
@@ -794,7 +794,7 @@ pub struct DeriveSubaccount {
     /// Free-form subaccount label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    /// USD maintenance margin requirement.
+    /// Signed net maintenance margin health; negative permits liquidation.
     #[serde(deserialize_with = "deserialize_decimal")]
     pub maintenance_margin: Decimal,
     /// Margining mode (standard, portfolio, or PMRM v2).

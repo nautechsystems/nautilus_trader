@@ -4485,11 +4485,18 @@ async fn test_query_account_emits_account_state_event() {
     .await;
 
     if let ExecutionEvent::Account(state) = event {
-        // sample subaccount carries 1000 USDC total / 100 USDC initial margin.
+        // sample subaccount carries 1000 USDC with no requirements; the
+        // 100/50 net health values travel in `info`, not as margins
         assert_eq!(state.balances.len(), 1);
         assert_eq!(state.balances[0].total.as_decimal(), dec!(1000));
+        assert_eq!(state.balances[0].locked.as_decimal(), dec!(0));
+        assert_eq!(state.balances[0].free.as_decimal(), dec!(1000));
         assert_eq!(state.margins.len(), 1);
-        assert_eq!(state.margins[0].initial.as_decimal(), dec!(100));
+        assert_eq!(state.margins[0].initial.as_decimal(), dec!(0));
+        assert_eq!(state.margins[0].maintenance.as_decimal(), dec!(0));
+        let info = state.info.expect("account state carries risk info");
+        assert_eq!(info.get("net_initial_margin"), Some(&json!("100")));
+        assert_eq!(info.get("net_maintenance_margin"), Some(&json!("50")));
     } else {
         unreachable!();
     }
@@ -4542,6 +4549,8 @@ async fn test_balance_subscription_refreshes_authoritative_account_state() {
     if let ExecutionEvent::Account(state) = event {
         assert_eq!(state.balances.len(), 1);
         assert_eq!(state.balances[0].total.as_decimal(), dec!(1250));
+        assert_eq!(state.balances[0].locked.as_decimal(), dec!(0));
+        assert_eq!(state.balances[0].free.as_decimal(), dec!(1250));
     } else {
         unreachable!();
     }

@@ -28,7 +28,7 @@
 //! far-from-market minimal limit order and cancels it, exercising the
 //! fixed-window matching pacing (account-wide and per-instrument) end to end.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use nautilus_core::UnixNanos;
 use nautilus_derive::{
@@ -39,14 +39,18 @@ use nautilus_derive::{
     },
     http::{
         DeriveCredentials, DeriveHttpClient,
-        parse::parse_derive_trade_to_fill_report,
+        parse::{
+            parse_derive_order_to_report, parse_derive_position_to_report,
+            parse_derive_subaccount_to_balances, parse_derive_trade_to_fill_report,
+        },
         query::{
-            DeriveCancelParams, DeriveGetTradeHistoryParams, DeriveGetTriggerOrdersParams,
+            DeriveCancelParams, DeriveGetOpenOrdersParams, DeriveGetPositionsParams,
+            DeriveGetSubaccountParams, DeriveGetTradeHistoryParams, DeriveGetTriggerOrdersParams,
             order_to_derive_payload,
         },
     },
     signing::nonce::NonceManager,
-    websocket::{DeriveWebSocketClient, DeriveWsCredentials},
+    websocket::{DeriveWebSocketClient, DeriveWsChannel, DeriveWsCredentials},
 };
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
@@ -192,6 +196,282 @@ async fn test_live_rest_trade_history_commissions_construct_exactly() {
         result.trades.len(),
         commissions,
     );
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "live network call against api.lyra.finance; run with --include-ignored"]
+async fn test_live_subaccount_maps_collateral_and_margin_account_state() {
+    let creds = live_credentials();
+    let http = DeriveHttpClient::with_credentials(
+        urls::rest_url(DeriveEnvironment::Mainnet),
+        DeriveCredentials::new(&creds.wallet_address, &creds.session_key).unwrap(),
+        None,
+        None,
+        None,
+    )
+    .expect("http client builds");
+
+    let subaccount = http
+        .get_subaccount(&DeriveGetSubaccountParams::new(creds.subaccount_id))
+        .await
+        .expect("private/get_subaccount succeeds");
+
+    let (balances, margins, info) = parse_derive_subaccount_to_balances(&subaccount)
+        .expect("live subaccount maps to account state");
+
+    // Collateral credit must not surface as locked funds: every balance row
+    // stays in its own units with nothing reserved per collateral.
+    for balance in &balances {
+        assert_eq!(balance.locked.as_decimal(), dec!(0));
+        assert_eq!(balance.free.as_decimal(), balance.total.as_decimal());
+    }
+
+    // Requirements aggregate position and open-order initial margin; the
+    // signed net health values travel in `info` instead of the margins.
+    assert_eq!(margins.len(), 1);
+    let expected_initial = subaccount.positions_initial_margin + subaccount.open_orders_margin;
+    assert_eq!(margins[0].initial.as_decimal(), expected_initial);
+    assert_eq!(
+        margins[0].maintenance.as_decimal(),
+        subaccount.positions_maintenance_margin,
+    );
+    assert_eq!(
+        info.get("net_initial_margin").and_then(|v| v.as_str()),
+        Some(subaccount.initial_margin.to_string().as_str()),
+    );
+    assert_eq!(
+        info.get("net_maintenance_margin").and_then(|v| v.as_str()),
+        Some(subaccount.maintenance_margin.to_string().as_str()),
+    );
+
+    log::info!(
+        "live subaccount mapped {} collateral balances, initial requirement {} (raw: positions_initial_margin={}, open_orders_margin={}, positions_maintenance_margin={}, net health initial={} maintenance={})",
+        balances.len(),
+        margins[0].initial,
+        subaccount.positions_initial_margin,
+        subaccount.open_orders_margin,
+        subaccount.positions_maintenance_margin,
+        subaccount.initial_margin,
+        subaccount.maintenance_margin,
+    );
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "live network call against api.lyra.finance; run with --include-ignored"]
+async fn test_live_reconciliation_reads_parse_every_report_path() {
+    // Exercises the same read set as reconnect reconciliation, parsing every
+    // returned row through the adapter's report parsers.
+    let creds = live_credentials();
+    let http = DeriveHttpClient::with_credentials(
+        urls::rest_url(DeriveEnvironment::Mainnet),
+        DeriveCredentials::new(&creds.wallet_address, &creds.session_key).unwrap(),
+        None,
+        None,
+        None,
+    )
+    .expect("http client builds");
+    let account_id = AccountId::new("DERIVE-SMOKE");
+    let ts = UnixNanos::from(0);
+
+    let subaccount = http
+        .get_subaccount(&DeriveGetSubaccountParams::new(creds.subaccount_id))
+        .await
+        .expect("private/get_subaccount succeeds");
+    let (balances, margins, info) =
+        parse_derive_subaccount_to_balances(&subaccount).expect("subaccount maps to account state");
+
+    for balance in &balances {
+        assert_eq!(balance.locked.as_decimal(), dec!(0));
+        assert_eq!(balance.free.as_decimal(), balance.total.as_decimal());
+    }
+    assert_eq!(margins.len(), 1);
+    assert_eq!(
+        margins[0].initial.as_decimal(),
+        subaccount.positions_initial_margin + subaccount.open_orders_margin,
+    );
+    assert_eq!(
+        info.get("net_initial_margin").and_then(|v| v.as_str()),
+        Some(subaccount.initial_margin.to_string().as_str()),
+    );
+
+    let open_orders = http
+        .get_open_orders(&DeriveGetOpenOrdersParams::new(creds.subaccount_id))
+        .await
+        .expect("private/get_open_orders succeeds");
+    let trigger_orders = http
+        .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(creds.subaccount_id))
+        .await
+        .expect("private/get_trigger_orders succeeds");
+    let mut order_reports = 0;
+
+    for order in open_orders
+        .orders
+        .iter()
+        .chain(trigger_orders.orders.iter())
+    {
+        parse_derive_order_to_report(order, account_id, ts)
+            .unwrap_or_else(|e| panic!("live order must parse: {e}"));
+        order_reports += 1;
+    }
+
+    let trades = http
+        .get_private_trade_history(&DeriveGetTradeHistoryParams::new(
+            creds.subaccount_id,
+            1,
+            100,
+        ))
+        .await
+        .expect("private/get_trade_history succeeds");
+    let mut fills = 0;
+
+    for trade in &trades.trades {
+        let report = parse_derive_trade_to_fill_report(trade, account_id, Currency::USDC(), ts)
+            .unwrap_or_else(|e| panic!("live trade must parse: {e}"));
+        if let Some(report) = report {
+            assert_eq!(report.commission.currency, Currency::USDC());
+            fills += 1;
+        }
+    }
+
+    let positions = http
+        .get_positions(&DeriveGetPositionsParams::new(creds.subaccount_id))
+        .await
+        .expect("private/get_positions succeeds");
+    let mut position_reports = 0;
+
+    for position in &positions.positions {
+        parse_derive_position_to_report(position, account_id, ts)
+            .unwrap_or_else(|e| panic!("live position must parse: {e}"));
+        position_reports += 1;
+    }
+
+    log::info!(
+        "live reconciliation parsed {} balances, margins initial {}, {} order reports, {} fills, {} position reports",
+        balances.len(),
+        margins[0].initial,
+        order_reports,
+        fills,
+        position_reports,
+    );
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "live network call against api.lyra.finance; run with --include-ignored"]
+async fn test_live_subaccount_mapping_is_stable_across_repeat_polls() {
+    let creds = live_credentials();
+    let http = DeriveHttpClient::with_credentials(
+        urls::rest_url(DeriveEnvironment::Mainnet),
+        DeriveCredentials::new(&creds.wallet_address, &creds.session_key).unwrap(),
+        None,
+        None,
+        None,
+    )
+    .expect("http client builds");
+    let account_id = AccountId::new("DERIVE-SMOKE");
+
+    let mut observed_totals: Vec<String> = Vec::new();
+
+    for poll in 0..10 {
+        let subaccount = http
+            .get_subaccount(&DeriveGetSubaccountParams::new(creds.subaccount_id))
+            .await
+            .unwrap_or_else(|e| panic!("poll {poll} failed: {e}"));
+        let (balances, margins, info) = parse_derive_subaccount_to_balances(&subaccount)
+            .unwrap_or_else(|e| panic!("poll {poll} failed to map: {e}"));
+
+        assert!(!balances.is_empty(), "poll {poll} lost collateral rows");
+        for balance in &balances {
+            assert_eq!(balance.locked.as_decimal(), dec!(0), "poll {poll}");
+            assert_eq!(balance.free.as_decimal(), balance.total.as_decimal());
+        }
+        assert_eq!(margins.len(), 1, "poll {poll}");
+        assert_eq!(
+            margins[0].initial.as_decimal(),
+            subaccount.positions_initial_margin + subaccount.open_orders_margin,
+            "poll {poll}",
+        );
+        assert_eq!(
+            margins[0].maintenance.as_decimal(),
+            subaccount.positions_maintenance_margin,
+            "poll {poll}",
+        );
+        assert_eq!(
+            info.get("net_initial_margin").and_then(|v| v.as_str()),
+            Some(subaccount.initial_margin.to_string().as_str()),
+            "poll {poll}",
+        );
+        assert_eq!(
+            info.get("net_maintenance_margin").and_then(|v| v.as_str()),
+            Some(subaccount.maintenance_margin.to_string().as_str()),
+            "poll {poll}",
+        );
+        assert_eq!(
+            info.get("is_under_liquidation"),
+            Some(&serde_json::json!(false)),
+            "poll {poll}",
+        );
+        observed_totals.push(
+            balances
+                .iter()
+                .map(|b| b.total.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+
+    let distinct: std::collections::BTreeSet<&str> =
+        observed_totals.iter().map(String::as_str).collect();
+    log::info!(
+        "live repeat polls observed {} distinct balance sets: {:?}",
+        distinct.len(),
+        distinct,
+    );
+    let _ = account_id;
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "live network call against api.lyra.finance; run with --include-ignored"]
+async fn test_live_ws_balances_channel_subscribes_and_stays_connected() {
+    let creds = live_credentials();
+    let ws_creds = DeriveWsCredentials::new(creds.wallet_address.clone(), &creds.session_key)
+        .expect("session key parses");
+    let mut client = DeriveWebSocketClient::with_credentials(
+        None,
+        DeriveEnvironment::Mainnet,
+        Default::default(),
+        None,
+        ws_creds,
+        None,
+        None,
+    );
+    client.connect().await.expect("login succeeds");
+    assert!(client.is_authenticated());
+
+    let channel = DeriveWsChannel::balances(creds.subaccount_id);
+    client
+        .subscribe_channels(vec![channel])
+        .await
+        .expect("balances channel subscribes");
+    assert_eq!(client.subscription_count(), 1);
+
+    // The execution client refreshes authoritative state from REST when a
+    // `.balances` notification arrives; on a dormant account none will fire,
+    // so the check is that the subscription stays confirmed and the session
+    // stays live for a sustained window.
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    assert!(client.is_active(), "session must stay connected");
+    assert_eq!(client.subscription_count(), 1);
+
+    client
+        .unsubscribe_channels(vec![DeriveWsChannel::balances(creds.subaccount_id)])
+        .await
+        .expect("balances channel unsubscribes");
+    client.disconnect().await.expect("disconnect");
 }
 
 #[rstest]

@@ -16,7 +16,7 @@
 //! HTTP response parsing utilities for the Derive execution client.
 
 use anyhow::Context;
-use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
+use nautilus_core::{Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
     enums::{LiquiditySide, OrderType, PositionSideSpecified},
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
@@ -24,6 +24,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
+use serde_json::Value;
 
 use crate::{
     common::{
@@ -277,12 +278,21 @@ pub fn parse_derive_position_to_report(
     ))
 }
 
-/// Derives [`AccountBalance`] and [`MarginBalance`] rows from a
-/// [`DeriveSubaccount`] snapshot.
+/// Derives [`AccountBalance`], [`MarginBalance`], and supplemental info rows
+/// from a [`DeriveSubaccount`] snapshot.
 ///
-/// Each collateral row becomes one [`AccountBalance`]; the subaccount's
-/// initial/maintenance margin requirements collapse into a single
-/// [`MarginBalance`] without an instrument scoping.
+/// Each collateral row becomes one [`AccountBalance`] in the collateral's own
+/// units with `total = amount` and `locked = 0`: the venue holds margin at the
+/// subaccount level and reports no per-collateral reservation, while
+/// `collaterals[].initial_margin` is USD credit contributed, not locked funds.
+///
+/// Portfolio requirements collapse into a single account-wide [`MarginBalance`]
+/// in the subaccount currency: `initial = positions_initial_margin +
+/// open_orders_margin` and `maintenance = positions_maintenance_margin`. The
+/// subaccount's `initial_margin`/`maintenance_margin` are signed net health
+/// values, not requirements, so they travel in the returned [`Params`] as
+/// `net_initial_margin`/`net_maintenance_margin` alongside the requirement
+/// split and the liquidation flag.
 ///
 /// # Errors
 ///
@@ -290,55 +300,65 @@ pub fn parse_derive_position_to_report(
 /// currency precision used by [`Money`].
 pub fn parse_derive_subaccount_to_balances(
     subaccount: &DeriveSubaccount,
-) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>)> {
+) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>, Params)> {
     let mut balances = Vec::with_capacity(subaccount.collaterals.len());
     for collateral in &subaccount.collaterals {
         let currency = Currency::get_or_create_crypto(collateral.asset_name.as_str());
-        // `amount` is in collateral units (e.g. 2.5 ETH); `initial_margin` is
-        // the USD value of the venue's margin requirement on this collateral.
-        // To produce a single-unit `AccountBalance` we convert the USD margin
-        // back into collateral units via `mark_price` (USDC's mark_price is 1
-        // so this is a no-op there; ETH/BTC scale by the spot rate). When
-        // mark_price is non-positive we cannot scale and report locked = 0
-        // rather than mix units.
-        let total_dec = collateral.amount;
-        let locked_dec = if collateral.mark_price > Decimal::ZERO {
-            (collateral.initial_margin.max(Decimal::ZERO) / collateral.mark_price)
-                .max(Decimal::ZERO)
-        } else {
-            Decimal::ZERO
-        };
-        // `from_total_and_locked` clamps `locked` into `[0, total]` and derives
-        // `free` in fixed-point so the `total == locked + free` invariant holds
-        // exactly at the currency precision, even when the venue's margin
-        // formula overshoots `amount` by sub-precision dust.
-        let balance = AccountBalance::from_total_and_locked(total_dec, locked_dec, currency)
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "failed to build collateral balance for {} (total={total_dec}, locked={locked_dec}): {e}",
-                    collateral.asset_name,
-                )
-            })?;
+        let balance =
+            AccountBalance::from_total_and_locked(collateral.amount, Decimal::ZERO, currency)
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "failed to build collateral balance for {} (total={}): {e}",
+                        collateral.asset_name,
+                        collateral.amount,
+                    )
+                })?;
         balances.push(balance);
     }
 
     let currency = Currency::get_or_create_crypto(subaccount.currency.as_str());
-    let initial = Money::from_decimal(subaccount.initial_margin, currency).with_context(|| {
+    let initial_dec = subaccount.positions_initial_margin + subaccount.open_orders_margin;
+    let maintenance_dec = subaccount.positions_maintenance_margin;
+    let initial = Money::from_decimal(initial_dec, currency).with_context(|| {
         format!(
-            "initial_margin {} cannot be represented at {} precision",
-            subaccount.initial_margin, currency,
+            "initial margin requirement {initial_dec} cannot be represented at {currency} precision",
         )
     })?;
     let maintenance =
-        Money::from_decimal(subaccount.maintenance_margin, currency).with_context(|| {
+        Money::from_decimal(maintenance_dec, currency).with_context(|| {
             format!(
-                "maintenance_margin {} cannot be represented at {} precision",
-                subaccount.maintenance_margin, currency,
+                "maintenance margin requirement {maintenance_dec} cannot be represented at {currency} precision",
             )
         })?;
     let margins = vec![MarginBalance::new(initial, maintenance, None)];
 
-    Ok((balances, margins))
+    let mut info = Params::new();
+    info.insert(
+        "net_initial_margin".to_string(),
+        Value::String(subaccount.initial_margin.to_string()),
+    );
+    info.insert(
+        "net_maintenance_margin".to_string(),
+        Value::String(subaccount.maintenance_margin.to_string()),
+    );
+    info.insert(
+        "positions_initial_margin".to_string(),
+        Value::String(subaccount.positions_initial_margin.to_string()),
+    );
+    info.insert(
+        "positions_maintenance_margin".to_string(),
+        Value::String(subaccount.positions_maintenance_margin.to_string()),
+    );
+    info.insert(
+        "open_orders_margin".to_string(),
+        Value::String(subaccount.open_orders_margin.to_string()),
+    );
+    info.insert(
+        "is_under_liquidation".to_string(),
+        Value::Bool(subaccount.is_under_liquidation),
+    );
+
+    Ok((balances, margins, info))
 }
 
 fn price_from_decimal(value: Decimal, field: &str) -> anyhow::Result<Price> {
@@ -846,69 +866,222 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_subaccount_emits_balances_and_margins() {
+    fn test_parse_subaccount_emits_balances_margins_and_info() {
         let subaccount = sample_subaccount();
-        let (balances, margins) = parse_derive_subaccount_to_balances(&subaccount).unwrap();
+        let (balances, margins, info) = parse_derive_subaccount_to_balances(&subaccount).unwrap();
         assert_eq!(balances.len(), 1);
         assert_eq!(balances[0].total.as_decimal(), dec!(1000));
-        assert_eq!(balances[0].locked.as_decimal(), dec!(100));
-        assert_eq!(balances[0].free.as_decimal(), dec!(900));
-        assert_eq!(margins.len(), 1);
-        assert_eq!(margins[0].initial.as_decimal(), dec!(100));
-        assert_eq!(margins[0].maintenance.as_decimal(), dec!(50));
-    }
-
-    #[rstest]
-    fn test_parse_subaccount_converts_non_usdc_locked_to_collateral_units() {
-        // 2.5 ETH collateral at $3500 mark with a $1000 USD margin requirement
-        // should report locked = 1000/3500 ETH (~0.2857), not "1000 ETH".
-        // Pre-fix code mixed units and reported locked as the raw 1000.
-        let mut subaccount = sample_subaccount();
-        subaccount.collaterals = vec![DeriveCollateral {
-            amount: dec!(2.5),
-            asset_name: "ETH".into(),
-            asset_type: DeriveAssetType::Erc20,
-            cumulative_interest: dec!(0),
-            currency: "ETH".into(),
-            initial_margin: dec!(1000),
-            maintenance_margin: dec!(500),
-            mark_price: dec!(3500),
-            mark_value: dec!(8750),
-            pending_interest: dec!(0),
-        }];
-
-        let (balances, _) = parse_derive_subaccount_to_balances(&subaccount).unwrap();
-        assert_eq!(balances[0].total.as_decimal(), dec!(2.5));
-        // Locked is computed in collateral units (USD margin / mark_price).
-        let locked = balances[0].locked.as_decimal();
-        let expected_locked = dec!(1000) / dec!(3500);
-        assert!(
-            (locked - expected_locked).abs() < dec!(0.000001),
-            "locked {locked} should be near {expected_locked} ETH"
-        );
-        let free = balances[0].free.as_decimal();
-        let expected_free = dec!(2.5) - expected_locked;
-        assert!(
-            (free - expected_free).abs() < dec!(0.000001),
-            "free {free} should be near {expected_free} ETH"
-        );
-    }
-
-    #[rstest]
-    fn test_parse_subaccount_reports_zero_locked_when_mark_price_non_positive() {
-        // A zero mark_price (venue corner case during onboarding) cannot
-        // convert USD into collateral units; report locked = 0 rather than
-        // mix units or panic on divide-by-zero.
-        let mut subaccount = sample_subaccount();
-        subaccount.collaterals[0].mark_price = dec!(0);
-        subaccount.collaterals[0].initial_margin = dec!(50);
-
-        let (balances, _) = parse_derive_subaccount_to_balances(&subaccount).unwrap();
         assert_eq!(balances[0].locked.as_decimal(), dec!(0));
+        assert_eq!(balances[0].free.as_decimal(), dec!(1000));
+        assert_eq!(margins.len(), 1);
+        assert_eq!(margins[0].initial.as_decimal(), dec!(0));
+        assert_eq!(margins[0].maintenance.as_decimal(), dec!(0));
         assert_eq!(
-            balances[0].free.as_decimal(),
-            balances[0].total.as_decimal()
+            info.get("net_initial_margin"),
+            Some(&serde_json::json!("100")),
         );
+        assert_eq!(
+            info.get("net_maintenance_margin"),
+            Some(&serde_json::json!("50")),
+        );
+        assert_eq!(
+            info.get("is_under_liquidation"),
+            Some(&serde_json::json!(false)),
+        );
+    }
+
+    #[rstest]
+    fn test_parse_subaccount_preserves_multi_collateral_units() {
+        // 2.5 ETH collateral reporting $1000 of credit stays 2.5 ETH total
+        // with nothing locked: credit is not a reservation on the collateral,
+        // so no mark-price conversion applies
+        let mut subaccount = sample_subaccount();
+        subaccount.collaterals = vec![
+            DeriveCollateral {
+                amount: dec!(2.5),
+                asset_name: "ETH".into(),
+                asset_type: DeriveAssetType::Erc20,
+                cumulative_interest: dec!(0),
+                currency: "ETH".into(),
+                initial_margin: dec!(1000),
+                maintenance_margin: dec!(500),
+                mark_price: dec!(3500),
+                mark_value: dec!(8750),
+                pending_interest: dec!(0),
+            },
+            DeriveCollateral {
+                amount: dec!(1000),
+                asset_name: "USDC".into(),
+                asset_type: DeriveAssetType::Erc20,
+                cumulative_interest: dec!(0),
+                currency: "USDC".into(),
+                initial_margin: dec!(1000),
+                maintenance_margin: dec!(1000),
+                mark_price: dec!(1),
+                mark_value: dec!(1000),
+                pending_interest: dec!(0),
+            },
+        ];
+
+        let (balances, _, _) = parse_derive_subaccount_to_balances(&subaccount).unwrap();
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].total.as_decimal(), dec!(2.5));
+        assert_eq!(balances[0].locked.as_decimal(), dec!(0));
+        assert_eq!(balances[0].free.as_decimal(), dec!(2.5));
+        assert_eq!(balances[1].total.as_decimal(), dec!(1000));
+        assert_eq!(balances[1].locked.as_decimal(), dec!(0));
+        assert_eq!(balances[1].free.as_decimal(), dec!(1000));
+    }
+
+    #[rstest]
+    fn test_parse_subaccount_aggregates_requirements_and_keeps_health_in_info() {
+        // Requirements aggregate position IM with open-order margin; the
+        // signed net health values must not appear as requirements
+        let mut subaccount = sample_subaccount();
+        subaccount.positions_initial_margin = dec!(350);
+        subaccount.positions_maintenance_margin = dec!(175);
+        subaccount.open_orders_margin = dec!(40);
+        subaccount.initial_margin = dec!(610);
+        subaccount.maintenance_margin = dec!(825);
+
+        let (balances, margins, info) = parse_derive_subaccount_to_balances(&subaccount).unwrap();
+        assert_eq!(balances[0].locked.as_decimal(), dec!(0));
+        assert_eq!(margins.len(), 1);
+        assert_eq!(margins[0].initial.as_decimal(), dec!(390));
+        assert_eq!(margins[0].maintenance.as_decimal(), dec!(175));
+        assert_eq!(
+            info.get("positions_initial_margin"),
+            Some(&serde_json::json!("350")),
+        );
+        assert_eq!(
+            info.get("positions_maintenance_margin"),
+            Some(&serde_json::json!("175")),
+        );
+        assert_eq!(
+            info.get("open_orders_margin"),
+            Some(&serde_json::json!("40")),
+        );
+        assert_eq!(
+            info.get("net_initial_margin"),
+            Some(&serde_json::json!("610")),
+        );
+        assert_eq!(
+            info.get("net_maintenance_margin"),
+            Some(&serde_json::json!("825")),
+        );
+    }
+
+    #[rstest]
+    fn test_parse_subaccount_funded_positionless_fixture_reports_no_locked() {
+        let (balances, margins, info) =
+            parse_subaccount_fixture("common/http_subaccount_usdc.json");
+        assert_eq!(balances.len(), 1);
+        assert_eq!(balances[0].total.as_decimal(), dec!(1000));
+        assert_eq!(balances[0].locked.as_decimal(), dec!(0));
+        assert_eq!(balances[0].free.as_decimal(), dec!(1000));
+        assert_eq!(margins.len(), 1);
+        assert_eq!(margins[0].initial.as_decimal(), dec!(0));
+        assert_eq!(margins[0].maintenance.as_decimal(), dec!(0));
+        // Net health equals the collateral credit with no requirements,
+        // matching observed mainnet responses for funded positionless accounts
+        assert_eq!(
+            info.get("net_initial_margin"),
+            Some(&serde_json::json!("1000")),
+        );
+        assert_eq!(
+            info.get("net_maintenance_margin"),
+            Some(&serde_json::json!("1000")),
+        );
+    }
+
+    #[rstest]
+    fn test_parse_subaccount_positions_margin_fixture_maps_requirements() {
+        let (balances, margins, info) =
+            parse_subaccount_fixture("common/http_subaccount_positions_margin.json");
+        assert_eq!(balances[0].locked.as_decimal(), dec!(0));
+        assert_eq!(margins[0].initial.as_decimal(), dec!(350));
+        assert_eq!(margins[0].maintenance.as_decimal(), dec!(175));
+        assert_eq!(
+            info.get("net_initial_margin"),
+            Some(&serde_json::json!("650")),
+        );
+        assert_eq!(
+            info.get("net_maintenance_margin"),
+            Some(&serde_json::json!("825")),
+        );
+    }
+
+    #[rstest]
+    fn test_parse_subaccount_open_orders_margin_fixture_maps_reservation() {
+        let (_, margins, info) =
+            parse_subaccount_fixture("common/http_subaccount_open_orders_margin.json");
+        assert_eq!(margins[0].initial.as_decimal(), dec!(40));
+        assert_eq!(margins[0].maintenance.as_decimal(), dec!(0));
+        assert_eq!(
+            info.get("open_orders_margin"),
+            Some(&serde_json::json!("40")),
+        );
+    }
+
+    #[rstest]
+    fn test_parse_subaccount_negative_health_fixture_preserves_signs() {
+        let (balances, margins, info) =
+            parse_subaccount_fixture("common/http_subaccount_negative_health.json");
+        assert_eq!(balances[0].locked.as_decimal(), dec!(0));
+        assert_eq!(margins[0].initial.as_decimal(), dec!(390));
+        assert_eq!(margins[0].maintenance.as_decimal(), dec!(175));
+        assert_eq!(
+            info.get("net_initial_margin"),
+            Some(&serde_json::json!("-50")),
+        );
+        assert_eq!(
+            info.get("net_maintenance_margin"),
+            Some(&serde_json::json!("-20")),
+        );
+        assert_eq!(
+            info.get("is_under_liquidation"),
+            Some(&serde_json::json!(true)),
+        );
+    }
+
+    #[rstest]
+    fn test_parse_subaccount_with_no_collateral_emits_margins_only() {
+        let mut subaccount = sample_subaccount();
+        subaccount.collaterals = vec![];
+        subaccount.positions_initial_margin = dec!(350);
+        subaccount.positions_maintenance_margin = dec!(175);
+
+        let (balances, margins, _) = parse_derive_subaccount_to_balances(&subaccount).unwrap();
+        assert!(balances.is_empty());
+        assert_eq!(margins.len(), 1);
+        assert_eq!(margins[0].initial.as_decimal(), dec!(350));
+        assert_eq!(margins[0].maintenance.as_decimal(), dec!(175));
+    }
+
+    #[rstest]
+    fn test_parse_subaccount_errors_on_unrepresentable_amount() {
+        let mut subaccount = sample_subaccount();
+        subaccount.collaterals[0].amount = Decimal::MAX;
+
+        let err = parse_derive_subaccount_to_balances(&subaccount)
+            .expect_err("out-of-range collateral amount must error instead of panicking");
+        assert!(
+            err.to_string().contains("collateral balance"),
+            "unexpected error: {err}",
+        );
+    }
+
+    fn parse_subaccount_fixture(
+        filename: &str,
+    ) -> (Vec<AccountBalance>, Vec<MarginBalance>, Params) {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join(filename);
+        let content =
+            std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("failed to read {filename}"));
+        let subaccount: DeriveSubaccount = serde_json::from_str(&content)
+            .unwrap_or_else(|e| panic!("failed to parse {filename}: {e}"));
+        parse_derive_subaccount_to_balances(&subaccount).expect("subaccount maps")
     }
 
     fn sample_subaccount() -> DeriveSubaccount {

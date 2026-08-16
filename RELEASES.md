@@ -109,6 +109,8 @@ Released on TBD (UTC).
 - Fixed Databento MBO snapshots advancing the incremental sequence (#4686), thanks @faysou
 - Fixed Derive cancel‑only replacements and reused labels during order reconciliation
 - Fixed Derive WebSocket recovery, subscription replay, and silent connection detection
+- Fixed Derive fill commissions to construct exactly from wire decimals and error on unrepresentable fees
+- Fixed Derive account state reporting collateral credit as locked and net health as margin requirements
 - Fixed Hyperliquid historical candle timestamps and unfinished candle filtering (#4727), thanks @HKOWL
 - Fixed Hyperliquid order and position reconciliation across standard and HIP‑3 dexes
 - Fixed Interactive Brokers continuous futures historical bar requests (#4664), thanks @dfjmax

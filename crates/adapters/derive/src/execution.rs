@@ -1841,9 +1841,9 @@ impl ExecutionClient for DeriveExecutionClient {
             let subaccount = http_client
                 .get_subaccount(&DeriveGetSubaccountParams::new(subaccount_id))
                 .await?;
-            let (balances, margins) = parse_derive_subaccount_to_balances(&subaccount)?;
+            let (balances, margins, info) = parse_derive_subaccount_to_balances(&subaccount)?;
             let ts_event = clock.get_time_ns();
-            emitter.emit_account_state(balances, margins, true, ts_event, None);
+            emitter.emit_account_state(balances, margins, true, ts_event, Some(info));
             Ok(())
         });
         Ok(())
@@ -1924,11 +1924,11 @@ impl DeriveReconciliationContext {
             .get_subaccount(&DeriveGetSubaccountParams::new(self.subaccount_id))
             .await
             .context("failed to fetch Derive subaccount snapshot")?;
-        let (balances, margins) = parse_derive_subaccount_to_balances(&value)
+        let (balances, margins, info) = parse_derive_subaccount_to_balances(&value)
             .context("failed to parse Derive subaccount balances")?;
         let ts_event = self.clock.get_time_ns();
         self.emitter
-            .emit_account_state(balances, margins, true, ts_event, None);
+            .emit_account_state(balances, margins, true, ts_event, Some(info));
         Ok(())
     }
 
