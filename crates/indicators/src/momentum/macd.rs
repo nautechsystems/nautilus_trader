@@ -90,6 +90,7 @@ impl Indicator for MovingAverageConvergenceDivergence {
 
     fn reset(&mut self) {
         self.value = 0.0;
+        self.count = 0;
         self.fast_ma.reset();
         self.slow_ma.reset();
         self.has_inputs = false;
@@ -140,6 +141,7 @@ impl MovingAverage for MovingAverageConvergenceDivergence {
         self.fast_ma.update_raw(close);
         self.slow_ma.update_raw(close);
         self.value = self.fast_ma.value() - self.slow_ma.value();
+        self.count += 1;
 
         // Initialization logic
         if !self.initialized {
@@ -250,9 +252,20 @@ mod tests {
         macd_10.update_raw(1.0);
         macd_10.reset();
         assert_eq!(macd_10.value, 0.0);
+        assert_eq!(macd_10.count, 0);
         assert_eq!(macd_10.fast_ma.value(), 0.0);
         assert_eq!(macd_10.slow_ma.value(), 0.0);
         assert!(!macd_10.has_inputs);
         assert!(!macd_10.initialized);
+    }
+
+    #[rstest]
+    fn count_matches_inputs(mut macd_10: MovingAverageConvergenceDivergence) {
+        assert_eq!(macd_10.count(), 0);
+
+        for i in 1..=12 {
+            macd_10.update_raw(f64::from(i));
+            assert_eq!(macd_10.count(), i as usize);
+        }
     }
 }
