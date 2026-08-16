@@ -25,6 +25,7 @@ from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import ComponentId
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OptionSeriesId
 from nautilus_trader.model import OrderListId
 from nautilus_trader.model import PositionId
 from nautilus_trader.model import StrategyId
@@ -227,6 +228,39 @@ def test_instrument_id_pickle():
     pickled = pickle.dumps(iid)
     unpickled = pickle.loads(pickled)  # noqa: S301
     assert unpickled == iid
+
+
+def test_option_series_id_construction():
+    series_id = OptionSeriesId("DERIBIT", "ETH", "USDC", 1_700_000_000_000_000_000)
+
+    assert series_id.venue == Venue("DERIBIT")
+    assert series_id.underlying == "ETH"
+    assert series_id.settlement_currency == "USDC"
+    assert series_id.expiration_ns == 1_700_000_000_000_000_000
+    assert series_id.value == "DERIBIT:ETH:USDC:2023-11-14T22:13:20Z"
+
+
+@pytest.mark.parametrize(
+    ("venue", "expected_err"),
+    [
+        (
+            "",
+            "invalid `OptionSeriesId` value ':ETH:USDC:1700000000000000000': "
+            "invalid venue: invalid string for 'value', was empty",
+        ),
+        (
+            "DÉRIBIT",
+            "invalid `OptionSeriesId` value 'DÉRIBIT:ETH:USDC:1700000000000000000': "
+            "invalid venue: invalid string for 'value' contained a non-ASCII char, was 'DÉRIBIT'",
+        ),
+    ],
+)
+def test_option_series_id_invalid_venue_raises(venue, expected_err):
+    with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
+        OptionSeriesId(venue, "ETH", "USDC", 1_700_000_000_000_000_000)
+
+    assert type(exc_info.value) is ValueError
+    assert str(exc_info.value) == expected_err
 
 
 def test_exec_algorithm_id():

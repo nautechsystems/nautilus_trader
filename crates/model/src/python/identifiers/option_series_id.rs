@@ -21,7 +21,6 @@ use std::{
 
 use nautilus_core::UnixNanos;
 use pyo3::{prelude::*, pyclass::CompareOp};
-use ustr::Ustr;
 
 use crate::{
     identifiers::{OptionSeriesId, Venue},
@@ -38,13 +37,14 @@ impl OptionSeriesId {
         underlying: &str,
         settlement_currency: &str,
         expiration_ns: u64,
-    ) -> Self {
-        Self {
-            venue: Venue::new(venue),
-            underlying: Ustr::from(underlying),
-            settlement_currency: Ustr::from(settlement_currency),
-            expiration_ns: UnixNanos::from(expiration_ns),
-        }
+    ) -> PyResult<Self> {
+        Self::from_expiry_ns(
+            venue,
+            underlying,
+            settlement_currency,
+            UnixNanos::from(expiration_ns),
+        )
+        .map_err(option_series_id_error_to_pyvalue_err)
     }
 
     /// Creates an `OptionSeriesId` from venue name, underlying symbol, settlement currency, and date string.

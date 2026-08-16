@@ -106,6 +106,7 @@ Released on TBD (UTC).
 - Fixed portfolio Greeks failing on closed positions (#4700), thanks @folknor
 - Fixed `AverageTrueRange` ignoring its configured `ma_type` and always using a simple moving average, which also affected the inner ATR for `KeltnerChannel`, `KeltnerPosition`, `Pressure`, and `VolatilityRatio`
 - Fixed Python `MessageBus` accepting empty or whitespace‑only subscription patterns
+- Fixed the `OptionSeriesId` Python constructor panicking on an invalid venue, which aborted the process in release builds; it now raises `ValueError`
 - Fixed Betfair stream reauthentication and subscription replay after session replacement
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
