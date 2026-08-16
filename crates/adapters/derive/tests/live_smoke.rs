@@ -28,7 +28,10 @@
 //! far-from-market minimal limit order and cancels it, exercising the
 //! fixed-window matching pacing (account-wide and per-instrument) end to end.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashMap,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use nautilus_core::UnixNanos;
 use nautilus_derive::{
@@ -39,6 +42,7 @@ use nautilus_derive::{
     },
     http::{
         DeriveCredentials, DeriveHttpClient,
+        models::DerivePublicTrade,
         parse::{
             parse_derive_order_to_report, parse_derive_position_to_report,
             parse_derive_subaccount_to_balances, parse_derive_trade_to_fill_report,
@@ -50,10 +54,13 @@ use nautilus_derive::{
         },
     },
     signing::nonce::NonceManager,
-    websocket::{DeriveWebSocketClient, DeriveWsChannel, DeriveWsCredentials},
+    websocket::{
+        DeriveWebSocketClient, DeriveWsChannel, DeriveWsCredentials, DeriveWsMessage,
+        parse_trade_tick, parse_trade_tick_from_rest, parse_trades_msg,
+    },
 };
 use nautilus_model::{
-    enums::{OrderSide, OrderType, TimeInForce},
+    enums::{AggressorSide, OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, InstrumentId},
     orders::{OrderAny, OrderTestBuilder},
     types::{Currency, Price, Quantity},
@@ -115,6 +122,205 @@ async fn test_live_rest_public_read_reaches_venue() {
         .await
         .expect("public/get_instrument succeeds");
     assert_eq!(instrument.instrument_name.as_str(), INSTRUMENT_NAME);
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "live network call against api.lyra.finance; run with --include-ignored"]
+async fn test_live_rest_public_trade_history_pairs_agree_on_aggressor_side() {
+    let client =
+        DeriveHttpClient::new(urls::rest_url(DeriveEnvironment::Mainnet), None, None, None)
+            .expect("client builds");
+
+    for instrument_name in [INSTRUMENT_NAME, "BTC-PERP"] {
+        let (rows, unique) = live_public_pairing_snapshot(&client, instrument_name).await;
+        log::info!(
+            "live public trade history {instrument_name}: {rows} rows, {unique} unique trades, paired rows agree on the aggressor side",
+        );
+    }
+}
+
+/// Walks the first pages of public trade history and returns the row count and
+/// unique trade count, asserting paired rows agree on the aggressor side.
+async fn live_public_pairing_snapshot(
+    client: &DeriveHttpClient,
+    instrument_name: &str,
+) -> (usize, usize) {
+    let instrument = client
+        .get_instrument(instrument_name)
+        .await
+        .unwrap_or_else(|e| panic!("public/get_instrument for {instrument_name}: {e}"));
+    let price_precision = u8::try_from(instrument.tick_size.scale()).expect("price scale fits u8");
+    let size_precision =
+        u8::try_from(instrument.amount_step.scale()).expect("amount scale fits u8");
+
+    let mut aggressor_by_trade_id: HashMap<String, AggressorSide> = HashMap::new();
+    let mut rows = 0;
+
+    for page in 1..=2 {
+        let result = client
+            .get_trade_history(instrument_name, None, None, page, 100)
+            .await
+            .unwrap_or_else(|e| panic!("public/get_trade_history page {page}: {e}"));
+        if result.trades.is_empty() {
+            break;
+        }
+
+        rows += result.trades.len();
+        for trade in &result.trades {
+            let tick = parse_trade_tick_from_rest(
+                trade,
+                price_precision,
+                size_precision,
+                UnixNanos::from(0),
+            )
+            .unwrap_or_else(|e| panic!("live public trade {} must parse: {e}", trade.trade_id));
+            if let Some(previous) =
+                aggressor_by_trade_id.insert(trade.trade_id.clone(), tick.aggressor_side)
+            {
+                assert_eq!(
+                    previous, tick.aggressor_side,
+                    "paired rows for trade {} disagree on the aggressor side",
+                    trade.trade_id,
+                );
+            }
+        }
+
+        if i64::from(page) >= result.pagination.num_pages {
+            break;
+        }
+    }
+
+    assert!(
+        !aggressor_by_trade_id.is_empty(),
+        "{instrument_name} must return recent public trades",
+    );
+    assert!(
+        rows > aggressor_by_trade_id.len(),
+        "must observe paired maker/taker rows under shared trade ids for {instrument_name}",
+    );
+    (rows, aggressor_by_trade_id.len())
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "live network call against api.lyra.finance; run with --include-ignored"]
+async fn test_live_ws_public_trades_match_rest_aggressor_side() {
+    // The public WS feed defines `direction` as the taker side while REST
+    // derives the aggressor from the row role; a live overlap must produce
+    // identical aggressor sides through both parsers. Derive public trade flow
+    // is bursty, so this listens across several trades channels and fails
+    // loudly when the venue is too quiet to prove the overlap.
+    let mut ws =
+        DeriveWebSocketClient::new(None, DeriveEnvironment::Mainnet, Default::default(), None);
+    ws.connect().await.expect("public ws connects");
+    let handle = ws.subscription_handle();
+
+    for (instrument_type, currency) in [
+        ("perp", "ETH"),
+        ("perp", "BTC"),
+        ("option", "ETH"),
+        ("erc20", "ETH"),
+    ] {
+        handle
+            .subscribe_trades(instrument_type, currency)
+            .await
+            .unwrap_or_else(|e| {
+                panic!("trades.{instrument_type}.{currency} subscribes: {e}");
+            });
+    }
+
+    // Rows are collected raw and parsed later with each instrument's real
+    // precisions, since the subscribed channels deliver any instrument.
+    let mut ws_trades: Vec<DerivePublicTrade> = Vec::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+    while let Ok(event) = tokio::time::timeout_at(deadline, ws.next_event()).await {
+        match event {
+            Some(DeriveWsMessage::Subscription(payload)) => {
+                if !payload.channel.starts_with("trades.") {
+                    continue;
+                }
+                let msg = parse_trades_msg(&payload)
+                    .unwrap_or_else(|e| panic!("live ws trades frame must parse: {e}"));
+                ws_trades.extend(msg.trades);
+            }
+            Some(_) => {}
+            None => break,
+        }
+    }
+    ws.disconnect().await.expect("disconnect");
+
+    assert!(
+        !ws_trades.is_empty(),
+        "no live public trades observed within the window; rerun when the venue is active",
+    );
+
+    let http = DeriveHttpClient::new(urls::rest_url(DeriveEnvironment::Mainnet), None, None, None)
+        .expect("client builds");
+    let mut distinct_instruments: Vec<String> = Vec::new();
+
+    for trade in &ws_trades {
+        let instrument_name = trade.instrument_name.to_string();
+        if !distinct_instruments.contains(&instrument_name) {
+            distinct_instruments.push(instrument_name);
+        }
+    }
+    let mut matched = 0;
+
+    for instrument_name in &distinct_instruments {
+        let instrument = http
+            .get_instrument(instrument_name)
+            .await
+            .unwrap_or_else(|e| panic!("public/get_instrument for {instrument_name}: {e}"));
+        let price_precision =
+            u8::try_from(instrument.tick_size.scale()).expect("price scale fits u8");
+        let size_precision =
+            u8::try_from(instrument.amount_step.scale()).expect("amount scale fits u8");
+        let result = http
+            .get_trade_history(instrument_name, None, None, 1, 100)
+            .await
+            .unwrap_or_else(|e| panic!("public/get_trade_history for {instrument_name}: {e}"));
+
+        let mut rest_aggressor_by_trade_id = HashMap::new();
+
+        for trade in &result.trades {
+            let tick = parse_trade_tick_from_rest(
+                trade,
+                price_precision,
+                size_precision,
+                UnixNanos::from(0),
+            )
+            .unwrap_or_else(|e| panic!("live public trade {} must parse: {e}", trade.trade_id));
+            rest_aggressor_by_trade_id.insert(trade.trade_id.clone(), tick.aggressor_side);
+        }
+
+        for trade in &ws_trades {
+            if trade.instrument_name.as_str() != instrument_name {
+                continue;
+            }
+            let ws_tick =
+                parse_trade_tick(trade, price_precision, size_precision, UnixNanos::from(0))
+                    .unwrap_or_else(|e| panic!("live ws trade {} must parse: {e}", trade.trade_id));
+            if let Some(rest_side) = rest_aggressor_by_trade_id.get(&trade.trade_id) {
+                assert_eq!(
+                    ws_tick.aggressor_side, *rest_side,
+                    "WS and REST disagree on the aggressor side for trade {}",
+                    trade.trade_id,
+                );
+                matched += 1;
+            }
+        }
+    }
+
+    assert!(
+        matched > 0,
+        "must match at least one trade across the live WS and REST feeds",
+    );
+    log::info!(
+        "live ws trades cross-check: {} ws trades across {} instruments, {matched} matched with REST, all agree on the aggressor side",
+        ws_trades.len(),
+        distinct_instruments.len(),
+    );
 }
 
 #[rstest]

@@ -64,8 +64,8 @@ use nautilus_derive::{
 };
 use nautilus_model::{
     data::{BarType, Data},
-    enums::BookType,
-    identifiers::{InstrumentId, Venue},
+    enums::{AggressorSide, BookType},
+    identifiers::{InstrumentId, TradeId, Venue},
     instruments::Instrument,
     types::{Price, Quantity},
 };
@@ -1317,6 +1317,67 @@ async fn connect_with_eth_currency(rest_addr: SocketAddr, ws_addr: SocketAddr) -
 
 #[rstest]
 #[tokio::test]
+async fn test_ws_trades_emit_direction_as_aggressor_side() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let channel = "trades.perp.ETH";
+    let mut notification = subscription_notification(channel).unwrap();
+    let row = notification["params"]["data"][0].clone();
+    let mut buy = row.clone();
+    buy["direction"] = json!("buy");
+    buy["trade_id"] = json!("perp-trade-buy");
+    let mut sell = row;
+    sell["direction"] = json!("sell");
+    sell["trade_id"] = json!("perp-trade-sell");
+    notification["params"]["data"] = json!([buy, sell]);
+    ws_state
+        .subscription_notifications
+        .lock()
+        .await
+        .insert(channel.to_string(), vec![notification]);
+    let rest_addr = start_rest_server(rest_state).await;
+    let ws_addr = start_ws_server(ws_state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+
+    let mut client = connect_with_eth_currency(rest_addr, ws_addr).await;
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
+    while rx.try_recv().is_ok() {}
+
+    client
+        .subscribe_trades(subscribe_trades(instrument_id))
+        .unwrap();
+    wait_for_subscribe(&ws_state, channel).await;
+
+    match recv_data(&mut rx).await {
+        Data::Trade(trade) => {
+            assert_eq!(trade.instrument_id, instrument_id);
+            assert_eq!(trade.aggressor_side, AggressorSide::Buy);
+            assert_eq!(trade.trade_id, TradeId::from("perp-trade-buy"));
+            assert_eq!(trade.price, Price::from("3500.00"));
+            assert_eq!(trade.size, Quantity::from("1.000"));
+        }
+        other => panic!("expected trade data, was {other:?}"),
+    }
+
+    match recv_data(&mut rx).await {
+        Data::Trade(trade) => {
+            assert_eq!(trade.instrument_id, instrument_id);
+            assert_eq!(trade.aggressor_side, AggressorSide::Sell);
+            assert_eq!(trade.trade_id, TradeId::from("perp-trade-sell"));
+        }
+        other => panic!("expected trade data, was {other:?}"),
+    }
+
+    client
+        .unsubscribe_trades(&unsubscribe_trades(instrument_id))
+        .unwrap();
+    wait_for_unsubscribe(&ws_state, channel).await;
+    client.disconnect().await.unwrap();
+}
+#[rstest]
+#[tokio::test]
 async fn test_request_trades_paginates_with_constant_page_size() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
@@ -1425,6 +1486,72 @@ async fn test_request_trades_returns_newest_unique_records_in_chronological_orde
             .all(|window| window[0] == window[1]),
         "pagination must use one fixed end bound: {to_timestamps:?}",
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trades_normalizes_paired_maker_first_rows_to_single_taker_tick() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *rest_state.trade_history_pages.lock().await = vec![load_json(
+        "perps/http_public_trades_result_eth_paired_maker_first.json",
+    )];
+    let rest_addr = start_rest_server(rest_state.clone()).await;
+    let ws_addr = start_ws_server(ws_state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+
+    let client = connect_with_eth_currency(rest_addr, ws_addr).await;
+
+    client
+        .request_trades(request_trades(InstrumentId::from("ETH-PERP.DERIVE"), None))
+        .unwrap();
+
+    let response = recv_response(&mut rx).await;
+    let DataResponse::Trades(trades) = response else {
+        panic!("expected trades response");
+    };
+
+    assert_eq!(trades.data.len(), 1, "paired rows must emit one tick");
+    let tick = &trades.data[0];
+    assert_eq!(tick.aggressor_side, AggressorSide::Buy);
+    assert_eq!(tick.trade_id, TradeId::from("pub-pair-1"));
+    assert_eq!(tick.price, Price::from("3500.00"));
+    assert_eq!(tick.size, Quantity::from("0.250"));
+    assert_eq!(tick.ts_event, UnixNanos::from(1_700_000_000_000_000_000));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trades_normalizes_paired_taker_first_rows_to_identical_tick() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *rest_state.trade_history_pages.lock().await = vec![load_json(
+        "perps/http_public_trades_result_eth_paired_taker_first.json",
+    )];
+    let rest_addr = start_rest_server(rest_state.clone()).await;
+    let ws_addr = start_ws_server(ws_state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+
+    let client = connect_with_eth_currency(rest_addr, ws_addr).await;
+
+    client
+        .request_trades(request_trades(InstrumentId::from("ETH-PERP.DERIVE"), None))
+        .unwrap();
+
+    let response = recv_response(&mut rx).await;
+    let DataResponse::Trades(trades) = response else {
+        panic!("expected trades response");
+    };
+
+    assert_eq!(trades.data.len(), 1, "paired rows must emit one tick");
+    let tick = &trades.data[0];
+    assert_eq!(tick.aggressor_side, AggressorSide::Buy);
+    assert_eq!(tick.trade_id, TradeId::from("pub-pair-1"));
+    assert_eq!(tick.price, Price::from("3500.00"));
+    assert_eq!(tick.size, Quantity::from("0.250"));
+    assert_eq!(tick.ts_event, UnixNanos::from(1_700_000_000_000_000_000));
 }
 
 #[rstest]

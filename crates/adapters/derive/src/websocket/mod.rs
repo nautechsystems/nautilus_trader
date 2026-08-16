@@ -55,5 +55,5 @@ pub use parse::{
     parse_funding_rate_history_record, parse_index_price, parse_mark_price, parse_option_greeks,
     parse_orderbook_deltas, parse_orderbook_depth10, parse_orderbook_msg, parse_public_ws_data,
     parse_ticker_msg, parse_ticker_quote, parse_ticker_quote_from_rest, parse_trade_tick,
-    parse_trades_msg,
+    parse_trade_tick_from_rest, parse_trades_msg,
 };

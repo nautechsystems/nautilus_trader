@@ -238,7 +238,12 @@ instrument rows are logged and skipped while valid rows continue to load.
 Historical requests use `public/get_trade_history`, `public/get_tradingview_chart_data`, and
 `public/get_funding_rate_history`. The bar `end` bound still selects buckets by their start time at
 the venue. Responses omit any bucket whose close is after the request time, including the
-still-forming bucket returned by the venue.
+still-forming bucket returned by the venue. Trade history returns one maker row and one taker row
+per trade under the same `trade_id`, and each row's `direction` is that participant's own
+side, while the public WS trades feed defines `direction` as the taker's side. Trade requests
+emit one `TradeTick` per trade whose aggressor side is the taker's direction, independent of
+row order; rows with an absent or `unknown` `liquidity_role` fall back to treating `direction`
+as the taker's side.
 
 Bars require `EXTERNAL` aggregation and `PriceType::Last`, since Derive candles are trade-based.
 The venue's candle periods map to 1, 5, 15, and 30 minute, 1, 4, and 8 hour, 1 day, and 1 week

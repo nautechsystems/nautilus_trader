@@ -894,8 +894,9 @@ pub struct DerivePublicTrade {
     pub index_price: Decimal,
     /// Instrument identifier.
     pub instrument_name: Ustr,
-    /// Maker / taker role of the aggressor. Only populated when the caller has
-    /// account context; absent on the public WS feed.
+    /// Role of this row's participant in the trade. The REST history endpoint
+    /// returns one maker row and one taker row per trade under the same
+    /// `trade_id`; absent on the public WS feed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub liquidity_role: Option<DeriveLiquidityRole>,
     /// Mark price at the time of the trade.
