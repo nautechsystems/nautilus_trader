@@ -147,7 +147,7 @@ pub const BINANCE_FUTURES_USD_DEMO_WS_URL: &str = "wss://demo-fstream.binance.co
 pub const BINANCE_FUTURES_COIN_DEMO_WS_URL: &str = "wss://demo-dstream.binance.com/ws";
 
 /// Binance USD-M Futures WebSocket base URL (testnet).
-pub const BINANCE_FUTURES_USD_TESTNET_WS_URL: &str = "wss://fstream.binancefuture.com/ws";
+pub const BINANCE_FUTURES_USD_TESTNET_WS_URL: &str = "wss://demo-fstream.binance.com/ws";
 
 /// Binance COIN-M Futures WebSocket base URL (testnet).
 pub const BINANCE_FUTURES_COIN_TESTNET_WS_URL: &str = "wss://dstream.binancefuture.com/ws";

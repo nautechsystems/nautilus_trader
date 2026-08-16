@@ -401,8 +401,11 @@ mod tests {
 
     #[rstest]
     fn test_ws_url_usdm_testnet() {
+        // USD-M testnet HTTP is paired with the Demo host (`demo-fapi.binance.com`), so the
+        // private WS stream must resolve to the matching Demo WS host as well, otherwise the
+        // listen key signed against the Demo account is rejected by the legacy WS host.
         let url = get_ws_base_url(BinanceProductType::UsdM, BinanceEnvironment::Testnet);
-        assert_eq!(url, "wss://fstream.binancefuture.com/ws");
+        assert_eq!(url, "wss://demo-fstream.binance.com/ws");
     }
 
     #[rstest]
