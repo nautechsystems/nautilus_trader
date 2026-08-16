@@ -207,7 +207,7 @@ SIM_FILTERSET := package(nautilus-common) + package(nautilus-network) + \
 	(package(nautilus-live) & test(test_startup_reconciliation_times_out_waiting_for_mass_status)) + \
 	(package(nautilus-core) & test(~virtual_time))
 SIM_HIGH_PRECISION_PACKAGES := -p nautilus-common -p nautilus-execution
-SIM_RUSTFLAGS := --cfg madsim -Aclippy::drop_non_drop
+SIM_RUSTFLAGS := --cfg madsim
 
 CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug build-wheel py-stubs check-code \
 	check-code-sim check-code-standard-precision \
