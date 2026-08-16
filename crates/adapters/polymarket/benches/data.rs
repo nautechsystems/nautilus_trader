@@ -377,7 +377,8 @@ fn bench_order_fill(c: &mut Criterion) {
                 taker_fee,
                 fee_exponent,
                 ts_init,
-            );
+            )
+            .expect("benchmark fixture commission is representable");
             black_box(report);
         });
     });
@@ -416,6 +417,7 @@ fn bench_order_fill_maker(c: &mut Criterion) {
                         ts_init,
                         ts_init,
                     )
+                    .expect("benchmark fixture commission is representable")
                 })
                 .collect();
             black_box(reports);

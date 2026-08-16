@@ -103,11 +103,13 @@ use nautilus_core::{
     datetime::{NANOSECONDS_IN_MILLISECOND, mins_to_secs, secs_to_nanos_unchecked},
 };
 use nautilus_execution::engine::ExecutionEngine;
+#[cfg(test)]
+use nautilus_model::reports::OrderStatusReport;
 use nautilus_model::{
     events::OrderEventAny,
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     orders::Order,
-    reports::{OrderStatusReport, PositionStatusReport},
+    reports::PositionStatusReport,
 };
 #[cfg(feature = "python")]
 use nautilus_system::trader::Trader;
@@ -123,7 +125,8 @@ use crate::{
         client::LiveExecutionClient,
         manager::{
             ExecutionManager, ExecutionManagerConfig, OpenOrderReportCheck, PositionReportCheck,
-            TargetedOrderQuery, TargetedOrderReportResult, request_targeted_order_reports,
+            SourcedOrderStatusReport, TargetedOrderQuery, TargetedOrderReportResult,
+            request_targeted_order_reports,
         },
     },
     runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
@@ -1417,11 +1420,17 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(result) => {
+                            let client_refs = self
+                                .exec_clients
+                                .iter()
+                                .map(|client| client as &dyn ExecutionClient)
+                                .collect::<Vec<_>>();
                             let reconciliation = self.exec_manager.reconcile_open_order_reports(
                                 &result.check,
                                 result.reports,
                                 &result.queried_clients,
                                 &result.failed_clients,
+                                &client_refs,
                             );
                             self.process_reconciliation_events(&reconciliation.events);
                             if !reconciliation.targeted_queries.is_empty() {
@@ -1458,7 +1467,14 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(result) => {
-                            let events = self.exec_manager.reconcile_targeted_order_reports(result);
+                            let client_refs = self
+                                .exec_clients
+                                .iter()
+                                .map(|client| client as &dyn ExecutionClient)
+                                .collect::<Vec<_>>();
+                            let events = self
+                                .exec_manager
+                                .reconcile_targeted_order_reports(result, &client_refs);
                             self.process_reconciliation_events(&events);
                         }
                         ReportTaskOutcome::TimedOut => {
@@ -2974,7 +2990,11 @@ async fn request_open_order_reports(
 
         match client.generate_order_status_reports(&command).await {
             Ok(reports) => {
-                all_reports.extend(reports);
+                all_reports.extend(
+                    reports
+                        .into_iter()
+                        .map(|report| SourcedOrderStatusReport { client_id, report }),
+                );
             }
             Err(e) => {
                 failed_clients.insert(client_id);
@@ -3067,7 +3087,7 @@ struct OpenOrderReportTask {
 
 struct OpenOrderReportResult {
     check: OpenOrderReportCheck,
-    reports: Vec<OrderStatusReport>,
+    reports: Vec<SourcedOrderStatusReport>,
     queried_clients: IndexSet<ClientId>,
     failed_clients: IndexSet<ClientId>,
 }
@@ -3081,7 +3101,7 @@ struct TargetedOrderReportTask {
 }
 
 struct OpenOrderReportQueryResult {
-    reports: Vec<OrderStatusReport>,
+    reports: Vec<SourcedOrderStatusReport>,
     queried_clients: IndexSet<ClientId>,
     failed_clients: IndexSet<ClientId>,
 }

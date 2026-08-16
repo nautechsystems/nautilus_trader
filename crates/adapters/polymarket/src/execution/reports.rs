@@ -145,7 +145,7 @@ impl PolymarketExecutionClient {
             &self.shared_token_instruments,
             Some(instrument_id),
             ts_init,
-        );
+        )?;
         order_fills.retain(|f| f.venue_order_id == venue_order_id);
         self.fill_tracker.snap_fill_reports(&mut order_fills);
 
@@ -552,7 +552,7 @@ impl PolymarketExecutionClient {
             &self.shared_token_instruments,
             cmd.instrument_id,
             self.clock.get_time_ns(),
-        );
+        )?;
 
         self.fill_tracker.snap_fill_reports(&mut reports);
 
@@ -633,7 +633,7 @@ async fn fetch_confirmed_fill_reports(
         .await
         .context("failed to fetch confirmed trades")?;
     let (reports, _) =
-        build_fill_reports_from_trades(&trades, ctx, token_instruments, instrument_id, ts_init);
+        build_fill_reports_from_trades(&trades, ctx, token_instruments, instrument_id, ts_init)?;
     Ok(reports)
 }
 

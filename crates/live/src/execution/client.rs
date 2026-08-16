@@ -361,7 +361,7 @@ impl ExecutionClient for LiveExecutionClient {
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
-    ) -> Option<Money> {
+    ) -> anyhow::Result<Option<Money>> {
         self.client
             .borrow()
             .calculate_commission(instrument, last_qty, last_px, liquidity_side)

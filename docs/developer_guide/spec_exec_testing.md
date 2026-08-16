@@ -1814,20 +1814,25 @@ ExecTesterConfig::builder()
 
 ---
 
-## Group 9: Lifecycle (start/stop)
+## Group 9: Lifecycle and reconciliation
 
-Test strategy lifecycle behavior and state management on start and stop.
+Test strategy lifecycle behavior and execution‑state recovery on start, stop, and report failure.
 
-| TC     | Name                    | Description                                              | Skip when         |
-| ------ | ----------------------- | -------------------------------------------------------- | ----------------- |
-| TC-E80 | Open position on start  | Open a position immediately when strategy starts.        | No market orders. |
-| TC-E81 | Cancel orders on stop   | Cancel all open orders when strategy stops.              | Never.            |
-| TC-E82 | Close positions on stop | Close open positions when strategy stops.                | No market orders. |
-| TC-E83 | Unsubscribe on stop     | Unsubscribe from data feeds on strategy stop.            | No unsub support. |
-| TC-E84 | Reconcile open orders   | Reconcile existing open orders from a prior session.     | Never.            |
-| TC-E85 | Reconcile filled orders | Reconcile previously filled orders from a prior session. | Never.            |
-| TC-E86 | Reconcile open long     | Reconcile existing open long position.                   | Never.            |
-| TC-E87 | Reconcile open short    | Reconcile existing open short position.                  | Never.            |
+TC-E88 and TC-E89 run offline as deterministic adapter unit or integration tests rather than through
+`ExecTester` against a venue.
+
+| TC     | Name                              | Description                                              | Skip when                                   |
+| ------ | --------------------------------- | -------------------------------------------------------- | ------------------------------------------- |
+| TC-E80 | Open position on start            | Open a position immediately when strategy starts.        | No market orders.                           |
+| TC-E81 | Cancel orders on stop             | Cancel all open orders when strategy stops.              | Never.                                      |
+| TC-E82 | Close positions on stop           | Close open positions when strategy stops.                | No market orders.                           |
+| TC-E83 | Unsubscribe on stop               | Unsubscribe from data feeds on strategy stop.            | No unsub support.                           |
+| TC-E84 | Reconcile open orders             | Reconcile existing open orders from a prior session.     | Never.                                      |
+| TC-E85 | Reconcile filled orders           | Reconcile previously filled orders from a prior session. | Never.                                      |
+| TC-E86 | Reconcile open long               | Reconcile existing open long position.                   | Never.                                      |
+| TC-E87 | Reconcile open short              | Reconcile existing open short position.                  | Never.                                      |
+| TC-E88 | Reconciliation commission failure | A required fill commission cannot be represented.        | No fill commission logic.                   |
+| TC-E89 | WebSocket commission failure      | A private fill commission cannot be represented.         | No private fill stream or commission logic. |
 
 ### TC-E80: Open position on start
 
@@ -1984,6 +1989,47 @@ ExecTesterConfig::builder()
   (`close_positions_on_stop=False`).
 - Verify the reconciled position quantity and average entry price match the venue.
 - After reconciliation, the strategy should be able to manage or close this position.
+
+### TC-E88: Reconciliation commission failure
+
+| Field              | Value                                                                                                           |
+| ------------------ | --------------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | A deterministic fixture produces an out‑of‑range commission for an owned, confirmed fill.                       |
+| **Action**         | Exercise direct fill, mass‑status, targeted report, and inferred‑fill commission paths with the fixture.        |
+| **Event sequence** | Report requests return an error; engine reconciliation logs a hook error and emits no fallback inferred fill.   |
+| **Pass criteria**  | The error is observable; startup fails or inferred work defers; a later valid response reconciles exactly once. |
+| **Skip when**      | The adapter does not calculate commission for fill reports.                                                     |
+
+**Considerations:**
+
+- Assert that no zero or generic commission replaces the failed venue calculation.
+- Exercise the inferred‑fill hook as well as direct `FillReport` construction.
+- Skip the inferred‑fill portion when the adapter does not override the shared commission hook.
+- Assert that hook quantity, price, and liquidity inputs match the emitted inferred fill, including
+  the back‑solved price of an incremental residual after a prior fill.
+- Valid explicit fills may apply, but the residual quantity and dependent terminal transition stay
+  pending.
+- A position‑only synthetic correction without trade evidence is not a commission calculation
+  failure.
+
+### TC-E89: WebSocket commission failure
+
+| Field              | Value                                                                                                                |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | A private fill fixture produces an out‑of‑range commission and has a stable venue trade ID.                          |
+| **Action**         | Deliver the invalid trade, replace its commission with a valid value, then redeliver the same trade ID.              |
+| **Event sequence** | The first delivery emits no fill and changes no fill, terminal, or deduplication state; the replay emits one fill.   |
+| **Pass criteria**  | No panic or fallback occurs; the valid replay applies exactly once; REST reconciliation can recover a missed replay. |
+| **Skip when**      | The adapter has no private fill stream or does not calculate commission for private fills.                           |
+
+**Considerations:**
+
+- For a venue trade that fills several owned orders, make one report fail and assert that the first
+  delivery emits none of them. This prevents a replay from duplicating reports built before the
+  failure.
+- Assert that the adapter consumes the deduplication key only after all reports construct and route
+  successfully.
+- Assert that a failed trade does not confirm or terminalize its order.
 
 ---
 

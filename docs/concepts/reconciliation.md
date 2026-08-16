@@ -201,7 +201,24 @@ do not require NETTING lifecycle inference.
   order‑only.
 - Fill reports arriving before order status reports are deferred until order state is available.
 
-If reconciliation fails, the system logs an error and does not start.
+#### Commission failures
+
+An adapter fill commission that cannot be calculated or represented fails the report request under
+the [adapter contract](../developer_guide/adapters.md#commission-failure-handling). The adapter does
+not drop that fill or replace its commission with zero or a generic formula. Startup stops before
+applying that client's mass status.
+
+When the engine asks the responsible execution client to calculate an inferred‑fill commission, a
+failure defers the inferred quantity and dependent terminal transition until a later reconciliation
+cycle succeeds. Valid explicit fills from the same report set can still apply. For an external order,
+the engine resolves the commission before adding the order to the cache or publishing its initial
+event, so a failure defers the entire external order. An unavailable responsible execution client
+has the same fail‑closed result.
+
+An inferred‑fill commission failure while applying an otherwise successful mass status does not
+stop startup. The unresolved work remains pending for a later reconciliation cycle.
+
+If startup reconciliation fails for any other reason, the system logs an error and does not start.
 
 ## Common reconciliation scenarios
 
@@ -222,6 +239,8 @@ The tables below cover startup reconciliation (mass status) and runtime checks
 | **Different fill data**                | Venue reports different fill price/commission than cached.                      | Preserves cached data, logs discrepancies.                                                               |
 | **Filtered orders**                    | Orders marked for filtering via config.                                         | Skips based on `filtered_client_order_ids` or instrument filters.                                        |
 | **Unresolved instrument**              | A report references an in‑scope instrument the adapter has not loaded.          | Fails startup for open order and position reports; warns and marks bounded history incomplete otherwise. |
+| **Fill commission failure**            | An adapter cannot represent a required fill commission while building reports.  | Fails mass‑status generation and stops startup before applying that client's reports.                    |
+| **Inferred‑fill commission failure**   | The responsible execution client cannot calculate a required commission.        | Defers inferred work; an external order remains absent, while valid explicit fills can still apply.      |
 | **Duplicate order reports**            | Multiple orders share the same identifier.                                      | Deduplicates with warning logged.                                                                        |
 | **Position quantity mismatch (long)**  | Internal long position differs from venue (e.g., 100 vs 150).                   | Generates BUY LIMIT with calculated price when `generate_missing_orders=True`.                           |
 | **Position quantity mismatch (short)** | Internal short position differs from venue (e.g., -100 vs -150).                | Generates SELL LIMIT with calculated price when `generate_missing_orders=True`.                          |
@@ -248,6 +267,7 @@ reconciliation completes, giving the system time to stabilize.
 | **In‑flight cancel/update timeout** | `PENDING_CANCEL` or `PENDING_UPDATE` exceeds the retries. | Resolves to `CANCELED` through reconciliation.  |
 | **Open orders check discrepancy**   | Periodic poll detects a venue state change.               | Confirms status and applies transitions.        |
 | **Position check discrepancy**      | Periodic poll detects a position mismatch.                | Generates reconciliation events when eligible.  |
+| **Commission construction failure** | A required fill commission cannot be represented.         | Defers the affected work to a later cycle.      |
 | **Own books audit mismatch**        | Own order books diverge from venue public books.          | Audits and logs inconsistencies.                |
 
 **In‑flight order timeout resolution** (venue does not respond after max retries):

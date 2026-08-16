@@ -611,7 +611,19 @@ symmetrically toward the extremes, and apply only to taker fills.
 Every order signed by the adapter carries the hard‑coded Nautilus builder code. Its builder fee
 rate is fixed at zero and is not configurable.
 
+### Fill commission handling
+
 `FillReport.commission` is denominated in pUSD and rounds the platform fee to five decimal places.
+If the exact result cannot be represented as `Money`, the adapter returns an error instead of using
+zero or a generic commission. See the
+[commission failure contract](../developer_guide/adapters.md#commission-failure-handling).
+
+A commission construction error fails a direct fill report request, terminal trade‑history recovery,
+or complete mass status. Startup returns a mass‑status error without applying that client's reports.
+When an active order report cannot enrich matched quantity from confirmed fills, the adapter logs
+the error and caps matched quantity to local and previously tracked evidence so reconciliation
+defers the unsupported residual. The adapter does not drop a failed fill while returning an order or
+position report that could recreate its quantity without the Polymarket commission.
 
 :::note
 For the latest public schedule, see Polymarket's
@@ -680,6 +692,11 @@ of locally applied fills and authenticated `CONFIRMED` trade history, so pending
 create an inferred fill. Runtime order checks fetch confirmed trade history when the venue reports
 more matched quantity than the local order and WebSocket fill tracker contain. Unpaired fill reports
 retain the normal fill-only path.
+
+A commission construction error fails the complete REST report request. Startup returns the error
+without applying a mass status; periodic and targeted reconciliation defer the affected work. The
+adapter does not drop the failed fill because an order or position report could then recreate its
+quantity without the Polymarket commission.
 
 ### Single-order recovery from trades
 
@@ -1010,6 +1027,13 @@ Matched WebSocket fills and their corrections are restored from cached order his
 deduplicated across reconnects. If a trade arrives before its instrument is available, the adapter
 leaves it out of the dedup state. A redelivered event or later REST reconciliation can apply it after
 instrument loading completes.
+
+The adapter also constructs every owned fill report for a trade before emitting any of them or
+recording the trade as processed. If commission construction fails, it emits no fill for that trade
+and leaves its deduplication, confirmation, and terminal state unchanged. A duplicate or reconnect
+replay can retry the trade, while scheduled REST reconciliation remains the authoritative recovery
+path.
+
 For a fully matched order, terminal quantity normalization waits for every trade ID in the order's
 `associate_trades` list to confirm before lowering the order quantity to its actual fills. If a
 confirmed trade is recovered through REST after a WebSocket gap, reconciliation applies the same

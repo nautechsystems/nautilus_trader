@@ -27,6 +27,7 @@
 
 use std::str::FromStr;
 
+use anyhow::Context;
 use indexmap::IndexMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::{UUID4, UnixNanos, collections::AtomicMap, time::AtomicTime};
@@ -406,7 +407,9 @@ fn dispatch_trade_update(
     }
 
     let is_confirmed = trade.status == PolymarketTradeStatus::Confirmed;
-    dispatch_trade_fills(trade, &dedup_key, is_confirmed, ctx, state);
+    if !dispatch_trade_fills(trade, &dedup_key, is_confirmed, ctx, state) {
+        return None;
+    }
 
     if !is_confirmed {
         return None;
@@ -463,22 +466,37 @@ fn dispatch_trade_fills(
     is_confirmed: bool,
     ctx: &WsDispatchContext<'_>,
     state: &mut WsDispatchState,
-) {
+) -> bool {
     if state.processed_fills.contains(dedup_key) {
         log::debug!("Duplicate fill skipped: {dedup_key}");
-        return;
+        return true;
     }
 
-    state.processed_fills.add(dedup_key.clone());
     let fills = if trade.trader_side == PolymarketLiquiditySide::Maker {
-        dispatch_maker_fills(trade, dedup_key, is_confirmed, ctx, state)
+        let reports = match build_ws_maker_fill_reports(trade, ctx) {
+            Ok(reports) => reports,
+            Err(e) => {
+                log::error!("Cannot build maker fills for trade {}: {e}", trade.id);
+                return false;
+            }
+        };
+        dispatch_maker_fill_reports(reports, trade, dedup_key, is_confirmed, ctx, state)
     } else {
-        dispatch_taker_fill(trade, dedup_key, is_confirmed, ctx, state)
+        let report = match build_ws_taker_fill_report_for_trade(trade, ctx) {
+            Ok(report) => report,
+            Err(e) => {
+                log::error!("Cannot build taker fill for trade {}: {e}", trade.id);
+                return false;
+            }
+        };
+        dispatch_taker_fill_report(report, trade, dedup_key, is_confirmed, ctx, state)
     };
 
     if !fills.is_empty() {
         state.matched_fills.insert(dedup_key.clone(), fills);
     }
+    state.processed_fills.add(dedup_key.clone());
+    true
 }
 
 fn confirm_trade(
@@ -512,13 +530,10 @@ fn confirm_trade(
     }
 }
 
-fn dispatch_maker_fills(
+fn build_ws_maker_fill_reports(
     trade: &PolymarketUserTrade,
-    correction_key: &str,
-    is_confirmed: bool,
     ctx: &WsDispatchContext<'_>,
-    state: &WsDispatchState,
-) -> Vec<OrderFilled> {
+) -> anyhow::Result<Vec<FillReport>> {
     let user_orders: Vec<_> = trade
         .maker_orders
         .iter()
@@ -527,25 +542,20 @@ fn dispatch_maker_fills(
 
     if user_orders.is_empty() {
         log::warn!("No matching maker orders for user in trade: {}", trade.id);
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let instruments = ctx.token_instruments.load();
-    let fill_info = trade_fill_info(trade);
     let liquidity_side = parse_liquidity_side(trade.trader_side);
     let ts_event = parse_timestamp_ms(&trade.timestamp).unwrap_or_else(|_| ctx.clock.get_time_ns());
     let ts_init = ctx.clock.get_time_ns();
-    let mut fills = Vec::new();
+    let mut reports = Vec::with_capacity(user_orders.len());
 
     for mo in user_orders {
         let asset_id = mo.asset_id;
-        let instrument = match instruments.get(&asset_id) {
-            Some(i) => i,
-            None => {
-                log::warn!("Unknown asset_id in maker order: {asset_id}");
-                continue;
-            }
-        };
+        let instrument = instruments
+            .get(&asset_id)
+            .with_context(|| format!("unknown asset_id in maker order: {asset_id}"))?;
         let mut report = build_maker_fill_report(
             mo,
             &trade.id,
@@ -560,12 +570,33 @@ fn dispatch_maker_fills(
             liquidity_side,
             ts_event,
             ts_init,
-        );
+        )
+        .with_context(|| format!("failed to build maker fill for asset {asset_id}"))?;
+
         let maker_venue_order_id = report.venue_order_id;
         report.client_order_id = ctx.pending_submits.client_order_id(&maker_venue_order_id);
         report.last_qty = ctx
             .fill_tracker
             .snap_fill_qty(&maker_venue_order_id, report.last_qty);
+        reports.push(report);
+    }
+
+    Ok(reports)
+}
+
+fn dispatch_maker_fill_reports(
+    reports: Vec<FillReport>,
+    trade: &PolymarketUserTrade,
+    correction_key: &str,
+    is_confirmed: bool,
+    ctx: &WsDispatchContext<'_>,
+    state: &WsDispatchState,
+) -> Vec<OrderFilled> {
+    let fill_info = trade_fill_info(trade);
+    let mut fills = Vec::new();
+
+    for report in reports {
+        let maker_venue_order_id = report.venue_order_id;
 
         if let Some(report) = ctx.fill_tracker.accept_or_buffer_fill(
             maker_venue_order_id,
@@ -597,22 +628,14 @@ fn is_user_maker_order(order: &PolymarketMakerOrder, ctx: &WsDispatchContext<'_>
     order.is_owned_by(ctx.user_address, ctx.user_api_key)
 }
 
-fn dispatch_taker_fill(
+fn build_ws_taker_fill_report_for_trade(
     trade: &PolymarketUserTrade,
-    correction_key: &str,
-    is_confirmed: bool,
     ctx: &WsDispatchContext<'_>,
-    state: &WsDispatchState,
-) -> Vec<OrderFilled> {
+) -> anyhow::Result<FillReport> {
     let instruments = ctx.token_instruments.load();
-    let instrument = match instruments.get(&trade.asset_id) {
-        Some(i) => i,
-        None => {
-            log::warn!("Unknown asset_id in trade: {}", trade.asset_id);
-            return Vec::new();
-        }
-    };
-
+    let instrument = instruments
+        .get(&trade.asset_id)
+        .with_context(|| format!("unknown asset_id in trade: {}", trade.asset_id))?;
     let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
     let liquidity_side = parse_liquidity_side(trade.trader_side);
     let ts_event = parse_timestamp_ms(&trade.timestamp).unwrap_or_else(|_| ctx.clock.get_time_ns());
@@ -625,11 +648,23 @@ fn dispatch_taker_fill(
         liquidity_side,
         ts_event,
         ts_init,
-    );
+    )?;
     report.client_order_id = ctx.pending_submits.client_order_id(&venue_order_id);
     report.last_qty = ctx
         .fill_tracker
         .snap_fill_qty(&venue_order_id, report.last_qty);
+    Ok(report)
+}
+
+fn dispatch_taker_fill_report(
+    report: FillReport,
+    trade: &PolymarketUserTrade,
+    correction_key: &str,
+    is_confirmed: bool,
+    ctx: &WsDispatchContext<'_>,
+    state: &WsDispatchState,
+) -> Vec<OrderFilled> {
+    let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
 
     if let Some(report) = ctx.fill_tracker.accept_or_buffer_fill(
         venue_order_id,
@@ -779,7 +814,7 @@ fn build_ws_taker_fill_report(
     liquidity_side: LiquiditySide,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> FillReport {
+) -> anyhow::Result<FillReport> {
     let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
     let trade_id = TradeId::from(trade.id.as_str());
     let order_side = determine_order_side(
@@ -808,7 +843,7 @@ fn build_ws_taker_fill_report(
     );
     let pusd = crate::execution::get_pusd_currency();
 
-    FillReport {
+    Ok(FillReport {
         account_id,
         instrument_id: instrument.id(),
         venue_order_id,
@@ -817,7 +852,7 @@ fn build_ws_taker_fill_report(
         last_qty,
         last_px,
         commission: Money::from_decimal(commission_value, pusd)
-            .expect("commission should be representable as Money"),
+            .context("commission is not representable as Money")?,
         liquidity_side,
         avg_px: None,
         report_id: UUID4::new(),
@@ -825,7 +860,7 @@ fn build_ws_taker_fill_report(
         ts_init,
         client_order_id: None,
         venue_position_id: None,
-    }
+    })
 }
 
 /// Emits order events for a tracked own-order status update.
@@ -1515,7 +1550,8 @@ mod tests {
             LiquiditySide::Taker,
             ts_event,
             ts_init,
-        );
+        )
+        .expect("representable commission builds a fill report");
 
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
@@ -1761,6 +1797,92 @@ mod tests {
         // Second dispatch should be deduped, no additional fill
         let _ = dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
         assert_eq!(fill_tracker.pending_fills_for(&venue_order_id).len(), 1);
+    }
+
+    #[rstest]
+    fn test_dispatch_taker_commission_failure_preserves_replay_state() {
+        let trade: PolymarketUserTrade = load("ws_user_trade.json");
+        let valid_instrument = test_instrument();
+        let mut invalid_instrument = valid_instrument.clone();
+        let InstrumentAny::BinaryOption(binary_option) = &mut invalid_instrument else {
+            panic!("expected binary option test instrument");
+        };
+        binary_option.taker_fee =
+            Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0);
+
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(trade.asset_id, invalid_instrument);
+        let fill_tracker = OrderFillTrackerMap::new();
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+        fill_tracker.register(
+            venue_order_id,
+            Quantity::from("100"),
+            OrderSide::Buy,
+            valid_instrument.id(),
+            valid_instrument.size_precision(),
+            valid_instrument.price_precision(),
+        );
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        register_identity(
+            &order_identities,
+            venue_order_id,
+            valid_instrument.id(),
+            "O-COMMISSION-REPLAY",
+        );
+        order_identities.mark_accepted(venue_order_id);
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            order_identities: &order_identities,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+        let mut state = WsDispatchState::default();
+        let dedup_key = format!("{}-{}", trade.id, trade.taker_order_id);
+
+        let failed = dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
+
+        assert!(failed.is_none());
+        assert!(!state.processed_fills.contains(&dedup_key));
+        assert!(!state.confirmed_trades.contains(&trade.id));
+        assert!(!fill_tracker.is_trade_confirmed(&dedup_key));
+        assert_eq!(
+            fill_tracker.get_cumulative_filled(&venue_order_id),
+            Some(Quantity::zero(valid_instrument.size_precision()))
+        );
+        assert!(receiver.try_recv().is_err());
+
+        token_instruments.insert(trade.asset_id, valid_instrument);
+        let replay = dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
+        let emitted = receiver.try_recv().expect("valid replay emits one fill");
+        let duplicate = dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
+
+        assert!(replay.is_some());
+        assert!(duplicate.is_some());
+        assert!(state.processed_fills.contains(&dedup_key));
+        assert!(
+            state
+                .confirmed_trades
+                .contains(&"trade-0xabcdef1234".to_string())
+        );
+        assert!(fill_tracker.is_trade_confirmed(&dedup_key));
+        assert!(matches!(
+            emitted,
+            ExecutionEvent::Order(OrderEventAny::Filled(_))
+        ));
+        assert_eq!(
+            fill_tracker.get_cumulative_filled(&venue_order_id),
+            Some(Quantity::from("25.0"))
+        );
+        assert!(receiver.try_recv().is_err());
     }
 
     #[rstest]

@@ -395,8 +395,9 @@ impl ExecutionClient for PolymarketExecutionClient {
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
-    ) -> Option<Money> {
-        Some(self.calculate_commission_impl(instrument, last_qty, last_px, liquidity_side))
+    ) -> anyhow::Result<Option<Money>> {
+        self.calculate_commission_impl(instrument, last_qty, last_px, liquidity_side)
+            .map(Some)
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {

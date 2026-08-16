@@ -50,6 +50,7 @@ work that proves conformance.
 | [Data events and request freshness](#data-client)                                             | Data clients                     |
 | [Execution client boundaries](#execution-client)                                              | Execution clients                |
 | [Reconciliation reports](#reconciliation-reports)                                             | Execution clients                |
+| [Commission failure handling](#commission-failure-handling)                                   | Execution clients                |
 | [Bounded mass‑status reports](#bounded-massstatus-reports)                                    | Execution clients                |
 | [Instrument resolution during reconciliation](#instrument-resolution-during-reconciliation)   | Execution clients                |
 | [Tracked and external execution updates](#tracked-and-external-execution-updates)             | Execution clients                |
@@ -98,6 +99,7 @@ baseline, as an optional capability proven per adapter rather than a requirement
 | Subscription identity      | [`SubscriptionState`](../../crates/network/src/websocket/subscription.rs)        | [Subscription management](#subscription-management)                           |
 | Reconnect requests         | [`request_reconnect`](../../crates/network/src/websocket/client.rs)              | [Reconnection and shutdown](#reconnection-and-shutdown)                       |
 | Retry machinery            | [`RetryManager`](../../crates/network/src/retry.rs)                              | [Error handling and retry logic](#error-handling-and-retry-logic)             |
+| Inferred fill commission   | [`ExecutionClient`](../../crates/common/src/clients/execution.rs)                | [Commission failure handling](#commission-failure-handling)                   |
 
 Where a venue transmits a discrete value as an IEEE‑754 field rather than a decimal string or JSON
 number, contain that at the parsing boundary as a documented exception instead of letting `f64`
@@ -653,7 +655,64 @@ implement this method before an open‑order check runs in full‑history mode.
 reports, including the startup procedure, the runtime checks that drive the periodic and targeted
 requests, and their retry and throttling rules. Cases TC-E84 to TC-E87 and TC-E101 in the
 [execution testing specification](spec_exec_testing.md) exercise startup reconciliation against a
-venue.
+venue. Cases TC-E88 and TC-E89 use deterministic fixtures to exercise REST and private‑stream
+commission failure.
+
+#### Commission failure handling
+
+Commission is part of a fill's economic record. Calculate it with exact decimal arithmetic, then
+construct the venue currency's [`Money`](../../crates/model/src/types/money.rs) value. The shared
+`ExecutionClient::calculate_commission` hook distinguishes these outcomes:
+
+| Result                 | Meaning                                                                                  |
+| ---------------------- | ---------------------------------------------------------------------------------------- |
+| `Ok(Some(commission))` | The venue formula applies and produces a representable commission. Use that exact value. |
+| `Ok(None)`             | The adapter has no venue override. The caller may use the generic commission formula.    |
+| `Err(error)`           | The venue formula applies but cannot produce a representable value. Fail closed.         |
+
+Never replace `Err(error)` with zero commission or the generic formula. That substitution records a
+confirmed trade with economics the venue did not report.
+
+##### REST report construction
+
+Commission construction belongs to the REST report request. If it fails for any required fill,
+return an error from the direct fill report request, targeted recovery, or complete mass status.
+Never drop the fill, return a partial mass status, or mark a bounded report set incomplete for this
+failure. Otherwise, an order or position report can cause the engine to infer the same quantity
+without its venue commission.
+
+During startup, the error prevents the node from starting and leaves that client's mass status
+unapplied. Periodic and targeted reconciliation defer the affected work until a later cycle.
+
+##### Inferred fills
+
+Call the hook for every adapter‑backed inferred fill: external and cached orders, continuous
+reconciliation, and targeted order recovery. If commission calculation fails, the engine may apply
+valid explicit fills, but it leaves the residual inferred quantity and dependent terminal
+transition pending.
+
+For an external order, calculate commission before a cache or event transition could prevent a
+retry. If the responsible execution client is unavailable, defer the inferred fill instead of
+treating the missing client as an `Ok(None)` response.
+
+Pass the same quantity, price, and liquidity side as the inferred‑fill event. For a cached order with
+prior fills, calculate commission from the back‑solved price of the unbooked incremental quantity,
+not the venue report's cumulative average price.
+
+A position‑only synthetic correction has no underlying trade evidence and may leave commission
+unspecified. Do not present an aggregate or generic value as the exact commission for that unknown
+fill; this case is distinct from a failed venue calculation.
+
+##### WebSocket trade processing
+
+Process each WebSocket trade atomically. Construct every owned maker and taker fill report before
+emitting any report, mutating fill trackers, or consuming the trade's deduplication key. Consume the
+key only after all reports route successfully.
+
+On failure, log the error and leave the trade unprocessed. Do not confirm or terminalize the
+affected orders or mark them permanently unreconcilable. A duplicate or reconnect replay can retry
+the trade. Scheduled REST reconciliation remains the authoritative recovery path; the WebSocket
+handler does not start an immediate REST request.
 
 #### Bounded mass‑status reports
 
@@ -668,6 +727,10 @@ completed and all required records were parsed, mapped, and linked to their orde
 required source, required row that cannot be parsed or mapped, or historical fill without its
 required order report makes the set incomplete. Preserve successful legs and authoritative active
 orders, but do not represent a failed historical query as a successful empty result.
+
+Commission construction is an exception to partial bounded history. Follow
+[commission failure handling](#commission-failure-handling) and fail the report request instead of
+returning a set that omits the affected fill.
 
 When positions come from a cached stream, absence proves flat only when a complete snapshot from
 the current connection epoch positively covers that instrument. Invalidate snapshot coverage on

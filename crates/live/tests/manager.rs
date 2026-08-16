@@ -135,6 +135,9 @@ impl TestContext {
 
         let manager = ExecutionManager::new(clock.clone(), cache.clone(), config);
         let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
+        engine
+            .register_client(Box::new(MockExecutionClient::new(Vec::new())))
+            .expect("test execution client registers");
 
         // Register hedging mode for EXTERNAL strategy (used by external/reconciliation orders)
         engine.register_oms_type(StrategyId::from("EXTERNAL"), OmsType::Hedging);
@@ -5658,6 +5661,88 @@ async fn test_inferred_fill_generated_when_venue_reports_filled() {
 }
 
 #[tokio::test]
+async fn test_mass_status_uses_source_client_and_retries_commission() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-COMMISSION-MASS-001");
+    let venue_order_id = VenueOrderId::from("V-COMMISSION-MASS-001");
+    let commission = Money::from("1.25 USDT");
+    let commission_failure = Rc::new(Cell::new(true));
+
+    ctx.add_instrument(test_instrument());
+    let order = create_accepted_order(
+        "O-COMMISSION-MASS-001",
+        instrument_id,
+        OrderSide::Buy,
+        "10.0",
+        "3000.00",
+        venue_order_id,
+    );
+    ctx.add_order_with_client_id(order, test_client_id());
+    ctx.exec_engine
+        .borrow_mut()
+        .deregister_client(test_client_id())
+        .expect("generic test execution client deregisters");
+    ctx.exec_engine
+        .borrow_mut()
+        .register_client(Box::new(
+            MockExecutionClient::new(Vec::new())
+                .with_commission(commission, commission_failure.clone()),
+        ))
+        .expect("test execution client registers");
+
+    let report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument_id,
+        OrderStatus::Filled,
+        Quantity::from("10.0"),
+        Quantity::from("10.0"),
+    )
+    .with_avg_px(dec!(3001.50));
+    let failed_mass_status = create_mass_status(vec![report.clone()], Vec::new());
+
+    let failed = ctx
+        .manager
+        .reconcile_execution_mass_status(failed_mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert!(failed.events.is_empty());
+    let order = ctx
+        .get_order(&client_order_id)
+        .expect("cached order remains available for retry");
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    assert_eq!(order.filled_qty(), Quantity::from("0.0"));
+    assert_eq!(order.commissions().get(&Currency::USDT()), None);
+
+    commission_failure.set(false);
+    let retry_mass_status = create_mass_status(vec![report], Vec::new());
+    let retry = ctx
+        .manager
+        .reconcile_execution_mass_status(retry_mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(retry.events.len(), 1);
+    let OrderEventAny::Filled(fill) = &retry.events[0] else {
+        panic!("expected inferred fill on valid retry");
+    };
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.last_qty, Quantity::from("10.0"));
+    assert_eq!(fill.last_px, Price::from("3001.50"));
+    assert_eq!(fill.commission, Some(commission));
+    assert!(fill.reconciliation);
+    let order = ctx
+        .get_order(&client_order_id)
+        .expect("retry updates the cached order");
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from("10.0"));
+    assert_eq!(
+        order.commissions().get(&Currency::USDT()),
+        Some(&commission)
+    );
+}
+
+#[tokio::test]
 async fn test_inferred_fill_uses_avg_px_for_first_fill() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
@@ -10282,6 +10367,8 @@ struct MockExecutionClient {
     order_report_query_count: Cell<usize>,
     fail_order_report: bool,
     fail_order_reports: bool,
+    commission: Option<Money>,
+    commission_failure: Option<Rc<Cell<bool>>>,
     on_order_report_query: RefCell<Option<Box<dyn FnOnce()>>>,
     on_order_reports_query: RefCell<Option<Box<dyn FnOnce()>>>,
 }
@@ -10298,6 +10385,8 @@ impl MockExecutionClient {
             order_report_query_count: Cell::new(0),
             fail_order_report: false,
             fail_order_reports: false,
+            commission: None,
+            commission_failure: None,
             on_order_report_query: RefCell::new(None),
             on_order_reports_query: RefCell::new(None),
         }
@@ -10314,6 +10403,8 @@ impl MockExecutionClient {
             order_report_query_count: Cell::new(0),
             fail_order_report: false,
             fail_order_reports: false,
+            commission: None,
+            commission_failure: None,
             on_order_report_query: RefCell::new(None),
             on_order_reports_query: RefCell::new(None),
         }
@@ -10330,6 +10421,8 @@ impl MockExecutionClient {
             order_report_query_count: Cell::new(0),
             fail_order_report: false,
             fail_order_reports: true,
+            commission: None,
+            commission_failure: None,
             on_order_report_query: RefCell::new(None),
             on_order_reports_query: RefCell::new(None),
         }
@@ -10352,6 +10445,12 @@ impl MockExecutionClient {
 
     fn with_failed_order_report(mut self) -> Self {
         self.fail_order_report = true;
+        self
+    }
+
+    fn with_commission(mut self, commission: Money, failure: Rc<Cell<bool>>) -> Self {
+        self.commission = Some(commission);
+        self.commission_failure = Some(failure);
         self
     }
 
@@ -10447,6 +10546,24 @@ impl ExecutionClient for MockExecutionClient {
 
     fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
         Ok(())
+    }
+
+    fn calculate_commission(
+        &self,
+        _instrument: &InstrumentAny,
+        _last_qty: Quantity,
+        _last_px: Price,
+        _liquidity_side: LiquiditySide,
+    ) -> anyhow::Result<Option<Money>> {
+        if self
+            .commission_failure
+            .as_ref()
+            .is_some_and(|failure| failure.get())
+        {
+            anyhow::bail!("commission unavailable");
+        }
+
+        Ok(self.commission)
     }
 
     async fn generate_order_status_report(

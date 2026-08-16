@@ -1652,6 +1652,88 @@ async fn test_generate_fill_reports_empty_without_instruments() {
 
 #[rstest]
 #[tokio::test]
+async fn test_commission_failure_errors_direct_mass_and_targeted_rest_requests() {
+    let venue_order_id =
+        VenueOrderId::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12");
+    let state = TestServerState::default();
+    *state.single_order_response.lock().await = Some(Value::Null);
+    *state.trades_response_override.lock().await = Some(recovery_trades_response(
+        venue_order_id.as_str(),
+        "10.0000",
+        "0.5000",
+    ));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let out_of_range_fee =
+        Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0);
+    add_instrument_to_cache_with_tick_and_taker_fee(
+        &cache,
+        instrument_id,
+        "0.0001",
+        4,
+        out_of_range_fee,
+    );
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let client_order_id = ClientOrderId::from("O-COMMISSION-FAILURE");
+    let mut order = make_limit_order(
+        client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, venue_order_id.as_str());
+
+    let fill_error = client
+        .generate_fill_reports(GenerateFillReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            venue_order_id: Some(venue_order_id),
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("direct fill request must fail as a unit");
+    let mass_error = client
+        .generate_mass_status(None)
+        .await
+        .expect_err("mass status must not omit the failed fill");
+    let targeted_error = client
+        .generate_order_status_report(&GenerateOrderStatusReport {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            client_order_id: Some(client_order_id),
+            venue_order_id: Some(venue_order_id),
+            params: None,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("targeted recovery must not omit the failed fill");
+
+    for error in [fill_error, mass_error, targeted_error] {
+        assert!(format!("{error:#}").contains("failed to represent commission"));
+    }
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_position_status_reports_always_empty() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;

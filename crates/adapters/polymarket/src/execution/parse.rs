@@ -15,6 +15,7 @@
 
 //! Parsing functions for Polymarket execution reports.
 
+use anyhow::Context;
 use jiff::Timestamp;
 use nautilus_core::{
     UUID4, UnixNanos,
@@ -183,16 +184,20 @@ fn parse_expiration_nanos(value: &str) -> Option<u64> {
     secs.checked_mul(NANOSECONDS_IN_SECOND)
 }
 
+// panics-doc-ok (transitive via validating identifier constructors)
 /// Parses a [`PolymarketTradeReport`] into a [`FillReport`].
 ///
 /// Produces one fill report for the overall trade. The `trade_id` is
 /// derived from the Polymarket trade ID. Commission is computed from the
 /// instrument's effective taker fee rate, fee exponent, and fill notional.
 ///
+/// # Errors
+///
+/// Returns an error if the computed commission cannot be represented as [`Money`].
+///
 /// # Panics
 ///
-/// Panics if the trade identifiers are invalid or the computed commission exceeds the
-/// representable range of [`Money`].
+/// Panics if the trade identifiers are invalid.
 #[expect(clippy::too_many_arguments)]
 pub fn parse_fill_report(
     trade: &PolymarketTradeReport,
@@ -205,7 +210,7 @@ pub fn parse_fill_report(
     taker_fee_rate: Decimal,
     fee_exponent: f64,
     ts_init: UnixNanos,
-) -> FillReport {
+) -> anyhow::Result<FillReport> {
     let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
     let trade_id = TradeId::from(trade.id.as_str());
     let order_side = OrderSide::from(trade.side);
@@ -222,12 +227,13 @@ pub fn parse_fill_report(
         trade.price,
         liquidity_side,
     );
-    let commission = Money::from_decimal(commission_value, currency)
-        .expect("commission should be representable as Money");
+    let commission = Money::from_decimal(commission_value, currency).with_context(|| {
+        format!("failed to represent commission {commission_value} for {instrument_id} as Money")
+    })?;
 
     let ts_event = parse_timestamp(&trade.match_time).unwrap_or(ts_init);
 
-    FillReport {
+    Ok(FillReport {
         account_id,
         instrument_id,
         venue_order_id,
@@ -243,14 +249,19 @@ pub fn parse_fill_report(
         ts_init,
         client_order_id,
         venue_position_id: None,
-    }
+    })
 }
 
+// panics-doc-ok (transitive via validating identifier constructors)
 /// Builds a [`FillReport`] from a [`PolymarketMakerOrder`] and trade-level context.
 ///
 /// Used by both the WS stream handler and REST fill report generation since both
 /// share the same [`PolymarketMakerOrder`] type for maker fills. Maker fills never
 /// pay commission per Polymarket's fee rules.
+///
+/// # Errors
+///
+/// Returns an error if the computed commission cannot be represented as [`Money`].
 ///
 /// # Panics
 ///
@@ -270,7 +281,7 @@ pub fn build_maker_fill_report(
     liquidity_side: LiquiditySide,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> FillReport {
+) -> anyhow::Result<FillReport> {
     let venue_order_id = VenueOrderId::from(mo.order_id.as_str());
     let fill_trade_id = make_composite_trade_id(trade_id, &mo.order_id);
     let order_side = determine_order_side(
@@ -290,8 +301,11 @@ pub fn build_maker_fill_report(
         mo.price,
         liquidity_side,
     );
+    let commission = Money::from_decimal(commission_value, currency).with_context(|| {
+        format!("failed to represent commission {commission_value} for {instrument_id} as Money")
+    })?;
 
-    FillReport {
+    Ok(FillReport {
         account_id,
         instrument_id,
         venue_order_id,
@@ -299,8 +313,7 @@ pub fn build_maker_fill_report(
         order_side,
         last_qty,
         last_px,
-        commission: Money::from_decimal(commission_value, currency)
-            .expect("commission should be representable as Money"),
+        commission,
         liquidity_side,
         avg_px: None,
         report_id: UUID4::new(),
@@ -308,7 +321,7 @@ pub fn build_maker_fill_report(
         ts_init,
         client_order_id: None,
         venue_position_id: None,
-    }
+    })
 }
 
 /// Returns the effective taker fee rate for a Polymarket instrument.
@@ -1417,6 +1430,34 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_fill_report_errors_when_commission_is_unrepresentable() {
+        let path = "test_data/http_trade_report.json";
+        let content = std::fs::read_to_string(path).expect("Failed to read test data");
+        let trade: PolymarketTradeReport =
+            serde_json::from_str(&content).expect("Failed to parse test data");
+
+        let result = parse_fill_report(
+            &trade,
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            AccountId::from("POLYMARKET-001"),
+            None,
+            4,
+            6,
+            Currency::pUSD(),
+            // Large enough that the commission exceeds Money's fixed-point range, while the
+            // Decimal arithmetic itself stays well inside its own limits
+            Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0),
+            1.0,
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        assert!(
+            result.is_err(),
+            "an unrepresentable commission must surface as an error rather than panicking"
+        );
+    }
+
+    #[rstest]
     fn test_parse_fill_report_from_fixture() {
         let path = "test_data/http_trade_report.json";
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
@@ -1438,7 +1479,8 @@ mod tests {
             Decimal::ZERO,
             1.0,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("fixture commission is representable");
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
@@ -1470,7 +1512,8 @@ mod tests {
             dec!(0.03),
             2.0,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("fixture commission is representable");
 
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.commission.as_decimal(), dec!(0.04688));

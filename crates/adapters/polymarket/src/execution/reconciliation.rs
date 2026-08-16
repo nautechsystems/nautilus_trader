@@ -75,7 +75,7 @@ pub(crate) fn build_fill_reports_from_trades(
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     instrument_filter: Option<InstrumentId>,
     ts_init: UnixNanos,
-) -> (Vec<FillReport>, FillBuildDiscards) {
+) -> anyhow::Result<(Vec<FillReport>, FillBuildDiscards)> {
     let mut reports = Vec::new();
     let mut discards = FillBuildDiscards::default();
 
@@ -136,7 +136,13 @@ pub(crate) fn build_fill_reports_from_trades(
                     LiquiditySide::Maker,
                     ts_event,
                     ts_init,
-                );
+                )
+                .with_context(|| {
+                    format!(
+                        "failed to build maker fill report for trade {} and order {}",
+                        trade.id, mo.order_id,
+                    )
+                })?;
                 reports.push(report);
             }
         } else {
@@ -174,12 +180,13 @@ pub(crate) fn build_fill_reports_from_trades(
                 taker_fee_rate,
                 fee_exponent,
                 ts_init,
-            );
+            )
+            .with_context(|| format!("failed to build taker fill report for trade {}", trade.id))?;
             reports.push(report);
         }
     }
 
-    (reports, discards)
+    Ok((reports, discards))
 }
 
 /// Converts open orders into order status reports.
@@ -325,7 +332,7 @@ pub(crate) async fn generate_mass_status(
         .context("failed to fetch trades for mass status")?;
 
     let (mut fill_reports, fill_discards) =
-        build_fill_reports_from_trades(&trades, ctx, instruments, None, ts_init);
+        build_fill_reports_from_trades(&trades, ctx, instruments, None, ts_init)?;
 
     if fill_discards.unowned_maker_trades > 0 {
         log::error!(

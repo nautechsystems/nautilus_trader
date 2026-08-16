@@ -1014,6 +1014,7 @@ mod tests {
         types::{Currency, Money},
     };
     use rstest::rstest;
+    use rust_decimal::Decimal;
     use ustr::Ustr;
 
     use super::*;
@@ -1498,7 +1499,8 @@ mod tests {
             &instruments,
             None,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("non-confirmed trades do not build fill reports");
 
         assert!(reports.is_empty());
     }
@@ -1541,7 +1543,8 @@ mod tests {
             &instruments,
             None,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("owned confirmed maker trade builds a fill report");
 
         assert_eq!(
             reports.len(),
@@ -1579,7 +1582,8 @@ mod tests {
             &instruments,
             None,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("unmapped instruments are counted rather than parsed");
 
         assert_eq!(reports.len(), 0);
         assert_eq!(
@@ -1615,7 +1619,8 @@ mod tests {
             &instruments,
             None,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .expect("unowned maker trades are counted rather than parsed");
 
         assert!(reports.is_empty());
         assert_eq!(
@@ -1623,6 +1628,57 @@ mod tests {
             "a confirmed maker trade dropped whole must be counted, not silent",
         );
         assert_eq!(discards.unmapped_instruments, 0);
+    }
+
+    #[rstest]
+    fn test_fill_report_batch_fails_instead_of_returning_valid_prefix() {
+        let mut instrument = test_instrument();
+        let InstrumentAny::BinaryOption(binary_option) = &mut instrument else {
+            panic!("expected binary option test instrument");
+        };
+        binary_option.taker_fee =
+            Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0);
+
+        let mut taker: crate::http::models::PolymarketTradeReport = load("http_trade_report.json");
+        taker.id = "trade-unrepresentable-taker".to_string();
+        let mut maker = taker.clone();
+        maker.id = "trade-valid-maker".to_string();
+        maker.trader_side = PolymarketLiquiditySide::Maker;
+        let configured_address = maker.maker_orders[0].maker_address.clone();
+
+        let instruments = AtomicMap::new();
+        instruments.insert(taker.asset_id, instrument);
+        let ctx = crate::execution::reconciliation::FillContext {
+            account_id: AccountId::from("POLY-001"),
+            user_address: &configured_address,
+            api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            pusd: Currency::pUSD(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        let (maker_reports, _) = crate::execution::reconciliation::build_fill_reports_from_trades(
+            &[maker.clone()],
+            &ctx,
+            &instruments,
+            None,
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .expect("maker commission is zero and representable");
+        let result = crate::execution::reconciliation::build_fill_reports_from_trades(
+            &[maker, taker],
+            &ctx,
+            &instruments,
+            None,
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        assert_eq!(maker_reports.len(), 1);
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("trade-unrepresentable-taker")
+        );
     }
 
     #[rstest]

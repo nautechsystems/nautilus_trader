@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use anyhow::Context;
 use nautilus_common::{
     cache::InstrumentLookupError,
     messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList},
@@ -25,6 +26,8 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
+#[cfg(test)]
+use rust_decimal_macros::dec;
 
 use super::{
     PolymarketExecutionClient,
@@ -747,18 +750,86 @@ impl PolymarketExecutionClient {
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
-    ) -> Money {
-        let fee_rate = instrument_taker_fee(instrument);
-        let fee_exponent = instrument_fee_exponent(instrument);
-        let commission = compute_commission(
-            fee_rate,
-            fee_exponent,
-            last_qty.as_decimal(),
-            last_px.as_decimal(),
-            liquidity_side,
-        );
+    ) -> anyhow::Result<Money> {
+        calculate_commission(instrument, last_qty, last_px, liquidity_side)
+    }
+}
 
-        Money::from_decimal(commission, instrument.quote_currency())
-            .expect("commission should be representable as Money")
+/// Calculates the venue commission for a fill of `last_qty` at `last_px`.
+///
+/// # Errors
+///
+/// Returns an error if the computed commission cannot be represented as [`Money`] in the
+/// instrument's quote currency.
+pub(super) fn calculate_commission(
+    instrument: &InstrumentAny,
+    last_qty: Quantity,
+    last_px: Price,
+    liquidity_side: LiquiditySide,
+) -> anyhow::Result<Money> {
+    let fee_rate = instrument_taker_fee(instrument);
+    let fee_exponent = instrument_fee_exponent(instrument);
+
+    let commission = compute_commission(
+        fee_rate,
+        fee_exponent,
+        last_qty.as_decimal(),
+        last_px.as_decimal(),
+        liquidity_side,
+    );
+
+    Money::from_decimal(commission, instrument.quote_currency()).with_context(|| {
+        format!(
+            "failed to represent commission {commission} for {} as Money",
+            instrument.id(),
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::instruments::stubs::binary_option;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_calculate_commission_returns_exact_money() {
+        let instrument = InstrumentAny::BinaryOption(binary_option());
+
+        let commission = calculate_commission(
+            &instrument,
+            Quantity::from("100"),
+            Price::from("0.50"),
+            LiquiditySide::Taker,
+        )
+        .expect("a representable commission succeeds");
+
+        assert_eq!(commission.currency, instrument.quote_currency());
+        assert_eq!(
+            commission.as_decimal(),
+            compute_commission(
+                instrument_taker_fee(&instrument),
+                instrument_fee_exponent(&instrument),
+                dec!(100),
+                dec!(0.50),
+                LiquiditySide::Taker,
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_calculate_commission_is_zero_for_maker_liquidity() {
+        let instrument = InstrumentAny::BinaryOption(binary_option());
+
+        let commission = calculate_commission(
+            &instrument,
+            Quantity::from("100"),
+            Price::from("0.50"),
+            LiquiditySide::Maker,
+        )
+        .expect("a zero commission is representable");
+
+        assert_eq!(commission.as_decimal(), dec!(0));
     }
 }

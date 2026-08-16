@@ -6439,3 +6439,281 @@ fn test_continuous_reconciliation_converges_quantity_on_working_order(instrument
     );
     assert!(pass2.is_empty(), "second pass must be a no-op");
 }
+
+#[rstest]
+#[case(OrderType::Market, false, LiquiditySide::Taker)]
+#[case(OrderType::StopMarket, false, LiquiditySide::Taker)]
+#[case(OrderType::TrailingStopMarket, false, LiquiditySide::Taker)]
+#[case(OrderType::Limit, true, LiquiditySide::Maker)]
+#[case(OrderType::Limit, false, LiquiditySide::NoLiquiditySide)]
+fn test_inferred_fill_price_and_liquidity_maps_side(
+    #[case] order_type: OrderType,
+    #[case] post_only: bool,
+    #[case] expected: LiquiditySide,
+) {
+    let instrument = crypto_perpetual_ethusdt();
+    let order = match order_type {
+        OrderType::Limit => OrderTestBuilder::new(order_type)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10.0"))
+            .price(Price::from("100.00"))
+            .post_only(post_only)
+            .build(),
+        OrderType::StopMarket => OrderTestBuilder::new(order_type)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10.0"))
+            .trigger_price(Price::from("100.00"))
+            .build(),
+        OrderType::TrailingStopMarket => OrderTestBuilder::new(order_type)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10.0"))
+            .trigger_price(Price::from("100.00"))
+            .trailing_offset(Decimal::from(1))
+            .build(),
+        _ => OrderTestBuilder::new(order_type)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10.0"))
+            .build(),
+    };
+    let report = make_test_report(
+        instrument.id(),
+        order_type,
+        OrderStatus::Filled,
+        "10.0",
+        post_only,
+    );
+
+    let (_, liquidity_side) = inferred_fill_price_and_liquidity(
+        &order,
+        &report,
+        &InstrumentAny::CryptoPerpetual(instrument),
+    )
+    .expect("price resolves from the report avg_px");
+
+    assert_eq!(
+        liquidity_side, expected,
+        "order_type={order_type}, post_only={post_only}"
+    );
+}
+
+#[rstest]
+fn test_inferred_fill_price_and_liquidity_prefers_report_avg_px() {
+    let instrument = crypto_perpetual_ethusdt();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.0"))
+        .price(Price::from("100.00"))
+        .build();
+    let mut report = make_test_report(
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Filled,
+        "10.0",
+        false,
+    );
+    report.avg_px = Some(dec!(123.45));
+    report.price = Some(Price::from("111.11"));
+
+    let (last_px, _) = inferred_fill_price_and_liquidity(
+        &order,
+        &report,
+        &InstrumentAny::CryptoPerpetual(instrument),
+    )
+    .expect("avg_px resolves");
+
+    assert_eq!(last_px, Price::from("123.45"));
+}
+
+#[rstest]
+fn test_inferred_fill_price_and_liquidity_falls_back_to_report_price() {
+    let instrument = crypto_perpetual_ethusdt();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.0"))
+        .price(Price::from("100.00"))
+        .build();
+    let mut report = make_test_report(
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Filled,
+        "10.0",
+        false,
+    );
+    report.avg_px = None;
+    report.price = Some(Price::from("111.11"));
+
+    let (last_px, _) = inferred_fill_price_and_liquidity(
+        &order,
+        &report,
+        &InstrumentAny::CryptoPerpetual(instrument),
+    )
+    .expect("report price resolves");
+
+    assert_eq!(last_px, Price::from("111.11"));
+}
+
+#[rstest]
+fn test_inferred_fill_price_and_liquidity_falls_back_to_order_price() {
+    let instrument = crypto_perpetual_ethusdt();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.0"))
+        .price(Price::from("100.00"))
+        .build();
+    let mut report = make_test_report(
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Filled,
+        "10.0",
+        false,
+    );
+    report.avg_px = None;
+    report.price = None;
+
+    let (last_px, _) = inferred_fill_price_and_liquidity(
+        &order,
+        &report,
+        &InstrumentAny::CryptoPerpetual(instrument),
+    )
+    .expect("order price resolves");
+
+    assert_eq!(last_px, Price::from("100.00"));
+}
+
+#[rstest]
+fn test_inferred_fill_price_and_liquidity_none_without_any_price() {
+    let instrument = crypto_perpetual_ethusdt();
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.0"))
+        .build();
+    let mut report = make_test_report(
+        instrument.id(),
+        OrderType::Market,
+        OrderStatus::Filled,
+        "10.0",
+        false,
+    );
+    report.avg_px = None;
+    report.price = None;
+
+    assert!(
+        inferred_fill_price_and_liquidity(
+            &order,
+            &report,
+            &InstrumentAny::CryptoPerpetual(instrument),
+        )
+        .is_none()
+    );
+}
+
+#[rstest]
+fn test_inferred_fill_price_and_liquidity_matches_emitted_fill() {
+    let instrument = crypto_perpetual_ethusdt();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.0"))
+        .price(Price::from("100.00"))
+        .post_only(true)
+        .build();
+    let report = make_test_report(
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Filled,
+        "10.0",
+        true,
+    );
+    let instrument_any = InstrumentAny::CryptoPerpetual(instrument);
+
+    let (last_px, liquidity_side) =
+        inferred_fill_price_and_liquidity(&order, &report, &instrument_any)
+            .expect("price resolves");
+    let event = create_inferred_fill_for_qty(
+        &order,
+        &report,
+        &AccountId::from("TEST-001"),
+        &instrument_any,
+        Quantity::from("5.0"),
+        UnixNanos::from(2_000_000),
+        None,
+    )
+    .expect("fill is emitted");
+
+    let filled = match event {
+        OrderEventAny::Filled(f) => f,
+        _ => panic!("Expected Filled event"),
+    };
+
+    assert_eq!(filled.last_px, last_px);
+    assert_eq!(filled.liquidity_side, liquidity_side);
+}
+
+#[rstest]
+fn test_incremental_inferred_fill_price_and_liquidity_matches_emitted_fill() {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let account_id = AccountId::from("TEST-001");
+    let venue_order_id = VenueOrderId::from("V-INCREMENTAL");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.0"))
+        .price(Price::from("100.00"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+    order
+        .apply(OrderEventAny::Filled(
+            OrderFilledSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .venue_order_id(venue_order_id)
+                .account_id(account_id)
+                .trade_id(TradeId::from("T-BOOKED"))
+                .order_side(OrderSide::Buy)
+                .order_type(OrderType::Limit)
+                .last_qty(Quantity::from("4.0"))
+                .last_px(Price::from("100.00"))
+                .currency(instrument.quote_currency())
+                .build(),
+        ))
+        .expect("booked fill applies");
+    let mut report = make_test_report(
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Filled,
+        "10.0",
+        false,
+    );
+    report.quantity = Quantity::from("10.0");
+    report.avg_px = Some(dec!(60.0));
+
+    let (last_px, liquidity_side) =
+        incremental_inferred_fill_price_and_liquidity(&order, &report, &instrument)
+            .expect("incremental price resolves");
+    let event = create_incremental_inferred_fill(
+        &order,
+        &report,
+        &account_id,
+        &instrument,
+        UnixNanos::from(2_000_000),
+        None,
+    )
+    .expect("incremental fill is emitted");
+    let OrderEventAny::Filled(filled) = event else {
+        panic!("expected Filled event");
+    };
+
+    assert_eq!(last_px, Price::from("33.33"));
+    assert_eq!(filled.last_px, last_px);
+    assert_eq!(filled.liquidity_side, liquidity_side);
+}
