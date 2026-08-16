@@ -404,6 +404,96 @@ def test_request_validates_endpoint_before_reading_request(bus):
     assert bus.req_count == 0
 
 
+INVALID_PATTERNS = [
+    pytest.param("", "was empty", id="empty"),
+    pytest.param("   ", "was all whitespace", id="spaces"),
+    pytest.param("\t\n", "was all whitespace", id="tab-newline"),
+]
+
+
+@pytest.mark.parametrize(("pattern", "message"), INVALID_PATTERNS)
+def test_subscribe_invalid_pattern_raises(bus, pattern, message):
+    with pytest.raises(ValueError, match=message) as exc_info:
+        bus.subscribe(pattern, [].append)
+
+    assert type(exc_info.value) is ValueError
+    assert bus.topics() == []
+    assert bus.subscriptions() == []
+
+
+@pytest.mark.parametrize(("pattern", "message"), INVALID_PATTERNS)
+def test_unsubscribe_invalid_pattern_raises(bus, pattern, message):
+    handler = [].append
+    bus.subscribe("system", handler)
+
+    with pytest.raises(ValueError, match=message) as exc_info:
+        bus.unsubscribe(pattern, handler)
+
+    assert type(exc_info.value) is ValueError
+    assert bus.topics() == ["system"]
+
+
+@pytest.mark.parametrize(("pattern", "message"), INVALID_PATTERNS)
+def test_is_subscribed_invalid_pattern_raises(bus, pattern, message):
+    with pytest.raises(ValueError, match=message) as exc_info:
+        bus.is_subscribed(pattern, [].append)
+
+    assert type(exc_info.value) is ValueError
+
+
+@pytest.mark.parametrize(("pattern", "message"), INVALID_PATTERNS)
+def test_subscriptions_invalid_pattern_raises(bus, pattern, message):
+    with pytest.raises(ValueError, match=message) as exc_info:
+        bus.subscriptions(pattern)
+
+    assert type(exc_info.value) is ValueError
+
+
+@pytest.mark.parametrize(("pattern", "message"), INVALID_PATTERNS)
+def test_has_subscribers_invalid_pattern_raises(bus, pattern, message):
+    with pytest.raises(ValueError, match=message) as exc_info:
+        bus.has_subscribers(pattern)
+
+    assert type(exc_info.value) is ValueError
+
+
+def test_subscribe_validates_pattern_before_building_handler(bus):
+    class ExplodingRepr:
+        def __repr__(self):
+            raise AssertionError("handler must not be built for an invalid pattern")
+
+        def __call__(self, msg):
+            pass
+
+    with pytest.raises(ValueError, match="was empty") as exc_info:
+        bus.subscribe("", ExplodingRepr())
+
+    assert type(exc_info.value) is ValueError
+    assert bus.subscriptions() == []
+
+
+@pytest.mark.parametrize("pattern", ["*", "data.*", "test.?", "a?b", "data.*.BINANCE.ETH*"])
+def test_subscribe_accepts_wildcard_patterns(bus, pattern):
+    bus.subscribe(pattern, [].append)
+
+    assert bus.topics() == [pattern]
+    assert bus.has_subscribers(pattern)
+
+
+def test_subscriptions_entries_report_topic_and_handler(bus):
+    def handler(msg):
+        return msg
+
+    bus.subscribe("data.quotes", handler)
+    bus.subscribe("events.order", handler)
+
+    expected_quotes = f"Subscription(topic=data.quotes, handler={handler!r})"
+    expected_order = f"Subscription(topic=events.order, handler={handler!r})"
+
+    assert sorted(bus.subscriptions()) == sorted([expected_quotes, expected_order])
+    assert bus.subscriptions("data.*") == [expected_quotes]
+
+
 def test_streaming_type_registration(bus):
     assert not bus.is_streaming_type(int)
     bus.add_streaming_type(int)

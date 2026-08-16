@@ -520,60 +520,48 @@ impl PyMessageBus {
     /// Returns subscriptions matching the given topic pattern.
     #[pyo3(name = "subscriptions")]
     #[pyo3(signature = (pattern=None))]
-    fn py_subscriptions(&self, pattern: Option<&str>) -> Vec<String> {
+    fn py_subscriptions(&self, pattern: Option<&str>) -> PyResult<Vec<String>> {
+        let filter = pattern.map(parse_pattern).transpose()?;
+
         let bus = get_message_bus();
         let bus_ref = bus.borrow();
         let subs: Vec<&Subscription> = bus_ref.subscriptions();
 
-        match pattern {
-            Some(p) => {
-                let filter = MStr::<Pattern>::pattern(p);
-                subs.into_iter()
-                    .filter(|s| is_matching(s.pattern.as_bytes(), filter.as_bytes()))
-                    .map(|s| {
-                        format!(
-                            "Subscription(topic={}, handler={})",
-                            s.pattern, s.handler_id
-                        )
-                    })
-                    .collect()
-            }
-            None => subs
-                .into_iter()
-                .map(|s| {
-                    format!(
-                        "Subscription(topic={}, handler={})",
-                        s.pattern, s.handler_id
-                    )
-                })
-                .collect(),
-        }
+        Ok(subs
+            .into_iter()
+            .filter(|s| filter.is_none_or(|f| is_matching(s.pattern.as_bytes(), f.as_bytes())))
+            .map(|s| {
+                format!(
+                    "Subscription(topic={}, handler={})",
+                    s.pattern, s.handler_id
+                )
+            })
+            .collect())
     }
 
     /// Returns whether there are subscribers for the given topic pattern.
     #[pyo3(name = "has_subscribers")]
     #[pyo3(signature = (pattern=None))]
-    fn py_has_subscribers(&self, pattern: Option<&str>) -> bool {
+    fn py_has_subscribers(&self, pattern: Option<&str>) -> PyResult<bool> {
+        let filter = pattern.map(parse_pattern).transpose()?;
+
         let bus = get_message_bus();
         let bus_ref = bus.borrow();
 
-        match pattern {
-            Some(p) => {
-                let filter = MStr::<Pattern>::pattern(p);
-                bus_ref
-                    .subscriptions()
-                    .iter()
-                    .any(|s| is_matching(s.pattern.as_bytes(), filter.as_bytes()))
-            }
+        Ok(match filter {
+            Some(filter) => bus_ref
+                .subscriptions()
+                .iter()
+                .any(|s| is_matching(s.pattern.as_bytes(), filter.as_bytes())),
             None => !bus_ref.subscriptions().is_empty(),
-        }
+        })
     }
 
     /// Returns whether the given topic and handler is subscribed.
     #[pyo3(name = "is_subscribed")]
     fn py_is_subscribed(&self, py: Python<'_>, topic: &str, handler: Py<PyAny>) -> PyResult<bool> {
+        let pattern = parse_pattern(topic)?;
         let handler = make_handler(py, handler)?;
-        let pattern = MStr::<Pattern>::pattern(topic);
         let sub = Subscription::new(pattern, handler, None);
         Ok(get_message_bus().borrow().subscriptions.contains(&sub))
     }
@@ -684,8 +672,8 @@ impl PyMessageBus {
         handler: Py<PyAny>,
         priority: u32,
     ) -> PyResult<()> {
+        let pattern = parse_pattern(topic)?;
         let handler = make_handler(py, handler)?;
-        let pattern = MStr::<Pattern>::pattern(topic);
         msgbus_api::subscribe_any(pattern, handler, Some(priority));
         Ok(())
     }
@@ -693,8 +681,8 @@ impl PyMessageBus {
     /// Unsubscribes the given handler from the given topic.
     #[pyo3(name = "unsubscribe")]
     fn py_unsubscribe(&self, py: Python<'_>, topic: &str, handler: Py<PyAny>) -> PyResult<()> {
+        let pattern = parse_pattern(topic)?;
         let handler = make_handler(py, handler)?;
-        let pattern = MStr::<Pattern>::pattern(topic);
         msgbus_api::unsubscribe_any(pattern, &handler);
         Ok(())
     }
@@ -802,6 +790,10 @@ impl PyMessageBus {
 
 fn parse_endpoint(endpoint: &str) -> PyResult<MStr<Endpoint>> {
     MStr::<Endpoint>::endpoint(endpoint).map_err(to_pyvalue_err)
+}
+
+fn parse_pattern(pattern: &str) -> PyResult<MStr<Pattern>> {
+    MStr::<Pattern>::pattern_checked(pattern).map_err(to_pyvalue_err)
 }
 
 #[cfg(test)]
