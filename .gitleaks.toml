@@ -1,0 +1,29 @@
+# gitleaks configuration for NautilusTrader.
+#
+# Extends the default ruleset with an exact-value allowlist for identifiers
+# that are public constants or published test keys, not secrets. Entries are
+# deliberately value-scoped: any different key-shaped string in these same
+# files is still detected.
+title = "NautilusTrader gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Public contract addresses, price-feed IDs, and published test keys"
+regexTarget = "match"
+regexes = [
+  # Fundless Derive test session key published in the upstream SDK test
+  # suite (tests/test_sign_order.py) and reproduced in signing fixtures.
+  "2ae8be44db8a590d20bffbe3b6872df9b569147d3bf6801a35a28281a4816bbd",
+  # Public Arbitrum Uniswap V3 token contracts from the block-185
+  # PoolCreated event fixture (blockchain adapter RPC tests).
+  "0x2E5353426C89F4eCD52D1036DA822D47E73376C4",
+  "0x838930cFE7502dd36B0b1ebbef8001fbF94f3bFb",
+  # Public Arbitrum Uniswap V3 token contracts from the block-540
+  # PoolCreated event fixture.
+  "0x8dd7c686B11c115FfAbA245CBfc418B371087F68",
+  "0xBE5381d826375492E55E05039a541eb2CB978e76",
+  # Public Pyth price-feed ID captured from the Polymarket public API.
+  "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43",
+]
