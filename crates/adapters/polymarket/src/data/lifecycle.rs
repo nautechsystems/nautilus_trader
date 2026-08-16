@@ -73,6 +73,7 @@ impl PolymarketDataClient {
 
         seed_token_meta_from_live_instruments(
             self.clock.get_time_ns(),
+            &self.closed_condition_ids,
             &self.instruments,
             &self.token_meta,
         );
@@ -90,6 +91,7 @@ impl PolymarketDataClient {
             active_quote_subs: self.active_quote_subs.clone(),
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
+            closed_condition_ids: self.closed_condition_ids.clone(),
             resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
             pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
@@ -168,6 +170,7 @@ impl PolymarketDataClient {
             active_quote_subs: self.active_quote_subs.clone(),
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
+            closed_condition_ids: self.closed_condition_ids.clone(),
             resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
             pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
@@ -210,6 +213,7 @@ impl PolymarketDataClient {
                                 &closure_sender,
                                 now_ns,
                                 &closed_condition_ids,
+                                &ws_sub_mutex,
                                 Some(&cancellation),
                             ) => result,
                             () = cancellation.cancelled() => break,
@@ -1308,6 +1312,42 @@ mod tests {
                 "message-handler startup #{startup} must not re-seed token_meta for retained expired instruments",
             );
         }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn spawn_message_handler_does_not_reseed_terminal_condition_routing() {
+        let mut client = make_client_for_reset_test();
+        let expiration_ns = UnixNanos::from(
+            client
+                .clock
+                .get_time_ns()
+                .as_u64()
+                .saturating_add(1_000_000_000),
+        );
+        let inst = seed_instrument(
+            &client,
+            "0xCOND-TERMINAL-0xTOKEN_TERMINAL",
+            "0xCOND-TERMINAL",
+            expiration_ns,
+        );
+        let token_id = Ustr::from(inst.raw_symbol().as_str());
+
+        crate::data::runtime::register_closed_condition(
+            &client.closed_condition_ids,
+            "0xCOND-TERMINAL",
+        );
+        client.token_meta.clear();
+
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<PolymarketWsMessage>();
+        drop(tx);
+        client.spawn_message_handler(rx);
+        client
+            .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
+            .await;
+
+        assert!(client.instruments.load().contains_key(&inst.id()));
+        assert!(!client.token_meta.contains_key(&token_id));
     }
 
     // Matches EXPIRED_ENGINE_SWEEP_INTERVAL_NS in crates/adapters/sandbox/src/execution.rs.

@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
+use ahash::AHashSet;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{AtomicMap, AtomicSet};
 use nautilus_model::{
@@ -52,12 +53,79 @@ pub(crate) async fn sync_ws_subscription_async(
     ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
     ws: crate::websocket::pool::PolymarketMarketPoolHandle,
 ) {
+    sync_ws_subscription_inner(
+        instrument_id,
+        token_id_str,
+        active_quote_subs,
+        active_delta_subs,
+        active_trade_subs,
+        None,
+        ws_open_tokens,
+        ws_sub_mutex,
+        ws,
+    )
+    .await;
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "shared state comes in as Arc refs"
+)]
+pub(crate) async fn sync_ws_subscription_with_terminal_async(
+    instrument_id: InstrumentId,
+    token_id_str: String,
+    active_quote_subs: Arc<AtomicSet<InstrumentId>>,
+    active_delta_subs: Arc<AtomicSet<InstrumentId>>,
+    active_trade_subs: Arc<AtomicSet<InstrumentId>>,
+    closed_condition_ids: Arc<StdMutex<AHashSet<String>>>,
+    ws_open_tokens: Arc<AtomicSet<Ustr>>,
+    ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
+    ws: crate::websocket::pool::PolymarketMarketPoolHandle,
+) {
+    sync_ws_subscription_inner(
+        instrument_id,
+        token_id_str,
+        active_quote_subs,
+        active_delta_subs,
+        active_trade_subs,
+        Some(closed_condition_ids),
+        ws_open_tokens,
+        ws_sub_mutex,
+        ws,
+    )
+    .await;
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "shared state comes in as Arc refs"
+)]
+async fn sync_ws_subscription_inner(
+    instrument_id: InstrumentId,
+    token_id_str: String,
+    active_quote_subs: Arc<AtomicSet<InstrumentId>>,
+    active_delta_subs: Arc<AtomicSet<InstrumentId>>,
+    active_trade_subs: Arc<AtomicSet<InstrumentId>>,
+    closed_condition_ids: Option<Arc<StdMutex<AHashSet<String>>>>,
+    ws_open_tokens: Arc<AtomicSet<Ustr>>,
+    ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
+    ws: crate::websocket::pool::PolymarketMarketPoolHandle,
+) {
     let token_id = Ustr::from(token_id_str.as_str());
     let _guard = ws_sub_mutex.lock().await;
 
-    let wants_subscribe = active_quote_subs.contains(&instrument_id)
-        || active_delta_subs.contains(&instrument_id)
-        || active_trade_subs.contains(&instrument_id);
+    let is_terminal = closed_condition_ids.is_some_and(|closed_condition_ids| {
+        crate::providers::extract_condition_id(&instrument_id).is_ok_and(|condition_id| {
+            closed_condition_ids
+                .lock()
+                .expect("closed_condition_ids mutex poisoned")
+                .contains(&condition_id)
+        })
+    });
+    let wants_subscribe = !is_terminal
+        && (active_quote_subs.contains(&instrument_id)
+            || active_delta_subs.contains(&instrument_id)
+            || active_trade_subs.contains(&instrument_id));
     let is_open = ws_open_tokens.contains(&token_id);
 
     if wants_subscribe && !is_open {

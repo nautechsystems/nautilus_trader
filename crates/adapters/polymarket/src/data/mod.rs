@@ -74,7 +74,7 @@ use self::{
         request_trades,
     },
     runtime::is_instrument_expired_and_not_reported_open,
-    subscriptions::{resolve_token_id_from, sync_ws_subscription_async},
+    subscriptions::{resolve_token_id_from, sync_ws_subscription_with_terminal_async},
 };
 use crate::{
     common::{
@@ -402,16 +402,18 @@ impl PolymarketDataClient {
         let active_quote_subs = self.active_quote_subs.clone();
         let active_delta_subs = self.active_delta_subs.clone();
         let active_trade_subs = self.active_trade_subs.clone();
+        let closed_condition_ids = self.closed_condition_ids.clone();
         let ws_open_tokens = self.ws_open_tokens.clone();
         let ws_sub_mutex = self.ws_sub_mutex.clone();
         let ws = self.ws_client.handle();
 
-        get_runtime().spawn(sync_ws_subscription_async(
+        get_runtime().spawn(sync_ws_subscription_with_terminal_async(
             instrument_id,
             token_id_str,
             active_quote_subs,
             active_delta_subs,
             active_trade_subs,
+            closed_condition_ids,
             ws_open_tokens,
             ws_sub_mutex,
             ws,

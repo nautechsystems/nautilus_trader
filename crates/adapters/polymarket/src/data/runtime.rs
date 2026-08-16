@@ -45,6 +45,7 @@ pub(crate) fn is_condition_closed(
         .contains(condition_id)
 }
 
+#[cfg(test)]
 pub(crate) fn register_closed_condition(
     closed_condition_ids: &Arc<StdMutex<AHashSet<String>>>,
     condition_id: &str,
@@ -53,6 +54,32 @@ pub(crate) fn register_closed_condition(
         .lock()
         .expect("closed_condition_ids mutex poisoned")
         .insert(condition_id.to_string());
+}
+
+pub(crate) async fn register_closed_condition_for_live_data(
+    closed_condition_ids: &Arc<StdMutex<AHashSet<String>>>,
+    ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
+    condition_id: &str,
+    cancellation: Option<&CancellationToken>,
+) -> bool {
+    let _reconcile_guard = if let Some(cancellation) = cancellation {
+        tokio::select! {
+            guard = ws_sub_mutex.lock() => guard,
+            () = cancellation.cancelled() => return false,
+        }
+    } else {
+        ws_sub_mutex.lock().await
+    };
+    let mut terminal_conditions = closed_condition_ids
+        .lock()
+        .expect("closed_condition_ids mutex poisoned");
+
+    if cancellation.is_some_and(CancellationToken::is_cancelled) {
+        return false;
+    }
+
+    terminal_conditions.insert(condition_id.to_string());
+    true
 }
 
 pub(crate) fn is_instrument_expired(instrument: &InstrumentAny, now_ns: UnixNanos) -> bool {
@@ -68,6 +95,7 @@ pub(crate) fn is_instrument_expired_and_not_reported_open(
 
 pub(crate) fn seed_token_meta_from_live_instruments(
     now_ns: UnixNanos,
+    closed_condition_ids: &Arc<StdMutex<AHashSet<String>>>,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
 ) {
@@ -75,6 +103,16 @@ pub(crate) fn seed_token_meta_from_live_instruments(
 
     for instrument in loaded.values() {
         if is_instrument_expired_and_not_reported_open(instrument, now_ns) {
+            continue;
+        }
+
+        let terminal_conditions = closed_condition_ids
+            .lock()
+            .expect("closed_condition_ids mutex poisoned");
+
+        if extract_condition_id(&instrument.id())
+            .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id))
+        {
             continue;
         }
 
@@ -228,7 +266,16 @@ pub(crate) async fn retire_closed_condition_state(
 
     // The terminal marker must be visible before state is inspected or any asynchronous
     // WebSocket reconciliation begins.
-    register_closed_condition(closed_condition_ids, condition_id);
+    if !register_closed_condition_for_live_data(
+        closed_condition_ids,
+        ws_sub_mutex,
+        condition_id,
+        cancellation,
+    )
+    .await
+    {
+        return;
+    }
 
     let matches_condition = |instrument_id: &InstrumentId| {
         extract_condition_id(instrument_id).is_ok_and(|candidate| candidate == condition_id)

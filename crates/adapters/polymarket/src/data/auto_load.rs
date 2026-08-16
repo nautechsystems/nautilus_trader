@@ -25,10 +25,12 @@ use nautilus_model::{
 use super::{
     PolymarketDataClient,
     instruments::{
-        cache_instrument, publish_cached_condition_closed, query_positive_closed_condition_ids,
+        apply_live_instrument, publish_cached_condition_closed, query_positive_closed_condition_ids,
     },
-    runtime::{is_condition_closed, retire_closed_condition_state},
-    subscriptions::{resolve_token_id_from, sync_ws_subscription_async},
+    runtime::{
+        is_condition_closed, register_closed_condition_for_live_data, retire_closed_condition_state,
+    },
+    subscriptions::{resolve_token_id_from, sync_ws_subscription_with_terminal_async},
 };
 use crate::{
     common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE, filters::market_closed,
@@ -304,11 +306,7 @@ impl PolymarketDataClient {
                 for (condition_id, outcome) in &outcomes {
                     match outcome {
                         AutoLoadOutcome::Open(loaded) => {
-                            let closed = closed_condition_ids
-                                .lock()
-                                .expect("closed_condition_ids mutex poisoned");
-
-                            if cancellation.is_cancelled() || closed.contains(condition_id) {
+                            if cancellation.is_cancelled() {
                                 continue;
                             }
 
@@ -321,20 +319,37 @@ impl PolymarketDataClient {
                                     continue;
                                 }
 
-                                cache_instrument(&instruments, &token_meta, instrument);
                                 let instrument_id = instrument.id();
-                                if let Err(e) =
-                                    data_sender.send(DataEvent::Instrument(instrument.clone()))
-                                {
-                                    log::error!(
-                                        "Failed to emit auto-loaded instrument {instrument_id}: {e}"
-                                    );
-                                }
+                                apply_live_instrument(
+                                    &closed_condition_ids,
+                                    &instruments,
+                                    &token_meta,
+                                    instrument,
+                                    |instrument| {
+                                        if let Err(e) = data_sender
+                                            .send(DataEvent::Instrument(instrument.clone()))
+                                        {
+                                            log::error!(
+                                                "Failed to emit auto-loaded instrument {instrument_id}: {e}"
+                                            );
+                                        }
+                                    },
+                                );
                             }
                         }
                         AutoLoadOutcome::Closed => {
+                            if !register_closed_condition_for_live_data(
+                                &closed_condition_ids,
+                                &ws_sub_mutex,
+                                condition_id,
+                                Some(&cancellation),
+                            )
+                            .await
                             {
-                                let mut closed = closed_condition_ids
+                                return;
+                            }
+                            {
+                                let closed = closed_condition_ids
                                     .lock()
                                     .expect("closed_condition_ids mutex poisoned");
 
@@ -342,7 +357,7 @@ impl PolymarketDataClient {
                                     return;
                                 }
 
-                                closed.insert(condition_id.clone());
+                                debug_assert!(closed.contains(condition_id));
                                 publish_cached_condition_closed(
                                     condition_id,
                                     &instruments,
@@ -406,17 +421,20 @@ impl PolymarketDataClient {
                             if loaded_ids.contains(id)
                                 && let Ok(token_id) = resolve_token_id_from(&instruments, *id)
                             {
-                                sync_ws_subscription_async(
+                                sync_ws_subscription_with_terminal_async(
                                     *id,
                                     token_id,
                                     active_quote_subs.clone(),
                                     active_delta_subs.clone(),
                                     active_trade_subs.clone(),
+                                    closed_condition_ids.clone(),
                                     ws_open_tokens.clone(),
                                     ws_sub_mutex.clone(),
                                     ws_client.clone(),
                                 )
                                 .await;
+                            } else {
+                                next_batch.insert(*id);
                             }
                         }
                         Some(AutoLoadOutcome::Closed) => {

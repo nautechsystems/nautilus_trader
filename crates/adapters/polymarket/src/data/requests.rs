@@ -31,7 +31,9 @@ use nautilus_core::datetime::datetime_to_unix_nanos;
 use nautilus_model::{data::CustomData, instruments::Instrument};
 
 use super::{
-    PolymarketDataClient, dispatch::WsMessageContext, instruments::cache_instrument_if_active,
+    PolymarketDataClient,
+    dispatch::WsMessageContext,
+    instruments::{apply_live_instrument, cache_instrument_if_active},
 };
 use crate::{
     common::consts::POLYMARKET_VENUE,
@@ -85,6 +87,7 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
         active_quote_subs: client.active_quote_subs.clone(),
         active_delta_subs: client.active_delta_subs.clone(),
         active_trade_subs: client.active_trade_subs.clone(),
+        closed_condition_ids: client.closed_condition_ids.clone(),
         resolve_poll_watchlist: client.resolve_poll_watchlist.clone(),
         resolve_watch_apply_mutex: client.resolve_watch_apply_mutex.clone(),
         pending_snapshot_after_tick_change: client.pending_snapshot_after_tick_change.clone(),
@@ -208,6 +211,7 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
     let instrument_config = client.provider.config().clone();
     let instruments_cache = client.instruments.clone();
     let token_meta = client.token_meta.clone();
+    let closed_condition_ids = client.closed_condition_ids.clone();
     let request_id = request.request_id;
     let client_id = request.client_id.unwrap_or(client.client_id);
     let venue = *POLYMARKET_VENUE;
@@ -236,6 +240,7 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
         for instrument in &instruments {
             if !cache_instrument_if_active(
                 clock.get_time_ns(),
+                &closed_condition_ids,
                 &instruments_cache,
                 &token_meta,
                 instrument,
@@ -270,6 +275,7 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
     let sender = client.data_sender.clone();
     let instruments_cache = client.instruments.clone();
     let token_meta = client.token_meta.clone();
+    let closed_condition_ids = client.closed_condition_ids.clone();
     let client_id = request.client_id.unwrap_or(client.client_id);
     let request_id = request.request_id;
     let start = request.start;
@@ -300,16 +306,25 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
         };
 
         if let Some(inst) = instrument {
-            if cache_instrument_if_active(clock.get_time_ns(), &instruments_cache, &token_meta, &inst)
-            {
-                // Publish onto the data bus so other clients (e.g. the exec
-                // client's token map) can update from the same fetch.
-                if let Err(e) = sender.send(DataEvent::Instrument(inst.clone())) {
-                    log::warn!("Failed to publish instrument {instrument_id}: {e}");
-                }
-            } else {
+            if crate::data::runtime::is_instrument_expired(&inst, clock.get_time_ns()) {
                 log::debug!(
                     "Skipping expired instrument {instrument_id} during request_instrument cache update"
+                );
+            } else {
+                apply_live_instrument(
+                    &closed_condition_ids,
+                    &instruments_cache,
+                    &token_meta,
+                    &inst,
+                    |instrument| {
+                        // Publish onto the data bus so other clients (e.g. the exec
+                        // client's token map) can update from the same fetch.
+                        if let Err(e) =
+                            sender.send(DataEvent::Instrument(instrument.clone()))
+                        {
+                            log::warn!("Failed to publish instrument {instrument_id}: {e}");
+                        }
+                    },
                 );
             }
 
