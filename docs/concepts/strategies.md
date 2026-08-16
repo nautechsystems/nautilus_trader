@@ -871,6 +871,10 @@ Because the runtime reads the tag back from the final hyphen-separated part of t
 and so does a subclass forwarding that tag through `__new__`. A config class that does not inherit
 from `StrategyConfig` carries the tag to registration instead, which raises a `RuntimeError`.
 
+The trader ID carries a tag in the same way, and its final hyphen-separated part reaches the same
+generated IDs. See [Configure a live trading node](../how_to/configure_live_trading.md) for the
+requirement that it stays unique across nodes.
+
 :::note
 The platform has built-in safety measures. Registering a duplicated strategy ID raises a
 `RuntimeError` indicating the strategy ID is already registered, and two different strategy IDs that

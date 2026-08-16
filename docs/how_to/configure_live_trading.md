@@ -71,16 +71,25 @@ config = LiveNodeConfig(
 
 ### Core configuration parameters
 
-| Setting                       | Default      | Description                                 |
-| ----------------------------- | ------------ | ------------------------------------------- |
-| `trader_id`                   | "TRADER-001" | Unique trader identifier (name‑tag format). |
-| `instance_id`                 | `None`       | Optional unique instance identifier.        |
-| `timeout_connection_secs`     | 60.0         | Connection timeout in seconds.              |
-| `timeout_reconciliation_secs` | 30.0         | Reconciliation timeout in seconds.          |
-| `timeout_portfolio_secs`      | 10.0         | Portfolio initialization timeout.           |
-| `timeout_disconnection_secs`  | 10.0         | Disconnection timeout.                      |
-| `delay_post_stop_secs`        | 10.0         | Delay for residual events after stopping.   |
-| `timeout_shutdown_secs`       | 5.0          | Pending‑task shutdown timeout in seconds.   |
+| Setting                       | Default      | Description                                                                      |
+| ----------------------------- | ------------ | -------------------------------------------------------------------------------- |
+| `trader_id`                   | "TRADER-001" | Unique trader identifier (name‑tag format); the tag must be unique across nodes. |
+| `instance_id`                 | `None`       | Optional unique instance identifier.                                             |
+| `timeout_connection_secs`     | 60.0         | Connection timeout in seconds.                                                   |
+| `timeout_reconciliation_secs` | 30.0         | Reconciliation timeout in seconds.                                               |
+| `timeout_portfolio_secs`      | 10.0         | Portfolio initialization timeout.                                                |
+| `timeout_disconnection_secs`  | 10.0         | Disconnection timeout.                                                           |
+| `delay_post_stop_secs`        | 10.0         | Delay for residual events after stopping.                                        |
+| `timeout_shutdown_secs`       | 5.0          | Pending‑task shutdown timeout in seconds.                                        |
+
+:::warning[Trader ID tag uniqueness]
+The tag after the final hyphen is what reaches generated client order IDs, order list IDs, and
+position IDs; the name before it does not. Two nodes trading the same venue account must therefore
+use different tags, because `MY-TRADER-001` and `OTHER-TRADER-001` share the tag `001` and can
+produce identical IDs. Setting `use_uuid_client_order_ids` on the strategy removes the
+exposure for client order IDs only: order list IDs and position IDs keep the tag either way, so
+unique tags remain required.
+:::
 
 ### Cache database configuration
 
