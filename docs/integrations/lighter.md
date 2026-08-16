@@ -398,6 +398,19 @@ historical fill maps to its order. If a historical source fails, active orders r
 reconciliation while historical fills follow the engine's
 [order‑only projection](../concepts/execution.md#orderonly-fill-projection) rules.
 
+The `trades` endpoint retains only the most recent 3,000 trades per `account_index`, so a bounded
+lookback can request more fill history than the venue serves. Pagination walks back from the newest
+trade, and only a trade older than the lookback start proves the window was served:
+
+- Trade older than the start: the report set stays complete.
+- Cursor exhausted first: the adapter logs the uncovered span and marks the report set incomplete.
+- No retained trades: nothing can have been truncated, so the report set stays complete.
+
+An exhausted cursor cannot distinguish truncation from an account with no older trades, so a young
+account reports incomplete even though nothing is missing. Choose a lookback the venue can serve.
+The `export` endpoint serves full trade history for auditing fills the lookback cannot cover, and
+the adapter does not read it.
+
 A strategy that opens a position immediately on start can trigger a transient position-check
 discrepancy warning (`cached=0, venue=N`) when the venue's `account_all_positions` frame arrives a
 few milliseconds before the matching fill event is processed. The warning self-resolves once the

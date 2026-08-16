@@ -190,6 +190,7 @@ struct TestServerState {
     inactive_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     inactive_orders_unscoped_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     trades_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    trades_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     next_rest_send_tx_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     next_send_tx_ack: Arc<tokio::sync::Mutex<Option<Value>>>,
     inbox_tx: tokio::sync::broadcast::Sender<String>,
@@ -228,6 +229,7 @@ impl Default for TestServerState {
             inactive_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             inactive_orders_unscoped_response: Arc::new(tokio::sync::Mutex::new(None)),
             trades_response: Arc::new(tokio::sync::Mutex::new(None)),
+            trades_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             next_rest_send_tx_response: Arc::new(tokio::sync::Mutex::new(None)),
             next_send_tx_ack: Arc::new(tokio::sync::Mutex::new(None)),
             inbox_tx,
@@ -407,6 +409,10 @@ async fn trades(
 ) -> Response {
     state.trades_calls.fetch_add(1, Ordering::Relaxed);
     state.trades_queries.lock().await.push(query);
+    if let Some(body) = state.trades_responses.lock().await.pop_front() {
+        return (StatusCode::OK, body.to_string()).into_response();
+    }
+
     if let Some(body) = state.trades_response.lock().await.clone() {
         return (StatusCode::OK, body.to_string()).into_response();
     }
@@ -3780,7 +3786,17 @@ async fn test_generate_bounded_mass_status_reports_snapshot_contract(
     closing_trade["bid_account_id"] = json!(TEST_ACCOUNT_INDEX as i64 + 1);
     closing_trade["timestamp"] = json!(now_ms);
     closing_trade["transaction_time"] = json!(now_ms * 1_000);
-    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[closing_trade]}));
+
+    // A trade older than the lookback start proves the venue served the whole
+    // requested window; the client filters it out of the report set.
+    let pre_window_ms = now_ms - 2 * 60 * 60 * 1_000;
+    let mut pre_window_trade = closing_trade.clone();
+    pre_window_trade["trade_id"] = json!(19_209_006_928_i64);
+    pre_window_trade["trade_id_str"] = json!("19209006928");
+    pre_window_trade["timestamp"] = json!(pre_window_ms);
+    pre_window_trade["transaction_time"] = json!(pre_window_ms * 1_000);
+    *state.trades_response.lock().await =
+        Some(json!({"code":200,"trades":[closing_trade, pre_window_trade]}));
 
     let mass_status = client
         .generate_mass_status(Some(60))
@@ -3819,6 +3835,176 @@ async fn test_generate_bounded_mass_status_reports_snapshot_contract(
     assert_eq!(position_report.quantity, Quantity::zero(4));
     assert_eq!(position_report.signed_decimal_qty, Decimal::ZERO);
     assert_eq!(position_report.venue_position_id, None);
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_bounded_mass_status_marks_truncated_trade_history_incomplete() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time after epoch");
+    let now_ms = now.as_millis() as i64;
+    let now_secs = now.as_secs() as i64;
+    let venue_order_id = VenueOrderId::from("562947905631061");
+    let mut closing_order = http_order_fixture(venue_order_id.as_str(), "51", "filled", "0.1336");
+    closing_order["initial_base_amount"] = json!("0.1336");
+    closing_order["remaining_base_amount"] = json!("0.0000");
+    closing_order["is_ask"] = json!(true);
+    closing_order["side"] = json!("sell");
+    closing_order["reduce_only"] = json!(true);
+    closing_order["timestamp"] = json!(now_secs);
+    closing_order["created_at"] = json!(now_secs);
+    closing_order["updated_at"] = json!(now_secs);
+    *state.inactive_orders_unscoped_response.lock().await =
+        Some(http_orders_payload(&[closing_order.clone()], None));
+    *state.inactive_orders_response.lock().await =
+        Some(http_orders_payload(&[closing_order], None));
+
+    let mut closing_trade = http_trade_fixture(19_209_006_931, 51);
+    closing_trade["ask_id"] = json!(venue_order_id.as_str().parse::<i64>().unwrap());
+    closing_trade["ask_id_str"] = json!(venue_order_id.as_str());
+    closing_trade["ask_client_id"] = json!(51);
+    closing_trade["ask_client_id_str"] = json!("51");
+    closing_trade["ask_account_id"] = json!(TEST_ACCOUNT_INDEX as i64);
+    closing_trade["bid_account_id"] = json!(TEST_ACCOUNT_INDEX as i64 + 1);
+    closing_trade["timestamp"] = json!(now_ms);
+    closing_trade["transaction_time"] = json!(now_ms * 1_000);
+
+    // Retained trade history ends inside the lookback: the venue offers no
+    // further cursor while its oldest served trade is still newer than the
+    // requested start.
+    let retained_edge_ms = now_ms - 30 * 60 * 1_000;
+    let mut retained_edge_trade = closing_trade.clone();
+    retained_edge_trade["trade_id"] = json!(19_209_006_932_i64);
+    retained_edge_trade["trade_id_str"] = json!("19209006932");
+    retained_edge_trade["timestamp"] = json!(retained_edge_ms);
+    retained_edge_trade["transaction_time"] = json!(retained_edge_ms * 1_000);
+    state.trades_responses.lock().await.extend([
+        json!({"code":200,"trades":[closing_trade],"next_cursor":"retained-tail"}),
+        json!({"code":200,"trades":[retained_edge_trade]}),
+    ]);
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("mass status")
+        .expect("mass status available");
+    let order_reports = mass_status.order_reports();
+    let fill_reports = mass_status.fill_reports();
+    let venue_fills = &fill_reports[&venue_order_id];
+
+    assert!(mass_status.lookback_start().is_some());
+    assert!(!mass_status.reports_complete());
+    assert_eq!(state.trades_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(order_reports.len(), 1);
+    assert_eq!(
+        order_reports[&venue_order_id].order_status,
+        OrderStatus::Filled,
+    );
+    assert_eq!(fill_reports.len(), 1);
+    assert_eq!(venue_fills.len(), 2);
+    assert_eq!(venue_fills[0].trade_id, TradeId::from("19209006931"));
+    assert_eq!(venue_fills[1].trade_id, TradeId::from("19209006932"));
+    assert_eq!(mass_status.position_reports().len(), 1);
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_unbounded_mass_status_stays_complete_when_trade_cursor_exhausts() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time after epoch");
+    let now_ms = now.as_millis() as i64;
+    let now_secs = now.as_secs() as i64;
+    let venue_order_id = VenueOrderId::from("562947905631062");
+    let mut closing_order = http_order_fixture(venue_order_id.as_str(), "52", "filled", "0.1336");
+    closing_order["initial_base_amount"] = json!("0.1336");
+    closing_order["remaining_base_amount"] = json!("0.0000");
+    closing_order["is_ask"] = json!(true);
+    closing_order["side"] = json!("sell");
+    closing_order["reduce_only"] = json!(true);
+    closing_order["timestamp"] = json!(now_secs);
+    closing_order["created_at"] = json!(now_secs);
+    closing_order["updated_at"] = json!(now_secs);
+    *state.inactive_orders_unscoped_response.lock().await =
+        Some(http_orders_payload(&[closing_order.clone()], None));
+    *state.inactive_orders_response.lock().await =
+        Some(http_orders_payload(&[closing_order], None));
+
+    let mut closing_trade = http_trade_fixture(19_209_006_933, 52);
+    closing_trade["ask_id"] = json!(venue_order_id.as_str().parse::<i64>().unwrap());
+    closing_trade["ask_id_str"] = json!(venue_order_id.as_str());
+    closing_trade["ask_client_id"] = json!(52);
+    closing_trade["ask_client_id_str"] = json!("52");
+    closing_trade["ask_account_id"] = json!(TEST_ACCOUNT_INDEX as i64);
+    closing_trade["bid_account_id"] = json!(TEST_ACCOUNT_INDEX as i64 + 1);
+    closing_trade["timestamp"] = json!(now_ms);
+    closing_trade["transaction_time"] = json!(now_ms * 1_000);
+
+    // An unbounded request asks for whatever the venue retains, so exhausting
+    // the trade cursor leaves no window uncovered.
+    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[closing_trade]}));
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .expect("mass status")
+        .expect("mass status available");
+
+    assert_eq!(mass_status.lookback_start(), None);
+    assert!(mass_status.reports_complete());
+    assert_eq!(state.trades_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(mass_status.order_reports().len(), 1);
+    assert_eq!(
+        mass_status.order_reports()[&venue_order_id].order_status,
+        OrderStatus::Filled,
+    );
+    assert_eq!(mass_status.fill_reports().len(), 1);
+    assert_eq!(
+        mass_status.fill_reports()[&venue_order_id][0].trade_id,
+        TradeId::from("19209006933"),
+    );
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_bounded_mass_status_stays_complete_when_no_trades_served() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+
+    // An account with no retained trades has no history the venue could have
+    // truncated, so the bounded window is covered.
+    *state.inactive_orders_unscoped_response.lock().await = Some(http_orders_payload(&[], None));
+    *state.inactive_orders_response.lock().await = Some(http_orders_payload(&[], None));
+    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[]}));
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("mass status")
+        .expect("mass status available");
+
+    assert!(mass_status.lookback_start().is_some());
+    assert!(mass_status.reports_complete());
+    assert_eq!(state.trades_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(mass_status.order_reports().len(), 0);
+    assert_eq!(mass_status.fill_reports().len(), 0);
+    assert_eq!(mass_status.position_reports().len(), 0);
 
     client.disconnect().await.expect("disconnect");
 }
