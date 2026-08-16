@@ -23,6 +23,10 @@ use nautilus_model::{
 };
 use serde::{Deserialize, Serialize};
 
+// Upper bound for `market_exit_interval_ms` so the nanosecond conversion on the market exit
+// timer path (`interval_ms * 1_000_000`) cannot overflow a `u64`.
+const MAX_MARKET_EXIT_INTERVAL_MS: u64 = u64::MAX / 1_000_000;
+
 /// The base model for all trading strategy configurations.
 #[cfg_attr(
     feature = "python",
@@ -164,6 +168,16 @@ impl StrategyConfig {
                 format!("must be a positive number of milliseconds, was {interval_ms}"),
             ),
         );
+        errors.check(
+            interval_ms <= MAX_MARKET_EXIT_INTERVAL_MS,
+            ConfigError::range(
+                "market_exit_interval_ms",
+                format!(
+                    "must be at most {MAX_MARKET_EXIT_INTERVAL_MS} milliseconds to convert to \
+                    nanoseconds without overflow, was {interval_ms}"
+                ),
+            ),
+        );
 
         let max_attempts = self.market_exit_max_attempts;
         errors.check(
@@ -240,6 +254,31 @@ mod tests {
         assert!(
             matches!(result, Err(ConfigError::Range { field, .. }) if field == "market_exit_interval_ms")
         );
+    }
+
+    #[rstest]
+    fn test_market_exit_interval_above_nanosecond_bound_rejected() {
+        let result = StrategyConfig::builder()
+            .market_exit_interval_ms(18_446_744_073_710)
+            .build();
+        let Err(ConfigError::Range { field, reason }) = result else {
+            panic!("expected ConfigError::Range");
+        };
+        assert_eq!(field, "market_exit_interval_ms");
+        assert_eq!(
+            reason,
+            "must be at most 18446744073709 milliseconds to convert to nanoseconds without overflow, \
+            was 18446744073710"
+        );
+    }
+
+    #[rstest]
+    fn test_market_exit_interval_at_nanosecond_bound_accepted() {
+        let config = StrategyConfig::builder()
+            .market_exit_interval_ms(18_446_744_073_709)
+            .build();
+
+        assert!(config.is_ok());
     }
 
     #[rstest]
