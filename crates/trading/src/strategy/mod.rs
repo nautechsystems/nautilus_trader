@@ -328,7 +328,7 @@ pub trait Strategy: DataActor {
 
         let first_order = orders.first();
         let order_inits: Vec<_> = orders.iter().map(|o| o.init_event().clone()).collect();
-        let exec_algorithm_id = first_order.and_then(|o| o.exec_algorithm_id());
+        let exec_algorithm_id = first_order.and_then(Order::exec_algorithm_id);
 
         let command = SubmitOrderList::new(
             trader_id,

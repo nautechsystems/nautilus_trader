@@ -500,7 +500,9 @@ impl OrderInitialized {
         match &self.tags {
             Some(tags) => dict.set_item(
                 "tags",
-                tags.iter().map(|x| x.to_string()).collect::<Vec<String>>(),
+                tags.iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<String>>(),
             )?,
             None => dict.set_item("tags", py.None())?,
         }

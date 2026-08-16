@@ -398,7 +398,7 @@ impl Debug for OrderInitialized {
                 )),
             self.tags.as_ref().map_or("None".to_string(), |tags| tags
                 .iter()
-                .map(|x| x.to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<String>>()
                 .join(", ")),
             self.event_id,
@@ -484,7 +484,7 @@ impl Display for OrderInitialized {
                 )),
             self.tags.as_ref().map_or("None".to_string(), |tags| tags
                 .iter()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<String>>()
                 .join(", ")),
         )

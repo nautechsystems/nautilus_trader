@@ -140,7 +140,7 @@ impl OrderList {
             );
         }
 
-        let client_order_ids = orders.iter().map(|o| o.client_order_id()).collect();
+        let client_order_ids = orders.iter().map(Order::client_order_id).collect();
 
         Self {
             id: order_list_id,

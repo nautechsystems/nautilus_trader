@@ -104,7 +104,7 @@ pub(crate) fn create_tls_config_from_certs_dir(
 
     // Sort entries for deterministic cert/key selection across platforms
     let mut entries: Vec<_> = std::fs::read_dir(certs_dir)?.collect::<Result<Vec<_>, _>>()?;
-    entries.sort_by_key(|e| e.path());
+    entries.sort_by_key(std::fs::DirEntry::path);
 
     for entry in entries {
         let path = entry.path();

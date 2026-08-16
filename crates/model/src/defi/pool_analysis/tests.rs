@@ -1521,12 +1521,12 @@ fn test_mint_above_current_price(mut uni_pool_profiler: PoolProfiler) {
     assert!(
         uni_pool_profiler
             .get_tick(lower_tick)
-            .is_some_and(|tick| tick.is_active())
+            .is_some_and(PoolTick::is_active)
     );
     assert!(
         uni_pool_profiler
             .get_tick(upper_tick)
-            .is_some_and(|tick| tick.is_active())
+            .is_some_and(PoolTick::is_active)
     );
 }
 

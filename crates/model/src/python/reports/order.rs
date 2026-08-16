@@ -492,7 +492,7 @@ impl OrderStatusReport {
 
         match &self.linked_order_ids {
             Some(ids) => {
-                let py_list = PyList::new(py, ids.iter().map(|id| id.to_string()))?;
+                let py_list = PyList::new(py, ids.iter().map(ToString::to_string))?;
                 dict.set_item("linked_order_ids", py_list)?;
             }
             None => dict.set_item("linked_order_ids", py.None())?,

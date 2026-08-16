@@ -3790,7 +3790,7 @@ mod tests {
         assert_eq!(position.quantity, Quantity::from(1000));
 
         // Verify commissions accumulated (should be 100 * 0.01 = 1.0 USD)
-        let total_commission: f64 = position.commissions().iter().map(|c| c.as_f64()).sum();
+        let total_commission: f64 = position.commissions().iter().map(Money::as_f64).sum();
         assert!(
             (total_commission - 1.0).abs() < 1e-10,
             "Commission accumulation should be accurate: expected 1.0, was {total_commission}"

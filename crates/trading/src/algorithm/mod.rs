@@ -60,7 +60,9 @@ use nautilus_model::{
         OrderSubmitted, OrderTriggered, OrderUpdated, PositionChanged, PositionClosed,
         PositionEvent, PositionOpened,
     },
-    identifiers::{AccountId, ClientId, ExecAlgorithmId, PositionId, StrategyId, TraderId},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, ExecAlgorithmId, PositionId, StrategyId, TraderId,
+    },
     orders::{LimitOrder, MarketOrder, MarketToLimitOrder, Order, OrderAny, OrderError, OrderList},
     types::{Price, Quantity},
 };
@@ -427,12 +429,12 @@ pub trait ExecutionAlgorithm: DataActor {
             primary.is_quote_quantity(),
             primary.contingency_type(),
             primary.order_list_id(),
-            primary.linked_order_ids().map(|ids| ids.to_vec()),
+            primary.linked_order_ids().map(<[ClientOrderId]>::to_vec),
             primary.parent_order_id(),
             Some(exec_algorithm_id),
             primary.exec_algorithm_params().cloned(),
             Some(primary.client_order_id()),
-            tags.or_else(|| primary.tags().map(|t| t.to_vec())),
+            tags.or_else(|| primary.tags().map(<[Ustr]>::to_vec)),
         )
     }
 
@@ -496,12 +498,12 @@ pub trait ExecutionAlgorithm: DataActor {
             None, // trigger_instrument_id
             primary.contingency_type(),
             primary.order_list_id(),
-            primary.linked_order_ids().map(|ids| ids.to_vec()),
+            primary.linked_order_ids().map(<[ClientOrderId]>::to_vec),
             primary.parent_order_id(),
             Some(exec_algorithm_id),
             primary.exec_algorithm_params().cloned(),
             Some(primary.client_order_id()),
-            tags.or_else(|| primary.tags().map(|t| t.to_vec())),
+            tags.or_else(|| primary.tags().map(<[Ustr]>::to_vec)),
             UUID4::new(),
             ts_init,
         )
@@ -562,12 +564,12 @@ pub trait ExecutionAlgorithm: DataActor {
             display_qty,
             primary.contingency_type(),
             primary.order_list_id(),
-            primary.linked_order_ids().map(|ids| ids.to_vec()),
+            primary.linked_order_ids().map(<[ClientOrderId]>::to_vec),
             primary.parent_order_id(),
             Some(exec_algorithm_id),
             primary.exec_algorithm_params().cloned(),
             Some(primary.client_order_id()),
-            tags.or_else(|| primary.tags().map(|t| t.to_vec())),
+            tags.or_else(|| primary.tags().map(<[Ustr]>::to_vec)),
             UUID4::new(),
             ts_init,
         );

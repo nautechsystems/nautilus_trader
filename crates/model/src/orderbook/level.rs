@@ -160,7 +160,7 @@ impl BookLevel {
                     order.size.precision,
                 )
             })
-            .fold(0, |acc, val| acc.saturating_add(val))
+            .fold(0, QuantityRaw::saturating_add)
     }
 
     /// Adds multiple orders to this price level in FIFO order. Orders must match the level's price.

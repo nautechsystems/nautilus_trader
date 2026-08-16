@@ -622,7 +622,7 @@ impl Display for StopLimitOrder {
                 .map_or("None".to_string(), |position_id| format!("{position_id}")),
             self.tags.clone().map_or("None".to_string(), |tags| tags
                 .iter()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<String>>()
                 .join(", ")),
         )

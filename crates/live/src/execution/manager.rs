@@ -545,7 +545,7 @@ impl ExecutionManager {
 
         let venue = mass_status.venue;
         let order_count = mass_status.order_reports().len();
-        let fill_count: usize = mass_status.fill_reports().values().map(|v| v.len()).sum();
+        let fill_count: usize = mass_status.fill_reports().values().map(Vec::len).sum();
         let position_count = mass_status.position_reports().len();
 
         log_info!(
@@ -938,7 +938,7 @@ impl ExecutionManager {
             }
         }
 
-        events.sort_by_key(|e| e.ts_event());
+        events.sort_by_key(OrderEventAny::ts_event);
 
         for event in &events {
             if let OrderEventAny::Filled(fill) = event
@@ -1623,10 +1623,8 @@ impl ExecutionManager {
         clients: &[&dyn ExecutionClient],
     ) -> OpenOrderReportCheck {
         let filtered_orders = self.filtered_open_orders_for_reconciliation();
-        let active_order_ids: IndexSet<ClientOrderId> = filtered_orders
-            .iter()
-            .map(|order| order.client_order_id())
-            .collect();
+        let active_order_ids: IndexSet<ClientOrderId> =
+            filtered_orders.iter().map(Order::client_order_id).collect();
         self.missing_order_coverage_warnings
             .retain(|client_order_id| active_order_ids.contains(client_order_id));
         self.unresolved_order_coverage
@@ -1965,7 +1963,7 @@ impl ExecutionManager {
             let cached_ids: IndexSet<ClientOrderId> = check
                 .filtered_orders
                 .iter()
-                .map(|o| o.client_order_id())
+                .map(Order::client_order_id)
                 .collect();
             let missing_at_venue: IndexSet<ClientOrderId> = cached_ids
                 .difference(&venue_reported_ids)
@@ -3238,7 +3236,7 @@ impl ExecutionManager {
         };
 
         // Track retries when reconciliation didn't produce events
-        if result.is_none() || result.as_ref().is_some_and(|e| e.is_empty()) {
+        if result.is_none() || result.as_ref().is_some_and(Vec::is_empty) {
             let new_retries = retries + 1;
             self.set_position_reconciliation_retries(key, report_shape, new_retries);
             if new_retries >= self.config.position_check_retries {

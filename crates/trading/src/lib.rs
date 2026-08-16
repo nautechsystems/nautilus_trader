@@ -58,10 +58,6 @@
     reason = "match and if-let early returns are consistent with surrounding trading flow code"
 )]
 #![allow(
-    clippy::redundant_closure_for_method_calls,
-    reason = "matches the Rust 1.94 ICE workaround in the workspace lint table"
-)]
-#![allow(
     clippy::cast_lossless,
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,

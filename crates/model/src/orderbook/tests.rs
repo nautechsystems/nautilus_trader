@@ -7033,15 +7033,15 @@ fn positive_quantity_strategy() -> impl Strategy<Value = Quantity> {
         // Small positive quantities (precision 2): 0.01 to 10.00
         (1u64..=1000u64)
             .prop_map(move |base| Quantity::from_raw(QuantityRaw::from(base) * scale_prec2, 2))
-            .prop_filter("quantity must be positive", |q| q.is_positive()),
+            .prop_filter("quantity must be positive", Quantity::is_positive),
         // Medium positive quantities (precision 3): 1.000 to 100.000
         (1000u64..=100_000_u64)
             .prop_map(move |base| Quantity::from_raw(QuantityRaw::from(base) * scale_prec3, 3))
-            .prop_filter("quantity must be positive", |q| q.is_positive()),
+            .prop_filter("quantity must be positive", Quantity::is_positive),
         // Large positive quantities (precision 2): 100.00 to 10000.00
         (10000u64..=1_000_000_u64)
             .prop_map(move |base| Quantity::from_raw(QuantityRaw::from(base) * scale_prec2, 2))
-            .prop_filter("quantity must be positive", |q| q.is_positive()),
+            .prop_filter("quantity must be positive", Quantity::is_positive),
     ]
 }
 

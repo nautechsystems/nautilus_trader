@@ -261,7 +261,7 @@ pub fn reconstruct_python_custom_data(
     data_class
         .bind(py)
         .call_method1("from_json", (payload,))
-        .map(|obj| obj.unbind())
+        .map(Bound::unbind)
 }
 
 /// Converts a cloneable PyO3-backed custom data value into a Python object.

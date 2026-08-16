@@ -72,10 +72,6 @@
     reason = "match can be clearer than let-else for some patterns"
 )]
 #![allow(
-    clippy::redundant_closure_for_method_calls,
-    reason = "causes clippy ICE on Rust 1.94; matches the workaround in workspace Cargo.toml"
-)]
-#![allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
     clippy::cast_sign_loss,

@@ -142,7 +142,7 @@ impl StackStr {
             });
         }
 
-        if bytes.iter().all(|b| b.is_ascii_whitespace()) {
+        if bytes.iter().all(u8::is_ascii_whitespace) {
             return Err(CorrectnessError::PredicateViolation {
                 message: "String contains only whitespace".to_string(),
             });

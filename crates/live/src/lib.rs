@@ -95,10 +95,6 @@
     reason = "match can be clearer than if-let-else for some reconciliation state transitions"
 )]
 #![allow(
-    clippy::redundant_closure_for_method_calls,
-    reason = "matches the Rust 1.94 ICE workaround in the workspace lint table"
-)]
-#![allow(
     clippy::too_many_lines,
     reason = "live node lifecycle and reconciliation flows exceed the default threshold by design"
 )]

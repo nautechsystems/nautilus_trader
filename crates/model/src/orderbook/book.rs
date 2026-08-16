@@ -423,8 +423,8 @@ impl OrderBook {
     pub fn to_deltas(&self, ts_event: UnixNanos, ts_init: UnixNanos) -> OrderBookDeltas {
         let mut deltas = Vec::new();
 
-        let total_orders = self.bids(None).map(|level| level.len()).sum::<usize>()
-            + self.asks(None).map(|level| level.len()).sum::<usize>();
+        let total_orders = self.bids(None).map(BookLevel::len).sum::<usize>()
+            + self.asks(None).map(BookLevel::len).sum::<usize>();
 
         // Set F_LAST on clear when book is empty so buffered consumers flush
         let mut clear = OrderBookDelta::clear(self.instrument_id, self.sequence, ts_event, ts_init);

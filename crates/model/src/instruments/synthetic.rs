@@ -779,7 +779,7 @@ mod tests {
         let components: Vec<InstrumentId> = (0..count)
             .map(|i| InstrumentId::from(format!("C{i}.VENUE").as_str()))
             .collect();
-        let terms: Vec<String> = components.iter().map(|c| c.to_string()).collect();
+        let terms: Vec<String> = components.iter().map(ToString::to_string).collect();
         let formula = terms.join(" + ");
 
         let synth = SyntheticInstrument::new(

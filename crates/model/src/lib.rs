@@ -61,10 +61,6 @@
     reason = "match can be clearer than let-else for some patterns"
 )]
 #![allow(
-    clippy::redundant_closure_for_method_calls,
-    reason = "causes clippy ICE on Rust 1.94; matches the workaround in workspace Cargo.toml"
-)]
-#![allow(
     clippy::float_cmp,
     reason = "numeric domain crate: float equality comparisons are pervasive and intentional"
 )]

@@ -343,7 +343,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
         let is_single_slice = self
             .scheduled_sizes
             .get(&primary_id)
-            .is_some_and(|s| s.is_empty());
+            .is_some_and(Vec::is_empty);
 
         // Single slice: submit the primary order directly
         if is_single_slice {
@@ -353,7 +353,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
         }
 
         // Multiple slices: spawn first child order and reduce primary
-        let tags = order.tags().map(|t| t.to_vec());
+        let tags = order.tags().map(<[Ustr]>::to_vec);
         let time_in_force = order.time_in_force();
         let reduce_only = order.is_reduce_only();
         let mut order = order;
@@ -419,7 +419,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
         }
 
         // Intermediate slice: spawn child order and reduce primary
-        let tags = primary.tags().map(|t| t.to_vec());
+        let tags = primary.tags().map(<[Ustr]>::to_vec);
         let time_in_force = primary.time_in_force();
         let reduce_only = primary.is_reduce_only();
         let mut primary = primary;
