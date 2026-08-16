@@ -2145,16 +2145,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             }
 
             let cache = self.core.cache();
-            if let Some(instrument) =
-                cache
-                    .instruments(&BINANCE_VENUE, None)
-                    .into_iter()
-                    .find(|instrument| {
-                        instrument.raw_symbol().as_str() == position.symbol.as_str()
-                            && is_instrument_for_product(instrument, self.product_type)
-                    })
-            {
-                match self.create_position_report(
+            let instruments = cache.instruments(&BINANCE_VENUE, None);
+            match find_futures_position_instrument(
+                &instruments,
+                position.symbol.as_str(),
+                self.product_type,
+            ) {
+                Some(instrument) => match self.create_position_report(
                     &position,
                     instrument.id(),
                     instrument.size_precision(),
@@ -2166,6 +2163,12 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                             position.symbol
                         );
                     }
+                },
+                None => {
+                    log::warn!(
+                        "No cached instrument for Futures position symbol={}; skipping position report",
+                        position.symbol
+                    );
                 }
             }
         }
@@ -3149,6 +3152,17 @@ fn is_instrument_for_product(instrument: &InstrumentAny, product_type: BinancePr
     }
 }
 
+/// Finds the cached instrument matching a Futures position's raw symbol and product type.
+fn find_futures_position_instrument<'a>(
+    instruments: &'a [&'a InstrumentAny],
+    symbol: &str,
+    product_type: BinanceProductType,
+) -> Option<&'a InstrumentAny> {
+    instruments.iter().copied().find(|instrument| {
+        instrument.raw_symbol().as_str() == symbol && is_instrument_for_product(instrument, product_type)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
@@ -3484,5 +3498,42 @@ mod tests {
         ));
         assert!(!is_instrument_for_product(&spot, BinanceProductType::UsdM));
         assert!(!is_instrument_for_product(&spot, BinanceProductType::CoinM));
+    }
+
+    #[rstest]
+    fn test_find_futures_position_instrument_returns_none_without_cached_instrument() {
+        // Reproduces #4735: an execution-only node with no cached instruments (e.g. no
+        // data client has populated the cache yet) must not silently resolve a position.
+        let instruments: Vec<&InstrumentAny> = Vec::new();
+
+        assert!(
+            find_futures_position_instrument(&instruments, "ETHUSDT", BinanceProductType::UsdM)
+                .is_none()
+        );
+    }
+
+    #[rstest]
+    fn test_find_futures_position_instrument_matches_symbol_and_product_type() {
+        let usdm = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instruments = vec![&usdm];
+
+        let found =
+            find_futures_position_instrument(&instruments, "ETHUSDT", BinanceProductType::UsdM);
+        assert_eq!(
+            found.map(|i| i.raw_symbol().as_str().to_string()).as_deref(),
+            Some("ETHUSDT")
+        );
+
+        // Symbol is cached but under a different product type: still no match.
+        assert!(
+            find_futures_position_instrument(&instruments, "ETHUSDT", BinanceProductType::CoinM)
+                .is_none()
+        );
+
+        // Symbol is not present in the cache at all.
+        assert!(
+            find_futures_position_instrument(&instruments, "BTCUSDT", BinanceProductType::UsdM)
+                .is_none()
+        );
     }
 }
