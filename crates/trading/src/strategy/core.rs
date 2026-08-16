@@ -26,6 +26,7 @@ use nautilus_common::{
     clock::Clock,
     factories::OrderFactory,
 };
+use nautilus_core::correctness::{CorrectnessResult, CorrectnessResultExt, FAILED};
 use nautilus_execution::order_manager::manager::OrderManager;
 use nautilus_model::identifiers::{
     ActorId, ClientOrderId, StrategyId, TraderId, UNASSIGNED_ORDER_ID_TAG, check_order_id_tag,
@@ -140,9 +141,16 @@ pub trait StrategyNative {
 }
 
 impl StrategyCore {
-    /// Creates a new [`StrategyCore`] instance.
-    #[must_use]
-    pub fn new(config: StrategyConfig) -> Self {
+    /// Creates a new [`StrategyCore`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configured order ID tag contains the '-' strategy ID separator.
+    pub fn new_checked(config: StrategyConfig) -> CorrectnessResult<Self> {
+        if let Some(order_id_tag) = config.order_id_tag.as_deref() {
+            check_order_id_tag(order_id_tag)?;
+        }
+
         let configured_strategy_id = config.strategy_id;
         let configured_order_id_tag = normalize_order_id_tag(config.order_id_tag.as_deref());
         let strategy_id = configured_strategy_id
@@ -164,7 +172,7 @@ impl StrategyCore {
             .unwrap_or_default();
         let market_exit_timer_name = Ustr::from(&format!("MARKET_EXIT_CHECK:{strategy_id_str}"));
 
-        Self {
+        Ok(Self {
             actor: DataActorCore::new(actor_config),
             config,
             strategy_id,
@@ -178,7 +186,17 @@ impl StrategyCore {
             market_exit_attempts: 0,
             market_exit_timer_name,
             market_exit_tag: Ustr::from("MARKET_EXIT"),
-        }
+        })
+    }
+
+    /// Creates a new [`StrategyCore`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the configured order ID tag contains the '-' strategy ID separator.
+    #[must_use]
+    pub fn new(config: StrategyConfig) -> Self {
+        Self::new_checked(config).expect_display(FAILED)
     }
 
     /// Returns the strategy configuration.
@@ -531,6 +549,50 @@ mod tests {
     }
 
     #[rstest]
+    fn test_strategy_core_new_checked_rejects_order_id_tag_with_separator() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("HyphenTagStrategy-A-B")),
+            order_id_tag: Some("A-B".to_string()),
+            ..Default::default()
+        };
+
+        let error = StrategyCore::new_checked(config).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "`order_id_tag` cannot contain the '-' strategy ID separator, was 'A-B'"
+        );
+    }
+
+    #[rstest]
+    #[case(Some("001".to_string()))]
+    #[case(Some("None".to_string()))]
+    #[case(Some(String::new()))]
+    #[case(None)]
+    fn test_strategy_core_new_checked_accepts_usable_order_id_tag(
+        #[case] order_id_tag: Option<String>,
+    ) {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            order_id_tag,
+            ..Default::default()
+        };
+
+        assert!(StrategyCore::new_checked(config).is_ok());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`order_id_tag` cannot contain the '-' strategy ID separator")]
+    fn test_strategy_core_new_panics_on_order_id_tag_with_separator() {
+        let config = StrategyConfig {
+            order_id_tag: Some("A-B".to_string()),
+            ..Default::default()
+        };
+
+        let _ = StrategyCore::new(config);
+    }
+
+    #[rstest]
     fn test_strategy_core_change_order_id_tag_rejects_separator() {
         let config = StrategyConfig {
             strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
@@ -555,11 +617,12 @@ mod tests {
     #[rstest]
     fn test_strategy_core_register_rejects_configured_order_id_tag_with_separator() {
         let config = StrategyConfig {
-            strategy_id: Some(StrategyId::from("HyphenTagStrategy-A-B")),
-            order_id_tag: Some("A-B".to_string()),
+            strategy_id: Some(StrategyId::from("HyphenTagStrategy-001")),
+            order_id_tag: Some("001".to_string()),
             ..Default::default()
         };
         let mut core = StrategyCore::new(config);
+        core.config.order_id_tag = Some("A-B".to_string());
 
         let trader_id = TraderId::from("TRADER-001");
         let clock = Rc::new(RefCell::new(TestClock::new()));

@@ -2741,11 +2741,14 @@ mod tests {
         );
 
         let config = StrategyConfig {
-            strategy_id: Some(StrategyId::from("HyphenTagStrategy-A-B")),
-            order_id_tag: Some("A-B".to_string()),
+            strategy_id: Some(StrategyId::from("HyphenTagStrategy-001")),
+            order_id_tag: Some("001".to_string()),
             ..Default::default()
         };
-        let strategy = TestStrategy::new(config);
+        let mut strategy = TestStrategy::new(config);
+        StrategyNative::strategy_core_mut(&mut strategy)
+            .config
+            .order_id_tag = Some("A-B".to_string());
 
         let error = trader.add_strategy(strategy).unwrap_err();
 

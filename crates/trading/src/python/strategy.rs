@@ -50,7 +50,9 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    Params, UnixNanos, from_pydict,
+    Params, UnixNanos,
+    correctness::{CorrectnessResult, CorrectnessResultExt, FAILED},
+    from_pydict,
     python::{to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::{
@@ -1307,11 +1309,14 @@ impl PyStrategy {
 }
 
 impl PyStrategy {
-    /// Creates a new `PyStrategy` instance.
-    #[must_use]
-    pub fn new(config: Option<StrategyConfig>) -> Self {
+    /// Creates a new `PyStrategy` instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configured order ID tag contains the '-' strategy ID separator.
+    pub fn new_checked(config: Option<StrategyConfig>) -> CorrectnessResult<Self> {
         let config = config.unwrap_or_default();
-        let core = StrategyCore::new(config);
+        let core = StrategyCore::new_checked(config)?;
         let clock = PyClock::new_test();
         let logger = PyLogger::new(core.actor.actor_id.as_str());
 
@@ -1323,9 +1328,19 @@ impl PyStrategy {
             logger,
         };
 
-        Self {
+        Ok(Self {
             inner: Rc::new(UnsafeCell::new(inner)),
-        }
+        })
+    }
+
+    /// Creates a new `PyStrategy` instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the configured order ID tag contains the '-' strategy ID separator.
+    #[must_use]
+    pub fn new(config: Option<StrategyConfig>) -> Self {
+        Self::new_checked(config).expect_display(FAILED)
     }
 
     /// Sets the Python instance reference for method dispatch.
@@ -1496,13 +1511,13 @@ impl PyStrategy {
     /// forwarding it to `super().__init__()`.
     #[new]
     #[pyo3(signature = (config=None))]
-    fn py_new(config: Option<Py<PyAny>>) -> Self {
+    fn py_new(config: Option<Py<PyAny>>) -> PyResult<Self> {
         let strategy_config = config
             .as_ref()
             .and_then(|obj| Python::attach(|py| obj.extract::<StrategyConfig>(py).ok()));
-        let mut strategy = Self::new(strategy_config);
+        let mut strategy = Self::new_checked(strategy_config).map_err(to_pyvalue_err)?;
         strategy.set_config(config);
-        strategy
+        Ok(strategy)
     }
 
     /// Captures the Python self reference for Rust→Python event dispatch.
@@ -4130,6 +4145,59 @@ class IndicatorEventStrategy:
         }));
 
         assert_eq!(strategy.external_order_claims(), Some(claims));
+    }
+
+    #[rstest::rstest]
+    fn test_new_checked_rejects_order_id_tag_with_separator() {
+        let config = StrategyConfig {
+            order_id_tag: Some("A-B".to_string()),
+            ..Default::default()
+        };
+
+        let error = PyStrategy::new_checked(Some(config)).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "`order_id_tag` cannot contain the '-' strategy ID separator, was 'A-B'"
+        );
+    }
+
+    #[rstest::rstest]
+    fn test_py_new_raises_value_error_for_order_id_tag_with_separator() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            // Built in Rust so it carries a tag `StrategyConfig.__new__` would have rejected,
+            // which is the only way to drive an invalid config through the constructor
+            let config = StrategyConfig {
+                order_id_tag: Some("A-B".to_string()),
+                ..Default::default()
+            };
+            let config_obj = Py::new(py, config).unwrap().into_any();
+
+            let error = PyStrategy::py_new(Some(config_obj)).unwrap_err();
+
+            assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+            assert_eq!(
+                error.value(py).to_string(),
+                "`order_id_tag` cannot contain the '-' strategy ID separator, was 'A-B'"
+            );
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_py_new_accepts_a_config_without_a_separator() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let config = StrategyConfig {
+                order_id_tag: Some("001".to_string()),
+                ..Default::default()
+            };
+            let config_obj = Py::new(py, config).unwrap().into_any();
+
+            let strategy = PyStrategy::py_new(Some(config_obj)).unwrap();
+
+            assert_eq!(strategy.order_id_tag(), Some("001".to_string()));
+        });
     }
 
     #[rstest::rstest]
