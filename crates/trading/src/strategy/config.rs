@@ -19,7 +19,7 @@ use nautilus_common::config::{ConfigError, ConfigErrorCollector, ConfigResult};
 use nautilus_core::serialization::{default_false, default_true};
 use nautilus_model::{
     enums::{OmsType, TimeInForce},
-    identifiers::{InstrumentId, StrategyId},
+    identifiers::{InstrumentId, StrategyId, check_order_id_tag},
 };
 use serde::{Deserialize, Serialize};
 
@@ -46,7 +46,8 @@ pub struct StrategyConfig {
     /// The unique ID for the strategy. Will become the strategy ID if not None.
     pub strategy_id: Option<StrategyId>,
     /// The unique order ID tag for the strategy. Must be unique
-    /// amongst all running strategies for a particular trader ID.
+    /// amongst all running strategies for a particular trader ID, and cannot contain the '-'
+    /// strategy ID separator.
     pub order_id_tag: Option<String>,
     /// If UUID4's should be used for client order ID values.
     #[serde(default = "default_false")]
@@ -149,6 +150,12 @@ impl StrategyConfig {
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 
+        if let Some(order_id_tag) = &self.order_id_tag
+            && let Err(e) = check_order_id_tag(order_id_tag)
+        {
+            errors.push(ConfigError::invalid_value("order_id_tag", e.to_string()));
+        }
+
         let interval_ms = self.market_exit_interval_ms;
         errors.check(
             interval_ms > 0,
@@ -232,6 +239,38 @@ mod tests {
             .build();
         assert!(
             matches!(result, Err(ConfigError::Range { field, .. }) if field == "market_exit_max_attempts")
+        );
+    }
+
+    #[rstest]
+    #[case("001")]
+    #[case("ABC")]
+    fn test_order_id_tag_without_separator_accepted(#[case] order_id_tag: &str) {
+        let config = StrategyConfig::builder()
+            .order_id_tag(order_id_tag.to_string())
+            .build()
+            .unwrap();
+
+        assert_eq!(config.order_id_tag.as_deref(), Some(order_id_tag));
+    }
+
+    #[rstest]
+    #[case("A-B")]
+    #[case("XNAS-T01")]
+    fn test_order_id_tag_with_separator_rejected(#[case] order_id_tag: &str) {
+        let result = StrategyConfig::builder()
+            .order_id_tag(order_id_tag.to_string())
+            .build();
+
+        let ConfigError::InvalidValue { field, reason } = result.unwrap_err() else {
+            panic!("expected ConfigError::InvalidValue");
+        };
+        assert_eq!(field, "order_id_tag");
+        assert_eq!(
+            reason,
+            format!(
+                "`order_id_tag` cannot contain the '-' strategy ID separator, was '{order_id_tag}'"
+            )
         );
     }
 

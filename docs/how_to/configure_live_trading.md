@@ -395,10 +395,10 @@ For a complete parameter list see the `StrategyConfig`
 
 ### Identification
 
-| Setting        | Default | Description                                       |
-| -------------- | ------- | ------------------------------------------------- |
-| `strategy_id`  | None    | Unique strategy identifier.                       |
-| `order_id_tag` | None    | Unique tag appended to this strategy's order IDs. |
+| Setting        | Default | Description                                                                |
+| -------------- | ------- | -------------------------------------------------------------------------- |
+| `strategy_id`  | None    | Unique strategy identifier.                                                |
+| `order_id_tag` | None    | Unique tag appended to this strategy's order IDs; cannot contain a hyphen. |
 
 ### Order management
 

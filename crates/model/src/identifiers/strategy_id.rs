@@ -23,17 +23,11 @@ use nautilus_core::correctness::{
 };
 use ustr::Ustr;
 
-/// The identifier for all 'external' strategy IDs (not local to this system instance).
-const EXTERNAL_STRATEGY_ID: &str = "EXTERNAL";
-
 /// The order ID tag reported for a strategy which has not been assigned one.
 pub const UNASSIGNED_ORDER_ID_TAG: &str = "None";
 
-/// Returns a usable order ID tag, filtering unset sentinel values.
-#[must_use]
-pub fn normalize_order_id_tag(order_id_tag: Option<&str>) -> Option<&str> {
-    order_id_tag.filter(|tag| !tag.is_empty() && *tag != UNASSIGNED_ORDER_ID_TAG)
-}
+/// The identifier for all 'external' strategy IDs (not local to this system instance).
+const EXTERNAL_STRATEGY_ID: &str = "EXTERNAL";
 
 /// Represents a valid strategy ID.
 #[repr(C)]
@@ -146,12 +140,33 @@ impl Display for StrategyId {
     }
 }
 
+/// Returns a usable order ID tag, filtering unset sentinel values.
+#[must_use]
+pub fn normalize_order_id_tag(order_id_tag: Option<&str>) -> Option<&str> {
+    order_id_tag.filter(|tag| !tag.is_empty() && *tag != UNASSIGNED_ORDER_ID_TAG)
+}
+
+/// Checks the `order_id_tag` survives composition into a strategy ID.
+///
+/// # Errors
+///
+/// Returns an error if `order_id_tag` contains the '-' separator, because
+/// [`StrategyId::get_tag`] splits on the final separator and would report a truncated tag.
+pub fn check_order_id_tag(order_id_tag: &str) -> CorrectnessResult<()> {
+    check_predicate_false(
+        order_id_tag.contains('-'),
+        &format!(
+            "`order_id_tag` cannot contain the '-' strategy ID separator, was '{order_id_tag}'"
+        ),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_core::correctness::CorrectnessError;
     use rstest::rstest;
 
-    use super::{StrategyId, normalize_order_id_tag};
+    use super::{StrategyId, check_order_id_tag, normalize_order_id_tag};
     use crate::identifiers::stubs::*;
 
     #[rstest]
@@ -191,6 +206,43 @@ mod tests {
         #[case] expected: Option<&str>,
     ) {
         assert_eq!(normalize_order_id_tag(order_id_tag), expected);
+    }
+
+    #[rstest]
+    #[case("001")]
+    #[case("ABC")]
+    #[case("None")]
+    #[case("")]
+    fn test_check_order_id_tag_accepts_tag_without_separator(#[case] order_id_tag: &str) {
+        assert!(check_order_id_tag(order_id_tag).is_ok());
+    }
+
+    #[rstest]
+    #[case("A-B")]
+    #[case("-001")]
+    #[case("001-")]
+    fn test_check_order_id_tag_rejects_tag_with_separator(#[case] order_id_tag: &str) {
+        let error = check_order_id_tag(order_id_tag).unwrap_err();
+
+        match error {
+            CorrectnessError::PredicateViolation { ref message } => {
+                assert_eq!(
+                    message,
+                    &format!(
+                        "`order_id_tag` cannot contain the '-' strategy ID separator, was '{order_id_tag}'"
+                    )
+                );
+            }
+            other => panic!("Expected typed predicate violation, was: {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_check_order_id_tag_rejects_tag_that_get_tag_would_truncate() {
+        let strategy_id = StrategyId::new("HyphenTagStrategy-A-B");
+
+        assert_eq!(strategy_id.get_tag(), "B");
+        assert!(check_order_id_tag("A-B").is_err());
     }
 
     #[rstest]

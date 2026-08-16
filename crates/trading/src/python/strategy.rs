@@ -1373,9 +1373,13 @@ impl PyStrategy {
     }
 
     /// Updates the runtime order ID tag.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `order_id_tag` contains the '-' strategy ID separator.
     pub fn set_order_id_tag(&mut self, order_id_tag: &str) -> anyhow::Result<()> {
         let inner = self.inner_mut();
-        inner.core.change_order_id_tag(order_id_tag);
+        inner.core.change_order_id_tag(order_id_tag)?;
         inner.logger = PyLogger::new(inner.core.actor.actor_id.as_str());
         Ok(())
     }

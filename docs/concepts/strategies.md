@@ -852,6 +852,8 @@ unique strategy ID and order ID tag.
 The system must be able to identify which strategy various commands and events belong to. The order
 ID tag also keeps generated client order IDs unique across strategies for the same trader.
 
+#### Order ID tag
+
 Set `strategy_id` on each config. The runtime takes the order ID tag from the final
 hyphen-separated part of the strategy ID, so `MyStrategy-001` and `MyStrategy-002` produce the tags
 `001` and `002`.
@@ -863,6 +865,11 @@ ends with that tag. For example, `strategy_id=StrategyId("MyStrategy-PRIMARY")` 
 A strategy registered without `strategy_id` takes its base ID from the strategy type name. An
 `order_id_tag` becomes the suffix, so `MyStrategy` with `order_id_tag="ABC"` registers as
 `MyStrategy-ABC`; without a tag, registration assigns the next numeric tag, starting with `000`.
+
+Because the runtime reads the tag back from the final hyphen-separated part of the strategy ID, an
+`order_id_tag` cannot contain a hyphen. `StrategyConfig(order_id_tag="A-B")` raises a `ValueError`,
+and so does a subclass forwarding that tag through `__new__`. A config class that does not inherit
+from `StrategyConfig` carries the tag to registration instead, which raises a `RuntimeError`.
 
 :::note
 The platform has built-in safety measures. Registering a duplicated strategy ID raises a

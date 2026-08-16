@@ -334,6 +334,32 @@ def test_registered_strategy_retains_configured_id_with_an_unset_order_id_tag(or
         engine.dispose()
 
 
+@pytest.mark.parametrize("order_id_tag", ["A-B", "XNAS-T01"])
+def test_strategy_config_rejects_an_order_id_tag_with_a_separator(order_id_tag):
+    with pytest.raises(
+        ValueError,
+        match=f"`order_id_tag` cannot contain the '-' strategy ID separator, was '{order_id_tag}'",
+    ):
+        StrategyConfig(order_id_tag=order_id_tag)
+
+
+@pytest.mark.parametrize("order_id_tag", ["A-B", "XNAS-T01"])
+def test_registering_a_strategy_with_a_separator_in_its_order_id_tag_is_rejected(order_id_tag):
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    strategy = PlainConfigStrategy(PlainStrategyConfig(order_id_tag=order_id_tag))
+
+    try:
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                f"`order_id_tag` cannot contain the '-' strategy ID separator, was '{order_id_tag}'"
+            ),
+        ):
+            engine.add_strategy(strategy)
+    finally:
+        engine.dispose()
+
+
 def test_registered_instances_of_one_strategy_class_receive_sequential_tags():
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     first = RepeatedDefaultStrategy()

@@ -62,7 +62,9 @@ pub use crate::identifiers::{
     option_series_id::{OptionSeriesId, OptionSeriesIdError},
     order_list_id::OrderListId,
     position_id::PositionId,
-    strategy_id::{StrategyId, UNASSIGNED_ORDER_ID_TAG, normalize_order_id_tag},
+    strategy_id::{
+        StrategyId, UNASSIGNED_ORDER_ID_TAG, check_order_id_tag, normalize_order_id_tag,
+    },
     symbol::Symbol,
     trade_id::TradeId,
     trader_id::TraderId,

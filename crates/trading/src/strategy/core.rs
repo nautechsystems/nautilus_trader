@@ -28,7 +28,8 @@ use nautilus_common::{
 };
 use nautilus_execution::order_manager::manager::OrderManager;
 use nautilus_model::identifiers::{
-    ActorId, ClientOrderId, StrategyId, TraderId, UNASSIGNED_ORDER_ID_TAG, normalize_order_id_tag,
+    ActorId, ClientOrderId, StrategyId, TraderId, UNASSIGNED_ORDER_ID_TAG, check_order_id_tag,
+    normalize_order_id_tag,
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use ustr::Ustr;
@@ -193,7 +194,13 @@ impl StrategyCore {
     }
 
     /// Changes the order ID tag before registration.
-    pub fn change_order_id_tag(&mut self, order_id_tag: &str) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `order_id_tag` contains the '-' strategy ID separator.
+    pub fn change_order_id_tag(&mut self, order_id_tag: &str) -> anyhow::Result<()> {
+        check_order_id_tag(order_id_tag)?;
+
         self.order_id_tag = normalize_order_id_tag(Some(order_id_tag)).map(str::to_string);
 
         if let Some(strategy_id) = self.strategy_id
@@ -202,6 +209,8 @@ impl StrategyCore {
             let strategy_id = strategy_id_with_order_id_tag(strategy_id, Some(order_id_tag));
             self.set_runtime_strategy_id(strategy_id);
         }
+
+        Ok(())
     }
 
     fn set_runtime_strategy_id(&mut self, strategy_id: StrategyId) {
@@ -231,7 +240,8 @@ impl StrategyCore {
     ///
     /// # Errors
     ///
-    /// Returns an error if registration with the actor core fails.
+    /// Returns an error if the configured order ID tag contains the '-' strategy ID separator,
+    /// or if registration with the actor core fails.
     pub fn register(
         &mut self,
         trader_id: TraderId,
@@ -239,6 +249,11 @@ impl StrategyCore {
         cache: Rc<RefCell<Cache>>,
         portfolio: Rc<RefCell<Portfolio>>,
     ) -> anyhow::Result<()> {
+        // Guards a config built without `StrategyConfig::validate`, such as a struct literal
+        if let Some(order_id_tag) = self.config.order_id_tag.as_deref() {
+            check_order_id_tag(order_id_tag)?;
+        }
+
         let strategy_id = StrategyId::from(self.actor.actor_id.inner().as_str());
 
         self.actor
@@ -487,7 +502,7 @@ mod tests {
         };
         let mut core = StrategyCore::new(config);
 
-        core.change_order_id_tag("T01");
+        core.change_order_id_tag("T01").unwrap();
 
         assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS-T01"));
         assert_eq!(
@@ -505,7 +520,7 @@ mod tests {
         };
         let mut core = StrategyCore::new(config);
 
-        core.change_order_id_tag("T01");
+        core.change_order_id_tag("T01").unwrap();
 
         assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS-T01"));
         assert_eq!(
@@ -513,6 +528,60 @@ mod tests {
             Some(StrategyId::from("ExampleStrategy-XNAS-T01"))
         );
         assert_eq!(core.order_id_tag(), Some("T01"));
+    }
+
+    #[rstest]
+    fn test_strategy_core_change_order_id_tag_rejects_separator() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            ..Default::default()
+        };
+        let mut core = StrategyCore::new(config);
+
+        let error = core.change_order_id_tag("A-B").unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "`order_id_tag` cannot contain the '-' strategy ID separator, was 'A-B'"
+        );
+        assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS"));
+        assert_eq!(
+            core.strategy_id(),
+            Some(StrategyId::from("ExampleStrategy-XNAS"))
+        );
+        assert_eq!(core.order_id_tag(), Some("XNAS"));
+    }
+
+    #[rstest]
+    fn test_strategy_core_register_rejects_configured_order_id_tag_with_separator() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("HyphenTagStrategy-A-B")),
+            order_id_tag: Some("A-B".to_string()),
+            ..Default::default()
+        };
+        let mut core = StrategyCore::new(config);
+
+        let trader_id = TraderId::from("TRADER-001");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let portfolio = Rc::new(RefCell::new(Portfolio::new(
+            clock.clone(),
+            cache.clone(),
+            None,
+        )));
+
+        let error = core
+            .register(trader_id, clock, cache, portfolio)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "`order_id_tag` cannot contain the '-' strategy ID separator, was 'A-B'"
+        );
+        assert!(core.order_factory.is_none());
+        assert!(core.order_manager.is_none());
+        assert!(core.portfolio.is_none());
+        assert_eq!(core.trader_id(), None);
     }
 
     #[rstest]

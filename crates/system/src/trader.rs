@@ -49,7 +49,8 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     events::{OrderEventAny, PositionEvent},
     identifiers::{
-        ActorId, ComponentId, ExecAlgorithmId, StrategyId, TraderId, normalize_order_id_tag,
+        ActorId, ComponentId, ExecAlgorithmId, StrategyId, TraderId, check_order_id_tag,
+        normalize_order_id_tag,
     },
     orders::Order,
 };
@@ -647,7 +648,8 @@ impl Trader {
     ///
     /// # Errors
     ///
-    /// Returns an error if the strategy ID or order ID tag is already registered.
+    /// Returns an error if the configured order ID tag contains the '-' strategy ID separator,
+    /// or if the strategy ID or order ID tag is already registered.
     pub fn prepare_strategy_for_registration<T>(
         &self,
         strategy: &mut T,
@@ -655,6 +657,15 @@ impl Trader {
     where
         T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
     {
+        // Guards a config built without `StrategyConfig::validate`, such as a struct literal
+        if let Some(order_id_tag) = StrategyNative::strategy_core(strategy)
+            .config
+            .order_id_tag
+            .as_deref()
+        {
+            check_order_id_tag(order_id_tag)?;
+        }
+
         let existing_order_id_tags: Vec<&str> =
             self.strategy_ids.iter().map(StrategyId::get_tag).collect();
 
@@ -2711,6 +2722,39 @@ mod tests {
                 .strategy_ids()
                 .contains(&StrategyId::from("Test-Strategy"))
         );
+    }
+
+    #[rstest]
+    fn test_add_strategy_rejects_order_id_tag_with_separator() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let instance_id = UUID4::new();
+
+        let mut trader = Trader::new(
+            trader_id,
+            instance_id,
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("HyphenTagStrategy-A-B")),
+            order_id_tag: Some("A-B".to_string()),
+            ..Default::default()
+        };
+        let strategy = TestStrategy::new(config);
+
+        let error = trader.add_strategy(strategy).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "`order_id_tag` cannot contain the '-' strategy ID separator, was 'A-B'"
+        );
+        assert_eq!(trader.strategy_count(), 0);
+        assert_eq!(trader.component_count(), 0);
     }
 
     #[rstest]
