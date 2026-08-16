@@ -131,6 +131,9 @@ explaining the change.
   hook warns without failing when the subject exceeds this target. The project plans to enforce
   this limit in the future.
 - Do not end the subject with a period.
+- Do not put an issue or pull request number in the subject. GitHub appends the pull request number
+  on squash merge, and any other reference belongs in the body. The commit‑message hook rejects a
+  subject containing `#<number>` in any position.
 
 ```text
 Add Decimal constructors to Instrument trait
@@ -146,6 +149,8 @@ feat(bybit): add due_post_only flag        # Conventional Commits type and scope
 fix: bug                                   # lowercase, unspecific, too short
 Fixed the Bybit post-only rejection flag.  # past tense, trailing period
 Update stuff                               # says nothing about the surface
+Fix the post-only flag (#4544)             # pull request number added by hand
+Fix PR #4544 review feedback               # issue or pull request number in the subject
 ```
 
 ### Conventional Commits
@@ -171,6 +176,9 @@ restate the diff.
 - Reference issues from the body, typically on a final line: `Resolves #4534` when the commit closes the
   issue, or `Related to #4547` when it is partial work.
 - GitHub appends the pull request number to the subject on squash merge, producing subjects such as
-  `Fix TWAP child-order sizing and interval validation (#4544)`. Do not add that suffix by hand.
+  `Fix TWAP child-order sizing and interval validation (#4544)`. Do not add that suffix by hand, and
+  do not reference a pull request or issue anywhere else in the subject either. The subject has no
+  room for detail the body carries better, and a hand-written number duplicates or contradicts the
+  appended one.
 - Aim to keep the pull request title short enough for the appended suffix to leave the squash‑merged
   subject at 60 characters or fewer.

@@ -23,7 +23,7 @@ CONVENTIONAL_SUBJECT = re.compile(
     r"(?:\([^()\r\n]+\))?!?:",
     re.IGNORECASE,
 )
-MANUAL_PR_SUFFIX = re.compile(r"\s+\(#\d+\)$")
+SUBJECT_NUMBER_REFERENCE = re.compile(r"#\d+")
 COAUTHOR_TRAILER = re.compile(r"^\s*co-authored-by\s*:", re.IGNORECASE)
 ATTRIBUTION_PHRASE = re.compile(
     r"\b(?:"
@@ -104,8 +104,8 @@ def _check_subject(subject: str) -> list[str]:
     if CONVENTIONAL_SUBJECT.match(subject):
         errors.append("subject must not use Conventional Commits syntax")
 
-    if MANUAL_PR_SUFFIX.search(subject):
-        errors.append("subject must not include a pull request number suffix")
+    if SUBJECT_NUMBER_REFERENCE.search(subject):
+        errors.append("subject must not include an issue or pull request number")
 
     return errors
 

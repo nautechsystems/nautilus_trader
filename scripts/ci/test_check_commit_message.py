@@ -32,12 +32,28 @@ def test_subject_rules() -> None:
         "fix: Reject invalid order state": ("subject must not use Conventional Commits syntax"),
         "refine invalid order state": "subject must start with a capitalized word",
         "Fix invalid order state.": "subject must not end with a period",
-        "Fix invalid order state (#123)": ("subject must not include a pull request number suffix"),
     }
 
     for subject, expected in cases.items():
         errors, _ = check_message(subject)
         assert expected in errors
+
+
+def test_subject_number_references() -> None:
+    expected = "subject must not include an issue or pull request number"
+    subjects = (
+        "Fix invalid order state (#123)",
+        "Fix invalid order state #123",
+        "Fix invalid order state [#123]",
+        "Fix PR #123 review feedback",
+        "Fixes #123 for invalid order state",
+    )
+
+    for subject in subjects:
+        errors, _ = check_message(subject)
+        assert expected in errors
+
+    assert check_message("Fix invalid order state\n\nResolves #123") == ([], [])
 
 
 def test_long_subject_warns_without_failing() -> None:
@@ -238,6 +254,7 @@ def git(repo: Path, *args: str) -> str:
 def main() -> None:
     test_valid_message()
     test_subject_rules()
+    test_subject_number_references()
     test_long_subject_warns_without_failing()
     test_body_rules()
     test_branded_attribution()

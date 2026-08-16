@@ -8,8 +8,8 @@ high standard for correctness, reliability, testing, clarity, and maintainabilit
 
 <!-- PR title: use a capitalized, imperative subject naming the affected surface, for example
      "Fix Bybit post-only rejection flag". Do NOT use Conventional Commits (`feat:`, `fix:`) syntax.
-     A squash merge appends the PR number to this title. Aim to keep the resulting subject at 60
-     characters or fewer. -->
+     A squash merge appends the PR number to this title, so do not add a number such as "(#9999)"
+     yourself. Aim to keep the resulting subject at 60 characters or fewer. -->
 
 - [ ] A maintainer agreed on the problem and approach in an issue, or this is a small,
   self‑contained fix that does not need prior discussion

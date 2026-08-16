@@ -26,6 +26,8 @@ standard for correctness, reliability, testing, clarity, and maintainability.**
 - Do not modify `.github/workflows` or `.github/actions` for an external contribution. These paths
   are maintainer‑only.
 - Do not use Conventional Commits syntax for commit messages or pull request titles.
+- Do not put an issue or pull request number in a commit subject or pull request title. A squash
+  merge appends the number; reference issues from the commit body instead.
 
 ## Pull request readiness
 

@@ -126,6 +126,9 @@ Complete these requirements before opening or updating a pull request:
 - Do not use [Conventional Commits](https://www.conventionalcommits.org/) syntax for commit messages
   or PR titles. Follow [Commit messages](docs/developer_guide/coding_standards.md#commit-messages)
   instead. PR titles matter because a squash merge turns the PR title into the commit subject.
+- Do not put an issue or pull request number in a commit subject or PR title, including a trailing
+  `(#9999)`. The squash merge appends that number for you, so a hand-written one duplicates it.
+  Reference issues from the commit body instead, such as `Resolves #4534`.
 
 For higher assurance, you can also run `make pre-flight`, which performs the project's broad local
 validation suite. It does not replace `make pre-commit`.
