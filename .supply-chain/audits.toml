@@ -1818,6 +1818,12 @@ criteria = "safe-to-deploy"
 delta = "1.23.5 -> 1.24.0"
 notes = "Adds MaybeUninit formatting support with tests and updates metadata. No new dependencies, build script, filesystem, network, process, or unsafe-code behavior."
 
+[[audits.uuid]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.24.0 -> 1.24.1"
+notes = "Reviewed a parse-diagnostics fix matching characters with is_ascii_hexdigit instead of truncating non-ASCII input to a byte, plus a regression test and metadata updates. No new dependencies, build script, filesystem, network, process, or unsafe-code behavior."
+
 [[audits.value-bag]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"

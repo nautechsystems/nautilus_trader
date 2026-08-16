@@ -852,6 +852,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/ci/test-release-verification-retry.bash
 	$Q bash scripts/ci/test-rust-toolchain.bash
 	$Q bash scripts/ci/test-verify-published-registries-crates.bash
+	$Q bash scripts/test-check-cargo-cooldown.bash
 	$Q python3 -B scripts/ci/test_check_commit_message.py
 	@printf "$(GREEN)Script tests passed$(RESET)\n"
 

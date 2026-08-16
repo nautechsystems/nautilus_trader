@@ -315,7 +315,7 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 unbounded-interval-tree = { version = "1.1.2", default-features = false }
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.24.0", features = ["v4", "serde"] }
+uuid = { version = "1.24.1", features = ["v4", "serde"] }
 webpki-roots = "1.0.9"
 
 # -----------------------------------------------------------------------------
@@ -376,7 +376,7 @@ criterion = { version = "0.8.2", default-features = false, features = [
 iai = "0.1.1"
 pretty_assertions = "1.4.1"
 proptest = { version = "1.11.0", default-features = false, features = ["std"] }
-rcgen = { version = "0.14.8", default-features = false, features = [
+rcgen = { version = "0.14.9", default-features = false, features = [
   "aws_lc_rs",
   "crypto",
   "pem",
@@ -414,6 +414,18 @@ lychee = "0.24.2"
 # cargo-vet supply chain security configuration
 [workspace.metadata.vet]
 store = { path = '.supply-chain' }
+
+# Minimum age before a crate version may enter Cargo.lock, approximating uv's
+# `exclude-newer` for Cargo. Enforced by scripts/check-cargo-cooldown.sh.
+[workspace.metadata.cooldown]
+days = 3
+
+# Crate versions deliberately accepted inside the cooldown window. Each entry
+# requires a cargo-vet audit in .supply-chain/audits.toml covering that exact
+# version. Pin the exact version, never a range, so the entry stops applying
+# once the crate moves again. Prune entries after the version ages out.
+[workspace.metadata.cooldown.allow]
+uuid = "1.24.1" # Parse-diagnostics fix; delta reviewed via cargo vet diff
 
 # -----------------------------------------------------------------------------
 # Profiles

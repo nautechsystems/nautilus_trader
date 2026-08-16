@@ -147,6 +147,7 @@ Released on TBD (UTC).
 - Updated concept and tutorial docs to describe current Rust and PyO3 behavior after the v1 removal
 - Upgraded Rust development tools: `cargo-hawk` v0.1.12, `cargo-nextest` v0.9.143, and Miri `nightly-2026-08-01`
 - Upgraded Python and workflow tools: `uv` v0.12.3, `pypi-attestations` v0.0.30, and `zizmor` v1.29.0
+- Upgraded Python lockfile dependencies: `librt` v0.15.0, `platformdirs` v4.11.1, and `soupsieve` v2.9.2
 - Upgraded `async-trait` crate to v0.1.92
 - Upgraded `base64` crate to v0.23.1 with only its safe `std` feature enabled
 - Upgraded `capnp` and `capnpc` crates to v0.27.0 and regenerated schema bindings
@@ -155,10 +156,12 @@ Released on TBD (UTC).
 - Upgraded `ibapi` crate to v3.3.0
 - Upgraded `pem` crate to v4.0.0 to align with the current Base64 API
 - Upgraded `pyo3` crate to v0.29.2 for object‑lifetime, free‑threading, and compatibility fixes
+- Upgraded `rcgen` crate to v0.14.9
 - Upgraded `redis` crate to v1.5.0
 - Upgraded `thiserror` crate to v2.0.20
 - Upgraded `time` crate to v0.3.55
 - Upgraded `toml` crate to v1.1.4
+- Upgraded `uuid` crate to v1.24.1
 
 ### Documentation Updates
 
