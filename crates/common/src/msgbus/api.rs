@@ -219,9 +219,14 @@ pub fn deregister_any(endpoint: MStr<Endpoint>) {
 }
 
 /// Returns whether an endpoint handler is registered for the given endpoint name.
+///
+/// An invalid endpoint name returns `false`, because registration rejects such names.
 #[must_use]
 pub fn has_endpoint(endpoint: &str) -> bool {
-    let key: MStr<Endpoint> = Ustr::from(endpoint).into();
+    let Ok(key) = MStr::<Endpoint>::endpoint(endpoint) else {
+        return false;
+    };
+
     get_message_bus().borrow().get_endpoint(key).is_some()
 }
 
@@ -1771,6 +1776,19 @@ mod tests {
             2,
             "{response_kind} duplicate responses must still increment the response count",
         );
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("   ")]
+    #[case("\t\n")]
+    #[case("*")]
+    #[case("mailbox.*")]
+    #[case("mail?ox")]
+    fn has_endpoint_returns_false_for_invalid_name(#[case] endpoint: &str) {
+        reset_message_bus();
+
+        assert!(!has_endpoint(endpoint));
     }
 
     #[rstest]
