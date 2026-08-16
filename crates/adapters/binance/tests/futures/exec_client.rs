@@ -1350,20 +1350,6 @@ fn add_test_instrument_to_cache(cache: &Rc<RefCell<Cache>>) {
     cache.borrow_mut().add_instrument(instrument).unwrap();
 }
 
-fn add_delivery_instrument_to_cache(cache: &Rc<RefCell<Cache>>) {
-    let exchange_info: BinanceFuturesUsdExchangeInfo =
-        serde_json::from_value(exchange_info_response()).unwrap();
-    let symbol = exchange_info
-        .symbols
-        .iter()
-        .find(|symbol| symbol.symbol == "BTCUSDT_260925")
-        .unwrap();
-    let instrument =
-        parse_usdm_instrument(symbol, UnixNanos::default(), UnixNanos::default()).unwrap();
-
-    cache.borrow_mut().add_instrument(instrument).unwrap();
-}
-
 #[rstest]
 #[tokio::test]
 async fn test_client_creation() {
@@ -2799,7 +2785,6 @@ async fn test_delivery_reconciliation_emits_open_order_and_position_reports() {
     let base_url_ws = format!("ws://{addr}/ws");
     let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
-    add_delivery_instrument_to_cache(&cache);
     let instrument_id = InstrumentId::from("BTCUSDT_260925.BINANCE");
 
     client.start().unwrap();
@@ -2838,6 +2823,57 @@ async fn test_delivery_reconciliation_emits_open_order_and_position_reports() {
     );
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].instrument_id, instrument_id);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reconciliation_fails_when_execution_instrument_catalogue_cannot_resolve() {
+    let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::Populated,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    client.instruments_cache().clear();
+
+    let order_error = client
+        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap_err();
+    assert!(order_error
+        .to_string()
+        .contains("open order has unresolved instrument"));
+
+    let position_error = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap_err();
+    assert!(position_error
+        .to_string()
+        .contains("position has unresolved instrument"));
 }
 
 #[rstest]
@@ -3960,11 +3996,6 @@ async fn test_report_generation_without_instrument_matches_raw_symbol_responses(
 
     client.start().unwrap();
     client.connect().await.unwrap();
-    add_test_instrument_to_cache(&cache);
-    cache
-        .borrow_mut()
-        .add_instrument(InstrumentAny::CurrencyPair(currency_pair_btcusdt()))
-        .unwrap();
 
     let open_orders = GenerateOrderStatusReports::new(
         nautilus_core::UUID4::new(),
