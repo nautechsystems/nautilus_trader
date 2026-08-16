@@ -38,37 +38,54 @@ Name the venue behavior that forces the exception, keep it inside the adapter, a
 test that fails if the venue stops requiring it. [Phase 7](#phase-7-prove-conformance) sequences the
 work that proves conformance.
 
-| Rule                                                                                          | Applies to                       |
-| --------------------------------------------------------------------------------------------- | -------------------------------- |
-| [Repository and Python wiring](#repository-and-python-wiring)                                 | New adapter crates               |
-| [Credentials and secret handling](#credentials-and-secret-handling)                           | Every adapter                    |
-| [Configurations](#configurations-configrs)                                                    | Every adapter                    |
-| [Symbols and instrument identity](#symbols-and-instrument-identity)                           | Every adapter                    |
-| [Venue payload modeling and precision](#modeling-venue-payloads)                              | Every adapter                    |
-| [Client traits and factories](#client-traits-and-factories-datars-executionrs-factoriesrs)    | Every adapter                    |
-| [Connection lifecycle](#connection-lifecycle-connect)                                         | Data and execution clients       |
-| [Data events and request freshness](#data-client)                                             | Data clients                     |
-| [Execution client boundaries](#execution-client)                                              | Execution clients                |
-| [Reconciliation reports](#reconciliation-reports)                                             | Execution clients                |
-| [Commission failure handling](#commission-failure-handling)                                   | Execution clients                |
-| [Bounded mass‑status reports](#bounded-massstatus-reports)                                    | Execution clients                |
-| [Instrument resolution during reconciliation](#instrument-resolution-during-reconciliation)   | Execution clients                |
-| [Tracked and external execution updates](#tracked-and-external-execution-updates)             | Execution clients                |
-| [Event ordering and deduplication](#event-ordering-and-deduplication)                         | Execution clients                |
-| [Order command outcome policy](#order-command-outcome-policy)                                 | Execution clients                |
-| [Naming the evidence classes](#naming-the-evidence-classes)                                   | Execution clients                |
-| [Diagnostics and strategy‑facing reasons](#separate-diagnostics-from-strategy-facing-reasons) | Execution clients                |
-| [Request flow](#request-flow)                                                                 | HTTP clients                     |
-| [Request signing and authentication](#request-signing-and-authentication)                     | HTTP and WebSocket request paths |
-| [Error handling and retry logic](#error-handling-and-retry-logic)                             | HTTP and WebSocket request paths |
-| [Rate limiting](#rate-limiting)                                                               | HTTP and WebSocket clients       |
-| [Handler initialization handshake](#handler-initialization-handshake-setclient)               | WebSocket clients                |
-| [Authentication](#authentication)                                                             | WebSocket clients                |
-| [Subscription management](#subscription-management)                                           | WebSocket clients                |
-| [Message routing](#message-routing)                                                           | WebSocket clients                |
-| [Reconnection and shutdown](#reconnection-and-shutdown)                                       | WebSocket clients                |
-| [Backpressure](#backpressure)                                                                 | Every adapter                    |
-| [Task management](#task-management)                                                           | Every adapter                    |
+### Adapter foundations
+
+| Rule                                                                                       | Applies to         |
+| ------------------------------------------------------------------------------------------ | ------------------ |
+| [Repository and Python wiring](#repository-and-python-wiring)                              | New adapter crates |
+| [Credentials and secret handling](#credentials-and-secret-handling)                        | Every adapter      |
+| [Configurations](#configurations-configrs)                                                 | Every adapter      |
+| [Symbols and instrument identity](#symbols-and-instrument-identity)                        | Every adapter      |
+| [Venue payload modeling and precision](#modeling-venue-payloads)                           | Every adapter      |
+| [Client traits and factories](#client-traits-and-factories-datars-executionrs-factoriesrs) | Every adapter      |
+
+### Runtime and client lifecycle
+
+| Rule                                                  | Applies to                 |
+| ----------------------------------------------------- | -------------------------- |
+| [Connection lifecycle](#connection-lifecycle-connect) | Data and execution clients |
+| [Data events and request freshness](#data-client)     | Data clients               |
+| [Backpressure](#backpressure)                         | Every adapter              |
+| [Task management](#task-management)                   | Every adapter              |
+
+### Execution and reconciliation
+
+| Rule                                                                                          | Applies to        |
+| --------------------------------------------------------------------------------------------- | ----------------- |
+| [Execution client boundaries](#execution-client)                                              | Execution clients |
+| [Reconciliation reports](#reconciliation-reports)                                             | Execution clients |
+| [Commission failure handling](#commission-failure-handling)                                   | Execution clients |
+| [Bounded mass‑status reports](#bounded-massstatus-reports)                                    | Execution clients |
+| [Instrument resolution during reconciliation](#instrument-resolution-during-reconciliation)   | Execution clients |
+| [Tracked and external execution updates](#tracked-and-external-execution-updates)             | Execution clients |
+| [Event ordering and deduplication](#event-ordering-and-deduplication)                         | Execution clients |
+| [Order command outcome policy](#order-command-outcome-policy)                                 | Execution clients |
+| [Naming the evidence classes](#naming-the-evidence-classes)                                   | Execution clients |
+| [Diagnostics and strategy‑facing reasons](#separate-diagnostics-from-strategy-facing-reasons) | Execution clients |
+
+### Transport and streaming
+
+| Rule                                                                            | Applies to                       |
+| ------------------------------------------------------------------------------- | -------------------------------- |
+| [Request flow](#request-flow)                                                   | HTTP clients                     |
+| [Request signing and authentication](#request-signing-and-authentication)       | HTTP and WebSocket request paths |
+| [Error handling and retry logic](#error-handling-and-retry-logic)               | HTTP and WebSocket request paths |
+| [Rate limiting](#rate-limiting)                                                 | HTTP and WebSocket clients       |
+| [Handler initialization handshake](#handler-initialization-handshake-setclient) | WebSocket clients                |
+| [Authentication](#authentication)                                               | WebSocket clients                |
+| [Subscription management](#subscription-management)                             | WebSocket clients                |
+| [Message routing](#message-routing)                                             | WebSocket clients                |
+| [Reconnection and shutdown](#reconnection-and-shutdown)                         | WebSocket clients                |
 
 The [data testing specification](spec_data_testing.md) and
 [execution testing specification](spec_exec_testing.md) hold the scenarios that prove these
@@ -456,6 +473,19 @@ Model the wire format, not an imagined stable subset:
 
 Avoid permissive fallbacks that silently turn a new venue value into an existing semantic value.
 Stable error handling is part of the parser contract.
+
+#### Separate authority from projections
+
+Use separate response models when one endpoint returns both evidence that establishes permission or
+authorizes state mutation and data needed for a narrower read.
+
+| Boundary                   | Purpose                                                            | Validation                                                                                          | Meaning of success                                                           |
+| -------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **Authoritative response** | Establish permission or authorize state mutation.                  | Requires all authoritative fields; rejects legacy conflicts and semantic duplicates before mapping. | The response can support the authority decision it models.                   |
+| **Narrow projection**      | Read a balance, health value, or metadata without using authority. | Decodes returned fields only; its type cannot expose, grant, or infer omitted authority.            | Only the projected value; omitted permission or account evidence is unknown. |
+
+Use the projection when malformed authority fields must not block the narrower read. Keep the
+authoritative model strict.
 
 ### Client traits and factories (`data.rs`, `execution.rs`, `factories.rs`)
 

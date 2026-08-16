@@ -144,6 +144,10 @@ The command grants maximum pUSD and CTF approvals to the CTF Exchange, Neg Risk 
 `POLYGON_RPC_URL` to use another Polygon RPC endpoint. Run it again if Polymarket changes the
 required contracts.
 
+The command grants approvals only; it does not revoke approvals for contracts that are no longer
+targets. Treat revocation as a separate on‑chain operation and confirm that no remaining redemption
+or settlement flow depends on the legacy approval before submitting it.
+
 ### Setting smart-wallet allowances
 
 Do not run the EOA command for a proxy, Safe, or Deposit Wallet funder. It signs transactions from
@@ -154,11 +158,23 @@ to submit the approvals from the account wallet. Deposit Wallet approvals use an
 batch authorized by the signer and submitted through the Relayer. Safe and Proxy Wallet approvals
 need their wallet‑specific SDK payloads.
 
+### Refreshing and verifying allowances
+
 After the approval transaction confirms, refresh the CLOB cache. Rust callers can use
 `PolymarketClobHttpClient::update_balance_allowance` with `AssetType::Collateral` for pUSD. Use
 `AssetType::Conditional` with a conditional token ID for a conditional‑token allowance. Both forms
 also need the account's signature type. The authenticated request maps to
 `GET /balance-allowance/update`. Use `SignatureType::Poly1271` for a Deposit Wallet.
+
+The balance‑allowance endpoint has two decoding paths:
+
+| Path                                              | Used for                                             | Allowance handling                                                                                                                                                             | Meaning of success                                                                 |
+| ------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `PolymarketClobHttpClient::get_balance_allowance` | Reading spender allowance evidence.                  | Requires the plural `allowances` map; rejects a missing map, a non‑null legacy singular value, malformed or non‑canonical keys, and semantic duplicates such as case variants. | Balance plus an unambiguous map; required targets and amounts still need checking. |
+| Internal balance‑only projection                  | Account state refresh and market‑buy fee adjustment. | Ignores allowance fields; its return type cannot expose or grant approval authority.                                                                                           | Balance only; required CLOB spender approvals remain unproven.                     |
+
+Use the strict path whenever a decision depends on allowance evidence so ambiguous wire data cannot
+become approval authority.
 
 ## API keys
 
