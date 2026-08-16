@@ -4225,7 +4225,8 @@ impl BybitHttpClient {
     ///
     /// When `open_only` is true the realtime endpoint is queried twice per order filter,
     /// once for currently open orders and once for recently closed orders, so terminal
-    /// reports are included.
+    /// reports are included. The closed pass fetches the most recent page only and is not
+    /// constrained by `start` or `end`.
     ///
     /// # Errors
     ///
@@ -4358,6 +4359,12 @@ impl BybitHttpClient {
                                 if seen_ids.insert(order.order_id) {
                                     all_orders.push(order);
                                 }
+                            }
+
+                            // The closed pass only needs the most recent page; the caller
+                            // re-filters reports on `start`, so older pages are discarded.
+                            if oo.is_some() {
+                                break;
                             }
 
                             cursor = response.result.next_page_cursor;

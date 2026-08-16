@@ -2217,7 +2217,8 @@ async fn handle_get_orders_realtime_open_only(
     list.truncate(1);
 
     if query.get("openOnly").map(String::as_str) == Some("1") {
-        // The venue echoes the still open order back alongside the closed one
+        // The venue returns recently closed orders here; keep the still-open order in the
+        // response too so both passes overlap and the dedup logic is exercised.
         let mut cancelled = list[0].clone();
         let fields = cancelled
             .as_object_mut()
@@ -2326,7 +2327,11 @@ async fn test_request_order_status_reports_open_only_includes_recently_closed() 
         open_count, 1,
         "Open order returned by both passes should be deduplicated"
     );
-    assert_eq!(reports.len(), 2, "Should have the open and the closed order");
+    assert_eq!(
+        reports.len(),
+        2,
+        "Should have the open and the closed order"
+    );
 }
 
 #[rstest]
