@@ -242,6 +242,10 @@ pool shards. It uses `polymarket-rtds-streams` for RTDS data and `polymarket-use
 execution events. Each Polymarket WebSocket has its own state sink and reconnect handle under the
 same label.
 
+Lighter uses `lighter-data-streams` for the data client and `lighter-user-streams` for the execution
+client. Both report transport state, and neither registers a reconnect handle, so
+`reconnect_socket` does not target a Lighter endpoint.
+
 ### Adapter and actor integration
 
 Adapter integrations construct a `SocketStateSink` and pass it through `connect_with_state_sink` or

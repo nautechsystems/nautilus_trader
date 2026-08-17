@@ -62,14 +62,15 @@ use futures_util::{SinkExt, StreamExt};
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    live::runner::replace_exec_event_sender,
+    live::runner::{replace_exec_event_sender, replace_system_event_sender},
     messages::{
-        ExecutionEvent, ExecutionReport,
+        ExecutionEvent, ExecutionReport, SystemEvent,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
             GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
             ModifyOrder, SubmitOrder, SubmitOrderList,
         },
+        system::SocketState,
     },
     testing::wait_until_async,
 };
@@ -1379,6 +1380,28 @@ async fn test_connect_disconnect_lifecycle() {
         Duration::from_secs(2),
     )
     .await;
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_reports_socket_state_on_the_user_streams_endpoint() {
+    let (addr, _state) = start_server().await;
+    let (system_sender, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_sender);
+    let (mut client, _rx, _cache) = build_client(addr);
+
+    client.connect().await.expect("connect");
+
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .expect("timed out waiting for a socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+
+    assert_eq!(change.client_id, client_id());
+    assert_eq!(change.venue, Some(*LIGHTER_VENUE));
+    assert_eq!(change.endpoint.as_str(), "lighter-user-streams");
+    assert_eq!(change.state, SocketState::Connected);
 }
 
 #[rstest]

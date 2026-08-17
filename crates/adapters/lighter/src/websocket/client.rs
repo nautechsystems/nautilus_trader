@@ -32,6 +32,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
 };
 use nautilus_network::{
+    SocketStateSink,
     mode::ConnectionMode,
     websocket::{
         SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -42,7 +43,8 @@ use nautilus_network::{
 use crate::{
     common::{
         consts::{
-            DISCONNECT_TIMEOUT, HEARTBEAT_INTERVAL, RECONNECT_BASE_BACKOFF, RECONNECT_MAX_BACKOFF,
+            DISCONNECT_TIMEOUT, HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, RECONNECT_BASE_BACKOFF,
+            RECONNECT_MAX_BACKOFF,
         },
         enums::{LighterCandleResolution, LighterEnvironment},
         rate_limit::ws_message_rate_limiter,
@@ -95,6 +97,7 @@ pub struct LighterWebSocketClient {
     transport_backend: TransportBackend,
     ws_timeout_secs: u64,
     proxy_url: Option<String>,
+    socket_sink: Option<SocketStateSink>,
 }
 
 impl Debug for LighterWebSocketClient {
@@ -150,6 +153,7 @@ impl Clone for LighterWebSocketClient {
             transport_backend: self.transport_backend,
             ws_timeout_secs: self.ws_timeout_secs,
             proxy_url: self.proxy_url.clone(),
+            socket_sink: self.socket_sink.clone(),
         }
     }
 }
@@ -191,7 +195,15 @@ impl LighterWebSocketClient {
             transport_backend,
             ws_timeout_secs,
             proxy_url,
+            socket_sink: None,
         }
+    }
+
+    /// Configures socket state reporting for the underlying transport.
+    #[must_use]
+    pub fn with_state_sink(mut self, state_sink: SocketStateSink) -> Self {
+        self.socket_sink = Some(state_sink);
+        self
     }
 
     /// Returns the resolved WebSocket URL.
@@ -312,11 +324,13 @@ impl LighterWebSocketClient {
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
         };
-        let client = WebSocketClient::connect_with_rate_limiter_and_epoch_handler(
+        let client = WebSocketClient::connect_with_rate_limiter_and_epoch_handler_and_state_sink(
             cfg,
             message_handler,
             None,
             ws_message_rate_limiter(&self.url),
+            self.socket_sink.clone(),
+            Some(HEARTBEAT_TIMEOUT),
         )
         .await?;
 

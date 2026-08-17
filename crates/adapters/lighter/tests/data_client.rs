@@ -52,9 +52,9 @@ use futures_util::{SinkExt, StreamExt};
 use jiff::Timestamp;
 use nautilus_common::{
     clients::DataClient,
-    live::runner::replace_data_event_sender,
+    live::runner::{replace_data_event_sender, replace_system_event_sender},
     messages::{
-        DataEvent,
+        DataEvent, SystemEvent,
         data::{
             DataResponse, RequestBars, RequestBookDepth, RequestBookSnapshot, RequestFundingRates,
             RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
@@ -63,6 +63,7 @@ use nautilus_common::{
             UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeIndexPrices,
             UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
+        system::{SocketState, SocketStateChange},
     },
     testing::wait_until_async,
 };
@@ -399,6 +400,34 @@ fn build_client(
     replace_data_event_sender(sender);
     let client = LighterDataClient::new(client_id(), config).expect("construct data client");
     (client, receiver)
+}
+
+/// Installs a fresh system event sender before building the client, so the data
+/// client captures it and attaches a socket state sink to its WebSocket client.
+fn build_client_with_system_events(
+    config: LighterDataClientConfig,
+) -> (
+    LighterDataClient,
+    tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
+) {
+    let (system_sender, system_receiver) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_sender);
+    let (client, receiver) = build_client(config);
+    (client, receiver, system_receiver)
+}
+
+/// Awaits the next socket state change emitted on the system event channel.
+async fn next_socket_state(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
+) -> SocketStateChange {
+    let event = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .expect("timed out waiting for a socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+
+    change
 }
 
 /// Pulls every event currently sitting in the receiver, returning the count.
@@ -2039,6 +2068,77 @@ async fn test_unsubscribe_bars_is_noop_for_unsupported_resolution() {
             None,
         ))
         .expect("unsubscribe_bars must not error on unsupported resolution");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_socket_state_events_survive_websocket_client_replacement() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, mut system_rx) = build_client_with_system_events(build_config(addr));
+
+    client.connect().await.expect("connect");
+    await_connection_count(&state, 1).await;
+
+    let change = next_socket_state(&mut system_rx).await;
+
+    // `stop()` swaps in a freshly built WebSocket client. The replacement must
+    // carry the sink, or socket state reporting dies after the first cycle.
+    client.stop().expect("stop");
+    await_connection_count(&state, 0).await;
+
+    client.connect().await.expect("reconnect");
+    await_connection_count(&state, 1).await;
+
+    let replacement = next_socket_state(&mut system_rx).await;
+
+    assert_eq!(change.client_id, client_id());
+    assert_eq!(change.venue, Some(*LIGHTER_VENUE));
+    assert_eq!(change.endpoint.as_str(), "lighter-data-streams");
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(replacement.client_id, client_id());
+    assert_eq!(replacement.venue, Some(*LIGHTER_VENUE));
+    assert_eq!(replacement.endpoint.as_str(), "lighter-data-streams");
+    assert_eq!(replacement.state, SocketState::Connected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_socket_state_events_report_connection_loss_and_recovery() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, mut system_rx) = build_client_with_system_events(build_config(addr));
+
+    client.connect().await.expect("connect");
+    drain_pending(&mut rx);
+    assert_eq!(
+        next_socket_state(&mut system_rx).await.state,
+        SocketState::Connected
+    );
+
+    // The server acks this subscribe and then closes, so the client observes a
+    // connection loss rather than a deliberate disconnect.
+    state
+        .drop_after_next_subscribe
+        .store(true, Ordering::Relaxed);
+    client
+        .subscribe_trades(SubscribeTrades::new(
+            eth_perp_id(),
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("subscribe_trades");
+    await_subscribe_count(&state, 1).await;
+
+    let lost = next_socket_state(&mut system_rx).await;
+    let recovered = next_socket_state(&mut system_rx).await;
+
+    assert_eq!(lost.endpoint.as_str(), "lighter-data-streams");
+    assert_eq!(lost.state, SocketState::Disconnected);
+    assert_eq!(recovered.endpoint.as_str(), "lighter-data-streams");
+    assert_eq!(recovered.state, SocketState::Connected);
 }
 
 #[rstest]

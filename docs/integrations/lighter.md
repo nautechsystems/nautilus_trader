@@ -565,7 +565,7 @@ Common REST endpoint weights from the official docs:
 | WebSocket subscriptions / connection   | 500        | Venue limit.                                         |
 | WebSocket unique accounts / connection | 500        | Venue limit.                                         |
 | WebSocket connections / minute         | 255        | Venue limit.                                         |
-| WebSocket client messages / minute     | 200        | Adapter paces non‑tx control frames at this cap.     |
+| WebSocket client messages / minute     | 200        | Paces non‑tx frames; heartbeat pings bypass it.      |
 | WebSocket inflight messages            | 50         | Venue cap; subscriptions use a 35-frame closed loop. |
 | WebSocket `sendTxBatch` batch size     | 15 txs     | Venue limit; adapter fanout is also capped at 15.    |
 | WebSocket keepalive                    | 2 minutes  | Adapter sends heartbeats every 30 seconds.           |
@@ -593,7 +593,10 @@ or a bounded strategy that earns enough fills to replenish its quota.
 ## Connection management
 
 The WebSocket client sends heartbeats every 30 seconds and reconnects with exponential backoff from
-250 milliseconds to 30 seconds. Private subscriptions use auth tokens with an 8‑hour maximum TTL;
+250 milliseconds to 30 seconds. It treats a connection carrying no inbound frame for 90 seconds as
+dead and reconnects, which recovers a stalled socket that the venue never closes. The venue answers
+each heartbeat with a pong, so a healthy connection refreshes that window even when no market data
+flows. Private subscriptions use auth tokens with an 8‑hour maximum TTL;
 the adapter mints 7‑hour tokens, rotates them every 6 hours, and resubscribes. A transparent
 reconnect triggers a fresh token and account resubscription after tracked subscriptions start
 replaying.
