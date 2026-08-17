@@ -139,7 +139,7 @@ impl AuthTracker {
     pub fn invalidate(&self) {
         if self
             .state
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |state| {
                 (AuthState::from_u8(state) == AuthState::Authenticated)
                     .then_some(AuthState::Unauthenticated.as_u8())
             })

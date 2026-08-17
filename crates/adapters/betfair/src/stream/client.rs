@@ -665,15 +665,15 @@ impl ReconnectAuthState {
 
     fn record_replay(&self, generation: u64) {
         self.replay_generation.store(generation, Ordering::SeqCst);
-        let _ =
-            self.pending_generation
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |pending| {
-                    if pending != 0 && pending <= generation {
-                        Some(0)
-                    } else {
-                        None
-                    }
-                });
+        let _ = self
+            .pending_generation
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |pending| {
+                if pending != 0 && pending <= generation {
+                    Some(0)
+                } else {
+                    None
+                }
+            });
     }
 
     fn request(&self, auth_generation: u64) -> bool {

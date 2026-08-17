@@ -330,7 +330,7 @@ impl ControllerLifecycle {
 
     pub(crate) fn enter_request(&self) -> Option<ControllerRequest<'_>> {
         self.state
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |state| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |state| {
                 if state & CONTROLLER_CLOSED != 0 {
                     None
                 } else {
