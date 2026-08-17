@@ -2350,9 +2350,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             .map(|report| report.instrument_id)
             .chain(position_reports.iter().map(|report| report.instrument_id))
             .collect();
+        let mut retained_instrument_ids = Vec::new();
         {
             let cache = self.core.cache();
-            instrument_ids.extend(
+            retained_instrument_ids.extend(
                 cache
                     .orders_open(
                         Some(&BINANCE_VENUE),
@@ -2364,7 +2365,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     .into_iter()
                     .map(|order| order.instrument_id()),
             );
-            instrument_ids.extend(
+            retained_instrument_ids.extend(
                 cache
                     .orders_inflight(
                         Some(&BINANCE_VENUE),
@@ -2376,7 +2377,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     .into_iter()
                     .map(|order| order.instrument_id()),
             );
-            instrument_ids.extend(
+            retained_instrument_ids.extend(
                 cache
                     .positions_open(
                         Some(&BINANCE_VENUE),
@@ -2388,12 +2389,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     .into_iter()
                     .map(|position| position.instrument_id),
             );
-            instrument_ids.retain(|instrument_id| {
+            retained_instrument_ids.retain(|instrument_id| {
                 cache.instrument(instrument_id).is_some_and(|instrument| {
                     is_instrument_for_product(instrument, self.product_type)
                 })
             });
         }
+        instrument_ids.extend(retained_instrument_ids);
         let instruments_cache = self.http_client.instruments_cache();
         instrument_ids.retain(|instrument_id| {
             let symbol = format_binance_symbol(instrument_id);
