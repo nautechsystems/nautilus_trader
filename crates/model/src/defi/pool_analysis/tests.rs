@@ -42,6 +42,7 @@ use crate::defi::{
     },
     stubs::{arbitrum, uniswap_v3},
     tick_map::{
+        full_math::{FullMath, Q128},
         liquidity_math::tick_spacing_to_max_liquidity_per_tick,
         sqrt_price_math::{
             decode_sqrt_price_x96_to_price_tokens_adjusted, encode_sqrt_ratio_x96,
@@ -2391,6 +2392,83 @@ fn test_fee_growth_well_after_cap_binds(mut empty_low_fee_pool_profiler: PoolPro
 }
 
 // ---------- WORKS ACROSS OVERFLOW BOUNDARIES ----------
+
+#[rstest]
+fn test_fee_growth_wrap_accrues_from_high_position_snapshot(
+    mut empty_low_fee_pool_profiler: PoolProfiler,
+) {
+    const LOW_FEE_TICK_SPACING: i32 = 10;
+    let min_tick = PoolTick::get_min_tick(LOW_FEE_TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(LOW_FEE_TICK_SPACING);
+    let liquidity = 1;
+
+    let mint_event = create_mint_event(lp_address(), min_tick, max_tick, liquidity);
+    empty_low_fee_pool_profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+
+    let fee_growth_before_wrap = U256::MAX - Q128 * U256::from(2);
+    empty_low_fee_pool_profiler.set_fee_growth_global(fee_growth_before_wrap, U256::ZERO);
+
+    let burn_event = create_burn_event(lp_address(), min_tick, max_tick, 0);
+    empty_low_fee_pool_profiler
+        .process(&DexPoolData::LiquidityUpdate(burn_event))
+        .unwrap();
+
+    empty_low_fee_pool_profiler
+        .process(&DexPoolData::FeeCollect(create_collect_event(
+            min_tick,
+            max_tick,
+            u128::MAX,
+            u128::MAX,
+        )))
+        .unwrap();
+    assert_eq!(
+        empty_low_fee_pool_profiler
+            .get_position(&lp_address(), min_tick, max_tick)
+            .expect("Position should exist")
+            .tokens_owed_0,
+        0
+    );
+
+    let fee_growth_global_before = empty_low_fee_pool_profiler.state.fee_growth_global_0;
+    empty_low_fee_pool_profiler
+        .process(&DexPoolData::Flash(create_flash_event(
+            U256::from(3),
+            U256::ZERO,
+        )))
+        .unwrap();
+    let fee_growth_global_after = empty_low_fee_pool_profiler.state.fee_growth_global_0;
+    assert!(fee_growth_global_after < fee_growth_global_before);
+
+    let fee_growth_delta = fee_growth_global_after.wrapping_sub(fee_growth_global_before);
+    assert_ne!(fee_growth_delta, U256::ZERO);
+    let expected_tokens_owed =
+        FullMath::mul_div(fee_growth_delta, U256::from(liquidity), Q128).unwrap();
+    assert_eq!(expected_tokens_owed, U256::from(3));
+
+    empty_low_fee_pool_profiler
+        .process(&DexPoolData::LiquidityUpdate(create_burn_event(
+            lp_address(),
+            min_tick,
+            max_tick,
+            0,
+        )))
+        .unwrap();
+
+    let position = empty_low_fee_pool_profiler
+        .get_position(&lp_address(), min_tick, max_tick)
+        .expect("Position should exist");
+
+    assert_eq!(
+        position.tokens_owed_0, 3,
+        "wrapped fee growth should accrue token0 fees"
+    );
+    assert_eq!(
+        position.fee_growth_inside_0_last, fee_growth_global_after,
+        "position should snapshot wrapped fee growth"
+    );
+}
 
 #[rstest]
 fn test_overflow_boundary_token0(mut empty_low_fee_pool_profiler: PoolProfiler) {
