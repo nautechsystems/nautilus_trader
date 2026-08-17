@@ -12,8 +12,10 @@ The visualization system has three parts:
 2. **Theme System** - Consistent styling with built-in and custom themes.
 3. **Configuration** - Declarative specification of what to render and how to display it.
 
-All visualization outputs are self-contained HTML files that can be viewed in any modern
-browser, shared with stakeholders, or archived for future reference.
+Tearsheets are written as self-contained HTML files that can be viewed in any modern
+browser, shared with stakeholders, or archived for future reference. Passing a static
+image extension (such as `.png` or `.pdf`) as the output path exports a static image
+via Kaleido instead.
 
 :::note
 The visualization system requires the `visualization` extra. It installs Pandas for
@@ -116,19 +118,21 @@ create_tearsheet(
 For multi-currency backtests, filter statistics to a specific currency:
 
 ```python
-from nautilus_trader.model.currencies import USD
+from nautilus_trader.model import Currency
 
 create_tearsheet(
     engine=engine,
     output_path="usd_only.html",
-    currency=USD,  # Currency object, shows only USD statistics
+    currency=Currency.from_str("USD"),  # Shows only USD statistics
 )
 ```
 
 When `currency` is `None` (default), statistics for all currencies are displayed
-separately in the tearsheet. Return-based charts are reconstructed from account
-reports only when the accounts share one currency; pass `currency` for multi-currency
-backtests so return charts use the selected currency.
+separately in the tearsheet. For `BacktestEngine` input, return-based charts require a
+single currency: they are derived from portfolio equity snapshots, falling back to
+account reports, and cannot be built for mixed-currency accounts without a filter;
+pass `currency` for multi-currency backtests so return charts use the selected
+currency.
 
 For `BacktestResult` input, `currency` filters PnL statistics and account balances. The result's
 stored return series remains unchanged.
@@ -335,7 +339,7 @@ render traces onto a Plotly figure object.
 ### Registering a custom chart
 
 ```python
-from nautilus_trader.analysis.tearsheet import register_chart
+from nautilus_trader.analysis import register_chart
 import plotly.graph_objects as go
 
 
@@ -345,7 +349,7 @@ def my_custom_chart(returns, output_path=None, title="Custom Chart", theme="plot
 
     This function signature matches the built-in chart functions for consistency.
     """
-    from nautilus_trader.analysis.themes import get_theme
+    from nautilus_trader.analysis import get_theme
 
     theme_config = get_theme(theme)
 
@@ -459,7 +463,7 @@ use the lower-level API:
 ```python
 import pandas as pd
 
-from nautilus_trader.analysis.tearsheet import create_tearsheet_from_stats
+from nautilus_trader.analysis import create_tearsheet_from_stats
 
 # Load precomputed data. The structure matches BacktestResult stats fields.
 stats_pnls = {"USD": {"PnL (total)": 1500.0, "Win Rate": 0.55, ...}}  # Per-currency
@@ -509,7 +513,7 @@ This approach is useful for:
 
 Custom charts work best when paired with statistics supplied through the same
 `stats_pnls`, `stats_returns`, and `stats_general` dictionaries used by the built-in
-tearsheet charts. For live `BacktestEngine` usage these values come from
+tearsheet charts. For `BacktestEngine` input these values come from
 `engine.get_result()`; for offline analysis, pass compatible dictionaries directly to
 `create_tearsheet_from_stats()`:
 
@@ -522,7 +526,7 @@ stats_returns = {
 
 ## API levels
 
-The visualization system provides two API levels:
+The visualization system provides two API levels, plus standalone chart functions:
 
 ### High-level API
 
@@ -571,7 +575,7 @@ from nautilus_trader.analysis import TearsheetBarsWithFillsChart
 from nautilus_trader.config import TearsheetConfig
 from nautilus_trader.analysis import TearsheetEquityChart
 from nautilus_trader.analysis import TearsheetStatsTableChart
-from nautilus_trader.model.data import BarType
+from nautilus_trader.model import BarType
 
 # Standalone usage
 bar_type = BarType.from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL")
@@ -615,9 +619,9 @@ create_tearsheet(engine=engine, config=config)
 ```
 
 The visualization shows candlesticks for OHLC price action with triangle markers representing order
-fills (green up-triangles for buys, red down-triangles for sells). Charts that need extra
-configuration (like `bar_type`) take those parameters directly on the chart object
-(e.g. `TearsheetBarsWithFillsChart(bar_type=...)`).
+fills (up-triangles for buys and down-triangles for sells, colored with the theme's positive and
+negative colors). Charts that need extra configuration (like `bar_type`) take those parameters
+directly on the chart object (e.g. `TearsheetBarsWithFillsChart(bar_type=...)`).
 
 Other individual chart functions include `create_equity_curve`, `create_drawdown_chart`,
 `create_monthly_returns_heatmap`, and more. See the API reference for the complete list.
