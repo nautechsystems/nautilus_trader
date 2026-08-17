@@ -100,7 +100,8 @@ use crate::{
             DeriveGetOrderParams, DeriveGetPositionsParams, DeriveGetSubaccountParams,
             DeriveGetTradeHistoryParams, DeriveGetTriggerOrdersParams,
             order_replace_to_derive_payload, order_to_derive_payload,
-            trigger_order_to_derive_payload,
+            trigger_order_to_derive_payload, validate_order_support,
+            validate_trigger_order_support,
         },
     },
     signing::{
@@ -789,6 +790,22 @@ impl ExecutionClient for DeriveExecutionClient {
             return Ok(());
         }
 
+        // Deny before emit_order_submitted so unsupported fields never
+        // surface as venue rejections.
+        let is_trigger_order = is_derive_trigger_order_type(order.order_type());
+        let support = if is_trigger_order {
+            validate_trigger_order_support(&order)
+        } else {
+            validate_order_support(&order)
+        };
+
+        if let Err(e) = support {
+            let reason = e.to_string();
+            log::warn!("Cannot submit order {}: {reason}", order.client_order_id());
+            self.emitter.emit_order_denied(&order, &reason);
+            return Ok(());
+        }
+
         // Spot has no position to reduce; the venue rejects reduce-only
         // unconditionally (11025), so deny locally. Perp/option reduce-only is
         // position-conditional and must still reach the venue.
@@ -808,7 +825,6 @@ impl ExecutionClient for DeriveExecutionClient {
         }
 
         // Keep the existing OrderDenied path here, then refresh before signing
-        let is_trigger_order = is_derive_trigger_order_type(order.order_type());
         let market_quote = if order.order_type() == OrderType::Market {
             match self.core.cache().quote(&cmd.instrument_id) {
                 Some(_) => Some(()),

@@ -604,13 +604,13 @@ pub fn order_replace_to_derive_payload(
     })
 }
 
-fn validate_order_support(order: &OrderAny) -> anyhow::Result<()> {
+pub(crate) fn validate_order_support(order: &OrderAny) -> anyhow::Result<()> {
     order_type_to_derive(order.order_type())?;
     time_in_force_to_derive(order.time_in_force(), order.is_post_only())?;
     Ok(())
 }
 
-fn validate_trigger_order_support(order: &OrderAny) -> anyhow::Result<()> {
+pub(crate) fn validate_trigger_order_support(order: &OrderAny) -> anyhow::Result<()> {
     trigger_order_type_to_derive(order.order_type())?;
     time_in_force_to_derive(order.time_in_force(), order.is_post_only())?;
     trigger_price_type_to_derive(order.trigger_type())?;

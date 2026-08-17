@@ -1181,6 +1181,39 @@ where
     }
 }
 
+/// Drains until `OrderDenied` for `client_order_id`, failing if `OrderSubmitted`
+/// for the same order arrives first.
+async fn drain_denied_without_submitted(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    client_order_id: &ClientOrderId,
+) -> ExecutionEvent {
+    let deadline = Duration::from_secs(5);
+    let outcome = tokio::time::timeout(deadline, async {
+        loop {
+            let event = rx.recv().await?;
+
+            if let ExecutionEvent::Order(OrderEventAny::Submitted(submitted)) = &event
+                && submitted.client_order_id == *client_order_id
+            {
+                panic!("OrderSubmitted emitted for {client_order_id} before OrderDenied");
+            }
+
+            if let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = &event
+                && denied.client_order_id == *client_order_id
+            {
+                return Some(event);
+            }
+        }
+    })
+    .await
+    .unwrap_or(None);
+
+    match outcome {
+        Some(event) => event,
+        None => panic!("timeout waiting for OrderDenied for {client_order_id}"),
+    }
+}
+
 fn build_limit_order(
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
@@ -1977,7 +2010,7 @@ async fn test_submit_order_posts_supported_time_in_force(
 #[case(TimeInForce::Ioc, true, "post-only Derive orders only support GTC")]
 #[case(TimeInForce::Fok, true, "post-only Derive orders only support GTC")]
 #[tokio::test]
-async fn test_submit_order_rejects_unsupported_time_in_force_before_posting(
+async fn test_submit_order_denies_unsupported_time_in_force_before_posting(
     #[case] time_in_force: TimeInForce,
     #[case] post_only: bool,
     #[case] reason_fragment: &str,
@@ -2010,27 +2043,14 @@ async fn test_submit_order_rejects_unsupported_time_in_force_before_posting(
         .submit_order(submit_cmd(&order))
         .expect("submit Ok");
 
-    let _ = drain_until(
-        &mut tc.rx,
-        |event| matches!(event, ExecutionEvent::Order(OrderEventAny::Submitted(_))),
-        "OrderSubmitted event",
-    )
-    .await;
-    let event = drain_until(
-        &mut tc.rx,
-        |event| matches!(event, ExecutionEvent::Order(OrderEventAny::Rejected(_))),
-        "OrderRejected event",
-    )
-    .await;
+    let event = drain_denied_without_submitted(&mut tc.rx, &order.client_order_id()).await;
 
-    if let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event {
-        assert_eq!(rejected.client_order_id, order.client_order_id());
-        assert!(!rejected.due_post_only);
+    if let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event {
+        assert_eq!(denied.client_order_id, order.client_order_id());
         assert!(
-            rejected.reason.as_str().contains("order encoding failed")
-                && rejected.reason.as_str().contains(reason_fragment),
-            "unexpected reject reason: {}",
-            rejected.reason,
+            denied.reason.as_str().contains(reason_fragment),
+            "unexpected deny reason: {}",
+            denied.reason,
         );
     } else {
         unreachable!();
@@ -2038,6 +2058,104 @@ async fn test_submit_order_rejects_unsupported_time_in_force_before_posting(
     assert!(
         ws_state.submitted_orders.lock().await.is_empty(),
         "invalid TIF must not post to the venue",
+    );
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test]
+async fn test_submit_order_denies_unsupported_order_type_before_posting() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let client_order_id = ClientOrderId::from("STRAT-BAD-TYPE");
+    let order = OrderTestBuilder::new(OrderType::MarketToLimit)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("3500.00"))
+        .build();
+    tc.cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .expect("cache insert");
+
+    tc.client
+        .submit_order(submit_cmd(&order))
+        .expect("submit Ok");
+
+    let event = drain_denied_without_submitted(&mut tc.rx, &order.client_order_id()).await;
+
+    if let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event {
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert!(
+            denied.reason.as_str().contains("unsupported order type"),
+            "unexpected deny reason: {}",
+            denied.reason,
+        );
+    } else {
+        unreachable!();
+    }
+    assert!(
+        ws_state.submitted_orders.lock().await.is_empty(),
+        "unsupported order type must not post to the venue",
+    );
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test]
+async fn test_submit_order_denies_unsupported_trigger_price_type_before_posting() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let client_order_id = ClientOrderId::from("STRAT-BAD-TRIGGER-TYPE");
+    let order = OrderTestBuilder::new(OrderType::StopMarket)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(Price::from("3400.00"))
+        .trigger_type(TriggerType::IndexPrice)
+        .build();
+    tc.cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .expect("cache insert");
+
+    tc.client
+        .submit_order(submit_cmd(&order))
+        .expect("submit Ok");
+
+    let event = drain_denied_without_submitted(&mut tc.rx, &order.client_order_id()).await;
+
+    if let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event {
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert!(
+            denied
+                .reason
+                .as_str()
+                .contains("unsupported trigger price type"),
+            "unexpected deny reason: {}",
+            denied.reason,
+        );
+    } else {
+        unreachable!();
+    }
+    assert!(
+        ws_state.submitted_orders.lock().await.is_empty(),
+        "unsupported trigger price type must not post to the venue",
     );
 
     tc.client.disconnect().await.expect("disconnect");

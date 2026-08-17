@@ -278,7 +278,7 @@ classes except for the reduce-only guard described below.
 The adapter supports ordinary `private/order` requests: `LIMIT` and `MARKET` orders with
 `GTC`, `IOC`, or `FOK` time-in-force values. It also supports Derive trigger orders for the
 Nautilus-native stop and if-touched order types listed below. Unsupported Nautilus order
-types are rejected before signing, so they cannot fill at the venue.
+types are denied locally with `OrderDenied` before submission, so they cannot fill at the venue.
 
 Market orders require a cached quote before submission; without one the adapter emits
 `OrderDenied` and never signs. After the async submit task resolves the instrument, it refreshes
@@ -325,7 +325,7 @@ minimum.
 The adapter maps Nautilus `TriggerType::Default` and `TriggerType::MarkPrice` to Derive
 `trigger_price_type=mark`. Derive's current error-code reference states that index and
 last-trade trigger price types are not supported yet, so `IndexPrice`, `LastPrice`, `BidAsk`,
-and other trigger price types are rejected locally before signing.
+and other trigger price types are denied locally with `OrderDenied` before submission.
 
 Derive error `11054` states that trigger orders cannot replace or be replaced. The adapter
 therefore rejects Nautilus modify requests for trigger orders with an `OrderModifyRejected`
@@ -347,9 +347,9 @@ cents); a too-tight offset produces spurious `11051` rejections.
 
 #### Time in force
 
-Derive documents `gtc`, `post_only`, `fok`, and `ioc` as its `time_in_force` values. The
-adapter rejects Nautilus values with no Derive equivalent before signing. Derive exposes
-post-only as a `time_in_force` value, so `post_only` cannot combine with `IOC` or `FOK`.
+Derive documents `gtc`, `post_only`, `fok`, and `ioc` as its `time_in_force` values. Nautilus
+values with no Derive equivalent are denied locally with `OrderDenied` before submission. Derive
+exposes post-only as a `time_in_force` value, so `post_only` cannot combine with `IOC` or `FOK`.
 
 | Time in force  | Supported | Derive value | Notes                      |
 | -------------- | --------- | ------------ | -------------------------- |
@@ -402,9 +402,9 @@ venue order notification or later reconciliation to settle the state.
 For post-only orders that reach the venue, Derive rejects a crossing order with JSON-RPC
 `11008` and message `Post only order cannot cross the market`. The adapter marks that
 terminal rejection with `due_post_only=true`; if a WebSocket/order-report rejection carries
-the same reason, the tracked order path applies the same classification. Local rejections
-for unsupported post-only IOC/FOK combinations are not marked `due_post_only` because they
-do not represent a venue crossing rejection.
+the same reason, the tracked order path applies the same classification. Local denials
+for unsupported post-only IOC/FOK combinations are `OrderDenied` events without
+`due_post_only`, because they do not represent a venue crossing rejection.
 
 For ambiguous write outcomes, the adapter emits no terminal event and lets WebSocket
 reconciliation or later status reports settle the state. The ambiguous set is deliberately
