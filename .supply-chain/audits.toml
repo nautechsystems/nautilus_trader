@@ -129,6 +129,12 @@ criteria = "safe-to-deploy"
 delta = "0.4.5 -> 0.4.7"
 notes = "Adds EIP-7928 merge and reusable hash-buffer APIs and corrects JSON field names and fixed-width encoding with tests. No unsafe, build, filesystem, network, process, or credential behavior was added."
 
+[[audits.alloy-eip7928]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.7 -> 0.4.8"
+notes = "Reviewed the published 0.4.7 -> 0.4.8 crate. Storage key and value JSON helpers now accept compact quantity encodings used by execution-spec fixtures, with tests. No unsafe, build script, filesystem, network, process, or credential behavior was added."
+
 [[audits.alloy-eips]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -673,6 +679,12 @@ criteria = "safe-to-deploy"
 delta = "0.22.1 -> 0.23.1"
 notes = "Adds custom padding and SIMD engines. Reviewed AVX2 and NEON CPU gating plus length-guarded unaligned loads and stores; Miri covers the unsafe kernels. This workspace disables simd-unsafe, so its active Base64 graph forbids unsafe code. No build script or ambient capabilities."
 
+[[audits.bitcoin-consensus-encoding]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.1.0 -> 1.2.0"
+notes = "Reviewed the published 1.1.0 -> 1.2.0 crate. Exposes IterEncoder and VecDecoderWith/ExactVecDecoderWith drivers, loosens serde_as_consensus bounds, and flattens nested error constructors. Encoding remains in-memory consensus serialization. No new unsafe, build script, filesystem, network, process, or credential behavior."
+
 [[audits.bitflags]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -696,6 +708,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.8.5 -> 1.8.6"
 notes = "Build script moves to the cargo:: directive syntax with no behavior change. maybe_mmap_file now takes the length by seeking instead of metadata, tolerates mapping failure, and rewinds the cursor before returning None, so block devices and Windows NUL hash correctly; the unsafe memmap2 contract is unchanged and the path is behind the mmap feature this workspace does not enable. No new build, network, process, or credential behavior."
+
+[[audits.bollard]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.21.0 -> 0.21.1"
+notes = "Reviewed the published 0.21.0 -> 0.21.1 crate. Runtime sources are unchanged. The crate version and an optional bollard-buildkit-proto pin move to 0.8.1 with default-features disabled; this workspace enables only http and pipe and does not resolve buildkit-proto. No new unsafe, build script, filesystem, network destination, or credential behavior."
 
 [[audits.borsh]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -795,6 +813,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.4.1 -> 1.4.2"
 notes = "Corrects ARM NEON compiler flags and probes leaf-frame-pointer support before passing the flag to GCC or Clang. The existing build-script compiler execution boundary is unchanged; no new filesystem, network, credential, or runtime behavior was added."
+
+[[audits.cc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.4.2 -> 1.4.3"
+notes = "Reviewed the published 1.4.2 -> 1.4.3 crate. Raises MSRV to 1.65 and regenerates target tables. Compiler invocation remains the existing build-time capability. No new filesystem, network, credential, or runtime behavior."
 
 [[audits.cfg_aliases]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1125,6 +1149,12 @@ criteria = "safe-to-deploy"
 delta = "0.1.9 -> 0.1.10"
 notes = "Edition 2021 modernization: Box<dyn Iterator>, max_by_key, next_back, Option::filter, and core::ffi integer types in the winapi shims, with the registry max_version lookup relocated unchanged. Windows toolchain probing behavior is unchanged and is not exercised on this workspace's Linux or macOS builds. No new process, network, or credential behavior."
 
+[[audits.find-msvc-tools]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.10 -> 0.1.11"
+notes = "Reviewed the published 0.1.10 -> 0.1.11 crate. MSRV bump to 1.65 with no Windows toolchain-probing behavior change. Not exercised on this workspace's Linux or macOS builds. No new process, network, or credential behavior."
+
 [[audits.futures]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1179,6 +1209,12 @@ criteria = "safe-to-deploy"
 delta = "0.3.33 -> 0.3.34"
 notes = "Reviewed futures-rs 0.3.33 -> 0.3.34 published crate deltas. Runtime changes add inline(always) to RawWaker clone functions so vtable identity is preserved; other changes are component version metadata, Miri doc-test guards, and tests. No new unsafe operation or ambient capability was added."
 
+[[audits.h2]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.15 -> 0.4.16"
+notes = "Reviewed the published 0.4.15 -> 0.4.16 crate. Adds a connection-level budget that GOAWAYs peers sending too many small DATA frames, releases flow-control earlier on RecvStream drop, and fixes 1xx push counting, trailer wakeups, HeaderValue copy retention, post-EOS resets, and a write-0 busy loop. HPACK decode tables move from 4-bit to 1-byte states. No new unsafe, build script, filesystem, process, or credential behavior."
+
 [[audits.hashlink]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1232,6 +1268,48 @@ criteria = "safe-to-deploy"
 delta = "1.1.4 -> 1.2.0"
 notes = "Adds explicit rate-limit response APIs and event rate-limit method, and updates Envio documentation URLs. No new dependencies, build script, filesystem behavior, or network mechanism beyond existing client requests."
 
+[[audits.icu_collections]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed the published ICU4X 2.2.0 -> 2.3.0 collections crate. Code-point set and trie APIs gain iterator and conversion helpers used by Unicode property data. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.icu_locale_core]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed the published ICU4X 2.2.0 -> 2.3.0 locale-core crate. Language-tag and Unicode-extension parsing/formatting updates with fixture tests. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.icu_normalizer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed the published ICU4X 2.2.0 -> 2.3.0 normalizer crate. Unicode normalization tables and tests refresh; API remains in-memory string processing. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.icu_normalizer_data]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed the published ICU4X 2.2.0 -> 2.3.0 normalizer data crate. Baked NFC/NFD/NFKD/UTS46 tables only. No executable logic, build script, filesystem, network, process, or credential behavior."
+
+[[audits.icu_properties]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed the published ICU4X 2.2.0 -> 2.3.0 properties crate. Adds enum value helpers and UnicodeSet parse support around existing property maps. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.icu_properties_data]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed the published ICU4X 2.2.0 -> 2.3.0 properties data crate. Baked Unicode property tables only. No executable logic, build script, filesystem, network, process, or credential behavior."
+
+[[audits.icu_provider]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.2.0 -> 2.3.0"
+notes = "Reviewed the published ICU4X 2.2.0 -> 2.3.0 provider crate. Data-marker, request, and baked-payload plumbing updates. No new build script, filesystem, network, process, or credential behavior."
+
 [[audits.indexmap]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1261,6 +1339,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.2.0 -> 0.2.1"
 notes = "Gates the aarch64_sha3 backend off on softfloat ABI targets and adds a compile_error! guard when the feature is forced there, fixing a build warning. The permutation itself is unchanged. No new build, filesystem, network, process, or credential behavior."
+
+[[audits.litemap]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.2 -> 0.8.3"
+notes = "Reviewed the published 0.8.2 -> 0.8.3 crate. LiteMap API adjustments only. No new unsafe, build script, filesystem, network, process, or credential behavior."
 
 [[audits.log]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1340,6 +1424,12 @@ criteria = "safe-to-deploy"
 delta = "2.8.8 -> 2.9.0"
 notes = "Fixes nested parser snapshot restoration and adds const Pratt-parser construction with tests. No unsafe code, build script, or ambient capability was added."
 
+[[audits.pkg-config]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.3.33 -> 0.3.34"
+notes = "Reviewed the published 0.3.33 -> 0.3.34 crate. Drops lazy_static, raises MSRV to 1.63, adds an option to skip --cflags, and publishes extract_lib_from_filename. Still invokes the host pkg-config binary at build time. No new network, credential, or runtime behavior."
+
 [[audits.portable-atomic]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1357,6 +1447,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.2.5 -> 0.2.6"
 notes = "Repository extraction from portable-atomic monorepo. Inlines version.rs build script, doc/lint updates. No logic changes."
+
+[[audits.potential_utf]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.5 -> 0.1.6"
+notes = "Reviewed the published 0.1.5 -> 0.1.6 crate. PotentialCodePoint/Ustr writeable helpers only. No new unsafe, build script, filesystem, network, process, or credential behavior."
 
 [[audits.proc-macro-error-attr3]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1436,6 +1532,12 @@ criteria = "safe-to-deploy"
 delta = "0.29.1 -> 0.29.2"
 notes = "Adds a ClassMethodReceiver distinction so a classmethod invoked on an instance resolves its receiver via Py_TYPE with an optional checked cast, and threads IntoPyObject type hints through introspection for pyo3(get) fields. Generated code stays within the existing PyO3 FFI and error-handling patterns. No new build, filesystem, network, process, or credential behavior."
 
+[[audits.quinn-proto]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.11.16 -> 0.11.17"
+notes = "Reviewed the published 0.11.16 -> 0.11.17 crate. packet_crypto key-phase selection is a filter refactor of the same previous-key vs remote-update rule; congestion, assembler, datagram, and path files change around that. No new unsafe, build script, filesystem, process, credential, or cryptographic primitive."
+
 [[audits.rapidhash]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1483,6 +1585,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.4.1 -> 1.5.0"
 notes = "Adds cluster TLS hostname mapping, reconnect handling, cluster logging, and RedisJSON commands. Network access remains caller-directed; no new external endpoints, unsafe, build script, process, credential, or data-exfiltration behavior."
+
+[[audits.redis]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.5.0 -> 1.6.0"
+notes = "Reviewed the published 1.5.0 -> 1.6.0 crate. Adds optional reconnect-attempt limits, XNACK, Search FT.CREATE options, cluster ASKING/redirect retry fixes, and a ROLE check so Sentinel clients reject non-sentinel nodes. This workspace uses ConnectionManager, streams, and sentinel against caller-supplied Redis endpoints. No new unsafe, build script, filesystem, process, or credential disclosure."
 
 [[audits.regex]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1674,6 +1782,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.3.54 -> 0.3.55"
 notes = "Fixes timestamp, serde, and bounds overflow handling. No new unsafe, build script, or ambient capabilities."
+
+[[audits.tinystr]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.3 -> 0.8.4"
+notes = "Reviewed the published 0.8.3 -> 0.8.4 crate. ASCII TinyAsciiStr integer-ops and unvalidated helpers only. No new unsafe, build script, filesystem, network, process, or credential behavior."
 
 [[audits.tinyvec]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1884,6 +1998,12 @@ criteria = "safe-to-deploy"
 delta = "1.0.1 -> 1.0.2"
 notes = "Adds TreeError conversion impls for Bits<I> in binary mode and deprecates tuple-offset helpers. No parser-core logic, unsafe, build, or network changes."
 
+[[audits.writeable]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.6.3 -> 0.6.4"
+notes = "Reviewed the published 0.6.3 -> 0.6.4 crate. Adds a replace adapter and small formatting-impl updates. No new unsafe, build script, filesystem, network, process, or credential behavior."
+
 [[audits.xml-rs]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1913,6 +2033,24 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.8.55 -> 0.8.56"
 notes = "Adds validate_crate_path, which rejects malformed crate_path attribute inputs such as Self and a leading :: before crate, self, or super, so the derive fails at expansion instead of emitting a path that resolves somewhere unintended. Input validation is strictly tightening. Relaxes the prettyplease dev-dependency from an exact pin to a caret requirement. No new build, filesystem, network, process, or credential behavior in the generated code."
+
+[[audits.zerotrie]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.4 -> 0.2.5"
+notes = "Reviewed the published 0.2.4 -> 0.2.5 crate. Cursor and builder slice-index helpers only. No new unsafe, build script, filesystem, network, process, or credential behavior."
+
+[[audits.zerovec]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.11.6 -> 0.11.7"
+notes = "Reviewed the published 0.11.6 -> 0.11.7 crate. ZeroVec/VarZeroVec cow, hashmap, and ULE encode helpers. Existing unsafe ULE contracts are unchanged. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.zerovec-derive]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.11.3 -> 0.11.4"
+notes = "Reviewed the published 0.11.3 -> 0.11.4 crate. MakeULE derive updates and syn 3. No new generated filesystem, network, process, or credential behavior."
 
 [[audits.zlib-rs]]
 who = "Nautech Systems <info@nautechsystems.io>"

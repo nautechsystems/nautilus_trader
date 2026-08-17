@@ -7,14 +7,14 @@
 # uv range:       pyproject.toml [tool.uv]
 
 [miri]
-version = "nightly-2026-08-01"
+version = "nightly-2026-08-14"
 rustc-version = "1.99.0"
 
 [uv]
-version = "0.12.3"
+version = "0.12.5"
 
 [prek]
-version = "0.4.13"
+version = "0.4.14"
 
 [pip-audit]
 version = "2.10.1"
@@ -23,7 +23,7 @@ version = "2.10.1"
 version = "0.0.30"
 
 [osv-scanner]
-version = "2.5.0"
+version = "2.5.1"
 
 [capnp]
 version = "1.5.0"

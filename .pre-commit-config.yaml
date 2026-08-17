@@ -423,7 +423,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.2
+    rev: v0.16.3
     hooks:
       - id: ruff
         name: ruff
@@ -451,7 +451,7 @@ repos:
           - "--in-place"
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.12.3 # Must match [uv] in tools.toml
+    rev: 0.12.5 # Must match [uv] in tools.toml
     hooks:
       - id: uv-lock
         args: ["--project", "python"]

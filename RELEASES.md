@@ -13,6 +13,9 @@ Released on TBD (UTC).
 - Added TCP keepalive and Linux `TCP_USER_TIMEOUT` to all outbound connections, detecting half-open sockets in ~1 min
 - Added HTTP `CONNECT` proxy support to the Sockudo WebSocket backend
 - Added `WebSocketConfig.heartbeat_timeout_secs` so every connect entry point can set a liveness window
+- Added `WalletAccount` for native and token balances with local reservations
+- Added `PositionOpened` realized PnL
+- Added `AccountState` venue metadata
 - Added canonical Rust backtest results with normalized projections, content digests, and stable ordering
 - Added full Rust config parity for the Python testkit `ExecTesterConfig`
 - Added `Sum` iterator support for owned and borrowed `Quantity` values (#4720), thanks @faysou
@@ -24,12 +27,16 @@ Released on TBD (UTC).
 - Added trader start warning when `load_state` or `save_state` is enabled without a cache database backing
 - Added runtime external‑order claim registration and removal to Rust `LiveNode` (#4620), thanks @folknor
 - Added `INFO` logs for socket and WebSocket connection loss and recovery (#4621), thanks @folknor
-- Added Rust and Python `SocketStateChanged` events for Binance Futures and Polymarket live clients
+- Added Rust and Python `SocketStateChanged` events for Binance Futures, Lighter, and Polymarket live clients
 - Added Deribit book summaries as requestable custom data (#4576), thanks @graceyangfan
+- Added Derive fixed-window matching rate limits
 - Added Hyperliquid user TWAP history and slice fills as opt‑in custom data (#4674), thanks @graceyangfan
+- Added Interactive Brokers support for canonical 21‑character OPRA option IDs (#4774), thanks @xxxxxx-oss
+- Added Lighter inbound liveness timeout and socket-state reporting on data and execution WebSockets
 - Added Polymarket `compute_effective_deltas` config option to emit net changes for book snapshots (default `False`)
 - Added Polymarket `series_ids` instrument provider scoping for recurring Gamma market families (#4650), thanks @mystic-io
 - Added Polymarket instrument bootstrap from a `filters` map or a market-sourcing registered `InstrumentFilter` alone, without requiring `load_all`
+- Added Polymarket backtest fee model with per-market taker fees and maker credits
 
 ### Breaking Changes
 
@@ -79,21 +86,16 @@ Released on TBD (UTC).
 - Changed Bybit `bybit_bar_spec_to_interval` to take a `BarAggregation` instead of an integer
 - Changed Bybit execution `heartbeat_interval_secs` default from `5` to `20`, matching the documented cadence
 - Changed Hyperliquid `subscribe_book_deltas` and `subscribe_book_snapshots` to take a `BookType` instead of an integer
+- Changed OKX and dYdX Python WebSocket clients to default `heartbeat` to the venue cadence instead of `None`
 - Changed Polymarket `HeartbeatResponse::Acknowledged` to carry a required chained ID
 - Changed Polymarket Gamma `game_id` to a string on `GammaMarket`, `GammaEvent`, and instrument `info`
-- Changed OKX and dYdX Python WebSocket clients to default `heartbeat` to the venue cadence instead of `None`
+- Changed Polymarket strict allowance decoding to require the plural `allowances` map (#4760), thanks @seungpyoson
 
 ### Security
 
 - Hardened development wheel publishing to validate exact artifacts and fail closed
 - Pinned the direct `alloy` crate dependency to v2.2.0 to limit its larger supply‑chain risk surface
-- Fixed malformed external message topics aborting Python v2 `LiveNode` (#4630), thanks for reporting @davidgreyme
-- Fixed macOS ARM64 PyArrow SIGSEGVs (#4633, #4642), thanks for reporting @ZhongxuanWang; thanks @alex09x
-- Fixed fee model panics from invalid Python inputs and decimal overflow (#4640), thanks @dfjmax
 - Fixed Rust network and WebSocket adapter logs that could expose credentials and payload contents
-- Fixed `CashAccount` aborts when reserving negative‑price buy orders (#4725), thanks @folknor
-- Fixed `OrderBookDeltas::new_checked` accepting child instrument mismatches (#4710), thanks @folknor
-- Fixed Python `MessageBus` endpoint panics from empty, whitespace, or wildcard addresses
 - Removed `OrderBookDeltas.from_pycapsule`, which reinterpreted unvalidated capsule pointers and could cause invalid memory access
 
 ### Fixes
@@ -106,10 +108,24 @@ Released on TBD (UTC).
 - Fixed `Position` average open price (`avg_px_open`) for exact closes after partial fills
 - Fixed order list `OrderInitialized` events to carry `order_list_id` through publication, persistence, and replay
 - Fixed Postgres cache restore dropping order `tags` and `exec_algorithm_params`
+- Fixed Cache venue order ID alias indexing and purging during mass-status reconciliation
 - Fixed failed live strategy registrations leaving orphaned external‑order claims (#4620), thanks @folknor
 - Fixed network controllers treating aborted reconnects as completed reconnections (#4623), thanks @folknor
 - Fixed WebSocket pong frames being held across a reconnect and enqueued on the replacement connection (#4613), thanks @folknor
 - Fixed Python v2 `FeeModel` subclass constructors and concrete model inheritance (#4640), thanks @dfjmax
+- Fixed fee model panics from invalid Python inputs and decimal overflow (#4640), thanks @dfjmax
+- Fixed malformed external message topics aborting Python v2 `LiveNode` (#4630), thanks for reporting @davidgreyme
+- Fixed macOS ARM64 PyArrow SIGSEGVs (#4633, #4642), thanks for reporting @ZhongxuanWang; thanks @alex09x
+- Fixed macOS Python allocator TLS collisions by selecting mimalloc v2 (#4758), thanks @faysou
+- Fixed `CashAccount` aborts when reserving negative‑price buy orders (#4725), thanks @folknor
+- Fixed `OrderBookDeltas::new_checked` accepting child instrument mismatches (#4710), thanks @folknor
+- Fixed Python `MessageBus` endpoint panics from empty, whitespace, or wildcard addresses
+- Fixed synthetic formula parser stack overflows from unbounded nesting (#4723), thanks @folknor
+- Fixed `f32` logarithm approximation on non‑positive and non‑finite inputs (#4740), thanks @folknor
+- Fixed margin models reserving a negative requirement for negative‑price orders (#4751), thanks @folknor
+- Fixed `DeltaNeutralVol` aborting when a rehedge quantity rounds to zero (#4752), thanks @folknor
+- Fixed strategy config accepting `GTD` market exits, which later aborted flattening (#4762), thanks @folknor
+- Fixed backtest `BorrowMutError` aborts when `use_message_queue` is disabled (#4763), thanks @folknor
 - Fixed AMA reset history retention and Rust `FuzzyCandlesticks` output retention (#4666), thanks @mkzung
 - Fixed `ChandeMomentumOscillator` returning a value outside [-100, 100] for a zero gain average, which gave `VariableIndexDynamicAverage` a smoothing weight above 1 (#4667), thanks @mkzung
 - Fixed portfolio PnL and net exposure currency when `convert_to_account_base_currency` is disabled
@@ -132,23 +148,38 @@ Released on TBD (UTC).
 - Fixed Python `MessageBus` accepting empty or whitespace‑only subscription patterns
 - Fixed the `OptionSeriesId` Python constructor panicking on an invalid venue, which aborted the process in release builds; it now raises `ValueError`
 - Fixed stale venue book snapshots logging one out‑of‑order warning per delta
+- Fixed backtest timer callbacks inheriting the next data event's timestamp (#4747), thanks @faysou
+- Fixed `AverageTrueRange.reset()` leaving the inner moving average populated (#4749), thanks @mkzung
+- Fixed HTTP query parameters being dropped when the URL already has a fragment (#4750), thanks @folknor
+- Fixed option constructors accepting a zero or negative strike price (#4745), thanks @folknor
+- Fixed cache position updates applying the index change before the value write (#4767), thanks @folknor
+- Fixed DeFi pool positions dropping fees when fee‑growth counters wrap (#4768), thanks @folknor
+- Fixed `MovingAverageConvergenceDivergence` input counting (#4779), thanks @mkzung
 - Fixed Betfair stream reauthentication and subscription replay after session replacement
 - Fixed Betfair rounding a sub-second stream heartbeat interval up instead of down
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
+- Fixed Binance Futures hedge‑mode `positionSide` for `close_position` exits (#4732), thanks @hashtagdenis
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
 - Fixed Databento MBO snapshots advancing the incremental sequence (#4686), thanks @faysou
+- Fixed Databento parent book-delta responses splitting by child instrument
 - Fixed Deribit losing its `set_heartbeat` contract after reconnecting, disabling venue `test_request` for the session
 - Fixed Derive cancel‑only replacements and reused labels during order reconciliation
 - Fixed Derive WebSocket recovery, subscription replay, and silent connection detection
 - Fixed Derive fill commissions to construct exactly from wire decimals and error on unrepresentable fees
 - Fixed Derive account state reporting collateral credit as locked and net health as margin requirements
+- Fixed Derive denying unsupported orders only after `OrderSubmitted`
+- Fixed Derive historical trade aggressor side and forward-price event times
 - Fixed Hyperliquid historical candle timestamps and unfinished candle filtering (#4727), thanks @HKOWL
 - Fixed Hyperliquid order and position reconciliation across standard and HIP‑3 dexes
 - Fixed Interactive Brokers continuous futures historical bar requests (#4664), thanks @dfjmax
 - Fixed Interactive Brokers deactivated open‑order processing
 - Fixed Interactive Brokers delayed market data not emitting `QuoteTick` values (#4719), thanks @faysou
 - Fixed Interactive Brokers local modify and cancel rejection event emission (#4564), thanks for reporting @davidgreyme
+- Fixed Lighter startup reconciliation for bounded fill history, incomplete coverage, and restored fills
+- Fixed Lighter acknowledged creates, position snapshot versus incremental updates
 - Fixed OKX margin reconciliation omitting `SPOT` orders and fills (#4743), thanks @silarin
+- Fixed OKX `QueryOrder` routing for algo and regular orders (#4731), thanks @silarin
+- Fixed OKX algo child dispatch and triggered conditional query recovery
 - Fixed Polymarket commissions to preserve exact decimal values in `Money` construction
 - Fixed Polymarket maker fill ownership and reported mass‑status trade drops (#4662), thanks @seungpyoson
 - Fixed Polymarket WebSocket asset and discovery subscription replay across reconnects
@@ -162,6 +193,10 @@ Released on TBD (UTC).
 - Fixed Polymarket open markets being removed from live state after `endDate` (#4706), thanks @mystic-io
 - Fixed Polymarket Gamma pagination failing on sports markets with a composite `gameId` (#4771), thanks for reporting @jamesjklin
 - Fixed Polymarket treating HTTP 425 and non‑CLOB 429 submit failures as definitive rejections
+- Fixed Polymarket WebSocket application heartbeat liveness
+- Fixed Polymarket terminal condition retirement repeating every poll cycle
+- Fixed Polymarket auto‑load dropping open markets omitted from the default Gamma lookup (#4728), thanks @mystic-io
+- Fixed Polymarket allowance decoding accepting duplicate spender keys (#4760), thanks @seungpyoson
 - Fixed Tardis CSV funding rates dropping `next_funding_ns` without a predicted rate
 - Fixed Tardis Machine funding rates omitting `next_funding_ns`
 
@@ -169,25 +204,30 @@ Released on TBD (UTC).
 
 - Added `From` conversions from `ActorId`, `ExecAlgorithmId`, and `StrategyId` to `ComponentId` that reuse the interned value
 - Improved native backtest workload coverage for canonical result checks
-- Improved indicator test tolerances across floating‑point magnitudes (#4718), thanks @mkzung
+- Improved indicator test tolerances across floating‑point magnitudes (#4718, #4742), thanks @mkzung
 - Improved published‑registry verifier tests to ignore fork metadata (#4715), thanks @xxxxxx-oss
 - Improved Coinbase request tests by removing redundant waits (#4637), thanks @pengpengyi92
 - Improved WebSocket reconnect replay to drop Ping, Pong, and Close frames instead of resending them
 - Improved network crate tests for retries, rate limits, mutual TLS, HTTP, socket reconnects, and WebSocket messages
 - Improved Polymarket order response tests for the `tradeIDs` matched shape and batch submission legs
+- Improved Polymarket on‑chain approval‑plan sharing and test coverage (#4773), thanks @seungpyoson
 - Improved Tardis tests with OKX X‑Perp and USDC index migration fixtures
 - Refactored the Redis cache adapter to delegate deletions and custom data writes to `RedisCacheDatabase`, removing duplicated implementations (Rust)
 - Refined CI, build, and dependency configuration after the v1 removal
 - Replaced Chrono and Chrono-TZ with Jiff and bundled TZDB data (#4639), thanks @sunlei
+- Standardized remaining risk engine order‑denied reasons to coded values (#4744), thanks @folknor
 - Standardized Rust adapter order command failure classification with a shared `CommandFailure` type for Architect AX, Bybit, and Kraken
 - Optimized pre-commit and local validation by reusing build artifacts and skipping unchanged checks, thanks @faysou
 - Optimized Polymarket interleaved price‑change dispatch and timestamp parsing
 - Updated concept and tutorial docs to describe current Rust and PyO3 behavior after the v1 removal
-- Upgraded Rust development tools: `cargo-hawk` v0.1.12, `cargo-nextest` v0.9.143, and Miri `nightly-2026-08-01`
-- Upgraded Python and workflow tools: `uv` v0.12.3, `pypi-attestations` v0.0.30, and `zizmor` v1.29.0
-- Upgraded Python lockfile dependencies: `librt` v0.15.0, `platformdirs` v4.11.1, and `soupsieve` v2.9.2
+- Upgraded Python and workflow tools: `uv` v0.12.5, `pypi-attestations` v0.0.30, and `zizmor` v1.29.0
+- Upgraded Python lockfile dependencies: `numpy` v2.5.2, `platformdirs` v4.11.2, `librt` v0.15.0, and `soupsieve` v2.9.2
+- Upgraded Rust development tools: `cargo-hawk` v0.1.12, `cargo-nextest` v0.9.143, and Miri `nightly-2026-08-14`
+- Upgraded `cargo-llvm-cov` to v0.9.0
+- Upgraded `prek` to v0.4.14 and `osv-scanner` to v2.5.1
 - Upgraded `async-trait` crate to v0.1.92
 - Upgraded `base64` crate to v0.23.1 with only its safe `std` feature enabled
+- Upgraded `bollard` crate to v0.21.1
 - Upgraded `capnp` and `capnpc` crates to v0.27.0 and regenerated schema bindings
 - Upgraded `clap` crate to v4.6.6
 - Upgraded `http` crate to v1.5.0
@@ -195,7 +235,7 @@ Released on TBD (UTC).
 - Upgraded `pem` crate to v4.0.0 to align with the current Base64 API
 - Upgraded `pyo3` crate to v0.29.2 for object‑lifetime, free‑threading, and compatibility fixes
 - Upgraded `rcgen` crate to v0.14.9
-- Upgraded `redis` crate to v1.5.0
+- Upgraded `redis` crate to v1.6.0
 - Upgraded `thiserror` crate to v2.0.20
 - Upgraded `time` crate to v0.3.55
 - Upgraded `toml` crate to v1.1.4

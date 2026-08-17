@@ -224,7 +224,7 @@ rand = { version = "0.10.2", default-features = false, features = [
   "thread_rng",
 ] }
 redb = { version = "4.1.0", default-features = false }
-redis = { version = "1.5.0", default-features = false, features = [
+redis = { version = "1.6.0", default-features = false, features = [
   "connection-manager",
   "sentinel",
   "streams",
@@ -330,7 +330,7 @@ alloy = { version = "=2.2.0", default-features = false, features = [
   "consensus",
   "eips",
 ] }
-bollard = { version = "0.21.0", default-features = false, features = [
+bollard = { version = "0.21.1", default-features = false, features = [
   "http",
   "pipe",
 ] }
@@ -405,7 +405,7 @@ cargo-deny = "0.20.2"
 cargo-edit = "0.13.13"
 cargo-fuzz = "0.13.2"
 cargo-hawk = "0.1.12"
-cargo-llvm-cov = "0.8.7"
+cargo-llvm-cov = "0.9.0"
 cargo-machete = "0.9.2"
 cargo-nextest = "0.9.143"
 cargo-vet = "0.10.2"
@@ -426,6 +426,10 @@ days = 3
 # version. Pin the exact version, never a range, so the entry stops applying
 # once the crate moves again. Prune entries after the version ages out.
 [workspace.metadata.cooldown.allow]
+bollard = "0.21.1" # Docker API client patch; published crate is a version/metadata bump
+h2 = "0.4.16" # HTTP/2 small-DATA-frame budget and flow-control fixes
+quinn-proto = "0.11.17" # QUIC key-phase selection refactor; no algorithm change
+redis = "1.6.0" # Streams XNACK, reconnect cap, sentinel role check
 uuid = "1.24.1" # Parse-diagnostics fix; delta reviewed via cargo vet diff
 
 # -----------------------------------------------------------------------------
