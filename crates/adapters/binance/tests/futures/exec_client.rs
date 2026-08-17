@@ -47,7 +47,7 @@ use nautilus_binance::{
         enums::BinanceProductType,
         parse::parse_usdm_instrument,
     },
-    config::BinanceExecClientConfig,
+    config::{BinanceExecClientConfig, BinanceInstrumentProviderConfig},
     futures::{
         execution::{BINANCE_VENUE_ORDER_ID_IS_ALGO_ID_PARAM, BinanceFuturesExecutionClient},
         http::models::BinanceFuturesUsdExchangeInfo,
@@ -1281,6 +1281,41 @@ fn create_test_execution_client_with_leverages(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
+    create_test_execution_client_with_options(
+        base_url_http,
+        base_url_ws,
+        futures_leverages,
+        BinanceInstrumentProviderConfig::default(),
+    )
+}
+
+fn create_test_execution_client_with_provider(
+    base_url_http: String,
+    base_url_ws: String,
+    instrument_provider: BinanceInstrumentProviderConfig,
+) -> (
+    BinanceFuturesExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    create_test_execution_client_with_options(
+        base_url_http,
+        base_url_ws,
+        None,
+        instrument_provider,
+    )
+}
+
+fn create_test_execution_client_with_options(
+    base_url_http: String,
+    base_url_ws: String,
+    futures_leverages: Option<HashMap<String, u32>>,
+    instrument_provider: BinanceInstrumentProviderConfig,
+) -> (
+    BinanceFuturesExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BINANCE-001");
     let client_id = *BINANCE_CLIENT_ID;
@@ -1308,6 +1343,7 @@ fn create_test_execution_client_with_leverages(
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),
         futures_leverages,
+        instrument_provider,
         ..Default::default()
     };
 
@@ -1344,6 +1380,20 @@ fn add_test_instrument_to_cache(cache: &Rc<RefCell<Cache>>) {
     let exchange_info: BinanceFuturesUsdExchangeInfo =
         serde_json::from_value(exchange_info_response()).unwrap();
     let symbol = exchange_info.symbols.first().unwrap();
+    let instrument =
+        parse_usdm_instrument(symbol, UnixNanos::default(), UnixNanos::default()).unwrap();
+
+    cache.borrow_mut().add_instrument(instrument).unwrap();
+}
+
+fn add_delivery_instrument_to_cache(cache: &Rc<RefCell<Cache>>) {
+    let exchange_info: BinanceFuturesUsdExchangeInfo =
+        serde_json::from_value(exchange_info_response()).unwrap();
+    let symbol = exchange_info
+        .symbols
+        .iter()
+        .find(|symbol| symbol.symbol.as_str() == "BTCUSDT_260925")
+        .unwrap();
     let instrument =
         parse_usdm_instrument(symbol, UnixNanos::default(), UnixNanos::default()).unwrap();
 
@@ -2826,6 +2876,96 @@ async fn test_delivery_reconciliation_emits_open_order_and_position_reports() {
 }
 
 #[rstest]
+#[case::in_scope(vec!["BTCUSDT-PERP.BINANCE"], true)]
+#[case::out_of_scope(vec!["XAUUSDT-PERP.BINANCE"], false)]
+#[tokio::test]
+async fn test_reconciliation_respects_load_id_scope(
+    #[case] load_ids: Vec<&str>,
+    #[case] in_scope: bool,
+) {
+    let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::Populated,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let provider = BinanceInstrumentProviderConfig {
+        load_all: false,
+        load_ids: Some(load_ids.into_iter().map(str::to_string).collect()),
+        ..Default::default()
+    };
+    let (mut client, _rx, cache) =
+        create_test_execution_client_with_provider(base_url_http, base_url_ws, provider);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_test_instrument_to_cache(&cache);
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    client.instruments_cache().clear();
+
+    let result = client
+        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await;
+
+    if in_scope {
+        let error = result.unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("open order has unresolved instrument"));
+    } else {
+        assert!(result.unwrap().is_empty());
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reconciliation_filters_out_delivery_instruments() {
+    let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::Delivery,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let provider = BinanceInstrumentProviderConfig {
+        filters: HashMap::from([("contract_types".to_string(), json!("PERPETUAL"))]),
+        ..Default::default()
+    };
+    let (mut client, _rx, cache) =
+        create_test_execution_client_with_provider(base_url_http, base_url_ws, provider);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_delivery_instrument_to_cache(&cache);
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let positions = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert!(positions.is_empty());
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_reconciliation_fails_when_execution_instrument_catalogue_cannot_resolve() {
     let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
@@ -2874,6 +3014,21 @@ async fn test_reconciliation_fails_when_execution_instrument_catalogue_cannot_re
     assert!(position_error
         .to_string()
         .contains("position has unresolved instrument"));
+
+    let fills = client
+        .generate_fill_reports(GenerateFillReports::new(
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            Some(test_instrument_id()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    assert!(fills.is_empty());
 }
 
 #[rstest]

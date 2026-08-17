@@ -57,6 +57,7 @@ use nautilus_model::{
         OrderRejected, OrderUpdated,
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue, VenueOrderId},
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Quantity},
@@ -106,6 +107,7 @@ use crate::{
             BinanceEnvironment, BinanceFuturesOrderType, BinancePositionSide, BinancePriceMatch,
             BinanceProductType, BinanceSide, BinanceTimeInForce, BinanceWorkingType,
         },
+        instruments::BinanceInstrumentSelector,
         symbol::{format_binance_symbol, format_instrument_id},
         urls::{get_usdm_ws_route_base_url, get_ws_private_base_url},
     },
@@ -960,12 +962,65 @@ impl BinanceFuturesExecutionClient {
 
     fn is_out_of_scope(&self, instrument_id: InstrumentId) -> bool {
         let provider = &self.config.instrument_provider;
-        !provider.load_all
+        if !provider.load_all
             && provider.load_ids.as_ref().is_none_or(|load_ids| {
                 load_ids
                     .iter()
                     .all(|raw_id| InstrumentId::from(raw_id.as_str()) != instrument_id)
             })
+        {
+            return true;
+        }
+
+        let Some(instrument) = self.core.cache().instrument(&instrument_id) else {
+            // A record with no shared-cache definition cannot be proven to be outside a
+            // filter. Keep it in scope so reconciliation reports the missing definition.
+            if let Some(values) = provider.filters.get("symbols")
+                && !filter_values_contain(values, &format_binance_symbol(&instrument_id))
+            {
+                return true;
+            }
+            return false;
+        };
+
+        let contract_type = instrument_contract_type(&instrument);
+        let mut selector_config = provider.clone();
+        let contract_filter = selector_config.filters.remove("contract_types");
+        let Ok(selector) = BinanceInstrumentSelector::new(&selector_config) else {
+            return false;
+        };
+
+        if !selector.includes(
+            instrument_id,
+            instrument.raw_symbol().as_str(),
+            instrument
+                .base_currency()
+                .map_or("", |currency| currency.code.as_str()),
+            instrument.quote_currency().code.as_str(),
+            contract_type,
+        ) {
+            return true;
+        }
+
+        let Some(contract_filter) = contract_filter else {
+            return false;
+        };
+
+        match contract_type {
+            Some(contract_type) => !filter_values_contain(&contract_filter, contract_type),
+            // The model retains delivery expiry but not Binance's current/next-quarter label.
+            // Treat a delivery contract as potentially selected when any delivery label is
+            // configured, while still classifying it out of scope for perpetual-only filters.
+            None => !filter_values_contain_any(
+                &contract_filter,
+                [
+                    "CURRENT_MONTH",
+                    "NEXT_MONTH",
+                    "CURRENT_QUARTER",
+                    "NEXT_QUARTER",
+                ],
+            ),
+        }
     }
 
     /// Creates a position status report from Binance position risk data.
@@ -2046,6 +2101,21 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         };
 
         let symbol = format_binance_symbol(&instrument_id);
+        let Some((_, price_precision, size_precision)) = self
+            .resolve_cached_instrument(&symbol)?
+        else {
+            if self.is_out_of_scope(instrument_id) {
+                log::debug!(
+                    "Dropping out-of-scope Binance Futures fills for instrument {instrument_id}"
+                );
+            } else {
+                log::warn!(
+                    "Dropping historical Binance Futures fills for unresolved instrument {instrument_id}"
+                );
+            }
+            return Ok(Vec::new());
+        };
+
         let mut trades = Vec::new();
         let mut seen_trade_ids = AHashSet::new();
         let requested_end_time = cmd
@@ -2158,7 +2228,6 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         }
 
         trades.sort_unstable_by_key(|trade| (trade.time, trade.id));
-        let (price_precision, size_precision) = self.get_instrument_precision(instrument_id)?;
         let ts_init = self.clock.get_time_ns();
 
         let mut reports = Vec::new();
@@ -2319,6 +2388,11 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     .into_iter()
                     .map(|position| position.instrument_id),
             );
+            instrument_ids.retain(|instrument_id| {
+                cache.instrument(instrument_id).is_some_and(|instrument| {
+                    is_instrument_for_product(instrument, self.product_type)
+                })
+            });
         }
         let instruments_cache = self.http_client.instruments_cache();
         instrument_ids.retain(|instrument_id| {
@@ -3198,8 +3272,65 @@ fn cancel_venue_order_id(
     }
 }
 
+fn is_instrument_for_product(instrument: &InstrumentAny, product_type: BinanceProductType) -> bool {
+    match product_type {
+        BinanceProductType::UsdM => {
+            matches!(
+                instrument,
+                InstrumentAny::CryptoFuture(_)
+                    | InstrumentAny::CryptoPerpetual(_)
+                    | InstrumentAny::PerpetualContract(_)
+            ) && !instrument.is_inverse()
+        }
+        BinanceProductType::CoinM => {
+            matches!(
+                instrument,
+                InstrumentAny::CryptoFuture(_) | InstrumentAny::CryptoPerpetual(_)
+            ) && instrument.is_inverse()
+        }
+        _ => false,
+    }
+}
+
+fn instrument_contract_type(instrument: &InstrumentAny) -> Option<&'static str> {
+    match instrument {
+        InstrumentAny::CryptoPerpetual(_) => Some("PERPETUAL"),
+        InstrumentAny::PerpetualContract(_) => Some("TRADIFI_PERPETUAL"),
+        InstrumentAny::CryptoFuture(_) => None,
+        _ => None,
+    }
+}
+
+fn filter_values_contain(value: &serde_json::Value, expected: &str) -> bool {
+    match value {
+        serde_json::Value::String(value) => value.trim().eq_ignore_ascii_case(expected),
+        serde_json::Value::Array(values) => values.iter().any(|value| {
+            value
+                .as_str()
+                .is_some_and(|value| value.trim().eq_ignore_ascii_case(expected))
+        }),
+        _ => false,
+    }
+}
+
+fn filter_values_contain_any<const N: usize>(
+    value: &serde_json::Value,
+    expected: [&str; N],
+) -> bool {
+    expected
+        .iter()
+        .any(|expected| filter_values_contain(value, expected))
+}
+
 #[cfg(test)]
 mod tests {
+    use nautilus_model::{
+        instruments::stubs::{
+            crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_btcusdt,
+            perpetual_contract_eurusd, xbtusd_bitmex,
+        },
+        types::Price,
+    };
     use rstest::rstest;
 
     use super::*;
@@ -3481,6 +3612,51 @@ mod tests {
         let err = http_error(BINANCE_GTX_ORDER_REJECT_CODE);
         assert!(!is_ambiguous_submit_error(&err));
         assert!(is_structured_venue_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_instrument_product_matching_distinguishes_futures_products_from_spot() {
+        let usdm = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let generic_perpetual = InstrumentAny::PerpetualContract(perpetual_contract_eurusd());
+        let coinm = InstrumentAny::CryptoPerpetual(xbtusd_bitmex());
+        let delivery =
+            || crypto_future_btcusdt(2, 6, Price::from("0.01"), Quantity::from("0.000001"));
+        let usdm_delivery = InstrumentAny::CryptoFuture(delivery());
+        let mut coinm_delivery = delivery();
+        coinm_delivery.is_inverse = true;
+        let coinm_delivery = InstrumentAny::CryptoFuture(coinm_delivery);
+        let spot = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+
+        assert!(is_instrument_for_product(&usdm, BinanceProductType::UsdM));
+        assert!(!is_instrument_for_product(&usdm, BinanceProductType::CoinM));
+        assert!(is_instrument_for_product(
+            &generic_perpetual,
+            BinanceProductType::UsdM
+        ));
+        assert!(!is_instrument_for_product(
+            &generic_perpetual,
+            BinanceProductType::CoinM
+        ));
+        assert!(is_instrument_for_product(&coinm, BinanceProductType::CoinM));
+        assert!(!is_instrument_for_product(&coinm, BinanceProductType::UsdM));
+        assert!(is_instrument_for_product(
+            &usdm_delivery,
+            BinanceProductType::UsdM
+        ));
+        assert!(!is_instrument_for_product(
+            &usdm_delivery,
+            BinanceProductType::CoinM
+        ));
+        assert!(is_instrument_for_product(
+            &coinm_delivery,
+            BinanceProductType::CoinM
+        ));
+        assert!(!is_instrument_for_product(
+            &coinm_delivery,
+            BinanceProductType::UsdM
+        ));
+        assert!(!is_instrument_for_product(&spot, BinanceProductType::UsdM));
+        assert!(!is_instrument_for_product(&spot, BinanceProductType::CoinM));
     }
 
 }
