@@ -12,69 +12,75 @@ requirements may change between releases.
 
 ## System implementations
 
-Nautilus has three implementations. Understanding where each stands helps
+Nautilus has two paths. Understanding where each stands helps
 you choose the right one for your use case.
 
-- **v1 legacy**: Cython/Python classes under `nautilus_trader/`. Fully
-  featured with the broadest component coverage.
 - **v2 Rust**: Pure Rust under `crates/`. Runs without Python.
 - **v2 PyO3**: Python user-components (actors, strategies) running on
-  the Rust core via PyO3 bindings. Combines Python convenience with
+  the Rust core via PyO3 bindings under `python/nautilus_trader/`. Combines Python convenience with
   Rust engine performance.
+
+:::note
+The legacy v1 (Cython) implementation has been removed. This guide covers
+the v2 Rust and v2 PyO3 paths only.
+:::
 
 ### Capability matrix
 
-| Component            | v1 legacy (Cython) | v2 Rust | v2 PyO3 (Python on Rust) |
-| -------------------- | ------------------ | ------- | ------------------------ |
-| Strategy             | ✓                  | ✓       | ✓                        |
-| Actor                | ✓                  | ✓       | ✓                        |
-| DataEngine           | ✓                  | ✓       | ✓                        |
-| ExecutionEngine      | ✓                  | ✓       | ✓                        |
-| RiskEngine           | ✓                  | ✓       | ✓                        |
-| BacktestEngine       | ✓                  | ✓       | ✓                        |
-| BacktestNode         | ✓                  | ✓       | ✓                        |
-| LiveNode             | ✓                  | ✓       | ✓                        |
-| OrderEmulator        | ✓                  | ✓       | ✓                        |
-| Matching engine      | ✓                  | ✓       | ✓                        |
-| Portfolio            | ✓                  | ✓       | ✓                        |
-| Accounts             | ✓                  | ✓       | ✓                        |
-| Cache                | ✓                  | ✓       | ✓                        |
-| MessageBus           | ✓                  | ✓       | ✓                        |
-| Data catalog         | ✓                  | ✓       | ✓                        |
-| Indicators           | ✓                  | ✓       | ✓                        |
-| Exec algorithms      | TWAP               | TWAP    | TWAP                     |
-| Controller           | ✓                  | -       | ✓                        |
-| Tearsheets           | ✓                  | -       | ✓                        |
-| Config serialization | ✓                  | -       | -                        |
+| Component       | v2 Rust | v2 PyO3 (Python on Rust) |
+| --------------- | ------- | ------------------------ |
+| Strategy        | ✓       | ✓                        |
+| Actor           | ✓       | ✓                        |
+| DataEngine      | ✓       | ✓                        |
+| ExecutionEngine | ✓       | ✓                        |
+| RiskEngine      | ✓       | ✓                        |
+| BacktestEngine  | ✓       | ✓                        |
+| BacktestNode    | ✓       | ✓                        |
+| LiveNode        | ✓       | ✓                        |
+| OrderEmulator   | ✓       | ✓                        |
+| Matching engine | ✓       | ✓                        |
+| Portfolio       | ✓       | ✓                        |
+| Accounts        | ✓       | ✓                        |
+| Cache           | ✓       | ✓                        |
+| MessageBus      | ✓       | ✓                        |
+| Data catalog    | ✓       | ✓                        |
+| Indicators      | ✓       | ✓                        |
+| Exec algorithms | TWAP    | TWAP                     |
+| Controller      | -       | ✓                        |
+| Tearsheets      | -       | ✓                        |
+
+:::note
+The Controller runtime is implemented in Rust and powers the Python `Controller`
+base class. The matrix marks it absent for v2 Rust because the supported
+registration path (importable controller configs) is Python-only.
+:::
 
 ### Adapters
 
-| Adapter             | v1 legacy (Cython) | v2 Rust | v2 PyO3 |
-| ------------------- | ------------------ | ------- | ------- |
-| Architect AX        | ✓                  | ✓       | ✓       |
-| Betfair             | ✓                  | ✓       | ✓       |
-| Binance             | ✓                  | ✓       | ✓       |
-| BitMEX              | ✓                  | ✓       | ✓       |
-| Blockchain          | -                  | ✓       | ✓       |
-| Bybit               | ✓                  | ✓       | ✓       |
-| Coinbase            | -                  | ✓       | ✓       |
-| Databento           | ✓                  | ✓       | ✓       |
-| Deribit             | ✓                  | ✓       | ✓       |
-| Derive              | -                  | ✓       | ✓       |
-| dYdX                | ✓                  | ✓       | ✓       |
-| Hyperliquid         | ✓                  | ✓       | ✓       |
-| Interactive Brokers | ✓                  | ✓       | ✓       |
-| Kraken              | ✓                  | ✓       | ✓       |
-| Lighter             | -                  | ✓       | ✓       |
-| OKX                 | ✓                  | ✓       | ✓       |
-| Polymarket          | ✓                  | ✓       | ✓       |
-| Sandbox             | ✓                  | ✓       | ✓       |
-| Tardis              | ✓                  | ✓       | ✓       |
+| Adapter             | v2 Rust | v2 PyO3 |
+| ------------------- | ------- | ------- |
+| Architect AX        | ✓       | ✓       |
+| Betfair             | ✓       | ✓       |
+| Binance             | ✓       | ✓       |
+| BitMEX              | ✓       | ✓       |
+| Blockchain          | ✓       | ✓       |
+| Bybit               | ✓       | ✓       |
+| Coinbase            | ✓       | ✓       |
+| Databento           | ✓       | ✓       |
+| Deribit             | ✓       | ✓       |
+| Derive              | ✓       | ✓       |
+| dYdX                | ✓       | ✓       |
+| Hyperliquid         | ✓       | ✓       |
+| Interactive Brokers | ✓       | ✓       |
+| Kraken              | ✓       | ✓       |
+| Lighter             | ✓       | ✓       |
+| OKX                 | ✓       | ✓       |
+| Polymarket          | ✓       | ✓       |
+| Sandbox             | ✓       | ✓       |
+| Tardis              | ✓       | ✓       |
 
 ### Choosing a path
 
-- **v1 legacy** is the most complete today. Use it if you need the
-  Controller or config serialization.
 - **v2 Rust** gives native performance without a Python runtime. All core
   trading functionality is available. Use it for latency-sensitive
   deployments or teams that prefer a compiled language.
@@ -190,8 +196,6 @@ override what you need.
 | `on_option_greeks`     | `OptionGreeks`            |
 | `on_option_chain`      | `OptionChainSlice`        |
 | `on_instrument_status` | `InstrumentStatus`        |
-| `on_order_filled`      | `OrderFilled`             |
-| `on_order_canceled`    | `OrderCanceled`           |
 | `on_time_event`        | `TimeEvent`               |
 
 For a step-by-step walkthrough, see the
@@ -207,6 +211,8 @@ into the strategy runtime contract. `StrategyCore` stores the runtime strategy
 state; normal strategy logic reaches it through facade methods on `self`.
 Runtime registration requires the native wiring generated by the macro, but
 normal strategy logic uses `Strategy` methods and the facade methods on `self`.
+Strategies also override order event handlers on the `Strategy` trait, such as
+`on_order_filled` (`OrderFilled`) and `on_order_canceled` (`OrderCanceled`).
 
 ### Order management
 
@@ -255,17 +261,6 @@ argument when needed. They do not make the actor, strategy, or `StrategyCore`
 deref to runtime internals.
 The execution algorithm macro takes an `on_order()` implementation block because
 that method defines the algorithm's required order handling.
-Normal code uses facade methods such as:
-
-- `actor_id()`
-- `trader_id()`
-- `is_registered()`
-- `config()`
-- `strategy_id()`
-- `clock()`
-- `cache()`
-- `order()`
-- `portfolio()`
 
 ### Native traits
 
