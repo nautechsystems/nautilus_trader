@@ -131,6 +131,11 @@ impl BacktestExecutionClient {
             msgbus::send_order_event(endpoint, event);
         }
     }
+
+    pub(crate) fn order_event_handler(&self) -> Rc<dyn Fn(OrderEventAny)> {
+        let queued_events = Rc::clone(&self.queued_events);
+        Rc::new(move |event| queued_events.borrow_mut().push(event))
+    }
 }
 
 #[async_trait(?Send)]
