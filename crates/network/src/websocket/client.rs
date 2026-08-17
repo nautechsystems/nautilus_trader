@@ -2578,6 +2578,7 @@ impl WebSocketClient {
             ping_handler,
             rate_limiter,
             None,
+            None,
         )
         .await
     }
@@ -2586,15 +2587,20 @@ impl WebSocketClient {
 
     /// Creates an epoch-handler client and reports transport availability changes.
     ///
+    /// A `heartbeat_timeout` starts when each connection is established and resets on every
+    /// inbound frame, including Ping and Pong. When the timeout expires, the client reconnects
+    /// normally.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the connection cannot be established.
+    /// Returns an error if the connection cannot be established or `heartbeat_timeout` is zero.
     pub async fn connect_with_rate_limiter_and_epoch_handler_and_state_sink(
         config: WebSocketConfig,
         epoch_handler: EpochMessageHandler,
         ping_handler: Option<PingHandler>,
         rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
         state_sink: Option<SocketStateSink>,
+        heartbeat_timeout: Option<Duration>,
     ) -> Result<Self, TransportError> {
         Self::connect_with_handler(
             config,
@@ -2602,7 +2608,7 @@ impl WebSocketClient {
             ping_handler.map(IncomingPingHandler::Ping),
             rate_limiter,
             state_sink,
-            None,
+            heartbeat_timeout,
         )
         .await
     }

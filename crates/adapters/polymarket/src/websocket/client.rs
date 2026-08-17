@@ -15,9 +15,12 @@
 
 //! Provides the WebSocket client for the Polymarket CLOB API.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU8, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU8, Ordering},
+    },
+    time::Duration,
 };
 
 use nautilus_common::{clients::SocketReconnectRegistration, live::get_runtime};
@@ -41,23 +44,21 @@ use crate::common::{
     urls::{clob_ws_market_url, clob_ws_user_url},
 };
 
-const POLYMARKET_HEARTBEAT_SECS: u64 = 30;
+// The venue counts only the `PING` text frame, not protocol ping frames, and
+// closes with `1008 no ping received` otherwise. Cadence per venue docs:
+// https://docs.polymarket.com/developers/CLOB/websocket/wss-overview
+const POLYMARKET_HEARTBEAT_SECS: u64 = 10;
+
+// Prediction markets go quiet for long stretches, so liveness is the venue
+// still sending frames, not data arriving. A data-silence timer cannot serve:
+// `PONG` is a text frame and refreshes it. Tear down after three cycles.
+const POLYMARKET_HEARTBEAT_TIMEOUT_SECS: u64 = POLYMARKET_HEARTBEAT_SECS * 3;
 
 /// Polymarket WebSocket channel: market data or authenticated user data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WsChannel {
     Market,
     User,
-}
-
-// Market channel streams continuously; user channel can legitimately be quiet
-// when no orders or fills exist, so give it a longer window before treating
-// silence as a zombie connection.
-fn idle_timeout_ms_for(channel: WsChannel) -> u64 {
-    match channel {
-        WsChannel::Market => 60_000,
-        WsChannel::User => 300_000,
-    }
 }
 
 /// Lightweight handle for subscribing/unsubscribing to market data.
@@ -261,6 +262,7 @@ impl PolymarketWebSocketClient {
             None,
             Arc::new(RateLimiter::new_with_quota(None, vec![])),
             self.socket_sink.clone(),
+            Some(Duration::from_secs(POLYMARKET_HEARTBEAT_TIMEOUT_SECS)),
         )
         .await?;
         self.socket_registration = self
@@ -378,14 +380,14 @@ impl PolymarketWebSocketClient {
             url: self.url.clone(),
             headers: vec![],
             heartbeat: Some(POLYMARKET_HEARTBEAT_SECS),
-            heartbeat_msg: None,
+            heartbeat_msg: Some("PING".to_string()),
             reconnect_timeout_ms: Some(15_000),
             reconnect_delay_initial_ms: Some(250),
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(200),
             reconnect_max_attempts: None,
-            idle_timeout_ms: Some(idle_timeout_ms_for(self.channel)),
+            idle_timeout_ms: None,
             backend: self.transport_backend,
             proxy_url: self.proxy_url.as_ref().map(|url| url.expose().to_string()),
         }
@@ -584,7 +586,7 @@ mod tests {
     };
     use rstest::rstest;
 
-    use super::{PolymarketWebSocketClient, WsChannel, idle_timeout_ms_for};
+    use super::PolymarketWebSocketClient;
 
     async fn handle_upgrade(ws: WebSocketUpgrade) -> Response {
         ws.on_upgrade(handle_socket)
@@ -611,13 +613,6 @@ mod tests {
 
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
         addr
-    }
-
-    #[rstest]
-    #[case::market(WsChannel::Market, 60_000)]
-    #[case::user(WsChannel::User, 300_000)]
-    fn test_idle_timeout_ms_for_channel(#[case] channel: WsChannel, #[case] expected: u64) {
-        assert_eq!(idle_timeout_ms_for(channel), expected);
     }
 
     #[rstest]
@@ -676,14 +671,17 @@ mod tests {
         let user_debug = format!("{user:?}");
         let assert_common = |config: &WebSocketConfig| {
             assert_eq!(config.headers, Vec::<(String, String)>::new());
-            assert_eq!(config.heartbeat, Some(super::POLYMARKET_HEARTBEAT_SECS));
-            assert_eq!(config.heartbeat_msg, None);
+            assert_eq!(config.heartbeat, Some(10));
+            assert_eq!(config.heartbeat_msg.as_deref(), Some("PING"));
             assert_eq!(config.reconnect_timeout_ms, Some(15_000));
             assert_eq!(config.reconnect_delay_initial_ms, Some(250));
             assert_eq!(config.reconnect_delay_max_ms, Some(5_000));
             assert_eq!(config.reconnect_backoff_factor, Some(2.0));
             assert_eq!(config.reconnect_jitter_ms, Some(200));
             assert_eq!(config.reconnect_max_attempts, None);
+            // No data-silence timer: `PONG` arrives as a text frame and would
+            // refresh it, so liveness rests on the heartbeat timeout instead.
+            assert_eq!(config.idle_timeout_ms, None);
             assert_eq!(config.backend, TransportBackend::Tungstenite);
         };
 
@@ -691,14 +689,6 @@ mod tests {
         assert_eq!(user.proxy_url.as_ref().unwrap().expose(), USER_PROXY);
         assert_eq!(market_config.url, "ws://market.example/ws");
         assert_eq!(user_config.url, "ws://user.example/ws");
-        assert_eq!(
-            market_config.idle_timeout_ms,
-            Some(idle_timeout_ms_for(WsChannel::Market))
-        );
-        assert_eq!(
-            user_config.idle_timeout_ms,
-            Some(idle_timeout_ms_for(WsChannel::User))
-        );
         assert_eq!(market_config.proxy_url.as_deref(), Some(MARKET_PROXY));
         assert_eq!(user_config.proxy_url.as_deref(), Some(USER_PROXY));
         assert_common(&market_config);

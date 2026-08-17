@@ -276,6 +276,11 @@ impl FeedHandler {
             return vec![];
         }
 
+        // Reply to the application-level `PING` heartbeat, which is not JSON
+        if text == "PONG" {
+            return vec![];
+        }
+
         match self.channel {
             WsChannel::Market => {
                 if let Ok(msgs) = serde_json::from_str::<Vec<&RawValue>>(text) {
