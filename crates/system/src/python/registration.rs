@@ -18,7 +18,9 @@
 //! Every Python component reaches the trader through one of the `add_python_*` methods here, so the
 //! sequence each component needs (component clock, register, global registries, lifecycle tracking)
 //! is expressed once. Registering in the global registries retains the component's Python wrapper,
-//! so ownership of that wrapper cannot be forgotten by a caller.
+//! so a caller of that path cannot forget the wrapper. A [`PyExecutionAlgorithm`] registers through
+//! the native path instead, so [`Trader::add_py_execution_algorithm_instance`] retains its wrapper
+//! directly and is the only place that has to.
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
@@ -344,12 +346,17 @@ impl Trader {
             anyhow::bail!("Execution algorithm '{exec_algorithm_id}' is already registered");
         }
 
-        self.ensure_component_id_available(ComponentId::from(exec_algorithm_id))?;
+        let component_id = ComponentId::from(exec_algorithm_id);
+        self.ensure_component_id_available(component_id)?;
 
-        self.add_exec_algorithm(algorithm)?;
+        if let Err(e) = self.add_exec_algorithm(algorithm) {
+            // Without this the guard sees the stranded clock and dead-ends this ID until disposal
+            self.release_component(component_id);
+            return Err(e);
+        }
 
         Python::attach(|py| {
-            retain_python_wrapper(ComponentId::from(exec_algorithm_id), wrapper.clone_ref(py));
+            retain_python_wrapper(component_id, wrapper.clone_ref(py));
         });
 
         Ok(exec_algorithm_id)

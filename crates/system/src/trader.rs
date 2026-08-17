@@ -4273,6 +4273,87 @@ class ModuleStrategy(Strategy):
         });
     }
 
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn test_failed_exec_algorithm_registration_leaves_the_id_reusable() {
+        use nautilus_trading::{ExecutionAlgorithmNative, python::algorithm::PyExecutionAlgorithm};
+
+        Python::initialize();
+
+        let exec_algorithm_id = ExecAlgorithmId::from("Rollback-Algo");
+        let component_id = ComponentId::from(exec_algorithm_id);
+
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let mut trader = Trader::new(
+            trader_id,
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache.clone(),
+            portfolio,
+        );
+
+        Python::attach(|py| {
+            let config = py
+                .eval(
+                    c_str!("type('_Cfg', (), {'exec_algorithm_id': 'Rollback-Algo'})()"),
+                    None,
+                    None,
+                )
+                .unwrap();
+            let wrapper = py
+                .get_type::<PyExecutionAlgorithm>()
+                .as_any()
+                .call1((config.clone(),))
+                .unwrap();
+            let mut algorithm = wrapper
+                .extract::<PyRefMut<PyExecutionAlgorithm>>()
+                .unwrap()
+                .clone();
+
+            // An already registered algorithm fails `register`, which the trader only reaches after
+            // it has created the component clock
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+            algorithm
+                .exec_algorithm_core_mut()
+                .register(trader_id, clock, cache)
+                .unwrap();
+
+            let error = trader
+                .add_py_execution_algorithm_instance(algorithm, &wrapper.unbind())
+                .expect_err("registering an already registered algorithm must fail");
+            assert!(error.to_string().contains("already registered"));
+
+            // A stranded clock would make the guard reject every later retry of this ID
+            assert!(trader.get_component_clocks().is_empty());
+            assert!(trader.exec_algorithm_ids().is_empty());
+            assert!(get_python_wrapper(component_id).is_none());
+
+            let fresh_wrapper = py
+                .get_type::<PyExecutionAlgorithm>()
+                .as_any()
+                .call1((config,))
+                .unwrap();
+            let fresh = fresh_wrapper
+                .extract::<PyRefMut<PyExecutionAlgorithm>>()
+                .unwrap()
+                .clone();
+
+            trader
+                .add_py_execution_algorithm_instance(fresh, &fresh_wrapper.unbind())
+                .expect("a failed attempt must not dead-end the component ID");
+            assert_eq!(trader.exec_algorithm_ids(), vec![exec_algorithm_id]);
+            assert!(get_python_wrapper(component_id).is_some());
+
+            // Retire everything so the thread-local registries stay isolated between tests
+            let _ = trader.dispose_components();
+            assert!(get_python_wrapper(component_id).is_none());
+            assert!(trader.get_component_clocks().is_empty());
+        });
+    }
+
     #[rstest]
     fn test_retirement_removes_component_subscriptions() {
         let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =

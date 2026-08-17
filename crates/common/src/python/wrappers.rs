@@ -37,6 +37,10 @@ pub fn retain_python_wrapper(component_id: ComponentId, wrapper: Py<PyAny>) {
     let displaced =
         PYTHON_WRAPPERS.with_borrow_mut(|wrappers| wrappers.insert(component_id, wrapper));
 
+    if displaced.is_some() {
+        log::warn!("Replaced the retained Python wrapper for {component_id}");
+    }
+
     // Dropping a wrapper can run Python finalization which re-enters Rust, so the value leaves the
     // registry before the borrow ends
     drop(displaced);
@@ -52,10 +56,12 @@ pub fn release_python_wrapper(component_id: ComponentId) {
 /// Returns the Python wrapper retained for `component_id`, or `None` when nothing is retained.
 #[must_use]
 pub fn get_python_wrapper(component_id: ComponentId) -> Option<Py<PyAny>> {
-    PYTHON_WRAPPERS.with_borrow(|wrappers| {
-        wrappers
-            .get(&component_id)
-            .map(|wrapper| Python::attach(|py| wrapper.clone_ref(py)))
+    Python::attach(|py| {
+        PYTHON_WRAPPERS.with_borrow(|wrappers| {
+            wrappers
+                .get(&component_id)
+                .map(|wrapper| wrapper.clone_ref(py))
+        })
     })
 }
 
