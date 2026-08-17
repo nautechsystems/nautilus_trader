@@ -984,7 +984,7 @@ impl BinanceFuturesExecutionClient {
             return false;
         };
 
-        let contract_type = instrument_contract_type(&instrument);
+        let contract_type = instrument_contract_type(instrument);
         let mut selector_config = provider.clone();
         let contract_filter = selector_config.filters.remove("contract_types");
         let Ok(selector) = BinanceInstrumentSelector::new(&selector_config) else {
