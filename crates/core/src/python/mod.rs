@@ -86,20 +86,14 @@ use crate::{
     },
 };
 
-/// Safely clones a Python object by acquiring the GIL and properly managing reference counts.
+/// Clones a Python object reference by attaching to the interpreter.
 ///
-/// This function exists to break reference cycles between Rust and Python that can occur
-/// when using `Arc<Py<PyAny>>` in callback-holding structs. The original design wrapped
-/// Python callbacks in `Arc` for thread-safe sharing, but this created circular references:
+/// The result is a second strong reference to the same object, so this does not break a reference
+/// cycle. When a Rust object holds a `Py<T>` whose Python object reaches back into Rust, cloning
+/// adds another strong edge to that cycle rather than removing one.
 ///
-/// 1. Rust `Arc` holds Python objects → increases Python reference count.
-/// 2. Python objects might reference Rust objects → creates cycles.
-/// 3. Neither side can be garbage collected → memory leak.
-///
-/// By using plain `Py<PyAny>` with GIL-based cloning instead of `Arc<Py<PyAny>>`, we:
-/// - Avoid circular references between Rust and Python memory management.
-/// - Ensure proper Python reference counting under the GIL.
-/// - Allow both Rust and Python garbage collectors to work correctly.
+/// Break such a back-reference with a Python weak reference (see [`upgrade_py_weakref`]) or an
+/// explicit terminal release point that drops the strong reference during disposal.
 #[must_use]
 pub fn clone_py_object(obj: &Py<PyAny>) -> Py<PyAny> {
     Python::attach(|py| obj.clone_ref(py))
