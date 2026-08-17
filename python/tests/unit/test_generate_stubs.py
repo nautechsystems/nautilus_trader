@@ -2417,7 +2417,7 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path):
         app_key="readback-app-key",
         proxy_url="http://user:password@proxy.example.test",
         event_type_ids=[7, 9],
-        stream_heartbeat_ms=4321,
+        stream_heartbeat_secs=43,
     )
     bitmex_config = BitmexExecClientConfig(
         submitter_proxy_urls=["http://submitter.example.test"],
@@ -2443,7 +2443,7 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path):
     assert ax_config.has_proxy_url is True
     assert betfair_config.username == "readback-user"
     assert betfair_config.event_type_ids == ["7", "9"]
-    assert betfair_config.stream_heartbeat_ms == 4321
+    assert betfair_config.stream_heartbeat_secs == 43
     assert betfair_config.has_proxy_url is True
     assert bitmex_config.deadmans_switch_timeout_secs == 45
     assert bitmex_config.has_submitter_proxy_urls is True

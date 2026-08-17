@@ -66,7 +66,7 @@ use ustr::Ustr;
 use crate::{
     common::{
         bar::{binance_bar_data_type, parse_binance_bar_type},
-        consts::BINANCE_VENUE,
+        consts::{BINANCE_VENUE, BINANCE_WS_HEARTBEAT_SECS},
         credential::resolve_credentials,
         enums::{BinanceEnvironment, BinanceProductType},
         parse::{bar_spec_to_binance_interval, quote_to_l1_deltas},
@@ -288,25 +288,23 @@ impl BinanceSpotDataClient {
                     config.base_url_ws.clone(),
                     creds.as_ref().map(|(k, _)| k.clone()),
                     creds.as_ref().map(|(_, s)| s.clone()),
-                    Some(20), // Heartbeat interval
+                    Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )?
                 .with_proxy(config.proxy_url.clone()),
             ),
-            BinanceSpotMarketDataMode::Json => {
-                SpotWsClient::JsonPublic(
-                    BinanceSpotPublicJsonWebSocketClient::new(
-                        Some(resolve_spot_json_ws_url(
-                            config.base_url_ws.clone(),
-                            config.environment,
-                            config.us,
-                        )),
-                        Some(20), // Heartbeat interval
-                        config.transport_backend,
-                    )
-                    .with_proxy(config.proxy_url.clone()),
+            BinanceSpotMarketDataMode::Json => SpotWsClient::JsonPublic(
+                BinanceSpotPublicJsonWebSocketClient::new(
+                    Some(resolve_spot_json_ws_url(
+                        config.base_url_ws.clone(),
+                        config.environment,
+                        config.us,
+                    )),
+                    Some(BINANCE_WS_HEARTBEAT_SECS),
+                    config.transport_backend,
                 )
-            }
+                .with_proxy(config.proxy_url.clone()),
+            ),
         };
         let data_sender = get_data_event_sender();
 

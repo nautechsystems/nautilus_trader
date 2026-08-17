@@ -27,6 +27,12 @@ pub const AUTHENTICATION_TIMEOUT_SECS: u64 = 10;
 /// Connection state check interval in milliseconds.
 pub(crate) const CONNECTION_STATE_CHECK_INTERVAL_MS: u64 = 10;
 
+/// Heartbeat intervals tolerated before an unset `heartbeat_timeout_secs` tears the connection down.
+///
+/// Sending a heartbeat implies the peer answers it, so a configured interval is enough to derive a
+/// liveness window without each adapter restating one. Three cycles tolerate two lost replies.
+pub(crate) const DEFAULT_HEARTBEAT_TIMEOUT_INTERVALS: u64 = 3;
+
 /// Graceful shutdown delay in milliseconds.
 pub(crate) const GRACEFUL_SHUTDOWN_DELAY_MS: u64 = 100;
 

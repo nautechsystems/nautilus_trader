@@ -142,15 +142,16 @@ fn socket_config() -> SocketConfig {
         mode: Mode::Plain,
         suffix: b"\r\n".to_vec(),
         message_handler: None,
-        heartbeat: None,
-        reconnect_timeout_ms: Some(2_000),
+        heartbeat_interval_secs: None,
+        heartbeat_payload: None,
+        connect_timeout_ms: Some(2_000),
         reconnect_delay_initial_ms: Some(50),
         reconnect_delay_max_ms: Some(500),
         reconnect_backoff_factor: Some(1.5),
         reconnect_jitter_ms: Some(10),
         connection_max_retries: None,
         reconnect_max_attempts: None,
-        idle_timeout_ms: None,
+        heartbeat_timeout_secs: None,
         certs_dir: None,
     }
 }
@@ -228,7 +229,7 @@ fn test_turmoil_real_socket_basic_connect(socket_config: SocketConfig) {
 
 #[rstest]
 fn test_turmoil_real_socket_reconnection(mut socket_config: SocketConfig) {
-    socket_config.reconnect_timeout_ms = Some(5_000);
+    socket_config.connect_timeout_ms = Some(5_000);
     socket_config.reconnect_delay_initial_ms = Some(100);
     let received = Arc::new(Mutex::new(Vec::new()));
     attach_message_capture(&mut socket_config, &received);
@@ -410,7 +411,7 @@ fn test_turmoil_socket_stable_reconnect_resets_attempts(mut socket_config: Socke
 
 #[rstest]
 fn test_turmoil_real_socket_network_partition(mut socket_config: SocketConfig) {
-    socket_config.reconnect_timeout_ms = Some(3_000);
+    socket_config.connect_timeout_ms = Some(3_000);
     let received = Arc::new(Mutex::new(Vec::new()));
     attach_message_capture(&mut socket_config, &received);
 
@@ -466,7 +467,7 @@ fn test_turmoil_real_socket_network_partition(mut socket_config: SocketConfig) {
 
 #[rstest]
 fn test_turmoil_real_socket_close_during_reconnect(mut socket_config: SocketConfig) {
-    socket_config.reconnect_timeout_ms = Some(5_000);
+    socket_config.connect_timeout_ms = Some(5_000);
     socket_config.reconnect_delay_initial_ms = Some(100);
 
     let mut sim = seeded_builder(CLOSE_DURING_RECONNECT_SEED).build();
@@ -502,7 +503,7 @@ fn test_turmoil_real_socket_close_during_reconnect(mut socket_config: SocketConf
 
 #[rstest]
 fn test_turmoil_real_socket_disconnect_during_backoff(mut socket_config: SocketConfig) {
-    socket_config.reconnect_timeout_ms = Some(1_000);
+    socket_config.connect_timeout_ms = Some(1_000);
     socket_config.reconnect_delay_initial_ms = Some(10_000); // Long backoff
     socket_config.reconnect_delay_max_ms = Some(10_000);
     socket_config.reconnect_backoff_factor = Some(1.0);
@@ -551,7 +552,7 @@ fn test_turmoil_socket_repeated_drops_preserve_message_order(
     mut socket_config: SocketConfig,
     #[case] seed: u64,
 ) {
-    socket_config.reconnect_timeout_ms = Some(5_000);
+    socket_config.connect_timeout_ms = Some(5_000);
     socket_config.reconnect_delay_initial_ms = Some(25);
     socket_config.reconnect_delay_max_ms = Some(100);
     socket_config.reconnect_backoff_factor = Some(1.0);

@@ -327,6 +327,22 @@ Socket state is operational evidence, not an execution‑command outcome. A disc
 not reject, cancel, or resolve an in‑flight command; stream updates, queries, or reconciliation
 provide that evidence under the [command outcome policy](execution.md#command-outcomes).
 
+### Dead‑peer detection
+
+A connection can stop delivering without closing: a NAT or load balancer drops it with no `FIN` and
+no `RST`, so writes keep succeeding into the send buffer and nothing surfaces the loss. Any transport
+configured with a heartbeat therefore reconnects when no inbound frame of any kind arrives within
+three heartbeat intervals. Sending a heartbeat establishes that the peer answers it, so the interval
+alone is enough to say when silence means the connection is gone. A transport with no heartbeat gets
+no window, because nothing would guarantee the inbound frames needed to keep one open.
+
+That window counts frames rather than data, so a keepalive reply refreshes it and a quiet market
+does not trip it. An adapter that also needs to detect a feed which stopped flowing while the
+transport stays healthy sets a separate idle timeout, which only Text and Binary frames refresh.
+That second window suits a venue which pushes data on a known cadence. Where the venue answers the
+keepalive with a text payload, its reply refreshes the idle timeout exactly like real data does, so
+the window means something only when it sits below the heartbeat interval.
+
 ### Endpoint labels
 
 Endpoint labels identify one logical adapter transport without exposing its URL. The Binance

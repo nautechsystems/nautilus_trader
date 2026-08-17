@@ -214,7 +214,7 @@ pub struct BybitExecClientConfig {
     #[builder(default = 10_000)]
     pub retry_delay_max_ms: u64,
     /// Heartbeat interval in seconds for WebSocket clients.
-    #[builder(default = 5)]
+    #[builder(default = 20)]
     pub heartbeat_interval_secs: u64,
     /// Optional WebSocket authentication wait timeout (seconds), defaulting to
     /// the client default when unset.
@@ -432,7 +432,7 @@ mod tests {
         assert!(!config.has_api_credentials());
         assert_eq!(config.product_types, vec![BybitProductType::Linear]);
         assert_eq!(config.http_timeout_secs, 60);
-        assert_eq!(config.heartbeat_interval_secs, 5);
+        assert_eq!(config.heartbeat_interval_secs, 20);
     }
 
     #[rstest]

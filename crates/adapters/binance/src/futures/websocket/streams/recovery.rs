@@ -39,6 +39,7 @@ use super::{
 };
 use crate::{
     common::{
+        consts::BINANCE_WS_HEARTBEAT_SECS,
         enums::{BinanceEnvironment, BinanceProductType},
         symbol::format_instrument_id,
         urls::get_futures_user_stream_url,
@@ -93,7 +94,7 @@ pub(crate) async fn build_and_connect_user_stream(
         Some(params.api_key.clone()),
         Some(params.api_secret.clone()),
         Some(private_url),
-        Some(20),
+        Some(BINANCE_WS_HEARTBEAT_SECS),
         params.transport_backend,
     )
     .context("failed to construct Binance Futures private WebSocket client")?

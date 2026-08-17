@@ -75,8 +75,8 @@ pub(crate) fn plain_stream_config(port: u16) -> BetfairStreamConfig {
     BetfairStreamConfig {
         host: "127.0.0.1".to_string(),
         port,
-        heartbeat_ms: 5_000,
-        idle_timeout_ms: 60_000,
+        heartbeat_secs: 5,
+        heartbeat_timeout_secs: 60,
         reconnect_delay_initial_ms: 200,
         reconnect_delay_max_ms: 1_000,
         use_tls: false,

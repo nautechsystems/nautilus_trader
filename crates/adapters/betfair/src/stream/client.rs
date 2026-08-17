@@ -224,19 +224,16 @@ impl BetfairStreamClient {
             mode,
             suffix: b"\r\n".to_vec(),
             message_handler: Some(message_handler),
-            // SocketConfig.heartbeat interval is in seconds; round up to avoid zero
-            heartbeat: Some((
-                config.heartbeat_ms.div_ceil(1_000),
-                b"{\"op\":\"heartbeat\"}".to_vec(),
-            )),
-            reconnect_timeout_ms: None,
+            heartbeat_interval_secs: Some(config.heartbeat_secs),
+            heartbeat_payload: Some(b"{\"op\":\"heartbeat\"}".to_vec()),
+            connect_timeout_ms: None,
             reconnect_delay_initial_ms: Some(config.reconnect_delay_initial_ms),
             reconnect_delay_max_ms: Some(config.reconnect_delay_max_ms),
             reconnect_backoff_factor: None,
             reconnect_jitter_ms: None,
             connection_max_retries: None,
             reconnect_max_attempts: None,
-            idle_timeout_ms: Some(config.idle_timeout_ms),
+            heartbeat_timeout_secs: Some(config.heartbeat_timeout_secs),
             certs_dir: None,
         };
 
@@ -560,18 +557,16 @@ impl BetfairRaceStreamClient {
             mode,
             suffix: b"\r\n".to_vec(),
             message_handler: Some(message_handler),
-            heartbeat: Some((
-                config.heartbeat_ms.div_ceil(1_000),
-                b"{\"op\":\"heartbeat\"}".to_vec(),
-            )),
-            reconnect_timeout_ms: None,
+            heartbeat_interval_secs: Some(config.heartbeat_secs),
+            heartbeat_payload: Some(b"{\"op\":\"heartbeat\"}".to_vec()),
+            connect_timeout_ms: None,
             reconnect_delay_initial_ms: Some(config.reconnect_delay_initial_ms),
             reconnect_delay_max_ms: Some(config.reconnect_delay_max_ms),
             reconnect_backoff_factor: None,
             reconnect_jitter_ms: None,
             connection_max_retries: None,
             reconnect_max_attempts: None,
-            idle_timeout_ms: Some(config.idle_timeout_ms),
+            heartbeat_timeout_secs: Some(config.heartbeat_timeout_secs),
             certs_dir: None,
         };
 
@@ -988,8 +983,8 @@ mod tests {
         let config = BetfairStreamConfig {
             host: "127.0.0.1".to_string(),
             port,
-            heartbeat_ms: 5_000,
-            idle_timeout_ms: 60_000,
+            heartbeat_secs: 5,
+            heartbeat_timeout_secs: 60,
             reconnect_delay_initial_ms: 200,
             reconnect_delay_max_ms: 1_000,
             use_tls: false,

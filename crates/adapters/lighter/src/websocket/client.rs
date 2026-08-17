@@ -312,14 +312,15 @@ impl LighterWebSocketClient {
         let cfg = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![],
-            heartbeat: Some(HEARTBEAT_INTERVAL.as_secs()),
-            heartbeat_msg: None,
-            reconnect_timeout_ms: Some(self.ws_timeout_secs.saturating_mul(1_000).max(1)),
+            heartbeat_interval_secs: Some(HEARTBEAT_INTERVAL.as_secs()),
+            heartbeat_payload: None,
+            connect_timeout_ms: Some(self.ws_timeout_secs.saturating_mul(1_000).max(1)),
             reconnect_delay_initial_ms: Some(RECONNECT_BASE_BACKOFF.as_millis() as u64),
             reconnect_delay_max_ms: Some(RECONNECT_MAX_BACKOFF.as_millis() as u64),
             reconnect_backoff_factor: Some(RECONNECT_BACKOFF_FACTOR),
             reconnect_jitter_ms: Some(RECONNECT_JITTER_MS),
             reconnect_max_attempts: None,
+            heartbeat_timeout_secs: Some(HEARTBEAT_TIMEOUT.as_secs()),
             idle_timeout_ms: None,
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
@@ -330,7 +331,6 @@ impl LighterWebSocketClient {
             None,
             ws_message_rate_limiter(&self.url),
             self.socket_sink.clone(),
-            Some(HEARTBEAT_TIMEOUT),
         )
         .await?;
 

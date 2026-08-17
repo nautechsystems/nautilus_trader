@@ -251,9 +251,9 @@ impl KrakenSpotWebSocketClient {
         let ws_config = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![],
-            heartbeat: Some(self.config.heartbeat_interval_secs),
-            heartbeat_msg: Some(WS_PING_MSG.to_string()),
-            reconnect_timeout_ms: Some(5_000),
+            heartbeat_interval_secs: Some(self.config.heartbeat_interval_secs),
+            heartbeat_payload: Some(WS_PING_MSG.to_string()),
+            connect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(1.5),
@@ -261,6 +261,7 @@ impl KrakenSpotWebSocketClient {
             reconnect_max_attempts: None,
             // Treat a silent connection as dead so the reconnect + resubscribe
             // path runs. `0` disables; see `ws_idle_timeout_ms` docs (issue #4255).
+            heartbeat_timeout_secs: None,
             idle_timeout_ms: (self.config.ws_idle_timeout_ms != 0)
                 .then_some(self.config.ws_idle_timeout_ms),
             backend: self.transport_backend,

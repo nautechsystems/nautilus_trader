@@ -91,14 +91,15 @@ fn websocket_config() -> WebSocketConfig {
     WebSocketConfig {
         url: "ws://server:8080".to_string(),
         headers: vec![],
-        heartbeat: None,
-        heartbeat_msg: None,
-        reconnect_timeout_ms: Some(2_000),
+        heartbeat_interval_secs: None,
+        heartbeat_payload: None,
+        connect_timeout_ms: Some(2_000),
         reconnect_delay_initial_ms: Some(50),
         reconnect_delay_max_ms: Some(500),
         reconnect_backoff_factor: Some(1.5),
         reconnect_jitter_ms: Some(10),
         reconnect_max_attempts: None,
+        heartbeat_timeout_secs: None,
         idle_timeout_ms: None,
         backend: TransportBackend::Sockudo,
         proxy_url: None,
@@ -213,7 +214,7 @@ fn test_turmoil_sockudo_repeated_drops_preserve_message_order(
     mut websocket_config: WebSocketConfig,
     #[case] seed: u64,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -281,7 +282,7 @@ fn test_turmoil_sockudo_repeated_drops_preserve_message_order(
 
 #[rstest]
 fn test_turmoil_real_sockudo_reconnection(mut websocket_config: WebSocketConfig) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(100);
 
     let mut sim = seeded_builder(RECONNECTION_SEED).build();
@@ -352,7 +353,7 @@ fn test_turmoil_real_sockudo_reconnection(mut websocket_config: WebSocketConfig)
 
 #[rstest]
 fn test_turmoil_real_sockudo_network_partition(mut websocket_config: WebSocketConfig) {
-    websocket_config.reconnect_timeout_ms = Some(3_000);
+    websocket_config.connect_timeout_ms = Some(3_000);
 
     let mut sim = seeded_builder(NETWORK_PARTITION_SEED).build();
 

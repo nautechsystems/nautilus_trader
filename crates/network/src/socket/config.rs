@@ -47,10 +47,26 @@ pub struct SocketConfig {
     pub suffix: Vec<u8>,
     /// The function called for each complete incoming message.
     pub message_handler: Option<TcpMessageHandler>,
-    /// The optional heartbeat as `(interval_seconds, payload)`.
-    pub heartbeat: Option<(u64, Vec<u8>)>,
-    /// The timeout (milliseconds) for reconnection attempts.
-    pub reconnect_timeout_ms: Option<u64>,
+    /// The optional heartbeat interval (seconds).
+    ///
+    /// Requires [`Self::heartbeat_payload`].
+    ///
+    /// Each timing field carries the coarsest unit that expresses every legitimate value, and
+    /// quantities compared against each other share a unit: this and [`Self::heartbeat_timeout_secs`]
+    /// are bounded below by whole-second cadences, while reconnect delays and jitter have real
+    /// sub-second values and stay in milliseconds.
+    pub heartbeat_interval_secs: Option<u64>,
+    /// The bytes sent as each heartbeat, framed with [`Self::suffix`] like any other message.
+    ///
+    /// Required when [`Self::heartbeat_interval_secs`] is set. A raw socket carries no control
+    /// frames, so there is no protocol-level keepalive to fall back to.
+    pub heartbeat_payload: Option<Vec<u8>>,
+    /// The timeout (milliseconds) for establishing a usable connection. Defaults to 10 seconds.
+    ///
+    /// Bounds the initial connection attempt, each reconnect attempt, and how long a send waits for
+    /// the client to become active again. Keep it above the reconnect backoff so a send does not
+    /// give up part-way through a normal reconnect.
+    pub connect_timeout_ms: Option<u64>,
     /// The initial reconnection delay (milliseconds) for reconnects.
     pub reconnect_delay_initial_ms: Option<u64>,
     /// The maximum reconnect delay (milliseconds) for exponential backoff.
@@ -67,12 +83,19 @@ pub struct SocketConfig {
     /// - `Some(n)`: Transitions to CLOSED once `n` consecutive reconnect attempts have either
     ///   failed or established connections active for less than 10 seconds.
     pub reconnect_max_attempts: Option<u32>,
-    /// The idle timeout (milliseconds) for the read task.
+    /// The dead-peer timeout (seconds) for the read task.
     ///
-    /// When set, the read task stops and triggers reconnection if it receives no data within this
-    /// duration. This detects silently dead connections where the server stops sending without
-    /// closing the connection.
-    pub idle_timeout_ms: Option<u64>,
+    /// Seconds rather than milliseconds because this is a multiple of
+    /// [`Self::heartbeat_interval_secs`]: it can never sensibly sit below one heartbeat cycle.
+    ///
+    /// When set, the read task stops and triggers reconnection if no bytes at all arrive within
+    /// this duration. A raw socket has no control frames, so any inbound byte refreshes it,
+    /// including the venue's reply to a heartbeat. That makes this the byte-level equivalent of
+    /// the WebSocket client's `heartbeat_timeout_secs`, not of its `idle_timeout_ms`: there is
+    /// no transport-level way to tell keepalive traffic from data here.
+    ///
+    /// Set it above [`Self::heartbeat_interval_secs`] so a healthy connection cannot trip it.
+    pub heartbeat_timeout_secs: Option<u64>,
     /// The path to the certificates directory.
     pub certs_dir: Option<String>,
 }
@@ -106,25 +129,51 @@ impl SocketConfig {
             errors.push(NetworkConfigError::invalid("url", "must not be empty"));
         }
 
-        if let Some((interval, _)) = &self.heartbeat
-            && *interval == 0
+        if let Some(interval) = self.heartbeat_interval_secs
+            && interval == 0
         {
             errors.push(NetworkConfigError::invalid(
-                "heartbeat",
+                "heartbeat_interval_secs",
                 "interval must be positive",
+            ));
+        }
+
+        match (self.heartbeat_interval_secs, &self.heartbeat_payload) {
+            (Some(_), None) => errors.push(NetworkConfigError::invalid(
+                "heartbeat_payload",
+                "must be set when heartbeat_interval_secs is set",
+            )),
+            (None, Some(_)) => errors.push(NetworkConfigError::invalid(
+                "heartbeat_interval_secs",
+                "must be set when heartbeat_payload is set",
+            )),
+            _ => {}
+        }
+
+        // A timeout at or below the send cadence tears every connection down before its first
+        // reply is due, so a healthy socket would reconnect forever.
+        if let (Some(interval_secs), Some(timeout_secs)) =
+            (self.heartbeat_interval_secs, self.heartbeat_timeout_secs)
+            && timeout_secs <= interval_secs
+        {
+            errors.push(NetworkConfigError::invalid(
+                "heartbeat_timeout_secs",
+                format!(
+                    "must exceed heartbeat_interval_secs ({interval_secs}s), was {timeout_secs}s"
+                ),
             ));
         }
 
         // `reconnect_jitter_ms` is intentionally unchecked: zero disables jitter and
         // `ExponentialBackoff::new` accepts it.
         for (field, value) in [
-            ("reconnect_timeout_ms", self.reconnect_timeout_ms),
+            ("connect_timeout_ms", self.connect_timeout_ms),
             (
                 "reconnect_delay_initial_ms",
                 self.reconnect_delay_initial_ms,
             ),
             ("reconnect_delay_max_ms", self.reconnect_delay_max_ms),
-            ("idle_timeout_ms", self.idle_timeout_ms),
+            ("heartbeat_timeout_secs", self.heartbeat_timeout_secs),
         ] {
             if let Some(value) = value
                 && value == 0
@@ -169,8 +218,9 @@ impl Debug for SocketConfig {
                 "message_handler",
                 &self.message_handler.as_ref().map(|_| "<function>"),
             )
-            .field("heartbeat", &self.heartbeat)
-            .field("reconnect_timeout_ms", &self.reconnect_timeout_ms)
+            .field("heartbeat_interval_secs", &self.heartbeat_interval_secs)
+            .field("heartbeat_payload", &self.heartbeat_payload)
+            .field("connect_timeout_ms", &self.connect_timeout_ms)
             .field(
                 "reconnect_delay_initial_ms",
                 &self.reconnect_delay_initial_ms,
@@ -180,7 +230,7 @@ impl Debug for SocketConfig {
             .field("reconnect_jitter_ms", &self.reconnect_jitter_ms)
             .field("connection_max_retries", &self.connection_max_retries)
             .field("reconnect_max_attempts", &self.reconnect_max_attempts)
-            .field("idle_timeout_ms", &self.idle_timeout_ms)
+            .field("heartbeat_timeout_secs", &self.heartbeat_timeout_secs)
             .field("certs_dir", &self.certs_dir)
             .finish()
     }
@@ -193,15 +243,16 @@ impl Clone for SocketConfig {
             mode: self.mode,
             suffix: self.suffix.clone(),
             message_handler: self.message_handler.clone(),
-            heartbeat: self.heartbeat.clone(),
-            reconnect_timeout_ms: self.reconnect_timeout_ms,
+            heartbeat_interval_secs: self.heartbeat_interval_secs,
+            heartbeat_payload: self.heartbeat_payload.clone(),
+            connect_timeout_ms: self.connect_timeout_ms,
             reconnect_delay_initial_ms: self.reconnect_delay_initial_ms,
             reconnect_delay_max_ms: self.reconnect_delay_max_ms,
             reconnect_backoff_factor: self.reconnect_backoff_factor,
             reconnect_jitter_ms: self.reconnect_jitter_ms,
             connection_max_retries: self.connection_max_retries,
             reconnect_max_attempts: self.reconnect_max_attempts,
-            idle_timeout_ms: self.idle_timeout_ms,
+            heartbeat_timeout_secs: self.heartbeat_timeout_secs,
             certs_dir: self.certs_dir.clone(),
         }
     }
@@ -245,11 +296,14 @@ mod tests {
 
     #[rstest]
     #[case::empty_url(|c: &mut SocketConfig| c.url = String::new(), "url")]
-    #[case::heartbeat(|c: &mut SocketConfig| c.heartbeat = Some((0, vec![])), "heartbeat")]
-    #[case::reconnect_timeout(|c: &mut SocketConfig| c.reconnect_timeout_ms = Some(0), "reconnect_timeout_ms")]
+    #[case::heartbeat_interval(|c: &mut SocketConfig| { c.heartbeat_interval_secs = Some(0); c.heartbeat_payload = Some(vec![]); }, "heartbeat_interval_secs")]
+    #[case::heartbeat_payload_without_interval(|c: &mut SocketConfig| c.heartbeat_payload = Some(vec![b'p']), "heartbeat_interval_secs")]
+    #[case::heartbeat_interval_without_payload(|c: &mut SocketConfig| c.heartbeat_interval_secs = Some(5), "heartbeat_payload")]
+    #[case::heartbeat_timeout_below_interval(|c: &mut SocketConfig| { c.heartbeat_interval_secs = Some(5); c.heartbeat_payload = Some(vec![b'p']); c.heartbeat_timeout_secs = Some(5); }, "heartbeat_timeout_secs")]
+    #[case::connect_timeout(|c: &mut SocketConfig| c.connect_timeout_ms = Some(0), "connect_timeout_ms")]
     #[case::reconnect_delay_initial(|c: &mut SocketConfig| c.reconnect_delay_initial_ms = Some(0), "reconnect_delay_initial_ms")]
     #[case::reconnect_delay_max(|c: &mut SocketConfig| c.reconnect_delay_max_ms = Some(0), "reconnect_delay_max_ms")]
-    #[case::idle_timeout(|c: &mut SocketConfig| c.idle_timeout_ms = Some(0), "idle_timeout_ms")]
+    #[case::heartbeat_timeout_zero(|c: &mut SocketConfig| c.heartbeat_timeout_secs = Some(0), "heartbeat_timeout_secs")]
     fn test_validate_rejects_invalid_field(
         #[case] mutate: fn(&mut SocketConfig),
         #[case] expected_field: &str,
@@ -303,7 +357,7 @@ mod tests {
     fn test_validate_collects_multiple_errors() {
         let mut config = valid_config();
         config.url = String::new();
-        config.reconnect_timeout_ms = Some(0);
+        config.connect_timeout_ms = Some(0);
 
         let err = config.validate().expect_err("multiple invalid fields");
 

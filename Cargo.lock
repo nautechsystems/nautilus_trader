@@ -6662,6 +6662,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
+ "socket2 0.6.5",
  "sockudo-ws",
  "strum 0.28.0",
  "tempfile",

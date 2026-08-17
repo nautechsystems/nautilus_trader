@@ -341,14 +341,15 @@ impl DeriveWebSocketClient {
         let cfg = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![],
-            heartbeat: Some(WS_HEARTBEAT_SECS),
-            heartbeat_msg: None,
-            reconnect_timeout_ms: Some(RECONNECT_TIMEOUT.as_millis() as u64),
+            heartbeat_interval_secs: Some(WS_HEARTBEAT_SECS),
+            heartbeat_payload: None,
+            connect_timeout_ms: Some(RECONNECT_TIMEOUT.as_millis() as u64),
             reconnect_delay_initial_ms: Some(RECONNECT_BASE_BACKOFF.as_millis() as u64),
             reconnect_delay_max_ms: Some(RECONNECT_MAX_BACKOFF.as_millis() as u64),
             reconnect_backoff_factor: Some(RECONNECT_BACKOFF_FACTOR),
             reconnect_jitter_ms: Some(RECONNECT_JITTER_MS),
             reconnect_max_attempts: None,
+            heartbeat_timeout_secs: Some(WS_HEARTBEAT_TIMEOUT.as_secs()),
             idle_timeout_ms: None,
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
@@ -356,16 +357,9 @@ impl DeriveWebSocketClient {
         // Rate limiting runs caller-side via `self.rate_limiter` before frames
         // are enqueued, so the network client's own limiter is left unconfigured
         // and never sleeps inside the single feed-handler task.
-        let client = WebSocketClient::connect_with_heartbeat_timeout(
-            cfg,
-            WS_HEARTBEAT_TIMEOUT,
-            Some(message_handler),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .map_err(|e| DeriveWsError::transport(e.to_string()))?;
+        let client = WebSocketClient::connect(cfg, Some(message_handler), None, vec![], None)
+            .await
+            .map_err(|e| DeriveWsError::transport(e.to_string()))?;
 
         // Register the tracker so the network controller clears
         // `is_authenticated()` on dead-socket detection, not just on the

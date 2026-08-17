@@ -167,7 +167,7 @@ class DydxOraclePrice:
 class DydxWebSocketClient:
     @staticmethod
     def new_public(
-        url: str, heartbeat: int | None = None, proxy_url: str | None = None
+        url: str, heartbeat: int | None = ..., proxy_url: str | None = None
     ) -> DydxWebSocketClient: ...
     @staticmethod
     def new_private(
@@ -175,7 +175,7 @@ class DydxWebSocketClient:
         private_key: str,
         authenticator_ids: typing.Sequence[int],
         account_id: model.AccountId,
-        heartbeat: int | None = None,
+        heartbeat: int | None = ...,
         proxy_url: str | None = None,
     ) -> DydxWebSocketClient: ...
     def is_connected(self) -> bool: ...

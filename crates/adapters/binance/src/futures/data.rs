@@ -74,7 +74,7 @@ use ustr::Ustr;
 use crate::{
     common::{
         bar::{binance_bar_data_type, parse_binance_bar_type},
-        consts::{BINANCE_BOOK_DEPTHS, BINANCE_VENUE},
+        consts::{BINANCE_BOOK_DEPTHS, BINANCE_VENUE, BINANCE_WS_HEARTBEAT_SECS},
         enums::{BinanceEnvironment, BinanceProductType},
         parse::{
             bar_spec_to_binance_interval, parse_millis, parse_millis_or_init,
@@ -223,7 +223,7 @@ impl BinanceFuturesDataClient {
             config.api_key.clone(),
             config.api_secret.clone(),
             market_url,
-            Some(20), // Heartbeat interval
+            Some(BINANCE_WS_HEARTBEAT_SECS),
             config.transport_backend,
         )?
         .with_proxy(config.proxy_url.clone());
@@ -257,7 +257,7 @@ impl BinanceFuturesDataClient {
             None,
             None,
             Some(public_url),
-            Some(20),
+            Some(BINANCE_WS_HEARTBEAT_SECS),
             config.transport_backend,
         )?
         .with_proxy(config.proxy_url.clone());

@@ -285,14 +285,15 @@ impl KrakenFuturesWebSocketClient {
         let ws_config = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![],
-            heartbeat: Some(self.heartbeat_secs),
-            heartbeat_msg: None, // Use WebSocket ping frames, not text messages
-            reconnect_timeout_ms: Some(5_000),
+            heartbeat_interval_secs: Some(self.heartbeat_secs),
+            heartbeat_payload: None, // Use WebSocket ping frames, not text messages
+            connect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),

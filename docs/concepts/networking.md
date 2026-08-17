@@ -133,10 +133,10 @@ that need direct stream backpressure or own a protocol‑specific reconnect sequ
 The `WsTransport` abstraction normalizes text, binary, Ping, Pong, and Close frames together with
 transport errors. `WebSocketConfig.backend` selects either backend at runtime:
 
-| Backend                                                              | Availability                                 | Upgrade headers                           | Proxy behavior                                       |
-| -------------------------------------------------------------------- | -------------------------------------------- | ----------------------------------------- | ---------------------------------------------------- |
-| [`tokio-tungstenite`](https://github.com/snapview/tokio-tungstenite) | Always compiled                              | Passed through the WebSocket handshake    | HTTP and HTTPS `CONNECT` tunnels                     |
-| [`sockudo-ws`](https://github.com/sockudo/sockudo-ws)                | Default with the `transport-sockudo` feature | Passed through a local HTTP/1.1 handshake | Falls back to Tungstenite when a proxy is configured |
+| Backend                                                              | Availability                                 | Upgrade headers                           | Proxy behavior                   |
+| -------------------------------------------------------------------- | -------------------------------------------- | ----------------------------------------- | -------------------------------- |
+| [`tokio-tungstenite`](https://github.com/snapview/tokio-tungstenite) | Always compiled                              | Passed through the WebSocket handshake    | HTTP and HTTPS `CONNECT` tunnels |
+| [`sockudo-ws`](https://github.com/sockudo/sockudo-ws)                | Default with the `transport-sockudo` feature | Passed through a local HTTP/1.1 handshake | HTTP and HTTPS `CONNECT` tunnels |
 
 Disabling default Cargo features removes `sockudo-ws` and makes Tungstenite the default. A recognized
 SOCKS proxy URL logs a warning and connects directly because WebSocket SOCKS tunneling is not
@@ -146,9 +146,16 @@ implemented. Malformed proxy URLs and other unsupported schemes return an error.
 ### Liveness and recovery
 
 The configured heartbeat sends either an RFC 6455 Ping or a venue‑specific text message at a fixed
-interval. It does not imply a response deadline. Handler mode can add a heartbeat timeout that
-resets on every inbound frame, including Ping and Pong. Its separate idle timeout resets only on
-text or binary application data, so control traffic cannot hide a silent market‑data stream.
+interval. Configuring one also arms a response deadline: sending a heartbeat establishes that the
+peer answers it, so an unset `heartbeat_timeout_secs` defaults to three intervals. Set the field to
+choose a different window. A transport with no heartbeat gets no default, because nothing would
+guarantee the inbound frames needed to keep the window open.
+
+The heartbeat timeout resets on every inbound frame, including Ping and Pong, so it detects a peer
+that has stopped sending anything. The separate idle timeout resets only on text or binary
+application data, so control traffic cannot hide a silent market‑data stream. A venue that answers
+the keepalive with a text payload refreshes the idle timeout exactly like real data does, so that
+window means something only when it sits below the heartbeat interval.
 
 A read failure, write failure, Close frame, heartbeat timeout, idle timeout, or explicit reconnect
 request moves a handler‑mode client into reconnecting state. Reconnect uses exponential backoff with
@@ -359,6 +366,31 @@ messages drain successfully; the reader and post‑reconnection callback start a
 concurrent disconnect can still prevent delivery. Reconnect replay and buffering are process memory,
 so protocols that require durable or exactly‑once delivery must enforce those guarantees above the
 socket client.
+
+## TCP socket options
+
+The WebSocket and raw TCP socket clients apply the same options to every outbound connection,
+including the hop to an HTTP `CONNECT` proxy. The HTTP client is not covered: `reqwest` owns its own
+sockets and its own pooling.
+
+| Option             | Value                           | Detects or prevents                                       |
+| ------------------ | ------------------------------- | --------------------------------------------------------- |
+| `TCP_NODELAY`      | Enabled                         | Nagle delaying a small frame behind an unacknowledged one |
+| Keepalive          | 20 s idle, 10 s apart, 3 probes | An idle peer that has gone away without closing           |
+| `TCP_USER_TIMEOUT` | 1 minute, Linux only            | Outbound data that is never acknowledged                  |
+
+These catch a connection that stops delivering without closing, which a NAT or load balancer
+produces when it drops state with no `FIN` and no `RST`. Writes keep succeeding into the send buffer
+and return `Ok` for messages the peer will never receive. Kernel defaults take roughly 15 minutes to
+give up; these bound that at about a minute.
+
+`TCP_USER_TIMEOUT` is sized to exceed the keepalive probe budget. On Linux it also overrides
+`TCP_KEEPCNT`, so detection there follows the timeout rather than the probe count, which applies on
+macOS and Windows.
+
+Treat them as a backstop. The heartbeat timeout usually fires first, and unlike it these need no
+configuration and still bound a connection whose reader task has stopped making progress. A socket
+that rejects an option is still usable, so failures are logged and the connection proceeds.
 
 ## Testing
 

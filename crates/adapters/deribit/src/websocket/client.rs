@@ -46,8 +46,8 @@ use nautilus_network::{
     http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, PingHandler, SubscriptionState, TransportBackend, WebSocketClient,
-        WebSocketConfig, channel_message_handler,
+        AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
     },
 };
 use tokio_util::sync::CancellationToken;
@@ -528,22 +528,22 @@ impl DeribitWebSocketClient {
         let (message_handler, raw_rx) = channel_message_handler();
 
         // No-op ping handler: handler responds to pings directly
-        let ping_handler: PingHandler = Arc::new(move |_payload: Vec<u8>| {
-            // Handler responds to pings internally
-        });
+        // Inbound Ping frames are answered by the transport, so no ping handler is needed;
+        // the reader routes them away from the message channel and the handler never sees them.
 
         // Configure WebSocket client
         let config = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
-            heartbeat: self.heartbeat_interval,
-            heartbeat_msg: None, // Deribit uses JSON-RPC heartbeat, not text ping
-            reconnect_timeout_ms: Some(5_000),
+            heartbeat_interval_secs: self.heartbeat_interval,
+            heartbeat_payload: None, // Deribit uses JSON-RPC heartbeat, not text ping
+            connect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None,
             reconnect_delay_max_ms: None,
             reconnect_backoff_factor: None,
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
@@ -562,7 +562,7 @@ impl DeribitWebSocketClient {
         let ws_client = WebSocketClient::connect(
             config,
             Some(message_handler),
-            Some(ping_handler),
+            None,
             keyed_quotas,
             Some(*DERIBIT_WS_SUBSCRIPTION_QUOTA), // Default quota for non-order operations
         )
@@ -625,6 +625,7 @@ impl DeribitWebSocketClient {
         let credential = self.credential.clone();
         let auth_tracker = self.auth_tracker.clone();
         let auth_state = self.auth_state.clone();
+        let heartbeat_interval = self.heartbeat_interval;
 
         let task_handle = get_runtime().spawn(async move {
             const MAX_REAUTH_ATTEMPTS: u32 = 3;
@@ -646,6 +647,13 @@ impl DeribitWebSocketClient {
                             refresh_cancel = CancellationToken::new();
                             retry_cancel.cancel();
                             retry_cancel = CancellationToken::new();
+
+                            // Deribit scopes `set_heartbeat` to the connection, so the replacement
+                            // starts with heartbeats off and the venue sends no further
+                            // `test_request` until they are re-armed.
+                            if let Some(interval) = heartbeat_interval {
+                                let _ = cmd_tx.send(HandlerCommand::SetHeartbeat { interval });
+                            }
 
                             let channels = subscriptions_state.all_topics();
 

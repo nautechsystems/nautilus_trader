@@ -75,7 +75,10 @@ use super::{extract_optional_string, extract_optional_trigger_type};
 use crate::{
     book_sync::{BookSequenceOutcome, BookSyncTracker},
     common::{
-        consts::{OKX_FIELD_CLORDID, OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_SUCCESS_CODE},
+        consts::{
+            OKX_FIELD_CLORDID, OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_SUCCESS_CODE,
+            OKX_WS_HEARTBEAT_SECS,
+        },
         enums::{
             OKXBookAction, OKXGreeksType, OKXInstrumentStatus, OKXInstrumentType, OKXTradeMode,
             OKXVipLevel,
@@ -318,7 +321,7 @@ impl OKXWebSocketError {
 impl OKXWebSocketClient {
     /// Provides a WebSocket client for connecting to [OKX](https://okx.com).
     #[new]
-    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=None, auth_timeout_secs=None, proxy_url=None))]
+    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=Some(OKX_WS_HEARTBEAT_SECS), auth_timeout_secs=None, proxy_url=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         url: Option<String>,
@@ -352,7 +355,7 @@ impl OKXWebSocketClient {
     /// client fails to initialize.
     #[staticmethod]
     #[pyo3(name = "with_credentials")]
-    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=None, auth_timeout_secs=None, proxy_url=None))]
+    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=Some(OKX_WS_HEARTBEAT_SECS), auth_timeout_secs=None, proxy_url=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_with_credentials(
         url: Option<String>,

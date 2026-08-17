@@ -9,6 +9,10 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added dead-peer detection to every transport with a configured heartbeat, reconnecting when the peer stops sending
+- Added TCP keepalive and Linux `TCP_USER_TIMEOUT` to all outbound connections, detecting half-open sockets in ~1 min
+- Added HTTP `CONNECT` proxy support to the Sockudo WebSocket backend
+- Added `WebSocketConfig.heartbeat_timeout_secs` so every connect entry point can set a liveness window
 - Added canonical Rust backtest results with normalized projections, content digests, and stable ordering
 - Added full Rust config parity for the Python testkit `ExecTesterConfig`
 - Added `Sum` iterator support for owned and borrowed `Quantity` values (#4720), thanks @faysou
@@ -34,16 +38,18 @@ Released on TBD (UTC).
 - Removed model `as_pycapsule` methods and `OrderBookDeltas.from_pycapsule`; pass typed model objects directly
 - Removed FFI features and static libraries outside `nautilus-core` and `nautilus-model`; use Rust or PyO3 APIs
 - Removed `cython-compat`, Cython cbindgen configs, and `drop_cvec_pycapsule`; use PyO3 APIs
-- Removed Databento `load_*_as_pycapsule` methods; use the corresponding `load_*` methods
 - Removed generic Python clients and support APIs from `nautilus_trader.network`; use adapter APIs or `nautilus-network`
 - Removed `LiveNode.poll()` and Python `LiveNode.start()`; use hosted `run_with_mode(...)` or `run_async()`
-- Removed unused Rust `SocketClient` connection/disconnection callbacks and `WebSocketClient` reconnection callback; use message or epoch handlers
-- Removed Rust `nautilus_execution::matching_engine::adapter::OrderEngineAdapter`; use `nautilus_execution::matching_engine::OrderMatchingEngine` directly
 - Removed `nautilus_trader.data.OptionChainManager`; use `subscribe_option_chain` and handle `OptionChainSlice` in `on_option_chain`
-- Removed duck-typed object conversion from `BacktestEngine.add_data`; pass model objects such as `QuoteTick`, `TradeTick`, and `Bar`
-- Removed Rust `from_pyobject` constructors from `nautilus_model` data types; use `Bound::extract` for the target type
 - Removed `Cache.actor_ids()`, which always returned an empty set because no data flowing through the cache carries an actor ID; the Rust `Trader::actor_ids()` still lists registered actors
+- Removed `WebSocketClient::connect_with_heartbeat_timeout`; set `WebSocketConfig.heartbeat_timeout_secs` instead
+- Removed duck-typed object conversion from `BacktestEngine.add_data`; pass model objects such as `QuoteTick`, `TradeTick`, and `Bar`
+- Removed Rust unused `SocketClient` connection/disconnection callbacks and `WebSocketClient` reconnection callback; use message or epoch handlers
+- Removed Rust `nautilus_execution::matching_engine::adapter::OrderEngineAdapter`; use `nautilus_execution::matching_engine::OrderMatchingEngine` directly
+- Removed Rust `from_pyobject` constructors from `nautilus_model` data types; use `Bound::extract` for the target type
 - Removed Rust `nautilus_core::CleanDrop` and its `drop` module; implement `Drop` directly
+- Removed Databento `load_*_as_pycapsule` methods; use the corresponding `load_*` methods
+- Removed the trailing `heartbeat_timeout` parameter from the epoch-handler connect; set it on the config
 - Replaced Rust `nautilus_model::python::data::data_to_pycapsule` with `data_to_pyobject`
 - Renamed `Portfolio.margins_init` to `instrument_initial_margins`
 - Renamed `Portfolio.margins_maint` to `instrument_maintenance_margins`
@@ -60,10 +66,22 @@ Released on TBD (UTC).
 - Changed Interactive Brokers historical tick responses and Tardis batch streams to provide typed model objects
 - Changed portfolio statistic `calculate_from_positions` to require `Position` objects instead of arbitrary objects with an `entry` attribute
 - Changed `AggressorSide` string output from `BUYER`/`SELLER` to `BUY`/`SELL` for display, serde, and SQL encoding
+- Changed `WebSocketConfig.heartbeat` to `heartbeat_interval_secs` and `heartbeat_msg` to `heartbeat_payload`
+- Changed `WebSocketConfig.reconnect_timeout_ms` to `connect_timeout_ms`, which also bounds the initial dial
+- Changed `SocketConfig.heartbeat` from a tuple to separate `heartbeat_interval_secs` and `heartbeat_payload` fields
+- Changed `SocketConfig.idle_timeout_ms` to `heartbeat_timeout_secs`, matching the inbound silence it always detected
+- Changed a configured heartbeat to imply dead-peer detection, defaulting `heartbeat_timeout_secs` to three intervals
+- Changed the Sockudo backend to tunnel through a configured `proxy_url` instead of silently falling back to Tungstenite
+- Changed WebSocket and socket clients to validate config on connect, so an invalid config now fails at startup
+- Changed Betfair `stream_heartbeat_ms` to `stream_heartbeat_secs`, now seconds rather than milliseconds (default `5`)
+- Changed Betfair `stream_idle_timeout_ms` to `stream_heartbeat_timeout_secs`, now seconds (default `60`)
+- Changed Binance spot and futures WebSocket API trading clients to send a keepalive, which they previously omitted
 - Changed Bybit `bybit_bar_spec_to_interval` to take a `BarAggregation` instead of an integer
+- Changed Bybit execution `heartbeat_interval_secs` default from `5` to `20`, matching the documented cadence
 - Changed Hyperliquid `subscribe_book_deltas` and `subscribe_book_snapshots` to take a `BookType` instead of an integer
 - Changed Polymarket `HeartbeatResponse::Acknowledged` to carry a required chained ID
 - Changed Polymarket Gamma `game_id` to a string on `GammaMarket`, `GammaEvent`, and instrument `info`
+- Changed OKX and dYdX Python WebSocket clients to default `heartbeat` to the venue cadence instead of `None`
 
 ### Security
 
@@ -115,9 +133,11 @@ Released on TBD (UTC).
 - Fixed the `OptionSeriesId` Python constructor panicking on an invalid venue, which aborted the process in release builds; it now raises `ValueError`
 - Fixed stale venue book snapshots logging one out‑of‑order warning per delta
 - Fixed Betfair stream reauthentication and subscription replay after session replacement
+- Fixed Betfair rounding a sub-second stream heartbeat interval up instead of down
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
 - Fixed Databento MBO snapshots advancing the incremental sequence (#4686), thanks @faysou
+- Fixed Deribit losing its `set_heartbeat` contract after reconnecting, disabling venue `test_request` for the session
 - Fixed Derive cancel‑only replacements and reused labels during order reconciliation
 - Fixed Derive WebSocket recovery, subscription replay, and silent connection detection
 - Fixed Derive fill commissions to construct exactly from wire decimals and error on unrepresentable fees

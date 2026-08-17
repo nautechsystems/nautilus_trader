@@ -379,23 +379,23 @@ class OKXHttpClient:
 class OKXWebSocketClient:
     def __init__(
         self,
-        url: str | None = None,
-        api_key: str | None = None,
-        api_secret: str | None = None,
-        api_passphrase: str | None = None,
-        account_id: model.AccountId | None = None,
-        heartbeat: int | None = None,
+        url: str | None = ...,
+        api_key: str | None = ...,
+        api_secret: str | None = ...,
+        api_passphrase: str | None = ...,
+        account_id: model.AccountId | None = ...,
+        heartbeat: int | None = ...,
         auth_timeout_secs: int | None = None,
         proxy_url: str | None = None,
     ) -> None: ...
     @staticmethod
     def with_credentials(
-        url: str | None = None,
-        api_key: str | None = None,
-        api_secret: str | None = None,
-        api_passphrase: str | None = None,
-        account_id: model.AccountId | None = None,
-        heartbeat: int | None = None,
+        url: str | None = ...,
+        api_key: str | None = ...,
+        api_secret: str | None = ...,
+        api_passphrase: str | None = ...,
+        account_id: model.AccountId | None = ...,
+        heartbeat: int | None = ...,
         auth_timeout_secs: int | None = None,
         proxy_url: str | None = None,
     ) -> OKXWebSocketClient: ...

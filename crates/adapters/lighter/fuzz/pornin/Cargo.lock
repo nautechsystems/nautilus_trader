@@ -1543,6 +1543,7 @@ dependencies = [
  "rustls-pemfile",
  "serde",
  "serde_urlencoded",
+ "socket2 0.6.5",
  "sockudo-ws",
  "strum",
  "thiserror",

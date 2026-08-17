@@ -50,7 +50,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::DYDX_VENUE,
+        consts::{DYDX_VENUE, DYDX_WS_HEARTBEAT_SECS},
         credential::DydxCredential,
         enums::{DydxCandleResolution, DydxMarketStatus},
         parse::{extract_raw_symbol, parse_price},
@@ -76,7 +76,7 @@ impl DydxWebSocketClient {
     /// the HTTP client, use `Self.new_public_with_cache` instead.
     #[staticmethod]
     #[pyo3(name = "new_public")]
-    #[pyo3(signature = (url, heartbeat=None, proxy_url=None))]
+    #[pyo3(signature = (url, heartbeat=Some(DYDX_WS_HEARTBEAT_SECS), proxy_url=None))]
     fn py_new_public(url: String, heartbeat: Option<u64>, proxy_url: Option<String>) -> Self {
         Self::new_public(url, heartbeat, proxy_url)
     }
@@ -87,7 +87,7 @@ impl DydxWebSocketClient {
     /// the HTTP client, use `Self.new_private_with_cache` instead.
     #[staticmethod]
     #[pyo3(name = "new_private")]
-    #[pyo3(signature = (url, private_key, authenticator_ids, account_id, heartbeat=None, proxy_url=None))]
+    #[pyo3(signature = (url, private_key, authenticator_ids, account_id, heartbeat=Some(DYDX_WS_HEARTBEAT_SECS), proxy_url=None))]
     fn py_new_private(
         url: String,
         private_key: &str,

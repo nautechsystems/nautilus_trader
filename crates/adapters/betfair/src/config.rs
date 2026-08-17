@@ -81,8 +81,8 @@ fn resolve_credential(
 fn build_stream_config(
     stream_host: &Option<String>,
     stream_port: &Option<u16>,
-    stream_heartbeat_ms: u64,
-    stream_idle_timeout_ms: u64,
+    stream_heartbeat_secs: u64,
+    stream_heartbeat_timeout_secs: u64,
     stream_reconnect_delay_initial_ms: u64,
     stream_reconnect_delay_max_ms: u64,
     stream_use_tls: bool,
@@ -92,8 +92,8 @@ fn build_stream_config(
     BetfairStreamConfig {
         host: stream_host.clone().unwrap_or(defaults.host),
         port: stream_port.unwrap_or(defaults.port),
-        heartbeat_ms: stream_heartbeat_ms,
-        idle_timeout_ms: stream_idle_timeout_ms,
+        heartbeat_secs: stream_heartbeat_secs,
+        heartbeat_timeout_secs: stream_heartbeat_timeout_secs,
         reconnect_delay_initial_ms: stream_reconnect_delay_initial_ms,
         reconnect_delay_max_ms: stream_reconnect_delay_max_ms,
         use_tls: stream_use_tls,
@@ -148,12 +148,12 @@ pub struct BetfairDataConfig {
     pub stream_host: Option<String>,
     /// Optional override for stream port.
     pub stream_port: Option<u16>,
-    /// Interval between stream heartbeat messages in milliseconds.
-    #[builder(default = 5_000)]
-    pub stream_heartbeat_ms: u64,
-    /// Stream idle timeout in milliseconds.
-    #[builder(default = 60_000)]
-    pub stream_idle_timeout_ms: u64,
+    /// Interval between stream heartbeat messages in seconds.
+    #[builder(default = 5)]
+    pub stream_heartbeat_secs: u64,
+    /// Dead-peer timeout in seconds; reconnects when no bytes arrive.
+    #[builder(default = 60)]
+    pub stream_heartbeat_timeout_secs: u64,
     /// Initial reconnection backoff in milliseconds.
     #[builder(default = 2_000)]
     pub stream_reconnect_delay_initial_ms: u64,
@@ -193,8 +193,8 @@ nautilus_core::impl_pyo3_config_getters!(BetfairDataConfig {
     max_market_start_time: Option<String>,
     stream_host: Option<String>,
     stream_port: Option<u16>,
-    stream_heartbeat_ms: u64,
-    stream_idle_timeout_ms: u64,
+    stream_heartbeat_secs: u64,
+    stream_heartbeat_timeout_secs: u64,
     stream_reconnect_delay_initial_ms: u64,
     stream_reconnect_delay_max_ms: u64,
     stream_use_tls: bool,
@@ -270,8 +270,8 @@ impl BetfairDataConfig {
         build_stream_config(
             &self.stream_host,
             &self.stream_port,
-            self.stream_heartbeat_ms,
-            self.stream_idle_timeout_ms,
+            self.stream_heartbeat_secs,
+            self.stream_heartbeat_timeout_secs,
             self.stream_reconnect_delay_initial_ms,
             self.stream_reconnect_delay_max_ms,
             self.stream_use_tls,
@@ -335,12 +335,12 @@ pub struct BetfairExecConfig {
     pub stream_host: Option<String>,
     /// Optional override for stream port.
     pub stream_port: Option<u16>,
-    /// Interval between stream heartbeat messages in milliseconds.
-    #[builder(default = 5_000)]
-    pub stream_heartbeat_ms: u64,
-    /// Stream idle timeout in milliseconds.
-    #[builder(default = 60_000)]
-    pub stream_idle_timeout_ms: u64,
+    /// Interval between stream heartbeat messages in seconds.
+    #[builder(default = 5)]
+    pub stream_heartbeat_secs: u64,
+    /// Dead-peer timeout in seconds; reconnects when no bytes arrive.
+    #[builder(default = 60)]
+    pub stream_heartbeat_timeout_secs: u64,
     /// Initial reconnection backoff in milliseconds.
     #[builder(default = 2_000)]
     pub stream_reconnect_delay_initial_ms: u64,
@@ -387,8 +387,8 @@ nautilus_core::impl_pyo3_config_getters!(BetfairExecConfig {
     order_request_rate_per_second: u32,
     stream_host: Option<String>,
     stream_port: Option<u16>,
-    stream_heartbeat_ms: u64,
-    stream_idle_timeout_ms: u64,
+    stream_heartbeat_secs: u64,
+    stream_heartbeat_timeout_secs: u64,
     stream_reconnect_delay_initial_ms: u64,
     stream_reconnect_delay_max_ms: u64,
     stream_use_tls: bool,
@@ -443,8 +443,8 @@ impl BetfairExecConfig {
         build_stream_config(
             &self.stream_host,
             &self.stream_port,
-            self.stream_heartbeat_ms,
-            self.stream_idle_timeout_ms,
+            self.stream_heartbeat_secs,
+            self.stream_heartbeat_timeout_secs,
             self.stream_reconnect_delay_initial_ms,
             self.stream_reconnect_delay_max_ms,
             self.stream_use_tls,
@@ -484,7 +484,7 @@ mod tests {
         assert_eq!(config.account_currency, "GBP");
         assert_eq!(config.request_rate_per_second, 5);
         assert!(config.market_ids.is_none());
-        assert_eq!(config.stream_heartbeat_ms, 5_000);
+        assert_eq!(config.stream_heartbeat_secs, 5);
         assert!(config.stream_conflate_ms.is_none());
         assert_eq!(config.subscription_delay_secs, 3);
         assert!(!config.subscribe_race_data);
@@ -513,8 +513,8 @@ mod tests {
         let config = BetfairDataConfig {
             stream_host: Some("localhost".to_string()),
             stream_port: Some(9443),
-            stream_heartbeat_ms: 2_500,
-            stream_idle_timeout_ms: 30_000,
+            stream_heartbeat_secs: 3,
+            stream_heartbeat_timeout_secs: 30,
             stream_reconnect_delay_initial_ms: 500,
             stream_reconnect_delay_max_ms: 5_000,
             stream_use_tls: false,
@@ -525,8 +525,8 @@ mod tests {
 
         assert_eq!(stream_config.host, "localhost");
         assert_eq!(stream_config.port, 9443);
-        assert_eq!(stream_config.heartbeat_ms, 2_500);
-        assert_eq!(stream_config.idle_timeout_ms, 30_000);
+        assert_eq!(stream_config.heartbeat_secs, 3);
+        assert_eq!(stream_config.heartbeat_timeout_secs, 30);
         assert_eq!(stream_config.reconnect_delay_initial_ms, 500);
         assert_eq!(stream_config.reconnect_delay_max_ms, 5_000);
         assert!(!stream_config.use_tls);
@@ -708,8 +708,8 @@ mod tests {
             r#"
 account_currency = "USD"
 request_rate_per_second = 10
-stream_heartbeat_ms = 2500
-stream_idle_timeout_ms = 30000
+stream_heartbeat_secs = 3
+stream_heartbeat_timeout_secs = 30
 stream_reconnect_delay_initial_ms = 500
 stream_reconnect_delay_max_ms = 5000
 stream_use_tls = false
@@ -722,7 +722,7 @@ subscribe_cricket_data = true
 
         assert_eq!(config.account_currency, "USD");
         assert_eq!(config.request_rate_per_second, 10);
-        assert_eq!(config.stream_heartbeat_ms, 2_500);
+        assert_eq!(config.stream_heartbeat_secs, 3);
         assert!(!config.stream_use_tls);
         assert!(config.subscribe_race_data);
         assert!(config.subscribe_cricket_data);
@@ -744,7 +744,7 @@ subscribe_cricket_data = true
             config.order_request_rate_per_second,
             expected.order_request_rate_per_second,
         );
-        assert_eq!(config.stream_heartbeat_ms, expected.stream_heartbeat_ms);
+        assert_eq!(config.stream_heartbeat_secs, expected.stream_heartbeat_secs);
         assert_eq!(config.stream_use_tls, expected.stream_use_tls);
         assert_eq!(
             config.calculate_account_state,

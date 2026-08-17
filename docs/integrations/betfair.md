@@ -481,8 +481,8 @@ reports the whole account.
 | `max_market_start_time`             | `None`   | Optional navigation filter.                 |
 | `stream_host`                       | `None`   | Optional stream host override.              |
 | `stream_port`                       | `None`   | Optional stream port override.              |
-| `stream_heartbeat_ms`               | `5,000`  | Interval between stream heartbeats.         |
-| `stream_idle_timeout_ms`            | `60,000` | Idle timeout before reconnect.              |
+| `stream_heartbeat_secs`             | `5`      | Interval between stream heartbeats.         |
+| `stream_heartbeat_timeout_secs`     | `60`     | Dead‑peer timeout before reconnect.         |
 | `stream_reconnect_delay_initial_ms` | `2,000`  | Initial reconnect delay.                    |
 | `stream_reconnect_delay_max_ms`     | `30,000` | Maximum reconnect delay.                    |
 | `stream_use_tls`                    | `True`   | Use TLS for the stream connection.          |
@@ -512,8 +512,8 @@ receive every price update.
 | `order_request_rate_per_second`     | `20`          | Order endpoint rate limit.                                         |
 | `stream_host`                       | `None`        | Optional stream host override.                                     |
 | `stream_port`                       | `None`        | Optional stream port override.                                     |
-| `stream_heartbeat_ms`               | `5,000`       | Interval between stream heartbeats.                                |
-| `stream_idle_timeout_ms`            | `60,000`      | Idle timeout before reconnect.                                     |
+| `stream_heartbeat_secs`             | `5`           | Interval between stream heartbeats.                                |
+| `stream_heartbeat_timeout_secs`     | `60`          | Dead‑peer timeout before reconnect.                                |
 | `stream_reconnect_delay_initial_ms` | `2,000`       | Initial reconnect delay.                                           |
 | `stream_reconnect_delay_max_ms`     | `30,000`      | Maximum reconnect delay.                                           |
 | `stream_use_tls`                    | `True`        | Use TLS for the stream connection.                                 |

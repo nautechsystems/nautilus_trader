@@ -51,7 +51,10 @@ use crate::{
 };
 
 const POLYMARKET_RTDS_HEARTBEAT_SECS: u64 = 5;
-const POLYMARKET_RTDS_IDLE_TIMEOUT_MS: u64 = 30_000;
+// The venue answers each `PING` with a text `PONG`, which refreshes a data-silence
+// timer just like real data would. Liveness therefore rests on inbound frames of any
+// kind, at six heartbeat cycles.
+const POLYMARKET_RTDS_HEARTBEAT_TIMEOUT_SECS: u64 = 30;
 const POLYMARKET_RTDS_RECONNECT_TIMEOUT_MS: u64 = 15_000;
 const POLYMARKET_RTDS_RECONNECT_DELAY_INITIAL_MS: u64 = 250;
 const POLYMARKET_RTDS_RECONNECT_DELAY_MAX_MS: u64 = 5_000;
@@ -686,15 +689,16 @@ impl PolymarketRtdsFeed {
         WebSocketConfig {
             url: self.inner.url.clone(),
             headers: vec![],
-            heartbeat: Some(POLYMARKET_RTDS_HEARTBEAT_SECS),
-            heartbeat_msg: Some("PING".to_string()),
-            reconnect_timeout_ms: Some(POLYMARKET_RTDS_RECONNECT_TIMEOUT_MS),
+            heartbeat_interval_secs: Some(POLYMARKET_RTDS_HEARTBEAT_SECS),
+            heartbeat_payload: Some("PING".to_string()),
+            connect_timeout_ms: Some(POLYMARKET_RTDS_RECONNECT_TIMEOUT_MS),
             reconnect_delay_initial_ms: Some(POLYMARKET_RTDS_RECONNECT_DELAY_INITIAL_MS),
             reconnect_delay_max_ms: Some(POLYMARKET_RTDS_RECONNECT_DELAY_MAX_MS),
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(POLYMARKET_RTDS_RECONNECT_JITTER_MS),
             reconnect_max_attempts: None,
-            idle_timeout_ms: Some(POLYMARKET_RTDS_IDLE_TIMEOUT_MS),
+            heartbeat_timeout_secs: Some(POLYMARKET_RTDS_HEARTBEAT_TIMEOUT_SECS),
+            idle_timeout_ms: None,
             backend: self.inner.transport_backend,
             proxy_url: self
                 .inner
@@ -1337,10 +1341,13 @@ mod tests {
         assert_eq!(feed.proxy_url().unwrap().expose(), PROXY_URL);
         assert_eq!(config.url, "ws://rtds.example/ws");
         assert_eq!(config.headers, Vec::<(String, String)>::new());
-        assert_eq!(config.heartbeat, Some(POLYMARKET_RTDS_HEARTBEAT_SECS));
-        assert_eq!(config.heartbeat_msg.as_deref(), Some("PING"));
         assert_eq!(
-            config.reconnect_timeout_ms,
+            config.heartbeat_interval_secs,
+            Some(POLYMARKET_RTDS_HEARTBEAT_SECS)
+        );
+        assert_eq!(config.heartbeat_payload.as_deref(), Some("PING"));
+        assert_eq!(
+            config.connect_timeout_ms,
             Some(POLYMARKET_RTDS_RECONNECT_TIMEOUT_MS)
         );
         assert_eq!(
@@ -1358,8 +1365,8 @@ mod tests {
         );
         assert_eq!(config.reconnect_max_attempts, None);
         assert_eq!(
-            config.idle_timeout_ms,
-            Some(POLYMARKET_RTDS_IDLE_TIMEOUT_MS)
+            config.heartbeat_timeout_secs,
+            Some(POLYMARKET_RTDS_HEARTBEAT_TIMEOUT_SECS)
         );
         assert_eq!(config.backend, TransportBackend::Tungstenite);
         assert_eq!(config.proxy_url.as_deref(), Some(PROXY_URL));
@@ -1567,15 +1574,16 @@ mod tests {
                 WebSocketConfig {
                     url,
                     headers: vec![],
-                    heartbeat: Some(POLYMARKET_RTDS_HEARTBEAT_SECS),
-                    heartbeat_msg: Some("PING".to_string()),
-                    reconnect_timeout_ms: Some(POLYMARKET_RTDS_RECONNECT_TIMEOUT_MS),
+                    heartbeat_interval_secs: Some(POLYMARKET_RTDS_HEARTBEAT_SECS),
+                    heartbeat_payload: Some("PING".to_string()),
+                    connect_timeout_ms: Some(POLYMARKET_RTDS_RECONNECT_TIMEOUT_MS),
                     reconnect_delay_initial_ms: Some(POLYMARKET_RTDS_RECONNECT_DELAY_INITIAL_MS),
                     reconnect_delay_max_ms: Some(POLYMARKET_RTDS_RECONNECT_DELAY_MAX_MS),
                     reconnect_backoff_factor: Some(2.0),
                     reconnect_jitter_ms: Some(POLYMARKET_RTDS_RECONNECT_JITTER_MS),
                     reconnect_max_attempts: None,
-                    idle_timeout_ms: Some(POLYMARKET_RTDS_IDLE_TIMEOUT_MS),
+                    heartbeat_timeout_secs: Some(POLYMARKET_RTDS_HEARTBEAT_TIMEOUT_SECS),
+                    idle_timeout_ms: None,
                     backend: TransportBackend::default(),
                     proxy_url: None,
                 },

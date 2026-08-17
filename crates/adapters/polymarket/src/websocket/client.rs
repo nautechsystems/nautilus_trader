@@ -15,12 +15,9 @@
 
 //! Provides the WebSocket client for the Polymarket CLOB API.
 
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU8, Ordering},
-    },
-    time::Duration,
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
 use nautilus_common::{clients::SocketReconnectRegistration, live::get_runtime};
@@ -262,7 +259,6 @@ impl PolymarketWebSocketClient {
             None,
             Arc::new(RateLimiter::new_with_quota(None, vec![])),
             self.socket_sink.clone(),
-            Some(Duration::from_secs(POLYMARKET_HEARTBEAT_TIMEOUT_SECS)),
         )
         .await?;
         self.socket_registration = self
@@ -379,14 +375,15 @@ impl PolymarketWebSocketClient {
         WebSocketConfig {
             url: self.url.clone(),
             headers: vec![],
-            heartbeat: Some(POLYMARKET_HEARTBEAT_SECS),
-            heartbeat_msg: Some("PING".to_string()),
-            reconnect_timeout_ms: Some(15_000),
+            heartbeat_interval_secs: Some(POLYMARKET_HEARTBEAT_SECS),
+            heartbeat_payload: Some("PING".to_string()),
+            connect_timeout_ms: Some(15_000),
             reconnect_delay_initial_ms: Some(250),
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(200),
             reconnect_max_attempts: None,
+            heartbeat_timeout_secs: Some(POLYMARKET_HEARTBEAT_TIMEOUT_SECS),
             idle_timeout_ms: None,
             backend: self.transport_backend,
             proxy_url: self.proxy_url.as_ref().map(|url| url.expose().to_string()),
@@ -671,9 +668,9 @@ mod tests {
         let user_debug = format!("{user:?}");
         let assert_common = |config: &WebSocketConfig| {
             assert_eq!(config.headers, Vec::<(String, String)>::new());
-            assert_eq!(config.heartbeat, Some(10));
-            assert_eq!(config.heartbeat_msg.as_deref(), Some("PING"));
-            assert_eq!(config.reconnect_timeout_ms, Some(15_000));
+            assert_eq!(config.heartbeat_interval_secs, Some(10));
+            assert_eq!(config.heartbeat_payload.as_deref(), Some("PING"));
+            assert_eq!(config.connect_timeout_ms, Some(15_000));
             assert_eq!(config.reconnect_delay_initial_ms, Some(250));
             assert_eq!(config.reconnect_delay_max_ms, Some(5_000));
             assert_eq!(config.reconnect_backoff_factor, Some(2.0));

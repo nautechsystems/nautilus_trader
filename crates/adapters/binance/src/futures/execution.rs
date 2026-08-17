@@ -97,7 +97,7 @@ use crate::{
             BINANCE_FUTURES_DUAL_SIDE_SYNC_REJECT_CODE, BINANCE_FUTURES_USD_WS_API_TESTNET_URL,
             BINANCE_FUTURES_USD_WS_API_URL, BINANCE_GTX_ORDER_REJECT_CODE,
             BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_STATUS_UNKNOWN_CODE,
-            BINANCE_UNEXPECTED_RESPONSE_CODE, BINANCE_VENUE,
+            BINANCE_UNEXPECTED_RESPONSE_CODE, BINANCE_VENUE, BINANCE_WS_HEARTBEAT_SECS,
         },
         credential::resolve_credentials,
         dispatch::{OrderIdentity, PendingOperation, PendingRequest, WsDispatchState},
@@ -288,7 +288,7 @@ impl BinanceFuturesExecutionClient {
                     ws_trading_url,
                     api_key,
                     api_secret,
-                    None, // heartbeat
+                    Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )
                 .with_proxy(config.proxy_url.clone())

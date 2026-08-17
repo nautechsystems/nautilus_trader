@@ -149,11 +149,19 @@ fn tracked_channel_message_handler(
     (tracked_handler, receiver)
 }
 
-async fn wait_for<F>(mut condition: F) -> bool
+async fn wait_for<F>(condition: F) -> bool
 where
     F: FnMut() -> bool,
 {
-    for _ in 0..POLL_ITERS {
+    wait_for_within(POLL_ITERS, condition).await
+}
+
+/// Polls for longer than [`POLL_ITERS`], for conditions gated on a whole-second timer.
+async fn wait_for_within<F>(iters: u32, mut condition: F) -> bool
+where
+    F: FnMut() -> bool,
+{
+    for _ in 0..iters {
         if condition() {
             return true;
         }
@@ -172,14 +180,15 @@ fn websocket_config_for_backend(backend: TransportBackend) -> WebSocketConfig {
     WebSocketConfig {
         url: "ws://server:8080".to_string(),
         headers: vec![],
-        heartbeat: None,
-        heartbeat_msg: None,
-        reconnect_timeout_ms: Some(2_000),
+        heartbeat_interval_secs: None,
+        heartbeat_payload: None,
+        connect_timeout_ms: Some(2_000),
         reconnect_delay_initial_ms: Some(50),
         reconnect_delay_max_ms: Some(500),
         reconnect_backoff_factor: Some(1.5),
         reconnect_jitter_ms: Some(10),
         reconnect_max_attempts: None,
+        heartbeat_timeout_secs: None,
         idle_timeout_ms: None,
         backend,
         proxy_url: None,
@@ -328,7 +337,7 @@ fn test_turmoil_real_websocket_basic_connect(websocket_config: WebSocketConfig) 
 
 #[rstest]
 fn test_turmoil_real_websocket_reconnection(mut websocket_config: WebSocketConfig) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(100);
 
     let mut sim = seeded_builder(RECONNECTION_SEED).build();
@@ -404,7 +413,7 @@ fn test_turmoil_real_websocket_reconnection(mut websocket_config: WebSocketConfi
 
 #[rstest]
 fn test_turmoil_connection_epoch_owns_messages_and_sends(mut websocket_config: WebSocketConfig) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -619,7 +628,7 @@ fn test_turmoil_websocket_stable_reconnect_resets_attempts(mut websocket_config:
 
 #[rstest]
 fn test_turmoil_real_websocket_network_partition(mut websocket_config: WebSocketConfig) {
-    websocket_config.reconnect_timeout_ms = Some(3_000);
+    websocket_config.connect_timeout_ms = Some(3_000);
 
     let mut sim = seeded_builder(NETWORK_PARTITION_SEED).build();
 
@@ -673,7 +682,7 @@ fn test_turmoil_real_websocket_network_partition(mut websocket_config: WebSocket
 
 #[rstest]
 fn test_turmoil_real_websocket_disconnect_during_reconnect(mut websocket_config: WebSocketConfig) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(100);
 
     let mut sim = seeded_builder(DISCONNECT_DURING_RECONNECT_SEED).build();
@@ -711,7 +720,7 @@ fn test_turmoil_real_websocket_disconnect_during_reconnect(mut websocket_config:
 
 #[rstest]
 fn test_turmoil_real_websocket_disconnect_during_backoff(mut websocket_config: WebSocketConfig) {
-    websocket_config.reconnect_timeout_ms = Some(1_000);
+    websocket_config.connect_timeout_ms = Some(1_000);
     websocket_config.reconnect_delay_initial_ms = Some(10_000); // Long backoff
     websocket_config.reconnect_delay_max_ms = Some(10_000);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -945,6 +954,26 @@ fn test_turmoil_websocket_sockudo_silent_until_idle_timeout_reconnects_to_active
 }
 
 #[rstest]
+fn test_turmoil_websocket_dark_until_derived_heartbeat_timeout_reconnects_to_active_state() {
+    run_websocket_dark_until_derived_heartbeat_timeout_reconnects_to_active_state(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        SILENT_UNTIL_IDLE_TIMEOUT_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_dark_until_derived_heartbeat_timeout_reconnects_to_active_state()
+{
+    run_websocket_dark_until_derived_heartbeat_timeout_reconnects_to_active_state(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        SILENT_UNTIL_IDLE_TIMEOUT_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
 fn test_turmoil_websocket_no_read_backpressure_reconnects_to_active_state() {
     run_websocket_no_read_backpressure_reconnects_to_active_state(
         websocket_config_for_backend(TransportBackend::Tungstenite),
@@ -1106,8 +1135,8 @@ fn test_turmoil_websocket_missing_pong_reconnects() {
 }
 
 #[rstest]
-fn test_turmoil_websocket_protocol_heartbeat_has_no_implicit_timeout() {
-    run_websocket_protocol_heartbeat_has_no_implicit_timeout(
+fn test_turmoil_websocket_no_heartbeat_has_no_implicit_timeout() {
+    run_websocket_no_heartbeat_has_no_implicit_timeout(
         websocket_config_for_backend(TransportBackend::Tungstenite),
         HEARTBEAT_PROTOCOL_NO_TIMEOUT_SEED,
         "websocket/tungstenite",
@@ -1116,8 +1145,8 @@ fn test_turmoil_websocket_protocol_heartbeat_has_no_implicit_timeout() {
 
 #[cfg(feature = "transport-sockudo")]
 #[rstest]
-fn test_turmoil_websocket_sockudo_protocol_heartbeat_has_no_implicit_timeout() {
-    run_websocket_protocol_heartbeat_has_no_implicit_timeout(
+fn test_turmoil_websocket_sockudo_no_heartbeat_has_no_implicit_timeout() {
+    run_websocket_no_heartbeat_has_no_implicit_timeout(
         websocket_config_for_backend(TransportBackend::Sockudo),
         HEARTBEAT_PROTOCOL_NO_TIMEOUT_SEED,
         "websocket/sockudo",
@@ -1135,8 +1164,8 @@ fn test_turmoil_websocket_sockudo_missing_pong_reconnects() {
 }
 
 #[rstest]
-fn test_turmoil_websocket_text_heartbeat_does_not_timeout() {
-    run_websocket_text_heartbeat_does_not_timeout(
+fn test_turmoil_websocket_unanswered_text_heartbeat_times_out() {
+    run_websocket_unanswered_text_heartbeat_times_out(
         websocket_config_for_backend(TransportBackend::Tungstenite),
         HEARTBEAT_TEXT_NO_RESPONSE_SEED,
         "websocket/tungstenite",
@@ -1145,8 +1174,8 @@ fn test_turmoil_websocket_text_heartbeat_does_not_timeout() {
 
 #[cfg(feature = "transport-sockudo")]
 #[rstest]
-fn test_turmoil_websocket_sockudo_text_heartbeat_does_not_timeout() {
-    run_websocket_text_heartbeat_does_not_timeout(
+fn test_turmoil_websocket_sockudo_unanswered_text_heartbeat_times_out() {
+    run_websocket_unanswered_text_heartbeat_times_out(
         websocket_config_for_backend(TransportBackend::Sockudo),
         HEARTBEAT_TEXT_NO_RESPONSE_SEED,
         "websocket/sockudo",
@@ -1238,7 +1267,7 @@ fn run_websocket_heartbeat_pings_reach_server(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.heartbeat = Some(1);
+    websocket_config.heartbeat_interval_secs = Some(1);
 
     let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
     let pings = Arc::new(AtomicUsize::new(0));
@@ -1252,16 +1281,10 @@ fn run_websocket_heartbeat_pings_reach_server(
     sim.client("client", async move {
         let reconnected = Arc::new(AtomicBool::new(false));
         let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
-        let client = WebSocketClient::connect_with_heartbeat_timeout(
-            websocket_config,
-            Duration::from_secs(2),
-            Some(handler),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        websocket_config.heartbeat_timeout_secs = Some(2);
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         // Heartbeat cadence is 1s; allow up to 10s of simulated time for 3 pings
         let mut received_enough = false;
@@ -1297,12 +1320,17 @@ fn run_websocket_heartbeat_pings_reach_server(
         .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
 }
 
-fn run_websocket_protocol_heartbeat_has_no_implicit_timeout(
+/// Without a heartbeat there is nothing to guarantee inbound frames, so no window is derived and a
+/// peer that has gone dark is left alone. The paired case, where a heartbeat is configured and the
+/// derived window does tear it down, is covered by
+/// `run_websocket_dark_until_derived_heartbeat_timeout_reconnects_to_active_state`.
+fn run_websocket_no_heartbeat_has_no_implicit_timeout(
     mut websocket_config: WebSocketConfig,
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.heartbeat = Some(1);
+    websocket_config.heartbeat_interval_secs = None;
+    websocket_config.heartbeat_timeout_secs = None;
 
     let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
     let first_connection_held = Arc::new(AtomicBool::new(false));
@@ -1340,11 +1368,11 @@ fn run_websocket_protocol_heartbeat_has_no_implicit_timeout(
 
         assert!(
             client.is_active(),
-            "{label} seed {seed:#018x} should stay active without an explicit heartbeat timeout"
+            "{label} seed {seed:#018x} should stay active with no heartbeat configured"
         );
         assert!(
             !reconnected.load(Ordering::SeqCst),
-            "{label} seed {seed:#018x} should preserve send-only protocol heartbeat behavior"
+            "{label} seed {seed:#018x} should derive no liveness window without a heartbeat"
         );
         release_first_connection.store(true, Ordering::SeqCst);
         client.disconnect().await;
@@ -1361,7 +1389,7 @@ fn run_websocket_missing_pong_reconnects(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.heartbeat = Some(1);
+    websocket_config.heartbeat_interval_secs = Some(1);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1388,16 +1416,10 @@ fn run_websocket_missing_pong_reconnects(
     sim.client("client", async move {
         let reconnected = Arc::new(AtomicBool::new(false));
         let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
-        let client = WebSocketClient::connect_with_heartbeat_timeout(
-            websocket_config,
-            Duration::from_secs(2),
-            Some(handler),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        websocket_config.heartbeat_timeout_secs = Some(2);
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         assert!(
             wait_for(|| first_connection_held.load(Ordering::SeqCst)).await,
@@ -1428,13 +1450,16 @@ fn run_websocket_missing_pong_reconnects(
         .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
 }
 
-fn run_websocket_text_heartbeat_does_not_timeout(
+/// A text keepalive the peer never answers is a dead peer, so the derived window tears it down.
+/// This is the text-payload counterpart to the Ping-frame case covered by
+/// `run_websocket_dark_until_derived_heartbeat_timeout_reconnects_to_active_state`.
+fn run_websocket_unanswered_text_heartbeat_times_out(
     mut websocket_config: WebSocketConfig,
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.heartbeat = Some(1);
-    websocket_config.heartbeat_msg = Some(TEXT_HEARTBEAT.to_string());
+    websocket_config.heartbeat_interval_secs = Some(1);
+    websocket_config.heartbeat_payload = Some(TEXT_HEARTBEAT.to_string());
 
     let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
     let heartbeats = Arc::new(AtomicUsize::new(0));
@@ -1468,12 +1493,8 @@ fn run_websocket_text_heartbeat_does_not_timeout(
             heartbeats.load(Ordering::SeqCst)
         );
         assert!(
-            client.is_active(),
-            "{label} seed {seed:#018x} should stay active without text-heartbeat responses"
-        );
-        assert!(
-            !reconnected.load(Ordering::SeqCst),
-            "{label} seed {seed:#018x} should not apply a heartbeat timeout to text heartbeats"
+            wait_for_within(1_000, || reconnected.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should tear down a text heartbeat the peer never answers"
         );
 
         client.disconnect().await;
@@ -1490,7 +1511,7 @@ fn run_websocket_non_pong_frames_prevent_heartbeat_timeout(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.heartbeat = Some(1);
+    websocket_config.heartbeat_interval_secs = Some(1);
 
     let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
     sim.host("server", ws_send_text_without_reading_server);
@@ -1498,16 +1519,10 @@ fn run_websocket_non_pong_frames_prevent_heartbeat_timeout(
     sim.client("client", async move {
         let reconnected = Arc::new(AtomicBool::new(false));
         let (handler, mut rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
-        let client = WebSocketClient::connect_with_heartbeat_timeout(
-            websocket_config,
-            Duration::from_secs(2),
-            Some(handler),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        websocket_config.heartbeat_timeout_secs = Some(2);
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
         let mut received = Vec::with_capacity(NON_PONG_FRAME_COUNT);
 
         for _ in 0..NON_PONG_FRAME_COUNT {
@@ -1581,7 +1596,7 @@ fn run_websocket_server_close_frame_triggers_reconnect(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1622,7 +1637,7 @@ fn run_websocket_repeated_drops_preserve_message_order(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1694,7 +1709,7 @@ fn run_websocket_reconnect_active_drop_preserves_later_message_order(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1790,7 +1805,7 @@ fn run_websocket_handshake_drop_reaches_active_state(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1839,7 +1854,7 @@ fn run_websocket_first_read_task_drop_reaches_active_state(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1896,7 +1911,7 @@ fn run_websocket_partition_while_reconnecting_reaches_active_state(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(1_000);
+    websocket_config.connect_timeout_ms = Some(1_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1970,7 +1985,7 @@ fn run_websocket_partition_during_backoff_sleep_reaches_active_state(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(1_000);
+    websocket_config.connect_timeout_ms = Some(1_000);
     websocket_config.reconnect_delay_initial_ms = Some(1_000);
     websocket_config.reconnect_delay_max_ms = Some(1_000);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -2052,12 +2067,79 @@ fn run_websocket_silent_until_idle_timeout_reconnects_to_active_state(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.idle_timeout_ms = Some(500);
+    run_websocket_silent_until_liveness_timeout_reconnects_to_active_state(
+        websocket_config,
+        seed,
+        label,
+    );
+}
+
+/// A configured heartbeat with no explicit timeout must still tear down a peer that has gone dark,
+/// because that derived window is what gives most adapters any dead-peer detection at all.
+fn run_websocket_dark_until_derived_heartbeat_timeout_reconnects_to_active_state(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.heartbeat_interval_secs = Some(1);
+    websocket_config.heartbeat_timeout_secs = None;
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
     websocket_config.reconnect_jitter_ms = Some(0);
-    websocket_config.idle_timeout_ms = Some(500);
+
+    let mut sim = stressed_builder(seed, Duration::from_secs(30)).build();
+    let first_connection_dark = Arc::new(AtomicBool::new(false));
+    let server_first_connection_dark = Arc::clone(&first_connection_dark);
+
+    sim.host("server", move || {
+        let server_first_connection_dark = Arc::clone(&server_first_connection_dark);
+        async move { ws_dark_first_connection_then_echo_server(server_first_connection_dark).await }
+    });
+
+    sim.client("client", async move {
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
+
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        assert!(
+            wait_for(|| first_connection_dark.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should enter the dark first connection"
+        );
+        assert!(
+            wait_for_within(1_000, || reconnected.load(Ordering::SeqCst) && client.is_active())
+                .await,
+            "{label} seed {seed:#018x} should become active after derived heartbeat-timeout reconnect"
+        );
+
+        client.disconnect().await;
+        assert!(
+            client.is_disconnected(),
+            "{label} seed {seed:#018x} should disconnect after scenario"
+        );
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_silent_until_liveness_timeout_reconnects_to_active_state(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.connect_timeout_ms = Some(5_000);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
 
     let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
     let first_connection_silent = Arc::new(AtomicBool::new(false));
@@ -2105,7 +2187,7 @@ fn run_websocket_no_read_backpressure_reconnects_to_active_state(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -2198,7 +2280,7 @@ fn run_websocket_disconnect_while_send_waits_for_reconnect_closes_send(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -2305,7 +2387,7 @@ fn run_websocket_disconnect_while_waiting_for_auth_closes_client(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -2402,7 +2484,7 @@ fn run_websocket_max_reconnect_attempts_while_waiting_for_auth_closes_client(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(500);
+    websocket_config.connect_timeout_ms = Some(500);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(25);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -2660,7 +2742,7 @@ fn run_websocket_reconnectable_drop_while_waiting_for_auth_waits_for_reauth(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -2763,7 +2845,7 @@ fn run_websocket_alternating_text_binary_preserves_message_order(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -2897,7 +2979,7 @@ fn run_websocket_queued_write_drop_preserves_later_message_order(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -3310,6 +3392,62 @@ async fn ws_silent_first_connection_then_echo_server(
                                 Ok(_) => {}
                             }
                         }
+                    }
+                }
+                _ => {
+                    if let Ok(mut ws_stream) = accept_async(stream).await {
+                        while let Some(msg) = ws_stream.next().await {
+                            match msg {
+                                Ok(Message::Text(text)) => {
+                                    let _ = ws_stream.send(Message::Text(text)).await;
+                                }
+                                Ok(Message::Binary(data)) => {
+                                    let _ = ws_stream.send(Message::Binary(data)).await;
+                                }
+                                Ok(Message::Ping(ping_data)) => {
+                                    let _ = ws_stream.send(Message::Pong(ping_data)).await;
+                                }
+                                Ok(Message::Close(_)) => {
+                                    let _ = ws_stream.close(None).await;
+                                    break;
+                                }
+                                Ok(Message::Pong(_) | Message::Frame(_)) => {}
+                                Err(_) => break,
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+/// Completes the handshake on the first connection then stops servicing the stream entirely.
+///
+/// Unlike the silent server, this never polls the stream, so tokio-tungstenite's automatic pong
+/// never runs and the peer emits no frame of any kind. That is the half-open connection the
+/// heartbeat timeout exists to catch: the socket stays open and writes keep succeeding.
+async fn ws_dark_first_connection_then_echo_server(
+    first_connection_dark: Arc<AtomicBool>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+    let mut connection_index = 0;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let current_connection = connection_index;
+        connection_index += 1;
+        let first_connection_dark = Arc::clone(&first_connection_dark);
+
+        tokio::spawn(async move {
+            match current_connection {
+                0 => {
+                    if let Ok(ws_stream) = accept_async(stream).await {
+                        first_connection_dark.store(true, Ordering::SeqCst);
+
+                        // Hold the stream without polling it so no pong is ever emitted.
+                        let _ws_stream = ws_stream;
+                        std::future::pending::<()>().await;
                     }
                 }
                 _ => {

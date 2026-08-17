@@ -676,7 +676,7 @@ The product type for each client is specified via the `product_type` option.
 | `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.          |
 | `timeout_secs`            | `30`      | HTTP request timeout in seconds.                               |
 | `heartbeat_interval_secs` | `30`      | WebSocket heartbeat interval in seconds.                       |
-| `ws_idle_timeout_ms`      | `10000`   | Idle timeout for the Spot v2 WebSocket; `0` disables.          |
+| `ws_idle_timeout_ms`      | `10,000`  | Data‑silence timeout for the Spot v2 WebSocket; `0` disables.  |
 | `max_requests_per_second` | `None`    | Per‑client request throttle; default is 5 req/s.               |
 | `transport_backend`       | `Sockudo` | WebSocket transport backend.                                   |
 

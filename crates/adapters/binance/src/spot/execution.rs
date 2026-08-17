@@ -79,7 +79,7 @@ use crate::{
             BINANCE_NEW_ORDER_REJECTED_CODE, BINANCE_SPOT_POST_ONLY_REJECT_MSG,
             BINANCE_SPOT_SBE_WS_API_DEMO_URL, BINANCE_SPOT_SBE_WS_API_TESTNET_URL,
             BINANCE_SPOT_SBE_WS_API_URL, BINANCE_STATUS_UNKNOWN_CODE,
-            BINANCE_UNEXPECTED_RESPONSE_CODE, BINANCE_VENUE,
+            BINANCE_UNEXPECTED_RESPONSE_CODE, BINANCE_VENUE, BINANCE_WS_HEARTBEAT_SECS,
         },
         credential::resolve_credentials,
         dispatch::{
@@ -197,7 +197,7 @@ impl BinanceSpotExecutionClient {
                     url,
                     api_key.clone(),
                     api_secret.clone(),
-                    None, // heartbeat
+                    Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )
                 .with_proxy(config.proxy_url.clone())
@@ -588,7 +588,7 @@ impl BinanceSpotExecutionClient {
             Some(url),
             api_key,
             api_secret,
-            Some(20),
+            Some(BINANCE_WS_HEARTBEAT_SECS),
             self.config.transport_backend,
         )
         .with_proxy(self.config.proxy_url.clone());
