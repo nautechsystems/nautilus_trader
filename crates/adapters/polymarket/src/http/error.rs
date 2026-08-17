@@ -44,6 +44,7 @@ pub enum Error {
         token_cost: u32,
         retry_after_ms: Option<u64>,
         message: String,
+        signer_limited: bool,
     },
 
     #[error("bad request: {0}")]
@@ -93,7 +94,13 @@ impl Error {
         token_cost: u32,
         retry_after_ms: Option<u64>,
     ) -> Self {
-        Self::rate_limit_response(endpoint, token_cost, retry_after_ms, "rate limit exceeded")
+        Self::rate_limit_response(
+            endpoint,
+            token_cost,
+            retry_after_ms,
+            "rate limit exceeded",
+            false,
+        )
     }
 
     pub fn rate_limit_response(
@@ -101,12 +108,14 @@ impl Error {
         token_cost: u32,
         retry_after_ms: Option<u64>,
         message: impl Into<String>,
+        signer_limited: bool,
     ) -> Self {
         Self::RateLimit {
             endpoint,
             token_cost,
             retry_after_ms,
             message: message.into(),
+            signer_limited,
         }
     }
 
@@ -115,12 +124,14 @@ impl Error {
         token_cost: u32,
         retry_after_ms: Option<u64>,
         body: &[u8],
+        signer_limited: bool,
     ) -> Self {
         Self::rate_limit_response(
             endpoint,
             token_cost,
             retry_after_ms,
             venue_error_message(body),
+            signer_limited,
         )
     }
 
@@ -153,7 +164,7 @@ impl Error {
         let message = venue_error_message(body);
 
         match status {
-            429 => Self::rate_limit_response("unknown", 0, None, message),
+            429 => Self::rate_limit_response("unknown", 0, None, message, false),
             _ => Self::http(status, message),
         }
     }
@@ -194,14 +205,18 @@ impl Error {
 
     /// Returns `true` when a submit POST may have reached the venue but the
     /// adapter cannot prove whether the venue accepted or rejected the order.
+    ///
+    /// HTTP 425 and a 429 without CLOB signer-limiter headers stay unknown. A
+    /// 429 is definitive only when `Poly-RateLimit-Remaining`,
+    /// `Poly-RateLimit-Reset`, or `Poly-RateLimit-Tier` is present.
     pub fn is_submit_outcome_unknown(&self) -> bool {
         match self {
             Self::Transport(_) | Self::Timeout | Self::Serde(_) | Self::Decode(_) | Self::Io(_) => {
                 true
             }
-            Self::Http { status, .. } => *status >= 500,
+            Self::Http { status, .. } => *status == 425 || *status >= 500,
+            Self::RateLimit { signer_limited, .. } => !signer_limited,
             Self::Auth(_)
-            | Self::RateLimit { .. }
             | Self::BadRequest(_)
             | Self::BurstExceeded { .. }
             | Self::Exchange(_)
@@ -415,6 +430,7 @@ mod tests {
             token_cost: 10,
             retry_after_ms: Some(60000),
             message: "slow down".to_string(),
+            signer_limited: false,
         };
         assert_eq!(
             err.to_string(),
@@ -525,8 +541,8 @@ mod tests {
     #[case::unauthorized(401, false, false, true)]
     #[case::forbidden(403, false, false, true)]
     #[case::not_found(404, false, false, false)]
-    #[case::too_early(425, true, false, false)]
-    #[case::rate_limited(429, true, false, false)]
+    #[case::too_early(425, true, true, false)]
+    #[case::rate_limited(429, true, true, false)]
     #[case::server_error(500, true, true, false)]
     #[case::service_unavailable(503, true, true, false)]
     fn test_http_status_classification(
@@ -620,10 +636,20 @@ mod tests {
         assert!(Error::http(500, "server error").is_submit_outcome_unknown());
         assert!(Error::decode("bad json").is_submit_outcome_unknown());
 
-        assert!(!Error::rate_limit("/orders", 10, Some(1_000)).is_submit_outcome_unknown());
+        assert!(Error::rate_limit("/orders", 10, Some(1_000)).is_submit_outcome_unknown());
+        assert!(Error::http(425, "too early").is_submit_outcome_unknown());
         assert!(!Error::auth("test").is_submit_outcome_unknown());
         assert!(!Error::bad_request("test").is_submit_outcome_unknown());
-        assert!(!Error::http(425, "too early").is_submit_outcome_unknown());
         assert!(!Error::http(404, "not found").is_submit_outcome_unknown());
+        assert!(
+            !Error::RateLimit {
+                endpoint: "/order",
+                token_cost: 1,
+                retry_after_ms: Some(1_000),
+                message: "slow down".to_string(),
+                signer_limited: true,
+            }
+            .is_submit_outcome_unknown()
+        );
     }
 }

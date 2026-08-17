@@ -374,6 +374,7 @@ impl PolymarketClobHttpClient {
                     cost,
                     rate_limit_headers.retry_after_ms(),
                     &response.body,
+                    rate_limit_headers.has_signer_headers(),
                 ))
             } else {
                 Err(Error::from_status_code(
@@ -417,6 +418,7 @@ impl PolymarketClobHttpClient {
                 0,
                 rate_limit_headers.retry_after_ms(),
                 &response.body,
+                rate_limit_headers.has_signer_headers(),
             ));
         }
 

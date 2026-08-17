@@ -140,6 +140,7 @@ Released on TBD (UTC).
 - Fixed Polymarket compact book snapshots being dropped when hash preimage fields are absent
 - Fixed Polymarket open markets being removed from live state after `endDate` (#4706), thanks @mystic-io
 - Fixed Polymarket Gamma pagination failing on sports markets with a composite `gameId` (#4771), thanks for reporting @jamesjklin
+- Fixed Polymarket treating HTTP 425 and non‑CLOB 429 submit failures as definitive rejections
 - Fixed Tardis CSV funding rates dropping `next_funding_ns` without a predicted rate
 - Fixed Tardis Machine funding rates omitting `next_funding_ns`
 

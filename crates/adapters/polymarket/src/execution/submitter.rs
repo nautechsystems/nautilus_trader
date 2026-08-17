@@ -663,10 +663,18 @@ mod tests {
 
     #[rstest]
     fn test_rate_limit_is_definitive_unless_an_earlier_attempt_was_unknown() {
-        let rate_limit = Error::rate_limit("/order", 1, Some(2_000));
+        let signer_limited = Error::RateLimit {
+            endpoint: "/order",
+            token_cost: 1,
+            retry_after_ms: Some(2_000),
+            message: "rate limit exceeded".to_string(),
+            signer_limited: true,
+        };
+        let bare_rate_limit = Error::rate_limit("/order", 1, Some(2_000));
 
-        assert!(!submit_outcome_is_unknown(&rate_limit, false));
-        assert!(submit_outcome_is_unknown(&rate_limit, true));
+        assert!(!submit_outcome_is_unknown(&signer_limited, false));
+        assert!(submit_outcome_is_unknown(&signer_limited, true));
+        assert!(submit_outcome_is_unknown(&bare_rate_limit, false));
         assert!(submit_outcome_is_unknown(
             &Error::transport("connection reset"),
             false

@@ -1098,6 +1098,7 @@ async fn test_post_heartbeat_rate_limit_preserves_retry_after() {
             token_cost: 0,
             retry_after_ms: Some(1_251),
             message,
+            ..
         } if message == "Too Many Requests"
     ));
 }
@@ -1155,6 +1156,7 @@ async fn test_order_rate_limit_preserves_retry_after_and_is_definitive() {
         token_cost,
         retry_after_ms,
         message,
+        signer_limited,
     } = &error
     else {
         panic!("expected rate-limit error, was {error}");
@@ -1163,9 +1165,53 @@ async fn test_order_rate_limit_preserves_retry_after_and_is_definitive() {
     assert_eq!(*token_cost, 1);
     assert_eq!(*retry_after_ms, Some(2_000));
     assert_eq!(message, "Rate limit exceeded");
+    assert!(signer_limited);
     assert_eq!(error.strategy_reason(), "Rate limit exceeded");
     assert!(error.is_retryable());
     assert!(!error.is_submit_outcome_unknown());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_order_rate_limit_without_signer_headers_is_unknown() {
+    let state = TestServerState::default();
+    state.rate_limit_after.store(0, Ordering::Relaxed);
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(HeaderName::from_static("retry-after"), "2".parse().unwrap());
+    *state.rate_limit_response_headers.lock().await = response_headers;
+    let addr = start_mock_server(state).await;
+    let client = PolymarketClobHttpClient::new(
+        test_credential(),
+        "0x0000000000000000000000000000000000000252".to_string(),
+        Some(format!("http://{addr}")),
+        5,
+    )
+    .unwrap();
+    let order: PolymarketOrder =
+        serde_json::from_value(load_json("http_signed_order.json")).unwrap();
+
+    let error = client
+        .post_order(&order, PolymarketOrderType::GTC, false)
+        .await
+        .unwrap_err();
+
+    let Error::RateLimit {
+        endpoint,
+        token_cost,
+        retry_after_ms,
+        message,
+        signer_limited,
+    } = &error
+    else {
+        panic!("expected rate-limit error, was {error}");
+    };
+    assert_eq!(*endpoint, "/order");
+    assert_eq!(*token_cost, 1);
+    assert_eq!(*retry_after_ms, Some(2_000));
+    assert_eq!(message, "Rate limit exceeded");
+    assert!(!signer_limited);
+    assert!(error.is_retryable());
+    assert!(error.is_submit_outcome_unknown());
 }
 
 #[rstest]
@@ -1199,6 +1245,7 @@ async fn test_batch_order_rate_limit_reports_entry_cost() {
         token_cost,
         retry_after_ms,
         message,
+        ..
     } = error
     else {
         panic!("expected rate-limit error");
@@ -1236,6 +1283,7 @@ async fn test_batch_cancel_rate_limit_reports_submitted_id_cost() {
         token_cost,
         retry_after_ms,
         message,
+        ..
     } = error
     else {
         panic!("expected rate-limit error");
@@ -1278,6 +1326,7 @@ async fn test_retry_after_delays_next_order_request() {
             token_cost: 1,
             retry_after_ms: Some(2_000),
             message,
+            ..
         } if message == "Rate limit exceeded"
     ));
     state.rate_limit_after.store(usize::MAX, Ordering::Relaxed);

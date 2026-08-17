@@ -187,6 +187,7 @@ struct TestServerState {
     balance_response: Arc<tokio::sync::Mutex<Value>>,
     order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     order_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
+    order_response_headers: Arc<tokio::sync::Mutex<HeaderMap>>,
     order_post_count: Arc<tokio::sync::Mutex<usize>>,
     /// When > 0, `handle_post_order` returns 500 on this many calls before
     /// reverting to the configured `order_response_status`. Used by retry tests.
@@ -248,6 +249,7 @@ impl Default for TestServerState {
             ))),
             order_response: Arc::new(tokio::sync::Mutex::new(None)),
             order_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
+            order_response_headers: Arc::new(tokio::sync::Mutex::new(HeaderMap::new())),
             order_post_count: Arc::new(tokio::sync::Mutex::new(0)),
             order_post_500_remaining: Arc::new(tokio::sync::Mutex::new(0)),
             order_response_uses_request_hash: Arc::new(AtomicBool::new(false)),
@@ -559,7 +561,11 @@ async fn handle_post_order(
     }
 
     record_open_order_ids(&state, std::slice::from_ref(&body)).await;
-    (status, Json(body)).into_response()
+    let mut response = (status, Json(body)).into_response();
+    response
+        .headers_mut()
+        .extend(state.order_response_headers.lock().await.clone());
+    response
 }
 
 async fn handle_post_orders(
@@ -4942,7 +4948,7 @@ async fn test_submit_order_malformed_success_response_remains_unknown() {
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_order_too_early_retries_then_rejects_definitively() {
+async fn test_submit_order_too_early_retries_then_remains_unknown() {
     let state = TestServerState::default();
     *state.order_response_status.lock().await = StatusCode::TOO_EARLY;
     *state.order_response.lock().await =
@@ -4973,11 +4979,107 @@ async fn test_submit_order_too_early_retries_then_rejects_definitively() {
         .unwrap();
 
     assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
-    let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
-    assert_eq!(
-        order_event_reason(&rejected),
-        "the market is not yet ready to process new orders"
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.order_post_count.lock().await == 2 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_bare_429_retries_then_remains_unknown() {
+    let state = TestServerState::default();
+    *state.order_response_status.lock().await = StatusCode::TOO_MANY_REQUESTS;
+    *state.order_response.lock().await = Some(json!({"error": "Rate limit exceeded"}));
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(HeaderName::from_static("retry-after"), "0".parse().unwrap());
+    *state.order_response_headers.lock().await = response_headers;
+
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client_with_retries(addr, 1);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let order = make_limit_order(
+        "O-BARE-429",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
     );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.order_post_count.lock().await == 2 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_signer_429_retries_then_rejects() {
+    let state = TestServerState::default();
+    *state.order_response_status.lock().await = StatusCode::TOO_MANY_REQUESTS;
+    *state.order_response.lock().await = Some(json!({"error": "Rate limit exceeded"}));
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
+        HeaderName::from_static("poly-ratelimit-remaining"),
+        "0".parse().unwrap(),
+    );
+    response_headers.insert(
+        HeaderName::from_static("poly-ratelimit-tier"),
+        "Standard".parse().unwrap(),
+    );
+    *state.order_response_headers.lock().await = response_headers;
+
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client_with_retries(addr, 1);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let order = make_limit_order(
+        "O-SIGNER-429",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
+    assert_eq!(order_event_reason(&rejected), "Rate limit exceeded");
     assert_eq!(*state.order_post_count.lock().await, 2);
 }
 

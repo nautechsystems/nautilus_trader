@@ -201,6 +201,10 @@ impl RateLimitHeaders {
                 .unwrap_or(u64::MAX)
         })
     }
+
+    pub(crate) fn has_signer_headers(&self) -> bool {
+        self.remaining.is_some() || self.reset.is_some() || self.tier.is_some()
+    }
 }
 
 #[derive(Debug)]
@@ -526,6 +530,20 @@ mod tests {
             .iter()
             .map(|(name, value)| ((*name).to_string(), (*value).to_string()))
             .collect()
+    }
+
+    #[rstest]
+    #[case::remaining(&[(HEADER_RATE_LIMIT_REMAINING, "0")], true)]
+    #[case::reset(&[(HEADER_RATE_LIMIT_RESET, "1")], true)]
+    #[case::tier(&[(HEADER_RATE_LIMIT_TIER, "Standard")], true)]
+    #[case::retry_after_only(&[(HEADER_RETRY_AFTER, "2")], false)]
+    #[case::warning_only(&[(HEADER_RATE_LIMIT_WARNING, "true")], false)]
+    #[case::empty(&[], false)]
+    fn test_has_signer_headers(#[case] entries: &[(&str, &str)], #[case] expected: bool) {
+        assert_eq!(
+            RateLimitHeaders::parse(&header_map(entries)).has_signer_headers(),
+            expected
+        );
     }
 
     #[rstest]

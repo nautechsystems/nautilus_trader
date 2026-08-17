@@ -419,6 +419,8 @@ Ambiguous failures include:
 - Response serialization or decoding failures.
 - Local I/O failures.
 - Server‑side failures.
+- HTTP 425 responses.
+- HTTP 429 responses that lack CLOB signer‑limiter headers.
 
 | Outcome                                                                                       | Nautilus result             | Reason                                    |
 | --------------------------------------------------------------------------------------------- | --------------------------- | ----------------------------------------- |
@@ -453,10 +455,18 @@ exact normalized reason sets `OrderRejected.due_post_only=true`; other post‑on
 ordinary rejections.
 
 Retry‑managed single‑order submit and cancel requests retry HTTP 425, 429, and 5xx responses with the
-configured backoff. Without an earlier ambiguous attempt, retry exhaustion makes a 425 or 429 a
-definitive rejection; a 5xx response remains an unknown submit outcome. HTTP 400, 401, 403, and 404
-responses do not retry. A malformed successful submit response also remains unknown and enters
-reconciliation instead of becoming a terminal rejection.
+configured backoff. After retries are exhausted, submit classification is:
+
+| HTTP status                          | Retried | Submit result       | Notes                                                                                                                                |
+| ------------------------------------ | ------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 425                                  | Yes     | Remains `Submitted` | Too Early does not prove rejection.                                                                                                  |
+| 429 with CLOB signer‑limiter headers | Yes     | `OrderRejected`     | Requires `Poly-RateLimit-Remaining`, `Poly-RateLimit-Reset`, or `Poly-RateLimit-Tier`. An earlier unknown attempt stays `Submitted`. |
+| 429 without those headers            | Yes     | Remains `Submitted` | Cloudflare or another hop may have seen the request.                                                                                 |
+| 5xx                                  | Yes     | Remains `Submitted` | The command may already have been applied.                                                                                           |
+| 400, 401, 403, 404                   | No      | `OrderRejected`     | Non‑retryable client or API error.                                                                                                   |
+
+A malformed successful submit response also remains unknown and enters reconciliation instead of
+becoming a terminal rejection.
 
 #### Unknown-outcome reconciliation
 
@@ -1115,8 +1125,8 @@ token cost, tier, remaining balance, and reset time.
 
 A `429 Too Many Requests` response with `Retry-After` blocks the applicable bucket for at least that
 delay before retry. Without `Retry-After`, the retry manager uses its configured exponential
-backoff. A standalone 429 is a definitive venue rejection. Transport failures, timeouts, and any
-submit with an earlier ambiguous attempt remain ambiguous outcomes.
+backoff. Submit classification of 425 and 429 is in
+[Definitive and ambiguous outcomes](#definitive-and-ambiguous-outcomes).
 
 ### Selected IP-based REST limits
 
