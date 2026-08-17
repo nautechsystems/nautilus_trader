@@ -108,6 +108,7 @@ Released on TBD (UTC).
 - Fixed `AverageTrueRange` ignoring its configured `ma_type` and always using a simple moving average, which also affected the inner ATR for `KeltnerChannel`, `KeltnerPosition`, `Pressure`, and `VolatilityRatio`
 - Fixed Python `MessageBus` accepting empty or whitespace‑only subscription patterns
 - Fixed the `OptionSeriesId` Python constructor panicking on an invalid venue, which aborted the process in release builds; it now raises `ValueError`
+- Fixed stale venue book snapshots logging one out‑of‑order warning per delta
 - Fixed Betfair stream reauthentication and subscription replay after session replacement
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
@@ -179,6 +180,7 @@ Released on TBD (UTC).
 - Consolidated Python v2 integration guides and examples on canonical paths
 - Corrected the Rust `DataTester` book depth support note in the data testing spec
 - Documented external Redis message fields and Python custom-data registration
+- Documented order book out‑of‑order update and stale snapshot reporting behavior
 - Documented the transient startup position-check race in the Lighter integration guide
 - Fixed broken README links on PyPI (#4644, #4648), thanks for reporting @ZhongxuanWang; thanks @xxxjqm
 
