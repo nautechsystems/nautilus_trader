@@ -558,7 +558,12 @@ impl DatabaseQueries {
     ///
     /// # Errors
     ///
-    /// Returns an error if the SQL INSERT or UPDATE operation fails.
+    /// Returns an error if the SQL INSERT or UPDATE operation fails, or if
+    /// serialization of `exec_algorithm_params` fails.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "order event persistence maps the full database schema in one transaction"
+    )]
     pub async fn add_order_event(
         pool: &PgPool,
         order_event: Box<dyn OrderEvent>,
@@ -594,17 +599,23 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to insert into client table: {e}"))?;
         }
 
+        let exec_algorithm_params = order_event
+            .exec_algorithm_params()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|e| anyhow::anyhow!("Failed to serialize exec algorithm params: {e}"))?;
+
         sqlx::query(r#"
             INSERT INTO "order_event" (
                 id, kind, client_order_id, order_type, order_side, trader_id, client_id, reason, strategy_id, instrument_id, trade_id, currency, quantity, time_in_force, liquidity_side,
                 post_only, reduce_only, quote_quantity, reconciliation, price, last_px, last_qty, trigger_price, trigger_type, limit_offset, trailing_offset,
                 trailing_offset_type, expire_time, display_qty, emulation_trigger, trigger_instrument_id, contingency_type,
                 order_list_id, linked_order_ids, parent_order_id,
-                exec_algorithm_id, exec_spawn_id, venue_order_id, account_id, position_id, commission, ts_event, ts_init, activation_price, created_at, updated_at
+                exec_algorithm_id, exec_spawn_id, venue_order_id, account_id, position_id, commission, ts_event, ts_init, activation_price, exec_algorithm_params, tags, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 $21, $22, $23, $24, $25, $26::trailing_offset_type, $27, $28, $29, $30, $31, $32, $33, $34,
-                $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (id)
             DO UPDATE
@@ -613,7 +624,8 @@ impl DatabaseQueries {
                 quantity = $13, time_in_force = $14, liquidity_side = $15, post_only = $16, reduce_only = $17, quote_quantity = $18, reconciliation = $19, price = $20, last_px = $21,
                 last_qty = $22, trigger_price = $23, trigger_type = $24, limit_offset = $25, trailing_offset = $26, trailing_offset_type = $27, expire_time = $28, display_qty = $29,
                 emulation_trigger = $30, trigger_instrument_id = $31, contingency_type = $32, order_list_id = $33, linked_order_ids = $34, parent_order_id = $35, exec_algorithm_id = $36,
-                exec_spawn_id = $37, venue_order_id = $38, account_id = $39, position_id = $40, commission = $41, ts_event = $42, ts_init = $43, activation_price = $44, updated_at = CURRENT_TIMESTAMP
+                exec_spawn_id = $37, venue_order_id = $38, account_id = $39, position_id = $40, commission = $41, ts_event = $42, ts_init = $43, activation_price = $44,
+                exec_algorithm_params = $45, tags = $46, updated_at = CURRENT_TIMESTAMP
 
         "#)
             .bind(order_event.id().to_string())
@@ -660,6 +672,8 @@ impl DatabaseQueries {
             .bind(order_event.ts_event().to_string())
             .bind(order_event.ts_init().to_string())
             .bind(order_event.activation_price().map(|x| x.to_string()))
+            .bind(exec_algorithm_params)
+            .bind(order_event.tags().map(|x| x.iter().map(ToString::to_string).collect::<Vec<String>>()))
             .execute(&mut *transaction)
             .await
             .map(|_| ())

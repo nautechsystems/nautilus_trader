@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -118,7 +119,13 @@ pub trait OrderEvent: 'static + Send {
     fn linked_order_ids(&self) -> Option<Vec<ClientOrderId>>;
     fn parent_order_id(&self) -> Option<ClientOrderId>;
     fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId>;
+    fn exec_algorithm_params(&self) -> Option<IndexMap<Ustr, Ustr>> {
+        None
+    }
     fn exec_spawn_id(&self) -> Option<ClientOrderId>;
+    fn tags(&self) -> Option<Vec<Ustr>> {
+        None
+    }
     fn venue_order_id(&self) -> Option<VenueOrderId>;
     fn account_id(&self) -> Option<AccountId>;
     fn position_id(&self) -> Option<PositionId>;

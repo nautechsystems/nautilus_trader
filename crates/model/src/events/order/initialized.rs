@@ -636,8 +636,16 @@ impl OrderEvent for OrderInitialized {
         self.exec_algorithm_id
     }
 
+    fn exec_algorithm_params(&self) -> Option<IndexMap<Ustr, Ustr>> {
+        self.exec_algorithm_params.clone()
+    }
+
     fn exec_spawn_id(&self) -> Option<ClientOrderId> {
         self.exec_spawn_id
+    }
+
+    fn tags(&self) -> Option<Vec<Ustr>> {
+        self.tags.clone()
     }
 
     fn venue_order_id(&self) -> Option<VenueOrderId> {
@@ -685,9 +693,15 @@ impl TryFrom<OrderInitialized> for OrderAny {
 
 #[cfg(test)]
 mod test {
+    use indexmap::IndexMap;
     use rstest::rstest;
+    use ustr::Ustr;
 
-    use crate::events::order::{initialized::OrderInitialized, stubs::*};
+    use crate::events::{
+        OrderEvent,
+        order::{initialized::OrderInitialized, stubs::*},
+    };
+
     #[rstest]
     fn test_order_initialized(order_initialized_buy_limit: OrderInitialized) {
         let display = format!("{order_initialized_buy_limit}");
@@ -699,6 +713,21 @@ mod test {
             contingency_type=OTO, order_list_id=1, linked_order_ids=[O-2020872378424], parent_order_id=None, \
             exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None)"
         );
+    }
+
+    #[rstest]
+    fn test_order_initialized_event_exposes_tags_and_exec_algorithm_params() {
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("speed"), Ustr::from("fast"));
+        let tags = vec![Ustr::from("tag-1"), Ustr::from("tag-2")];
+        let event = OrderInitialized {
+            exec_algorithm_params: Some(params.clone()),
+            tags: Some(tags.clone()),
+            ..OrderInitialized::default()
+        };
+
+        assert_eq!(OrderEvent::exec_algorithm_params(&event), Some(params));
+        assert_eq!(OrderEvent::tags(&event), Some(tags));
     }
 
     #[rstest]

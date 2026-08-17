@@ -262,11 +262,7 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
             .try_get::<Option<&str>, _>("exec_spawn_id")
             .ok()
             .and_then(|x| x.map(ClientOrderId::from));
-        let tags: Option<Vec<Ustr>> = row
-            .try_get::<Option<serde_json::Value>, _>("tags")
-            .ok()
-            .and_then(|x| x.map(|x| serde_json::from_value::<Vec<String>>(x).unwrap()))
-            .map(|x| x.into_iter().map(|x| Ustr::from(x.as_str())).collect());
+        let tags = tags_from_row(row);
         let order_event = OrderInitialized::new_checked(
             trader_id,
             strategy_id,
@@ -725,19 +721,7 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
             .try_get::<Option<&str>, _>("exec_spawn_id")
             .ok()
             .and_then(|x| x.map(ClientOrderId::from));
-        let tags = row
-            .try_get::<Option<serde_json::Value>, _>("tags")
-            .ok()
-            .flatten()
-            .and_then(|tags_value| {
-                serde_json::from_value::<Vec<String>>(tags_value)
-                    .ok()
-                    .map(|vec| {
-                        vec.into_iter()
-                            .map(|tag| Ustr::from(tag.as_str()))
-                            .collect::<Vec<Ustr>>()
-                    })
-            });
+        let tags = tags_from_row(row);
         let init_id = row.try_get::<&str, _>("init_id").map(UUID4::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
         let ts_last = row.try_get::<String, _>("ts_last").map(UnixNanos::from)?;
@@ -791,4 +775,10 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
 
         Ok(Self(snapshot))
     }
+}
+
+fn tags_from_row(row: &PgRow) -> Option<Vec<Ustr>> {
+    row.try_get::<Vec<String>, _>("tags")
+        .ok()
+        .map(|tags| tags.iter().map(|tag| Ustr::from(tag.as_str())).collect())
 }

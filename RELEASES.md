@@ -87,6 +87,7 @@ Released on TBD (UTC).
 - Fixed market order risk checks to use cached bars and deny orders without a usable price
 - Fixed `Position` average open price (`avg_px_open`) for exact closes after partial fills
 - Fixed order list `OrderInitialized` events to carry `order_list_id` through publication, persistence, and replay
+- Fixed Postgres cache restore dropping order `tags` and `exec_algorithm_params`
 - Fixed failed live strategy registrations leaving orphaned external‑order claims (#4620), thanks @folknor
 - Fixed network controllers treating aborted reconnects as completed reconnections (#4623), thanks @folknor
 - Fixed WebSocket pong frames being held across a reconnect and enqueued on the replacement connection (#4613), thanks @folknor

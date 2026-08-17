@@ -393,6 +393,8 @@ mod serial_tests {
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from("1.0"))
+            .exec_algorithm_params(indexmap! { Ustr::from("speed") => Ustr::from("fast") })
+            .tags(vec![Ustr::from("tag-1"), Ustr::from("tag-2")])
             .build();
         let limit_order = OrderTestBuilder::new(OrderType::Limit)
             .client_order_id(client_order_id_2)
@@ -1310,13 +1312,28 @@ mod serial_tests {
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from("1.0"))
+            .tags(vec![Ustr::from("tag-1"), Ustr::from("tag-2")])
             .build();
+        let snapshot: OrderSnapshot = order.into();
 
-        pg_cache.add_order_snapshot(&order.into()).unwrap();
+        pg_cache.add_order_snapshot(&snapshot).unwrap();
 
-        let result = pg_cache.load_order_snapshot(&client_order_id);
+        wait_until(
+            || {
+                pg_cache
+                    .load_order_snapshot(&client_order_id)
+                    .unwrap()
+                    .is_some()
+            },
+            Duration::from_secs(5),
+        );
 
-        assert!(result.is_ok());
+        let loaded = pg_cache
+            .load_order_snapshot(&client_order_id)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(loaded.tags, snapshot.tags);
         pg_cache.flush().unwrap();
         pg_cache.close().unwrap();
     }

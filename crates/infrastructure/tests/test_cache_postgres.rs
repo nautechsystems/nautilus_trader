@@ -117,6 +117,7 @@ mod serial_tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from("1.0"))
             .client_order_id(ClientOrderId::new("O-19700101-0000-001-001-1"))
+            .tags(vec![Ustr::from("tag-1"), Ustr::from("tag-2")])
             .build();
 
         // Add foreign key dependencies: instrument and currencies
