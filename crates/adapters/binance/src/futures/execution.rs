@@ -972,7 +972,8 @@ impl BinanceFuturesExecutionClient {
             return true;
         }
 
-        let Some(instrument) = self.core.cache().instrument(&instrument_id) else {
+        let cache = self.core.cache();
+        let Some(instrument) = cache.instrument(&instrument_id) else {
             // A record with no shared-cache definition cannot be proven to be outside a
             // filter. Keep it in scope so reconciliation reports the missing definition.
             if let Some(values) = provider.filters.get("symbols")
