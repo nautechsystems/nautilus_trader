@@ -22,6 +22,9 @@
 //!
 //! Both share the same EIP-712 domain name and version; only the
 //! `verifyingContract` differs.
+//!
+//! This module also owns the CLOB V2 contract identities and ordered on-chain
+//! approval plan ([`approval_plan`]) used by the set-allowances binary.
 
 use std::str::FromStr;
 
@@ -58,12 +61,63 @@ pub const NEG_RISK_CTF_EXCHANGE: Address = address!("0xe2222d279d744050d28e00520
 pub const NEG_RISK_CTF_COLLATERAL_ADAPTER: Address =
     address!("0xadA2005600Dec949baf300f4C6120000bDB6eAab");
 
+/// Polymarket pUSD collateral token contract address on Polygon mainnet.
+pub const POLYMARKET_COLLATERAL_TOKEN: Address =
+    address!("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB");
+
+/// Conditional Tokens Framework contract address on Polygon mainnet.
+pub const CONDITIONAL_TOKENS: Address = address!("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045");
+
 /// Complete spender set requiring collateral approval for Polymarket CLOB V2 orders.
 pub const COLLATERAL_APPROVAL_TARGETS: &[Address] = &[
     CTF_EXCHANGE,
     NEG_RISK_CTF_EXCHANGE,
     NEG_RISK_CTF_COLLATERAL_ADAPTER,
 ];
+
+/// One transaction in the Polymarket approval plan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PolymarketApproval {
+    /// Approves a contract to spend pUSD collateral.
+    Collateral {
+        /// Collateral token contract receiving the approval call.
+        contract: Address,
+        /// Contract receiving the collateral allowance.
+        spender: Address,
+        /// Collateral allowance amount.
+        amount: U256,
+    },
+    /// Enables a contract as an operator for conditional tokens.
+    ConditionalTokens {
+        /// Conditional Tokens contract receiving the operator call.
+        contract: Address,
+        /// Contract receiving conditional-token operator authority.
+        operator: Address,
+        /// Whether operator authority is enabled.
+        approved: bool,
+    },
+}
+
+/// Returns the ordered approval plan for Polymarket CLOB V2.
+pub fn approval_plan() -> impl Iterator<Item = PolymarketApproval> {
+    COLLATERAL_APPROVAL_TARGETS
+        .iter()
+        .copied()
+        .flat_map(|target| {
+            [
+                PolymarketApproval::Collateral {
+                    contract: POLYMARKET_COLLATERAL_TOKEN,
+                    spender: target,
+                    amount: U256::MAX,
+                },
+                PolymarketApproval::ConditionalTokens {
+                    contract: CONDITIONAL_TOKENS,
+                    operator: target,
+                    approved: true,
+                },
+            ]
+        })
+}
 
 const DOMAIN_NAME: &str = "Polymarket CTF Exchange";
 const DOMAIN_VERSION: &str = "2";
@@ -652,6 +706,14 @@ mod tests {
             "0xada2005600dec949baf300f4c6120000bdb6eaab"
         );
         assert_eq!(
+            format!("{POLYMARKET_COLLATERAL_TOKEN:#x}"),
+            "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb"
+        );
+        assert_eq!(
+            format!("{CONDITIONAL_TOKENS:#x}"),
+            "0x4d97dcd97ec945f40cf65f87097ace5ea0476045"
+        );
+        assert_eq!(
             COLLATERAL_APPROVAL_TARGETS,
             &[
                 CTF_EXCHANGE,
@@ -659,6 +721,49 @@ mod tests {
                 NEG_RISK_CTF_COLLATERAL_ADAPTER,
             ]
         );
+    }
+
+    #[rstest]
+    fn test_approval_plan() {
+        let collateral_token = address!("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB");
+        let conditional_tokens = address!("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045");
+        let ctf_exchange = address!("0xE111180000d2663C0091e4f400237545B87B996B");
+        let neg_risk_ctf_exchange = address!("0xe2222d279d744050d28e00520010520000310F59");
+        let neg_risk_collateral_adapter = address!("0xadA2005600Dec949baf300f4C6120000bDB6eAab");
+        let expected = vec![
+            PolymarketApproval::Collateral {
+                contract: collateral_token,
+                spender: ctf_exchange,
+                amount: U256::MAX,
+            },
+            PolymarketApproval::ConditionalTokens {
+                contract: conditional_tokens,
+                operator: ctf_exchange,
+                approved: true,
+            },
+            PolymarketApproval::Collateral {
+                contract: collateral_token,
+                spender: neg_risk_ctf_exchange,
+                amount: U256::MAX,
+            },
+            PolymarketApproval::ConditionalTokens {
+                contract: conditional_tokens,
+                operator: neg_risk_ctf_exchange,
+                approved: true,
+            },
+            PolymarketApproval::Collateral {
+                contract: collateral_token,
+                spender: neg_risk_collateral_adapter,
+                amount: U256::MAX,
+            },
+            PolymarketApproval::ConditionalTokens {
+                contract: conditional_tokens,
+                operator: neg_risk_collateral_adapter,
+                approved: true,
+            },
+        ];
+
+        assert_eq!(approval_plan().collect::<Vec<_>>(), expected);
     }
 
     #[rstest]
