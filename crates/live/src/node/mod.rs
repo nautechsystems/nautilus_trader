@@ -149,21 +149,20 @@ pub use metrics::{RunnerChannelMetricsSnapshot, RunnerMetricsDelta, RunnerMetric
 use metrics::{RunnerChannelQueueDepths, RunnerMetrics};
 use queue::{QueueMonitor, QueueStateTransition};
 use state::{EngineConnectionStatus, RunningTransition};
-pub use state::{LiveNodeHandle, NodeState};
+pub use state::{LiveNodeHandle, NodeRunMode, NodeState};
+
+/// Dispatches the run loop performs before yielding to the executor.
+///
+/// A saturated channel keeps every select branch ready, so the loop would otherwise never return
+/// `Pending`. Under a host event loop that starves the adapter I/O tasks feeding those channels,
+/// which shows up as lapsed heartbeats and reconnects rather than as backpressure.
+const DISPATCHES_PER_YIELD: usize = 64;
 
 /// High-level abstraction for a live Nautilus system node.
 ///
 /// Provides a simplified interface for running live systems
 /// with automatic client management and lifecycle handling.
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", unsendable)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
-)]
 pub struct LiveNode {
     kernel: NautilusKernel,
     runner: Option<AsyncRunner>,
@@ -329,10 +328,9 @@ impl LiveNode {
     /// Starts the live node without entering a select loop.
     ///
     /// Connects clients, runs reconciliation, and starts the trader, but does
-    /// not consume the runner or drive channel receivers. Channel traffic that
-    /// arrives after startup is not serviced until the caller provides a loop.
-    ///
-    /// For a self-contained entry point that owns the event loop, use [`run`](Self::run).
+    /// not consume the runner or drive channel receivers, so channel traffic arriving after
+    /// startup is never serviced. This is a building block for tests and embedding, not a
+    /// lifecycle: use [`run`](Self::run) or [`run_with_mode`](Self::run_with_mode) to run a node.
     ///
     /// # Errors
     ///
@@ -344,7 +342,7 @@ impl LiveNode {
 
         if self.external_msgbus.is_some() {
             log::warn!(
-                "External message bus ingress is configured but LiveNode::start() with poll() does not service it; use LiveNode::run()"
+                "External message bus ingress is configured but LiveNode::start() does not service it; use LiveNode::run()"
             );
         }
 
@@ -460,30 +458,6 @@ impl LiveNode {
         }
 
         Ok(())
-    }
-
-    /// Processes the live-node channel traffic queued when this method is called.
-    ///
-    /// This provides a non-blocking integration for host loops after [`start`](Self::start).
-    /// Events that arrive while polling remain queued for the next call.
-    /// Use [`run`](Self::run) when the node should also own maintenance, external
-    /// ingress, signal handling, and automatic shutdown.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the node is not running or its runner is unavailable.
-    pub fn poll(&mut self) -> anyhow::Result<usize> {
-        if !self.state().is_running() {
-            anyhow::bail!("LiveNode is not running");
-        }
-
-        let Some(mut runner) = self.runner.take() else {
-            anyhow::bail!("LiveNode runner is unavailable");
-        };
-
-        let processed = runner.poll_pending(|event| self.process_runner_event(event));
-        self.runner = Some(runner);
-        Ok(processed)
     }
 
     /// Stop the live node.
@@ -910,6 +884,19 @@ impl LiveNode {
     ///
     /// Returns an error if the node fails to start or encounters a runtime error.
     pub async fn run(&mut self) -> anyhow::Result<()> {
+        self.run_with_mode(NodeRunMode::Owned).await
+    }
+
+    /// Run the live node under the given mode.
+    ///
+    /// [`NodeRunMode::Hosted`] leaves signal handling to the host application. Every other
+    /// responsibility, including maintenance, reconciliation, external ingress, and the shutdown
+    /// sequence, is identical across modes so that hosted and owned nodes cannot diverge.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the node fails to start or encounters a runtime error.
+    pub async fn run_with_mode(&mut self, mode: NodeRunMode) -> anyhow::Result<()> {
         if self.state().is_running() {
             anyhow::bail!("Already running");
         }
@@ -1353,8 +1340,26 @@ impl LiveNode {
         let mut open_order_report_task: Option<OpenOrderReportTask> = None;
         let mut targeted_order_report_task: Option<TargetedOrderReportTask> = None;
         let mut position_report_task: Option<PositionReportTask> = None;
-        let ctrl_c = dst::signal::ctrl_c();
-        let terminate = dst::signal::terminate();
+
+        // A hosted node never installs signal handlers, so these futures stay pending and their
+        // listeners are never registered. Both arms resolve to the same type as the real listeners.
+        let owns_signals = mode.owns_signals();
+
+        let ctrl_c = async move {
+            if owns_signals {
+                dst::signal::ctrl_c().await
+            } else {
+                std::future::pending::<std::io::Result<()>>().await
+            }
+        };
+
+        let terminate = async move {
+            if owns_signals {
+                dst::signal::terminate().await
+            } else {
+                std::future::pending::<std::io::Result<()>>().await
+            }
+        };
 
         tokio::pin!(ctrl_c);
         tokio::pin!(terminate);
@@ -1362,11 +1367,13 @@ impl LiveNode {
         let metrics = self.handle.metrics.clone();
         let metrics_start = dst::time::Instant::now();
         metrics.reset();
+
         let mut queue_monitor = self
             .config
             .queue_monitor
             .as_ref()
             .map(|config| QueueMonitor::new(config, metrics.snapshot()));
+        let mut dispatches_since_yield = 0usize;
 
         loop {
             let shutdown_deadline = self.shutdown_deadline;
@@ -1718,6 +1725,12 @@ impl LiveNode {
                     );
                 }
             }
+
+            dispatches_since_yield += 1;
+            if dispatches_since_yield >= DISPATCHES_PER_YIELD {
+                dispatches_since_yield = 0;
+                tokio::task::yield_now().await;
+            }
         }
 
         if residual_events > 0 {
@@ -1803,6 +1816,12 @@ impl LiveNode {
         }
 
         Ok(())
+    }
+
+    /// Returns whether a cache database backing is configured but not yet installed.
+    #[must_use]
+    pub const fn has_pending_cache_database(&self) -> bool {
+        self.cache_database_factory.is_some()
     }
 
     /// Constructs the configured cache database backing and installs it on the kernel cache.
@@ -2449,7 +2468,7 @@ impl LiveNode {
     ) -> anyhow::Result<()> {
         if self.state() != NodeState::Idle {
             anyhow::bail!(
-                "Cannot set cache database while node is running, set it before calling start()"
+                "Cannot set cache database while node is running, set it before running the node"
             );
         }
 
@@ -2487,7 +2506,7 @@ impl LiveNode {
     {
         if self.state() != NodeState::Idle {
             anyhow::bail!(
-                "Cannot add actor while node is running, add actors before calling start()"
+                "Cannot add actor while node is running, add actors before running the node"
             );
         }
 
@@ -2512,7 +2531,7 @@ impl LiveNode {
     {
         if self.state() != NodeState::Idle {
             anyhow::bail!(
-                "Cannot add actor while node is running, add actors before calling start()"
+                "Cannot add actor while node is running, add actors before running the node"
             );
         }
 
@@ -2543,7 +2562,7 @@ impl LiveNode {
     {
         if self.state() != NodeState::Idle {
             anyhow::bail!(
-                "Cannot add strategy while node is running, add strategies before calling start()"
+                "Cannot add strategy while node is running, add strategies before running the node"
             );
         }
 
@@ -2595,9 +2614,9 @@ impl LiveNode {
     /// Registers external order claims on both live execution tiers.
     ///
     /// The operation is synchronous and atomic across the reconciliation manager and execution
-    /// engine. It can be called while the node is idle, between [`poll`](Self::poll) calls after
-    /// manual [`start`](Self::start), or after the node stops. It cannot be called while
-    /// [`run`](Self::run) owns the node.
+    /// engine. It can be called while the node is idle, after manual [`start`](Self::start)
+    /// returns, or after the node stops. It cannot be called while [`run`](Self::run) or
+    /// [`run_with_mode`](Self::run_with_mode) owns the node.
     ///
     /// # Errors
     ///
@@ -2664,8 +2683,8 @@ impl LiveNode {
     ///
     /// Remove the strategy through the trader or controller first, then call this method before
     /// registering a successor. The operation is synchronous and can be called while the node is
-    /// idle, between [`poll`](Self::poll) calls after manual [`start`](Self::start), or after the
-    /// node stops. It cannot be called while [`run`](Self::run) owns the node.
+    /// idle, after manual [`start`](Self::start) returns, or after the node stops. It cannot be
+    /// called while [`run`](Self::run) or [`run_with_mode`](Self::run_with_mode) owns the node.
     ///
     /// # Errors
     ///
@@ -2714,7 +2733,7 @@ impl LiveNode {
     {
         if self.state() != NodeState::Idle {
             anyhow::bail!(
-                "Cannot add exec algorithm while node is running, add exec algorithms before calling start()"
+                "Cannot add exec algorithm while node is running, add exec algorithms before running the node"
             );
         }
 
@@ -5545,87 +5564,6 @@ mod tests {
         assert_eq!(handle.state(), NodeState::Stopped);
         assert!(handle.should_stop());
         assert!(!handle.is_running());
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_poll_processes_post_start_data_and_exec_events_without_waiting() {
-        let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            timeout_connection: Duration::ZERO,
-            timeout_reconciliation: Duration::ZERO,
-            timeout_portfolio: Duration::ZERO,
-            timeout_disconnection: Duration::ZERO,
-            delay_post_stop: Duration::ZERO,
-            timeout_shutdown: Duration::ZERO,
-            ..Default::default()
-        };
-        let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        let instrument_id = instrument.id();
-        let order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(instrument_id)
-            .quantity(Quantity::from("1"))
-            .build();
-        let client_order_id = order.client_order_id();
-        let submitted = TestOrderEventStubs::submitted(&order, AccountId::from("POLL-001"));
-
-        node.kernel
-            .cache()
-            .borrow_mut()
-            .add_order(order, None, None, false)
-            .unwrap();
-
-        node.start().await.unwrap();
-        get_data_event_sender()
-            .send(DataEvent::Instrument(instrument))
-            .unwrap();
-        get_exec_event_sender()
-            .send(ExecutionEvent::Order(submitted))
-            .unwrap();
-
-        assert!(
-            node.kernel
-                .cache()
-                .borrow()
-                .instrument(&instrument_id)
-                .is_none()
-        );
-        assert_eq!(
-            node.kernel
-                .cache()
-                .borrow()
-                .order(&client_order_id)
-                .unwrap()
-                .status(),
-            OrderStatus::Initialized
-        );
-
-        assert_eq!(node.poll().unwrap(), 2);
-
-        assert!(
-            node.kernel
-                .cache()
-                .borrow()
-                .instrument(&instrument_id)
-                .is_some()
-        );
-        assert_eq!(
-            node.kernel
-                .cache()
-                .borrow()
-                .order(&client_order_id)
-                .unwrap()
-                .status(),
-            OrderStatus::Submitted
-        );
-        assert_eq!(node.poll().unwrap(), 0);
-
-        node.stop().await.unwrap();
-        node.dispose();
     }
 
     #[rstest]

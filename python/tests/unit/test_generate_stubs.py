@@ -1748,6 +1748,15 @@ def test_live_stub_exposes_native_live_node_config_signature():
     assert '"PortfolioConfig"' in live_stub
 
 
+def test_live_stub_exposes_run_async_coroutine_signature():
+    live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
+
+    assert (
+        "def run_async(self) -> collections.abc.Coroutine[typing.Any, typing.Any, None]: ..."
+        in live_stub
+    )
+
+
 def test_live_stub_exposes_builder_engine_config_methods():
     live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
 

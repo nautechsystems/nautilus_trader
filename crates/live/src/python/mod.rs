@@ -34,8 +34,10 @@ pyo3_stub_gen::reexport_module_members!(
 /// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn live(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<crate::node::LiveNode>()?;
-    m.add_class::<node::LiveNodeBuilderPy>()?;
+    m.add_class::<node::PyLiveNode>()?;
+    m.add_class::<node::PyLiveNodeHandle>()?;
+    m.add_class::<node::PyLiveNodeBuilder>()?;
+    m.add_class::<node::NodeState>()?;
     m.add_class::<crate::config::LiveNodeConfig>()?;
     m.add_class::<crate::config::LiveDataEngineConfig>()?;
     m.add_class::<crate::config::LiveRiskEngineConfig>()?;

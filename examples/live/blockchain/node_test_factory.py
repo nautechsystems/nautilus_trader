@@ -15,12 +15,25 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
+import threading
+import time
 
 from nautilus_trader.common import Environment
 from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.infrastructure import PostgresConnectOptions
 from nautilus_trader.live import LiveNode
+from nautilus_trader.live import LiveNodeHandle
 from nautilus_trader.model import TraderId
+
+
+def _stop_when_running(handle: LiveNodeHandle) -> None:
+    """
+    Stop the node once it reports running, so `run()` returns.
+    """
+    deadline = time.monotonic() + 30.0
+    while not handle.is_running and time.monotonic() < deadline:
+        time.sleep(0.01)
+    handle.stop()
 
 
 def test_factory_approach():
@@ -64,11 +77,13 @@ def test_factory_approach():
     node.add_actor_from_config(actor_config)
     print("Successfully added actor from config")
 
-    node.start()
-    print("Successfully started node with factory-created actor")
+    handle = node.handle()
+    stopper = threading.Thread(target=_stop_when_running, args=(handle,), daemon=True)
+    stopper.start()
 
-    node.stop()
-    print("Successfully stopped node")
+    node.run()
+    stopper.join(timeout=30.0)
+    print("Successfully ran and stopped node with factory-created actor")
 
 
 if __name__ == "__main__":

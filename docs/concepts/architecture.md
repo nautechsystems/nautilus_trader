@@ -812,4 +812,6 @@ opt in from your own binary (see the [Rust guide](rust.md#memory-allocator)).
 ## Related guides
 
 - [Overview](overview.md): High‑level introduction to NautilusTrader.
+- [Python](python.md): Python ownership, runtime, and public API boundaries.
+- [Rust](rust.md): Native Rust APIs and runtime use.
 - [Message Bus](message_bus.md): Core messaging infrastructure.

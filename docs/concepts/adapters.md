@@ -58,7 +58,8 @@ when a specific client must handle a request, subscription, or order. Without an
 the data and execution engines use the venue and default routes configured by the node.
 
 :::note
-Python v2 will eventually provide a custom‑adapter API that matches Python v1.
+Python v2 does not yet provide a custom‑adapter API that matches Python v1.
+See the [Python concept guide](python.md#support-boundaries) for the public package boundary.
 :::
 
 ## Instrument providers

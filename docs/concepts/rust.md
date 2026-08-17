@@ -16,9 +16,8 @@ Nautilus has two paths. Understanding where each stands helps
 you choose the right one for your use case.
 
 - **v2 Rust**: Pure Rust under `crates/`. Runs without Python.
-- **v2 PyO3**: Python user-components (actors, strategies) running on
-  the Rust core via PyO3 bindings under `python/nautilus_trader/`. Combines Python convenience with
-  Rust engine performance.
+- **v2 PyO3**: [Python user components](python.md) running on the Rust core through PyO3 bindings
+  under `python/nautilus_trader/`. Combines Python convenience with Rust engine performance.
 
 :::note
 The legacy v1 (Cython) implementation has been removed. This guide covers
@@ -469,6 +468,7 @@ against live venues.
 
 ## Related guides
 
+- [Python](python.md) - Python ownership, runtime, and public API boundaries.
 - [Write an Actor (Rust)](../how_to/write_rust_actor.md) - Step-by-step actor walkthrough.
 - [Write a Strategy (Rust)](../how_to/write_rust_strategy.md) - Step-by-step strategy walkthrough.
 - [Run a Backtest (Rust)](../how_to/run_rust_backtest.md) - BacktestEngine and BacktestNode usage.

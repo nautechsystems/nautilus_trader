@@ -326,8 +326,10 @@ venue. `SimulationModuleConfig` is therefore no longer a separate Python type.
 
 Three v1 application config exports represent workflows with no current public Python equivalent:
 `DataCatalogConfig`, `DatabaseConfig`, and `StreamingConfig`. Do not substitute a same‑named Rust
-config. In particular, `BacktestNode` does not yet expose the v1 catalog streaming workflow, and
-Python live‑node config cannot select a Redis or SQL backing.
+config. `BacktestNode` does not yet expose the v1 catalog streaming workflow. For live trading,
+configure Redis or Postgres cache backing through `LiveNodeBuilder`; this does not restore the
+generic v1 `DatabaseConfig` workflow. See
+[cache database configuration](docs/how_to/configure_live_trading.md#cache-database-configuration).
 
 The generic Python APIs under `nautilus_trader.network` have no v2 public Python equivalent:
 `HttpClient`, `HttpMethod`, `HttpResponse`, `SocketClient`, `WebSocketClient`, `SocketConfig`,
@@ -348,6 +350,9 @@ them:
 - `KrakenFuturesHttpClient.edit_orders_batch`
 - `KrakenFuturesHttpClient.submit_orders_batch`
 - `KrakenSpotHttpClient.submit_orders_batch`
+
+See the [Python concept guide](docs/concepts/python.md) for the runtime ownership model and public
+API boundaries.
 
 The [Rust‑native Python examples][python-v2-examples] show current live-node builders, adapter factories,
 strategies, actors, and data/execution testers.
@@ -404,34 +409,23 @@ shared wrappers provide normal inspection without exposing runtime internals.
 
 Choose the lifecycle method based on who owns the loop:
 
-| Method    | Contract                                                                                    |
-| --------- | ------------------------------------------------------------------------------------------- |
-| `run()`   | Owns the full lifecycle and blocks until shutdown.                                          |
-| `start()` | Completes startup and returns, but does not service post-start channel traffic.             |
-| `poll()`  | Processes traffic queued at call entry, returns its count, and does not wait for more.      |
-| `stop()`  | Blocks through shutdown and services runner traffic during the residual-event grace period. |
+| Method                  | Contract                                                                                |
+| ----------------------- | --------------------------------------------------------------------------------------- |
+| `LiveNode.run()`        | Runs on the calling thread, owns signal handling, and blocks until shutdown.            |
+| `LiveNode.run_async()`  | Runs on the caller's asyncio loop and resolves once the node has stopped.               |
+| `LiveNodeHandle.stop()` | Requests graceful shutdown and returns immediately; the active run completes afterward. |
 
-`run()` also owns maintenance, external message-bus ingress, signal handling, and automatic
-shutdown. A host that owns its loop must call `start()` once and schedule `poll()` repeatedly:
+Both entry points run the same lifecycle, so a hosted node performs the same startup ordering,
+maintenance, external message-bus ingress, reconciliation, and shutdown as an owned one. A host
+that owns its loop awaits `run_async()` and stops the node through its handle. It must wait for the
+handle to report `Running`, supervise the run task for unexpected completion, await graceful
+shutdown, and then dispose the node.
 
-```python
-import asyncio
-
-
-async def service_live_node(node):
-    node.start()
-    try:
-        while application_running():
-            node.poll()
-            await asyncio.sleep(0.01)
-    finally:
-        node.stop()
-        node.dispose()
-```
-
-`poll()` services time events, execution events, trading commands, data events, and data commands.
-Traffic arriving during a call remains queued for the next host cycle. The host decides when to
-stop a node in polling mode.
+Capture `cache`, `portfolio`, and `handle()` before starting, because `run_async()` lends the node
+to the returned coroutine for the run's duration. Use `LiveNodeHandle.stop()` as the external stop
+path while either execution mode owns the node. See the
+[live trading](docs/concepts/live.md#hosted-event-loops) concept guide for the canonical recipe and
+full contract.
 
 ### Order factory configuration readback
 

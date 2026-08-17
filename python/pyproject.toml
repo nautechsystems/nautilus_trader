@@ -80,11 +80,13 @@ no-build-package = [
   "certifi",
   "charset-normalizer",
   "choreographer",
+  "click",
   "colorama",
   "coverage",
   "docutils",
   "execnet",
   "furo",
+  "h11",
   "idna",
   "imagesize",
   "iniconfig",
@@ -138,6 +140,8 @@ no-build-package = [
   "tzdata",
   "uc-micro-py",
   "urllib3",
+  "uvicorn",
+  "uvloop",
 ]
 
 [dependency-groups]
@@ -147,6 +151,8 @@ test = [
   "pytest-asyncio>=1.4.0",
   "pytest-cov>=7.1.0",
   "pytest-xdist[psutil]>=3.8.0",
+  "uvicorn>=0.52.1",
+  "uvloop>=0.22.1; sys_platform != 'win32'",
 ]
 docs = [
   "furo==2025.12.19",

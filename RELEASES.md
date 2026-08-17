@@ -14,6 +14,7 @@ Released on TBD (UTC).
 - Added `Sum` iterator support for owned and borrowed `Quantity` values (#4720), thanks @faysou
 - Added Python v2 Redis message bus backing for `LiveNode` (#4630), thanks for reporting @davidgreyme
 - Added Python v2 cache database backing for `LiveNode` (#4634), thanks for reporting @AlphaTraderK
+- Added Python v2 `LiveNode.run_async()`, `LiveNodeHandle`, and `NodeState` for caller-owned event loops
 - Added direct message bus backing installation through `RedisMessageBusConfig`
 - Added `LiveNode.start()` warning when external message bus ingress requires `run()`
 - Added trader start warning when `load_state` or `save_state` is enabled without a cache database backing
@@ -35,6 +36,7 @@ Released on TBD (UTC).
 - Removed `cython-compat`, Cython cbindgen configs, and `drop_cvec_pycapsule`; use PyO3 APIs
 - Removed Databento `load_*_as_pycapsule` methods; use the corresponding `load_*` methods
 - Removed generic Python clients and support APIs from `nautilus_trader.network`; use adapter APIs or `nautilus-network`
+- Removed `LiveNode.poll()` and Python `LiveNode.start()`; use hosted `run_with_mode(...)` or `run_async()`
 - Removed unused Rust `SocketClient` connection/disconnection callbacks and `WebSocketClient` reconnection callback; use message or epoch handlers
 - Removed Rust `nautilus_execution::matching_engine::adapter::OrderEngineAdapter`; use `nautilus_execution::matching_engine::OrderMatchingEngine` directly
 - Removed `nautilus_trader.data.OptionChainManager`; use `subscribe_option_chain` and handle `OptionChainSlice` in `on_option_chain`
@@ -177,6 +179,7 @@ Released on TBD (UTC).
 
 ### Documentation Updates
 
+- Added Python concept guidance for runtime ownership, public APIs, and hosted live execution
 - Consolidated Python v2 integration guides and examples on canonical paths
 - Corrected the Rust `DataTester` book depth support note in the data testing spec
 - Documented external Redis message fields and Python custom-data registration

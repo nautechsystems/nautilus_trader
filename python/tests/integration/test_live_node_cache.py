@@ -15,6 +15,8 @@
 
 import os
 import socket
+import threading
+import time
 
 import pytest
 
@@ -48,6 +50,35 @@ pytestmark = pytest.mark.skipif(
     not INFRASTRUCTURE_REQUIRED and not _infrastructure_is_reachable(),
     reason="Redis and Postgres infrastructure services are not reachable",
 )
+
+
+class GeneralDataActor(DataActor):
+    """
+    Reads and writes general cache data from inside the node's own lifecycle.
+
+    `Cache` is unsendable and a database-backed node owns its thread, so cache access has to
+    happen on the node thread rather than from the test body.
+
+    """
+
+    key: str = ""
+    token: bytes = b""
+    write_on_start: bool = False
+    loaded: bytes | None = None
+
+    @classmethod
+    def configure(cls, key: str, token: bytes, *, write_on_start: bool) -> None:
+        cls.key = key
+        cls.token = token
+        cls.write_on_start = write_on_start
+        cls.loaded = None
+
+    def on_start(self) -> None:
+        cls = type(self)
+        if cls.write_on_start:
+            self.cache.add(cls.key, cls.token)
+        else:
+            cls.loaded = self.cache.get(cls.key)
 
 
 class StateRoundTripActor(DataActor):
@@ -110,10 +141,28 @@ def _build_cache_node(
 
 
 def _run_node_lifecycle(node: LiveNode) -> None:
+    """
+    Run the node on this thread until a worker stops it.
+
+    A cache database backing blocks its caller, so these nodes own their thread through
+    `run()` rather than sharing a host event loop.
+
+    """
+    handle = node.handle()
+
+    def stop_when_running() -> None:
+        deadline = time.monotonic() + 30.0
+        while not handle.is_running and time.monotonic() < deadline:
+            time.sleep(0.01)
+        handle.stop()
+
+    stopper = threading.Thread(target=stop_when_running, daemon=True)
+    stopper.start()
+
     try:
-        node.start()
-        node.stop()
+        node.run()
     finally:
+        stopper.join(timeout=30.0)
         node.dispose()
 
 
@@ -131,21 +180,23 @@ def test_cache_backing_round_trips_general_data(
     key = f"integration-{UUID4()}"
     trader_id = TraderId(f"TESTER-CACHE-{UUID4()}")
 
-    saving_node = _build_cache_node(config_type(), trader_id)
-    try:
-        saving_node.start()
-        saving_node.cache.add(key, token)
-        saving_node.stop()
-    finally:
-        saving_node.dispose()
+    actor_config = ImportableActorConfig(
+        actor_path="tests.integration.test_live_node_cache:GeneralDataActor",
+        config_path="nautilus_trader.common:DataActorConfig",
+        config={"actor_id": "GENERAL-DATA"},
+    )
 
+    GeneralDataActor.configure(key, token, write_on_start=True)
+    saving_node = _build_cache_node(config_type(), trader_id)
+    saving_node.add_actor_from_config(actor_config)
+    _run_node_lifecycle(saving_node)
+
+    GeneralDataActor.configure(key, token, write_on_start=False)
     loading_node = _build_cache_node(config_type(), trader_id)
-    try:
-        loading_node.start()
-        loaded = loading_node.cache.get(key)
-        loading_node.stop()
-    finally:
-        loading_node.dispose()
+    loading_node.add_actor_from_config(actor_config)
+    _run_node_lifecycle(loading_node)
+
+    loaded = GeneralDataActor.loaded
 
     assert loaded == token
 

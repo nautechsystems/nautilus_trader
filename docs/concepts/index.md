@@ -155,6 +155,11 @@ and raw TCP socket clients.
 Writing actors, strategies, and running backtests and live trading in pure Rust
 using the `crates/` implementation directly.
 
+## Python
+
+Python application composition and user components running on the Rust core through PyO3,
+including ownership, async execution, and public API boundaries.
+
 ## Deterministic simulation testing (DST)
 
 The determinism contract for seed-replayable execution, the source-level seams that implement

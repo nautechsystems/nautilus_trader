@@ -17,8 +17,9 @@ as standalone Python scripts or services.
 :::
 
 :::warning[One LiveNode per process]
-Running multiple `LiveNode` instances concurrently in the same process is not supported due to global singleton state.
-Add multiple strategies to a single node, or run additional nodes in separate processes for parallel execution.
+Running multiple `LiveNode` instances concurrently in the same process is not supported because
+runtime state is not isolated. `run_async()` also rejects a second hosted node on the same event
+loop. Add multiple strategies to a single node, or run additional nodes in separate processes.
 
 See [Processes and threads](../concepts/architecture.md#processes-and-threads) for details.
 :::
@@ -166,7 +167,8 @@ finally:
 
 Pass `PostgresCacheConfig` instead to back the cache with Postgres. Any other object raises
 `NotImplementedError` from `with_cache_database_factory`, and a failed database connection fails
-`run()`.
+`run()`. Database‑backed nodes must use `run()` because `run_async()` rejects cache database
+backings that would block the host event loop.
 
 `with_load_state` and `with_save_state` control actor and strategy state persistence, which requires
 a Redis backing. The Postgres adapter backs cache state only: with registered actors or strategies,
@@ -245,9 +247,9 @@ Existing code can continue passing `RedisMessageBusFactory(redis_config)` to
 
 `MessageBusConfig` alone does not install a backing. Pair it with a factory as shown above. The
 factory always installs external egress, and calling `run()` also consumes the configured external
-streams. Entries already in a stream before the node starts are not replayed. A host loop based on
-`start()` and `poll()` does not service external message‑bus ingress; use `run()` when
-`external_streams` is configured. See [message bus backing
+streams. Entries already in a stream before the node starts are not replayed. `run_async()` runs
+the same lifecycle as `run()`, so a node hosted on a caller's event loop services external
+message‑bus ingress too. See [message bus backing
 configuration](../concepts/message_bus.md#backing-config) for lifecycle and ingress details.
 External producers that write directly to Redis must supply the required `type` field. See
 [external egress and ingress](../concepts/message_bus.md#external-egress-and-ingress) for the wire

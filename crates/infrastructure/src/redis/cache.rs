@@ -637,6 +637,11 @@ impl RedisCacheDatabase {
     }
 }
 
+/// Receives a reply, handing off the worker first when called from the Nautilus runtime.
+///
+/// The check is whether a runtime handle is current, not whether this thread is a runtime worker.
+/// Both branches block the caller, so a caller that must not block, such as a live node driven by
+/// a host event loop, cannot use these paths at all and is rejected before it reaches them.
 fn blocking_recv<T>(rx: &mpsc::Receiver<T>) -> Result<T, mpsc::RecvError> {
     let on_nautilus_runtime =
         tokio::runtime::Handle::try_current().is_ok_and(|h| h.id() == get_runtime().handle().id());
