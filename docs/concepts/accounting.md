@@ -18,7 +18,7 @@ adapter selects it, and its execution client is still in development.
 
 | Account type | Typical use case                                | What the engine locks                                                     |
 | ------------ | ----------------------------------------------- | ------------------------------------------------------------------------- |
-| Cash         | Spot trading (e.g., BTC/USDT, stocks)           | Notional value for every position a pending order would open.             |
+| Cash         | Spot trading (e.g., BTC/USDT, stocks)           | Notional for pending buy orders; quantity for pending sell orders.        |
 | Margin       | Derivatives or any product that allows leverage | Initial margin for each order plus maintenance margin for open positions. |
 | Betting      | Sports betting, bookmaking                      | Stake required by the venue; no leverage.                                 |
 | Wallet       | Blockchain wallets (DeFi)                       | Amounts reserved locally for pending orders; no leverage or borrowing.    |
@@ -26,8 +26,9 @@ adapter selects it, and its execution client is still in development.
 ### Cash accounts
 
 Cash accounts settle trades in full; there is no leverage and therefore no
-concept of margin. Locked balances reflect the notional reserved for pending
-orders.
+concept of margin. Locked balances reflect the value reserved for pending
+orders: the notional value of each pending buy and the quantity each pending
+sell would deliver.
 
 ### Margin accounts
 
@@ -92,14 +93,14 @@ fields up front. Adapter code written in Rust has two additional derived
 constructors that enforce the invariant centrally; prefer them over
 `AccountBalance::new` whenever the venue reports only two of the three values:
 
-| Rust helper                             | When to use                                                                    |
-| --------------------------------------- | ------------------------------------------------------------------------------ |
-| `AccountBalance::from_total_and_locked` | Venue reports total and locked; `free` is derived and clamped to `[0, total]`. |
-| `AccountBalance::from_total_and_free`   | Venue reports total and free; `locked` is derived and clamped.                 |
-| `AccountBalance::new`                   | All three values are already known and consistent (tests, pass‑through).       |
+| Rust helper                             | When to use                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------ |
+| `AccountBalance::from_total_and_locked` | Venue reports total and locked; `free` is derived from the two.          |
+| `AccountBalance::from_total_and_free`   | Venue reports total and free; `locked` is derived from the two.          |
+| `AccountBalance::new`                   | All three values are already known and consistent (tests, pass‑through). |
 
-The helpers clamp the derived field to `[0, total]` when `total >= 0`, so
-transient overshoots from venue rounding never leave the account in a broken
+Each helper clamps the venue‑reported field into `[0, total]` when `total >= 0`,
+so transient overshoots from venue rounding never leave the account in a broken
 state.
 
 ## Currency and valuation contracts
@@ -159,9 +160,11 @@ An `AccountState` event may carry entries in either or both scopes, and
 
 :::note
 `MarginAccount.apply()` **replaces** both stores from the incoming event. It does
-not merge with prior state. Adapters that emit partial snapshots must include
-every live margin entry on each update or those entries will be dropped until
-the next full snapshot. The balances list is likewise replaced.
+not merge with prior state, and an event carrying neither balances nor margins
+leaves the prior stores in place. Adapters that emit partial snapshots must
+include every live margin entry on each update or those entries will be dropped
+until the next full snapshot. Balances the event carries replace the stored
+entry for their currency; currencies the event omits are retained.
 :::
 
 ## Strategy query API
@@ -215,9 +218,9 @@ example, isolated positions alongside cross-margin collateral).
 
 This query surface does not expose the internal Rust mutation methods
 `update_margin`, `clear_margin`, `clear_account_margin`, `clear_initial_margin`,
-`clear_maintenance_margin`, or `set_margin_model`. Existing Python methods,
-including `update_initial_margin`, `update_maintenance_margin`,
-`set_default_leverage`, and `set_leverage`, remain unchanged.
+`clear_maintenance_margin`, or `set_margin_model`. Python does expose other
+mutation methods, including `update_initial_margin`, `update_maintenance_margin`,
+`set_default_leverage`, and `set_leverage`.
 
 ### Portfolio-level queries
 
@@ -272,8 +275,8 @@ for ccy, margin_balance in margin_account.account_margins().items():
 
 NautilusTrader provides flexible margin calculation models for the calculated
 path (backtests, and live strategies running with `calculate_account_state=True`
-for reconciliation). Reported margins from a venue flow straight into
-`_account_margins` or `_margins` without going through a model.
+for reconciliation). Reported margins from a venue flow straight into the
+account's `margins` or `account_margins` stores without going through a model.
 
 ### Overview
 
@@ -359,7 +362,7 @@ leverage affects margin requirements.
 | Standard  | $110,000 × 0.03        | $3,300 | 3.00%      |
 | Leveraged | ($110,000 ÷ 50) × 0.03 | $66    | 0.06%      |
 
-On a $10,000 account: the standard model blocks the trade; the leveraged model
+On a $1,000 account: the standard model blocks the trade; the leveraged model
 allows it.
 
 ### Python model selection
