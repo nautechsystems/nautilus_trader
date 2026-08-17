@@ -2813,8 +2813,98 @@ mod tests {
         (provider, temp_dir)
     }
 
+    fn opra_option_contract_details(mut contract: Contract) -> ibapi::contracts::ContractDetails {
+        contract.contract_id = 12_345;
+        contract.symbol = ibapi::contracts::Symbol::from("AAPL");
+        contract.security_type = SecurityType::Option;
+        contract.exchange = Exchange::from("SMART");
+        contract.currency = ibapi::contracts::Currency::from("USD");
+        contract.local_symbol = "AAPL  270115P00155000".to_string();
+        contract.last_trade_date_or_contract_month = "20270115".to_string();
+        contract.strike = 155.0;
+        contract.right = Some(ibapi::contracts::OptionRight::Put);
+        contract.multiplier = "100".to_string();
+
+        ibapi::contracts::ContractDetails {
+            contract,
+            min_tick: 0.01,
+            under_symbol: "AAPL".to_string(),
+            under_security_type: "STK".to_string(),
+            valid_exchanges: vec!["SMART".to_string(), "CBOE".to_string()],
+            ..Default::default()
+        }
+    }
+
     fn create_test_instrument(instrument_id: InstrumentId) -> InstrumentAny {
         create_test_instrument_with_info(instrument_id, None)
+    }
+
+    #[rstest]
+    fn test_qualified_opra_details_preserve_canonical_instrument_identity() {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let requested_id = InstrumentId::from("AAPL  270115P00155000.OPRA");
+        let request = instrument_id_to_ib_contract(requested_id, None).unwrap();
+
+        assert_eq!(request.security_type, SecurityType::Option);
+        assert_eq!(request.exchange.as_str(), "SMART");
+        assert!(request.symbol.as_str().is_empty());
+        assert_eq!(request.currency.as_str(), "USD");
+        assert_eq!(request.local_symbol, "AAPL  270115P00155000");
+        assert!(request.last_trade_date_or_contract_month.is_empty());
+        assert!(request.right.is_none());
+        assert_eq!(request.strike, 0.0);
+
+        let details = opra_option_contract_details(request);
+        let loaded_id = provider
+            .process_contract_detail(&details, Some(requested_id.venue), false)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(loaded_id, requested_id);
+        assert_eq!(provider.count(), 1);
+        assert_eq!(
+            provider.get_instrument_id_by_contract_id(12_345),
+            Some(requested_id)
+        );
+        assert_eq!(
+            provider
+                .resolve_instrument_id_for_contract(&details.contract)
+                .unwrap(),
+            requested_id
+        );
+
+        let cached = provider.find(&requested_id).unwrap();
+        let InstrumentAny::OptionContract(option) = cached else {
+            panic!("expected option contract");
+        };
+        assert_eq!(option.id, requested_id);
+        assert_eq!(option.id.venue.as_str(), "OPRA");
+        assert!(
+            provider
+                .find(&InstrumentId::from("AAPL  270115P00155000.SMART"))
+                .is_none()
+        );
+
+        let cached_contract = provider
+            .instrument_id_to_ib_contract(&requested_id)
+            .unwrap();
+        assert_eq!(cached_contract.contract_id, 12_345);
+        assert_eq!(cached_contract.security_type, SecurityType::Option);
+        assert_eq!(cached_contract.exchange.as_str(), "SMART");
+
+        let resolved_contract = provider
+            .resolve_contract_for_instrument(requested_id)
+            .unwrap();
+        assert_eq!(resolved_contract, cached_contract);
+
+        let cached_details = provider
+            .instrument_id_to_ib_contract_details(&requested_id)
+            .unwrap();
+        assert_eq!(cached_details.contract.contract_id, 12_345);
+        assert_eq!(
+            cached_details.valid_exchanges,
+            vec!["SMART".to_string(), "CBOE".to_string()]
+        );
     }
 
     fn create_test_instrument_with_info(

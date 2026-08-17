@@ -1585,6 +1585,22 @@ fn test_parse_historical_fill_report_uses_provider_resolved_stock_venue() {
 }
 
 #[rstest]
+fn test_report_contract_resolution_preserves_canonical_opra_id() {
+    let (client, _, _) = create_test_execution_client();
+    let instrument_id = InstrumentId::from("SPY   250101C00400000.OPRA");
+    client
+        .instrument_provider
+        .insert_test_contract_id_mapping(12_345, instrument_id);
+    let exec_data = create_test_execution_data(123, "exec-opra-001", 1.0, 1.25, "BOT");
+
+    let resolved = client
+        .resolve_report_contract_instrument_id(&exec_data.contract)
+        .unwrap();
+
+    assert_eq!(resolved, instrument_id);
+}
+
+#[rstest]
 fn test_parse_historical_fill_report_uses_cached_bag_spread_id() {
     let (client, _, _) = create_test_execution_client();
     let spread = create_test_option_spread();
@@ -2081,6 +2097,76 @@ async fn test_handle_order_status_canceled_emits_canceled_event() {
             .lock()
             .unwrap()
             .contains_key(&order_id)
+    );
+}
+
+#[tokio::test]
+async fn test_opra_cancel_status_preserves_canonical_instrument_identity() {
+    let state = SubmitTrackingState::new();
+    let order_id = 7_002;
+    let client_order_id = ClientOrderId::from("O-OPRA-CANCEL-001");
+    let instrument_id = InstrumentId::from("SPY   250101C00400000.OPRA");
+    state.cache(
+        order_id,
+        client_order_id,
+        instrument_id,
+        TraderId::from("TRADER-001"),
+        StrategyId::from("STRATEGY-001"),
+    );
+
+    let instrument_provider = create_test_instrument_provider();
+    let order_avg_prices = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_combo_fills = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_combo_fill_avgs = Arc::new(Mutex::new(AHashMap::new()));
+    let order_fill_progress = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_cancel_orders = Arc::new(Mutex::new(ahash::AHashSet::new()));
+    let spread_fill_tracking = Arc::new(Mutex::new(AHashMap::new()));
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+
+    InteractiveBrokersExecutionClient::handle_order_status(
+        &create_test_order_status(order_id, "Cancelled"),
+        &state.order_id_map,
+        &state.venue_order_id_map,
+        &instrument_provider,
+        &exec_sender,
+        UnixNanos::new(1),
+        AccountId::from("IB-001"),
+        &state.instrument_id_map,
+        &state.trader_id_map,
+        &state.strategy_id_map,
+        &state.active_order_contexts,
+        &state.terminal_order_contexts,
+        &order_avg_prices,
+        &pending_combo_fills,
+        &pending_combo_fill_avgs,
+        &order_fill_progress,
+        &pending_cancel_orders,
+        &spread_fill_tracking,
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Accepted(event))
+            if event.instrument_id == instrument_id
+    ));
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Canceled(event))
+            if event.instrument_id == instrument_id
+                && event.client_order_id == client_order_id
+    ));
+    assert!(exec_receiver.try_recv().is_err());
+    assert_eq!(
+        state
+            .terminal_order_contexts
+            .lock()
+            .unwrap()
+            .get(&order_id)
+            .unwrap()
+            .instrument_id,
+        instrument_id
     );
 }
 
