@@ -1308,6 +1308,15 @@ pub trait ExecutionAlgorithm: DataActor {
         Ok(())
     }
 
+    /// Called when the algorithm is resumed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if resume fails.
+    fn on_resume(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Called when the algorithm is reset.
     ///
     /// # Errors
