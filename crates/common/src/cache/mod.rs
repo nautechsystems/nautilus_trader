@@ -5118,15 +5118,20 @@ impl Cache {
             .insert(order.client_order_id());
     }
 
-    /// Updates the `position` in the cache.
+    /// Updates a `position` already held in the cache.
     ///
-    /// Reuses the existing cell when present so any held [`PositionRef`] handles continue to point
-    /// at the canonical entry; only inserts a new cell when the position is unknown.
+    /// Reuses the existing cell so any held [`PositionRef`] handles continue to point at the
+    /// canonical entry.
     ///
     /// # Errors
     ///
-    /// Returns an error if updating the position in the database fails.
+    /// Returns an error if the position is not already held in the cache, or if updating the
+    /// position in the database fails.
     pub fn update_position(&mut self, position: &Position) -> anyhow::Result<()> {
+        let Some(position_cell) = self.positions.get(&position.id).cloned() else {
+            anyhow::bail!("Cannot update position {}: not found in cache", position.id);
+        };
+
         // Update open/closed state
 
         if position.is_open() {
@@ -5137,13 +5142,7 @@ impl Cache {
             self.index.positions_open.remove(&position.id);
         }
 
-        match self.positions.get(&position.id) {
-            Some(position_cell) => *position_cell.borrow_mut() = position.clone(),
-            None => {
-                self.positions
-                    .insert(position.id, SharedCell::new(position.clone()));
-            }
-        }
+        *position_cell.borrow_mut() = position.clone();
 
         if let Some(database) = &mut self.database {
             database.update_position(position)?;
