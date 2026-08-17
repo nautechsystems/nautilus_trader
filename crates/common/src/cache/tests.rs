@@ -1597,6 +1597,96 @@ fn test_add_venue_order_id_rejects_cross_order_claim_and_retains_historical_alia
 }
 
 #[rstest]
+fn test_index_venue_order_id_establishes_forward_mapping_when_unmapped(mut cache: Cache) {
+    let client_order_id = ClientOrderId::new("O-1");
+    let venue_order_id = VenueOrderId::new("V-1");
+
+    cache
+        .index_venue_order_id(&client_order_id, &venue_order_id)
+        .unwrap();
+
+    assert_eq!(
+        cache.venue_order_id(&client_order_id),
+        Some(&venue_order_id)
+    );
+    assert_eq!(
+        cache.client_order_id(&venue_order_id),
+        Some(&client_order_id)
+    );
+}
+
+#[rstest]
+fn test_index_venue_order_id_registers_superseded_generation_without_moving_current_mapping(
+    mut cache: Cache,
+) {
+    let client_order_id = ClientOrderId::new("O-1");
+    let superseded_venue_order_id = VenueOrderId::new("V-SUPERSEDED");
+    let current_venue_order_id = VenueOrderId::new("V-CURRENT");
+
+    cache
+        .add_venue_order_id(&client_order_id, &superseded_venue_order_id, false)
+        .unwrap();
+    cache
+        .add_venue_order_id(&client_order_id, &current_venue_order_id, true)
+        .unwrap();
+
+    // Mass status re-registers the superseded generation of a replaced order.
+    cache
+        .index_venue_order_id(&client_order_id, &superseded_venue_order_id)
+        .unwrap();
+
+    assert_eq!(
+        cache.venue_order_id(&client_order_id),
+        Some(&current_venue_order_id)
+    );
+    assert_eq!(
+        cache.client_order_id(&superseded_venue_order_id),
+        Some(&client_order_id)
+    );
+    assert_eq!(
+        cache.client_order_id(&current_venue_order_id),
+        Some(&client_order_id)
+    );
+}
+
+#[rstest]
+fn test_index_venue_order_id_rejects_cross_order_claim(mut cache: Cache) {
+    let client_order_id1 = ClientOrderId::new("O-1");
+    let client_order_id2 = ClientOrderId::new("O-2");
+    let venue_order_id1 = VenueOrderId::new("V-1");
+    let venue_order_id2 = VenueOrderId::new("V-2");
+
+    cache
+        .add_venue_order_id(&client_order_id1, &venue_order_id1, false)
+        .unwrap();
+    cache
+        .add_venue_order_id(&client_order_id1, &venue_order_id2, true)
+        .unwrap();
+
+    let error = cache
+        .index_venue_order_id(&client_order_id2, &venue_order_id2)
+        .unwrap_err();
+
+    assert_eq!(
+        error.downcast_ref::<VenueOrderIdOwnershipError>(),
+        Some(&VenueOrderIdOwnershipError {
+            venue_order_id: venue_order_id2,
+            existing_client_order_id: client_order_id1,
+            claimant_client_order_id: client_order_id2,
+        })
+    );
+    assert_eq!(
+        cache.venue_order_id(&client_order_id1),
+        Some(&venue_order_id2)
+    );
+    assert_eq!(cache.venue_order_id(&client_order_id2), None);
+    assert_eq!(
+        cache.client_order_id(&venue_order_id2),
+        Some(&client_order_id1)
+    );
+}
+
+#[rstest]
 fn test_update_order_rejects_cross_order_venue_id_claim_atomically(
     mut cache: Cache,
     audusd_sim: CurrencyPair,
@@ -4592,6 +4682,48 @@ fn test_purge_order_removes_historical_venue_order_ids() {
 }
 
 #[rstest]
+fn test_purge_order_removes_reconciliation_registered_alias() {
+    let mut cache = Cache::default();
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let account_id = AccountId::new("SIM-001");
+    let current_venue_order_id = VenueOrderId::new("V-CURRENT");
+    let reported_venue_order_id = VenueOrderId::new("V-REPORTED");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+    let submitted = TestOrderEventStubs::submitted(&order, account_id);
+    update_order_with_event(&mut cache, &mut order, submitted);
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, current_venue_order_id);
+    update_order_with_event(&mut cache, &mut order, accepted);
+
+    // Mass status reports a superseded generation the order never applied an event for.
+    cache
+        .index_venue_order_id(&client_order_id, &reported_venue_order_id)
+        .unwrap();
+
+    let canceled = build_order_canceled(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        client_order_id,
+        Some(current_venue_order_id),
+        Some(account_id),
+    );
+    update_order_with_event(&mut cache, &mut order, OrderEventAny::Canceled(canceled));
+
+    cache.purge_order(client_order_id);
+
+    assert!(cache.client_order_id(&current_venue_order_id).is_none());
+    assert!(cache.client_order_id(&reported_venue_order_id).is_none());
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
 fn test_purge_order_preserves_rebound_historical_venue_order_id() {
     let mut cache = Cache::default();
     let instrument = InstrumentAny::CurrencyPair(audusd_sim());
@@ -5107,6 +5239,41 @@ fn test_purge_open_order_skips_purge() {
     assert!(cache.order_exists(&client_order_id));
     assert_eq!(cache.orders_total_count(None, None, None, None, None), 1);
     assert!(cache.order_exists(&client_order_id));
+}
+
+#[rstest]
+fn test_purge_open_order_retains_venue_order_id_aliases() {
+    let mut cache = Cache::default();
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let account_id = AccountId::new("SIM-001");
+    let venue_order_id = VenueOrderId::new("V-OPEN");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+    let submitted = TestOrderEventStubs::submitted(&order, account_id);
+    update_order_with_event(&mut cache, &mut order, submitted);
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+    update_order_with_event(&mut cache, &mut order, accepted);
+    assert!(order.is_open());
+
+    cache.purge_order(client_order_id);
+
+    // The guard skipped the purge, so both index directions must survive intact.
+    assert!(cache.order_exists(&client_order_id));
+    assert_eq!(
+        cache.venue_order_id(&client_order_id),
+        Some(&venue_order_id)
+    );
+    assert_eq!(
+        cache.client_order_id(&venue_order_id),
+        Some(&client_order_id)
+    );
+    assert!(cache.check_integrity());
 }
 
 #[rstest]

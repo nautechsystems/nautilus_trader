@@ -3282,6 +3282,7 @@ impl Cache {
         let buffer_ns = secs_to_nanos_unchecked(buffer_secs as f64);
 
         let mut affected_order_list_ids: AHashSet<OrderListId> = AHashSet::new();
+        let mut purged_client_order_ids: AHashSet<ClientOrderId> = AHashSet::new();
 
         'outer: for client_order_id in self.index.orders_closed.clone() {
             let purge_target = self.orders.get(&client_order_id).and_then(|order_cell| {
@@ -3318,7 +3319,15 @@ impl Cache {
                 affected_order_list_ids.insert(order_list_id);
             }
 
-            self.purge_order(client_order_id);
+            if self.purge_order_except_aliases(client_order_id) {
+                purged_client_order_ids.insert(client_order_id);
+            }
+        }
+
+        if !purged_client_order_ids.is_empty() {
+            self.index
+                .venue_order_ids
+                .retain(|_, owner| !purged_client_order_ids.contains(owner));
         }
 
         for order_list_id in affected_order_list_ids {
@@ -3368,6 +3377,18 @@ impl Cache {
     ///
     /// For safety, an order is prevented from being purged if it's open.
     pub fn purge_order(&mut self, client_order_id: ClientOrderId) {
+        if self.purge_order_except_aliases(client_order_id) {
+            self.index
+                .venue_order_ids
+                .retain(|_, owner| owner != &client_order_id);
+        }
+    }
+
+    /// Removes the order and its indexes, leaving the reverse venue order ID aliases for the
+    /// caller to sweep by owner, so a bulk purge pays for one pass rather than one pass per order.
+    ///
+    /// Returns whether the order was purged, so a skipped purge leaves its aliases intact.
+    fn purge_order_except_aliases(&mut self, client_order_id: ClientOrderId) -> bool {
         struct OrderDetails {
             is_open: bool,
             instrument_id: InstrumentId,
@@ -3376,8 +3397,6 @@ impl Cache {
             exec_algorithm_id: Option<ExecAlgorithmId>,
             exec_spawn_id: Option<ClientOrderId>,
             position_id: Option<PositionId>,
-            venue_order_id: Option<VenueOrderId>,
-            venue_order_ids: Vec<VenueOrderId>,
         }
 
         let order_cell = self.orders.get(&client_order_id).cloned();
@@ -3391,8 +3410,6 @@ impl Cache {
                 exec_algorithm_id: order.exec_algorithm_id(),
                 exec_spawn_id: order.exec_spawn_id(),
                 position_id: order.position_id(),
-                venue_order_id: order.venue_order_id(),
-                venue_order_ids: order.venue_order_ids().into_iter().copied().collect(),
             }
         });
 
@@ -3401,7 +3418,7 @@ impl Cache {
             .is_some_and(|details| details.is_open)
         {
             log::warn!("Order {client_order_id} found open when purging, skipping purge");
-            return;
+            return false;
         }
 
         if order_details.is_some() {
@@ -3413,7 +3430,7 @@ impl Cache {
         let indexed_position_id = self.index.order_position.remove(&client_order_id);
         let indexed_strategy_id = self.index.order_strategy.remove(&client_order_id);
         self.index.order_client.remove(&client_order_id);
-        let indexed_venue_order_id = self.index.client_order_ids.remove(&client_order_id);
+        self.index.client_order_ids.remove(&client_order_id);
 
         if let Some(details) = &order_details {
             if let Some(venue_orders) = self
@@ -3584,24 +3601,6 @@ impl Cache {
             }
         }
 
-        let mut venue_order_ids = AHashSet::new();
-        if let Some(venue_order_id) = indexed_venue_order_id {
-            venue_order_ids.insert(venue_order_id);
-        }
-
-        if let Some(details) = &order_details {
-            venue_order_ids.extend(details.venue_order_ids.iter().copied());
-            if let Some(venue_order_id) = details.venue_order_id {
-                venue_order_ids.insert(venue_order_id);
-            }
-        }
-
-        for venue_order_id in venue_order_ids {
-            if self.index.venue_order_ids.get(&venue_order_id) == Some(&client_order_id) {
-                self.index.venue_order_ids.remove(&venue_order_id);
-            }
-        }
-
         self.index.exec_spawn_orders.remove(&client_order_id);
 
         self.index.orders.remove(&client_order_id);
@@ -3615,6 +3614,8 @@ impl Cache {
         if order_details.is_some() {
             log::info!("Purged order {client_order_id}");
         }
+
+        true
     }
 
     /// Purges the position with the `position_id` from the cache (if found).
@@ -4434,6 +4435,34 @@ impl Cache {
         self.index
             .venue_order_ids
             .insert(*venue_order_id, *client_order_id);
+
+        Ok(())
+    }
+
+    /// Indexes the reverse alias `venue_order_id` to `client_order_id` for routing.
+    ///
+    /// Unlike [`Cache::add_venue_order_id`], an existing forward mapping for the client
+    /// order is never moved, so superseded venue order ID generations from mass status
+    /// reports register idempotently. The forward mapping's authority stays with order
+    /// event application via [`Cache::update_order`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the venue order ID is owned by a different client order.
+    pub fn index_venue_order_id(
+        &mut self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: &VenueOrderId,
+    ) -> anyhow::Result<()> {
+        self.validate_venue_order_id_ownership(client_order_id, venue_order_id)?;
+
+        self.index
+            .venue_order_ids
+            .insert(*venue_order_id, *client_order_id);
+        self.index
+            .client_order_ids
+            .entry(*client_order_id)
+            .or_insert(*venue_order_id);
 
         Ok(())
     }

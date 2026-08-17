@@ -2463,6 +2463,13 @@ mod tests {
             &[PAYLOAD_TYPE_ORDER_ACCEPTED, PAYLOAD_TYPE_ORDER_UPDATED],
         ),
         cache_mutation(
+            // Replay restores the current generation only; superseded reverse aliases are
+            // re-registered by live mass-status reconciliation.
+            "index_venue_order_id",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
             "add_order",
             CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
             &[PAYLOAD_TYPE_ORDER_INITIALIZED],
