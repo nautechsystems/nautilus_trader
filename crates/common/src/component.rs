@@ -186,10 +186,19 @@ pub trait Component {
     /// # Errors
     ///
     /// Returns an error if the component fails to fault.
+    ///
+    /// # Notes
+    ///
+    /// Subscriptions are released whether or not `on_fault` succeeds, so a faulted component never
+    /// keeps message bus handlers installed. Retirement relies on this: it deregisters a `Faulted`
+    /// component without disposing it, which would otherwise leave those handlers behind.
     fn fault(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Fault)?; // -> Faulting
 
-        if let Err(e) = self.on_fault() {
+        let result = self.on_fault();
+        self.release_subscriptions();
+
+        if let Err(e) = result {
             log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
@@ -225,24 +234,29 @@ pub trait Component {
     ///
     /// # Notes
     ///
-    /// A failing `on_dispose` leaves the component in `Disposing`, and `dispose` can never
-    /// recover it: `Dispose` is only valid from `Ready` or `Stopped`, while `Disposing` accepts
-    /// only `DisposeCompleted`, which `dispose` emits after a successful `on_dispose`. Resources,
-    /// subscriptions, registry entries, and any owner a trader holds are deliberately retained,
-    /// so the component stays inspectable but can no longer be retired through this path.
+    /// A failing `on_dispose` releases subscriptions and moves the component to `Faulted`, then
+    /// returns the error. The trader's registry entries and retained Python wrapper, if any, are
+    /// deliberately kept, so the component stays inspectable, while `Faulted` leaves it retirable.
+    /// Subscriptions are released on this path too, because a handler left installed would resolve
+    /// a component the trader can now deregister.
     ///
-    /// Forcing [`Component::transition_state`] with `DisposeCompleted` does reach `Disposed` and
-    /// makes the component retirable again, at the cost of skipping
-    /// [`Component::release_subscriptions`] and leaving its message bus handlers installed.
+    /// `on_fault` does not run, since invoking a second user hook immediately after `on_dispose`
+    /// failed can fail again.
     fn dispose(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Dispose)?; // -> Disposing
 
-        if let Err(e) = self.on_dispose() {
+        let result = self.on_dispose();
+        self.release_subscriptions();
+
+        if let Err(e) = result {
             log_error(self.component_id(), &e);
-            return Err(e); // Halt state transition
+
+            self.transition_state(ComponentTrigger::Fault)?; // -> Faulting
+            self.transition_state(ComponentTrigger::FaultCompleted)?; // -> Faulted
+
+            return Err(e);
         }
 
-        self.release_subscriptions();
         self.transition_state(ComponentTrigger::DisposeCompleted)?;
 
         Ok(())
@@ -250,8 +264,10 @@ pub trait Component {
 
     /// Releases the message bus registrations this component installed.
     ///
-    /// Runs on disposal after `on_dispose`, so a component the trader then deregisters leaves
-    /// behind no handler which would resolve an actor that is no longer registered.
+    /// Runs on disposal after `on_dispose` and on faulting after `on_fault`, so a component the
+    /// trader then deregisters leaves behind no handler which would resolve an actor that is no
+    /// longer registered. An override must suit both routes rather than assume disposal, and should
+    /// be idempotent: a component that faults from inside its own `on_dispose` releases twice.
     fn release_subscriptions(&mut self) {}
 
     /// Actions to be performed on start.
@@ -376,6 +392,7 @@ impl ComponentState {
             (Self::Degraded, ComponentTrigger::Stop) => Self::Stopping,
             (Self::Degraded, ComponentTrigger::Fault) => Self::Faulting,
             (Self::Disposing, ComponentTrigger::DisposeCompleted) => Self::Disposed,
+            (Self::Disposing, ComponentTrigger::Fault) => Self::Faulting,
             (Self::Faulting, ComponentTrigger::FaultCompleted) => Self::Faulted,
             _ => anyhow::bail!("Invalid state trigger {self} -> {trigger}"),
         };

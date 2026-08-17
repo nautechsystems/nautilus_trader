@@ -1609,8 +1609,8 @@ impl Trader {
     /// # Errors
     ///
     /// Returns an error if the actor is not registered, or if disposal fails. A failed disposal
-    /// keeps the actor registered and tracked; see [`Component::dispose`] for why it can no
-    /// longer be removed through this path.
+    /// keeps the actor registered and tracked, and leaves it `Faulted`; see [`Component::dispose`].
+    /// Calling this again retires the actor.
     pub fn remove_actor(&mut self, actor_id: &ActorId) -> anyhow::Result<()> {
         if !self.actor_ids.contains(actor_id) {
             anyhow::bail!("Cannot remove actor, {actor_id} not found");
@@ -1713,9 +1713,9 @@ impl Trader {
     ///
     /// # Errors
     ///
-    /// Returns an error if the strategy is not registered, or if disposal fails. A failed
-    /// disposal keeps the strategy registered and tracked; see [`Component::dispose`] for why it
-    /// can no longer be removed through this path.
+    /// Returns an error if the strategy is not registered, or if disposal fails. A failed disposal
+    /// keeps the strategy registered and tracked, and leaves it `Faulted`; see
+    /// [`Component::dispose`]. Calling this again retires the strategy.
     pub fn remove_strategy(&mut self, strategy_id: &StrategyId) -> anyhow::Result<()> {
         if !self.strategy_ids.contains(strategy_id) {
             anyhow::bail!("Cannot remove strategy, {strategy_id} not found");
@@ -1785,13 +1785,18 @@ impl Trader {
         Ok(())
     }
 
-    /// Disposes the component `id` unless it was already disposed directly from Python.
+    /// Disposes the component `id` unless it has already reached a terminal state.
     ///
     /// A component disposed from Python has already run `on_dispose`, so a second disposal
-    /// transition would fail and strand the trader's bookkeeping.
+    /// transition would fail and strand the trader's bookkeeping. A `Faulted` component has
+    /// released its subscriptions on every route into that state, through either
+    /// [`Component::dispose`] or [`Component::fault`], so it is retirable without a further
+    /// transition.
     fn dispose_registered_component(id: Ustr) -> anyhow::Result<()> {
-        if component_state(&id)? == ComponentState::Disposed {
-            log::debug!("Component {id} already disposed, skipping disposal transition");
+        let state = component_state(&id)?;
+
+        if matches!(state, ComponentState::Disposed | ComponentState::Faulted) {
+            log::debug!("Component {id} already {state}, skipping disposal transition");
             return Ok(());
         }
 
@@ -1817,9 +1822,10 @@ impl Trader {
 
     /// Releases the clock, registry entries, and Python wrapper the trader owns for a component.
     ///
-    /// Called once a component has disposed successfully, or to roll back a failed registration
-    /// attempt. A failed disposal never reaches here, so the component stays registered and
-    /// reachable for inspection or retry.
+    /// Called once a component has disposed successfully, to retire a `Faulted` component, or to
+    /// roll back a failed registration. A failed disposal does not reach here on the attempt that
+    /// failed, so the component stays registered and reachable for inspection or retry; a later
+    /// attempt retires it through the `Faulted` route.
     fn release_component(&mut self, component_id: ComponentId) {
         if let Some(clock) = self.clocks.shift_remove(&component_id) {
             let mut clock = clock.borrow_mut();
@@ -4382,9 +4388,140 @@ class StateComponent:
         assert!(actor_exists(&actor_id.inner()));
         assert_eq!(
             component_state(&actor_id.inner()).unwrap(),
-            ComponentState::Disposing,
-            "a failed disposal halts before the Disposed transition",
+            ComponentState::Faulted,
+            "a failed disposal faults the component rather than reaching Disposed",
         );
+    }
+
+    #[rstest]
+    fn test_failed_dispose_component_can_be_retired() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let actor_id = ActorId::from("Retired-After-Failed-Dispose-Actor");
+        let mut actor = TestDataActor::new(DataActorConfig {
+            actor_id: Some(actor_id),
+            ..Default::default()
+        });
+        actor.fail_dispose = true;
+        trader.add_actor(actor).unwrap();
+
+        trader.remove_actor(&actor_id).unwrap_err();
+        assert_eq!(
+            component_state(&actor_id.inner()).unwrap(),
+            ComponentState::Faulted
+        );
+
+        // The dead end this closes: retirement previously failed for the life of the process
+        trader.remove_actor(&actor_id).unwrap();
+
+        assert!(get_component(&actor_id.inner()).is_none());
+        assert!(!actor_exists(&actor_id.inner()));
+        assert!(trader.actor_ids().is_empty());
+        assert!(trader.get_component_clocks().is_empty());
+    }
+
+    #[rstest]
+    fn test_failed_dispose_releases_subscriptions() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let actor_id = ActorId::from("Subscribed-Failing-Dispose-Actor");
+        let mut actor = TestDataActor::new(DataActorConfig {
+            actor_id: Some(actor_id),
+            ..Default::default()
+        });
+        actor.fail_dispose = true;
+        trader.add_actor(actor).unwrap();
+        trader.start_actor(&actor_id).unwrap();
+
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let deltas_topic = get_book_deltas_topic(instrument_id);
+        get_actor_unchecked::<TestDataActor>(&actor_id.inner()).subscribe_book_deltas(
+            instrument_id,
+            BookType::L3_MBO,
+            None,
+            None,
+            false,
+            None,
+        );
+
+        // Positive control: without this the check after the failed disposal would be vacuous
+        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
+
+        trader.remove_actor(&actor_id).unwrap_err();
+
+        // A failed disposal releases subscriptions even though it retains the registration
+        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
+    }
+
+    #[rstest]
+    fn test_runtime_faulted_component_retires_without_leaking_subscriptions() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let actor_id = ActorId::from("Runtime-Faulted-Actor");
+        trader
+            .add_actor(TestDataActor::new(DataActorConfig {
+                actor_id: Some(actor_id),
+                ..Default::default()
+            }))
+            .unwrap();
+        trader.start_actor(&actor_id).unwrap();
+
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let deltas_topic = get_book_deltas_topic(instrument_id);
+        get_actor_unchecked::<TestDataActor>(&actor_id.inner()).subscribe_book_deltas(
+            instrument_id,
+            BookType::L3_MBO,
+            None,
+            None,
+            false,
+            None,
+        );
+
+        // Positive control: without this the check after retirement would be vacuous
+        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
+
+        // Faulting at runtime is a separate route to Faulted from a failed disposal, and
+        // retirement skips disposal for a faulted component
+        get_actor_unchecked::<TestDataActor>(&actor_id.inner())
+            .fault()
+            .unwrap();
+        assert_eq!(
+            component_state(&actor_id.inner()).unwrap(),
+            ComponentState::Faulted
+        );
+
+        trader.remove_actor(&actor_id).unwrap();
+
+        assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
+        assert!(get_component(&actor_id.inner()).is_none());
+        assert!(!actor_exists(&actor_id.inner()));
     }
 
     #[rstest]

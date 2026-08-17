@@ -440,6 +440,7 @@ stateDiagram-v2
     READY --> DISPOSING : dispose()
     STOPPED --> DISPOSING : dispose()
     DISPOSING --> DISPOSED
+    DISPOSING --> FAULTING : on_dispose() error
 
     DISPOSED --> [*]
 ```
@@ -465,7 +466,8 @@ stateDiagram-v2
 - **FAULTING**: The component is executing its `fault` actions.
 
 Transitional states cover the corresponding lifecycle callback and should remain brief. If a
-callback returns an error, the transition halts in its transitional state.
+callback returns an error, the transition halts in its transitional state. `dispose()` is the
+exception: a failing `on_dispose` moves the component to FAULTED so it can still be retired.
 
 #### Actor vs Component traits
 
