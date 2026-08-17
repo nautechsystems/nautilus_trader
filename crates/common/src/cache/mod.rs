@@ -4490,7 +4490,10 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if not `replace_existing` and the `order.client_order_id` is already contained in the cache.
+    /// Returns an error if not `replace_existing` and the `order.client_order_id` is already contained in the cache,
+    /// or if persisting the order to the backing database fails. The order and every index are
+    /// committed to memory before persistence is attempted, so a persistence error leaves the
+    /// cache internally consistent.
     pub fn add_order(
         &mut self,
         order: OrderAny,
@@ -4585,12 +4588,12 @@ impl Cache {
 
         // Index position ID if provided
         if let Some(position_id) = position_id {
-            self.add_position_id(
+            self.index_position_id_in_memory(
                 &position_id,
                 &order.instrument_id().venue,
                 &client_order_id,
                 &strategy_id,
-            )?;
+            );
         }
 
         // Index client ID if provided
@@ -4599,21 +4602,27 @@ impl Cache {
             log::debug!("Indexed {client_id:?}");
         }
 
+        // Reuse the existing cell on replace so the canonical entry stays in place
+        // rather than orphaning a stale cell.
+        let order_cell = if let Some(order_cell) = self.orders.get(&client_order_id) {
+            *order_cell.borrow_mut() = order;
+            order_cell.clone()
+        } else {
+            let order_cell = SharedCell::new(order);
+            self.orders.insert(client_order_id, order_cell.clone());
+            order_cell
+        };
+
+        if let Some(position_id) = position_id {
+            self.persist_position_id(&position_id, &client_order_id)?;
+        }
+
         if let Some(database) = &mut self.database {
-            database.add_order(&order, client_id)?;
+            database.add_order(&order_cell.borrow(), client_id)?;
             // TODO: Implement
             // if self.config.snapshot_orders {
             //     database.snapshot_order_state(order)?;
             // }
-        }
-
-        match self.orders.get(&client_order_id) {
-            // Reuse the existing cell on replace so the canonical entry stays in place
-            // rather than orphaning a stale cell.
-            Some(order_cell) => *order_cell.borrow_mut() = order,
-            None => {
-                self.orders.insert(client_order_id, SharedCell::new(order));
-            }
         }
 
         Ok(())
@@ -4642,7 +4651,9 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if indexing position ID in the backing database fails.
+    /// Returns an error if indexing position ID in the backing database fails. The complete index
+    /// operation is committed to memory before persistence is attempted, so a persistence error
+    /// leaves the cache internally consistent.
     pub fn add_position_id(
         &mut self,
         position_id: &PositionId,
@@ -4650,21 +4661,36 @@ impl Cache {
         client_order_id: &ClientOrderId,
         strategy_id: &StrategyId,
     ) -> anyhow::Result<()> {
+        self.index_position_id_in_memory(position_id, venue, client_order_id, strategy_id);
+        self.persist_position_id(position_id, client_order_id)
+    }
+
+    fn index_position_id_in_memory(
+        &mut self,
+        position_id: &PositionId,
+        venue: &Venue,
+        client_order_id: &ClientOrderId,
+        strategy_id: &StrategyId,
+    ) {
         self.index
             .order_position
             .insert(*client_order_id, *position_id);
-
-        // Index: ClientOrderId -> PositionId
-        if let Some(database) = &mut self.database {
-            database.index_order_position(*client_order_id, *position_id)?;
-        }
-
         self.index_position(position_id, venue, strategy_id);
         self.index
             .position_orders
             .entry(*position_id)
             .or_default()
             .insert(*client_order_id);
+    }
+
+    fn persist_position_id(
+        &mut self,
+        position_id: &PositionId,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &mut self.database {
+            database.index_order_position(*client_order_id, *position_id)?;
+        }
 
         Ok(())
     }
@@ -4757,7 +4783,9 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if persisting the position to the backing database fails.
+    /// Returns an error if persisting the position to the backing database fails. After
+    /// serialization succeeds, the complete operation is committed to memory before persistence
+    /// is attempted, so a persistence error leaves the cache internally consistent.
     pub fn add_position(&mut self, position: &Position, oms_type: OmsType) -> anyhow::Result<()> {
         self.add_position_inner(position, oms_type, true)
     }
@@ -4766,7 +4794,9 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if persisting the position to the backing database fails.
+    /// Returns an error if persisting the position to the backing database fails. After
+    /// serialization succeeds, the complete operation is committed to memory before persistence
+    /// is attempted, so a persistence error leaves the cache internally consistent.
     pub fn add_position_without_order(
         &mut self,
         position: &Position,
@@ -4781,6 +4811,13 @@ impl Cache {
         oms_type: OmsType,
         index_order: bool,
     ) -> anyhow::Result<()> {
+        // Validate and serialize the OMS entry up front: both are construction failures, and
+        // committing the position before they run would leave the cache mutated by one.
+        let key = position_oms_key(position.id);
+        check_valid_string_ascii(&key, stringify!(key))?;
+        let value = Bytes::from(serde_json::to_vec(&oms_type)?);
+        check_predicate_false(value.is_empty(), stringify!(value))?;
+
         self.positions
             .insert(position.id, SharedCell::new(position.clone()));
         self.index.position_oms.insert(position.id, oms_type);
@@ -4796,12 +4833,12 @@ impl Cache {
         log::debug!("Adding {position}");
 
         if index_order {
-            self.add_position_id(
+            self.index_position_id_in_memory(
                 &position.id,
                 &position.instrument_id.venue,
                 &position.opening_order_id,
                 &position.strategy_id,
-            )?;
+            );
         } else {
             self.index_position(
                 &position.id,
@@ -4834,6 +4871,13 @@ impl Cache {
             .or_default()
             .insert(position.id);
 
+        log::debug!("Adding general {key}");
+        self.general.insert(key.clone(), value.clone());
+
+        if index_order {
+            self.persist_position_id(&position.id, &position.opening_order_id)?;
+        }
+
         if let Some(database) = &mut self.database {
             database.add_position(position)?;
             // TODO: Implement position snapshots
@@ -4844,11 +4888,8 @@ impl Cache {
             //         self.calculate_unrealized_pnl(&position),
             //     )?;
             // }
+            database.add(key, value)?;
         }
-
-        let key = position_oms_key(position.id);
-        let value = Bytes::from(serde_json::to_vec(&oms_type)?);
-        self.add(&key, value)?;
 
         Ok(())
     }
@@ -4965,11 +5006,15 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if updating the order indexes or database fails.
+    /// Returns an error if validation or persistence fails. After validation succeeds, the
+    /// canonical order is committed to memory before its indexes and database are refreshed, so a
+    /// persistence error leaves the cache internally consistent.
     pub fn replace_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
-        self.refresh_order(order)?;
-
         let client_order_id = order.client_order_id();
+        if let Some(venue_order_id) = order.venue_order_id() {
+            self.validate_venue_order_id_ownership(&client_order_id, &venue_order_id)?;
+        }
+
         match self.orders.get(&client_order_id) {
             // Reuse the existing cell so the canonical entry stays in place rather than
             // orphaning a stale cell.
@@ -4980,7 +5025,7 @@ impl Cache {
             }
         }
 
-        Ok(())
+        self.refresh_order(order)
     }
 
     /// Updates the cached order by applying an event and refreshing derived cache state.
