@@ -80,6 +80,8 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed overflowing order fill raw sums becoming undefined quantities or panicking
+- Fixed `MarginAccount` total margin getters panicking on out-of-range raw sums
 - Fixed Python `on_historical_data` to receive `CustomData` response batches as a single list
 - Fixed `Cache::get_xrate` for instrument symbols that do not use the `BASE/QUOTE` format
 - Fixed market order risk checks to use cached bars and deny orders without a usable price
