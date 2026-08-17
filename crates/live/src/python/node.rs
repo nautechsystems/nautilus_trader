@@ -25,10 +25,7 @@ use nautilus_common::{
     logging::logger::LoggerConfig,
     msgbus::MessageBusConfig,
     python::{
-        actor::{
-            PyDataActor, PyDataActorInner, apply_class_derived_actor_id,
-            register_python_exec_algorithm_endpoint,
-        },
+        actor::{PyDataActor, apply_class_derived_actor_id},
         cache::{PyCache, get_global_cache_database_factory_registry},
         msgbus::get_global_msgbus_factory_registry,
     },
@@ -41,7 +38,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     enums::OmsType,
-    identifiers::{ActorId, ComponentId, ExecAlgorithmId, InstrumentId, TraderId},
+    identifiers::{ActorId, ExecAlgorithmId, InstrumentId, TraderId},
 };
 use nautilus_portfolio::{config::PortfolioConfig, python::PyPortfolio};
 use nautilus_system::get_global_pyo3_registry;
@@ -58,10 +55,7 @@ use nautilus_trading::examples::{
 };
 use nautilus_trading::{
     ImportableControllerConfig, ImportableExecAlgorithmConfig, ImportableStrategyConfig,
-    python::{
-        algorithm::PyExecutionAlgorithm,
-        strategy::{PyStrategy, PyStrategyInner},
-    },
+    python::{algorithm::PyExecutionAlgorithm, strategy::PyStrategy},
 };
 use pyo3::{
     prelude::*,
@@ -295,10 +289,6 @@ impl LiveNode {
         stop_result
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "Required for Python actor component registration"
-    )]
     #[pyo3(name = "add_actor_from_config")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_actor_from_config(
@@ -391,58 +381,12 @@ impl LiveNode {
             )));
         }
 
-        // Phase 2: Create per-component clock via the trader.
-        // This requires `&mut self` access to the kernel, which cannot be held
-        // inside a `Python::attach` block, hence the separate phases.
-        let trader_id = self.kernel().trader_id();
-        let cache = self.kernel().cache();
-        let component_id = ComponentId::from(actor_id);
-        let clock = self
-            .kernel_mut()
-            .trader
-            .borrow_mut()
-            .create_component_clock(component_id);
-
-        // Phase 3: Register the actor with its dedicated clock
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_actor = python_actor.bind(py);
-            let mut py_data_actor_ref = py_actor
-                .extract::<PyRefMut<PyDataActor>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
-
-            py_data_actor_ref
-                .register(trader_id, clock, cache)
-                .map_err(|e| anyhow::anyhow!("Failed to register PyDataActor: {e}"))?;
-
-            log::debug!(
-                "Internal PyDataActor registered: {}, state: {:?}",
-                py_data_actor_ref.is_registered(),
-                py_data_actor_ref.state()
-            );
-
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        // Phase 4: Register in global registries and track for lifecycle
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_actor = python_actor.bind(py);
-            let py_data_actor_ref = py_actor
-                .cast::<PyDataActor>()
-                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyDataActor: {e}"))?;
-            py_data_actor_ref.borrow().register_in_global_registries();
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
+        // Phase 2: Register the actor through the trader's single Python registration path
         self.kernel_mut()
             .trader
             .borrow_mut()
-            .add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)
+            .add_python_actor_instance(&python_actor, actor_id)
             .map_err(to_pyruntime_err)?;
-
-        self.retain_python_component(ComponentId::from(actor_id), &python_actor);
 
         log::info!("Registered Python actor {actor_id}");
         Ok(())
@@ -539,10 +483,6 @@ impl LiveNode {
         Ok(())
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "Required for Python strategy component registration"
-    )]
     #[pyo3(name = "add_strategy_from_config")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_strategy_from_config(
@@ -616,51 +556,7 @@ impl LiveNode {
         })
         .map_err(to_pyruntime_err)?;
 
-        // Phase 2: Create per-component clock via the trader.
-        // This requires `&mut self` access to the kernel, which cannot be held
-        // inside a `Python::attach` block, hence the separate phases.
-        let trader_id = self.kernel().trader_id();
-        let cache = self.kernel().cache();
-        let portfolio = self.kernel().portfolio.clone();
-        let component_id = ComponentId::from(strategy_id);
-        let clock = self
-            .kernel_mut()
-            .trader
-            .borrow_mut()
-            .create_component_clock(component_id);
-
-        // Phase 3: Register the strategy with its dedicated clock
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_strategy = python_strategy.bind(py);
-            let mut py_strategy_ref = py_strategy
-                .extract::<PyRefMut<PyStrategy>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
-
-            py_strategy_ref
-                .register(trader_id, clock, cache, portfolio)
-                .map_err(|e| anyhow::anyhow!("Failed to register PyStrategy: {e}"))?;
-
-            log::debug!(
-                "Internal PyStrategy registered: {}",
-                py_strategy_ref.is_registered()
-            );
-
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        // Phase 4: Register in global registries and install event subscriptions
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_strategy = python_strategy.bind(py);
-            let py_strategy_ref = py_strategy
-                .cast::<PyStrategy>()
-                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyStrategy: {e}"))?;
-            py_strategy_ref.borrow().register_in_global_registries();
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
+        // Phase 2: Claim external orders before committing, matching the instance path
         let external_order_claims = Python::attach(|py| -> anyhow::Result<Option<Vec<_>>> {
             let py_strategy = python_strategy.bind(py);
             let py_strategy_ref = py_strategy
@@ -677,13 +573,12 @@ impl LiveNode {
                 .map_err(to_pyruntime_err)?;
         }
 
+        // Phase 3: Register the strategy through the trader's single Python registration path
         self.kernel_mut()
             .trader
             .borrow_mut()
-            .add_strategy_id_with_subscriptions::<PyStrategyInner>(strategy_id)
+            .commit_python_strategy_instance(&python_strategy)
             .map_err(to_pyruntime_err)?;
-
-        self.retain_python_component(component_id, &python_strategy);
 
         log::info!("Registered Python strategy {strategy_id}");
         Ok(())
@@ -734,20 +629,17 @@ impl LiveNode {
         })
         .map_err(to_pyruntime_err)?;
 
-        let exec_algorithm_id = py_exec_algorithm.exec_algorithm_id();
-        self.add_exec_algorithm(py_exec_algorithm)
+        let exec_algorithm_id = self
+            .kernel_mut()
+            .trader
+            .borrow_mut()
+            .add_py_execution_algorithm_instance(py_exec_algorithm, &exec_algorithm)
             .map_err(to_pyruntime_err)?;
-
-        self.retain_python_component(ComponentId::from(exec_algorithm_id), &exec_algorithm);
 
         log::info!("Registered Python exec algorithm {exec_algorithm_id}");
         Ok(())
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "Required for Python exec algorithm component registration"
-    )]
     #[pyo3(name = "add_exec_algorithm_from_config")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_exec_algorithm_from_config(
@@ -856,88 +748,29 @@ impl LiveNode {
         )
         .map_err(to_pyruntime_err)?;
 
-        if let Some(py_execution_algorithm) = py_execution_algorithm {
-            let exec_algorithm_id = py_execution_algorithm.exec_algorithm_id();
-            self.add_exec_algorithm(py_execution_algorithm)
-                .map_err(to_pyruntime_err)?;
+        let exec_algorithm_id = if let Some(py_execution_algorithm) = py_execution_algorithm {
+            // This branch registered through `LiveNode::add_exec_algorithm` before the trader owned
+            // the path, so it keeps that method's stricter state requirement
+            if self.state() != NodeState::Idle {
+                return Err(to_pyruntime_err(
+                    "Cannot add exec algorithm while node is running, add exec algorithms before calling start()",
+                ));
+            }
 
-            self.retain_python_component(
-                ComponentId::from(exec_algorithm_id),
-                &python_exec_algorithm,
-            );
-
-            log::info!("Registered Python exec algorithm {exec_algorithm_id}");
-            return Ok(());
-        }
-
-        let exec_algorithm_id = ExecAlgorithmId::from(actor_id.inner().as_str());
-
-        if self
-            .kernel()
-            .trader
-            .borrow()
-            .exec_algorithm_ids()
-            .contains(&exec_algorithm_id)
-        {
-            return Err(to_pyruntime_err(format!(
-                "Execution algorithm '{exec_algorithm_id}' is already registered"
-            )));
-        }
-
-        // Phase 2: Create per-component clock via the trader.
-        // This requires `&mut self` access to the kernel, which cannot be held
-        // inside a `Python::attach` block, hence the separate phases.
-        let trader_id = self.kernel().trader_id();
-        let cache = self.kernel().cache();
-        let component_id = ComponentId::from(actor_id);
-        let clock = self
-            .kernel_mut()
-            .trader
-            .borrow_mut()
-            .create_component_clock(component_id);
-
-        // Phase 3: Register the exec algorithm with its dedicated clock
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_algo = python_exec_algorithm.bind(py);
-            let mut py_data_actor_ref = py_algo
-                .extract::<PyRefMut<PyDataActor>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
-
-            py_data_actor_ref
-                .register(trader_id, clock, cache)
-                .map_err(|e| anyhow::anyhow!("Failed to register PyDataActor: {e}"))?;
-
-            log::debug!(
-                "Internal PyDataActor registered: {}, state: {:?}",
-                py_data_actor_ref.is_registered(),
-                py_data_actor_ref.state()
-            );
-
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        // Phase 4: Register in global registries and track for lifecycle
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_algo = python_exec_algorithm.bind(py);
-            let py_data_actor_ref = py_algo
-                .cast::<PyDataActor>()
-                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyDataActor: {e}"))?;
-            py_data_actor_ref.borrow().register_in_global_registries();
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        register_python_exec_algorithm_endpoint(exec_algorithm_id);
-
-        self.kernel_mut()
-            .trader
-            .borrow_mut()
-            .add_exec_algorithm_id_for_lifecycle(exec_algorithm_id)
-            .map_err(to_pyruntime_err)?;
-
-        self.retain_python_component(ComponentId::from(exec_algorithm_id), &python_exec_algorithm);
+            self.kernel_mut()
+                .trader
+                .borrow_mut()
+                .add_py_execution_algorithm_instance(py_execution_algorithm, &python_exec_algorithm)
+                .map_err(to_pyruntime_err)?
+        } else {
+            // Phase 2: Register the DataActor-backed algorithm through the trader's single Python
+            // registration path
+            self.kernel_mut()
+                .trader
+                .borrow_mut()
+                .add_python_exec_algorithm_instance(&python_exec_algorithm, actor_id)
+                .map_err(to_pyruntime_err)?
+        };
 
         log::info!("Registered Python exec algorithm {exec_algorithm_id}");
         Ok(())
@@ -1008,18 +841,6 @@ impl LiveNode {
             self.environment(),
             self.is_running()
         )
-    }
-}
-
-impl LiveNode {
-    /// Hands the trader the strong reference which keeps a registered wrapper alive.
-    fn retain_python_component(&mut self, component_id: ComponentId, wrapper: &Py<PyAny>) {
-        Python::attach(|py| {
-            self.kernel_mut()
-                .trader
-                .borrow_mut()
-                .retain_python_component(component_id, wrapper.clone_ref(py));
-        });
     }
 }
 

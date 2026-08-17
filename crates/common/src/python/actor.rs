@@ -81,6 +81,7 @@ use crate::{
         clock::PyClock,
         indicators::{registered_python_indicators, wrap_python_indicator},
         logging::PyLogger,
+        wrappers::retain_python_wrapper,
     },
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
@@ -960,22 +961,41 @@ impl PyDataActor {
         inner.initialize()
     }
 
-    /// Registers this actor in the global component and actor registries.
+    /// Registers this actor in the global component, actor, and wrapper registries.
     ///
     /// Clones the internal `Rc` and inserts into both registries. This ensures
-    /// Python and the registries share the exact same actor instance.
-    pub fn register_in_global_registries(&self) {
+    /// Python and the registries share the exact same actor instance. The Python wrapper is
+    /// retained as part of the same act, so a registered actor always has an owner for the
+    /// wrapper its inner only weakly references.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no Python wrapper is attached, or if the attached wrapper has already
+    /// been collected. Nothing is registered in that case.
+    pub fn register_in_global_registries(&self) -> PyResult<()> {
         let inner = self.inner();
-        let component_id = inner.component_id().inner();
+        let component_id = inner.component_id();
         let actor_id = Actor::id(inner);
+
+        let Some(wrapper) = inner.python_instance()? else {
+            return Err(to_pyruntime_err(format!(
+                "Cannot register actor {actor_id} without a Python wrapper, call `set_python_instance` first"
+            )));
+        };
 
         let inner_ref: Rc<UnsafeCell<PyDataActorInner>> = self.inner.clone();
 
         let component_trait_ref: Rc<UnsafeCell<dyn Component>> = inner_ref.clone();
-        with_component_registry(|registry| registry.insert(component_id, component_trait_ref));
+        with_component_registry(|registry| {
+            registry.insert(component_id.inner(), component_trait_ref);
+        });
 
         let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = inner_ref;
         with_actor_registry(|registry| registry.insert(actor_id, actor_trait_ref));
+
+        retain_python_wrapper(component_id, wrapper);
+
+        Ok(())
     }
 }
 
@@ -2872,7 +2892,7 @@ mod tests {
         enums::{
             AggressorSide, BookType, GreeksConvention, InstrumentCloseType, MarketStatusAction,
         },
-        identifiers::{ClientId, OptionSeriesId, TradeId, TraderId, Venue},
+        identifiers::{ActorId, ClientId, ComponentId, OptionSeriesId, TradeId, TraderId, Venue},
         instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
         orderbook::OrderBook,
         types::{Price, Quantity},
@@ -2887,10 +2907,10 @@ mod tests {
 
     use super::PyDataActor;
     use crate::{
-        actor::DataActor,
+        actor::{DataActor, data_actor::DataActorConfig, registry::actor_exists},
         cache::Cache,
         clock::TestClock,
-        component::Component,
+        component::{Component, get_component},
         enums::ComponentState,
         live::runner::replace_system_command_sender,
         messages::{
@@ -2901,6 +2921,7 @@ mod tests {
             },
         },
         msgbus::{self, MessageBus, MessagingSwitchboard, get_message_bus},
+        python::wrappers::get_python_wrapper,
         runner::{SyncDataCommandSender, SystemChannel, set_data_cmd_sender},
         signal::Signal,
         timer::TimeEvent,
@@ -3279,6 +3300,61 @@ mod tests {
     }
 
     #[rstest]
+    fn test_register_in_global_registries_retains_python_wrapper(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(Some(DataActorConfig {
+                actor_id: Some(ActorId::from("RETAINED-ACTOR")),
+                ..Default::default()
+            }));
+            rust_actor.set_python_instance(py_actor.bind(py)).unwrap();
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            rust_actor.register_in_global_registries().unwrap();
+
+            let retained = get_python_wrapper(ComponentId::from("RETAINED-ACTOR"))
+                .expect("registering must retain the actor's Python wrapper");
+
+            assert!(retained.bind(py).is(py_actor.bind(py)));
+            assert!(get_component(&Ustr::from("RETAINED-ACTOR")).is_some());
+            assert!(actor_exists(&Ustr::from("RETAINED-ACTOR")));
+        });
+    }
+
+    #[rstest]
+    fn test_register_in_global_registries_rejects_missing_python_wrapper(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+
+        Python::attach(|_py| {
+            let mut rust_actor = PyDataActor::new(Some(DataActorConfig {
+                actor_id: Some(ActorId::from("UNWRAPPED-ACTOR")),
+                ..Default::default()
+            }));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let error = rust_actor
+                .register_in_global_registries()
+                .expect_err("registering without a Python wrapper must fail");
+
+            assert!(error.to_string().contains("without a Python wrapper"));
+            assert!(get_component(&Ustr::from("UNWRAPPED-ACTOR")).is_none());
+            assert!(!actor_exists(&Ustr::from("UNWRAPPED-ACTOR")));
+            assert!(get_python_wrapper(ComponentId::from("UNWRAPPED-ACTOR")).is_none());
+        });
+    }
+
+    #[rstest]
     fn test_publish_data_dispatches_to_python_on_data(
         clock: Rc<RefCell<TestClock>>,
         cache: Rc<RefCell<Cache>>,
@@ -3296,7 +3372,7 @@ mod tests {
             let mut rust_actor = PyDataActor::new(None);
             rust_actor.set_python_instance(py_actor.bind(py)).unwrap();
             rust_actor.register(trader_id, clock, cache).unwrap();
-            rust_actor.register_in_global_registries();
+            rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
 
             let data = stub_custom_data(1, 42, None, None);
@@ -3330,7 +3406,7 @@ mod tests {
             let mut rust_actor = PyDataActor::new(None);
             rust_actor.set_python_instance(py_actor.bind(py)).unwrap();
             rust_actor.register(trader_id, clock, cache).unwrap();
-            rust_actor.register_in_global_registries();
+            rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
 
             rust_actor.py_subscribe_signal("example", None).unwrap();
@@ -3366,7 +3442,7 @@ mod tests {
             let mut rust_actor = PyDataActor::new(None);
             rust_actor.set_python_instance(py_actor.bind(py)).unwrap();
             rust_actor.register(trader_id, clock, cache).unwrap();
-            rust_actor.register_in_global_registries();
+            rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
 
             rust_actor.py_subscribe_signal("example", None).unwrap();
@@ -3401,7 +3477,7 @@ mod tests {
             let mut rust_actor = PyDataActor::new(None);
             rust_actor.set_python_instance(py_actor.bind(py)).unwrap();
             rust_actor.register(trader_id, clock, cache).unwrap();
-            rust_actor.register_in_global_registries();
+            rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
             rust_actor.py_subscribe_queue_state(Some(50)).unwrap();
 
@@ -3444,7 +3520,7 @@ mod tests {
             let mut rust_actor = PyDataActor::new(None);
             rust_actor.set_python_instance(py_actor.bind(py)).unwrap();
             rust_actor.register(trader_id, clock, cache).unwrap();
-            rust_actor.register_in_global_registries();
+            rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
             rust_actor.py_subscribe_socket_state(Some(50)).unwrap();
 
@@ -3492,7 +3568,7 @@ mod tests {
             let mut rust_actor = PyDataActor::new(None);
             rust_actor.set_python_instance(py_actor.bind(py)).unwrap();
             rust_actor.register(trader_id, clock, cache).unwrap();
-            rust_actor.register_in_global_registries();
+            rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
 
             rust_actor.py_subscribe_signal("", None).unwrap();
@@ -3554,7 +3630,7 @@ class CapturingActor:
             let mut rust_actor = PyDataActor::new(None);
             rust_actor.set_python_instance(py_actor.bind(py)).unwrap();
             rust_actor.register(trader_id, clock, cache).unwrap();
-            rust_actor.register_in_global_registries();
+            rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
 
             // Subscribe as custom-data for the signal's advertised DataType

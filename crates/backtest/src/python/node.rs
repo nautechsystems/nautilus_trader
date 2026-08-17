@@ -20,14 +20,14 @@ use std::collections::HashMap;
 use nautilus_common::{
     actor::data_actor::ImportableActorConfig,
     python::{
-        actor::{PyDataActor, PyDataActorInner, apply_class_derived_actor_id},
+        actor::{PyDataActor, apply_class_derived_actor_id},
         cache::PyCache,
     },
 };
 #[cfg(feature = "examples")]
 use nautilus_core::python::to_pytype_err;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use nautilus_model::identifiers::{AccountId, ActorId, ComponentId, Venue};
+use nautilus_model::identifiers::{AccountId, ActorId, Venue};
 use nautilus_portfolio::python::PyPortfolio;
 use nautilus_trading::ImportableStrategyConfig;
 #[cfg(feature = "examples")]
@@ -307,64 +307,13 @@ impl BacktestNode {
             )));
         }
 
-        // Phase 2: Create per-component clock via the trader (individual
-        // TestClock in backtest so each actor gets its own default timer handler)
-        let trader_id = engine.kernel().config.trader_id();
-        let cache = engine.kernel().cache.clone();
-        let component_id = ComponentId::from(actor_id);
-        let clock = engine
-            .kernel_mut()
-            .trader
-            .borrow_mut()
-            .create_component_clock(component_id);
-
-        // Phase 3: Register the actor with its dedicated clock
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_actor = python_actor.bind(py);
-            let mut py_data_actor_ref = py_actor
-                .extract::<PyRefMut<PyDataActor>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
-
-            py_data_actor_ref
-                .register(trader_id, clock, cache)
-                .map_err(|e| anyhow::anyhow!("Failed to register PyDataActor: {e}"))?;
-
-            log::debug!(
-                "Internal PyDataActor registered: {}, state: {:?}",
-                py_data_actor_ref.is_registered(),
-                py_data_actor_ref.state()
-            );
-
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        // Phase 4: Register in global registries and track for lifecycle
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_actor = python_actor.bind(py);
-            let py_data_actor_ref = py_actor
-                .cast::<PyDataActor>()
-                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyDataActor: {e}"))?;
-            py_data_actor_ref.borrow().register_in_global_registries();
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
+        // Phase 2: Register the actor through the trader's single Python registration path
         engine
             .kernel_mut()
             .trader
             .borrow_mut()
-            .add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)
+            .add_python_actor_instance(&python_actor, actor_id)
             .map_err(to_pyruntime_err)?;
-
-        Python::attach(|py| {
-            engine
-                .kernel_mut()
-                .trader
-                .borrow_mut()
-                .retain_python_component(ComponentId::from(actor_id), python_actor.clone_ref(py));
-        });
 
         log::info!("Registered Python actor {actor_id}");
         Ok(())

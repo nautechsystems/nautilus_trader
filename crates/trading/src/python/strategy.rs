@@ -45,6 +45,7 @@ use nautilus_common::{
         indicators::{registered_python_indicators, wrap_python_indicator},
         logging::PyLogger,
         order_factory::PyOrderFactory,
+        wrappers::retain_python_wrapper,
     },
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
@@ -1492,19 +1493,39 @@ impl PyStrategy {
         Component::initialize(inner)
     }
 
-    /// Registers this strategy in the global component and actor registries.
-    pub fn register_in_global_registries(&self) {
+    /// Registers this strategy in the global component, actor, and wrapper registries.
+    ///
+    /// The Python wrapper is retained as part of the same act, so a registered strategy always has
+    /// an owner for the wrapper its inner only weakly references.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no Python wrapper is attached, or if the attached wrapper has already
+    /// been collected. Nothing is registered in that case.
+    pub fn register_in_global_registries(&self) -> PyResult<()> {
         let inner = self.inner();
-        let component_id = Component::component_id(inner).inner();
+        let component_id = Component::component_id(inner);
         let actor_id = Actor::id(inner);
+
+        let Some(wrapper) = inner.python_instance()? else {
+            return Err(to_pyruntime_err(format!(
+                "Cannot register strategy {actor_id} without a Python wrapper, call `set_python_instance` first"
+            )));
+        };
 
         let inner_ref: Rc<UnsafeCell<PyStrategyInner>> = self.inner.clone();
 
         let component_trait_ref: Rc<UnsafeCell<dyn Component>> = inner_ref.clone();
-        with_component_registry(|registry| registry.insert(component_id, component_trait_ref));
+        with_component_registry(|registry| {
+            registry.insert(component_id.inner(), component_trait_ref);
+        });
 
         let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = inner_ref;
         with_actor_registry(|registry| registry.insert(actor_id, actor_trait_ref));
+
+        retain_python_wrapper(component_id, wrapper);
+
+        Ok(())
     }
 }
 
@@ -3508,10 +3529,10 @@ mod tests {
 
     use indexmap::IndexMap;
     use nautilus_common::{
-        actor::DataActor,
+        actor::{DataActor, registry::actor_exists},
         cache::Cache,
         clock::{Clock, TestClock},
-        component::Component,
+        component::{Component, get_component},
         live::runner::replace_system_command_sender,
         messages::{
             SystemCommand,
@@ -3528,7 +3549,7 @@ mod tests {
             self, MessagingSwitchboard,
             stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
         },
-        python::cache::PyCache,
+        python::{cache::PyCache, wrappers::get_python_wrapper},
         runner::SystemChannel,
         signal::Signal,
         timer::TimeEvent,
@@ -3556,8 +3577,8 @@ mod tests {
             order::spec::OrderFilledSpec,
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, OrderListId,
-            PositionId, StrategyId, TradeId, TraderId, Venue,
+            AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, OptionSeriesId,
+            OrderListId, PositionId, StrategyId, TradeId, TraderId, Venue,
         },
         instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
         orderbook::OrderBook,
@@ -4153,6 +4174,62 @@ class IndicatorEventStrategy:
 
     fn create_registered_tracking_strategy(py: Python<'_>) -> (Py<PyAny>, PyStrategy) {
         create_registered_tracking_strategy_with_config(py, None)
+    }
+
+    #[rstest::rstest]
+    fn test_register_in_global_registries_retains_python_wrapper() {
+        pyo3::Python::initialize();
+
+        Python::attach(|py| {
+            let (py_strategy, rust_strategy) = create_registered_tracking_strategy_with_config(
+                py,
+                Some(StrategyConfig {
+                    strategy_id: Some(StrategyId::from("Retained-001")),
+                    ..Default::default()
+                }),
+            );
+
+            rust_strategy.register_in_global_registries().unwrap();
+
+            let retained = get_python_wrapper(ComponentId::from("Retained-001"))
+                .expect("registering must retain the strategy's Python wrapper");
+
+            assert!(retained.bind(py).is(py_strategy.bind(py)));
+            assert!(get_component(&Ustr::from("Retained-001")).is_some());
+            assert!(actor_exists(&Ustr::from("Retained-001")));
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_register_in_global_registries_rejects_missing_python_wrapper() {
+        pyo3::Python::initialize();
+
+        Python::attach(|_py| {
+            let mut rust_strategy = PyStrategy::new(Some(StrategyConfig {
+                strategy_id: Some(StrategyId::from("Unwrapped-001")),
+                ..Default::default()
+            }));
+
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+            let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+            let portfolio = Rc::new(RefCell::new(Portfolio::new(
+                clock.clone(),
+                cache.clone(),
+                None,
+            )));
+            rust_strategy
+                .register(TraderId::from("TRADER-001"), clock, cache, portfolio)
+                .unwrap();
+
+            let error = rust_strategy
+                .register_in_global_registries()
+                .expect_err("registering without a Python wrapper must fail");
+
+            assert!(error.to_string().contains("without a Python wrapper"));
+            assert!(get_component(&Ustr::from("Unwrapped-001")).is_none());
+            assert!(!actor_exists(&Ustr::from("Unwrapped-001")));
+            assert!(get_python_wrapper(ComponentId::from("Unwrapped-001")).is_none());
+        });
     }
 
     #[rstest::rstest]

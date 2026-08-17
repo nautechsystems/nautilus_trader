@@ -41,6 +41,7 @@ pub mod runtime;
 pub mod signal;
 pub mod system;
 pub mod timer;
+pub mod wrappers;
 pub mod xrate;
 
 use nautilus_core::python::to_pyvalue_err;

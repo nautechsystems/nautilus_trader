@@ -24,10 +24,7 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 use ahash::AHashMap;
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
-use nautilus_common::{
-    actor::data_actor::ImportableActorConfig,
-    python::actor::{PyDataActor, PyDataActorInner, apply_class_derived_actor_id},
-};
+use nautilus_common::python::wrappers::release_python_wrapper;
 use nautilus_common::{
     actor::{
         DataActor, DataActorNative,
@@ -61,16 +58,6 @@ use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_trading::{
     ExecutionAlgorithm, ExecutionAlgorithmNative,
     strategy::{Strategy, StrategyNative},
-};
-#[cfg(feature = "python")]
-use nautilus_trading::{
-    ImportableControllerConfig, ImportableStrategyConfig,
-    python::strategy::{PyStrategy, PyStrategyInner},
-};
-#[cfg(feature = "python")]
-use pyo3::{
-    prelude::*,
-    types::{PyDict, PyModule},
 };
 use ustr::Ustr;
 
@@ -125,15 +112,15 @@ pub struct Trader {
     /// Clock source for trader timestamps and component clocks.
     clock_factory: ClockFactory,
     /// System cache for data storage.
-    cache: Rc<RefCell<Cache>>,
+    pub(crate) cache: Rc<RefCell<Cache>>,
     /// Portfolio reference for strategy registration.
-    portfolio: Rc<RefCell<Portfolio>>,
+    pub(crate) portfolio: Rc<RefCell<Portfolio>>,
     /// Registered actor IDs (actors stored in global registry).
-    actor_ids: Vec<ActorId>,
+    pub(crate) actor_ids: Vec<ActorId>,
     /// Type-erased state callbacks for registered actors.
     actor_state_callbacks: AHashMap<ActorId, ComponentStateCallbacks>,
     /// Registered strategy IDs (strategies stored in global registry).
-    strategy_ids: Vec<StrategyId>,
+    pub(crate) strategy_ids: Vec<StrategyId>,
     /// Type-erased state callbacks for registered strategies.
     strategy_state_callbacks: AHashMap<StrategyId, ComponentStateCallbacks>,
     /// Strategy stop functions for managed stop behavior.
@@ -141,16 +128,13 @@ pub struct Trader {
     /// Msgbus handler IDs for strategy event subscriptions (order, position).
     strategy_handler_ids: AHashMap<StrategyId, (Ustr, Ustr)>,
     /// Registered exec algorithm IDs (algorithms stored in global registry).
-    exec_algorithm_ids: Vec<ExecAlgorithmId>,
+    pub(crate) exec_algorithm_ids: Vec<ExecAlgorithmId>,
     /// Restores strategy event subscriptions for concrete execution algorithms.
     exec_algorithm_restore_fns: AHashMap<ExecAlgorithmId, ExecAlgorithmSubscriptionFn>,
     /// Removes strategy event subscriptions for concrete execution algorithms.
     exec_algorithm_cleanup_fns: AHashMap<ExecAlgorithmId, ExecAlgorithmSubscriptionFn>,
     /// Component clocks for individual components.
-    clocks: IndexMap<ComponentId, Rc<RefCell<dyn Clock>>>,
-    /// Strong references to the Python wrappers of registered components.
-    #[cfg(feature = "python")]
-    python_components: AHashMap<ComponentId, Py<PyAny>>,
+    pub(crate) clocks: IndexMap<ComponentId, Rc<RefCell<dyn Clock>>>,
     /// Timestamp when the trader was created.
     ts_created: UnixNanos,
     /// Timestamp when the trader was last started.
@@ -197,8 +181,6 @@ impl Trader {
             exec_algorithm_restore_fns: AHashMap::new(),
             exec_algorithm_cleanup_fns: AHashMap::new(),
             clocks: IndexMap::new(),
-            #[cfg(feature = "python")]
-            python_components: AHashMap::new(),
             ts_created,
             ts_started: None,
             ts_stopped: None,
@@ -354,124 +336,6 @@ impl Trader {
         let actor = factory()?;
 
         self.add_actor(actor)
-    }
-
-    /// Adds an importable Python actor to the trader.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the actor cannot be imported, configured, registered, or tracked.
-    #[cfg(feature = "python")]
-    pub fn add_actor_from_importable_config(
-        &mut self,
-        config: &ImportableActorConfig,
-    ) -> anyhow::Result<ActorId> {
-        self.validate_actor_or_strategy_registration()?;
-
-        let (python_actor, actor_id) = create_python_actor(config)?;
-        if self.actor_ids.contains(&actor_id) {
-            anyhow::bail!("Actor {actor_id} is already registered");
-        }
-
-        self.register_python_actor_instance(&python_actor, actor_id)?;
-
-        log::info!(
-            "Registered Python actor {actor_id} with trader {}",
-            self.trader_id
-        );
-        Ok(actor_id)
-    }
-
-    #[cfg(feature = "python")]
-    fn register_python_actor_instance(
-        &mut self,
-        python_actor: &Py<PyAny>,
-        actor_id: ActorId,
-    ) -> anyhow::Result<()> {
-        let component_id = ComponentId::from(actor_id);
-
-        if let Err(e) = self.register_python_actor_components(python_actor, actor_id) {
-            // Leave no clock or registry entry behind from a failed attempt
-            self.release_component(component_id);
-            return Err(e);
-        }
-
-        Python::attach(|py| {
-            self.retain_python_component(component_id, python_actor.clone_ref(py));
-        });
-
-        Ok(())
-    }
-
-    #[cfg(feature = "python")]
-    fn register_python_actor_components(
-        &mut self,
-        python_actor: &Py<PyAny>,
-        actor_id: ActorId,
-    ) -> anyhow::Result<()> {
-        let clock = self.create_component_clock(ComponentId::from(actor_id));
-        let trader_id = self.trader_id;
-        let cache = self.cache.clone();
-
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_actor = python_actor.bind(py);
-            let mut py_data_actor_ref = py_actor
-                .extract::<PyRefMut<PyDataActor>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
-
-            py_data_actor_ref
-                .register(trader_id, clock, cache)
-                .map_err(|e| anyhow::anyhow!("Failed to register PyDataActor: {e}"))?;
-
-            Ok(())
-        })?;
-
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_actor = python_actor.bind(py);
-            let py_data_actor_ref = py_actor
-                .cast::<PyDataActor>()
-                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyDataActor: {e}"))?;
-            py_data_actor_ref.borrow().register_in_global_registries();
-            Ok(())
-        })?;
-
-        self.add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)
-    }
-
-    /// Adds an importable Python controller to the trader.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the controller cannot be imported, configured, registered, or tracked.
-    #[cfg(feature = "python")]
-    pub fn add_controller_from_importable_config(
-        trader: &Rc<RefCell<Self>>,
-        config: &ImportableControllerConfig,
-    ) -> anyhow::Result<ActorId> {
-        trader.borrow().validate_actor_or_strategy_registration()?;
-
-        let actor_config = ImportableActorConfig {
-            actor_path: config.controller_path.clone(),
-            config_path: config.config_path.clone(),
-            config: config.config.clone(),
-        };
-        let (python_controller, actor_id) = create_python_actor(&actor_config)?;
-        if trader.borrow().actor_ids.contains(&actor_id) {
-            anyhow::bail!("Actor {actor_id} is already registered");
-        }
-
-        crate::python::controller::bind_controller_trader(&python_controller, trader)?;
-
-        trader
-            .borrow_mut()
-            .register_python_actor_instance(&python_controller, actor_id)?;
-
-        log::info!(
-            "Registered Python controller {actor_id} with trader {}",
-            trader.borrow().trader_id
-        );
-        Ok(actor_id)
     }
 
     /// Adds an already registered actor to the trader's component registry.
@@ -845,181 +709,6 @@ impl Trader {
         Ok(())
     }
 
-    /// Adds an importable Python strategy to the trader.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the strategy cannot be imported, configured, registered, or tracked.
-    #[cfg(feature = "python")]
-    pub fn add_strategy_from_importable_config(
-        &mut self,
-        config: &ImportableStrategyConfig,
-    ) -> anyhow::Result<StrategyId> {
-        // Checked before importing and constructing the Python class so a rejected addition never
-        // runs user constructor code
-        self.validate_actor_or_strategy_registration()?;
-
-        let python_strategy = create_python_strategy(config)?;
-
-        self.add_python_strategy_instance(&python_strategy)
-    }
-
-    /// Adds a constructed Python strategy instance to the trader.
-    ///
-    /// This is the instance-based counterpart to [`Self::add_strategy_from_importable_config`]:
-    /// the strategy is already constructed in Python, avoiding the `dict`-to-JSON round trip of
-    /// the importable-config path. The strategy ID, order ID tag, and logging flags are sourced
-    /// from the instance's retained `.config`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the strategy cannot be configured, registered, or tracked.
-    #[cfg(feature = "python")]
-    pub fn add_python_strategy_instance(
-        &mut self,
-        strategy: &Py<PyAny>,
-    ) -> anyhow::Result<StrategyId> {
-        self.prepare_python_strategy_instance(strategy)?;
-        self.commit_python_strategy_instance(strategy)
-    }
-
-    /// Prepares a constructed Python strategy instance for registration without committing it.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the strategy cannot be configured, or its ID or order ID tag is
-    /// already registered.
-    #[cfg(feature = "python")]
-    pub fn prepare_python_strategy_instance(
-        &mut self,
-        strategy: &Py<PyAny>,
-    ) -> anyhow::Result<StrategyId> {
-        self.validate_actor_or_strategy_registration()?;
-
-        let existing_order_id_tags: Vec<&str> =
-            self.strategy_ids.iter().map(StrategyId::get_tag).collect();
-
-        Python::attach(|py| -> anyhow::Result<StrategyId> {
-            let bound = strategy.bind(py);
-
-            let config_instance = bound
-                .getattr("config")
-                .ok()
-                .filter(|config| !config.is_none());
-
-            let class_name = bound.get_type().name()?.to_string();
-
-            let mut py_strategy_ref = bound
-                .extract::<PyRefMut<PyStrategy>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
-
-            if let Some(config_obj) = config_instance.as_ref() {
-                configure_py_strategy(&mut py_strategy_ref, config_obj)?;
-            }
-
-            // Mirrors the native path: a configured ID is kept, otherwise the runtime class name
-            // takes the configured order ID tag, or the next positional tag
-            let runtime_order_id_tag = py_strategy_ref.order_id_tag();
-            let strategy_id = if let Some(strategy_id) = py_strategy_ref.configured_strategy_id() {
-                strategy_id
-            } else {
-                let order_id_tag = normalize_order_id_tag(runtime_order_id_tag.as_deref())
-                    .map_or_else(
-                        || format!("{:03}", existing_order_id_tags.len()),
-                        str::to_string,
-                    );
-                StrategyId::new_checked(format!("{class_name}-{order_id_tag}"))?
-            };
-
-            if self.strategy_ids.contains(&strategy_id) {
-                anyhow::bail!("Strategy {strategy_id} is already registered");
-            }
-            ensure_unique_order_id_tag(&existing_order_id_tags, strategy_id.get_tag())?;
-
-            py_strategy_ref.set_strategy_id(strategy_id)?;
-            py_strategy_ref.set_python_instance(bound)?;
-
-            Ok(py_strategy_ref.strategy_id())
-        })
-    }
-
-    /// Commits a previously prepared Python strategy instance.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the strategy cannot be registered or its subscriptions cannot be
-    /// installed.
-    #[cfg(feature = "python")]
-    pub fn commit_python_strategy_instance(
-        &mut self,
-        strategy: &Py<PyAny>,
-    ) -> anyhow::Result<StrategyId> {
-        let strategy_id = Python::attach(|py| -> anyhow::Result<StrategyId> {
-            Ok(strategy
-                .bind(py)
-                .extract::<PyRef<PyStrategy>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?
-                .strategy_id())
-        })?;
-
-        let component_id = ComponentId::from(strategy_id);
-
-        if let Err(e) = self.register_python_strategy_components(strategy, strategy_id) {
-            // Leave no clock or registry entry behind from a failed attempt
-            self.release_component(component_id);
-            return Err(e);
-        }
-
-        Python::attach(|py| {
-            self.retain_python_component(component_id, strategy.clone_ref(py));
-        });
-
-        log::info!(
-            "Registered Python strategy {strategy_id} with trader {}",
-            self.trader_id
-        );
-        Ok(strategy_id)
-    }
-
-    #[cfg(feature = "python")]
-    fn register_python_strategy_components(
-        &mut self,
-        strategy: &Py<PyAny>,
-        strategy_id: StrategyId,
-    ) -> anyhow::Result<()> {
-        let clock = self.create_component_clock(ComponentId::from(strategy_id));
-        let trader_id = self.trader_id;
-        let cache = self.cache.clone();
-        let portfolio = self.portfolio.clone();
-
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_strategy = strategy.bind(py);
-            let mut py_strategy_ref = py_strategy
-                .extract::<PyRefMut<PyStrategy>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
-
-            py_strategy_ref
-                .register(trader_id, clock, cache, portfolio)
-                .map_err(|e| anyhow::anyhow!("Failed to register PyStrategy: {e}"))?;
-
-            Ok(())
-        })?;
-
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_strategy = strategy.bind(py);
-            let py_strategy_ref = py_strategy
-                .cast::<PyStrategy>()
-                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyStrategy: {e}"))?;
-            py_strategy_ref.borrow().register_in_global_registries();
-            Ok(())
-        })?;
-
-        self.add_strategy_id_with_subscriptions::<PyStrategyInner>(strategy_id)
-    }
-
     /// Adds an execution algorithm to the trader.
     ///
     /// Execution algorithms are registered in both the component registry (for lifecycle
@@ -1125,7 +814,7 @@ impl Trader {
     /// Actors and strategies can be added while the trader is `PreInitialized`, `Ready`,
     /// `Stopped`, or `Running`. This enables the [`Controller`](crate::controller::Controller)
     /// to add them at runtime.
-    fn validate_actor_or_strategy_registration(&self) -> anyhow::Result<()> {
+    pub(crate) fn validate_actor_or_strategy_registration(&self) -> anyhow::Result<()> {
         match self.state {
             ComponentState::PreInitialized
             | ComponentState::Ready
@@ -1140,7 +829,7 @@ impl Trader {
     }
 
     /// Validates that the trader is in a valid state for execution algorithm registration.
-    fn validate_exec_algorithm_registration(&self) -> anyhow::Result<()> {
+    pub(crate) fn validate_exec_algorithm_registration(&self) -> anyhow::Result<()> {
         match self.state {
             ComponentState::PreInitialized | ComponentState::Ready | ComponentState::Stopped => {
                 Ok(())
@@ -1732,16 +1421,6 @@ impl Trader {
         Ok(())
     }
 
-    /// Retains the strong Python reference to a registered component wrapper.
-    ///
-    /// Component inners hold only a weak reference to their Python wrapper, so the trader owns
-    /// the wrapper for as long as the component stays registered. Call this once the component
-    /// is fully registered; the reference is released when the component retires successfully.
-    #[cfg(feature = "python")]
-    pub fn retain_python_component(&mut self, component_id: ComponentId, wrapper: Py<PyAny>) {
-        self.python_components.insert(component_id, wrapper);
-    }
-
     /// Disposes an actor, then releases everything its registration created.
     ///
     /// Each component is retired completely before the next one starts, so a failure part way
@@ -1820,13 +1499,16 @@ impl Trader {
             .deregister(strategy_control_endpoint(strategy_id));
     }
 
-    /// Releases the clock, registry entries, and Python wrapper the trader owns for a component.
+    /// Releases the clock, registry entries, and Python wrapper registered for a component.
     ///
     /// Called once a component has disposed successfully, to retire a `Faulted` component, or to
     /// roll back a failed registration. A failed disposal does not reach here on the attempt that
     /// failed, so the component stays registered and reachable for inspection or retry; a later
     /// attempt retires it through the `Faulted` route.
-    fn release_component(&mut self, component_id: ComponentId) {
+    ///
+    /// A rollback only removes what the failed attempt created, because the Python registration
+    /// path rejects a component ID this trader already tracks before it mutates anything.
+    pub(crate) fn release_component(&mut self, component_id: ComponentId) {
         if let Some(clock) = self.clocks.shift_remove(&component_id) {
             let mut clock = clock.borrow_mut();
             clock.cancel_timers();
@@ -1838,8 +1520,10 @@ impl Trader {
         deregister_component(&id);
         deregister_actor(&id);
 
+        // Runs last because dropping the wrapper can trigger Python finalization which re-enters
+        // Rust, and by then nothing is registered
         #[cfg(feature = "python")]
-        self.python_components.remove(&component_id);
+        release_python_wrapper(component_id);
     }
 
     // -- Lifecycle management ---------------------------------------------------
@@ -2095,258 +1779,6 @@ impl Component for Trader {
     }
 }
 
-#[cfg(feature = "python")]
-fn create_python_actor(config: &ImportableActorConfig) -> anyhow::Result<(Py<PyAny>, ActorId)> {
-    let (module_name, class_name) = split_import_path(&config.actor_path, "actor_path")?;
-
-    log::info!("Importing actor from module: {module_name} class: {class_name}");
-
-    Python::attach(|py| -> anyhow::Result<(Py<PyAny>, ActorId)> {
-        let actor_class = import_python_class(py, module_name, class_name)?;
-        let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
-
-        let python_actor = if let Some(config_obj) = config_instance.as_ref() {
-            actor_class.call1((config_obj,))?
-        } else {
-            actor_class.call0()?
-        };
-
-        let mut py_data_actor_ref = python_actor
-            .extract::<PyRefMut<PyDataActor>>()
-            .map_err(Into::<PyErr>::into)
-            .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
-
-        if let Some(config_obj) = config_instance.as_ref() {
-            configure_py_data_actor(&mut py_data_actor_ref, config_obj)?;
-        }
-
-        py_data_actor_ref.set_python_instance(&python_actor)?;
-        apply_class_derived_actor_id(&mut py_data_actor_ref, &python_actor)?;
-        let actor_id = py_data_actor_ref.actor_id();
-
-        Ok((python_actor.unbind(), actor_id))
-    })
-}
-
-#[cfg(feature = "python")]
-fn create_python_strategy(config: &ImportableStrategyConfig) -> anyhow::Result<Py<PyAny>> {
-    let (module_name, class_name) = split_import_path(&config.strategy_path, "strategy_path")?;
-
-    log::info!("Importing strategy from module: {module_name} class: {class_name}");
-
-    Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
-        let strategy_class = import_python_class(py, module_name, class_name)?;
-        let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
-
-        let python_strategy = if let Some(config_obj) = config_instance.as_ref() {
-            strategy_class.call1((config_obj,))?
-        } else {
-            strategy_class.call0()?
-        };
-
-        Ok(python_strategy.unbind())
-    })
-}
-
-#[cfg(feature = "python")]
-fn split_import_path<'a>(path: &'a str, field: &str) -> anyhow::Result<(&'a str, &'a str)> {
-    let Some((module_name, class_name)) = path.split_once(':') else {
-        anyhow::bail!("{field} must be in format 'module.path:ClassName'");
-    };
-
-    if module_name.is_empty() || class_name.is_empty() || class_name.contains(':') {
-        anyhow::bail!("{field} must be in format 'module.path:ClassName'");
-    }
-
-    Ok((module_name, class_name))
-}
-
-#[cfg(feature = "python")]
-fn import_python_class<'py>(
-    py: Python<'py>,
-    module_name: &str,
-    class_name: &str,
-) -> anyhow::Result<Bound<'py, PyAny>> {
-    let module = py
-        .import(module_name)
-        .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
-
-    module
-        .getattr(class_name)
-        .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))
-}
-
-#[cfg(feature = "python")]
-fn create_config_instance<'py>(
-    py: Python<'py>,
-    config_path: &str,
-    config: &std::collections::HashMap<String, serde_json::Value>,
-) -> anyhow::Result<Option<Bound<'py, PyAny>>> {
-    if config_path.is_empty() && config.is_empty() {
-        log::debug!("No config_path or empty config, using None");
-        return Ok(None);
-    }
-
-    let Some((config_module_name, config_class_name)) = config_path.split_once(':') else {
-        anyhow::bail!("config_path must be in format 'module.path:ClassName', was {config_path}");
-    };
-
-    if config_module_name.is_empty()
-        || config_class_name.is_empty()
-        || config_class_name.contains(':')
-    {
-        anyhow::bail!("config_path must be in format 'module.path:ClassName', was {config_path}");
-    }
-
-    log::debug!(
-        "Importing config class from module: {config_module_name} class: {config_class_name}"
-    );
-
-    let config_module = py
-        .import(config_module_name)
-        .map_err(|e| anyhow::anyhow!("Failed to import config module {config_module_name}: {e}"))?;
-    let config_class = config_module
-        .getattr(config_class_name)
-        .map_err(|e| anyhow::anyhow!("Failed to get config class {config_class_name}: {e}"))?;
-    let py_dict = PyDict::new(py);
-
-    for (key, value) in config {
-        let py_value = config_value_to_py(py, key, value)?;
-        py_dict.set_item(key, py_value)?;
-    }
-
-    let config_instance = match config_class.call((), Some(&py_dict)) {
-        Ok(instance) => instance,
-        Err(kwargs_err) => match config_class.call0() {
-            Ok(instance) => {
-                for (key, value) in config {
-                    let py_value = config_value_to_py(py, key, value)?;
-
-                    if let Err(setattr_err) = instance.setattr(key, py_value) {
-                        log::warn!("Failed to set attribute {key}: {setattr_err}");
-                    }
-                }
-
-                if instance.hasattr("__post_init__")? {
-                    instance.call_method0("__post_init__")?;
-                }
-
-                instance
-            }
-            Err(default_err) => {
-                anyhow::bail!(
-                    "Failed to create config instance. Tried kwargs: {kwargs_err}, default: {default_err}"
-                );
-            }
-        },
-    };
-
-    Ok(Some(config_instance))
-}
-
-#[cfg(feature = "python")]
-fn config_value_to_py<'py>(
-    py: Python<'py>,
-    key: &str,
-    value: &serde_json::Value,
-) -> anyhow::Result<Bound<'py, PyAny>> {
-    if key == "actor_id"
-        && let Some(actor_id) = value.as_str()
-    {
-        return Ok(ActorId::new_checked(actor_id)?
-            .into_pyobject(py)?
-            .into_any());
-    }
-
-    let json_str = serde_json::to_string(value)
-        .map_err(|e| anyhow::anyhow!("Failed to serialize config value: {e}"))?;
-
-    Ok(PyModule::import(py, "json")?
-        .call_method("loads", (json_str,), None)?
-        .into_any())
-}
-
-#[cfg(feature = "python")]
-fn configure_py_data_actor(
-    actor: &mut PyRefMut<'_, PyDataActor>,
-    config_obj: &Bound<'_, PyAny>,
-) -> anyhow::Result<()> {
-    if let Some(actor_id) = config_obj
-        .getattr("actor_id")
-        .ok()
-        .filter(|value| !value.is_none())
-    {
-        let actor_id = if let Ok(actor_id) = actor_id.extract::<ActorId>() {
-            actor_id
-        } else if let Ok(actor_id_str) = actor_id.extract::<String>() {
-            ActorId::new_checked(&actor_id_str)?
-        } else {
-            anyhow::bail!("Invalid `actor_id` type");
-        };
-        actor.set_actor_id(actor_id);
-    }
-
-    if let Some(log_events) = extract_bool_config_attr(config_obj, "log_events") {
-        actor.set_log_events(log_events);
-    }
-
-    if let Some(log_commands) = extract_bool_config_attr(config_obj, "log_commands") {
-        actor.set_log_commands(log_commands);
-    }
-
-    Ok(())
-}
-
-#[cfg(feature = "python")]
-fn configure_py_strategy(
-    strategy: &mut PyRefMut<'_, PyStrategy>,
-    config_obj: &Bound<'_, PyAny>,
-) -> anyhow::Result<()> {
-    if let Some(strategy_id) = config_obj
-        .getattr("strategy_id")
-        .ok()
-        .filter(|value| !value.is_none())
-    {
-        let strategy_id = if let Ok(strategy_id) = strategy_id.extract::<StrategyId>() {
-            strategy_id
-        } else if let Ok(strategy_id_str) = strategy_id.extract::<String>() {
-            StrategyId::new_checked(&strategy_id_str)?
-        } else {
-            anyhow::bail!("Invalid `strategy_id` type");
-        };
-        strategy.set_strategy_id(strategy_id)?;
-    }
-
-    if let Some(order_id_tag) = config_obj
-        .getattr("order_id_tag")
-        .ok()
-        .filter(|value| !value.is_none())
-    {
-        let order_id_tag = order_id_tag
-            .extract::<String>()
-            .map_err(|e| anyhow::anyhow!("Invalid `order_id_tag` type: {e}"))?;
-        strategy.set_order_id_tag(&order_id_tag)?;
-    }
-
-    if let Some(log_events) = extract_bool_config_attr(config_obj, "log_events") {
-        strategy.set_log_events(log_events);
-    }
-
-    if let Some(log_commands) = extract_bool_config_attr(config_obj, "log_commands") {
-        strategy.set_log_commands(log_commands);
-    }
-
-    Ok(())
-}
-
-#[cfg(feature = "python")]
-fn extract_bool_config_attr(config_obj: &Bound<'_, PyAny>, attr: &str) -> Option<bool> {
-    config_obj
-        .getattr(attr)
-        .ok()
-        .and_then(|value| value.extract::<bool>().ok())
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -2355,6 +1787,14 @@ mod tests {
         sync::Arc,
     };
 
+    #[cfg(feature = "python")]
+    use nautilus_common::{
+        actor::data_actor::ImportableActorConfig,
+        python::{
+            actor::{PyDataActor, PyDataActorInner},
+            wrappers::get_python_wrapper,
+        },
+    };
     use nautilus_common::{
         actor::{
             DataActorCore,
@@ -2406,13 +1846,19 @@ mod tests {
     use nautilus_risk::engine::{RiskEngine, config::RiskEngineConfig};
     #[cfg(feature = "python")]
     use nautilus_testkit::cache::TestCacheDatabaseControl;
+    #[cfg(feature = "python")]
+    use nautilus_trading::python::strategy::{PyStrategy, PyStrategyInner};
     use nautilus_trading::{
         ExecutionAlgorithmConfig, ExecutionAlgorithmCore, StrategyNative,
         nautilus_execution_algorithm, nautilus_strategy,
         strategy::{config::StrategyConfig, core::StrategyCore},
     };
     #[cfg(feature = "python")]
-    use pyo3::ffi::c_str;
+    use pyo3::{
+        ffi::c_str,
+        prelude::*,
+        types::{PyDict, PyModule},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -4105,7 +3551,7 @@ class StateComponent:
             actor
                 .register(trader_id, actor_clock, cache.clone())
                 .unwrap();
-            actor.register_in_global_registries();
+            actor.register_in_global_registries().unwrap();
             trader
                 .add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)
                 .unwrap();
@@ -4119,7 +3565,7 @@ class StateComponent:
             strategy
                 .register(trader_id, strategy_clock, cache, portfolio)
                 .unwrap();
-            strategy.register_in_global_registries();
+            strategy.register_in_global_registries().unwrap();
             trader
                 .add_strategy_id_with_subscriptions::<PyStrategyInner>(strategy_id)
                 .unwrap();
@@ -4648,6 +4094,183 @@ class OwnedActor(DataActor):
         );
         assert!(get_component(&actor_id.inner()).is_none());
         assert!(!actor_exists(&actor_id.inner()));
+    }
+
+    #[cfg(feature = "python")]
+    fn install_python_component_module(py: Python<'_>, module_name: &str) {
+        let module = PyModule::new(py, module_name).expect("test module should create");
+        module
+            .setattr("DataActor", py.get_type::<PyDataActor>())
+            .expect("DataActor type should bind");
+        module
+            .setattr("Strategy", py.get_type::<PyStrategy>())
+            .expect("Strategy type should bind");
+
+        let code = c_str!(
+            r#"
+class ModuleActor(DataActor):
+    pass
+
+
+class ModuleStrategy(Strategy):
+    pass
+"#
+        );
+
+        py.run(code, Some(&module.dict()), None)
+            .expect("test component code should execute");
+
+        py.import("sys")
+            .expect("sys should import")
+            .getattr("modules")
+            .expect("sys.modules should exist")
+            .set_item(module_name, module)
+            .expect("test component module should register");
+    }
+
+    #[cfg(feature = "python")]
+    fn create_python_component(py: Python<'_>, module_name: &str, class_name: &str) -> Py<PyAny> {
+        py.import(module_name)
+            .expect("test component module should import")
+            .getattr(class_name)
+            .expect("test component class should exist")
+            .call0()
+            .expect("test component should construct")
+            .unbind()
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn test_colliding_python_registration_leaves_the_live_component_registered() {
+        Python::initialize();
+
+        let module_name = "test_trader_colliding_components";
+        let strategy_id = StrategyId::from("Colliding-001");
+        let actor_id = ActorId::from("Colliding-001");
+        let component_id = ComponentId::from(strategy_id);
+
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        Python::attach(|py| {
+            install_python_component_module(py, module_name);
+
+            let py_strategy = create_python_component(py, module_name, "ModuleStrategy");
+            py_strategy
+                .bind(py)
+                .extract::<PyRefMut<PyStrategy>>()
+                .unwrap()
+                .set_strategy_id(strategy_id)
+                .unwrap();
+
+            trader
+                .commit_python_strategy_instance(&py_strategy)
+                .unwrap();
+
+            // Positive control: without these the checks after the failed attempt would be vacuous
+            assert!(get_component(&component_id.inner()).is_some());
+            assert!(actor_exists(&component_id.inner()));
+            assert!(
+                get_python_wrapper(component_id)
+                    .unwrap()
+                    .bind(py)
+                    .is(py_strategy.bind(py))
+            );
+
+            let py_actor = create_python_component(py, module_name, "ModuleActor");
+            py_actor
+                .bind(py)
+                .extract::<PyRefMut<PyDataActor>>()
+                .unwrap()
+                .set_actor_id(actor_id);
+
+            let error = trader
+                .add_python_actor_instance(&py_actor, actor_id)
+                .expect_err("an actor colliding with a live strategy must not register");
+            assert!(error.to_string().contains("already registered"));
+
+            // The strategy keeps every registration its own attempt created
+            assert!(try_get_actor_unchecked::<PyStrategyInner>(&component_id.inner()).is_some());
+            assert!(get_component(&component_id.inner()).is_some());
+            assert!(actor_exists(&component_id.inner()));
+            assert!(
+                get_python_wrapper(component_id)
+                    .expect("the strategy must still hold its wrapper")
+                    .bind(py)
+                    .is(py_strategy.bind(py))
+            );
+            assert_eq!(trader.strategy_ids(), vec![strategy_id]);
+            assert!(trader.actor_ids().is_empty());
+            assert_eq!(trader.get_component_clocks().len(), 1);
+        });
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn test_failed_python_actor_registration_rolls_back_only_its_own_state() {
+        Python::initialize();
+
+        let module_name = "test_trader_rollback_components";
+        let registered_id = ActorId::from("Rollback-Registered");
+        let attempted_id = ActorId::from("Rollback-Attempted");
+        let registered_component_id = ComponentId::from(registered_id);
+        let attempted_component_id = ComponentId::from(attempted_id);
+
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        Python::attach(|py| {
+            install_python_component_module(py, module_name);
+
+            let py_actor = create_python_component(py, module_name, "ModuleActor");
+            py_actor
+                .bind(py)
+                .extract::<PyRefMut<PyDataActor>>()
+                .unwrap()
+                .set_actor_id(registered_id);
+
+            trader
+                .add_python_actor_instance(&py_actor, registered_id)
+                .unwrap();
+
+            // The same instance cannot register twice, so this attempt fails after it has already
+            // created a component clock
+            let error = trader
+                .add_python_actor_instance(&py_actor, attempted_id)
+                .expect_err("registering an already registered actor must fail");
+            assert!(error.to_string().contains("already registered"));
+
+            assert!(get_component(&attempted_component_id.inner()).is_none());
+            assert!(!actor_exists(&attempted_component_id.inner()));
+            assert!(get_python_wrapper(attempted_component_id).is_none());
+            assert_eq!(trader.get_component_clocks().len(), 1);
+
+            assert!(get_component(&registered_component_id.inner()).is_some());
+            assert!(actor_exists(&registered_component_id.inner()));
+            assert!(
+                get_python_wrapper(registered_component_id)
+                    .expect("the registered actor must still hold its wrapper")
+                    .bind(py)
+                    .is(py_actor.bind(py))
+            );
+            assert_eq!(trader.actor_ids(), vec![registered_id]);
+        });
     }
 
     #[rstest]

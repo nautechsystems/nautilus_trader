@@ -16,6 +16,7 @@
 //! Python bindings from [PyO3](https://pyo3.rs).
 
 pub mod controller;
+pub mod registration;
 pub mod registry;
 
 // Re-exports
