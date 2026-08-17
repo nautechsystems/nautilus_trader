@@ -80,15 +80,17 @@ pub trait Clock: Debug + Any {
     /// Cancel the registered default event handler (if any).
     ///
     /// Releases the held callback so any Python object owned by it can be dropped.
-    /// Required to break reference cycles between Python components and their clock,
-    /// since the clock stores callbacks as `Py<PyAny>` which Python's GC cannot trace.
+    /// `Trader::release_component` calls this at component retirement to break the cycle
+    /// between a Python component and its clock: the clock holds the callback as a
+    /// `Py<PyAny>` that Python's cycle collector cannot reach through.
     fn cancel_default_handler(&mut self);
 
     /// Cancel all registered named event callbacks.
     ///
     /// Releases callbacks registered via [`Clock::set_time_alert_ns`] or
-    /// [`Clock::set_timer_ns`] with an explicit `callback` argument. Called during
-    /// component disposal to break reference cycles via Python `Py<PyAny>` callbacks.
+    /// [`Clock::set_timer_ns`] with an explicit `callback` argument.
+    /// `Trader::release_component` calls this at component retirement, breaking the same
+    /// cycle as [`Clock::cancel_default_handler`].
     fn cancel_callbacks(&mut self);
 
     /// Get handler for [`TimeEvent`].
