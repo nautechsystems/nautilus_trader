@@ -515,6 +515,23 @@ impl ExecutionManager {
         mass_status: ExecutionMassStatus,
         exec_engine: Rc<RefCell<ExecutionEngine>>,
     ) -> ReconciliationResult {
+        if exec_engine
+            .borrow()
+            .get_client(&mass_status.client_id)
+            .is_none()
+        {
+            log::error!(
+                "Cannot reconcile ExecutionMassStatus from unknown client {}",
+                mass_status.client_id
+            );
+            return ReconciliationResult::default();
+        }
+
+        if let Err(e) = self.validate_mass_status_order_sources(&mass_status) {
+            log::error!("Cannot reconcile ExecutionMassStatus: {e}");
+            return ReconciliationResult::default();
+        }
+
         // Publish raw reports before any state mutation (including fill adjustment
         // below, which can synthesise replacement order/fill reports). The
         // execution engine's per-report `reconcile_*` entry points are bypassed by
@@ -541,6 +558,18 @@ impl ExecutionManager {
             for report in reports {
                 msgbus::publish_any(raw_position_topic, report);
             }
+        }
+
+        if exec_engine
+            .borrow()
+            .get_client(&mass_status.client_id)
+            .is_none()
+        {
+            log::error!(
+                "Execution client {} disappeared while publishing raw mass status reports",
+                mass_status.client_id
+            );
+            return ReconciliationResult::default();
         }
 
         let venue = mass_status.venue;
@@ -1574,6 +1603,56 @@ impl ExecutionManager {
         }
 
         result
+    }
+
+    pub(crate) fn validate_mass_status_order_sources(
+        &self,
+        mass_status: &ExecutionMassStatus,
+    ) -> anyhow::Result<()> {
+        let cache = self.cache.borrow();
+        let mut checked_client_order_ids = IndexSet::new();
+
+        let mut validate_report_source =
+            |direct_client_order_id: Option<ClientOrderId>, venue_order_id: VenueOrderId| {
+                let direct_client_order_id = direct_client_order_id
+                    .filter(|client_order_id| cache.order_exists(client_order_id));
+                let indexed_client_order_id = cache
+                    .client_order_id(&venue_order_id)
+                    .copied()
+                    .filter(|client_order_id| cache.order_exists(client_order_id));
+
+                for client_order_id in [direct_client_order_id, indexed_client_order_id]
+                    .into_iter()
+                    .flatten()
+                    .filter(|client_order_id| checked_client_order_ids.insert(*client_order_id))
+                {
+                    let cached_client_id = cache.client_id(&client_order_id).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Cached order {client_order_id} has no execution client origin"
+                        )
+                    })?;
+                    anyhow::ensure!(
+                        *cached_client_id == mass_status.client_id,
+                        "Cached order {client_order_id} belongs to execution client \
+                         {cached_client_id}, not mass status client {}",
+                        mass_status.client_id,
+                    );
+                }
+
+                Ok::<_, anyhow::Error>(())
+            };
+
+        for report in mass_status.order_reports().values() {
+            validate_report_source(report.client_order_id, report.venue_order_id)?;
+        }
+
+        for fills in mass_status.fill_reports().values() {
+            for fill in fills {
+                validate_report_source(fill.client_order_id, fill.venue_order_id)?;
+            }
+        }
+
+        Ok(())
     }
 
     fn filtered_open_orders_for_reconciliation(&self) -> Vec<OrderAny> {
@@ -4221,7 +4300,13 @@ impl ExecutionManager {
 
         {
             let mut cache = self.cache.borrow_mut();
-            if let Err(e) = cache.add_order(order.clone(), None, None, false) {
+            let source_client_id = if is_synthetic {
+                None
+            } else {
+                commission_client.map(ExecutionClient::client_id)
+            };
+
+            if let Err(e) = cache.add_order(order.clone(), None, source_client_id, false) {
                 // Deterministic synthetic reconciliation IDs hash the same logical event
                 // to the same client_order_id, so a restart replay can legitimately collide
                 // with a cached order. Differentiate expected dedup from stuck state.

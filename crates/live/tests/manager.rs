@@ -171,7 +171,7 @@ impl TestContext {
     fn add_order(&self, order: OrderAny) {
         self.cache
             .borrow_mut()
-            .add_order(order, None, None, false)
+            .add_order(order, None, Some(test_client_id()), false)
             .unwrap();
     }
 
@@ -693,6 +693,7 @@ async fn test_reconcile_mass_status_with_empty_reports() {
 async fn test_reconcile_mass_status_creates_external_order_accepted() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
+    let client_id = test_client_id();
 
     ctx.add_instrument(test_instrument());
 
@@ -726,6 +727,166 @@ async fn test_reconcile_mass_status_creates_external_order_accepted() {
     let client_order_id = ClientOrderId::from("V-EXT-001");
     let order = ctx.get_order(&client_order_id);
     assert!(order.is_some());
+    assert_eq!(
+        ctx.cache.borrow().client_id(&client_order_id),
+        Some(&client_id)
+    );
+}
+
+#[rstest]
+#[case(None, true, false)]
+#[case(None, false, false)]
+#[case(Some("BINANCE"), true, true)]
+#[case(Some("BINANCE"), false, true)]
+#[case(Some("OTHER"), true, false)]
+#[case(Some("OTHER"), false, false)]
+#[tokio::test]
+async fn test_reconcile_mass_status_requires_matching_cached_client_origin(
+    #[case] cached_client_id: Option<&str>,
+    #[case] report_has_client_order_id: bool,
+    #[case] should_reconcile: bool,
+) {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-CACHED-SOURCE");
+    let venue_order_id = VenueOrderId::from("V-CACHED-SOURCE");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(client_order_id)
+        .instrument_id(instrument_id)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("3000.00"))
+        .build();
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    order.apply(submitted).unwrap();
+    let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
+    order.apply(accepted).unwrap();
+
+    ctx.add_instrument(test_instrument());
+    ctx.cache
+        .borrow_mut()
+        .add_order(order, None, cached_client_id.map(ClientId::from), false)
+        .unwrap();
+
+    if !report_has_client_order_id {
+        ctx.cache
+            .borrow_mut()
+            .add_venue_order_id(&client_order_id, &venue_order_id, false)
+            .unwrap();
+    }
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_order_reports(vec![create_order_status_report(
+        report_has_client_order_id.then_some(client_order_id),
+        venue_order_id,
+        instrument_id,
+        OrderStatus::Canceled,
+        Quantity::from("1.0"),
+        Quantity::from("0"),
+    )]);
+
+    let raw_topic = MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+    let raw_pattern: msgbus::MStr<msgbus::Pattern> = raw_topic.into();
+    let (raw_handler, raw_saver) = get_any_saving_handler::<OrderStatusReport>(None);
+    msgbus::subscribe_any(raw_pattern, raw_handler.clone(), None);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    msgbus::unsubscribe_any(raw_pattern, &raw_handler);
+
+    assert_eq!(result.events.len(), usize::from(should_reconcile));
+    assert!(result.external_orders.is_empty());
+    assert_eq!(
+        ctx.get_order(&client_order_id).unwrap().status() == OrderStatus::Canceled,
+        should_reconcile,
+    );
+    assert_eq!(
+        raw_saver.get_messages().len(),
+        usize::from(should_reconcile)
+    );
+    assert_eq!(
+        ctx.cache.borrow().client_id(&client_order_id).copied(),
+        cached_client_id.map(ClientId::from),
+    );
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_rejects_venue_only_fill_from_other_client() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-CACHED-FILL-SOURCE");
+    let venue_order_id = VenueOrderId::from("V-CACHED-FILL-SOURCE");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(client_order_id)
+        .instrument_id(instrument_id)
+        .quantity(Quantity::from("1.0"))
+        .price(Price::from("3000.00"))
+        .build();
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    order.apply(submitted).unwrap();
+    let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
+    order.apply(accepted).unwrap();
+
+    ctx.add_instrument(test_instrument());
+    ctx.cache
+        .borrow_mut()
+        .add_order(order, None, Some(ClientId::from("OTHER")), false)
+        .unwrap();
+    ctx.cache
+        .borrow_mut()
+        .add_venue_order_id(&client_order_id, &venue_order_id, false)
+        .unwrap();
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_fill_reports(vec![FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        TradeId::from("T-CACHED-FILL-SOURCE"),
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Maker,
+        None,
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )]);
+
+    let raw_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+    let raw_pattern: msgbus::MStr<msgbus::Pattern> = raw_topic.into();
+    let (raw_handler, raw_saver) = get_any_saving_handler::<FillReport>(None);
+    msgbus::subscribe_any(raw_pattern, raw_handler.clone(), None);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    msgbus::unsubscribe_any(raw_pattern, &raw_handler);
+
+    assert!(result.events.is_empty());
+    assert!(result.external_orders.is_empty());
+    assert!(raw_saver.get_messages().is_empty());
+    let cached_order = ctx.get_order(&client_order_id).unwrap();
+    assert_eq!(cached_order.status(), OrderStatus::Accepted);
+    assert!(cached_order.filled_qty().is_zero());
 }
 
 #[rstest]
@@ -1626,6 +1787,9 @@ async fn test_synthetic_orders_bypass_filter_unclaimed_external() {
     } else {
         panic!("Expected Accepted event first, was {:?}", result.events[0]);
     }
+
+    let client_order_id = result.events[0].client_order_id();
+    assert_eq!(ctx.cache.borrow().client_id(&client_order_id), None);
 }
 
 #[tokio::test]
@@ -11317,7 +11481,10 @@ async fn test_check_open_orders_queries_oversized_responsible_client_group() {
         .price(Price::from("100.0"))
         .build();
     let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
-    ctx.add_order(order);
+    ctx.cache
+        .borrow_mut()
+        .add_order(order, None, None, false)
+        .unwrap();
     let order = ctx.cache.borrow_mut().update_order(&submitted).unwrap();
     let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
     ctx.cache.borrow_mut().update_order(&accepted).unwrap();
