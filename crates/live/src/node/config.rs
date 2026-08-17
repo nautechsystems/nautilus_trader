@@ -1018,6 +1018,18 @@ impl LiveExecEngineConfig {
                 "LiveExecEngineConfig.purge_account_events_interval_mins",
                 self.purge_account_events_interval_mins,
             ),
+            (
+                "LiveExecEngineConfig.purge_closed_orders_buffer_mins",
+                self.purge_closed_orders_buffer_mins,
+            ),
+            (
+                "LiveExecEngineConfig.purge_closed_positions_buffer_mins",
+                self.purge_closed_positions_buffer_mins,
+            ),
+            (
+                "LiveExecEngineConfig.purge_account_events_lookback_mins",
+                self.purge_account_events_lookback_mins,
+            ),
         ] {
             if let Some(mins) = value {
                 collector.collect(check_range(
@@ -1635,6 +1647,52 @@ mean_dispatch_ns_clear = 700
                 ],
             }
         );
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(307_445_734)]
+    fn test_validate_runtime_support_accepts_purge_retention_boundaries(#[case] mins: u32) {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                purge_closed_orders_buffer_mins: Some(mins),
+                purge_closed_positions_buffer_mins: Some(mins),
+                purge_account_events_lookback_mins: Some(mins),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert!(config.validate_runtime_support().is_ok());
+    }
+
+    #[rstest]
+    fn test_validate_runtime_support_rejects_overflowing_purge_retention_minutes() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                purge_closed_orders_buffer_mins: Some(307_445_735),
+                purge_closed_positions_buffer_mins: Some(307_445_735),
+                purge_account_events_lookback_mins: Some(307_445_735),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let error = config.validate_runtime_support().unwrap_err();
+        let ConfigError::Multiple { errors } = error else {
+            panic!("Expected multiple config errors, received {error:?}");
+        };
+        assert_eq!(errors.len(), 3);
+
+        for field in [
+            "LiveExecEngineConfig.purge_closed_orders_buffer_mins",
+            "LiveExecEngineConfig.purge_closed_positions_buffer_mins",
+            "LiveExecEngineConfig.purge_account_events_lookback_mins",
+        ] {
+            assert!(errors.iter().any(
+                |e| matches!(e, ConfigError::Range { field: error_field, .. } if error_field == field)
+            ));
+        }
     }
 
     #[rstest]
