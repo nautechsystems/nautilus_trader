@@ -76,7 +76,7 @@ Released on TBD (UTC).
 - Changed `AggressorSide` string output from `BUYER`/`SELLER` to `BUY`/`SELL` for display, serde, and SQL encoding
 - Changed `WebSocketConfig.heartbeat` to `heartbeat_interval_secs` and `heartbeat_msg` to `heartbeat_payload`
 - Changed `WebSocketConfig.reconnect_timeout_ms` to `connect_timeout_ms`, which also bounds the initial dial
-- Changed `SocketConfig.heartbeat` from a tuple to separate `heartbeat_interval_secs` and `heartbeat_payload` fields
+- Changed `SocketConfig.heartbeat` from a tuple to `Option<SocketHeartbeat>` with `interval_secs` and `payload`
 - Changed `SocketConfig.idle_timeout_ms` to `heartbeat_timeout_secs`, matching the inbound silence it always detected
 - Changed a configured heartbeat to imply dead-peer detection, defaulting `heartbeat_timeout_secs` to three intervals
 - Changed the Sockudo backend to tunnel through a configured `proxy_url` instead of silently falling back to Tungstenite

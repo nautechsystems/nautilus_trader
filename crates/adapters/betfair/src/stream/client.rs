@@ -28,7 +28,8 @@ use bytes::Bytes;
 use nautilus_network::{
     mode::ReconnectRequestOutcome,
     socket::{
-        SocketClient, SocketConfig, SocketReconnectHandle, SocketReconnectReplay, TcpMessageHandler,
+        SocketClient, SocketConfig, SocketHeartbeat, SocketReconnectHandle, SocketReconnectReplay,
+        TcpMessageHandler,
     },
 };
 use tokio::sync::watch; // tokio-import-ok
@@ -224,8 +225,10 @@ impl BetfairStreamClient {
             mode,
             suffix: b"\r\n".to_vec(),
             message_handler: Some(message_handler),
-            heartbeat_interval_secs: Some(config.heartbeat_secs),
-            heartbeat_payload: Some(b"{\"op\":\"heartbeat\"}".to_vec()),
+            heartbeat: Some(SocketHeartbeat {
+                interval_secs: config.heartbeat_secs,
+                payload: b"{\"op\":\"heartbeat\"}".to_vec(),
+            }),
             connect_timeout_ms: None,
             reconnect_delay_initial_ms: Some(config.reconnect_delay_initial_ms),
             reconnect_delay_max_ms: Some(config.reconnect_delay_max_ms),
@@ -557,8 +560,10 @@ impl BetfairRaceStreamClient {
             mode,
             suffix: b"\r\n".to_vec(),
             message_handler: Some(message_handler),
-            heartbeat_interval_secs: Some(config.heartbeat_secs),
-            heartbeat_payload: Some(b"{\"op\":\"heartbeat\"}".to_vec()),
+            heartbeat: Some(SocketHeartbeat {
+                interval_secs: config.heartbeat_secs,
+                payload: b"{\"op\":\"heartbeat\"}".to_vec(),
+            }),
             connect_timeout_ms: None,
             reconnect_delay_initial_ms: Some(config.reconnect_delay_initial_ms),
             reconnect_delay_max_ms: Some(config.reconnect_delay_max_ms),

@@ -157,6 +157,10 @@ application data, so control traffic cannot hide a silent market‑data stream. 
 the keepalive with a text payload refreshes the idle timeout exactly like real data does, so that
 window means something only when it sits below the heartbeat interval.
 
+An unset timeout leaves that detection off, except that an unset `heartbeat_timeout_secs` still
+derives three intervals when a heartbeat is configured. A zero timeout is rejected. Adapters that
+expose a non‑optional integer map zero to unset rather than passing it through.
+
 A read failure, write failure, Close frame, heartbeat timeout, idle timeout, or explicit reconnect
 request moves a handler‑mode client into reconnecting state. Reconnect uses exponential backoff with
 bounded jitter and allows unlimited attempts by default. A replacement connection that remains
@@ -293,9 +297,11 @@ remains active, it emits complete messages in arrival order. If an unterminated 
 10 MiB, the reader stops and the controller reconnects instead of allowing unchecked memory growth.
 
 An optional heartbeat task sends a configured byte payload at a fixed interval; the writer appends
-the same suffix as it does for application messages. An idle timeout stops the reader when no bytes
-arrive within the configured period. The socket enables `TCP_NODELAY` to avoid Nagle delays for
-small protocol messages.
+the same suffix as it does for application messages. A raw socket has no Ping frames, so the
+payload is required. `heartbeat_timeout_secs` stops the reader when no bytes arrive within the
+window. Unset, it defaults to three intervals when a heartbeat is configured and leaves detection
+off otherwise. A zero timeout is rejected. The socket enables `TCP_NODELAY` to avoid Nagle delays
+for small protocol messages.
 
 ### Connection and TLS policy
 

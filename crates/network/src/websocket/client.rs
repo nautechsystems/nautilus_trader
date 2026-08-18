@@ -89,8 +89,8 @@ use super::{
     auth::{AuthState, AuthTracker},
     config::{TransportBackend, WebSocketConfig},
     consts::{
-        CONNECTION_STATE_CHECK_INTERVAL_MS, DEFAULT_HEARTBEAT_TIMEOUT_INTERVALS,
-        GRACEFUL_SHUTDOWN_DELAY_MS, GRACEFUL_SHUTDOWN_TIMEOUT_SECS,
+        CONNECTION_STATE_CHECK_INTERVAL_MS, GRACEFUL_SHUTDOWN_DELAY_MS,
+        GRACEFUL_SHUTDOWN_TIMEOUT_SECS,
     },
     types::{
         EpochMessageHandler, EpochPingHandler, MessageHandler, MessageReader, MessageWriter,
@@ -339,7 +339,7 @@ impl WebSocketClientInner {
             })?;
         }
 
-        let heartbeat_timeout = resolve_heartbeat_timeout(&config).map(Duration::from_secs);
+        let heartbeat_timeout = config.resolved_heartbeat_timeout().map(Duration::from_secs);
         let reconnect_max_attempts = config.reconnect_max_attempts;
 
         // Stream mode documents reconnect_* fields as ignored (callers may pass Some(0))
@@ -1833,21 +1833,6 @@ impl WebSocketClientInner {
             log_task_stopped("heartbeat");
         })
     }
-}
-
-/// Resolves the liveness window, defaulting to a multiple of the heartbeat interval.
-///
-/// An adapter that sends a heartbeat has established that the peer answers it, so the interval
-/// alone is enough to say when silence means the connection is gone. Leaving that implicit is what
-/// left most connections with no dead-peer detection at all. An explicit `heartbeat_timeout_secs`
-/// always wins, and a connection with no heartbeat gets no default: nothing would guarantee the
-/// inbound frames needed to keep the window open.
-pub(crate) fn resolve_heartbeat_timeout(config: &WebSocketConfig) -> Option<u64> {
-    config.heartbeat_timeout_secs.or_else(|| {
-        config
-            .heartbeat_interval_secs
-            .map(|secs| secs.saturating_mul(DEFAULT_HEARTBEAT_TIMEOUT_INTERVALS))
-    })
 }
 
 fn heartbeat_timeout_exceeded(

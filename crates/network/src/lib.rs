@@ -92,6 +92,7 @@ pub mod socket;
 pub mod transport;
 pub mod websocket;
 
+mod heartbeat;
 mod logging;
 mod sink;
 mod tls;

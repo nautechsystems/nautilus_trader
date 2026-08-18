@@ -174,6 +174,9 @@ pub struct WebSocketConfig {
     /// [`Self::heartbeat_interval_secs`] so a healthy connection cannot trip it; three intervals is
     /// the usual choice, tolerating two lost replies.
     ///
+    /// `None` derives three heartbeat intervals when a heartbeat is configured, and disables
+    /// detection otherwise. `Some(0)` is rejected.
+    ///
     /// Only applies to handler mode; stream mode ignores this field.
     #[serde(default)]
     pub heartbeat_timeout_secs: Option<u64>,
@@ -183,6 +186,9 @@ pub struct WebSocketConfig {
     /// within this duration. Ping and Pong deliberately do not refresh it, so this detects a feed
     /// that has stopped flowing even while the transport is provably alive. Contrast
     /// [`Self::heartbeat_timeout_secs`], which any inbound frame refreshes.
+    ///
+    /// `None` disables this timeout. `Some(0)` is rejected. Adapters that expose a required integer
+    /// map `0` to `None` rather than passing it through.
     ///
     /// The raw-socket client has no equivalent: TCP carries no control frames, so there is no
     /// transport-level way to tell keepalive traffic from data.
@@ -335,6 +341,13 @@ impl WebSocketConfig {
 
         NetworkConfigError::collect(errors)
     }
+
+    pub(crate) fn resolved_heartbeat_timeout(&self) -> Option<u64> {
+        crate::heartbeat::resolve_heartbeat_timeout(
+            self.heartbeat_timeout_secs,
+            self.heartbeat_interval_secs,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -456,12 +469,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case::none_without_heartbeat(None, None, None)]
-    #[case::derived_from_interval(Some(30), None, Some(90))]
-    #[case::derived_from_short_interval(Some(5), None, Some(15))]
+    #[case::derived(Some(30), None, Some(90))]
     #[case::explicit_wins(Some(30), Some(45), Some(45))]
-    #[case::explicit_without_heartbeat(None, Some(60), Some(60))]
-    fn test_resolve_heartbeat_timeout(
+    fn test_resolve_timeout_from_websocket_heartbeat(
         #[case] interval_secs: Option<u64>,
         #[case] timeout_secs: Option<u64>,
         #[case] expected: Option<u64>,
@@ -470,10 +480,7 @@ mod tests {
         config.heartbeat_interval_secs = interval_secs;
         config.heartbeat_timeout_secs = timeout_secs;
 
-        assert_eq!(
-            crate::websocket::client::resolve_heartbeat_timeout(&config),
-            expected
-        );
+        assert_eq!(config.resolved_heartbeat_timeout(), expected);
     }
 
     #[rstest]

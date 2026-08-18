@@ -55,5 +55,5 @@ pub mod config;
 pub mod types;
 
 pub use client::{SocketClient, SocketReconnectHandle, SocketReconnectReplay};
-pub use config::SocketConfig;
+pub use config::{SocketConfig, SocketHeartbeat};
 pub use types::{TcpMessageHandler, TcpReader, TcpWriter, WriterCommand};

@@ -72,12 +72,6 @@ use crate::{
 
 // Connection timing constants
 const CONNECTION_STATE_CHECK_INTERVAL_MS: u64 = 10;
-
-/// Heartbeat intervals tolerated before an unset `heartbeat_timeout_secs` tears the connection down.
-///
-/// Mirrors the WebSocket client so a configured heartbeat implies liveness detection on either
-/// transport. Three cycles tolerate two lost replies.
-const DEFAULT_HEARTBEAT_TIMEOUT_INTERVALS: u64 = 3;
 const GRACEFUL_SHUTDOWN_DELAY_MS: u64 = 100;
 const GRACEFUL_SHUTDOWN_TIMEOUT_SECS: u64 = 5;
 const WRITE_TIMEOUT_SECS: u64 = 5;
@@ -223,7 +217,7 @@ impl SocketClientInner {
             reader,
             config.message_handler.clone(),
             config.suffix.clone(),
-            resolve_heartbeat_timeout(&config),
+            config.resolved_heartbeat_timeout(),
         );
 
         let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
@@ -237,19 +231,14 @@ impl SocketClientInner {
             state_sink.clone(),
         );
 
-        // Optionally spawn a heartbeat task to periodically ping server.
-        // `validate` guarantees the payload is present whenever the interval is.
-        let heartbeat_task = config
-            .heartbeat_interval_secs
-            .zip(config.heartbeat_payload.clone())
-            .map(|(interval_secs, payload)| {
-                Self::spawn_heartbeat_task(
-                    connection_mode.clone(),
-                    interval_secs,
-                    payload,
-                    writer_tx.clone(),
-                )
-            });
+        let heartbeat_task = config.heartbeat.as_ref().map(|heartbeat| {
+            Self::spawn_heartbeat_task(
+                connection_mode.clone(),
+                heartbeat.interval_secs,
+                heartbeat.payload.clone(),
+                writer_tx.clone(),
+            )
+        });
         let reconnect_max_attempts = config.reconnect_max_attempts;
 
         Ok(Self {
@@ -474,7 +463,7 @@ impl SocketClientInner {
             reader,
             self.config.message_handler.clone(),
             self.config.suffix.clone(),
-            resolve_heartbeat_timeout(&self.config),
+            self.config.resolved_heartbeat_timeout(),
         );
 
         log::info!("Reconnect succeeded");
@@ -898,20 +887,6 @@ impl SocketClientInner {
             log_task_stopped("heartbeat");
         })
     }
-}
-
-/// Resolves the liveness window, defaulting to a multiple of the heartbeat interval.
-///
-/// A configured heartbeat establishes that the peer answers, so the interval alone is enough to say
-/// when silence means the connection is gone. An explicit `heartbeat_timeout_secs` always wins, and a
-/// socket with no heartbeat gets no default: nothing would guarantee the inbound bytes needed to
-/// keep the window open.
-fn resolve_heartbeat_timeout(config: &SocketConfig) -> Option<u64> {
-    config.heartbeat_timeout_secs.or_else(|| {
-        config
-            .heartbeat_interval_secs
-            .map(|secs| secs.saturating_mul(DEFAULT_HEARTBEAT_TIMEOUT_INTERVALS))
-    })
 }
 
 impl Drop for SocketClientInner {
@@ -1512,7 +1487,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::SocketState;
+    use crate::{SocketState, socket::SocketHeartbeat};
 
     async fn bind_test_server() -> (u16, TcpListener) {
         let listener = TcpListener::bind("127.0.0.1:0")
@@ -1568,8 +1543,7 @@ mod tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_backoff_factor: None,
@@ -1617,8 +1591,7 @@ mod tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(100),
             reconnect_delay_initial_ms: Some(50),
             reconnect_backoff_factor: Some(1.0),
@@ -1655,8 +1628,7 @@ mod tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_backoff_factor: None,
@@ -1693,8 +1665,7 @@ mod tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(200),
             reconnect_delay_initial_ms: Some(50),
             reconnect_backoff_factor: Some(1.0),
@@ -1762,8 +1733,10 @@ mod tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: Some(1),
-            heartbeat_payload: Some(b"ping".to_vec()),
+            heartbeat: Some(SocketHeartbeat {
+                interval_secs: 1,
+                payload: b"ping".to_vec(),
+            }),
             connect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_backoff_factor: None,
@@ -1824,8 +1797,7 @@ mod tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
             reconnect_delay_max_ms: Some(5_000),
@@ -1874,8 +1846,7 @@ mod tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(10),
             reconnect_backoff_factor: Some(1.0),
@@ -1930,8 +1901,7 @@ mod tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(100),
             reconnect_delay_initial_ms: Some(1),
             reconnect_backoff_factor: Some(1.0),
@@ -1976,7 +1946,7 @@ mod rust_tests {
     };
 
     use super::*;
-    use crate::SocketState;
+    use crate::{SocketState, socket::SocketHeartbeat};
 
     const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -2040,8 +2010,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: None,
             reconnect_backoff_factor: None,
@@ -2113,8 +2082,10 @@ mod rust_tests {
             std::future::pending::<()>().await;
         });
         let mut config = reconnect_test_config(port);
-        config.heartbeat_interval_secs = Some(60);
-        config.heartbeat_payload = Some(b"ping\r\n".to_vec());
+        config.heartbeat = Some(SocketHeartbeat {
+            interval_secs: 60,
+            payload: b"ping\r\n".to_vec(),
+        });
         let inner = SocketClientInner::connect_url(config, None).await.unwrap();
         let read_fence = inner.read_fence.clone();
         let read_abort = inner.read_task.abort_handle();
@@ -2519,8 +2490,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(100),
             reconnect_delay_initial_ms: Some(1),
             reconnect_delay_max_ms: Some(1),
@@ -2574,8 +2544,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(100),
             reconnect_delay_initial_ms: Some(1),
             reconnect_delay_max_ms: Some(1),
@@ -2620,8 +2589,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_delay_max_ms: None,
@@ -2870,8 +2838,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -2921,8 +2888,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -2970,8 +2936,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -3093,8 +3058,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -3138,8 +3102,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -3207,8 +3170,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -3271,8 +3233,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(5_000), // 5s timeout - enough for reconnect
             reconnect_delay_initial_ms: Some(100),
             reconnect_delay_max_ms: Some(200),
@@ -3334,8 +3295,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(1_000), // 1s timeout for faster test
             reconnect_delay_initial_ms: Some(200), // Short backoff (but > timeout) to keep client in RECONNECT
             reconnect_delay_max_ms: Some(200),
@@ -3399,8 +3359,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(2_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -3455,8 +3414,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(2_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -3507,8 +3465,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(10_000), // 10s backoff to ensure we're sleeping
             reconnect_delay_max_ms: Some(10_000),
@@ -3555,8 +3512,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_delay_max_ms: None,
@@ -3586,8 +3542,7 @@ mod rust_tests {
             mode: Mode::Plain,
             suffix: vec![],
             message_handler: None,
-            heartbeat_interval_secs: None,
-            heartbeat_payload: None,
+            heartbeat: None,
             connect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_delay_max_ms: None,
