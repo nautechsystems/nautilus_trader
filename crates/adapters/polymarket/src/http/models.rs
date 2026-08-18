@@ -188,7 +188,12 @@ pub struct GammaMarket {
     /// Whether order book trading is enabled.
     pub enable_order_book: Option<bool>,
     /// Minimum price increment.
-    pub order_price_min_tick_size: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub order_price_min_tick_size: Option<Decimal>,
     /// Minimum order size.
     #[serde(
         default,
@@ -353,7 +358,8 @@ pub struct SearchResponse {
 #[derive(Clone, Debug, Deserialize)]
 pub struct TickSizeResponse {
     /// Minimum tick size (price increment) for a token.
-    pub minimum_tick_size: f64,
+    #[serde(deserialize_with = "deserialize_decimal_from_json_number")]
+    pub minimum_tick_size: Decimal,
 }
 
 /// Fee rate response from CLOB `GET /fee-rate`.
@@ -1130,6 +1136,17 @@ mod tests {
         assert!(response.tokens[0].winner);
         assert_eq!(response.tokens[1].outcome, "No");
         assert!(!response.tokens[1].winner);
+    }
+
+    #[rstest]
+    fn test_tick_size_response_preserves_json_number() {
+        let response: TickSizeResponse =
+            serde_json::from_str(r#"{"minimum_tick_size":0.1234567890123456789012345678}"#)
+                .unwrap();
+        let precise =
+            rust_decimal::Decimal::from_str_exact("0.1234567890123456789012345678").unwrap();
+
+        assert_eq!(response.minimum_tick_size, precise);
     }
 
     #[rstest]

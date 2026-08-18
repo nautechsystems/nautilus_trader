@@ -14,12 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::Context;
-use nautilus_common::{
-    cache::InstrumentLookupError,
-    messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList},
-};
+use nautilus_common::messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList};
+use nautilus_live::execution::failure::CommandFailure;
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderType},
+    events::OrderDeniedReason,
     identifiers::VenueOrderId,
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
@@ -43,21 +42,21 @@ use super::{
     submitter::{
         InvalidMarketPriceError, MarketBuyFeeContext, MarketOrderSubmitRequest, UnknownSubmitError,
     },
-    types::{BatchLimitOrderContext, LimitOrderSubmitRequest},
+    types::{BatchLimitOrderContext, LimitOrderSubmitRequest, classify_http_command_failure},
 };
 use crate::{common::consts::BATCH_ORDER_LIMIT, http::error::Error as HttpError};
 
 impl PolymarketExecutionClient {
     pub(super) fn submit_limit_order(&self, order: OrderAny) {
         if let Err(reason) = PolymarketOrderBuilder::validate_limit_order(&order) {
-            self.emitter.emit_order_denied(&order, &reason);
+            self.emitter.emit_order_denied(&order, &reason.to_string());
             return;
         }
 
         if let Err(reason) =
             PolymarketOrderBuilder::validate_limit_expiration(&order, self.clock.get_time_ns())
         {
-            self.emitter.emit_order_denied(&order, &reason);
+            self.emitter.emit_order_denied(&order, &reason.to_string());
             return;
         }
 
@@ -69,7 +68,7 @@ impl PolymarketExecutionClient {
         if let Err(reason) =
             PolymarketOrderBuilder::validate_limit_price(&order, instrument.price_increment())
         {
-            self.emitter.emit_order_denied(&order, &reason);
+            self.emitter.emit_order_denied(&order, &reason.to_string());
             return;
         }
 
@@ -109,7 +108,7 @@ impl PolymarketExecutionClient {
             if let Err(reason) =
                 PolymarketOrderBuilder::validate_limit_expiration(&order, clock.get_time_ns())
             {
-                emitter.emit_order_denied(&order, &reason);
+                emitter.emit_order_denied(&order, &reason.to_string());
                 return Ok(());
             }
 
@@ -167,43 +166,39 @@ impl PolymarketExecutionClient {
                         .await;
                     }
                 }
-                Err(e) if e.is_submit_outcome_unknown() => {
-                    if let Some((order_id_str, venue_order_id)) = handle_unknown_submit_result(
-                        &order,
-                        expected_venue_order_id,
-                        &e.to_string(),
-                        None,
-                        &emitter,
-                        clock,
-                        &fill_tracker,
-                        &order_identities,
-                        &pending_submits,
-                        &pending_cancels,
-                        account_id,
-                        size_precision,
-                        price_precision,
-                    ) {
-                        execute_deferred_cancel(
-                            &submitter,
+                Err(e) => match classify_http_command_failure(&e) {
+                    CommandFailure::Ambiguous(reason) => {
+                        if let Some((order_id_str, venue_order_id)) = handle_unknown_submit_result(
                             &order,
-                            &order_id_str,
-                            venue_order_id,
+                            expected_venue_order_id,
+                            &reason,
+                            None,
                             &emitter,
-                            &pending_cancels,
                             clock,
-                        )
-                        .await;
+                            &fill_tracker,
+                            &order_identities,
+                            &pending_submits,
+                            &pending_cancels,
+                            account_id,
+                            size_precision,
+                            price_precision,
+                        ) {
+                            execute_deferred_cancel(
+                                &submitter,
+                                &order,
+                                &order_id_str,
+                                venue_order_id,
+                                &emitter,
+                                &pending_cancels,
+                                clock,
+                            )
+                            .await;
+                        }
                     }
-                }
-                Err(e) => {
-                    reject_submit_order(
-                        &order,
-                        &e.strategy_reason(),
-                        &emitter,
-                        clock,
-                        &pending_cancels,
-                    );
-                }
+                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                        reject_submit_order(&order, &reason, &emitter, clock, &pending_cancels);
+                    }
+                },
             }
             Ok(())
         });
@@ -211,7 +206,7 @@ impl PolymarketExecutionClient {
 
     pub(super) fn submit_market_order(&self, order: OrderAny) {
         if let Err(reason) = PolymarketOrderBuilder::validate_market_order(&order) {
-            self.emitter.emit_order_denied(&order, &reason);
+            self.emitter.emit_order_denied(&order, &reason.to_string());
             return;
         }
 
@@ -265,7 +260,12 @@ impl PolymarketExecutionClient {
                     Err(e) => {
                         emitter.emit_order_denied(
                             &order,
-                            &format!("Failed to fetch pUSD balance for fee adjustment: {e}"),
+                            &OrderDeniedReason::ValidationFailed {
+                                detail: format!(
+                                    "Failed to fetch pUSD balance for fee adjustment: {e}"
+                                ),
+                            }
+                            .to_string(),
                         );
                         return Ok(());
                     }
@@ -406,13 +406,37 @@ impl PolymarketExecutionClient {
                         }
                     } else if let Some(invalid_price) = e.downcast_ref::<InvalidMarketPriceError>()
                     {
-                        emitter.emit_order_denied(&order, &invalid_price.to_string());
+                        emitter.emit_order_denied(
+                            &order,
+                            &OrderDeniedReason::ValidationFailed {
+                                detail: invalid_price.to_string(),
+                            }
+                            .to_string(),
+                        );
                     } else {
-                        let reason = e
-                            .downcast_ref::<HttpError>()
-                            .map_or_else(|| e.to_string(), HttpError::strategy_reason);
+                        let failure = e.downcast_ref::<HttpError>().map_or_else(
+                            || CommandFailure::not_sent(e.to_string()),
+                            classify_http_command_failure,
+                        );
 
-                        reject_submit_order(&order, &reason, &emitter, clock, &pending_cancels);
+                        match failure {
+                            CommandFailure::Ambiguous(reason) => {
+                                log::warn!(
+                                    "Market submit outcome unknown for {}: {reason}",
+                                    order.client_order_id()
+                                );
+                            }
+                            CommandFailure::NotSent(reason)
+                            | CommandFailure::VenueRejected(reason) => {
+                                reject_submit_order(
+                                    &order,
+                                    &reason,
+                                    &emitter,
+                                    clock,
+                                    &pending_cancels,
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -432,7 +456,10 @@ impl PolymarketExecutionClient {
             None => {
                 self.emitter.emit_order_denied(
                     order,
-                    &InstrumentLookupError::not_found(order.instrument_id()).to_string(),
+                    &OrderDeniedReason::InstrumentNotFound {
+                        instrument_id: order.instrument_id(),
+                    }
+                    .to_string(),
                 );
                 None
             }
@@ -453,10 +480,10 @@ impl PolymarketExecutionClient {
             _ => {
                 self.emitter.emit_order_denied(
                     &order,
-                    &format!(
-                        "Unsupported order type for Polymarket: {:?}",
-                        order.order_type()
-                    ),
+                    &OrderDeniedReason::UnsupportedOrderType {
+                        order_type: order.order_type(),
+                    }
+                    .to_string(),
                 );
             }
         }
@@ -496,19 +523,19 @@ impl PolymarketExecutionClient {
                 other => {
                     self.emitter.emit_order_denied(
                         &order,
-                        &format!("Unsupported order type for Polymarket: {other:?}"),
+                        &OrderDeniedReason::UnsupportedOrderType { order_type: other }.to_string(),
                     );
                     continue;
                 }
             }
 
             if let Err(reason) = PolymarketOrderBuilder::validate_limit_order(&order) {
-                self.emitter.emit_order_denied(&order, &reason);
+                self.emitter.emit_order_denied(&order, &reason.to_string());
                 continue;
             }
 
             if let Err(reason) = PolymarketOrderBuilder::validate_limit_expiration(&order, ts_now) {
-                self.emitter.emit_order_denied(&order, &reason);
+                self.emitter.emit_order_denied(&order, &reason.to_string());
                 continue;
             }
 
@@ -520,7 +547,7 @@ impl PolymarketExecutionClient {
             if let Err(reason) =
                 PolymarketOrderBuilder::validate_limit_price(&order, instrument.price_increment())
             {
-                self.emitter.emit_order_denied(&order, &reason);
+                self.emitter.emit_order_denied(&order, &reason.to_string());
                 continue;
             }
 
@@ -575,7 +602,7 @@ impl PolymarketExecutionClient {
                 {
                     Ok(()) => true,
                     Err(reason) => {
-                        emitter.emit_order_denied(&batch_order.order, &reason);
+                        emitter.emit_order_denied(&batch_order.order, &reason.to_string());
                         false
                     }
                 }
@@ -670,51 +697,54 @@ impl PolymarketExecutionClient {
                             )
                             .await;
                         }
-                        Err(e) if e.is_submit_outcome_unknown() => {
-                            for (batch_order, expected_venue_order_id) in
-                                orders_chunk.into_iter().zip(expected_venue_order_ids)
-                            {
-                                if let Some((order_id_str, venue_order_id)) =
-                                    handle_unknown_submit_result(
-                                        &batch_order.order,
-                                        expected_venue_order_id,
-                                        &e.to_string(),
-                                        None,
-                                        &emitter,
-                                        clock,
-                                        &fill_tracker,
-                                        &order_identities,
-                                        &pending_submits,
-                                        &pending_cancels,
-                                        account_id,
-                                        batch_order.size_precision,
-                                        batch_order.price_precision,
-                                    )
+                        Err(e) => match classify_http_command_failure(&e) {
+                            CommandFailure::Ambiguous(reason) => {
+                                for (batch_order, expected_venue_order_id) in
+                                    orders_chunk.into_iter().zip(expected_venue_order_ids)
                                 {
-                                    execute_deferred_cancel(
-                                        &submitter,
-                                        &batch_order.order,
-                                        &order_id_str,
-                                        venue_order_id,
-                                        &emitter,
-                                        &pending_cancels,
-                                        clock,
-                                    )
-                                    .await;
+                                    if let Some((order_id_str, venue_order_id)) =
+                                        handle_unknown_submit_result(
+                                            &batch_order.order,
+                                            expected_venue_order_id,
+                                            &reason,
+                                            None,
+                                            &emitter,
+                                            clock,
+                                            &fill_tracker,
+                                            &order_identities,
+                                            &pending_submits,
+                                            &pending_cancels,
+                                            account_id,
+                                            batch_order.size_precision,
+                                            batch_order.price_precision,
+                                        )
+                                    {
+                                        execute_deferred_cancel(
+                                            &submitter,
+                                            &batch_order.order,
+                                            &order_id_str,
+                                            venue_order_id,
+                                            &emitter,
+                                            &pending_cancels,
+                                            clock,
+                                        )
+                                        .await;
+                                    }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            for batch_order in orders_chunk {
-                                reject_submit_order(
-                                    &batch_order.order,
-                                    &e.strategy_reason(),
-                                    &emitter,
-                                    clock,
-                                    &pending_cancels,
-                                );
+                            CommandFailure::NotSent(reason)
+                            | CommandFailure::VenueRejected(reason) => {
+                                for batch_order in orders_chunk {
+                                    reject_submit_order(
+                                        &batch_order.order,
+                                        &reason,
+                                        &emitter,
+                                        clock,
+                                        &pending_cancels,
+                                    );
+                                }
                             }
-                        }
+                        },
                     }
                 }
 

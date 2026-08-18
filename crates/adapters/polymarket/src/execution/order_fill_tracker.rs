@@ -17,6 +17,7 @@
 
 use std::sync::Mutex;
 
+use ahash::AHashMap;
 use indexmap::IndexMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::MUTEX_POISONED;
@@ -63,7 +64,7 @@ pub(crate) struct BufferedFill {
 /// drain that follows it.
 #[derive(Debug, Default)]
 struct TrackerInner {
-    orders: FifoCacheMap<VenueOrderId, OrderFillState, 10_000>,
+    orders: AHashMap<VenueOrderId, OrderFillState>,
     pending_fills: FifoCacheMap<VenueOrderId, Vec<BufferedFill>, 1_000>,
     pending_reports: FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>,
     voided_trades: FifoCache<String, 10_000>,
@@ -475,7 +476,7 @@ fn new_order_state(submitted_qty: Quantity, order_side: OrderSide) -> OrderFillS
 }
 
 fn buy_overfill_bump_in(
-    orders: &mut FifoCacheMap<VenueOrderId, OrderFillState, 10_000>,
+    orders: &mut AHashMap<VenueOrderId, OrderFillState>,
     venue_order_id: &VenueOrderId,
 ) -> Option<Quantity> {
     let state = orders.get_mut(venue_order_id)?;
@@ -619,7 +620,7 @@ impl OrderFillTrackerMap {
 }
 
 fn record_fill_in(
-    orders: &mut FifoCacheMap<VenueOrderId, OrderFillState, 10_000>,
+    orders: &mut AHashMap<VenueOrderId, OrderFillState>,
     venue_order_id: &VenueOrderId,
     qty: Quantity,
 ) {
@@ -629,7 +630,7 @@ fn record_fill_in(
 }
 
 fn reverse_fill_in(
-    orders: &mut FifoCacheMap<VenueOrderId, OrderFillState, 10_000>,
+    orders: &mut AHashMap<VenueOrderId, OrderFillState>,
     venue_order_id: &VenueOrderId,
     qty: Quantity,
 ) {
@@ -643,7 +644,7 @@ fn reverse_fill_in(
 }
 
 fn snap_fill_qty_in(
-    orders: &FifoCacheMap<VenueOrderId, OrderFillState, 10_000>,
+    orders: &AHashMap<VenueOrderId, OrderFillState>,
     venue_order_id: &VenueOrderId,
     fill_qty: Quantity,
 ) -> Quantity {
@@ -696,6 +697,38 @@ mod tests {
             2,
         );
         assert!(tracker.contains(&vid));
+    }
+
+    #[rstest]
+    fn test_register_retains_fill_state_after_later_capacity_flood() {
+        let tracker = OrderFillTrackerMap::new();
+        let retained = VenueOrderId::from("order-retain");
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+        tracker.register(
+            retained,
+            Quantity::from("100"),
+            OrderSide::Buy,
+            instrument_id,
+            6,
+            2,
+        );
+
+        for index in 0..10_000 {
+            tracker.register(
+                VenueOrderId::from(format!("order-flood-{index}").as_str()),
+                Quantity::from("1"),
+                OrderSide::Sell,
+                instrument_id,
+                6,
+                2,
+            );
+        }
+
+        assert!(tracker.contains(&retained));
+        assert_eq!(
+            tracker.submitted_qty(&retained),
+            Some(Quantity::from("100"))
+        );
     }
 
     #[rstest]

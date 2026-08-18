@@ -398,8 +398,9 @@ compatibility and keeps the REST check.
 
 A `delayed` response:
 
-- Registers the venue order identity and fill tracking immediately. Later order queries, WebSocket
-  events, and reconciliation reports can then resolve the local `ClientOrderId`.
+- Registers the venue order identity and fill tracking immediately and retains them independently of
+  bounded replay caches. Later order queries, WebSocket events, and reconciliation reports can then
+  resolve the local `ClientOrderId`.
 - Leaves the order `Submitted` until a fill, order update, or REST result proves acceptance.
 - Emits `OrderAccepted` before any fill, cancellation, expiry, or filled status that proves
   acceptance.
@@ -431,6 +432,9 @@ Ambiguous failures include:
 | Any ambiguous failure                                                                         | Remains `Submitted`         | The adapter cannot determine the outcome. |
 | Definitive retry error after an earlier ambiguous attempt                                     | Remains `Submitted`         | The earlier attempt may have succeeded.   |
 | Failure before `POST /order`, such as a failed pUSD balance lookup                            | `OrderDenied`               | The adapter did not submit the order.     |
+
+Local denials format the strategy-facing reason from `OrderDeniedReason`. The leading token is the
+stable code, such as `VALIDATION_FAILED` or `UNSUPPORTED_ORDER_TYPE`.
 
 The proven unfilled `FOK` response skips the REST check. After an ambiguous single‑order attempt, a
 later HTTP error or decoded rejection does not prove that the first attempt failed. An accepted
@@ -467,6 +471,10 @@ configured backoff. After retries are exhausted, submit classification is:
 
 A malformed successful submit response also remains unknown and enters reconciliation instead of
 becoming a terminal rejection.
+
+Cancel classification uses the same evidence classes. A non‑retryable client or API error after the
+cancel is sent, or a local failure that proves the cancel was never transmitted, emits
+`OrderCancelRejected`. HTTP 425, headerless 429, and 5xx leave the cancel in flight.
 
 #### Unknown-outcome reconciliation
 

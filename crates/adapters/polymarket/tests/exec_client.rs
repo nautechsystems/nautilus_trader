@@ -41,7 +41,7 @@ use axum::{
 };
 use futures_util::StreamExt;
 use nautilus_common::{
-    cache::{Cache, INSTRUMENT_NOT_FOUND, InstrumentLookupError},
+    cache::Cache,
     clients::ExecutionClient,
     enums::LogLevel,
     live::runner::{replace_system_event_sender, set_exec_event_sender},
@@ -64,7 +64,7 @@ use nautilus_model::{
         AccountType, AssetClass, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce,
         TriggerType,
     },
-    events::{AccountState, OrderEventAny, OrderPendingCancel},
+    events::{AccountState, OrderDeniedReason, OrderEventAny, OrderPendingCancel},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TraderId,
         VenueOrderId,
@@ -3000,7 +3000,13 @@ async fn test_submit_market_order_denies_invalid_derived_price_before_post(
         .unwrap();
 
     let denied = assert_order_event(recv_execution_event(&mut rx).await, "Denied");
-    assert_eq!(order_event_reason(&denied), expected_reason);
+    assert_eq!(
+        order_event_reason(&denied),
+        OrderDeniedReason::ValidationFailed {
+            detail: expected_reason.to_string(),
+        }
+        .to_string()
+    );
     assert_eq!(*state.order_post_count.lock().await, 0);
     assert_no_execution_event(&mut rx).await;
 }
@@ -4103,7 +4109,10 @@ async fn test_submit_gtd_order_denied_below_expiry_buffer_before_post() {
     let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
     assert_eq!(
         order_event_reason(&denied),
-        "Polymarket GTD expiry must be at least 180 seconds in the future",
+        OrderDeniedReason::ValidationFailed {
+            detail: "Polymarket GTD expiry must be at least 180 seconds in the future".to_string(),
+        }
+        .to_string(),
     );
     assert_eq!(*state.order_post_count.lock().await, 0);
     assert_eq!(*state.batch_order_post_count.lock().await, 0);
@@ -4153,7 +4162,11 @@ async fn test_submit_gtd_order_list_denies_invalid_legs_before_batch_post() {
         let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
         assert_eq!(
             order_event_reason(&denied),
-            "Polymarket GTD expiry must be at least 180 seconds in the future",
+            OrderDeniedReason::ValidationFailed {
+                detail: "Polymarket GTD expiry must be at least 180 seconds in the future"
+                    .to_string(),
+            }
+            .to_string(),
         );
     }
     assert_eq!(*state.order_post_count.lock().await, 0);
@@ -4213,7 +4226,10 @@ async fn test_submit_gtd_order_list_preserves_valid_legs() {
     let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
     assert_eq!(
         order_event_reason(&denied),
-        "Polymarket GTD expiry must be at least 180 seconds in the future",
+        OrderDeniedReason::ValidationFailed {
+            detail: "Polymarket GTD expiry must be at least 180 seconds in the future".to_string(),
+        }
+        .to_string(),
     );
     assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
     assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
@@ -4350,7 +4366,10 @@ async fn test_submit_order_denied_for_price_out_of_range(#[case] price: &str) {
     let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
     assert_eq!(
         order_event_reason(&denied),
-        format!("Limit order price {price} outside Polymarket range [0.0001, 0.9999]")
+        OrderDeniedReason::ValidationFailed {
+            detail: format!("Limit order price {price} outside Polymarket range [0.0001, 0.9999]"),
+        }
+        .to_string()
     );
     assert_eq!(*state.order_post_count.lock().await, 0);
 }
@@ -4392,7 +4411,12 @@ async fn test_submit_order_denied_for_price_misaligned(
     let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
     assert_eq!(
         order_event_reason(&denied),
-        format!("Limit order price {price} does not conform to Polymarket tick size {tick_size}")
+        OrderDeniedReason::ValidationFailed {
+            detail: format!(
+                "Limit order price {price} does not conform to Polymarket tick size {tick_size}"
+            ),
+        }
+        .to_string()
     );
     assert_eq!(*state.order_post_count.lock().await, 0);
 }
@@ -4471,9 +4495,12 @@ async fn test_submit_immediate_limit_buy_denies_fractional_cent_maker_amount(
     let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
     assert_eq!(
         order_event_reason(&denied),
-        format!(
-            "Polymarket {order_type} BUY maker amount 4.805 pUSD exceeds 2 decimal places for price 0.961 and quantity 5"
-        ),
+        OrderDeniedReason::ValidationFailed {
+            detail: format!(
+                "Polymarket {order_type} BUY maker amount 4.805 pUSD exceeds 2 decimal places for price 0.961 and quantity 5"
+            ),
+        }
+        .to_string(),
     );
     assert_eq!(*state.order_post_count.lock().await, 0);
 }
@@ -4693,9 +4720,8 @@ async fn test_submit_order_denied_for_missing_cached_instrument() {
 
     assert_eq!(
         reason,
-        InstrumentLookupError::not_found(instrument_id).to_string()
+        OrderDeniedReason::InstrumentNotFound { instrument_id }.to_string()
     );
-    assert_eq!(reason, format!("{INSTRUMENT_NOT_FOUND}: {instrument_id}"));
 }
 
 #[rstest]
@@ -5513,9 +5539,12 @@ async fn test_submit_order_list_denies_unrepresentable_immediate_buys_before_pos
         let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
         assert_eq!(
             order_event_reason(&denied),
-            format!(
-                "Polymarket {order_type} BUY maker amount 4.805 pUSD exceeds 2 decimal places for price 0.961 and quantity 5"
-            ),
+            OrderDeniedReason::ValidationFailed {
+                detail: format!(
+                    "Polymarket {order_type} BUY maker amount 4.805 pUSD exceeds 2 decimal places for price 0.961 and quantity 5"
+                ),
+            }
+            .to_string(),
         );
     }
     assert_eq!(*state.order_post_count.lock().await, 0);
@@ -6546,11 +6575,14 @@ async fn test_submit_order_list_filters_out_ineligible_entries(#[case] kind: &st
 
         match kind {
             "unsupported" => assert!(
-                reason.contains("Unsupported order type"),
+                reason.contains("UNSUPPORTED_ORDER_TYPE"),
                 "reason was {reason}"
             ),
             "missing_instrument" => {
-                assert!(reason.contains(INSTRUMENT_NOT_FOUND), "reason was {reason}");
+                assert!(
+                    reason.contains("INSTRUMENT_NOT_FOUND"),
+                    "reason was {reason}"
+                );
             }
             _ => unreachable!(),
         }
@@ -6796,6 +6828,44 @@ async fn test_cancel_order_ambiguous_http_failure_does_not_emit_cancel_rejected(
     )
     .await;
     assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_order_http_400_emits_cancel_rejected() {
+    let state = TestServerState::default();
+    *state.cancel_response_status.lock().await = StatusCode::BAD_REQUEST;
+    *state.cancel_response.lock().await = Some(json!({"error": "order does not exist"}));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut order = make_limit_order(
+        "O-CANCEL-400",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, "0xvenue-cancel-400");
+
+    let cmd = make_cancel_cmd("O-CANCEL-400", instrument_id);
+    client.cancel_order(cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let rejected = assert_order_event(event, "CancelRejected");
+    assert_eq!(order_event_reason(&rejected), "order does not exist");
 }
 
 #[rstest]

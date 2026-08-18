@@ -89,6 +89,7 @@ Released on TBD (UTC).
 - Changed OKX and dYdX Python WebSocket clients to default `heartbeat` to the venue cadence instead of `None`
 - Changed Polymarket `HeartbeatResponse::Acknowledged` to carry a required chained ID
 - Changed Polymarket Gamma `game_id` to a string on `GammaMarket`, `GammaEvent`, and instrument `info`
+- Changed Polymarket Gamma and CLOB tick size fields from `f64` to `Decimal`
 - Changed Polymarket strict allowance decoding to require the plural `allowances` map (#4760), thanks @seungpyoson
 
 ### Security
@@ -199,6 +200,8 @@ Released on TBD (UTC).
 - Fixed Polymarket terminal condition retirement repeating every poll cycle
 - Fixed Polymarket auto‑load dropping open markets omitted from the default Gamma lookup (#4728), thanks @mystic-io
 - Fixed Polymarket allowance decoding accepting duplicate spender keys (#4760), thanks @seungpyoson
+- Fixed Polymarket FIFO replay evicting still‑active order identity and fill state
+- Fixed Polymarket unsent and rejected cancels remaining in flight
 - Fixed Tardis CSV funding rates dropping `next_funding_ns` without a predicted rate
 - Fixed Tardis Machine funding rates omitting `next_funding_ns`
 
@@ -220,6 +223,8 @@ Released on TBD (UTC).
 - Standardized remaining risk engine order‑denied reasons to coded values (#4744), thanks @folknor
 - Standardized Rust adapter order command failure classification with a shared `CommandFailure` type for Architect AX, Bybit, and Kraken
 - Standardized OKX order command failure classification with the shared `CommandFailure` type
+- Standardized Polymarket submit and cancel HTTP failures with `CommandFailure`
+- Standardized Polymarket local order denials to coded `OrderDeniedReason` values
 - Optimized pre-commit and local validation by reusing build artifacts and skipping unchanged checks, thanks @faysou
 - Optimized Polymarket interleaved price‑change dispatch and timestamp parsing
 - Updated concept and tutorial docs to describe current Rust and PyO3 behavior after the v1 removal
@@ -238,6 +243,7 @@ Released on TBD (UTC).
 - Upgraded `pem` crate to v4.0.0 to align with the current Base64 API
 - Upgraded `pyo3` crate to v0.29.2 for object‑lifetime, free‑threading, and compatibility fixes
 - Upgraded `rcgen` crate to v0.14.9
+- Upgraded `redb` crate to v4.2.0
 - Upgraded `redis` crate to v1.6.0
 - Upgraded `thiserror` crate to v2.0.20
 - Upgraded `time` crate to v0.3.55
@@ -251,6 +257,7 @@ Released on TBD (UTC).
 - Corrected the Rust `DataTester` book depth support note in the data testing spec
 - Documented external Redis message fields and Python custom-data registration
 - Documented order book out‑of‑order update and stale snapshot reporting behavior
+- Documented Polymarket command‑failure classes and coded local denial reasons
 - Documented the transient startup position-check race in the Lighter integration guide
 - Fixed broken README links on PyPI (#4644, #4648), thanks for reporting @ZhongxuanWang; thanks @xxxjqm
 

@@ -24,6 +24,7 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -33,7 +34,7 @@ use crate::common::{
     enums::PolymarketOutcome,
 };
 
-const DEFAULT_TICK_SIZE: &str = "0.001";
+const DEFAULT_TICK_SIZE: Decimal = dec!(0.001);
 
 /// Normalized instrument definition for a single Polymarket outcome token.
 ///
@@ -117,12 +118,9 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
         anyhow::bail!("Expected 2 outcomes, received {}", outcomes.len());
     }
 
-    let tick_size_str = market
+    let tick_size = market
         .order_price_min_tick_size
-        .map_or_else(|| DEFAULT_TICK_SIZE.to_string(), |ts| ts.to_string());
-    let tick_size: Decimal = tick_size_str
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse tick size '{tick_size_str}': {e}"))?;
+        .unwrap_or(DEFAULT_TICK_SIZE);
     let price_precision = tick_size.scale() as u8;
 
     // Polymarket charges fees using `feeSchedule.rate` on the Gamma market.
@@ -737,20 +735,20 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0.1, "0.1", "0.9", 1)]
-    #[case(0.01, "0.01", "0.99", 2)]
-    #[case(0.005, "0.005", "0.995", 3)]
-    #[case(0.0025, "0.0025", "0.9975", 4)]
-    #[case(0.001, "0.001", "0.999", 3)]
-    #[case(0.0001, "0.0001", "0.9999", 4)]
+    #[case("0.1", "0.1", "0.9", 1)]
+    #[case("0.01", "0.01", "0.99", 2)]
+    #[case("0.005", "0.005", "0.995", 3)]
+    #[case("0.0025", "0.0025", "0.9975", 4)]
+    #[case("0.001", "0.001", "0.999", 3)]
+    #[case("0.0001", "0.0001", "0.9999", 4)]
     fn test_create_instrument_tick_relative_price_bounds(
-        #[case] tick_size: f64,
+        #[case] tick_size: &str,
         #[case] expected_min: &str,
         #[case] expected_max: &str,
         #[case] expected_precision: u8,
     ) {
         let mut market = load_gamma_market("gamma_market.json");
-        market.order_price_min_tick_size = Some(tick_size);
+        market.order_price_min_tick_size = Some(tick_size.parse().unwrap());
         let defs = parse_gamma_market(&market).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
@@ -774,7 +772,7 @@ mod tests {
         // venue's [tick, 1 - tick] range that `validate_limit_price` enforces, and the old
         // static 0.001/0.999 bounds must be rejected by that same validation.
         let mut market = load_gamma_market("gamma_market.json");
-        market.order_price_min_tick_size = Some(0.01);
+        market.order_price_min_tick_size = Some(dec!(0.01));
         let defs = parse_gamma_market(&market).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 

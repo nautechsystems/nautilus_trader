@@ -17,8 +17,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use ahash::AHashSet;
-use nautilus_common::cache::fifo::FifoCacheMap;
+use ahash::{AHashMap, AHashSet};
 use nautilus_core::MUTEX_POISONED;
 use nautilus_model::identifiers::{ClientOrderId, VenueOrderId};
 
@@ -26,7 +25,7 @@ use nautilus_model::identifiers::{ClientOrderId, VenueOrderId};
 /// cache-free WS dispatch can resolve a tracked own order before the submit response lands.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PendingSubmitTracker {
-    venue_to_client: Arc<Mutex<FifoCacheMap<VenueOrderId, ClientOrderId, 10_000>>>,
+    venue_to_client: Arc<Mutex<AHashMap<VenueOrderId, ClientOrderId>>>,
 }
 
 impl PendingSubmitTracker {

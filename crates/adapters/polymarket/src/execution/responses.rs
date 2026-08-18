@@ -17,7 +17,7 @@ use std::{sync::Arc, time::Duration};
 
 use nautilus_common::live::{get_runtime, task::TaskHandles};
 use nautilus_core::{UUID4, time::AtomicTime};
-use nautilus_live::ExecutionEventEmitter;
+use nautilus_live::{ExecutionEventEmitter, execution::failure::CommandFailure};
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{OrderEventAny, OrderFilled, OrderUpdated},
@@ -39,7 +39,7 @@ use super::{
         OrderSubmitter, SubmitResponseOutcome, is_fok_unfilled, submit_response_outcome,
         submit_response_unknown_reason, submit_response_venue_order_id,
     },
-    types::BatchLimitOrderContext,
+    types::{BatchLimitOrderContext, classify_http_command_failure},
 };
 use crate::http::{
     error::{sanitize_error_text, strategy_rejection_reason},
@@ -321,43 +321,39 @@ pub(super) async fn handle_single_order_response(
                 .await;
             }
         }
-        Err(e) if e.is_submit_outcome_unknown() => {
-            if let Some((order_id_str, venue_order_id)) = handle_unknown_submit_result(
-                &batch_order.order,
-                expected_venue_order_id,
-                &e.to_string(),
-                None,
-                emitter,
-                clock,
-                fill_tracker,
-                order_identities,
-                pending_submits,
-                pending_cancels,
-                account_id,
-                batch_order.size_precision,
-                batch_order.price_precision,
-            ) {
-                execute_deferred_cancel(
-                    submitter,
+        Err(e) => match classify_http_command_failure(&e) {
+            CommandFailure::Ambiguous(reason) => {
+                if let Some((order_id_str, venue_order_id)) = handle_unknown_submit_result(
                     &batch_order.order,
-                    &order_id_str,
-                    venue_order_id,
+                    expected_venue_order_id,
+                    &reason,
+                    None,
                     emitter,
-                    pending_cancels,
                     clock,
-                )
-                .await;
+                    fill_tracker,
+                    order_identities,
+                    pending_submits,
+                    pending_cancels,
+                    account_id,
+                    batch_order.size_precision,
+                    batch_order.price_precision,
+                ) {
+                    execute_deferred_cancel(
+                        submitter,
+                        &batch_order.order,
+                        &order_id_str,
+                        venue_order_id,
+                        emitter,
+                        pending_cancels,
+                        clock,
+                    )
+                    .await;
+                }
             }
-        }
-        Err(e) => {
-            reject_submit_order(
-                &batch_order.order,
-                &e.strategy_reason(),
-                emitter,
-                clock,
-                pending_cancels,
-            );
-        }
+            CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                reject_submit_order(&batch_order.order, &reason, emitter, clock, pending_cancels);
+            }
+        },
     }
 }
 
@@ -623,13 +619,20 @@ pub(super) fn handle_order_response(
                 let reason = response
                     .error_msg
                     .unwrap_or_else(|| "unknown error".to_string());
-
                 reject_submit_order(order, &reason, emitter, clock, pending_cancels);
             }
         }
-        Err(e) => {
-            reject_submit_order(order, &e.strategy_reason(), emitter, clock, pending_cancels);
-        }
+        Err(e) => match classify_http_command_failure(&e) {
+            CommandFailure::Ambiguous(reason) => {
+                log::warn!(
+                    "Submit outcome unknown for {} without an expected venue order ID: {reason}",
+                    order.client_order_id()
+                );
+            }
+            CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                reject_submit_order(order, &reason, emitter, clock, pending_cancels);
+            }
+        },
     }
 
     None

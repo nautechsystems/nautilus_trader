@@ -2074,7 +2074,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_late_fill_falls_back_to_report_after_identity_eviction() {
+    fn test_dispatch_late_fill_stays_tracked_after_later_registrations() {
         let trade: PolymarketUserTrade = load("ws_user_trade.json");
         let market: GammaMarket = load("gamma_market_sports_market_money_line.json");
         let defs = parse_gamma_market(&market).unwrap();
@@ -2103,19 +2103,30 @@ mod tests {
             instrument.id(),
             "O-LATE-FILL",
         );
+        order_identities.mark_accepted(venue_order_id);
         assert!(order_identities.get(&venue_order_id).is_some());
 
         for index in 0..10_000 {
-            let eviction_venue_order_id = VenueOrderId::from(format!("V-EVICT-{index}").as_str());
-            let eviction_client_order_id = format!("O-EVICT-{index}");
+            let later_venue_order_id = VenueOrderId::from(format!("V-LATER-{index}").as_str());
+            let later_client_order_id = format!("O-LATER-{index}");
             register_identity(
                 &order_identities,
-                eviction_venue_order_id,
+                later_venue_order_id,
                 instrument.id(),
-                &eviction_client_order_id,
+                &later_client_order_id,
+            );
+            order_identities.mark_accepted(later_venue_order_id);
+            fill_tracker.register(
+                later_venue_order_id,
+                Quantity::from("1"),
+                OrderSide::Sell,
+                instrument.id(),
+                instrument.size_precision(),
+                instrument.price_precision(),
             );
         }
-        assert!(order_identities.get(&venue_order_id).is_none());
+        assert!(order_identities.get(&venue_order_id).is_some());
+        assert!(fill_tracker.contains(&venue_order_id));
 
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -2136,26 +2147,28 @@ mod tests {
 
         dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
 
-        let event = receiver.try_recv().expect("expected late fill report");
-        let ExecutionEvent::Report(ExecutionReport::Fill(report)) = event else {
-            panic!("expected fill report for evicted identity, was {event:?}");
+        let event = receiver.try_recv().expect("expected tracked late fill");
+        let ExecutionEvent::Order(OrderEventAny::Filled(filled)) = event else {
+            panic!("expected tracked OrderFilled after later registrations, was {event:?}");
         };
 
-        assert_eq!(report.venue_order_id, venue_order_id);
-        assert_eq!(report.trade_id, TradeId::from(trade.id.as_str()));
-        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(filled.client_order_id, ClientOrderId::from("O-LATE-FILL"));
+        assert_eq!(filled.venue_order_id, venue_order_id);
+        assert_eq!(filled.trade_id, TradeId::from(trade.id.as_str()));
+        assert_eq!(filled.instrument_id, instrument.id());
         assert_eq!(
-            report.last_qty.as_decimal(),
+            filled.last_qty.as_decimal(),
             Decimal::from_str_exact(&trade.size).unwrap()
         );
         assert_eq!(
-            report.last_px.as_decimal(),
+            filled.last_px.as_decimal(),
             Decimal::from_str_exact(&trade.price).unwrap()
         );
-        assert_eq!(report.order_side, OrderSide::Buy);
-        assert_eq!(report.liquidity_side, LiquiditySide::Taker);
-        assert_eq!(report.commission.as_decimal(), dec!(0.1875));
-        assert_eq!(report.commission.currency, Currency::pUSD());
+        assert_eq!(filled.order_side, OrderSide::Buy);
+        assert_eq!(filled.liquidity_side, LiquiditySide::Taker);
+        let commission = filled.commission.expect("tracked fill has commission");
+        assert_eq!(commission.as_decimal(), dec!(0.1875));
+        assert_eq!(commission.currency, Currency::pUSD());
         assert!(receiver.try_recv().is_err());
     }
 
