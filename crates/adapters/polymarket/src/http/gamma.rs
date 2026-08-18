@@ -27,7 +27,6 @@
 
 use std::{collections::HashMap, result::Result as StdResult, sync::Arc};
 
-use ahash::AHashSet;
 use nautilus_core::{
     UnixNanos,
     consts::NAUTILUS_USER_AGENT,
@@ -48,6 +47,7 @@ use crate::{
     http::{
         error::{Error, Result},
         models::{GammaEvent, GammaMarket, GammaTag, SearchResponse},
+        pagination::{CursorKey, PaginationGuard},
         parse::{create_instrument_from_def, parse_gamma_market},
         query::{GetGammaEventsParams, GetGammaMarketsParams, GetSearchParams},
         rate_limits::POLYMARKET_GAMMA_REST_QUOTA,
@@ -504,7 +504,7 @@ impl PolymarketGammaHttpClient {
         let mut all_markets = Vec::new();
         let mut remaining_offset = base_params.offset.unwrap_or(0);
         let mut after_cursor = None;
-        let mut seen_cursors = AHashSet::new();
+        let mut pagination = PaginationGuard::new("Gamma market");
         let mut page_num = 0u32;
 
         loop {
@@ -518,7 +518,8 @@ impl PolymarketGammaHttpClient {
                 .inner
                 .get_gamma_markets_keyset(params, after_cursor.as_deref())
                 .await?;
-            let page_len = response.markets.len() as u32;
+            let page_rows = response.markets.len();
+            let page_len = page_rows as u32;
             let skipped = remaining_offset.min(page_len) as usize;
             remaining_offset -= skipped as u32;
             page_num += 1;
@@ -536,14 +537,10 @@ impl PolymarketGammaHttpClient {
                 break;
             }
 
+            pagination.advance(page_rows, response.next_cursor.clone().map(CursorKey::new))?;
             let Some(next_cursor) = response.next_cursor else {
                 break;
             };
-
-            anyhow::ensure!(
-                seen_cursors.insert(next_cursor.clone()),
-                "Gamma market pagination repeated cursor {next_cursor:?}",
-            );
             after_cursor = Some(next_cursor);
         }
 
@@ -875,7 +872,7 @@ impl PolymarketGammaHttpClient {
         let mut all_events = Vec::new();
         let mut remaining_offset = base_params.offset.unwrap_or(0);
         let mut after_cursor = None;
-        let mut seen_cursors = AHashSet::new();
+        let mut pagination = PaginationGuard::new("Gamma event");
         let mut page_num = 0u32;
 
         loop {
@@ -889,7 +886,8 @@ impl PolymarketGammaHttpClient {
                 .inner
                 .get_gamma_events_keyset(params, after_cursor.as_deref())
                 .await?;
-            let page_len = response.events.len() as u32;
+            let page_rows = response.events.len();
+            let page_len = page_rows as u32;
             let skipped = remaining_offset.min(page_len) as usize;
             remaining_offset -= skipped as u32;
             page_num += 1;
@@ -908,14 +906,10 @@ impl PolymarketGammaHttpClient {
                 break;
             }
 
+            pagination.advance(page_rows, response.next_cursor.clone().map(CursorKey::new))?;
             let Some(next_cursor) = response.next_cursor else {
                 break;
             };
-
-            anyhow::ensure!(
-                seen_cursors.insert(next_cursor.clone()),
-                "Gamma event pagination repeated cursor {next_cursor:?}",
-            );
             after_cursor = Some(next_cursor);
         }
 

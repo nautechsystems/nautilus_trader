@@ -15,7 +15,7 @@
 
 //! Provides the HTTP client for the Polymarket Data API.
 
-use std::{collections::HashMap, result::Result as StdResult};
+use std::{collections::HashMap, fmt::Debug, result::Result as StdResult};
 
 use anyhow::Context;
 use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT};
@@ -36,6 +36,7 @@ use crate::{
     http::{
         error::{Error, Result},
         models::{DataApiPosition, DataApiTrade},
+        pagination::PaginationGuard,
     },
 };
 
@@ -72,6 +73,15 @@ pub(crate) fn build_polymarket_trade_id(transaction_hash: &str, asset: &str, seq
 }
 
 const POLYMARKET_DATA_API_URL: &str = "https://data-api.polymarket.com";
+
+#[derive(Eq, Hash, PartialEq)]
+struct PositionPage(Vec<u8>);
+
+impl Debug for PositionPage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("a full page")
+    }
+}
 
 /// Provides an unauthenticated HTTP client for the Polymarket Data API.
 ///
@@ -130,6 +140,7 @@ impl PolymarketDataApiHttpClient {
 
         let mut all_positions: Vec<DataApiPosition> = Vec::new();
         let mut offset: u32 = 0;
+        let mut pagination = PaginationGuard::new("/positions");
 
         loop {
             let params = vec![
@@ -149,15 +160,24 @@ impl PolymarketDataApiHttpClient {
                 .map_err(Error::from_http_client)?;
 
             if response.status.is_success() {
+                let page_body = PositionPage(response.body.to_vec());
                 let page: Vec<DataApiPosition> =
                     serde_json::from_slice(&response.body).map_err(Error::Serde)?;
-                let count = page.len() as u32;
+                let page_len = page.len();
+                let count = u32::try_from(page_len)
+                    .map_err(|_| Error::decode("/positions page length exceeds u32"))?;
+                let progress = (count >= PAGE_SIZE).then_some(page_body);
+                pagination
+                    .advance(page_len, progress)
+                    .map_err(|e| Error::decode(e.to_string()))?;
                 all_positions.extend(page);
 
                 if count < PAGE_SIZE {
                     break;
                 }
-                offset += count;
+                offset = offset
+                    .checked_add(count)
+                    .ok_or_else(|| Error::decode("/positions pagination offset overflowed u32"))?;
             } else {
                 return Err(Error::from_status_code(
                     response.status.as_u16(),

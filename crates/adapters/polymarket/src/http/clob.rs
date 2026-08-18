@@ -45,6 +45,7 @@ use crate::{
             ClobBookResponse, ClobMarketResponse, FeeRateResponse, PolymarketOpenOrder,
             PolymarketOrder, PolymarketTradeReport, TickSizeResponse,
         },
+        pagination::{CursorKey, PaginationGuard},
         query::{
             BalanceAllowance, BatchCancelResponse, CancelMarketOrdersParams, CancelResponse,
             ClobVersionResponse, GetBalanceAllowanceParams, GetOrdersParams, GetTradesParams,
@@ -455,18 +456,22 @@ impl PolymarketClobHttpClient {
         mut params: GetOrdersParams,
     ) -> Result<Vec<PolymarketOpenOrder>> {
         let mut all = Vec::new();
+        let mut cursor = params
+            .next_cursor
+            .clone()
+            .unwrap_or_else(|| CURSOR_START.to_string());
+        params.next_cursor = Some(cursor.clone());
+        let mut pagination = CursorPagination::new(PATH_ORDERS, cursor.clone());
 
         loop {
-            let cursor = params
-                .next_cursor
-                .get_or_insert_with(|| CURSOR_START.to_string())
-                .clone();
             let page: PaginatedResponse<PolymarketOpenOrder> =
                 self.send_get(PATH_ORDERS, Some(&params), true).await?;
+            let page_len = page.data.len();
             all.extend(page.data);
-            let Some(next_cursor) = cursor_next(PATH_ORDERS, &cursor, page.next_cursor)? else {
+            let Some(next_cursor) = pagination.next(page_len, &cursor, page.next_cursor)? else {
                 break;
             };
+            cursor.clone_from(&next_cursor);
             params.next_cursor = Some(next_cursor);
         }
         Ok(all)
@@ -494,18 +499,22 @@ impl PolymarketClobHttpClient {
         mut params: GetTradesParams,
     ) -> Result<Vec<PolymarketTradeReport>> {
         let mut all = Vec::new();
+        let mut cursor = params
+            .next_cursor
+            .clone()
+            .unwrap_or_else(|| CURSOR_START.to_string());
+        params.next_cursor = Some(cursor.clone());
+        let mut pagination = CursorPagination::new(PATH_TRADES, cursor.clone());
 
         loop {
-            let cursor = params
-                .next_cursor
-                .get_or_insert_with(|| CURSOR_START.to_string())
-                .clone();
             let page: PaginatedResponse<PolymarketTradeReport> =
                 self.send_get(PATH_TRADES, Some(&params), true).await?;
+            let page_len = page.data.len();
             all.extend(page.data);
-            let Some(next_cursor) = cursor_next(PATH_TRADES, &cursor, page.next_cursor)? else {
+            let Some(next_cursor) = pagination.next(page_len, &cursor, page.next_cursor)? else {
                 break;
             };
+            cursor.clone_from(&next_cursor);
             params.next_cursor = Some(next_cursor);
         }
         Ok(all)
@@ -770,21 +779,46 @@ impl PolymarketClobPublicClient {
     }
 }
 
-fn cursor_next(
+struct CursorPagination {
     endpoint: &'static str,
-    cursor: &str,
-    next_cursor: Option<String>,
-) -> Result<Option<String>> {
-    let next_cursor = next_cursor
-        .ok_or_else(|| Error::decode(format!("{endpoint} response omitted next_cursor")))?;
-    if next_cursor.is_empty() || next_cursor == CURSOR_END {
-        Ok(None)
-    } else if next_cursor == cursor {
-        Err(Error::decode(format!(
-            "{endpoint} pagination cursor did not advance from {cursor:?}"
-        )))
-    } else {
-        Ok(Some(next_cursor))
+    guard: PaginationGuard<CursorKey>,
+}
+
+impl CursorPagination {
+    fn new(endpoint: &'static str, initial_cursor: String) -> Self {
+        let mut guard = PaginationGuard::new(endpoint);
+        guard.seed(CursorKey::new(initial_cursor));
+        Self { endpoint, guard }
+    }
+
+    fn next(
+        &mut self,
+        rows: usize,
+        cursor: &str,
+        next_cursor: Option<String>,
+    ) -> Result<Option<String>> {
+        let next_cursor = next_cursor.ok_or_else(|| {
+            Error::decode(format!("{} response omitted next_cursor", self.endpoint))
+        })?;
+
+        match next_cursor {
+            next if next.is_empty() || next == CURSOR_END => {
+                self.guard
+                    .advance(rows, None)
+                    .map_err(|e| Error::decode(e.to_string()))?;
+                Ok(None)
+            }
+            next if next == cursor => Err(Error::decode(format!(
+                "{} pagination cursor did not advance from {cursor:?}",
+                self.endpoint
+            ))),
+            next => {
+                self.guard
+                    .advance(rows, Some(CursorKey::new(next.clone())))
+                    .map_err(|e| Error::decode(e.to_string()))?;
+                Ok(Some(next))
+            }
+        }
     }
 }
 
