@@ -128,6 +128,7 @@ enum InFlightSlot {
 
 #[derive(Debug, Clone)]
 struct IncludedTransaction {
+    intent_id: i64,
     tx_hash: B256,
     block_number: u64,
     receipt: RpcTransactionReceipt,
@@ -558,6 +559,7 @@ impl BlockchainExecutionClient {
         let calldata = WETH9::depositCall {}.abi_encode();
         let executor = self.transaction_executor()?;
         let IncludedTransaction {
+            intent_id,
             tx_hash,
             block_number,
             ..
@@ -571,6 +573,10 @@ impl BlockchainExecutionClient {
             )
             .await?;
         self.ensure_wrap_balance_increase(&self.weth_address, amount_wei, tx_hash, block_number)
+            .await?;
+        executor
+            .database
+            .mark_execution_event_emitted(intent_id, "terminal")
             .await?;
 
         Ok(tx_hash)
@@ -625,6 +631,7 @@ impl BlockchainExecutionClient {
 
         let executor = self.transaction_executor()?;
         let IncludedTransaction {
+            intent_id,
             tx_hash,
             block_number,
             ..
@@ -638,6 +645,10 @@ impl BlockchainExecutionClient {
             )
             .await?;
         self.ensure_approve_allowance(&token, &router, amount, tx_hash, block_number)
+            .await?;
+        executor
+            .database
+            .mark_execution_event_emitted(intent_id, "terminal")
             .await?;
 
         Ok(tx_hash)
@@ -987,6 +998,7 @@ impl BlockchainExecutionClient {
 
             if intent.status == "finalized" {
                 InclusionOutcome::Finalized(IncludedTransaction {
+                    intent_id: intent.id,
                     tx_hash,
                     block_number: receipt.block_number,
                     receipt,
@@ -1026,13 +1038,17 @@ impl BlockchainExecutionClient {
                             .mark_execution_event_emitted(intent.id, "terminal")
                             .await?;
                     }
+                    executor.release_slot();
                 } else {
                     self.ensure_recovered_operator_transaction(
                         &intent, purpose, nonce, &included, &executor,
                     )
                     .await?;
+                    database
+                        .mark_execution_event_emitted(intent.id, "terminal")
+                        .await?;
+                    executor.release_slot();
                 }
-                executor.release_slot();
             }
             InclusionOutcome::Reverted(tx_hash) => {
                 if let Some(plan) = plan {
@@ -1059,7 +1075,7 @@ impl BlockchainExecutionClient {
     /// and reruns the live postcondition before the restored intent may report success.
     ///
     /// Fails closed: any identity mismatch or unproven postcondition returns an error, which
-    /// keeps the in-flight signer slot occupied and fails the connect attempt.
+    /// keeps the in-flight signer slot occupied, leaves the intent active, and fails connect.
     async fn ensure_recovered_operator_transaction(
         &self,
         intent: &ExecutionIntentRow,
@@ -1678,6 +1694,7 @@ impl TransactionExecutor {
                             .await?;
                         return if receipt.status {
                             Ok(InclusionOutcome::Finalized(IncludedTransaction {
+                                intent_id: prepared.intent_id,
                                 tx_hash,
                                 block_number: receipt.block_number,
                                 receipt,
@@ -7340,6 +7357,34 @@ mod tests {
                 .iter()
                 .all(|request| request["method"] != "eth_sendRawTransaction")
         );
+        let (status, active): (String, bool) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT status, active FROM {schema}.execution_intent"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "finalized");
+        assert!(active);
+
+        let database = restarted.cache.database.as_ref().unwrap().clone();
+        drop(restarted);
+        let mut second = test_client(format!("http://{addr}"));
+        second.cache.database = Some(database);
+        second.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        let error = second.reconcile_unresolved_execution().await.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("does not match the persisted wrap intent"),
+            "was: {error}"
+        );
+        let active: bool = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT active FROM {schema}.execution_intent"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert!(active);
 
         drop_execution_schema(&admin_pool, &schema).await;
     }

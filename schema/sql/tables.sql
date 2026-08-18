@@ -702,13 +702,11 @@ CREATE TABLE IF NOT EXISTS "execution_intent" (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT execution_intent_active_check CHECK (
-        active = (
-            status NOT IN ('finalized', 'reverted', 'recoverable')
-            OR (
-                purpose = 'swap'
-                AND status IN ('finalized', 'reverted')
-                AND NOT (fill_emitted OR terminal_emitted)
-            )
+        NOT active
+        OR status NOT IN ('finalized', 'reverted', 'recoverable')
+        OR (
+            status IN ('finalized', 'reverted')
+            AND NOT (fill_emitted OR terminal_emitted)
         )
     ),
     CHECK (NOT (fill_emitted AND terminal_emitted)),

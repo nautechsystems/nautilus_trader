@@ -704,23 +704,23 @@ The schema keeps the legacy execution transaction table. Its connect‑time migr
 
 Partial unique indexes enforce one active intent per signer, one active owner per signer and nonce,
 and one intent per client order. An intent also stores separate acknowledgement, fill, and terminal
-event markers. A terminal swap remains active until its fill or terminal marker is durable; wrap
-and approve become inactive when they reach a terminal chain state.
+event markers. A finalized or reverted intent remains active until its fill or terminal marker is
+durable.
 
 #### States
 
-| State         | Detection or transition                                             | Ownership and event effect                                   |
-| ------------- | ------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `prepared`    | Intent reserved before nonce assignment.                            | Owns the signer; no transaction exists.                      |
-| `signed`      | Nonce assigned; any completed signature is stored before broadcast. | Owns the signer and nonce.                                   |
-| `broadcast`   | Broadcast attempt persisted before send.                            | A swap can record its `OrderSubmitted` marker.               |
-| `included`    | Receipt block hash matches the canonical numbered block.            | Nonterminal; no fill.                                        |
-| `replaced`    | Another canonical hash consumed the signer nonce.                   | The replacement joins the original intent.                   |
-| `reorged`     | Receipt disappears or its block hash stops matching.                | Observation resumes; no terminal event.                      |
-| `dropped`     | No stable finalized receipt within the poll window.                 | Remains active and blocks new signing.                       |
-| `finalized`   | Successful receipt reaches a stable finalized boundary.             | Operator intent closes; swap awaits fill or terminal marker. |
-| `reverted`    | Failed receipt reaches a stable finalized boundary.                 | Operator call errors; swap emits `OrderRejected`.            |
-| `recoverable` | Restart finds `prepared` or `signed` before broadcast.              | Becomes inactive because no broadcast could have occurred.   |
+| State         | Detection or transition                                             | Ownership and event effect                                 |
+| ------------- | ------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `prepared`    | Intent reserved before nonce assignment.                            | Owns the signer; no transaction exists.                    |
+| `signed`      | Nonce assigned; any completed signature is stored before broadcast. | Owns the signer and nonce.                                 |
+| `broadcast`   | Broadcast attempt persisted before send.                            | A swap can record its `OrderSubmitted` marker.             |
+| `included`    | Receipt block hash matches the canonical numbered block.            | Nonterminal; no fill.                                      |
+| `replaced`    | Another canonical hash consumed the signer nonce.                   | The replacement joins the original intent.                 |
+| `reorged`     | Receipt disappears or its block hash stops matching.                | Observation resumes; no terminal event.                    |
+| `dropped`     | No stable finalized receipt within the poll window.                 | Remains active and blocks new signing.                     |
+| `finalized`   | Successful receipt reaches a stable finalized boundary.             | Stays active until a fill or terminal marker.              |
+| `reverted`    | Failed receipt reaches a stable finalized boundary.                 | Operator call errors; swap emits `OrderRejected`.          |
+| `recoverable` | Restart finds `prepared` or `signed` before broadcast.              | Becomes inactive because no broadcast could have occurred. |
 
 #### Restart and replacement
 
@@ -745,8 +745,8 @@ Keep the signing key exclusive to this client while an intent is active. On rest
 or approve must match the persisted destination, calldata, and value, including a same‑nonce
 replacement. The wrap then rereads WETH balances at the inclusion block and the previous block; the
 approve rereads router allowance at the inclusion block. A call‑identity mismatch or a failed
-postcondition keeps the in‑flight signer slot occupied and fails connect. A mismatched swap emits
-`OrderRejected` instead.
+postcondition keeps the intent active, occupies the in‑flight signer slot, and fails connect,
+including on a later process. A mismatched swap emits `OrderRejected` instead.
 :::
 
 #### Finality and fills

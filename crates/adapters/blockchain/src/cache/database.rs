@@ -51,7 +51,7 @@ use crate::{
         types::{U128Pg, U256Pg},
     },
     events::initialize::InitializeEvent,
-    execution::transaction::{EXECUTION_SCHEMA_VERSION, TransactionPurpose, TransactionStatus},
+    execution::transaction::{EXECUTION_SCHEMA_VERSION, TransactionStatus},
 };
 
 /// Database interface for persisting and retrieving blockchain entities and domain objects.
@@ -3106,13 +3106,11 @@ impl BlockchainCacheDatabase {
                     'reverted', 'replaced', 'dropped', 'reorged', 'recoverable'
                 )),
                 CONSTRAINT execution_intent_active_check CHECK (
-                    active = (
-                        status NOT IN ('finalized', 'reverted', 'recoverable')
-                        OR (
-                            purpose = 'swap'
-                            AND status IN ('finalized', 'reverted')
-                            AND NOT (fill_emitted OR terminal_emitted)
-                        )
+                    NOT active
+                    OR status NOT IN ('finalized', 'reverted', 'recoverable')
+                    OR (
+                        status IN ('finalized', 'reverted')
+                        AND NOT (fill_emitted OR terminal_emitted)
                     )
                 ),
                 CHECK (NOT (fill_emitted AND terminal_emitted)),
@@ -3153,13 +3151,11 @@ impl BlockchainCacheDatabase {
             "
             ALTER TABLE execution_intent
             ADD CONSTRAINT execution_intent_active_check CHECK (
-                active = (
-                    status NOT IN ('finalized', 'reverted', 'recoverable')
-                    OR (
-                        purpose = 'swap'
-                        AND status IN ('finalized', 'reverted')
-                        AND NOT (fill_emitted OR terminal_emitted)
-                    )
+                NOT active
+                OR status NOT IN ('finalized', 'reverted', 'recoverable')
+                OR (
+                    status IN ('finalized', 'reverted')
+                    AND NOT (fill_emitted OR terminal_emitted)
                 )
             )
             ",
@@ -3617,9 +3613,9 @@ impl BlockchainCacheDatabase {
             .begin()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to start execution status transition: {e}"))?;
-        let (current_status, purpose, fill_emitted, terminal_emitted) =
-            sqlx::query_as::<_, (String, String, bool, bool)>(
-            "SELECT status, purpose, fill_emitted, terminal_emitted FROM execution_intent WHERE id = $1 FOR UPDATE",
+        let (current_status, fill_emitted, terminal_emitted) =
+            sqlx::query_as::<_, (String, bool, bool)>(
+            "SELECT status, fill_emitted, terminal_emitted FROM execution_intent WHERE id = $1 FOR UPDATE",
         )
         .bind(intent_id)
         .fetch_optional(&mut *transaction)
@@ -3634,7 +3630,7 @@ impl BlockchainCacheDatabase {
 
         let active = match status {
             TransactionStatus::Finalized | TransactionStatus::Reverted => {
-                purpose == TransactionPurpose::Swap.as_str() && !fill_emitted && !terminal_emitted
+                !fill_emitted && !terminal_emitted
             }
             TransactionStatus::Recoverable => false,
             _ => true,
