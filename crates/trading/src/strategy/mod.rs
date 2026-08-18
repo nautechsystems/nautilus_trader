@@ -18,7 +18,10 @@ pub mod config;
 pub mod core;
 
 pub use core::{StrategyCore, StrategyNative};
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::{
+    fmt::Display,
+    panic::{AssertUnwindSafe, catch_unwind},
+};
 
 use ahash::AHashSet;
 pub use api::{OrderApi, PortfolioApi};
@@ -116,7 +119,7 @@ impl SubmitOrderError {
     }
 }
 
-impl std::fmt::Display for SubmitOrderError {
+impl Display for SubmitOrderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.source.fmt(f)
     }
