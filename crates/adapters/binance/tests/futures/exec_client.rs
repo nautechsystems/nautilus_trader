@@ -2876,11 +2876,14 @@ async fn test_delivery_reconciliation_emits_open_order_and_position_reports() {
 }
 
 #[rstest]
-#[case::in_scope(vec!["BTCUSDT-PERP.BINANCE"], true)]
-#[case::out_of_scope(vec!["XAUUSDT-PERP.BINANCE"], false)]
+#[case::explicitly_in_scope(false, Some(vec!["BTCUSDT-PERP.BINANCE"]), true)]
+#[case::explicitly_out_of_scope(false, Some(vec!["XAUUSDT-PERP.BINANCE"]), false)]
+#[case::no_explicit_ids(false, None, true)]
+#[case::load_all_ignores_ids(true, Some(vec!["XAUUSDT-PERP.BINANCE"]), true)]
 #[tokio::test]
 async fn test_reconciliation_respects_load_id_scope(
-    #[case] load_ids: Vec<&str>,
+    #[case] load_all: bool,
+    #[case] load_ids: Option<Vec<&str>>,
     #[case] in_scope: bool,
 ) {
     let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
@@ -2891,8 +2894,8 @@ async fn test_reconciliation_respects_load_id_scope(
     let base_url_http = format!("http://{addr}");
     let base_url_ws = format!("ws://{addr}/ws");
     let provider = BinanceInstrumentProviderConfig {
-        load_all: false,
-        load_ids: Some(load_ids.into_iter().map(str::to_string).collect()),
+        load_all,
+        load_ids: load_ids.map(|ids| ids.into_iter().map(str::to_string).collect()),
         ..Default::default()
     };
     let (mut client, _rx, cache) =
@@ -2919,9 +2922,11 @@ async fn test_reconciliation_respects_load_id_scope(
 
     if in_scope {
         let error = result.unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("open order has unresolved instrument"));
+        assert!(
+            error
+                .to_string()
+                .contains("open order has unresolved instrument")
+        );
     } else {
         assert!(result.unwrap().is_empty());
     }
@@ -2929,7 +2934,7 @@ async fn test_reconciliation_respects_load_id_scope(
 
 #[rstest]
 #[tokio::test]
-async fn test_reconciliation_filters_out_delivery_instruments() {
+async fn test_reconciliation_filter_mismatch_remains_in_scope() {
     let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
         CommandResponses::default(),
         ReportFixtureMode::Delivery,
@@ -2949,7 +2954,7 @@ async fn test_reconciliation_filters_out_delivery_instruments() {
     client.start().unwrap();
     client.connect().await.unwrap();
 
-    let positions = client
+    let error = client
         .generate_position_status_reports(&GeneratePositionStatusReports::new(
             nautilus_core::UUID4::new(),
             UnixNanos::default(),
@@ -2960,9 +2965,13 @@ async fn test_reconciliation_filters_out_delivery_instruments() {
             None,
         ))
         .await
-        .unwrap();
+        .unwrap_err();
 
-    assert!(positions.is_empty());
+    assert!(
+        error
+            .to_string()
+            .contains("position has unresolved instrument")
+    );
 }
 
 #[rstest]
