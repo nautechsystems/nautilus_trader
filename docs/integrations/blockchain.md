@@ -3,8 +3,9 @@
 ## Overview
 
 The blockchain adapter ingests DeFi data from EVM chains and exposes it through the
-NautilusTrader data model. It also has an experimental execution client for locally signed
-Uniswap V3 swaps (see [Execution](#execution)). The adapter uses three backends:
+NautilusTrader data model. It also has a fork‑validated initial execution client for locally
+signed Uniswap V3 swaps, proven end to end on Arbitrum (see [Execution](#execution)). That
+capability is not production‑ready Uniswap execution. The adapter uses three backends:
 
 - HyperSync: high-throughput historical blocks and contract logs. See the
   [Envio HyperSync docs](https://docs.envio.dev/docs/HyperSync/hypersync-usage) for query shape,
@@ -728,6 +729,8 @@ On connect, the client reloads the active signer intent before enabling new sign
 - `prepared` and `signed` pre‑broadcast intents become `recoverable` and inactive.
 - Later states restore the local in‑flight slot and observe the current hash without submitting the
   raw transaction again.
+- A restored wrap or approve revalidates destination, calldata, and value, including a same‑nonce
+  replacement, then reruns its live postcondition before reporting success.
 - A swap also requires its order, instrument, and pool to be restored in the engine cache. Missing
   or inconsistent state fails connect.
 
@@ -738,11 +741,12 @@ canonical block records `reorged` and resumes observation. Poll timeout records 
 the signer slot occupied for the next connect attempt.
 
 :::warning
-Restart reconciliation provides stronger validation for swaps than for operator transactions. A
-finalized swap must match the persisted destination, calldata, and value. A restored wrap or approve
-intent currently follows signer, nonce, hash, receipt, and finality, but does not revalidate those
-call fields or rerun its balance or allowance postcondition. Keep the signing key exclusive to this
-client while an intent is active.
+Keep the signing key exclusive to this client while an intent is active. On restart, a restored wrap
+or approve must match the persisted destination, calldata, and value, including a same‑nonce
+replacement. The wrap then rereads WETH balances at the inclusion block and the previous block; the
+approve rereads router allowance at the inclusion block. A call‑identity mismatch or a failed
+postcondition keeps the in‑flight signer slot occupied and fails connect. A mismatched swap emits
+`OrderRejected` instead.
 :::
 
 #### Finality and fills
@@ -827,7 +831,7 @@ The execution tests have three layers:
 | --------------- | ----------------------------------------- | --------------------------------------------------------- |
 | Unit/mocked RPC | File‑backed JSON‑RPC responses.           | Encoding, signing, policy, events, and chain observation. |
 | Postgres        | Temporary schema when Postgres is active. | Schema, ordering, uniqueness, and terminal persistence.   |
-| Anvil fork      | Local chain plus read‑only archive RPC.   | Real contract calls and the supported swap flow.          |
+| Anvil fork      | Local chain plus read‑only archive RPC.   | Real contract calls, swap flow, and restart recovery.     |
 
 #### Default test coverage
 
@@ -873,6 +877,8 @@ The direct-client suite (`execution_fork`) runs these scenarios:
 | WETH wrap and router approval.           | Successful receipts, balance delta, allowance, and terminal records.   |
 | WETH to USDC Uniswap V3 market SELL.     | Exact submitted/fill events, asset deltas, gas, and final transitions. |
 | Disconnect and reconnect after finality. | No nonce use, rebroadcast, or repeated order event.                    |
+| Restart a dropped wrap or approve.       | Call identity and postcondition pass; the intent becomes inactive.     |
+| Restart after a mismatched replacement.  | Connect fails closed; the wrap is not treated as success.              |
 
 Anvil does not reproduce Arbitrum ArbOS gas pricing. Mocked RPC tests cover gas estimation and fee
 policy.
@@ -1207,8 +1213,6 @@ A new protocol family needs the design pass above.
   all fail closed with no on-chain or durable side effects. LiveNode must disable in‑flight checks
   and leave open‑order checks off. BUY-side, quote-denominated, and multi-hop orders are not
   supported. See [Execution](#execution).
-- Restart reconciliation does not revalidate call identity or rerun contract postconditions for
-  wrap and approve intents. Swap reconciliation performs the stronger exact transaction check.
 - Order event publication and its durable marker are separate writes, so the adapter does not
   guarantee atomic exactly‑once event delivery across a process crash.
 - Very large Uniswap V3 pools can still hit provider payload, timeout, or rate limits during

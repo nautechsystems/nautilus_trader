@@ -570,38 +570,8 @@ impl BlockchainExecutionClient {
                 None,
             )
             .await?;
-        let previous_block = block_number.checked_sub(1).ok_or_else(|| {
-            anyhow::anyhow!("Included wrap transaction {tx_hash} has invalid block number 0")
-        })?;
-        let balance_before = self
-            .erc20_contract
-            .balance_of_at(&self.weth_address, &self.wallet_address, previous_block)
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to read WETH balance before included transaction {tx_hash} at block {previous_block}"
-                )
-            })?;
-        let balance_after = self
-            .erc20_contract
-            .balance_of_at(&self.weth_address, &self.wallet_address, block_number)
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to read WETH balance after included transaction {tx_hash} at block {block_number}"
-                )
-            })?;
-        let expected_balance = balance_before.checked_add(amount_wei).ok_or_else(|| {
-            anyhow::anyhow!(
-                "WETH balance overflow for included transaction {tx_hash} at block {block_number}: wrap amount {amount_wei} from balance {balance_before}"
-            )
-        })?;
-
-        if balance_after != expected_balance {
-            anyhow::bail!(
-                "WETH balance after transaction {tx_hash} did not increase by {amount_wei}: expected {expected_balance}, was {balance_after}"
-            );
-        }
+        self.ensure_wrap_balance_increase(&self.weth_address, amount_wei, tx_hash, block_number)
+            .await?;
 
         Ok(tx_hash)
     }
@@ -667,21 +637,8 @@ impl BlockchainExecutionClient {
                 None,
             )
             .await?;
-        let allowance = self
-            .erc20_contract
-            .allowance_at(&token, &self.wallet_address, &router, block_number)
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to read router allowance after included transaction {tx_hash} at block {block_number}"
-                )
-            })?;
-
-        if allowance < amount {
-            anyhow::bail!(
-                "Router allowance after transaction {tx_hash} is below the requested amount {amount}: was {allowance}"
-            );
-        }
+        self.ensure_approve_allowance(&token, &router, amount, tx_hash, block_number)
+            .await?;
 
         Ok(tx_hash)
     }
@@ -695,6 +652,81 @@ impl BlockchainExecutionClient {
         if code.is_empty() {
             anyhow::bail!("No deployed bytecode at configured {description} address {address}");
         }
+        Ok(())
+    }
+
+    /// Ensures the wrapped native token balance increased by exactly `amount_wei` across the
+    /// block that included transaction `tx_hash`, reading both balances at their historical
+    /// blocks. Shared by the live wrap path and restart reconciliation.
+    async fn ensure_wrap_balance_increase(
+        &self,
+        weth_address: &Address,
+        amount_wei: U256,
+        tx_hash: B256,
+        block_number: u64,
+    ) -> anyhow::Result<()> {
+        let previous_block = block_number.checked_sub(1).ok_or_else(|| {
+            anyhow::anyhow!("Included wrap transaction {tx_hash} has invalid block number 0")
+        })?;
+        let balance_before = self
+            .erc20_contract
+            .balance_of_at(weth_address, &self.wallet_address, previous_block)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to read WETH balance before included transaction {tx_hash} at block {previous_block}"
+                )
+            })?;
+        let balance_after = self
+            .erc20_contract
+            .balance_of_at(weth_address, &self.wallet_address, block_number)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to read WETH balance after included transaction {tx_hash} at block {block_number}"
+                )
+            })?;
+        let expected_balance = balance_before.checked_add(amount_wei).ok_or_else(|| {
+            anyhow::anyhow!(
+                "WETH balance overflow for included transaction {tx_hash} at block {block_number}: wrap amount {amount_wei} from balance {balance_before}"
+            )
+        })?;
+
+        if balance_after != expected_balance {
+            anyhow::bail!(
+                "WETH balance after transaction {tx_hash} did not increase by {amount_wei}: expected {expected_balance}, was {balance_after}"
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Ensures the router allowance at the block that included transaction `tx_hash` covers
+    /// `amount`. Shared by the live approve path and restart reconciliation.
+    async fn ensure_approve_allowance(
+        &self,
+        token: &Address,
+        router: &Address,
+        amount: U256,
+        tx_hash: B256,
+        block_number: u64,
+    ) -> anyhow::Result<()> {
+        let allowance = self
+            .erc20_contract
+            .allowance_at(token, &self.wallet_address, router, block_number)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to read router allowance after included transaction {tx_hash} at block {block_number}"
+                )
+            })?;
+
+        if allowance < amount {
+            anyhow::bail!(
+                "Router allowance after transaction {tx_hash} is below the requested amount {amount}: was {allowance}"
+            );
+        }
+
         Ok(())
     }
 
@@ -994,6 +1026,11 @@ impl BlockchainExecutionClient {
                             .mark_execution_event_emitted(intent.id, "terminal")
                             .await?;
                     }
+                } else {
+                    self.ensure_recovered_operator_transaction(
+                        &intent, purpose, nonce, &included, &executor,
+                    )
+                    .await?;
                 }
                 executor.release_slot();
             }
@@ -1016,6 +1053,57 @@ impl BlockchainExecutionClient {
             InclusionOutcome::Pending(message) => log::warn!("{message}"),
         }
         Ok(())
+    }
+
+    /// Revalidates a restored wrap or approve against the finalized signer-nonce transaction
+    /// and reruns the live postcondition before the restored intent may report success.
+    ///
+    /// Fails closed: any identity mismatch or unproven postcondition returns an error, which
+    /// keeps the in-flight signer slot occupied and fails the connect attempt.
+    async fn ensure_recovered_operator_transaction(
+        &self,
+        intent: &ExecutionIntentRow,
+        purpose: TransactionPurpose,
+        nonce: u64,
+        included: &IncludedTransaction,
+        executor: &TransactionExecutor,
+    ) -> anyhow::Result<()> {
+        if !finalized_transaction_matches(included, intent, nonce, executor).await? {
+            anyhow::bail!(
+                "Finalized signer-nonce transaction {} does not match the persisted {} intent",
+                included.tx_hash,
+                purpose.as_str()
+            );
+        }
+
+        let (to, input, value) = persisted_call_fields(intent)?;
+
+        match purpose {
+            TransactionPurpose::Wrap => {
+                self.ensure_wrap_balance_increase(
+                    &to,
+                    value,
+                    included.tx_hash,
+                    included.block_number,
+                )
+                .await
+            }
+            TransactionPurpose::Approve => {
+                let call = ERC20::approveCall::abi_decode(&input)
+                    .with_context(|| "persisted approve calldata is invalid")?;
+                self.ensure_approve_allowance(
+                    &to,
+                    &call.spender,
+                    call.amount,
+                    included.tx_hash,
+                    included.block_number,
+                )
+                .await
+            }
+            TransactionPurpose::Swap => {
+                unreachable!("swap intents restore a swap plan")
+            }
+        }
     }
 
     fn ensure_transaction_ready(&self, purpose: TransactionPurpose) -> anyhow::Result<()> {
@@ -2039,23 +2127,30 @@ async fn finalized_transaction_matches(
             included.tx_hash
         );
     };
-    let expected_to = Address::from_str(&intent.transaction_to)
+    let (expected_to, expected_input, expected_value) = persisted_call_fields(intent)?;
+
+    Ok(transaction.from == executor.wallet_address
+        && transaction.nonce == nonce
+        && transaction.to == Some(expected_to)
+        && transaction.input == expected_input
+        && transaction.value == expected_value)
+}
+
+/// Parses the persisted destination, calldata, and value of an execution intent.
+fn persisted_call_fields(intent: &ExecutionIntentRow) -> anyhow::Result<(Address, Bytes, U256)> {
+    let to = Address::from_str(&intent.transaction_to)
         .with_context(|| "persisted execution destination is invalid")?;
-    let expected_input = hex::decode(
+    let input = hex::decode(
         intent
             .transaction_input
             .strip_prefix("0x")
             .unwrap_or(&intent.transaction_input),
     )
     .with_context(|| "persisted execution calldata is invalid")?;
-    let expected_value = U256::from_str(&intent.transaction_value)
+    let value = U256::from_str(&intent.transaction_value)
         .with_context(|| "persisted execution value is invalid")?;
 
-    Ok(transaction.from == executor.wallet_address
-        && transaction.nonce == nonce
-        && transaction.to == Some(expected_to)
-        && transaction.input.as_ref() == expected_input
-        && transaction.value == expected_value)
+    Ok((to, Bytes::from(input), value))
 }
 
 async fn complete_finalized_swap(
@@ -3029,18 +3124,28 @@ mod tests {
     }
 
     async fn expected_wrap_tx_hash(value: U256) -> B256 {
-        // The orchestration's policy math is deterministic: nonce 7 from the fixture,
-        // buffered gas 78000, buffered max fee 130000000, priority fee 10000000
-        let expected_tx = build_eip1559_transaction(
-            42161,
-            7,
-            78_000,
-            130_000_000,
-            10_000_000,
+        expected_tx_hash(
             WETH_ADDRESS,
             value,
             Bytes::from(nautilus_core::hex::decode("d0e30db0").unwrap()),
-        );
+        )
+        .await
+    }
+
+    async fn expected_approve_tx_hash(amount: U256) -> B256 {
+        let calldata = ERC20::approveCall {
+            spender: ROUTER_ADDRESS,
+            amount,
+        }
+        .abi_encode();
+        expected_tx_hash(WETH_ADDRESS, U256::ZERO, Bytes::from(calldata)).await
+    }
+
+    async fn expected_tx_hash(to: Address, value: U256, input: Bytes) -> B256 {
+        // The orchestration's policy math is deterministic: nonce 7 from the fixture,
+        // buffered gas 78000, buffered max fee 130000000, priority fee 10000000
+        let expected_tx =
+            build_eip1559_transaction(42161, 7, 78_000, 130_000_000, 10_000_000, to, value, input);
         let (expected_hash, _) = sign_eip1559_transaction(
             expected_tx,
             &PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
@@ -3471,6 +3576,59 @@ mod tests {
                     "to": WETH,
                     "input": "0xd0e30db0",
                     "value": "0x38d7ea4c68000"
+                }]
+            }
+        })
+        .to_string()
+    }
+
+    /// The canonical block at the receipt height containing the given wrap transaction with
+    /// the exact persisted call fields.
+    fn finalized_wrap_block(tx_hash: B256) -> String {
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "number": "0x1cf0d41",
+                "hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+                "timestamp": "0x69044a21",
+                "baseFeePerGas": "0x5f5e100",
+                "transactions": [{
+                    "hash": tx_hash.to_string(),
+                    "from": WALLET,
+                    "nonce": "0x7",
+                    "to": WETH,
+                    "input": "0xd0e30db0",
+                    "value": "0x38d7ea4c68000"
+                }]
+            }
+        })
+        .to_string()
+    }
+
+    /// The canonical block at the receipt height containing the given approve transaction
+    /// with the exact persisted call fields.
+    fn finalized_approve_block(tx_hash: B256, amount: U256) -> String {
+        let calldata = ERC20::approveCall {
+            spender: ROUTER_ADDRESS,
+            amount,
+        }
+        .abi_encode();
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "number": "0x1cf0d41",
+                "hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+                "timestamp": "0x69044a21",
+                "baseFeePerGas": "0x5f5e100",
+                "transactions": [{
+                    "hash": tx_hash.to_string(),
+                    "from": WALLET,
+                    "nonce": "0x7",
+                    "to": WETH,
+                    "input": hex::encode_prefixed(calldata),
+                    "value": "0x0"
                 }]
             }
         })
@@ -6994,8 +7152,14 @@ mod tests {
         let database = first_client.cache.database.as_ref().unwrap().clone();
         drop(first_client);
 
-        let restart_state =
-            execution_rpc_state().with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS);
+        let restart_state = execution_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_parameter_response(
+                "eth_getBlockByNumber",
+                "0x1cf0d41",
+                &finalized_wrap_block(expected_hash),
+            )
+            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE_AFTER_WRAP]);
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
@@ -7019,6 +7183,13 @@ mod tests {
                 .filter(|request| request["method"] == "eth_getTransactionReceipt")
                 .count(),
             1
+        );
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request["method"] == "eth_call")
+                .count(),
+            2
         );
         assert_eq!(
             requests
@@ -7083,6 +7254,361 @@ mod tests {
         assert!(client.in_flight.lock().unwrap().is_none());
         assert!(
             state
+                .recorded_requests()
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn restart_wrap_identity_mismatch_keeps_signer_ownership() {
+        let initial_state = broadcast_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
+            .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE);
+        let Some((admin_pool, schema, mut first_client, _)) =
+            execution_client_with_database("execution_restart_mismatch_test", initial_state).await
+        else {
+            return;
+        };
+        let expected_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000_u64)).await;
+        let error = first_client
+            .wrap(U256::from(1_000_000_000_000_000_u64))
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("Timed out awaiting finality"),
+            "was: {error}"
+        );
+        let database = first_client.cache.database.as_ref().unwrap().clone();
+        drop(first_client);
+
+        // The finalized transaction carries no value, so it cannot be the persisted wrap
+        let mismatched_block = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "number": "0x1cf0d41",
+                "hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+                "timestamp": "0x69044a21",
+                "baseFeePerGas": "0x5f5e100",
+                "transactions": [{
+                    "hash": expected_hash.to_string(),
+                    "from": WALLET,
+                    "nonce": "0x7",
+                    "to": WETH,
+                    "input": "0xd0e30db0",
+                    "value": "0x0"
+                }]
+            }
+        })
+        .to_string();
+        let restart_state = execution_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &mismatched_block)
+            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE_AFTER_WRAP]);
+        let addr = start_mock_rpc_server(restart_state.clone()).await;
+        let mut restarted = test_client(format!("http://{addr}"));
+        restarted.cache.database = Some(database);
+        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+
+        let error = restarted
+            .reconcile_unresolved_execution()
+            .await
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("does not match the persisted wrap intent"),
+            "was: {error}"
+        );
+        let in_flight = awaiting_in_flight(&restarted);
+        assert_eq!(in_flight.nonce, 7);
+        assert_eq!(in_flight.purpose, TransactionPurpose::Wrap);
+        assert_eq!(in_flight.tx_hash, expected_hash);
+        let requests = restart_state.recorded_requests();
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_call"),
+            "the postcondition must not run when call identity is unproven"
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn restart_wrap_postcondition_failure_keeps_signer_ownership() {
+        let initial_state = broadcast_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
+            .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE);
+        let Some((admin_pool, schema, mut first_client, _)) =
+            execution_client_with_database("execution_restart_postcondition_test", initial_state)
+                .await
+        else {
+            return;
+        };
+        let expected_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000_u64)).await;
+        let error = first_client
+            .wrap(U256::from(1_000_000_000_000_000_u64))
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("Timed out awaiting finality"),
+            "was: {error}"
+        );
+        let database = first_client.cache.database.as_ref().unwrap().clone();
+        drop(first_client);
+
+        // Call identity matches, but the wrapped balance does not increase
+        let restart_state = execution_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_parameter_response(
+                "eth_getBlockByNumber",
+                "0x1cf0d41",
+                &finalized_wrap_block(expected_hash),
+            )
+            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE]);
+        let addr = start_mock_rpc_server(restart_state.clone()).await;
+        let mut restarted = test_client(format!("http://{addr}"));
+        restarted.cache.database = Some(database);
+        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+
+        let error = restarted
+            .reconcile_unresolved_execution()
+            .await
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains("did not increase by"),
+            "was: {error}"
+        );
+        let in_flight = awaiting_in_flight(&restarted);
+        assert_eq!(in_flight.nonce, 7);
+        assert_eq!(in_flight.purpose, TransactionPurpose::Wrap);
+        assert!(
+            restart_state
+                .recorded_requests()
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn restart_reconciles_same_nonce_wrap_replacement_after_validation() {
+        let initial_state = broadcast_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
+            .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE);
+        let Some((admin_pool, schema, mut first_client, _)) =
+            execution_client_with_database("execution_restart_replacement_test", initial_state)
+                .await
+        else {
+            return;
+        };
+        let original_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000_u64)).await;
+        let error = first_client
+            .wrap(U256::from(1_000_000_000_000_000_u64))
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("Timed out awaiting finality"),
+            "was: {error}"
+        );
+        let database = first_client.cache.database.as_ref().unwrap().clone();
+        drop(first_client);
+
+        // The replacement consumes the signer nonce with identical call fields
+        let replacement_hash = B256::from([0x44; 32]);
+        let restart_state = execution_rpc_state()
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT_NEXT)
+            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE_AFTER_WRAP])
+            .with_response_sequence(
+                "eth_getTransactionReceipt",
+                &[RECEIPT_NULL, RECEIPT_SUCCESS],
+            )
+            .with_parameter_response(
+                "eth_getBlockByNumber",
+                "0x1cf0d40",
+                &replacement_head_block(replacement_hash),
+            )
+            .with_parameter_response(
+                "eth_getBlockByNumber",
+                "0x1cf0d41",
+                &finalized_wrap_block(replacement_hash),
+            );
+        let addr = start_mock_rpc_server(restart_state.clone()).await;
+        let mut restarted = test_client(format!("http://{addr}"));
+        restarted.cache.database = Some(database);
+        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        restarted.transaction_limits.receipt_timeout_secs = 2;
+
+        restarted.reconcile_unresolved_execution().await.unwrap();
+
+        let hashes: Vec<(String, String, bool)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT transaction_hash, status, current FROM \
+                 {schema}.execution_transaction_hash ORDER BY id"
+        )))
+        .fetch_all(&admin_pool)
+        .await
+        .unwrap();
+        let requests = restart_state.recorded_requests();
+
+        assert_eq!(
+            hashes,
+            [
+                (original_hash.to_string(), "replaced".to_string(), false),
+                (replacement_hash.to_string(), "finalized".to_string(), true),
+            ]
+        );
+        assert!(restarted.in_flight.lock().unwrap().is_none());
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request["method"] == "eth_getTransactionReceipt")
+                .count(),
+            2
+        );
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request["method"] == "eth_call")
+                .count(),
+            2
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn restart_reconciles_finalized_approve_after_validation() {
+        let initial_state = broadcast_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
+            .with_response("eth_call", CALL_BOOL_TRUE);
+        let Some((admin_pool, schema, mut first_client, _)) =
+            execution_client_with_database("execution_restart_approve_test", initial_state).await
+        else {
+            return;
+        };
+        let expected_hash = expected_approve_tx_hash(U256::from(1_000u64)).await;
+        let error = first_client
+            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("Timed out awaiting finality"),
+            "was: {error}"
+        );
+        let database = first_client.cache.database.as_ref().unwrap().clone();
+        drop(first_client);
+
+        let restart_state = execution_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_parameter_response(
+                "eth_getBlockByNumber",
+                "0x1cf0d41",
+                &finalized_approve_block(expected_hash, U256::from(1_000u64)),
+            )
+            .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE);
+        let addr = start_mock_rpc_server(restart_state.clone()).await;
+        let mut restarted = test_client(format!("http://{addr}"));
+        restarted.cache.database = Some(database);
+        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+
+        restarted.reconcile_unresolved_execution().await.unwrap();
+
+        let record = restarted
+            .cache
+            .get_execution_transaction(42161, &expected_hash.to_string())
+            .await
+            .unwrap()
+            .unwrap();
+        let requests = restart_state.recorded_requests();
+        assert_eq!(record.status, "finalized");
+        assert_eq!(record.purpose, "approve");
+        assert!(restarted.in_flight.lock().unwrap().is_none());
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request["method"] == "eth_call")
+                .count(),
+            1
+        );
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request["method"] == "eth_sendRawTransaction")
+                .count(),
+            0
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn restart_approve_postcondition_failure_keeps_signer_ownership() {
+        let initial_state = broadcast_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
+            .with_response("eth_call", CALL_BOOL_TRUE);
+        let Some((admin_pool, schema, mut first_client, _)) =
+            execution_client_with_database("execution_restart_approve_post_test", initial_state)
+                .await
+        else {
+            return;
+        };
+        let expected_hash = expected_approve_tx_hash(U256::from(1_000u64)).await;
+        let error = first_client
+            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("Timed out awaiting finality"),
+            "was: {error}"
+        );
+        let database = first_client.cache.database.as_ref().unwrap().clone();
+        drop(first_client);
+
+        // Call identity matches, but the allowance does not cover the approved amount
+        let restart_state = execution_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_parameter_response(
+                "eth_getBlockByNumber",
+                "0x1cf0d41",
+                &finalized_approve_block(expected_hash, U256::from(1_000u64)),
+            )
+            .with_call_response(ALLOWANCE_SELECTOR, CALL_ZERO);
+        let addr = start_mock_rpc_server(restart_state.clone()).await;
+        let mut restarted = test_client(format!("http://{addr}"));
+        restarted.cache.database = Some(database);
+        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+
+        let error = restarted
+            .reconcile_unresolved_execution()
+            .await
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains("below the requested amount"),
+            "was: {error}"
+        );
+        let in_flight = awaiting_in_flight(&restarted);
+        assert_eq!(in_flight.nonce, 7);
+        assert_eq!(in_flight.purpose, TransactionPurpose::Approve);
+        assert!(
+            restart_state
                 .recorded_requests()
                 .iter()
                 .all(|request| request["method"] != "eth_sendRawTransaction")

@@ -107,15 +107,23 @@ pub(crate) fn weth_usdc_pool() -> Pool {
 }
 
 pub(crate) async fn start_anvil(fork_rpc_url: &str) -> Option<(AnvilProcess, AnvilStartup)> {
-    let mut child = match Command::new("anvil")
+    start_anvil_at(fork_rpc_url, Some(FORK_BLOCK)).await
+}
+
+pub(crate) async fn start_anvil_at(
+    fork_rpc_url: &str,
+    fork_block: Option<u64>,
+) -> Option<(AnvilProcess, AnvilStartup)> {
+    let mut command = Command::new("anvil");
+    command
         .arg("--fork-url")
         .arg(fork_rpc_url)
-        .arg("--fork-block-number")
-        .arg(FORK_BLOCK.to_string())
         .arg("--retries")
         .arg("8")
         .arg("--fork-retry-backoff")
         .arg("1500")
+        .arg("--accounts")
+        .arg("0")
         .arg("--chain-id")
         .arg(CHAIN_ID.to_string())
         .arg("--block-time")
@@ -124,7 +132,11 @@ pub(crate) async fn start_anvil(fork_rpc_url: &str) -> Option<(AnvilProcess, Anv
         .arg("--slots-in-an-epoch")
         .arg("1")
         .arg("--port")
-        .arg("0")
+        .arg("0");
+    if let Some(block) = fork_block {
+        command.arg("--fork-block-number").arg(block.to_string());
+    }
+    let mut child = match command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -223,14 +235,70 @@ pub(crate) async fn start_anvil(fork_rpc_url: &str) -> Option<(AnvilProcess, Anv
 }
 
 pub(crate) async fn fund_anvil_wallet(anvil_url: &str, wallet: Address) {
+    let response = anvil_rpc(
+        anvil_url,
+        "anvil_setBalance",
+        serde_json::json!([wallet.to_string(), format!("0x{FUND_AMOUNT_WEI:x}")]),
+    )
+    .await;
+    assert_eq!(response["result"], serde_json::Value::Null);
+}
+
+#[allow(
+    dead_code,
+    reason = "used by execution_fork; this harness is compiled into each fork binary"
+)]
+pub(crate) async fn anvil_set_automine(anvil_url: &str, enabled: bool) {
+    let response = anvil_rpc(anvil_url, "evm_setAutomine", serde_json::json!([enabled])).await;
+    assert!(
+        response.get("error").is_none(),
+        "evm_setAutomine failed: {response}"
+    );
+}
+
+#[allow(
+    dead_code,
+    reason = "used by execution_fork; this harness is compiled into each fork binary"
+)]
+pub(crate) async fn anvil_set_interval_mining(anvil_url: &str, seconds: u64) {
+    let response = anvil_rpc(
+        anvil_url,
+        "evm_setIntervalMining",
+        serde_json::json!([seconds]),
+    )
+    .await;
+    assert!(
+        response.get("error").is_none(),
+        "evm_setIntervalMining failed: {response}"
+    );
+}
+
+#[allow(
+    dead_code,
+    reason = "used by execution_fork; this harness is compiled into each fork binary"
+)]
+pub(crate) async fn anvil_mine(anvil_url: &str, blocks: u64) {
+    let response = anvil_rpc(
+        anvil_url,
+        "anvil_mine",
+        serde_json::json!([format!("0x{blocks:x}"), "0x0"]),
+    )
+    .await;
+    assert!(
+        response.get("error").is_none(),
+        "anvil_mine failed: {response}"
+    );
+}
+
+async fn anvil_rpc(anvil_url: &str, method: &str, params: serde_json::Value) -> serde_json::Value {
     let client = HttpClient::new(HashMap::new(), vec![], vec![], None, Some(10), None).unwrap();
     let mut headers = HashMap::new();
     headers.insert("Content-Type".to_string(), "application/json".to_string());
     let body = serde_json::to_vec(&serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "anvil_setBalance",
-        "params": [wallet.to_string(), format!("0x{FUND_AMOUNT_WEI:x}")]
+        "method": method,
+        "params": params
     }))
     .unwrap();
     let response = client
@@ -245,8 +313,7 @@ pub(crate) async fn fund_anvil_wallet(anvil_url: &str, wallet: Address) {
         )
         .await
         .unwrap();
-    let response: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(response["result"], serde_json::Value::Null);
+    serde_json::from_slice(&response.body).unwrap()
 }
 
 // Additive schema only: create the tables this slice needs when absent, never touch
