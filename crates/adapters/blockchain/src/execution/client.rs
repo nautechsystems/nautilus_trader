@@ -91,6 +91,16 @@ use crate::{
 const RECEIPT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// Basis points denominator for slippage derivation.
 const BPS_DENOMINATOR: u32 = 10_000;
+/// Denial reason for order-list submissions, which have no on-chain execution route.
+const ORDER_LIST_UNSUPPORTED: &str =
+    "Order lists are not supported; submit each order individually";
+/// Rejection reason for order modifications, which immutable on-chain swaps cannot support.
+const ORDER_MODIFY_UNSUPPORTED: &str = "Order modification is not supported";
+/// Rejection reason for order cancellations, which immutable on-chain swaps cannot support.
+const ORDER_CANCEL_UNSUPPORTED: &str = "Order cancellation is not supported";
+/// Error for venue report probes that cannot answer without implying absence.
+const VENUE_EXECUTION_REPORTS_UNSUPPORTED: &str =
+    "Venue execution reports are not supported on the blockchain execution client";
 
 // A broadcast transaction awaiting finality, occupying the single in-flight slot.
 #[derive(Debug, Clone, Copy)]
@@ -2498,24 +2508,68 @@ impl ExecutionClient for BlockchainExecutionClient {
         Ok(())
     }
 
-    fn submit_order_list(&self, _cmd: SubmitOrderList) -> anyhow::Result<()> {
-        todo!("implement submit_order_list")
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
+        let orders = self
+            .core
+            .cache()
+            .orders_for_ids(&cmd.order_list.client_order_ids, &cmd);
+
+        for order in &orders {
+            if order.is_closed() {
+                log::warn!("Cannot submit closed order {}", order.client_order_id());
+                continue;
+            }
+
+            self.emitter
+                .emit_order_denied(order, ORDER_LIST_UNSUPPORTED);
+        }
+
+        Ok(())
     }
 
-    fn modify_order(&self, _cmd: ModifyOrder) -> anyhow::Result<()> {
-        todo!("implement modify_order")
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
+        let Ok(order) = self.core.cache().try_order_owned(&cmd.client_order_id) else {
+            log::warn!("Cannot modify unknown order {}", cmd.client_order_id);
+            return Ok(());
+        };
+
+        self.emitter.emit_order_modify_rejected(
+            &order,
+            cmd.venue_order_id,
+            ORDER_MODIFY_UNSUPPORTED,
+            get_atomic_clock_realtime().get_time_ns(),
+        );
+        Ok(())
     }
 
-    fn cancel_order(&self, _cmd: CancelOrder) -> anyhow::Result<()> {
-        todo!("implement cancel_order")
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
+        let Ok(order) = self.core.cache().try_order_owned(&cmd.client_order_id) else {
+            log::warn!("Cannot cancel unknown order {}", cmd.client_order_id);
+            return Ok(());
+        };
+
+        self.emitter.emit_order_cancel_rejected(
+            &order,
+            cmd.venue_order_id,
+            ORDER_CANCEL_UNSUPPORTED,
+            get_atomic_clock_realtime().get_time_ns(),
+        );
+        Ok(())
     }
 
-    fn cancel_all_orders(&self, _cmd: CancelAllOrders) -> anyhow::Result<()> {
-        todo!("implement cancel_all_orders")
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
+        log::warn!(
+            "Cancel-all for {} is not supported on the blockchain execution client",
+            cmd.instrument_id
+        );
+        Ok(())
     }
 
-    fn batch_cancel_orders(&self, _cmd: BatchCancelOrders) -> anyhow::Result<()> {
-        todo!("implement batch_cancel_orders")
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
+        for cancel in cmd.cancels {
+            self.cancel_order(cancel)?;
+        }
+        Ok(())
     }
 
     fn query_account(&self, cmd: QueryAccount) -> anyhow::Result<()> {
@@ -2541,8 +2595,12 @@ impl ExecutionClient for BlockchainExecutionClient {
         )
     }
 
-    fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
-        todo!("implement query_order")
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
+        log::warn!(
+            "Order queries are not supported on the blockchain execution client; cannot query {}",
+            cmd.client_order_id
+        );
+        Ok(())
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
@@ -2659,35 +2717,40 @@ impl ExecutionClient for BlockchainExecutionClient {
         &self,
         _cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        todo!("implement generate_order_status_report")
+        anyhow::bail!("{VENUE_EXECUTION_REPORTS_UNSUPPORTED}");
     }
 
     async fn generate_order_status_reports(
         &self,
         _cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        todo!("implement generate_order_status_reports")
+        anyhow::bail!("{VENUE_EXECUTION_REPORTS_UNSUPPORTED}");
     }
 
     async fn generate_fill_reports(
         &self,
         _cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        todo!("implement generate_fill_reports")
+        anyhow::bail!("{VENUE_EXECUTION_REPORTS_UNSUPPORTED}");
     }
 
     async fn generate_position_status_reports(
         &self,
         _cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        todo!("implement generate_position_status_reports")
+        anyhow::bail!("{VENUE_EXECUTION_REPORTS_UNSUPPORTED}");
     }
 
     async fn generate_mass_status(
         &self,
         _lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        todo!("implement generate_mass_status")
+        // Venue mass status is unsupported; durable intent reconciliation at connect
+        // covers restart recovery, and Ok(None) keeps LiveNode startup safe
+        log::warn!(
+            "Mass status is not supported on the blockchain execution client; skipping venue reconciliation"
+        );
+        Ok(None)
     }
 }
 
@@ -2717,8 +2780,8 @@ mod tests {
         },
         enums::AccountType,
         events::OrderEventAny,
-        identifiers::{StrategyId, TraderId},
-        orders::OrderTestBuilder,
+        identifiers::{OrderListId, StrategyId, TraderId},
+        orders::{OrderList, OrderTestBuilder},
         types::Price,
     };
     use rstest::rstest;
@@ -3099,14 +3162,7 @@ mod tests {
     }
 
     fn test_market_sell_order(instrument_id: InstrumentId) -> OrderAny {
-        OrderTestBuilder::new(OrderType::Market)
-            .trader_id(TraderId::from("TRADER-001"))
-            .strategy_id(StrategyId::from("S-001"))
-            .instrument_id(instrument_id)
-            .client_order_id(ClientOrderId::from("O-SWAP-001"))
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from("0.001"))
-            .build()
+        market_sell_order_with_id(instrument_id, "O-SWAP-001")
     }
 
     fn submit_order_cmd(order: &OrderAny) -> SubmitOrder {
@@ -7687,6 +7743,395 @@ mod tests {
         assert_eq!(record.status, "reverted");
 
         drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    fn market_sell_order_with_id(instrument_id: InstrumentId, client_order_id: &str) -> OrderAny {
+        OrderTestBuilder::new(OrderType::Market)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("S-001"))
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from(client_order_id))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.001"))
+            .build()
+    }
+
+    fn submit_order_list_cmd(orders: &[OrderAny]) -> SubmitOrderList {
+        let order_list = OrderList::new(
+            OrderListId::from("OL-001"),
+            orders[0].instrument_id(),
+            orders[0].strategy_id(),
+            orders.iter().map(|order| order.client_order_id()).collect(),
+            UnixNanos::default(),
+        );
+        SubmitOrderList::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from("BLOCKCHAIN-001")),
+            orders[0].strategy_id(),
+            order_list,
+            orders
+                .iter()
+                .map(|order| order.init_event().clone())
+                .collect(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        )
+    }
+
+    fn modify_order_cmd(
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+    ) -> ModifyOrder {
+        ModifyOrder::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from("BLOCKCHAIN-001")),
+            StrategyId::from("S-001"),
+            instrument_id,
+            client_order_id,
+            None,
+            Some(Quantity::from("0.002")),
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    }
+
+    fn cancel_order_cmd(
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+    ) -> CancelOrder {
+        CancelOrder::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from("BLOCKCHAIN-001")),
+            StrategyId::from("S-001"),
+            instrument_id,
+            client_order_id,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    }
+
+    fn cancel_all_orders_cmd(instrument_id: InstrumentId) -> CancelAllOrders {
+        CancelAllOrders::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from("BLOCKCHAIN-001")),
+            StrategyId::from("S-001"),
+            instrument_id,
+            OrderSide::Sell,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    }
+
+    fn batch_cancel_orders_cmd(cancels: Vec<CancelOrder>) -> BatchCancelOrders {
+        BatchCancelOrders::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from("BLOCKCHAIN-001")),
+            StrategyId::from("S-001"),
+            cancels[0].instrument_id,
+            cancels,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    }
+
+    fn query_order_cmd(instrument_id: InstrumentId, client_order_id: ClientOrderId) -> QueryOrder {
+        QueryOrder::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from("BLOCKCHAIN-001")),
+            StrategyId::from("S-001"),
+            instrument_id,
+            client_order_id,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    }
+
+    async fn unsupported_client_with_mock_rpc()
+    -> (BlockchainExecutionClient, MockRpcState, Rc<RefCell<Cache>>) {
+        let state = ready_rpc_state();
+        let addr = start_mock_rpc_server(state.clone()).await;
+        let (client, cache) = swap_client_with_cache(test_config(format!("http://{addr}")));
+        (client, state, cache)
+    }
+
+    #[tokio::test]
+    async fn submit_order_list_denies_every_order_without_side_effects() {
+        let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
+        let pool = test_pool();
+        let first = test_market_sell_order(pool.instrument_id);
+        let second = market_sell_order_with_id(pool.instrument_id, "O-SWAP-002");
+        cache
+            .borrow_mut()
+            .add_order(second.clone(), None, None, false)
+            .unwrap();
+        let orders = [first.clone(), second.clone()];
+        let mut receiver = start_with_events(&mut client);
+
+        client
+            .submit_order_list(submit_order_list_cmd(&orders))
+            .unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        let mut denied_ids = Vec::new();
+
+        for event in &events {
+            let OrderEventAny::Denied(denied) = event else {
+                panic!("expected OrderDenied, was {event:?}");
+            };
+            assert_eq!(denied.reason.as_str(), ORDER_LIST_UNSUPPORTED);
+            denied_ids.push(denied.client_order_id);
+        }
+        denied_ids.sort();
+        assert_eq!(
+            denied_ids,
+            [first.client_order_id(), second.client_order_id()]
+        );
+        assert!(state.recorded_requests().is_empty());
+        assert!(client.in_flight.lock().unwrap().is_none());
+
+        for order in &orders {
+            let cache_ref = cache.borrow();
+            let cached = cache_ref.order(&order.client_order_id()).unwrap();
+            assert_eq!(cached.status(), OrderStatus::Initialized);
+        }
+    }
+
+    #[tokio::test]
+    async fn modify_order_rejects_without_side_effects() {
+        let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client
+            .modify_order(modify_order_cmd(
+                order.instrument_id(),
+                order.client_order_id(),
+            ))
+            .unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1, "was: {events:?}");
+        let OrderEventAny::ModifyRejected(rejected) = &events[0] else {
+            panic!("expected OrderModifyRejected, was {:?}", events[0]);
+        };
+        assert_eq!(rejected.client_order_id, order.client_order_id());
+        assert_eq!(rejected.reason.as_str(), ORDER_MODIFY_UNSUPPORTED);
+        assert!(state.recorded_requests().is_empty());
+        assert!(client.in_flight.lock().unwrap().is_none());
+        let cache_ref = cache.borrow();
+        let cached = cache_ref.order(&order.client_order_id()).unwrap();
+        assert_eq!(cached.status(), OrderStatus::Initialized);
+    }
+
+    #[tokio::test]
+    async fn cancel_order_rejects_without_side_effects() {
+        let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client
+            .cancel_order(cancel_order_cmd(
+                order.instrument_id(),
+                order.client_order_id(),
+            ))
+            .unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1, "was: {events:?}");
+        let OrderEventAny::CancelRejected(rejected) = &events[0] else {
+            panic!("expected OrderCancelRejected, was {:?}", events[0]);
+        };
+        assert_eq!(rejected.client_order_id, order.client_order_id());
+        assert_eq!(rejected.reason.as_str(), ORDER_CANCEL_UNSUPPORTED);
+        assert!(state.recorded_requests().is_empty());
+        assert!(client.in_flight.lock().unwrap().is_none());
+        let cache_ref = cache.borrow();
+        let cached = cache_ref.order(&order.client_order_id()).unwrap();
+        assert_eq!(cached.status(), OrderStatus::Initialized);
+    }
+
+    #[tokio::test]
+    async fn batch_cancel_orders_rejects_each_order_without_side_effects() {
+        let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
+        let pool = test_pool();
+        let first = test_market_sell_order(pool.instrument_id);
+        let second = market_sell_order_with_id(pool.instrument_id, "O-SWAP-002");
+        cache
+            .borrow_mut()
+            .add_order(second.clone(), None, None, false)
+            .unwrap();
+        let orders = [first.clone(), second.clone()];
+        let cancels = orders
+            .iter()
+            .map(|order| cancel_order_cmd(order.instrument_id(), order.client_order_id()))
+            .collect();
+        let mut receiver = start_with_events(&mut client);
+
+        client
+            .batch_cancel_orders(batch_cancel_orders_cmd(cancels))
+            .unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        let mut rejected_ids = Vec::new();
+
+        for event in &events {
+            let OrderEventAny::CancelRejected(rejected) = event else {
+                panic!("expected OrderCancelRejected, was {event:?}");
+            };
+            assert_eq!(rejected.reason.as_str(), ORDER_CANCEL_UNSUPPORTED);
+            rejected_ids.push(rejected.client_order_id);
+        }
+        rejected_ids.sort();
+        assert_eq!(
+            rejected_ids,
+            [first.client_order_id(), second.client_order_id()]
+        );
+        assert!(state.recorded_requests().is_empty());
+        assert!(client.in_flight.lock().unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn cancel_all_and_query_order_log_unsupported_without_side_effects() {
+        let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client
+            .cancel_all_orders(cancel_all_orders_cmd(order.instrument_id()))
+            .unwrap();
+        client
+            .query_order(query_order_cmd(
+                order.instrument_id(),
+                order.client_order_id(),
+            ))
+            .unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert!(events.is_empty(), "was: {events:?}");
+        assert!(state.recorded_requests().is_empty());
+        assert!(client.in_flight.lock().unwrap().is_none());
+        let cache_ref = cache.borrow();
+        let cached = cache_ref.order(&order.client_order_id()).unwrap();
+        assert_eq!(cached.status(), OrderStatus::Initialized);
+    }
+
+    #[tokio::test]
+    async fn unsupported_commands_handle_unknown_orders_without_panic() {
+        let (mut client, state, _) = unsupported_client_with_mock_rpc().await;
+        let instrument_id = test_pool().instrument_id;
+        let unknown = ClientOrderId::from("O-UNKNOWN");
+        let mut receiver = start_with_events(&mut client);
+
+        client
+            .modify_order(modify_order_cmd(instrument_id, unknown))
+            .unwrap();
+        client
+            .cancel_order(cancel_order_cmd(instrument_id, unknown))
+            .unwrap();
+        client
+            .batch_cancel_orders(batch_cancel_orders_cmd(vec![cancel_order_cmd(
+                instrument_id,
+                unknown,
+            )]))
+            .unwrap();
+        client
+            .query_order(query_order_cmd(instrument_id, unknown))
+            .unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert!(events.is_empty(), "was: {events:?}");
+        assert!(state.recorded_requests().is_empty());
+        assert!(client.in_flight.lock().unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn report_generators_error_except_mass_status_without_side_effects() {
+        let (client, state, _) = unsupported_client_with_mock_rpc().await;
+
+        let report = client
+            .generate_order_status_report(&GenerateOrderStatusReport::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(report.to_string(), VENUE_EXECUTION_REPORTS_UNSUPPORTED);
+
+        let reports = client
+            .generate_order_status_reports(&GenerateOrderStatusReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(reports.to_string(), VENUE_EXECUTION_REPORTS_UNSUPPORTED);
+
+        let fills = client
+            .generate_fill_reports(GenerateFillReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(fills.to_string(), VENUE_EXECUTION_REPORTS_UNSUPPORTED);
+
+        let positions = client
+            .generate_position_status_reports(&GeneratePositionStatusReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(positions.to_string(), VENUE_EXECUTION_REPORTS_UNSUPPORTED);
+
+        let mass_status = client.generate_mass_status(None).await.unwrap();
+        assert!(mass_status.is_none());
+
+        let mass_status = client.generate_mass_status(Some(60)).await.unwrap();
+        assert!(mass_status.is_none());
+
+        assert!(state.recorded_requests().is_empty());
+        assert!(client.in_flight.lock().unwrap().is_none());
     }
 
     async fn connect_test_postgres(

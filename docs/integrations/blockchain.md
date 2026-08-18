@@ -436,7 +436,7 @@ PancakeSwap V3 reuses the Uniswap V3 read contract because `slot0`, `ticks`, `po
 Execution support is under active development. `BlockchainExecutionClient` implements preflight,
 explicit WETH wrap and ERC‑20 approval, local EIP‑1559 signing, durable reconciliation, and one
 Uniswap V3 swap flow. Arbitrum Uniswap V3 is the only chain and DEX combination covered end to end.
-Other order operations are not implemented.
+Other order operations fail closed with no on-chain or durable side effects.
 :::
 
 ### Connection and account state
@@ -496,8 +496,16 @@ order.
 The implementation admits Uniswap V3 on any configured chain whose venue matches. Only Arbitrum
 Uniswap V3 has end‑to‑end adapter coverage, including the fork test described below.
 
-Order lists, modify and cancel commands, and reconciliation report methods are unimplemented and
-currently panic if called.
+Order lists deny each open order with `OrderDenied`; modify, cancel, and batch-cancel commands
+reject each referenced cached order with `OrderModifyRejected` or `OrderCancelRejected`; cancel-all
+commands and order queries log a warning without an event. Mass status returns `Ok(None)` so
+startup reconciliation logs and continues. Order, fill, and position report probes return an error
+so LiveNode does not treat an empty answer as absence. These paths never sign, broadcast, or persist
+an intent.
+
+A swap stays `Submitted` until finality, and venue status queries cannot resolve it. Set
+`inflight_check_interval_ms = 0` and leave open‑order checks off. The engine's default in‑flight
+timeout would otherwise reject a live swap.
 
 Execution routing follows Nautilus's multi‑venue broker pattern because the client represents a
 wallet and RPC connection for one chain while each instrument venue identifies both its chain and
@@ -843,7 +851,7 @@ JSON‑RPC fixtures live under `crates/adapters/blockchain/test_data/execution/`
 
 #### Anvil fork coverage
 
-The opt‑in integration test uses this environment:
+The opt‑in integration suites share this environment:
 
 | Property     | Value                                                                        |
 | ------------ | ---------------------------------------------------------------------------- |
@@ -854,7 +862,7 @@ The opt‑in integration test uses this environment:
 | Transactions | Signed by a fresh funded key and sent only to a random localhost Anvil port. |
 | Persistence  | A reachable Postgres instance.                                               |
 
-The test runs these scenarios:
+The direct-client suite (`execution_fork`) runs these scenarios:
 
 | Scenario                                 | Expected result                                                        |
 | ---------------------------------------- | ---------------------------------------------------------------------- |
@@ -869,45 +877,75 @@ The test runs these scenarios:
 Anvil does not reproduce Arbitrum ArbOS gas pricing. Mocked RPC tests cover gas estimation and fee
 policy.
 
-To run the fork suite with Foundry's Anvil installed:
+A second suite, `execution_livenode_fork`, proves the supported swap slice through the full node
+path: `BlockchainExecutionClientFactory` registration, venue routing, and a strategy submitting a
+SELL market order through the risk and execution engines to a finalized fill with refreshed wallet
+account state. A second node then reconnects after finality with no nonce use, no new intent or
+transaction hash, and its terminal emission markers still in place, so restart reconciliation
+cannot re-emit order events; the direct-client suite's channel-level check covers duplicate event
+emission. Operator wrap and router approval run first through direct client construction, matching
+the `node_wallet` operator tooling, because those operations precede node routing. Its data client
+stub stands in for the HyperSync-backed adapter at the venue boundary only, because HyperSync
+serves the live chain rather than the fork's pinned state; the stub also derives a synthetic quote
+from the pool's on-chain price for market-order risk pricing. The engine-side pool, instrument,
+and profiler restoration it feeds is production code. The suite sets
+`inflight_check_interval_ms = 0` because venue probes cannot resolve a `Submitted` swap.
+
+:::warning
+DeFi pool definitions and account‑state updates publish on typed message‑bus routers.
+A `subscribe_any` handler never receives them. Use `subscribe_defi_pools` and
+`subscribe_account_state` (or the matching actor subscription APIs) when observing those
+events from a test or an external handler.
+:::
+
+To run the fork suites with Foundry's Anvil installed:
 
 ```bash
 BLOCKCHAIN_FORK_TESTS=1 BLOCKCHAIN_FORK_RPC_URL="https://your-archive-capable-arbitrum-rpc.example.com" \
-cargo nextest run -p nautilus-blockchain --features hypersync --test execution_fork
+cargo nextest run -p nautilus-blockchain --features hypersync --test execution_fork --test execution_livenode_fork
 ```
 
-Use a stable Anvil release. Anvil `1.5.1-stable` completes this fork suite; Anvil `1.8.0-nightly`
+Use a stable Anvil release. Anvil `1.5.1-stable` completes these fork suites; Anvil `1.8.0-nightly`
 rejects contract calls at the pinned Arbitrum block with
 `Excess blob gas not set`. Confirm archive support with a historical state read such as
 `eth_getCode` at block `0x1d258c40`: a provider may return that block's header while its historical
 contract state is unavailable.
 
 :::warning
-Without `BLOCKCHAIN_FORK_TESTS=1`, nextest reports the test's early return as a pass. No fork or
+Without `BLOCKCHAIN_FORK_TESTS=1`, nextest reports each test's early return as a pass. No fork or
 transaction ran.
 :::
 
-Once enabled, a missing RPC URL, unreachable Postgres, absent Anvil, or incompatible Anvil fails the
-test. The test removes stale evidence before it starts.
+Once enabled, a missing RPC URL, unreachable Postgres, absent Anvil, or incompatible Anvil fails
+the tests. Each test removes its own stale evidence before it starts, and the two suites serialize
+against each other so they can share one invocation and one Postgres instance.
 
 #### Evidence packet
 
-The suite writes `target/blockchain-fork-evidence/` with:
+Each fork suite writes `target/blockchain-fork-evidence/` with:
 
 - Commit, staged‑patch SHA‑256, and complete working‑tree patch SHA‑256.
 - Chain, fork block, Anvil version, and configured protections.
-- Denial cases, transaction hashes, receipt status, block, gas use, and client order ID.
+- Transaction hashes, receipt status, block, gas use, and client order ID.
 - Observed asset deltas and file SHA‑256 sums.
 
-Verify a successful packet from its directory so the relative path in `SHA256SUMS` resolves:
+The direct-client packet (`run.json`, verified by `SHA256SUMS`) additionally records the pre-trade
+denial cases; the node packet (`livenode-run.json`, verified by `SHA256SUMS.livenode`) additionally
+records the execution client factory, routing venue, reconnect outcome, and account-state event
+count.
+
+Verify a successful packet from its directory so the relative paths in the checksum files
+resolve:
 
 ```bash
 (
 cd target/blockchain-fork-evidence
 if command -v sha256sum >/dev/null 2>&1; then
     sha256sum -c SHA256SUMS
+    sha256sum -c SHA256SUMS.livenode
 else
     shasum -a 256 -c SHA256SUMS
+    shasum -a 256 -c SHA256SUMS.livenode
 fi
 )
 ```
@@ -1164,9 +1202,11 @@ A new protocol family needs the design pass above.
 ## Current limitations
 
 - Order submission supports only SELL market orders swapping a Uniswap V3 pool's base token for
-  its quote token on the client's chain. Order lists, cancel and modify operations, and the
-  reconciliation report methods remain unimplemented and panic if called. BUY-side,
-  quote-denominated, and multi-hop orders are not supported. See [Execution](#execution).
+  its quote token on the client's chain. Order lists are denied, modify and cancel operations are
+  rejected, and venue report probes return an error except mass status, which returns `Ok(None)`;
+  all fail closed with no on-chain or durable side effects. LiveNode must disable in‑flight checks
+  and leave open‑order checks off. BUY-side, quote-denominated, and multi-hop orders are not
+  supported. See [Execution](#execution).
 - Restart reconciliation does not revalidate call identity or rerun contract postconditions for
   wrap and approve intents. Swap reconciliation performs the stronger exact transaction check.
 - Order event publication and its durable marker are separate writes, so the adapter does not
