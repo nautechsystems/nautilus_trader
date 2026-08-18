@@ -58,8 +58,9 @@ when a specific client must handle a request, subscription, or order. Without an
 the data and execution engines use the venue and default routes configured by the node.
 
 :::note[Custom adapter support]
-The public Python API does not define an interface for implementing an out‑of‑tree adapter
-entirely in Python. Use the Rust adapter traits. See the
+The public Python API does not yet define an interface for implementing an out‑of‑tree adapter
+entirely in Python. An out‑of‑tree Python adapter surface is planned. Custom venue integrations
+currently use the Rust adapter traits. See the
 [Python concept guide](python.md#support-boundaries).
 :::
 

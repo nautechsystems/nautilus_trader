@@ -114,9 +114,10 @@ and data types under `nautilus_trader.adapters`. Their integration guides define
 capabilities.
 
 :::note[Custom adapter support]
-Use the Rust adapter traits to implement custom venue integrations. The public Python API supports
-using official adapters, but does not define an interface for implementing an out‑of‑tree adapter
-entirely in Python.
+The public Python API does not yet define an interface for implementing an out‑of‑tree adapter
+entirely in Python. Official adapters remain usable from Python. Custom venue integrations
+currently use the Rust adapter traits. An out‑of‑tree Python adapter surface is planned; see
+[issue 4694](https://github.com/nautechsystems/nautilus_trader/issues/4694).
 :::
 
 Hosted `LiveNode` execution enables Python services to share an asyncio loop with a node. It does

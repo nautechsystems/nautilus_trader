@@ -9,8 +9,9 @@ client traits in Rust, then expose configs, factories, and selected low‑level 
 through PyO3.
 
 :::note
-The public Python API does not define an interface for implementing an out‑of‑tree
-adapter entirely in Python. Implement custom adapters against the Rust client traits.
+The public Python API does not yet define an interface for implementing an out‑of‑tree
+adapter entirely in Python. An out‑of‑tree Python adapter surface is planned. This guide
+covers in‑tree Rust adapters.
 :::
 
 Use reference adapters selectively. Their layouts reflect different venue protocols, product

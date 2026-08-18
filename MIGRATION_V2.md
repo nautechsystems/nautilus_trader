@@ -594,6 +594,13 @@ These gaps can affect migration but do not block supported cutover workflows:
   `LiveNodeBuilder.with_external_msgbus_factory(RedisMessageBusConfig(...))`. See
   [live message‑bus configuration][live-message-bus-config]. The existing
   `RedisMessageBusFactory(RedisMessageBusConfig(...))` wrapper remains supported.
+- Official in‑tree live adapters remain configurable from Python through
+  `LiveNodeBuilder.add_data_client` and `add_exec_client`. Sandbox simulated execution uses
+  `add_simulated_exec_client`. A working sandbox client does not mean a custom live factory will
+  register: neither path currently accepts an out‑of‑tree Python factory, and v1 `LiveDataClient`
+  and `LiveExecutionClient` subclassing has no v2 equivalent yet. An out‑of‑tree Python adapter
+  surface is planned. See [Python support boundaries][python-support-boundaries],
+  [issue 4748][python-v2-custom-clients], and [issue 4694][python-v2-out-of-tree-adapters].
 - PostgreSQL cache position and synthetic loads, actor and strategy state persistence, and cache
   heartbeat remain incomplete.
 - External message-bus publishing of serialized order and position snapshots remains deferred.
@@ -611,8 +618,11 @@ The [v2 roadmap][v2-roadmap] tracks the wider post-cutover surface. Release-spec
 changes remain in [RELEASES.md][release-notes].
 
 [live-message-bus-config]: docs/how_to/configure_live_trading.md#messagebus-configuration
+[python-support-boundaries]: docs/concepts/python.md#support-boundaries
 [python-v2-backtest-tests]: python/tests/acceptance/test_backtest.py
+[python-v2-custom-clients]: https://github.com/nautechsystems/nautilus_trader/issues/4748
 [python-v2-examples]: examples/README.md#live-adapter-examples
+[python-v2-out-of-tree-adapters]: https://github.com/nautechsystems/nautilus_trader/issues/4694
 [python-v2-strategy-config]: python/tests/strategies/ema_cross.py
 [release-notes]: RELEASES.md
 [v2-roadmap]: https://github.com/nautechsystems/nautilus_trader/issues/4042
