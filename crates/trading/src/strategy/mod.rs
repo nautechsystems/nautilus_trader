@@ -2606,6 +2606,11 @@ mod tests {
     }
 
     fn register_strategy(strategy: &mut TestStrategy) {
+        register_strategy_core(&mut strategy.core);
+        strategy.initialize().unwrap();
+    }
+
+    fn register_strategy_core(core: &mut StrategyCore) -> Rc<RefCell<TestClock>> {
         let trader_id = TraderId::from("TRADER-001");
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
@@ -2615,11 +2620,9 @@ mod tests {
             None,
         )));
 
-        strategy
-            .core
-            .register(trader_id, clock, cache, portfolio)
+        core.register(trader_id, clock.clone(), cache, portfolio)
             .unwrap();
-        strategy.initialize().unwrap();
+        clock
     }
 
     fn start_strategy(strategy: &mut TestStrategy) {
@@ -3215,7 +3218,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_submit_order_handoff_extension_bypasses_legacy_override() {
+    fn test_submit_order_handoff_extension_bypasses_legacy_overrides() {
         let config = StrategyConfig {
             strategy_id: Some(StrategyId::from("TEST-001")),
             order_id_tag: Some("001".to_string()),
@@ -3224,19 +3227,13 @@ mod tests {
         let mut strategy = LegacySubmitOverrideStrategy {
             core: StrategyCore::new(config),
         };
-        let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
-        let cache = Rc::new(RefCell::new(Cache::default()));
-        let portfolio = Rc::new(RefCell::new(Portfolio::new(
-            clock.clone(),
-            cache.clone(),
-            None,
-        )));
-        strategy
-            .core
-            .register(trader_id, clock, cache, portfolio)
-            .unwrap();
+        register_strategy_core(&mut strategy.core);
         strategy.initialize().unwrap();
+
+        let legacy_order = make_initialized_market_order("O-20250208-LEGACY-FACADE-001");
+        let legacy_error =
+            Strategy::submit_order(&mut strategy, legacy_order, None, None, None).unwrap_err();
+        assert_eq!(legacy_error.to_string(), "legacy submit override called");
 
         let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
             get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
@@ -3265,31 +3262,7 @@ mod tests {
                 command_id: command.command_id,
             },
         );
-    }
 
-    #[rstest]
-    fn test_submit_order_handoff_extension_bypasses_legacy_denial_override() {
-        let config = StrategyConfig {
-            strategy_id: Some(StrategyId::from("TEST-001")),
-            order_id_tag: Some("001".to_string()),
-            ..Default::default()
-        };
-        let mut strategy = LegacySubmitOverrideStrategy {
-            core: StrategyCore::new(config),
-        };
-        let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
-        let cache = Rc::new(RefCell::new(Cache::default()));
-        let portfolio = Rc::new(RefCell::new(Portfolio::new(
-            clock.clone(),
-            cache.clone(),
-            None,
-        )));
-        strategy
-            .core
-            .register(trader_id, clock, cache, portfolio)
-            .unwrap();
-        strategy.initialize().unwrap();
         strategy.core.is_exiting = true;
         let order = make_initialized_market_order("O-20250208-LEGACY-DENY-001");
 
@@ -3314,18 +3287,7 @@ mod tests {
             ..Default::default()
         };
         let mut strategy = TestStrategy::new(config);
-        let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
-        let cache = Rc::new(RefCell::new(Cache::default()));
-        let portfolio = Rc::new(RefCell::new(Portfolio::new(
-            clock.clone(),
-            cache.clone(),
-            None,
-        )));
-        strategy
-            .core
-            .register(trader_id, clock.clone(), cache, portfolio)
-            .unwrap();
+        let clock = register_strategy_core(&mut strategy.core);
         strategy.initialize().unwrap();
         clock.borrow_mut().cancel_callbacks();
 
