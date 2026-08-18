@@ -3947,13 +3947,29 @@ impl ParquetDataCatalog {
             return Ok(());
         }
 
-        // Convert data class name to filename (e.g., "quotes" -> "quotes")
-        // The data_cls should already be in the correct format (snake_case)
-        let data_name = to_snake_case(data_cls);
+        // Preserve the `custom/` marker that `is_supported_stream_data_type`
+        // checks: `custom/RustTestHashMapCustomData` must not become
+        // `custom_rust_test_hash_map_custom_data`, or the custom branch in
+        // `convert_feather_batches_to_parquet` is never reached and custom
+        // streams silently convert nothing.
+        let data_name = if let Some(type_name) = data_cls.strip_prefix("custom/") {
+            format!("custom/{type_name}")
+        } else {
+            to_snake_case(data_cls)
+        };
+
+        // `FeatherWriter` physically writes custom data beneath
+        // `data/custom/{TypeName}/...` (see `get_writer_path_custom`), while
+        // the logical name keeps the `custom/` marker, so the discovery prefix
+        // is the physical layout rather than `custom/{TypeName}`.
+        let search_prefix = data_name
+            .strip_prefix("custom/")
+            .map(|type_name| format!("data/custom/{type_name}"))
+            .unwrap_or_else(|| data_name.clone());
 
         // List all feather files for this data class
         let feather_files =
-            self.list_feather_files(subdirectory, instance_id, &data_name, identifiers)?;
+            self.list_feather_files(subdirectory, instance_id, &search_prefix, identifiers)?;
 
         if feather_files.is_empty() {
             return Ok(());

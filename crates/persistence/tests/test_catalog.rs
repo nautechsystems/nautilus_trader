@@ -4694,6 +4694,97 @@ fn test_convert_stream_to_data_writes_flat_stream_file() {
     assert_eq!(payload.value(1), "b");
 }
 
+/// Regression for #4607: `convert_stream_to_data` silently converts nothing
+/// for custom data written by `FeatherWriter`.
+///
+/// Two coordinated causes: `to_snake_case` turned `custom/RustTestHashMapCustomData`
+/// into `custom_rust_test_hash_map_custom_data` (destroying the `custom/` marker
+/// that `is_supported_stream_data_type` checks), and file discovery searched
+/// `{data_name}/...` while `FeatherWriter` physically writes beneath
+/// `data/custom/{TypeName}/...`. Conversion returned `Ok(())` with zero files,
+/// and a subsequent custom-data query returned zero records.
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_convert_stream_to_data_converts_custom_data_written_by_feather_writer() {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::clock::{Clock, TestClock};
+    use nautilus_persistence::backend::feather::{FeatherWriter, RotationConfig};
+    use object_store::ObjectStore;
+
+    ensure_test_custom_data_registered();
+
+    let temp_dir = TempDir::new().unwrap();
+    let instance_id = "test_instance_custom_4607";
+    let subdirectory = "live";
+
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
+    let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+
+    // Root the FeatherWriter at the catalog-relative logical path
+    // `{subdirectory}/{instance_id}`: the catalog's own `base_path` is empty
+    // (see `create_local_store`), so it discovers streams under the relative
+    // path `live/{instance_id}/`, and that is where the writer must put files.
+    let writer_root = format!("{subdirectory}/{instance_id}");
+
+    let mut writer = FeatherWriter::new(
+        writer_root,
+        store,
+        clock,
+        RotationConfig::NoRotation,
+        None,
+        None,
+        None,
+    );
+
+    // Write three records for each of two identifiers (six total) through the
+    // same `FeatherWriter` path a live data engine uses.
+    for (ident, base_ts) in [("ident_a", 1000u64), ("ident_b", 2000u64)] {
+        let data_type = DataType::new("RustTestHashMapCustomData", None, Some(ident.to_string()));
+        for i in 0..3 {
+            let item = RustTestHashMapCustomData {
+                name: format!("{ident}_{i}"),
+                prices: HashMap::from([("AUD/USD.SIM".to_string(), Price::from("1.23456"))]),
+                ts_event: UnixNanos::from(base_ts + i),
+                ts_init: UnixNanos::from(base_ts + i),
+            };
+            let data = Data::Custom(CustomData::new(Arc::new(item), data_type.clone()));
+            writer.write_data(data).await.unwrap();
+        }
+    }
+    writer.close().await.unwrap();
+
+    catalog
+        .convert_stream_to_data(
+            instance_id,
+            "custom/RustTestHashMapCustomData",
+            Some(subdirectory),
+            None,
+            false,
+        )
+        .unwrap();
+
+    let loaded = catalog
+        .query_custom_data_dynamic(
+            "RustTestHashMapCustomData",
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+
+    assert_eq!(
+        loaded.len(),
+        6,
+        "all FeatherWriter custom records must convert to queryable parquet"
+    );
+}
+
 #[rstest]
 fn test_convert_stream_to_data_keeps_flat_stream_file_with_identifiers() {
     use std::sync::Arc;
