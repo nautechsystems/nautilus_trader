@@ -445,6 +445,11 @@ impl<P, R> Paginator<P, R> {
                         endpoint: self.endpoint,
                     })
                 })?;
+            log::debug!(
+                "Fetched {} page {prospective_pages}: {} rows ({prospective_rows} total)",
+                self.endpoint,
+                rows.len(),
+            );
             let observation = self
                 .protocol
                 .observe(&position, prospective_pages, &rows, wire)

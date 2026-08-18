@@ -110,6 +110,22 @@ fn trade_page_fingerprint(rows: &[DataApiTrade]) -> PageFingerprint {
     fingerprint_multiset(2, descriptors)
 }
 
+fn validate_trade_page_scope(
+    rows: Vec<DataApiTrade>,
+    expected_condition_id: &str,
+) -> anyhow::Result<Vec<DataApiTrade>> {
+    match rows
+        .iter()
+        .find(|trade| trade.condition_id != expected_condition_id)
+    {
+        Some(trade) => anyhow::bail!(
+            "Polymarket Data API returned trade for condition {} while requesting {expected_condition_id}",
+            trade.condition_id
+        ),
+        None => Ok(rows),
+    }
+}
+
 fn encode_decimal(output: &mut Vec<u8>, value: Decimal) {
     let normalized = value.normalize();
     output.extend_from_slice(&normalized.mantissa().to_be_bytes());
@@ -428,7 +444,10 @@ impl PolymarketDataApiHttpClient {
                         )
                         .await
                     {
-                        Ok(rows) => Ok(FetchOutcome::Page { rows, wire: () }),
+                        Ok(rows) => Ok(FetchOutcome::Page {
+                            rows: validate_trade_page_scope(rows, condition_id)?,
+                            wire: (),
+                        }),
                         Err(e) if is_historical_offset_ceiling(&e) => {
                             Ok(FetchOutcome::Stop(TradeTickStop::VenueOffsetCeiling(
                                 OffsetCeilingSource::Remote(e.to_string()),
@@ -469,10 +488,12 @@ impl PolymarketDataApiHttpClient {
 }
 
 fn is_historical_offset_ceiling(error: &Error) -> bool {
-    matches!(
-        error,
-        Error::Http { message, .. } if message.contains("max historical activity offset")
-    )
+    match error {
+        Error::Http { message, .. } | Error::RateLimit { message, .. } => {
+            message.contains("max historical activity offset")
+        }
+        _ => false,
+    }
 }
 
 fn count_matching_trades_within_end(
