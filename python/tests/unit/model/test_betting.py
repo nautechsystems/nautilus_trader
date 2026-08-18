@@ -15,6 +15,8 @@
 
 from decimal import Decimal
 
+import pytest
+
 from nautilus_trader.model import Bet
 from nautilus_trader.model import BetPosition
 from nautilus_trader.model import BetSide
@@ -90,3 +92,83 @@ def test_bet_side_helpers():
     assert BetSide.from_str("BACK") == BetSide.BACK
     assert BetSide.from_order_side(OrderSide.BUY) == BetSide.BACK
     assert BetSide.BACK.opposite() == BetSide.LAY
+
+
+def test_from_liability_rejects_back_side():
+    with pytest.raises(ValueError, match="Liability-based betting is only applicable for Lay side"):
+        Bet.from_liability(Decimal("2.0"), Decimal(100), BetSide.BACK)
+
+
+@pytest.mark.parametrize("price", [Decimal(1), Decimal(0), Decimal(-1)])
+def test_from_liability_rejects_odds_at_or_below_one(price: Decimal):
+    with pytest.raises(ValueError, match=r"Price must be greater than 1\.0"):
+        Bet.from_liability(price, Decimal(100), BetSide.LAY)
+
+
+def test_from_stake_or_liability_rejects_lay_odds_at_one():
+    with pytest.raises(ValueError, match=r"Price must be greater than 1\.0"):
+        Bet.from_stake_or_liability(Decimal(1), Decimal(100), BetSide.LAY)
+
+
+def test_from_stake_or_liability_allows_back_odds_at_one():
+    bet = Bet.from_stake_or_liability(Decimal(1), Decimal(10), BetSide.BACK)
+
+    assert bet.price == Decimal(1)
+    assert bet.stake == Decimal(10)
+    assert bet.side == BetSide.BACK
+    assert bet.exposure() == Decimal(10)
+    assert bet.profit() == Decimal(0)
+
+
+def test_hedging_rejects_zero_price():
+    bet = Bet(Decimal("2.0"), Decimal(10), BetSide.BACK)
+
+    with pytest.raises(ValueError, match="must be non-zero"):
+        bet.hedging_stake(Decimal(0))
+    with pytest.raises(ValueError, match="must be non-zero"):
+        bet.hedging_bet(Decimal(0))
+
+
+def test_exposure_rejects_decimal_overflow():
+    bet = Bet(Decimal(79228162514264337593543950335), Decimal(2), BetSide.BACK)
+
+    with pytest.raises(ValueError, match="Decimal overflow"):
+        bet.exposure()
+
+
+def test_flattening_bet_rejects_zero_price():
+    position = BetPosition()
+    position.add_bet(Bet.from_stake(Decimal("2.0"), Decimal(10), BetSide.BACK))
+
+    with pytest.raises(ValueError, match="must be non-zero"):
+        position.flattening_bet(Decimal(0))
+
+
+def test_mark_to_market_rejects_zero_price():
+    position = BetPosition()
+    position.add_bet(Bet.from_stake(Decimal("2.0"), Decimal(10), BetSide.BACK))
+
+    with pytest.raises(ValueError, match="must be non-zero"):
+        position.unrealized_pnl(Decimal(0))
+    with pytest.raises(ValueError, match="must be non-zero"):
+        position.total_pnl(Decimal(0))
+
+
+def test_add_bet_rejects_overflow_and_leaves_position_unchanged():
+    position = BetPosition()
+    position.add_bet(Bet.from_stake(Decimal("2.0"), Decimal(10), BetSide.BACK))
+    before_price = position.price
+    before_exposure = position.exposure
+
+    with pytest.raises(ValueError, match="Decimal overflow"):
+        position.add_bet(Bet(Decimal(79228162514264337593543950335), Decimal(2), BetSide.BACK))
+
+    assert position.price == before_price
+    assert position.exposure == before_exposure
+
+
+def test_probability_conversion_rejects_unspecified_side():
+    with pytest.raises(ValueError, match="must be Buy or Sell"):
+        probability_to_bet(Decimal("0.4"), Decimal(10), OrderSide.NO_ORDER_SIDE)
+    with pytest.raises(ValueError, match="must be Buy or Sell"):
+        inverse_probability_to_bet(Decimal("0.4"), Decimal(10), OrderSide.NO_ORDER_SIDE)

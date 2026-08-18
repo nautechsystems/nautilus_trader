@@ -23,7 +23,10 @@ use pyo3::{basic::CompareOp, prelude::*};
 use rust_decimal::Decimal;
 
 use crate::{
-    data::bet::{Bet, BetPosition, calc_bets_pnl, inverse_probability_to_bet, probability_to_bet},
+    data::bet::{
+        Bet, BetPosition, calc_bets_pnl_checked, inverse_probability_to_bet, probability_to_bet,
+        specified_order_side,
+    },
     enums::{BetSide, OrderSide},
 };
 
@@ -64,8 +67,12 @@ impl Bet {
     /// `BetSide::Lay` it calls `Self.from_liability`.
     #[staticmethod]
     #[pyo3(name = "from_stake_or_liability")]
-    fn py_from_stake_or_liability(price: Decimal, volume: Decimal, side: BetSide) -> Self {
-        Self::from_stake_or_liability(price, volume, side)
+    fn py_from_stake_or_liability(
+        price: Decimal,
+        volume: Decimal,
+        side: BetSide,
+    ) -> PyResult<Self> {
+        Self::from_stake_or_liability_checked(price, volume, side).map_err(to_pyvalue_err)
     }
 
     /// Creates a bet from a given stake.
@@ -78,8 +85,8 @@ impl Bet {
     /// Creates a bet from a given liability.
     #[staticmethod]
     #[pyo3(name = "from_liability")]
-    fn py_from_liability(price: Decimal, liability: Decimal, side: BetSide) -> Self {
-        Self::from_liability(price, liability, side)
+    fn py_from_liability(price: Decimal, liability: Decimal, side: BetSide) -> PyResult<Self> {
+        Self::from_liability_checked(price, liability, side).map_err(to_pyvalue_err)
     }
 
     /// Returns the bet's price.
@@ -107,8 +114,8 @@ impl Bet {
     ///
     /// For BACK bets, exposure is positive; for LAY bets, it is negative.
     #[pyo3(name = "exposure")]
-    fn py_exposure(&self) -> Decimal {
-        self.exposure()
+    fn py_exposure(&self) -> PyResult<Decimal> {
+        self.exposure_checked().map_err(to_pyvalue_err)
     }
 
     /// Returns the bet's liability.
@@ -116,44 +123,44 @@ impl Bet {
     /// For BACK bets, liability equals the stake; for LAY bets, it is
     /// stake multiplied by (price - 1).
     #[pyo3(name = "liability")]
-    fn py_liability(&self) -> Decimal {
-        self.liability()
+    fn py_liability(&self) -> PyResult<Decimal> {
+        self.liability_checked().map_err(to_pyvalue_err)
     }
 
     /// Returns the bet's profit.
     ///
     /// For BACK bets, profit is stake * (price - 1); for LAY bets it equals the stake.
     #[pyo3(name = "profit")]
-    fn py_profit(&self) -> Decimal {
-        self.profit()
+    fn py_profit(&self) -> PyResult<Decimal> {
+        self.profit_checked().map_err(to_pyvalue_err)
     }
 
     /// Returns the outcome win payoff.
     ///
     /// For BACK bets this is the profit; for LAY bets it is the negative liability.
     #[pyo3(name = "outcome_win_payoff")]
-    fn py_outcome_win_payoff(&self) -> Decimal {
-        self.outcome_win_payoff()
+    fn py_outcome_win_payoff(&self) -> PyResult<Decimal> {
+        self.outcome_win_payoff_checked().map_err(to_pyvalue_err)
     }
 
     /// Returns the outcome lose payoff.
     ///
     /// For BACK bets this is the negative liability; for LAY bets it is the profit.
     #[pyo3(name = "outcome_lose_payoff")]
-    fn py_outcome_lose_payoff(&self) -> Decimal {
-        self.outcome_lose_payoff()
+    fn py_outcome_lose_payoff(&self) -> PyResult<Decimal> {
+        self.outcome_lose_payoff_checked().map_err(to_pyvalue_err)
     }
 
     /// Returns the hedging stake given a new price.
     #[pyo3(name = "hedging_stake")]
-    fn py_hedging_stake(&self, price: Decimal) -> Decimal {
-        self.hedging_stake(price)
+    fn py_hedging_stake(&self, price: Decimal) -> PyResult<Decimal> {
+        self.hedging_stake_checked(price).map_err(to_pyvalue_err)
     }
 
     /// Creates a hedging bet for a given price.
     #[pyo3(name = "hedging_bet")]
-    fn py_hedging_bet(&self, price: Decimal) -> Self {
-        self.hedging_bet(price)
+    fn py_hedging_bet(&self, price: Decimal) -> PyResult<Self> {
+        self.hedging_bet_checked(price).map_err(to_pyvalue_err)
     }
 }
 
@@ -206,32 +213,32 @@ impl BetPosition {
 
     /// Adds a bet to the position, adjusting exposure and realized PnL.
     #[pyo3(name = "add_bet")]
-    fn py_add_bet(&mut self, bet: &Bet) {
-        self.add_bet(bet.clone());
+    fn py_add_bet(&mut self, bet: &Bet) -> PyResult<()> {
+        self.add_bet_checked(bet.clone()).map_err(to_pyvalue_err)
     }
 
     /// Converts the current position into a single bet, if possible.
     #[pyo3(name = "as_bet")]
-    fn py_as_bet(&self) -> Option<Bet> {
-        self.as_bet()
+    fn py_as_bet(&self) -> PyResult<Option<Bet>> {
+        self.as_bet_checked().map_err(to_pyvalue_err)
     }
 
     /// Calculates the unrealized profit and loss given a current price.
     #[pyo3(name = "unrealized_pnl")]
-    fn py_unrealized_pnl(&self, price: Decimal) -> Decimal {
-        self.unrealized_pnl(price)
+    fn py_unrealized_pnl(&self, price: Decimal) -> PyResult<Decimal> {
+        self.unrealized_pnl_checked(price).map_err(to_pyvalue_err)
     }
 
     /// Returns the total profit and loss (realized plus unrealized) given a current price.
     #[pyo3(name = "total_pnl")]
-    fn py_total_pnl(&self, price: Decimal) -> Decimal {
-        self.total_pnl(price)
+    fn py_total_pnl(&self, price: Decimal) -> PyResult<Decimal> {
+        self.total_pnl_checked(price).map_err(to_pyvalue_err)
     }
 
     /// Creates a bet that would flatten (neutralize) the current position.
     #[pyo3(name = "flattening_bet")]
-    fn py_flattening_bet(&self, price: Decimal) -> Option<Bet> {
-        self.flattening_bet(price)
+    fn py_flattening_bet(&self, price: Decimal) -> PyResult<Option<Bet>> {
+        self.flattening_bet_checked(price).map_err(to_pyvalue_err)
     }
 
     /// Resets the bet position to its initial state.
@@ -247,7 +254,7 @@ impl BetPosition {
 #[pyo3(name = "calc_bets_pnl")]
 #[expect(clippy::needless_pass_by_value)]
 pub fn py_calc_bets_pnl(bets: Vec<Bet>) -> PyResult<Decimal> {
-    Ok(calc_bets_pnl(&bets))
+    calc_bets_pnl_checked(&bets).map_err(to_pyvalue_err)
 }
 
 /// Converts a probability and volume into a Bet.
@@ -256,7 +263,7 @@ pub fn py_calc_bets_pnl(bets: Vec<Bet>) -> PyResult<Decimal> {
 ///
 /// # Errors
 ///
-/// Returns an error if `probability` is zero.
+/// Returns an error if `probability` is zero or the conversion overflows.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(name = "probability_to_bet")]
@@ -265,7 +272,12 @@ pub fn py_probability_to_bet(
     volume: Decimal,
     side: OrderSide,
 ) -> PyResult<Bet> {
-    probability_to_bet(probability, volume, side.as_specified()).map_err(to_pyvalue_err)
+    probability_to_bet(
+        probability,
+        volume,
+        specified_order_side(side).map_err(to_pyvalue_err)?,
+    )
+    .map_err(to_pyvalue_err)
 }
 
 /// Converts a probability and volume into a Bet using the inverse probability.
@@ -283,5 +295,10 @@ pub fn py_inverse_probability_to_bet(
     volume: Decimal,
     side: OrderSide,
 ) -> PyResult<Bet> {
-    inverse_probability_to_bet(probability, volume, side.as_specified()).map_err(to_pyvalue_err)
+    inverse_probability_to_bet(
+        probability,
+        volume,
+        specified_order_side(side).map_err(to_pyvalue_err)?,
+    )
+    .map_err(to_pyvalue_err)
 }

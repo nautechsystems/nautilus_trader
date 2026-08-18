@@ -19,7 +19,7 @@ use std::fmt::Display;
 
 use rust_decimal::Decimal;
 
-use crate::enums::{BetSide, OrderSideSpecified};
+use crate::enums::{BetSide, OrderSide, OrderSideSpecified};
 
 /// A bet in a betting market.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -66,11 +66,28 @@ impl Bet {
     ///
     /// For `BetSide::Back` this calls [`Self::from_stake`] and for
     /// `BetSide::Lay` it calls [`Self::from_liability`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `side` is [`BetSide::Lay`] and [`Self::from_liability`] panics.
     #[must_use]
     pub fn from_stake_or_liability(price: Decimal, volume: Decimal, side: BetSide) -> Self {
+        Self::from_stake_or_liability_checked(price, volume, side).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Creates a bet from a stake or liability depending on the bet side.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `side` is [`BetSide::Lay`] and [`Self::from_liability_checked`] fails.
+    pub fn from_stake_or_liability_checked(
+        price: Decimal,
+        volume: Decimal,
+        side: BetSide,
+    ) -> anyhow::Result<Self> {
         match side {
-            BetSide::Back => Self::from_stake(price, volume, side),
-            BetSide::Lay => Self::from_liability(price, volume, side),
+            BetSide::Back => Ok(Self::from_stake(price, volume, side)),
+            BetSide::Lay => Self::from_liability_checked(price, volume, side),
         }
     }
 
@@ -84,90 +101,204 @@ impl Bet {
     ///
     /// # Panics
     ///
-    /// Panics if the side is not [`BetSide::Lay`], or if `price` is not greater than 1.
+    /// Panics if the side is not [`BetSide::Lay`], if `price` is not greater than 1,
+    /// or if the stake calculation overflows.
     #[must_use]
     pub fn from_liability(price: Decimal, liability: Decimal, side: BetSide) -> Self {
-        assert!(
-            side == BetSide::Lay,
-            "Liability-based betting is only applicable for Lay side."
-        );
-        assert!(
-            price > Decimal::ONE,
-            "Price must be greater than 1.0 for lay liability calculation, was {price}"
-        );
-        let adjusted_volume = liability / (price - Decimal::ONE);
-        Self::new(price, adjusted_volume, side)
+        Self::from_liability_checked(price, liability, side).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Creates a bet from a given liability.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the side is not [`BetSide::Lay`], if `price` is not greater
+    /// than 1, or if the stake calculation overflows.
+    pub fn from_liability_checked(
+        price: Decimal,
+        liability: Decimal,
+        side: BetSide,
+    ) -> anyhow::Result<Self> {
+        if side != BetSide::Lay {
+            anyhow::bail!("Liability-based betting is only applicable for Lay side.");
+        }
+
+        check_odds_gt_one(price)?;
+        let stake = checked_div(liability, checked_sub(price, Decimal::ONE)?)?;
+        Ok(Self::new(price, stake, side))
     }
 
     /// Returns the bet's exposure.
     ///
     /// For BACK bets, exposure is positive; for LAY bets, it is negative.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the calculation overflows.
     #[must_use]
     pub fn exposure(&self) -> Decimal {
-        match self.side {
-            BetSide::Back => self.price * self.stake,
-            BetSide::Lay => -self.price * self.stake,
-        }
+        self.exposure_checked().unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Returns the bet's exposure.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the calculation overflows.
+    pub fn exposure_checked(&self) -> anyhow::Result<Decimal> {
+        let notional = checked_mul(self.price, self.stake)?;
+        Ok(match self.side {
+            BetSide::Back => notional,
+            BetSide::Lay => -notional,
+        })
     }
 
     /// Returns the bet's liability.
     ///
     /// For BACK bets, liability equals the stake; for LAY bets, it is
     /// stake multiplied by (price - 1).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the calculation overflows.
     #[must_use]
     pub fn liability(&self) -> Decimal {
+        self.liability_checked().unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Returns the bet's liability.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the calculation overflows.
+    pub fn liability_checked(&self) -> anyhow::Result<Decimal> {
         match self.side {
-            BetSide::Back => self.stake,
-            BetSide::Lay => self.stake * (self.price - Decimal::ONE),
+            BetSide::Back => Ok(self.stake),
+            BetSide::Lay => checked_mul(self.stake, checked_sub(self.price, Decimal::ONE)?),
         }
     }
 
     /// Returns the bet's profit.
     ///
     /// For BACK bets, profit is stake * (price - 1); for LAY bets it equals the stake.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the calculation overflows.
     #[must_use]
     pub fn profit(&self) -> Decimal {
+        self.profit_checked().unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Returns the bet's profit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the calculation overflows.
+    pub fn profit_checked(&self) -> anyhow::Result<Decimal> {
         match self.side {
-            BetSide::Back => self.stake * (self.price - Decimal::ONE),
-            BetSide::Lay => self.stake,
+            BetSide::Back => checked_mul(self.stake, checked_sub(self.price, Decimal::ONE)?),
+            BetSide::Lay => Ok(self.stake),
         }
     }
 
     /// Returns the outcome win payoff.
     ///
     /// For BACK bets this is the profit; for LAY bets it is the negative liability.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the calculation overflows.
     #[must_use]
     pub fn outcome_win_payoff(&self) -> Decimal {
+        self.outcome_win_payoff_checked()
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Returns the outcome win payoff.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the calculation overflows.
+    pub fn outcome_win_payoff_checked(&self) -> anyhow::Result<Decimal> {
         match self.side {
-            BetSide::Back => self.profit(),
-            BetSide::Lay => -self.liability(),
+            BetSide::Back => self.profit_checked(),
+            BetSide::Lay => Ok(-self.liability_checked()?),
         }
     }
 
     /// Returns the outcome lose payoff.
     ///
     /// For BACK bets this is the negative liability; for LAY bets it is the profit.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the calculation overflows.
     #[must_use]
     pub fn outcome_lose_payoff(&self) -> Decimal {
+        self.outcome_lose_payoff_checked()
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Returns the outcome lose payoff.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the calculation overflows.
+    pub fn outcome_lose_payoff_checked(&self) -> anyhow::Result<Decimal> {
         match self.side {
-            BetSide::Back => -self.liability(),
-            BetSide::Lay => self.profit(),
+            BetSide::Back => Ok(-self.liability_checked()?),
+            BetSide::Lay => self.profit_checked(),
         }
     }
 
     /// Returns the hedging stake given a new price.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `price` is zero, if this bet's price is zero on the lay path,
+    /// or if the calculation overflows.
     #[must_use]
     pub fn hedging_stake(&self, price: Decimal) -> Decimal {
+        self.hedging_stake_checked(price)
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Returns the hedging stake given a new price.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `price` is zero, if this bet's price is zero on the
+    /// lay path, or if the calculation overflows.
+    pub fn hedging_stake_checked(&self, price: Decimal) -> anyhow::Result<Decimal> {
         match self.side {
-            BetSide::Back => (self.price / price) * self.stake,
-            BetSide::Lay => self.stake / (price / self.price),
+            BetSide::Back => checked_mul(checked_div(self.price, price)?, self.stake),
+            BetSide::Lay => checked_div(self.stake, checked_div(price, self.price)?),
         }
     }
 
     /// Creates a hedging bet for a given price.
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`Self::hedging_stake`] panics.
     #[must_use]
     pub fn hedging_bet(&self, price: Decimal) -> Self {
-        Self::new(price, self.hedging_stake(price), self.side.opposite())
+        self.hedging_bet_checked(price)
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Creates a hedging bet for a given price.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if [`Self::hedging_stake_checked`] fails.
+    pub fn hedging_bet_checked(&self, price: Decimal) -> anyhow::Result<Self> {
+        Ok(Self::new(
+            price,
+            self.hedging_stake_checked(price)?,
+            self.side.opposite(),
+        ))
     }
 }
 
@@ -248,15 +379,32 @@ impl BetPosition {
     }
 
     /// Converts the current position into a single bet, if possible.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the position has a side and `price` is zero, or if the
+    /// calculation overflows.
     #[must_use]
     pub fn as_bet(&self) -> Option<Bet> {
-        self.side().map(|side| {
-            let stake = match side {
-                BetSide::Back => self.exposure / self.price,
-                BetSide::Lay => -self.exposure / self.price,
-            };
-            Bet::new(self.price, stake, side)
-        })
+        self.as_bet_checked().unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Converts the current position into a single bet, if possible.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the position has a side and `price` is zero, or if
+    /// the calculation overflows.
+    pub fn as_bet_checked(&self) -> anyhow::Result<Option<Bet>> {
+        let Some(side) = self.side() else {
+            return Ok(None);
+        };
+        check_nonzero_denominator(self.price, "price")?;
+        let stake = match side {
+            BetSide::Back => checked_div(self.exposure, self.price)?,
+            BetSide::Lay => checked_div(-self.exposure, self.price)?,
+        };
+        Ok(Some(Bet::new(self.price, stake, side)))
     }
 
     /// Adds a bet to the position, adjusting exposure and realized PnL.
@@ -272,6 +420,94 @@ impl BetPosition {
             }
         }
         self.bets.push(bet);
+    }
+
+    /// Adds a bet to the position, adjusting exposure and realized PnL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a denominator is zero or a Decimal calculation overflows.
+    /// On error the position is left unchanged.
+    pub fn add_bet_checked(&mut self, bet: Bet) -> anyhow::Result<()> {
+        let (price, exposure, realized_pnl) = match self.side() {
+            None => self.increased_state(&bet)?,
+            Some(current_side) if current_side == bet.side => self.increased_state(&bet)?,
+            Some(_) => self.decreased_state(&bet)?,
+        };
+        self.price = price;
+        self.exposure = exposure;
+        self.realized_pnl = realized_pnl;
+        self.bets.push(bet);
+        Ok(())
+    }
+
+    fn increased_state(&self, bet: &Bet) -> anyhow::Result<(Decimal, Decimal, Decimal)> {
+        let bet_exposure = bet.exposure_checked()?;
+        let price = if self.side().is_none() {
+            bet.price
+        } else if self.side() == Some(bet.side)
+            && self.price > Decimal::ZERO
+            && bet.price > Decimal::ZERO
+            && bet.stake > Decimal::ZERO
+        {
+            let abs_self_exposure = self.exposure.abs();
+            let abs_bet_exposure = bet_exposure.abs();
+            let total_stake = checked_add(checked_div(abs_self_exposure, self.price)?, bet.stake)?;
+            checked_div(
+                checked_add(abs_self_exposure, abs_bet_exposure)?,
+                total_stake,
+            )?
+        } else {
+            self.price
+        };
+        Ok((
+            price,
+            checked_add(self.exposure, bet_exposure)?,
+            self.realized_pnl,
+        ))
+    }
+
+    fn decreased_state(&self, bet: &Bet) -> anyhow::Result<(Decimal, Decimal, Decimal)> {
+        let current_side = self
+            .side()
+            .ok_or_else(|| anyhow::anyhow!("cannot decrease an empty bet position"))?;
+        let bet_exposure = bet.exposure_checked()?;
+        let abs_bet_exposure = bet_exposure.abs();
+        let abs_self_exposure = self.exposure.abs();
+
+        match abs_bet_exposure.cmp(&abs_self_exposure) {
+            std::cmp::Ordering::Less => {
+                check_nonzero_denominator(self.price, "price")?;
+                let decreasing_volume = checked_div(abs_bet_exposure, self.price)?;
+                let decreasing_bet = Bet::new(self.price, decreasing_volume, current_side);
+                let pnl = calc_bets_pnl_checked(&[bet.clone(), decreasing_bet])?;
+                Ok((
+                    self.price,
+                    checked_add(self.exposure, bet_exposure)?,
+                    checked_add(self.realized_pnl, pnl)?,
+                ))
+            }
+            std::cmp::Ordering::Greater => Ok((
+                bet.price,
+                checked_add(self.exposure, bet_exposure)?,
+                self.realized_after_close(bet)?,
+            )),
+            std::cmp::Ordering::Equal => Ok((
+                Decimal::ZERO,
+                Decimal::ZERO,
+                self.realized_after_close(bet)?,
+            )),
+        }
+    }
+
+    fn realized_after_close(&self, bet: &Bet) -> anyhow::Result<Decimal> {
+        match self.as_bet_checked()? {
+            Some(self_bet) => checked_add(
+                self.realized_pnl,
+                calc_bets_pnl_checked(&[bet.clone(), self_bet])?,
+            ),
+            None => Ok(self.realized_pnl),
+        }
     }
 
     /// Increases the position with the provided bet.
@@ -338,38 +574,82 @@ impl BetPosition {
     }
 
     /// Calculates the unrealized profit and loss given a current price.
+    ///
+    /// # Panics
+    ///
+    /// Panics if flattening or marking the position overflows or divides by zero.
     #[must_use]
     pub fn unrealized_pnl(&self, price: Decimal) -> Decimal {
+        self.unrealized_pnl_checked(price)
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Calculates the unrealized profit and loss given a current price.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if flattening or marking the position overflows or divides by zero.
+    pub fn unrealized_pnl_checked(&self, price: Decimal) -> anyhow::Result<Decimal> {
         if self.side().is_none() {
-            Decimal::ZERO
-        } else if let Some(flattening_bet) = self.flattening_bet(price) {
-            if let Some(self_bet) = self.as_bet() {
-                calc_bets_pnl(&[flattening_bet, self_bet])
-            } else {
-                Decimal::ZERO
-            }
-        } else {
-            Decimal::ZERO
+            return Ok(Decimal::ZERO);
         }
+        let Some(flattening_bet) = self.flattening_bet_checked(price)? else {
+            return Ok(Decimal::ZERO);
+        };
+        let Some(self_bet) = self.as_bet_checked()? else {
+            return Ok(Decimal::ZERO);
+        };
+        calc_bets_pnl_checked(&[flattening_bet, self_bet])
     }
 
     /// Returns the total profit and loss (realized plus unrealized) given a current price.
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`Self::unrealized_pnl`] panics or the sum overflows.
     #[must_use]
     pub fn total_pnl(&self, price: Decimal) -> Decimal {
-        self.realized_pnl + self.unrealized_pnl(price)
+        self.total_pnl_checked(price)
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Returns the total profit and loss (realized plus unrealized) given a current price.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unrealized PnL cannot be computed or the sum overflows.
+    pub fn total_pnl_checked(&self, price: Decimal) -> anyhow::Result<Decimal> {
+        checked_add(self.realized_pnl, self.unrealized_pnl_checked(price)?)
     }
 
     /// Creates a bet that would flatten (neutralize) the current position.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the position has a side and `price` is zero, or if the
+    /// calculation overflows.
     #[must_use]
     pub fn flattening_bet(&self, price: Decimal) -> Option<Bet> {
-        self.side().map(|side| {
-            let stake = match side {
-                BetSide::Back => self.exposure / price,
-                BetSide::Lay => -self.exposure / price,
-            };
-            // Use the opposite side to flatten the position.
-            Bet::new(price, stake, side.opposite())
-        })
+        self.flattening_bet_checked(price)
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Creates a bet that would flatten (neutralize) the current position.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the position has a side and `price` is zero, or if
+    /// the calculation overflows.
+    pub fn flattening_bet_checked(&self, price: Decimal) -> anyhow::Result<Option<Bet>> {
+        let Some(side) = self.side() else {
+            return Ok(None);
+        };
+        check_nonzero_denominator(price, "price")?;
+        let stake = match side {
+            BetSide::Back => checked_div(self.exposure, price)?,
+            BetSide::Lay => checked_div(-self.exposure, price)?,
+        };
+        Ok(Some(Bet::new(price, stake, side.opposite())))
     }
 
     /// Resets the bet position to its initial state.
@@ -392,10 +672,24 @@ impl Display for BetPosition {
 }
 
 /// Calculates the combined profit and loss for a slice of bets.
+///
+/// # Panics
+///
+/// Panics if a payoff or the running total overflows.
 #[must_use]
 pub fn calc_bets_pnl(bets: &[Bet]) -> Decimal {
-    bets.iter()
-        .fold(Decimal::ZERO, |acc, bet| acc + bet.outcome_win_payoff())
+    calc_bets_pnl_checked(bets).unwrap_or_else(|e| panic!("{e}"))
+}
+
+/// Calculates the combined profit and loss for a slice of bets.
+///
+/// # Errors
+///
+/// Returns an error if a payoff or the running total overflows.
+pub fn calc_bets_pnl_checked(bets: &[Bet]) -> anyhow::Result<Decimal> {
+    bets.iter().try_fold(Decimal::ZERO, |acc, bet| {
+        checked_add(acc, bet.outcome_win_payoff_checked()?)
+    })
 }
 
 /// Checks that `probability` is non-zero.
@@ -428,17 +722,18 @@ pub fn check_probability_invertible(probability: Decimal) -> anyhow::Result<()> 
 ///
 /// # Errors
 ///
-/// Returns an error if `probability` is zero.
+/// Returns an error if `probability` is zero or the conversion overflows.
 pub fn probability_to_bet(
     probability: Decimal,
     volume: Decimal,
     side: OrderSideSpecified,
 ) -> anyhow::Result<Bet> {
     check_probability_non_zero(probability)?;
-    let price = Decimal::ONE / probability;
+    let price = checked_div(Decimal::ONE, probability)?;
+    let stake = checked_div(volume, price)?;
     let bet = match side {
-        OrderSideSpecified::Buy => Bet::new(price, volume / price, BetSide::Back),
-        OrderSideSpecified::Sell => Bet::new(price, volume / price, BetSide::Lay),
+        OrderSideSpecified::Buy => Bet::new(price, stake, BetSide::Back),
+        OrderSideSpecified::Sell => Bet::new(price, stake, BetSide::Lay),
     };
     Ok(bet)
 }
@@ -456,12 +751,62 @@ pub fn inverse_probability_to_bet(
     side: OrderSideSpecified,
 ) -> anyhow::Result<Bet> {
     check_probability_invertible(probability)?;
-    let inverse_probability = Decimal::ONE - probability;
+    let inverse_probability = checked_sub(Decimal::ONE, probability)?;
     let inverse_side = match side {
         OrderSideSpecified::Buy => OrderSideSpecified::Sell,
         OrderSideSpecified::Sell => OrderSideSpecified::Buy,
     };
     probability_to_bet(inverse_probability, volume, inverse_side)
+}
+
+fn check_odds_gt_one(price: Decimal) -> anyhow::Result<()> {
+    if price <= Decimal::ONE {
+        anyhow::bail!("Price must be greater than 1.0 for lay liability calculation, was {price}");
+    }
+    Ok(())
+}
+
+fn check_nonzero_denominator(value: Decimal, name: &str) -> anyhow::Result<()> {
+    if value.is_zero() {
+        anyhow::bail!("invalid {name}: must be non-zero")
+    }
+    Ok(())
+}
+
+/// Converts [`OrderSide`] into a specified side for betting conversions.
+///
+/// # Errors
+///
+/// Returns an error if `side` is [`OrderSide::NoOrderSide`].
+pub fn specified_order_side(side: OrderSide) -> anyhow::Result<OrderSideSpecified> {
+    match side {
+        OrderSide::Buy => Ok(OrderSideSpecified::Buy),
+        OrderSide::Sell => Ok(OrderSideSpecified::Sell),
+        OrderSide::NoOrderSide => {
+            anyhow::bail!("invalid OrderSide: must be Buy or Sell, was {side}")
+        }
+    }
+}
+
+fn checked_add(lhs: Decimal, rhs: Decimal) -> anyhow::Result<Decimal> {
+    lhs.checked_add(rhs)
+        .ok_or_else(|| anyhow::anyhow!("Decimal overflow adding {lhs} and {rhs}"))
+}
+
+fn checked_sub(lhs: Decimal, rhs: Decimal) -> anyhow::Result<Decimal> {
+    lhs.checked_sub(rhs)
+        .ok_or_else(|| anyhow::anyhow!("Decimal overflow subtracting {rhs} from {lhs}"))
+}
+
+fn checked_mul(lhs: Decimal, rhs: Decimal) -> anyhow::Result<Decimal> {
+    lhs.checked_mul(rhs)
+        .ok_or_else(|| anyhow::anyhow!("Decimal overflow multiplying {lhs} by {rhs}"))
+}
+
+fn checked_div(lhs: Decimal, rhs: Decimal) -> anyhow::Result<Decimal> {
+    check_nonzero_denominator(rhs, "divisor")?;
+    lhs.checked_div(rhs)
+        .ok_or_else(|| anyhow::anyhow!("Decimal overflow dividing {lhs} by {rhs}"))
 }
 
 #[cfg(test)]
@@ -1132,5 +1477,160 @@ mod tests {
         assert_eq!(inverse_bet.stake, dec!(18.0));
         assert_eq!(inverse_bet.outcome_win_payoff(), dec!(32.0));
         assert_eq!(inverse_bet.outcome_lose_payoff(), dec!(-18.0));
+    }
+
+    #[rstest]
+    fn test_from_liability_checked_rejects_back_side() {
+        let err = Bet::from_liability_checked(dec!(2.0), dec!(100.0), BetSide::Back).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Liability-based betting is only applicable for Lay side."
+        );
+    }
+
+    #[rstest]
+    #[case(dec!(1.0))]
+    #[case(dec!(0.0))]
+    #[case(dec!(-1.0))]
+    fn test_from_liability_checked_rejects_odds_at_or_below_one(#[case] price: Decimal) {
+        let err = Bet::from_liability_checked(price, dec!(100.0), BetSide::Lay).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!("Price must be greater than 1.0 for lay liability calculation, was {price}")
+        );
+    }
+
+    #[rstest]
+    fn test_from_stake_or_liability_checked_rejects_lay_odds_at_one() {
+        let err =
+            Bet::from_stake_or_liability_checked(dec!(1.0), dec!(100.0), BetSide::Lay).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Price must be greater than 1.0 for lay liability calculation, was 1.0"
+        );
+    }
+
+    #[rstest]
+    fn test_from_stake_or_liability_checked_allows_back_odds_at_one() {
+        let bet =
+            Bet::from_stake_or_liability_checked(dec!(1.0), dec!(10.0), BetSide::Back).unwrap();
+        assert_eq!(bet.price(), dec!(1.0));
+        assert_eq!(bet.stake(), dec!(10.0));
+        assert_eq!(bet.side(), BetSide::Back);
+        assert_eq!(bet.exposure_checked().unwrap(), dec!(10.0));
+        assert_eq!(bet.profit_checked().unwrap(), dec!(0.0));
+    }
+
+    #[rstest]
+    fn test_from_liability_checked_preserves_stake_identity() {
+        let bet = Bet::from_liability_checked(dec!(2.5), dec!(15.0), BetSide::Lay).unwrap();
+        assert_eq!(bet.stake(), dec!(10.0));
+        assert_eq!(bet.liability_checked().unwrap(), dec!(15.0));
+    }
+
+    #[rstest]
+    fn test_hedging_stake_checked_rejects_zero_price() {
+        let bet = Bet::new(dec!(2.0), dec!(100.0), BetSide::Back);
+        let err = bet.hedging_stake_checked(Decimal::ZERO).unwrap_err();
+        assert_eq!(err.to_string(), "invalid divisor: must be non-zero");
+    }
+
+    #[rstest]
+    fn test_hedging_bet_checked_rejects_zero_price() {
+        let bet = Bet::new(dec!(2.0), dec!(100.0), BetSide::Lay);
+        let err = bet.hedging_bet_checked(Decimal::ZERO).unwrap_err();
+        assert_eq!(err.to_string(), "invalid divisor: must be non-zero");
+    }
+
+    #[rstest]
+    fn test_exposure_checked_rejects_overflow() {
+        let bet = Bet::new(Decimal::MAX, dec!(2.0), BetSide::Back);
+        let err = bet.exposure_checked().unwrap_err();
+        assert!(err.to_string().starts_with("Decimal overflow multiplying"));
+    }
+
+    #[rstest]
+    fn test_liability_checked_rejects_overflow() {
+        let bet = Bet::new(Decimal::MAX, dec!(2.0), BetSide::Lay);
+        let err = bet.liability_checked().unwrap_err();
+        assert!(err.to_string().starts_with("Decimal overflow multiplying"));
+    }
+
+    #[rstest]
+    fn test_flattening_bet_checked_rejects_zero_price() {
+        let mut position = BetPosition::default();
+        position.add_bet(Bet::new(dec!(2.0), dec!(100.0), BetSide::Back));
+        let err = position.flattening_bet_checked(Decimal::ZERO).unwrap_err();
+        assert_eq!(err.to_string(), "invalid price: must be non-zero");
+    }
+
+    #[rstest]
+    fn test_add_bet_checked_matches_infallible_decrease() {
+        let back = Bet::new(dec!(3.0), dec!(100_000), BetSide::Back);
+        let lay = Bet::new(dec!(2.0), dec!(10_000), BetSide::Lay);
+        let mut expected = BetPosition::default();
+        expected.add_bet(back.clone());
+        expected.add_bet(lay.clone());
+
+        let mut position = BetPosition::default();
+        position.add_bet_checked(back).unwrap();
+        position.add_bet_checked(lay).unwrap();
+
+        assert_eq!(position.price(), expected.price());
+        assert_eq!(position.exposure(), expected.exposure());
+        assert_eq!(position.realized_pnl(), expected.realized_pnl());
+        assert_eq!(position.bets(), expected.bets());
+    }
+
+    #[rstest]
+    fn test_add_bet_checked_rejects_overflow_and_leaves_position_unchanged() {
+        let mut position = BetPosition::default();
+        position
+            .add_bet_checked(Bet::new(dec!(2.0), dec!(100.0), BetSide::Back))
+            .unwrap();
+        let before_price = position.price();
+        let before_exposure = position.exposure();
+        let before_len = position.bets().len();
+
+        let err = position
+            .add_bet_checked(Bet::new(Decimal::MAX, dec!(2.0), BetSide::Back))
+            .unwrap_err();
+
+        assert!(err.to_string().starts_with("Decimal overflow multiplying"));
+        assert_eq!(position.price(), before_price);
+        assert_eq!(position.exposure(), before_exposure);
+        assert_eq!(position.bets().len(), before_len);
+    }
+
+    #[rstest]
+    fn test_specified_order_side_rejects_unspecified() {
+        let err = specified_order_side(OrderSide::NoOrderSide).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "invalid OrderSide: must be Buy or Sell, was NO_ORDER_SIDE"
+        );
+    }
+
+    #[rstest]
+    fn test_checked_methods_preserve_valid_identities() {
+        let back = Bet::new(dec!(2.5), dec!(10.0), BetSide::Back);
+        let hedge = back.hedging_bet_checked(dec!(1.5)).unwrap();
+
+        assert_eq!(back.exposure_checked().unwrap(), back.exposure());
+        assert_eq!(back.liability_checked().unwrap(), back.liability());
+        assert_eq!(back.profit_checked().unwrap(), back.profit());
+        assert_eq!(
+            back.outcome_win_payoff_checked().unwrap(),
+            back.outcome_win_payoff()
+        );
+        assert_eq!(
+            back.outcome_lose_payoff_checked().unwrap(),
+            back.outcome_lose_payoff()
+        );
+        assert_eq!(hedge, back.hedging_bet(dec!(1.5)));
+        assert_eq!(
+            calc_bets_pnl_checked(&[back.clone(), hedge.clone()]).unwrap(),
+            calc_bets_pnl(&[back, hedge])
+        );
     }
 }
