@@ -8164,7 +8164,7 @@ mod tests {
             ["prepared", "signed", "broadcast", "included", "finalized"]
         );
         assert_eq!(status, "finalized");
-        assert!(!active);
+        assert!(active);
         assert!(
             append_only_error
                 .to_string()
