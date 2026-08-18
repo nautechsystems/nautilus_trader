@@ -21,7 +21,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -116,6 +116,7 @@ struct TestServerState {
     single_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     data_api_position_pages: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     data_api_trade_pages: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
+    data_api_ignore_trade_offset: Arc<AtomicBool>,
     data_api_trade_query_log: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     data_api_error_response: Arc<tokio::sync::Mutex<Option<(StatusCode, Value)>>>,
 }
@@ -163,6 +164,7 @@ impl Default for TestServerState {
             single_order_response: Arc::new(tokio::sync::Mutex::new(None)),
             data_api_position_pages: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             data_api_trade_pages: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+            data_api_ignore_trade_offset: Arc::new(AtomicBool::new(false)),
             data_api_trade_query_log: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             data_api_error_response: Arc::new(tokio::sync::Mutex::new(None)),
         }
@@ -651,10 +653,14 @@ async fn handle_data_api_trades(
         .cloned()
         .collect();
 
-    let offset: usize = params
-        .get("offset")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+    let offset: usize = if state.data_api_ignore_trade_offset.load(Ordering::SeqCst) {
+        0
+    } else {
+        params
+            .get("offset")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0)
+    };
     let limit: usize = params
         .get("limit")
         .and_then(|s| s.parse().ok())
@@ -1517,6 +1523,49 @@ async fn test_get_orders_errors_on_repeated_caller_cursor() {
 
 #[rstest]
 #[tokio::test]
+async fn test_get_orders_rejects_overlong_initial_cursor_before_request() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+    let params = GetOrdersParams {
+        next_cursor: Some("x".repeat(8 * 1024 + 1)),
+        ..Default::default()
+    };
+
+    let error = client.get_orders(params).await.unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "decode error: /data/orders pagination cursor exceeds 8192 bytes"
+    );
+    assert_eq!(*state.request_count.lock().await, 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_orders_rejects_overlong_response_cursor() {
+    let state = TestServerState::default();
+    let mut page = load_json("http_open_orders_page.json");
+    page["next_cursor"] = json!("x".repeat(8 * 1024 + 1));
+    state.orders_pages.lock().await.push_back(page);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+
+    let error = client
+        .get_orders(GetOrdersParams::default())
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "decode error: /data/orders pagination cursor exceeds 8192 bytes"
+    );
+    assert_eq!(*state.request_count.lock().await, 1);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_get_orders_errors_on_cursor_cycle() {
     let state = TestServerState::default();
     let mut page1 = load_json("http_open_orders_page.json");
@@ -1544,6 +1593,30 @@ async fn test_get_orders_errors_on_cursor_cycle() {
         "decode error: /data/orders pagination repeated cursor \"cursor-a\""
     );
     assert_eq!(*state.request_count.lock().await, 3);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_orders_accepts_terminal_page_100_without_request_101() {
+    let state = TestServerState::default();
+    let pages = (1..=100).map(|page_number| {
+        let mut page = load_json("http_open_orders_page.json");
+        page["next_cursor"] = if page_number == 100 {
+            json!("LTE=")
+        } else {
+            json!(format!("cursor-{page_number}"))
+        };
+        page
+    });
+    state.orders_pages.lock().await.extend(pages);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+
+    let orders = client.get_orders(GetOrdersParams::default()).await.unwrap();
+
+    assert_eq!(orders.len(), 200);
+    assert_eq!(*state.request_count.lock().await, 100);
 }
 
 #[rstest]
@@ -3814,6 +3887,51 @@ async fn test_fetch_gamma_markets_rejects_repeated_cursor() {
 
 #[rstest]
 #[tokio::test]
+async fn test_fetch_gamma_markets_rejects_repeated_cursor_before_cap() {
+    let state = TestServerState::default();
+    let skipped = gamma_market_with_slug(
+        "skipped-market",
+        "0xcondition_skipped_market",
+        ["97400000000000000001", "97400000000000000002"],
+    );
+    let retained = gamma_market_with_slug(
+        "retained-market",
+        "0xcondition_retained_market",
+        ["97500000000000000001", "97500000000000000002"],
+    );
+    {
+        let mut pages = state.gamma_markets_pages.lock().await;
+        pages.push_back(json!({
+            "markets": [skipped],
+            "next_cursor": "stuck",
+        }));
+        pages.push_back(json!({
+            "markets": [retained],
+            "next_cursor": "stuck",
+        }));
+    }
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let error = client
+        .request_markets_by_params(GetGammaMarketsParams {
+            limit: Some(1),
+            offset: Some(1),
+            max_markets: Some(1),
+            ..Default::default()
+        })
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Gamma market pagination repeated cursor \"stuck\""
+    );
+    assert_eq!(state.gamma_markets_query_log.lock().await.len(), 2);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_fetch_gamma_markets_errors_when_page_limit_exhausted() {
     let state = TestServerState::default();
     let pages = (1..=100).map(|page_number| {
@@ -3843,6 +3961,43 @@ async fn test_fetch_gamma_markets_errors_when_page_limit_exhausted() {
         error.to_string(),
         "Gamma market pagination exceeded 100 pages"
     );
+    assert_eq!(state.gamma_markets_query_log.lock().await.len(), 100);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_fetch_gamma_markets_cap_wins_on_page_100() {
+    let state = TestServerState::default();
+    let pages = (1..=100).map(|page_number| {
+        let first_token = format!("61{page_number:064}");
+        let second_token = format!("62{page_number:064}");
+        let market = gamma_market_with_slug(
+            &format!("capped-market-{page_number}"),
+            &format!("0xc{page_number:063x}"),
+            [&first_token, &second_token],
+        );
+        json!({
+            "markets": [market],
+            "next_cursor": format!("cursor-{page_number}"),
+        })
+    });
+    state.gamma_markets_pages.lock().await.extend(pages);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let markets = client
+        .request_markets_by_params(GetGammaMarketsParams {
+            limit: Some(1),
+            offset: Some(99),
+            max_markets: Some(1),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(markets.len(), 1);
+    assert_eq!(markets[0].market_slug.as_deref(), Some("capped-market-100"));
     assert_eq!(state.gamma_markets_query_log.lock().await.len(), 100);
 }
 
@@ -4648,9 +4803,64 @@ async fn test_get_positions_errors_on_repeated_full_page() {
 
     assert_eq!(
         error.to_string(),
-        "decode error: /positions pagination repeated a full page"
+        "decode error: /positions pagination repeated a full page at page 2 offset 100"
     );
     assert_eq!(*state.request_count.lock().await, 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_positions_rejects_repeated_identities_with_changed_values() {
+    let state = TestServerState::default();
+    let first = Value::Array((0..100).map(make_data_api_position).collect());
+    let second = Value::Array(
+        (0..100)
+            .map(|index| {
+                json!({
+                    "avgPrice": 0.75,
+                    "size": 2.0,
+                    "conditionId": format!("0xcondition{index:064x}"),
+                    "asset": index.to_string(),
+                })
+            })
+            .collect(),
+    );
+    state
+        .data_api_position_pages
+        .lock()
+        .await
+        .extend([first, second]);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let error = client.get_positions(TEST_ADDRESS).await.unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "decode error: /positions pagination repeated a full page at page 2 offset 100"
+    );
+    assert_eq!(*state.request_count.lock().await, 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_positions_rejects_oversized_page() {
+    let state = TestServerState::default();
+    let position = make_data_api_position(0);
+    let page = Value::Array(std::iter::repeat_n(position, 100_001).collect());
+    state.data_api_position_pages.lock().await.push_back(page);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let error = client.get_positions(TEST_ADDRESS).await.unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "decode error: /positions pagination exceeded 100000 rows"
+    );
+    assert_eq!(*state.request_count.lock().await, 1);
 }
 
 #[rstest]
@@ -4725,6 +4935,109 @@ async fn test_request_trade_ticks_paginates_multiple_pages() {
     for i in 1..ticks.len() {
         assert!(ticks[i - 1].ts_event <= ticks[i].ts_event);
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trade_ticks_rejects_repeated_full_page() {
+    let state = TestServerState::default();
+    state
+        .data_api_ignore_trade_offset
+        .store(true, Ordering::SeqCst);
+    let token = "token_repeated";
+    let trades = (0..500)
+        .map(|index| {
+            make_data_api_trade(
+                token,
+                0.50,
+                1_710_000_000 + index as i64,
+                &format!("repeated{index}"),
+            )
+        })
+        .collect();
+    state
+        .data_api_trade_pages
+        .lock()
+        .await
+        .push_back(Value::Array(trades));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let error = client
+        .request_trade_ticks(
+            InstrumentId::from("0xcondition_test-token_repeated.POLYMARKET"),
+            "0xcondition_test",
+            token,
+            2,
+            2,
+            Some(nautilus_core::UnixNanos::from(
+                1_710_000_000_000_000_000_u64,
+            )),
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "/trades pagination repeated a full page at page 2 offset 500"
+    );
+    assert_eq!(state.data_api_trade_query_log.lock().await.len(), 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trade_ticks_rejects_repeated_economics_with_restamped_condition() {
+    let state = TestServerState::default();
+    let token = "token_restamped";
+    let first = (0..500)
+        .map(|index| {
+            make_data_api_trade(
+                token,
+                0.50,
+                1_710_000_000 + index as i64,
+                &format!("restamped{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let second = first
+        .iter()
+        .cloned()
+        .map(|mut trade| {
+            trade["conditionId"] = json!("0xrestamped_condition");
+            trade
+        })
+        .collect::<Vec<_>>();
+    state
+        .data_api_trade_pages
+        .lock()
+        .await
+        .extend([Value::Array(first), Value::Array(second)]);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let error = client
+        .request_trade_ticks(
+            InstrumentId::from("0xcondition_test-token_restamped.POLYMARKET"),
+            "0xcondition_test",
+            token,
+            2,
+            2,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "/trades pagination repeated a full page at page 2 offset 500"
+    );
+    assert_eq!(state.data_api_trade_query_log.lock().await.len(), 2);
 }
 
 #[rstest]
@@ -5006,7 +5319,7 @@ async fn test_request_trade_ticks_stops_at_data_api_offset_ceiling() {
 async fn test_request_trade_ticks_rejects_start_at_offset_ceiling(#[case] limit: Option<u32>) {
     let state = TestServerState::default();
     let token = "token_ceiling";
-    let trades = (0..10_000)
+    let mut trades = (0..10_000)
         .map(|index| {
             make_data_api_trade(
                 token,
@@ -5016,6 +5329,7 @@ async fn test_request_trade_ticks_rejects_start_at_offset_ceiling(#[case] limit:
             )
         })
         .collect::<Vec<_>>();
+    trades[0]["price"] = json!(100_000_000_000_000.0);
     state
         .data_api_trade_pages
         .lock()
@@ -5045,7 +5359,8 @@ async fn test_request_trade_ticks_rejects_start_at_offset_ceiling(#[case] limit:
     assert!(
         error
             .to_string()
-            .contains("cannot guarantee complete start-anchored results")
+            .contains("cannot guarantee complete start-anchored results"),
+        "unexpected error: {error:#}"
     );
     assert_eq!(queries.len(), 20);
 }

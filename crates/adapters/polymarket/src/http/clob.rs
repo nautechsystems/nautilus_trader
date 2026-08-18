@@ -15,7 +15,10 @@
 
 //! Provides the HTTP client for the Polymarket CLOB REST API.
 
-use std::{collections::HashMap, result::Result as StdResult, str::from_utf8, sync::Arc};
+use std::{
+    collections::HashMap, convert::Infallible, result::Result as StdResult, str::from_utf8,
+    sync::Arc,
+};
 
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT,
@@ -45,7 +48,7 @@ use crate::{
             ClobBookResponse, ClobMarketResponse, FeeRateResponse, PolymarketOpenOrder,
             PolymarketOrder, PolymarketTradeReport, TickSizeResponse,
         },
-        pagination::{CursorKey, PaginationGuard},
+        pagination::{CollectAll, Completion, CursorProtocol, FetchOutcome, Paginator},
         query::{
             BalanceAllowance, BatchCancelResponse, CancelMarketOrdersParams, CancelResponse,
             ClobVersionResponse, GetBalanceAllowanceParams, GetOrdersParams, GetTradesParams,
@@ -451,30 +454,37 @@ impl PolymarketClobHttpClient {
     }
 
     /// Fetches all open orders matching the given parameters (auto-paginated).
-    pub async fn get_orders(
-        &self,
-        mut params: GetOrdersParams,
-    ) -> Result<Vec<PolymarketOpenOrder>> {
-        let mut all = Vec::new();
-        let mut cursor = params
+    pub async fn get_orders(&self, params: GetOrdersParams) -> Result<Vec<PolymarketOpenOrder>> {
+        let initial_cursor = params
             .next_cursor
             .clone()
             .unwrap_or_else(|| CURSOR_START.to_string());
-        params.next_cursor = Some(cursor.clone());
-        let mut pagination = CursorPagination::new(PATH_ORDERS, cursor.clone());
+        let protocol = CursorProtocol::<Infallible>::clob(PATH_ORDERS, initial_cursor, CURSOR_END)
+            .map_err(|e| Error::decode(e.to_string()))?;
+        let paginator = Paginator::new(PATH_ORDERS, protocol, CollectAll::new());
+        let completed = paginator
+            .run(
+                |position| {
+                    let mut request = params.clone();
+                    request.next_cursor =
+                        position.as_ref().map(|cursor| cursor.as_ref().to_string());
+                    async move {
+                        let page: PaginatedResponse<PolymarketOpenOrder> =
+                            self.send_get(PATH_ORDERS, Some(&request), true).await?;
+                        Ok(FetchOutcome::Page {
+                            rows: page.data,
+                            wire: page.next_cursor,
+                        })
+                    }
+                },
+                |e| Error::decode(e.to_string()),
+            )
+            .await?;
 
-        loop {
-            let page: PaginatedResponse<PolymarketOpenOrder> =
-                self.send_get(PATH_ORDERS, Some(&params), true).await?;
-            let page_len = page.data.len();
-            all.extend(page.data);
-            let Some(next_cursor) = pagination.next(page_len, &cursor, page.next_cursor)? else {
-                break;
-            };
-            cursor.clone_from(&next_cursor);
-            params.next_cursor = Some(next_cursor);
+        match completed.completion {
+            Completion::WireComplete => Ok(completed.output),
+            Completion::Stopped(never) => match never {},
         }
-        Ok(all)
     }
 
     /// Fetches a single order by ID, returning `None` for empty/null responses.
@@ -494,30 +504,37 @@ impl PolymarketClobHttpClient {
     }
 
     /// Fetches all trades matching the given parameters (auto-paginated).
-    pub async fn get_trades(
-        &self,
-        mut params: GetTradesParams,
-    ) -> Result<Vec<PolymarketTradeReport>> {
-        let mut all = Vec::new();
-        let mut cursor = params
+    pub async fn get_trades(&self, params: GetTradesParams) -> Result<Vec<PolymarketTradeReport>> {
+        let initial_cursor = params
             .next_cursor
             .clone()
             .unwrap_or_else(|| CURSOR_START.to_string());
-        params.next_cursor = Some(cursor.clone());
-        let mut pagination = CursorPagination::new(PATH_TRADES, cursor.clone());
+        let protocol = CursorProtocol::<Infallible>::clob(PATH_TRADES, initial_cursor, CURSOR_END)
+            .map_err(|e| Error::decode(e.to_string()))?;
+        let paginator = Paginator::new(PATH_TRADES, protocol, CollectAll::new());
+        let completed = paginator
+            .run(
+                |position| {
+                    let mut request = params.clone();
+                    request.next_cursor =
+                        position.as_ref().map(|cursor| cursor.as_ref().to_string());
+                    async move {
+                        let page: PaginatedResponse<PolymarketTradeReport> =
+                            self.send_get(PATH_TRADES, Some(&request), true).await?;
+                        Ok(FetchOutcome::Page {
+                            rows: page.data,
+                            wire: page.next_cursor,
+                        })
+                    }
+                },
+                |e| Error::decode(e.to_string()),
+            )
+            .await?;
 
-        loop {
-            let page: PaginatedResponse<PolymarketTradeReport> =
-                self.send_get(PATH_TRADES, Some(&params), true).await?;
-            let page_len = page.data.len();
-            all.extend(page.data);
-            let Some(next_cursor) = pagination.next(page_len, &cursor, page.next_cursor)? else {
-                break;
-            };
-            cursor.clone_from(&next_cursor);
-            params.next_cursor = Some(next_cursor);
+        match completed.completion {
+            Completion::WireComplete => Ok(completed.output),
+            Completion::Stopped(never) => match never {},
         }
-        Ok(all)
     }
 
     /// Fetches strict V2 balance and allowance evidence for the given parameters.
@@ -776,49 +793,6 @@ impl PolymarketClobPublicClient {
         );
 
         Ok(book)
-    }
-}
-
-struct CursorPagination {
-    endpoint: &'static str,
-    guard: PaginationGuard<CursorKey>,
-}
-
-impl CursorPagination {
-    fn new(endpoint: &'static str, initial_cursor: String) -> Self {
-        let mut guard = PaginationGuard::new(endpoint);
-        guard.seed(CursorKey::new(initial_cursor));
-        Self { endpoint, guard }
-    }
-
-    fn next(
-        &mut self,
-        rows: usize,
-        cursor: &str,
-        next_cursor: Option<String>,
-    ) -> Result<Option<String>> {
-        let next_cursor = next_cursor.ok_or_else(|| {
-            Error::decode(format!("{} response omitted next_cursor", self.endpoint))
-        })?;
-
-        match next_cursor {
-            next if next.is_empty() || next == CURSOR_END => {
-                self.guard
-                    .advance(rows, None)
-                    .map_err(|e| Error::decode(e.to_string()))?;
-                Ok(None)
-            }
-            next if next == cursor => Err(Error::decode(format!(
-                "{} pagination cursor did not advance from {cursor:?}",
-                self.endpoint
-            ))),
-            next => {
-                self.guard
-                    .advance(rows, Some(CursorKey::new(next.clone())))
-                    .map_err(|e| Error::decode(e.to_string()))?;
-                Ok(Some(next))
-            }
-        }
     }
 }
 
