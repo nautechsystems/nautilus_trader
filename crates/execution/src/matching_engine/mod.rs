@@ -24,6 +24,7 @@ use std::{
     cell::RefCell,
     cmp::min,
     fmt::Debug,
+    mem,
     ops::{Add, Sub},
     rc::Rc,
 };
@@ -127,6 +128,9 @@ pub struct OrderMatchingEngine {
     queue_ahead_orders: IndexMap<ClientOrderId, IndexMap<OrderId, QuantityRaw>>,
     queue_ahead_total: IndexMap<ClientOrderId, (PriceRaw, QuantityRaw)>,
     queue_excess: IndexMap<ClientOrderId, QuantityRaw>,
+    queue_id_scratch: Vec<ClientOrderId>,
+    queue_stale_scratch: Vec<ClientOrderId>,
+    queue_entry_scratch: Vec<(ClientOrderId, QuantityRaw, QuantityRaw)>,
     prev_bid_price_raw: PriceRaw,
     prev_bid_size_raw: QuantityRaw,
     prev_ask_price_raw: PriceRaw,
@@ -216,6 +220,9 @@ impl OrderMatchingEngine {
             queue_ahead_orders: IndexMap::new(),
             queue_ahead_total: IndexMap::new(),
             queue_excess: IndexMap::new(),
+            queue_id_scratch: Vec::new(),
+            queue_stale_scratch: Vec::new(),
+            queue_entry_scratch: Vec::new(),
             prev_bid_price_raw: 0,
             prev_bid_size_raw: 0,
             prev_ask_price_raw: 0,
@@ -277,6 +284,9 @@ impl OrderMatchingEngine {
         self.queue_ahead_orders.clear();
         self.queue_ahead_total.clear();
         self.queue_excess.clear();
+        self.queue_id_scratch.clear();
+        self.queue_stale_scratch.clear();
+        self.queue_entry_scratch.clear();
         self.prev_bid_price_raw = 0;
         self.prev_bid_size_raw = 0;
         self.prev_ask_price_raw = 0;
@@ -511,11 +521,12 @@ impl OrderMatchingEngine {
 
         self.queue_excess.clear();
 
-        let keys: Vec<ClientOrderId> = self.queue_ahead_total.keys().copied().collect();
-        let mut entries: Vec<(ClientOrderId, QuantityRaw, QuantityRaw)> = Vec::new();
-        let mut stale: Vec<ClientOrderId> = Vec::new();
+        let mut keys = Self::take_cleared(&mut self.queue_id_scratch);
+        keys.extend(self.queue_ahead_total.keys().copied());
+        let mut entries = Self::take_cleared(&mut self.queue_entry_scratch);
+        let mut stale = Self::take_cleared(&mut self.queue_stale_scratch);
 
-        for client_order_id in keys {
+        for client_order_id in keys.iter().copied() {
             let (order_price_raw, ahead_raw) =
                 match self.queue_ahead_total.get(&client_order_id).copied() {
                     Some(v) => v,
@@ -550,7 +561,7 @@ impl OrderMatchingEngine {
             }
         }
 
-        for id in stale {
+        for id in stale.drain(..) {
             self.queue_ahead_total.shift_remove(&id);
             self.queue_ahead_orders.shift_remove(&id);
         }
@@ -589,6 +600,10 @@ impl OrderMatchingEngine {
             remaining -= excess;
             prev_position = ahead_raw + excess;
         }
+
+        self.queue_id_scratch = keys;
+        self.queue_entry_scratch = entries;
+        self.queue_stale_scratch = stale;
     }
 
     /// Reduces an order's quantity ahead, front-consuming its tracked orders by
@@ -709,8 +724,9 @@ impl OrderMatchingEngine {
     }
 
     fn clear_queue_on_delete(&mut self, deleted_price_raw: PriceRaw, deleted_side: OrderSide) {
-        let keys: Vec<ClientOrderId> = self.queue_ahead_total.keys().copied().collect();
-        for client_order_id in keys {
+        let mut keys = Self::take_cleared(&mut self.queue_id_scratch);
+        keys.extend(self.queue_ahead_total.keys().copied());
+        for client_order_id in keys.iter().copied() {
             if let Some(&(order_price_raw, ahead_raw)) =
                 self.queue_ahead_total.get(&client_order_id)
                 && order_price_raw == deleted_price_raw
@@ -726,6 +742,7 @@ impl OrderMatchingEngine {
                 }
             }
         }
+        self.queue_id_scratch = keys;
     }
 
     /// Returns `true` when the delta identifies a single book order (pure MBO);
@@ -784,10 +801,11 @@ impl OrderMatchingEngine {
         size_raw: QuantityRaw,
         order_side: OrderSide,
     ) {
-        let keys: Vec<ClientOrderId> = self.queue_ahead_total.keys().copied().collect();
-        let mut stale: Vec<ClientOrderId> = Vec::new();
+        let mut keys = Self::take_cleared(&mut self.queue_id_scratch);
+        keys.extend(self.queue_ahead_total.keys().copied());
+        let mut stale = Self::take_cleared(&mut self.queue_stale_scratch);
 
-        for client_order_id in keys {
+        for client_order_id in keys.iter().copied() {
             let (order_price_raw, ahead_raw) =
                 match self.queue_ahead_total.get(&client_order_id).copied() {
                     Some(v) => v,
@@ -820,10 +838,13 @@ impl OrderMatchingEngine {
             self.reduce_queue_ahead(client_order_id, order_price_raw, ahead_raw, size_raw);
         }
 
-        for id in stale {
+        for id in stale.drain(..) {
             self.queue_ahead_total.shift_remove(&id);
             self.queue_ahead_orders.shift_remove(&id);
         }
+
+        self.queue_id_scratch = keys;
+        self.queue_stale_scratch = stale;
     }
 
     fn seed_tob_baseline(&mut self) {
@@ -870,10 +891,11 @@ impl OrderMatchingEngine {
         new_size_raw: QuantityRaw,
         order_side: OrderSide,
     ) {
-        let keys: Vec<ClientOrderId> = self.queue_ahead_total.keys().copied().collect();
-        let mut stale: Vec<ClientOrderId> = Vec::new();
+        let mut keys = Self::take_cleared(&mut self.queue_id_scratch);
+        keys.extend(self.queue_ahead_total.keys().copied());
+        let mut stale = Self::take_cleared(&mut self.queue_stale_scratch);
 
-        for client_order_id in keys {
+        for client_order_id in keys.iter().copied() {
             let Some(&(order_price_raw, ahead_raw)) = self.queue_ahead_total.get(&client_order_id)
             else {
                 continue;
@@ -914,15 +936,16 @@ impl OrderMatchingEngine {
             }
         }
 
-        for id in stale {
+        for id in stale.drain(..) {
             self.queue_ahead_total.shift_remove(&id);
         }
 
-        // Also resolve pending L1 orders affected by this price move
-        let pending_keys: Vec<ClientOrderId> = self.queue_pending.keys().copied().collect();
-        let mut pending_stale: Vec<ClientOrderId> = Vec::new();
+        // Pending L1 orders affected by this price move. `stale` must be empty
+        // here so ids from the ahead-total walk are not removed from pending.
+        keys.clear();
+        keys.extend(self.queue_pending.keys().copied());
 
-        for client_order_id in pending_keys {
+        for client_order_id in keys.iter().copied() {
             let Some(&order_price_raw) = self.queue_pending.get(&client_order_id) else {
                 continue;
             };
@@ -938,7 +961,7 @@ impl OrderMatchingEngine {
             drop(cache);
 
             let Some(side) = order_info else {
-                pending_stale.push(client_order_id);
+                stale.push(client_order_id);
                 continue;
             };
 
@@ -962,9 +985,12 @@ impl OrderMatchingEngine {
             }
         }
 
-        for id in pending_stale {
+        for id in stale.drain(..) {
             self.queue_pending.shift_remove(&id);
         }
+
+        self.queue_id_scratch = keys;
+        self.queue_stale_scratch = stale;
     }
 
     fn resolve_pending_l1_snapshots(
@@ -974,10 +1000,11 @@ impl OrderMatchingEngine {
         ask_price_raw: PriceRaw,
         ask_size_raw: QuantityRaw,
     ) {
-        let keys: Vec<ClientOrderId> = self.queue_pending.keys().copied().collect();
-        let mut stale: Vec<ClientOrderId> = Vec::new();
+        let mut keys = Self::take_cleared(&mut self.queue_id_scratch);
+        keys.extend(self.queue_pending.keys().copied());
+        let mut stale = Self::take_cleared(&mut self.queue_stale_scratch);
 
-        for client_order_id in keys {
+        for client_order_id in keys.iter().copied() {
             let Some(&order_price_raw) = self.queue_pending.get(&client_order_id) else {
                 continue;
             };
@@ -1011,16 +1038,20 @@ impl OrderMatchingEngine {
             }
         }
 
-        for id in stale {
+        for id in stale.drain(..) {
             self.queue_pending.shift_remove(&id);
         }
+
+        self.queue_id_scratch = keys;
+        self.queue_stale_scratch = stale;
     }
 
     fn resolve_pending_on_trade(&mut self, trade_price_raw: PriceRaw) {
-        let keys: Vec<ClientOrderId> = self.queue_pending.keys().copied().collect();
-        let mut stale: Vec<ClientOrderId> = Vec::new();
+        let mut keys = Self::take_cleared(&mut self.queue_id_scratch);
+        keys.extend(self.queue_pending.keys().copied());
+        let mut stale = Self::take_cleared(&mut self.queue_stale_scratch);
 
-        for client_order_id in keys {
+        for client_order_id in keys.iter().copied() {
             let Some(&order_price_raw) = self.queue_pending.get(&client_order_id) else {
                 continue;
             };
@@ -1054,9 +1085,18 @@ impl OrderMatchingEngine {
             }
         }
 
-        for id in stale {
+        for id in stale.drain(..) {
             self.queue_pending.shift_remove(&id);
         }
+
+        self.queue_id_scratch = keys;
+        self.queue_stale_scratch = stale;
+    }
+
+    fn take_cleared<T>(buf: &mut Vec<T>) -> Vec<T> {
+        let mut items = mem::take(buf);
+        items.clear();
+        items
     }
 
     #[must_use]

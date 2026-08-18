@@ -58,6 +58,7 @@ use nautilus_model::{
 const MARKET_DATA_COUNT: usize = 1_000;
 const ORDER_COUNT: usize = 100;
 const PASSIVE_ORDER_COUNT: usize = 1_000;
+const QUEUE_ORDER_COUNT: usize = 32;
 const ITERATION_COUNT: usize = 1_000;
 const BASE_TS_NS: u64 = 1_735_689_600_000_000_000;
 const ACCOUNT_ID: &str = "ACCOUNT-001";
@@ -179,6 +180,111 @@ fn bench_market_data(c: &mut Criterion) {
             )
         });
     });
+
+    group.finish();
+}
+
+fn bench_queue_position(c: &mut Criterion) {
+    let instrument_id = crypto_perpetual_ethusdt().id();
+    let rest_price = Price::from("1480.00");
+    let orders = generate_orders(
+        instrument_id,
+        OrderType::Limit,
+        Some(rest_price),
+        QUEUE_ORDER_COUNT,
+    );
+    let ask = ask_delta(instrument_id, Quantity::from("100.000"), 1);
+    let trades = generate_trades(instrument_id, MARKET_DATA_COUNT);
+    let updates = generate_queue_updates(instrument_id, rest_price, MARKET_DATA_COUNT);
+    let quotes = generate_quotes(instrument_id, MARKET_DATA_COUNT);
+    let mut group = c.benchmark_group("matching_engine/queue_position");
+
+    group.throughput(Throughput::Elements(MARKET_DATA_COUNT as u64));
+
+    // Resting tracked orders stay open; each trade still snapshots queue keys
+    group.bench_function(
+        BenchmarkId::new("trade_l2_tracked", MARKET_DATA_COUNT),
+        |b| {
+            b.iter_custom(|iters| {
+                run_iterations(
+                    iters,
+                    || build_queue_engine(BookType::L2_MBP, &orders, Some(&ask), None),
+                    |state| {
+                        for trade in &trades {
+                            state.engine.process_trade_tick(black_box(trade));
+                        }
+                    },
+                    |state| {
+                        assert_events(state, EventCounts::default());
+                        assert_order_status(state, OrderStatus::Accepted, QUEUE_ORDER_COUNT);
+                    },
+                )
+            });
+        },
+    );
+
+    // Level-wide Update deltas walk cap_queue_ahead for every tracked order
+    group.bench_function(
+        BenchmarkId::new("delta_l2_update_tracked", MARKET_DATA_COUNT),
+        |b| {
+            b.iter_custom(|iters| {
+                run_iterations(
+                    iters,
+                    || build_queue_engine(BookType::L2_MBP, &orders, Some(&ask), None),
+                    |state| {
+                        for delta in &updates {
+                            state
+                                .engine
+                                .process_order_book_delta(black_box(delta))
+                                .expect("L2 queue update should be processed");
+                        }
+                    },
+                    |state| {
+                        assert_eq!(
+                            state.engine.get_book().update_count,
+                            (MARKET_DATA_COUNT + 1) as u64,
+                        );
+                        assert_events(state, EventCounts::default());
+                        assert_order_status(state, OrderStatus::Accepted, QUEUE_ORDER_COUNT);
+                    },
+                )
+            });
+        },
+    );
+
+    // L1 quotes with pending/ahead tracking walk the L1 queue helpers
+    group.bench_function(
+        BenchmarkId::new("quote_l1_tracked", MARKET_DATA_COUNT),
+        |b| {
+            b.iter_custom(|iters| {
+                run_iterations(
+                    iters,
+                    || {
+                        let quote = quote(
+                            instrument_id,
+                            Price::from("1490.00"),
+                            Price::from("1500.00"),
+                            1,
+                        );
+                        build_queue_engine(BookType::L1_MBP, &orders, None, Some(&quote))
+                    },
+                    |state| {
+                        for quote in &quotes {
+                            state.engine.process_quote_tick(black_box(quote));
+                        }
+                    },
+                    |state| {
+                        assert_eq!(
+                            state.engine.get_book().update_count,
+                            (MARKET_DATA_COUNT + 1) as u64,
+                        );
+                        assert_events(state, EventCounts::default());
+                        assert_order_status(state, OrderStatus::Accepted, QUEUE_ORDER_COUNT);
+                    },
+                )
+            });
+        },
+    );
 
     group.finish();
 }
@@ -514,6 +620,10 @@ where
 }
 
 fn build_engine(book_type: BookType) -> BenchEngine {
+    build_engine_with_config(book_type, OrderMatchingEngineConfig::default())
+}
+
+fn build_engine_with_config(book_type: BookType, config: OrderMatchingEngineConfig) -> BenchEngine {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
     let cache = Rc::new(RefCell::new(Cache::default()));
     let events = Rc::new(RefCell::new(EventCounts::default()));
@@ -529,7 +639,7 @@ fn build_engine(book_type: BookType) -> BenchEngine {
         AccountType::Margin,
         Rc::new(RefCell::new(TestClock::new())),
         cache.clone(),
-        OrderMatchingEngineConfig::default(),
+        config,
     );
     engine.set_event_handler(Rc::new(move |event| {
         event_cache
@@ -554,6 +664,37 @@ fn build_engine(book_type: BookType) -> BenchEngine {
         cache,
         events,
     }
+}
+
+fn build_queue_engine(
+    book_type: BookType,
+    orders: &[OrderAny],
+    ask: Option<&OrderBookDelta>,
+    quote: Option<&QuoteTick>,
+) -> BenchEngine {
+    let config = OrderMatchingEngineConfig {
+        queue_position: true,
+        ..OrderMatchingEngineConfig::default()
+    };
+    let mut state = build_engine_with_config(book_type, config);
+    if let Some(ask) = ask {
+        state
+            .engine
+            .process_order_book_delta(ask)
+            .expect("seed ask should be processed");
+    }
+
+    if let Some(quote) = quote {
+        state.engine.process_quote_tick(quote);
+    }
+    let mut seeded_orders = orders.to_vec();
+    add_orders_to_cache(&state, &seeded_orders);
+    let account_id = AccountId::from(ACCOUNT_ID);
+    for order in &mut seeded_orders {
+        state.engine.process_order(order, account_id);
+    }
+    clear_events(&state);
+    state
 }
 
 fn build_passive_engine(orders: &[OrderAny], ask: &OrderBookDelta) -> BenchEngine {
@@ -642,6 +783,30 @@ fn generate_trades(instrument_id: InstrumentId, count: usize) -> Vec<TradeTick> 
                 ts,
                 ts,
             )
+        })
+        .collect()
+}
+
+fn generate_queue_updates(
+    instrument_id: InstrumentId,
+    price: Price,
+    count: usize,
+) -> Vec<OrderBookDelta> {
+    (0..count)
+        .map(|i| {
+            let ts = UnixNanos::from(BASE_TS_NS + i as u64);
+            OrderBookDeltaTestBuilder::new(instrument_id)
+                .book_action(BookAction::Update)
+                .book_order(BookOrder::new(
+                    OrderSide::Buy,
+                    price,
+                    Quantity::from("10.000"),
+                    i as u64 + 1,
+                ))
+                .sequence(i as u64 + 1)
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
         })
         .collect()
 }
@@ -769,6 +934,7 @@ fn price_from_cents(cents: i64) -> Price {
 criterion_group!(
     benches,
     bench_market_data,
+    bench_queue_position,
     bench_submit,
     bench_iterate,
     bench_resting_fill,

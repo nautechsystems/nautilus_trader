@@ -9020,6 +9020,104 @@ fn test_process_book_delta(
 }
 
 #[rstest]
+fn test_process_book_delta_buffers_until_f_last(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let config = DataEngineConfig {
+        buffer_deltas: true,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache, Some(config));
+
+    let (handler, saver) = get_typed_message_saving_handler::<OrderBookDeltas>(None);
+    let topic = switchboard::get_book_deltas_topic(instrument_id);
+    msgbus::subscribe_book_deltas(topic.into(), handler, None);
+
+    let f_last = RecordFlag::F_LAST as u8;
+    data_engine.process_data(Data::Delta(delta_with_flag(instrument_id, 1_000, 0)));
+    data_engine.process_data(Data::Delta(delta_with_flag(instrument_id, 2_000, 0)));
+    assert!(
+        saver.get_messages().is_empty(),
+        "buffered deltas must not publish before F_LAST"
+    );
+
+    data_engine.process_data(Data::Delta(delta_with_flag(instrument_id, 3_000, f_last)));
+    let first = saver.get_messages();
+    assert_eq!(first.len(), 1);
+    assert_eq!(
+        first[0]
+            .deltas
+            .iter()
+            .map(|delta| delta.ts_event.as_u64())
+            .collect::<Vec<_>>(),
+        vec![1_000, 2_000, 3_000],
+    );
+    assert_eq!(first[0].flags, f_last);
+
+    data_engine.process_data(Data::Delta(delta_with_flag(instrument_id, 4_000, f_last)));
+    let second = saver.get_messages();
+    assert_eq!(second.len(), 2);
+    assert_eq!(second[1].deltas.len(), 1);
+    assert_eq!(second[1].deltas[0].ts_event.as_u64(), 4_000);
+}
+
+#[rstest]
+fn test_process_book_deltas_buffers_until_f_last(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let config = DataEngineConfig {
+        buffer_deltas: true,
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache, Some(config));
+
+    let (handler, saver) = get_typed_message_saving_handler::<OrderBookDeltas>(None);
+    let topic = switchboard::get_book_deltas_topic(instrument_id);
+    msgbus::subscribe_book_deltas(topic.into(), handler, None);
+
+    let f_last = RecordFlag::F_LAST as u8;
+    let batch = OrderBookDeltas::new(
+        instrument_id,
+        vec![
+            delta_with_flag(instrument_id, 1_000, 0),
+            delta_with_flag(instrument_id, 2_000, f_last),
+            delta_with_flag(instrument_id, 3_000, 0),
+            delta_with_flag(instrument_id, 4_000, f_last),
+        ],
+    );
+    data_engine.process_data(Data::Deltas(Box::new(batch)));
+
+    let published = saver.get_messages();
+    assert_eq!(published.len(), 2);
+    assert_eq!(
+        published[0]
+            .deltas
+            .iter()
+            .map(|delta| delta.ts_event.as_u64())
+            .collect::<Vec<_>>(),
+        vec![1_000, 2_000],
+    );
+    assert_eq!(
+        published[1]
+            .deltas
+            .iter()
+            .map(|delta| delta.ts_event.as_u64())
+            .collect::<Vec<_>>(),
+        vec![3_000, 4_000],
+    );
+}
+
+#[rstest]
 fn test_process_book_deltas(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,

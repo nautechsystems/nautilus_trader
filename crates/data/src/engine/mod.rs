@@ -48,6 +48,7 @@ use std::{
     cell::{Ref, RefCell},
     collections::VecDeque,
     fmt::{Debug, Display},
+    mem,
     num::NonZeroUsize,
     rc::Rc,
     str::FromStr,
@@ -187,6 +188,7 @@ pub struct DataEngine {
     subscribed_synthetic_quotes: AHashSet<InstrumentId>,
     subscribed_synthetic_trades: AHashSet<InstrumentId>,
     buffered_deltas_map: AHashMap<InstrumentId, OrderBookDeltas>,
+    deltas_frame: Vec<OrderBookDelta>,
     command_count: u64,
     data_count: u64,
     request_count: u64,
@@ -270,6 +272,7 @@ impl DataEngine {
             subscribed_synthetic_quotes: AHashSet::new(),
             subscribed_synthetic_trades: AHashSet::new(),
             buffered_deltas_map: AHashMap::new(),
+            deltas_frame: Vec::new(),
             command_count: 0,
             data_count: 0,
             request_count: 0,
@@ -662,6 +665,7 @@ impl DataEngine {
         self.book_snapshot_counts.clear();
         self.book_snapshotters.clear();
         self.buffered_deltas_map.clear();
+        self.deltas_frame.clear();
 
         self.synthetic_quote_feeds.clear();
         self.synthetic_trade_feeds.clear();
@@ -2463,18 +2467,8 @@ impl DataEngine {
     }
 
     fn handle_delta(&mut self, delta: OrderBookDelta) {
-        let deltas = if self.config.buffer_deltas {
-            if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&delta.instrument_id) {
-                buffered_deltas.deltas.push(delta);
-                buffered_deltas.flags = delta.flags;
-                buffered_deltas.sequence = delta.sequence;
-                buffered_deltas.ts_event = delta.ts_event;
-                buffered_deltas.ts_init = delta.ts_init;
-            } else {
-                let buffered_deltas = OrderBookDeltas::new(delta.instrument_id, vec![delta]);
-                self.buffered_deltas_map
-                    .insert(delta.instrument_id, buffered_deltas);
-            }
+        let mut deltas = if self.config.buffer_deltas {
+            self.buffer_delta(delta);
 
             if !RecordFlag::F_LAST.matches(delta.flags) {
                 return; // Not the last delta for event
@@ -2484,42 +2478,36 @@ impl DataEngine {
                 .remove(&delta.instrument_id)
                 .expect("buffered deltas exist")
         } else {
-            OrderBookDeltas::new(delta.instrument_id, vec![delta])
+            self.single_delta_batch(delta)
         };
 
         let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
         msgbus::publish_deltas(topic, &deltas);
+        self.reclaim_deltas_frame(mem::take(&mut deltas.deltas));
     }
 
-    fn handle_deltas(&mut self, deltas: OrderBookDeltas) {
+    fn handle_deltas(&mut self, mut deltas: OrderBookDeltas) {
         if self.config.buffer_deltas {
             let instrument_id = deltas.instrument_id;
 
             for delta in deltas.deltas {
-                if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&instrument_id) {
-                    buffered_deltas.deltas.push(delta);
-                    buffered_deltas.flags = delta.flags;
-                    buffered_deltas.sequence = delta.sequence;
-                    buffered_deltas.ts_event = delta.ts_event;
-                    buffered_deltas.ts_init = delta.ts_init;
-                } else {
-                    let buffered_deltas = OrderBookDeltas::new(instrument_id, vec![delta]);
-                    self.buffered_deltas_map
-                        .insert(instrument_id, buffered_deltas);
-                }
+                let is_last = RecordFlag::F_LAST.matches(delta.flags);
+                self.buffer_delta(delta);
 
-                if RecordFlag::F_LAST.matches(delta.flags) {
-                    let deltas_to_publish = self
+                if is_last {
+                    let mut deltas_to_publish = self
                         .buffered_deltas_map
                         .remove(&instrument_id)
                         .expect("buffered deltas exist");
                     let topic = switchboard::get_book_deltas_topic(instrument_id);
                     msgbus::publish_deltas(topic, &deltas_to_publish);
+                    self.reclaim_deltas_frame(mem::take(&mut deltas_to_publish.deltas));
                 }
             }
         } else {
             let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
             msgbus::publish_deltas(topic, &deltas);
+            self.reclaim_deltas_frame(mem::take(&mut deltas.deltas));
         }
     }
 
@@ -2807,11 +2795,41 @@ impl DataEngine {
         msgbus::publish_any(topic, custom);
     }
 
-    fn handle_delta_pipeline(&self, delta: OrderBookDelta) {
+    fn handle_delta_pipeline(&mut self, delta: OrderBookDelta) {
         // Pipeline deltas are not buffered; replays arrive pre-batched
-        let deltas = OrderBookDeltas::new(delta.instrument_id, vec![delta]);
+        let mut deltas = self.single_delta_batch(delta);
         let topic = switchboard::get_pipeline_book_deltas_topic(deltas.instrument_id);
         msgbus::publish_deltas(topic, &deltas);
+        self.reclaim_deltas_frame(mem::take(&mut deltas.deltas));
+    }
+
+    fn buffer_delta(&mut self, delta: OrderBookDelta) {
+        if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&delta.instrument_id) {
+            buffered_deltas.deltas.push(delta);
+            buffered_deltas.flags = delta.flags;
+            buffered_deltas.sequence = delta.sequence;
+            buffered_deltas.ts_event = delta.ts_event;
+            buffered_deltas.ts_init = delta.ts_init;
+            return;
+        }
+
+        let instrument_id = delta.instrument_id;
+        let buffered_deltas = self.single_delta_batch(delta);
+        self.buffered_deltas_map
+            .insert(instrument_id, buffered_deltas);
+    }
+
+    fn single_delta_batch(&mut self, delta: OrderBookDelta) -> OrderBookDeltas {
+        let instrument_id = delta.instrument_id;
+        let mut frame = mem::take(&mut self.deltas_frame);
+        frame.clear();
+        frame.push(delta);
+        OrderBookDeltas::new(instrument_id, frame)
+    }
+
+    fn reclaim_deltas_frame(&mut self, mut frame: Vec<OrderBookDelta>) {
+        frame.clear();
+        self.deltas_frame = frame;
     }
 
     fn handle_deltas_pipeline(&self, deltas: &OrderBookDeltas) {

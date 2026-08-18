@@ -15,11 +15,14 @@
 
 //! Benchmarks for the `DataEngine` ingestion path.
 //!
-//! Targets the trade-to-cache stage of the live data pipeline:
+//! Targets live pipeline stages:
 //!
 //! - `DataEngine::process_data(Data::Trade(..))` -> `handle_trade` -> `Cache::add_trade`
 //!   -> `msgbus::publish_trade` (publish has no subscribers in this bench).
 //! - Direct `Cache::add_trade` to isolate cache write cost from engine plus publish.
+//! - `DataEngine::process_data(Data::Delta(..))` -> `handle_delta` -> wrap into
+//!   `OrderBookDeltas` -> `msgbus::publish_deltas`. The default path wraps every
+//!   incremental delta; the buffered path flushes on `F_LAST`.
 //!
 //! Run with `cargo bench -p nautilus-data --bench engine`.
 
@@ -31,13 +34,15 @@ use nautilus_common::{
     clock::{Clock, TestClock},
     msgbus::{self, MessageBus},
 };
-use nautilus_data::engine::DataEngine;
+use nautilus_data::engine::{DataEngine, config::DataEngineConfig};
 use nautilus_model::{
-    data::{Data, trade::TradeTick},
-    enums::AggressorSide,
+    data::{BookOrder, Data, OrderBookDelta, trade::TradeTick},
+    enums::{AggressorSide, BookAction, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
+
+const DELTA_FRAME_SIZE: usize = 8;
 
 fn sample_trade() -> TradeTick {
     TradeTick {
@@ -51,15 +56,36 @@ fn sample_trade() -> TradeTick {
     }
 }
 
+fn sample_delta(flags: u8) -> OrderBookDelta {
+    OrderBookDelta::new(
+        InstrumentId::from("EUR/USD.SIM"),
+        BookAction::Update,
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1.10000"),
+            Quantity::from(100_000),
+            1,
+        ),
+        flags,
+        1,
+        0.into(),
+        0.into(),
+    )
+}
+
 fn install_thread_local_msgbus() {
     msgbus::set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
 }
 
 fn build_engine() -> Rc<RefCell<DataEngine>> {
+    build_engine_with_config(None)
+}
+
+fn build_engine_with_config(config: Option<DataEngineConfig>) -> Rc<RefCell<DataEngine>> {
     install_thread_local_msgbus();
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let engine = Rc::new(RefCell::new(DataEngine::new(clock, cache, None)));
+    let engine = Rc::new(RefCell::new(DataEngine::new(clock, cache, config)));
     DataEngine::register_msgbus_handlers(&engine);
     engine
 }
@@ -117,5 +143,90 @@ fn bench_process_trade_batch(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_process_trade, bench_process_trade_batch);
+fn bench_process_delta(c: &mut Criterion) {
+    let mut group = c.benchmark_group("DataEngine ingest");
+    group.throughput(Throughput::Elements(1));
+
+    // Default config publishes each incremental delta as its own batch
+    group.bench_function("process_data_delta", |b| {
+        let engine = build_engine();
+        let delta = sample_delta(RecordFlag::F_LAST as u8);
+        b.iter(|| {
+            engine
+                .borrow_mut()
+                .process_data(Data::Delta(black_box(delta)));
+        });
+    });
+
+    group.finish();
+}
+
+fn bench_process_delta_batch(c: &mut Criterion) {
+    let mut group = c.benchmark_group("DataEngine ingest batch");
+
+    for size in [1_000_usize, 10_000, 100_000] {
+        group.throughput(Throughput::Elements(size as u64));
+        group.bench_with_input(
+            criterion::BenchmarkId::new("process_data_delta", size),
+            &size,
+            |b, &n| {
+                let engine = build_engine();
+                let delta = sample_delta(RecordFlag::F_LAST as u8);
+                b.iter(|| {
+                    let mut e = engine.borrow_mut();
+                    for _ in 0..n {
+                        e.process_data(Data::Delta(black_box(delta)));
+                    }
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn bench_process_delta_buffered(c: &mut Criterion) {
+    let mut group = c.benchmark_group("DataEngine ingest batch");
+    let config = DataEngineConfig {
+        buffer_deltas: true,
+        ..DataEngineConfig::default()
+    };
+
+    // Incremental stream: engine buffers until F_LAST, then publishes
+    for size in [1_000_usize, 10_000, 100_000] {
+        group.throughput(Throughput::Elements(size as u64));
+        group.bench_with_input(
+            criterion::BenchmarkId::new("process_data_delta_buffered", size),
+            &size,
+            |b, &n| {
+                let engine = build_engine_with_config(Some(config.clone()));
+                let body = sample_delta(0);
+                let last = sample_delta(RecordFlag::F_LAST as u8);
+                b.iter(|| {
+                    let mut e = engine.borrow_mut();
+
+                    for i in 0..n {
+                        let delta = if (i + 1).is_multiple_of(DELTA_FRAME_SIZE) || i + 1 == n {
+                            last
+                        } else {
+                            body
+                        };
+                        e.process_data(Data::Delta(black_box(delta)));
+                    }
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_process_trade,
+    bench_process_trade_batch,
+    bench_process_delta,
+    bench_process_delta_batch,
+    bench_process_delta_buffered,
+);
 criterion_main!(benches);
