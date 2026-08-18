@@ -64,6 +64,37 @@ def test_defi_public_module_names():
     assert DexType.__module__ == "nautilus_trader.model"
 
 
+@pytest.mark.parametrize(
+    ("factory", "expected_err"),
+    [
+        ("", "Ethereum address must start with '0x': "),
+        (
+            "742d35Cc6634C0532925a3b844Bc454e4438f44e",
+            "Ethereum address must start with '0x': 742d35Cc6634C0532925a3b844Bc454e4438f44e",
+        ),
+        (
+            "0x1233",
+            "Blockchain address '0x1233' is incorrect: invalid string length",
+        ),
+        (
+            "0xZZZd35Cc6634C0532925a3b844Bc454e4438f44e",
+            "Blockchain address '0xZZZd35Cc6634C0532925a3b844Bc454e4438f44e' is incorrect: invalid character 'Z' at position 0",
+        ),
+        (
+            "0x742d35cc6634c0532925a3b844bc454e4438f44e",
+            "Blockchain address '0x742d35cc6634c0532925a3b844bc454e4438f44e' has incorrect checksum",
+        ),
+    ],
+)
+def test_dex_rejects_invalid_factory_address(factory, expected_err):
+    chain = Chain(Blockchain.BASE, 8453)
+
+    with pytest.raises(ValueError, match=expected_err) as exc_info:
+        _make_dex(chain, factory)
+
+    assert str(exc_info.value) == expected_err
+
+
 def test_dex_and_token_properties():
     chain = Chain(Blockchain.BASE, 8453)
     dex = _make_dex(chain)
@@ -196,11 +227,11 @@ def test_pool_profiler_surface_methods():
     assert hasattr(PoolProfiler, "size_for_impact_bps_detailed")
 
 
-def _make_dex(chain):
+def _make_dex(chain, factory="0x0000000000000000000000000000000000000fac"):
     return Dex(
         chain=chain,
         name="UniswapV3",
-        factory="0x0000000000000000000000000000000000000fac",
+        factory=factory,
         factory_creation_block=1,
         amm_type="CLAMM",
         pool_created_event="PoolCreated",
