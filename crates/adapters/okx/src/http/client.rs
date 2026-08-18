@@ -2214,9 +2214,12 @@ impl OKXHttpClient {
 
     /// Requests all instruments for the `instrument_type` from OKX.
     ///
+    /// Option requests require `instrument_family` (OKX `instFamily`), for example `BTC-USD`.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the HTTP request fails or instrument parsing fails.
+    /// Returns an error if `instrument_type` is option and `instrument_family` is missing,
+    /// the HTTP request fails, or instrument parsing fails.
     ///
     /// # Returns
     ///
@@ -2228,6 +2231,12 @@ impl OKXHttpClient {
         instrument_type: OKXInstrumentType,
         instrument_family: Option<String>,
     ) -> anyhow::Result<(Vec<InstrumentAny>, Vec<(Ustr, u64)>)> {
+        if instrument_type == OKXInstrumentType::Option && instrument_family.is_none() {
+            anyhow::bail!(
+                "option instruments require instrument_family (OKX instFamily), for example BTC-USD"
+            );
+        }
+
         let resp = if instrument_type == OKXInstrumentType::Events {
             let series_ids = if let Some(series_id) = instrument_family.clone() {
                 vec![series_id]

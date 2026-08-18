@@ -2123,6 +2123,34 @@ async fn test_http_request_event_instruments_fetches_all_series() {
 
 #[rstest]
 #[tokio::test]
+async fn test_http_request_option_instruments_requires_family() {
+    let client = OKXHttpClient::new(
+        Some("http://127.0.0.1:1".to_string()),
+        60,
+        0,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let error = client
+        .request_instruments(OKXInstrumentType::Option, None)
+        .await
+        .unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains("instrument_family"), "was {message}");
+    assert!(message.contains("BTC-USD"), "was {message}");
+    assert!(
+        !message.contains("error sending request"),
+        "must not reach HTTP, was {message}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_http_request_event_instrument_scans_series_until_match() {
     let state = Arc::new(TestServerState::default());
     let addr = start_test_server(state.clone()).await;
