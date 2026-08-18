@@ -31,6 +31,14 @@ pub enum OKXWsError {
     JsonError(String),
     #[error("Client error: {0}")]
     ClientError(String),
+    #[error("No active WebSocket client")]
+    NoActiveClient,
+    #[error("Handler not available: {0}")]
+    HandlerUnavailable(String),
+    #[error("Send failed: {0}")]
+    SendFailed(String),
+    #[error("Operation timed out after {timeout_ms}ms")]
+    OperationTimeout { timeout_ms: u64 },
     #[error("Authentication error: {0}")]
     AuthenticationError(String),
     /// Wrapping the underlying HttpClientError from the network crate.

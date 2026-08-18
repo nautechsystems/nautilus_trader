@@ -4999,7 +4999,7 @@ async fn test_http_okx_error_falls_back_to_s_msg_on_http_200() {
             error_code,
             message,
         }) => {
-            assert_eq!(error_code, "1");
+            assert_eq!(error_code, "51000");
             assert_eq!(message, "Parameter triggerPx error");
         }
         other => panic!("expected OkxError: {other:?}"),
@@ -5076,7 +5076,7 @@ async fn test_http_okx_error_falls_back_to_s_msg_on_http_400() {
             error_code,
             message,
         }) => {
-            assert_eq!(error_code, "1");
+            assert_eq!(error_code, "51000");
             assert_eq!(message, "Parameter triggerPx error");
         }
         other => panic!("expected OkxError: {other:?}"),
@@ -5150,7 +5150,7 @@ async fn test_http_okx_error_falls_back_to_s_code_when_s_msg_empty() {
             error_code,
             message,
         }) => {
-            assert_eq!(error_code, "1");
+            assert_eq!(error_code, "51008");
             assert_eq!(message, "51008");
         }
         other => panic!("expected OkxError: {other:?}"),

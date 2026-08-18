@@ -1577,6 +1577,13 @@ impl From<OKXHttpError> for PyErr {
             OKXHttpError::UnexpectedStatus { status, body } => {
                 to_pyruntime_err(format!("Unexpected HTTP status code {status}: {body}"))
             }
+            OKXHttpError::OperationTimeout { timeout_ms } => {
+                to_pyruntime_err(format!("Operation timed out after {timeout_ms}ms"))
+            }
+            OKXHttpError::RetryBudgetExceeded(msg) => {
+                to_pyruntime_err(format!("Retry budget exceeded: {msg}"))
+            }
+            OKXHttpError::EmptyResponse => to_pyruntime_err("Empty response"),
             // Validation/configuration errors
             OKXHttpError::MissingCredentials => {
                 to_pyvalue_err("Missing credentials for authenticated request")

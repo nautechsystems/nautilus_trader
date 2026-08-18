@@ -30,7 +30,10 @@ use ahash::AHashMap;
 use dashmap::DashMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::{AtomicMap, MUTEX_POISONED, UUID4, UnixNanos, time::AtomicTime};
-use nautilus_live::{ExecutionEventEmitter, execution::context::OrderIdentity};
+use nautilus_live::{
+    ExecutionEventEmitter,
+    execution::{context::OrderIdentity, failure::CommandFailure},
+};
 use nautilus_model::{
     enums::OrderStatus,
     events::{OrderAccepted, OrderEventAny, OrderFilled, OrderRejected, OrderUpdated},
@@ -51,6 +54,7 @@ use crate::{
             OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_SUCCESS_CODE,
         },
         enums::{OKXOrderStatus, OKXOrderType},
+        failure::{classify_okx_venue_code, classify_okx_ws_failure},
         parse::{
             is_market_price, parse_client_order_id, parse_millisecond_timestamp, parse_price,
             parse_quantity,
@@ -428,6 +432,24 @@ pub fn dispatch_ws_message(
                     .filter(|s| !s.is_empty())
                     .map(VenueOrderId::new);
 
+                match classify_okx_venue_code(s_code, reason.clone()) {
+                    CommandFailure::Ambiguous(reason) => {
+                        log::warn!(
+                            "Ambiguous order response for {client_order_id}, awaiting reconciliation: \
+                             op={op:?} s_code={s_code} {reason}"
+                        );
+                        continue;
+                    }
+                    CommandFailure::NotSent(_) => {
+                        log::warn!(
+                            "Unexpected NotSent classification for venue order response: \
+                             op={op:?} cl_ord_id={cl_ord_id} s_code={s_code}"
+                        );
+                        continue;
+                    }
+                    CommandFailure::VenueRejected(_) => {}
+                }
+
                 match op {
                     OKXWsOperation::Order | OKXWsOperation::BatchOrders => {
                         state.order_identities.remove(&client_order_id);
@@ -486,10 +508,11 @@ pub fn dispatch_ws_message(
             op,
             error,
         } => {
+            let failure = classify_okx_ws_failure(&error);
             log::warn!(
                 "WebSocket send failed without structured venue response: \
                  request_id={request_id}, client_order_id={client_order_id:?}, \
-                 op={op:?}, awaiting reconciliation: {error}"
+                 op={op:?}, {failure:?}"
             );
 
             if let Some(client_order_id) = client_order_id {
@@ -502,6 +525,7 @@ pub fn dispatch_ws_message(
                         | OKXWsOperation::OrderAlgo,
                     ) => {
                         state.pending_orders.remove(key);
+                        emit_send_failed_submit(failure, state, emitter, clock, client_order_id);
                     }
                     Some(
                         OKXWsOperation::CancelOrder
@@ -513,6 +537,7 @@ pub fn dispatch_ws_message(
                     }
                     Some(OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders) => {
                         state.pending_amends.remove(key);
+                        emit_send_failed_modify(failure, state, emitter, clock, client_order_id);
                     }
                     _ => {}
                 }
@@ -1323,6 +1348,63 @@ pub fn dispatch_execution_reports(
     }
 }
 
+fn emit_send_failed_submit(
+    failure: CommandFailure,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+    clock: &AtomicTime,
+    client_order_id: ClientOrderId,
+) {
+    let (CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason)) = failure else {
+        return;
+    };
+    let Some(ident) = state
+        .order_identities
+        .get(&client_order_id)
+        .map(|entry| *entry)
+    else {
+        return;
+    };
+
+    state.order_identities.remove(&client_order_id);
+    emitter.emit_order_rejected_event(
+        ident.strategy_id,
+        ident.instrument_id,
+        client_order_id,
+        &reason,
+        clock.get_time_ns(),
+        false,
+    );
+}
+
+fn emit_send_failed_modify(
+    failure: CommandFailure,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+    clock: &AtomicTime,
+    client_order_id: ClientOrderId,
+) {
+    let (CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason)) = failure else {
+        return;
+    };
+    let Some(ident) = state
+        .order_identities
+        .get(&client_order_id)
+        .map(|entry| *entry)
+    else {
+        return;
+    };
+
+    emitter.emit_order_modify_rejected_event(
+        ident.strategy_id,
+        ident.instrument_id,
+        client_order_id,
+        None,
+        &reason,
+        clock.get_time_ns(),
+    );
+}
+
 fn format_order_response_reason(s_code: &str, s_msg: &str, sub_code: &str) -> String {
     match (s_msg.is_empty(), sub_code.is_empty(), s_code.is_empty()) {
         (false, true, _) => s_msg.to_string(),
@@ -1357,6 +1439,27 @@ pub fn emit_algo_cancel_rejections(
         }
 
         let msg = item.s_msg.as_deref().unwrap_or("");
+
+        if matches!(
+            classify_okx_venue_code(code, msg),
+            CommandFailure::Ambiguous(_) | CommandFailure::NotSent(_)
+        ) {
+            if let Some(ctx) = contexts.get(i) {
+                log::warn!(
+                    "Ambiguous algo cancel response for {}, awaiting reconciliation: \
+                     algo_id={} sCode={code} sMsg={msg}",
+                    ctx.client_order_id,
+                    item.algo_id
+                );
+            } else {
+                log::warn!(
+                    "Ambiguous algo cancel response without context at index {i}: \
+                     algo_id={} sCode={code} sMsg={msg}",
+                    item.algo_id
+                );
+            }
+            continue;
+        }
 
         if let Some(ctx) = contexts.get(i) {
             let ts = clock.get_time_ns();

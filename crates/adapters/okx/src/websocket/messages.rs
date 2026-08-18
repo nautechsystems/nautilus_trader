@@ -150,7 +150,7 @@ pub enum OKXWsMessage {
         request_id: String,
         client_order_id: Option<ClientOrderId>,
         op: Option<OKXWsOperation>,
-        error: String,
+        error: super::error::OKXWsError,
     },
     /// Error received from OKX.
     Error(OKXWebSocketError),

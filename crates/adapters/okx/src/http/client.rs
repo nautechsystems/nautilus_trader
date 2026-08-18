@@ -173,6 +173,24 @@ fn spot_quote_priority(symbol: &str) -> u8 {
     })
 }
 
+fn resolve_okx_error_code(response_body: &[u8], envelope_code: &str) -> String {
+    if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(response_body)
+        && let Some(s_code) = payload
+            .get("data")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|items| items.first())
+            .and_then(|item| item.get(OKX_FIELD_SCODE))
+            .and_then(serde_json::Value::as_str)
+    {
+        let s_code = s_code.trim();
+        if !s_code.is_empty() {
+            return s_code.to_string();
+        }
+    }
+
+    envelope_code.to_string()
+}
+
 fn resolve_okx_error_message(response_body: &[u8], top_level_msg: &str) -> String {
     let message = top_level_msg.trim();
     let is_generic_top_level = message.eq_ignore_ascii_case("All operations failed");
@@ -237,7 +255,8 @@ mod tests {
     use rust_decimal::Decimal;
 
     use super::{
-        OKXInstrumentDefinitionError, deserialize_okx_response, resolve_okx_error_message,
+        OKXInstrumentDefinitionError, deserialize_okx_response, resolve_okx_error_code,
+        resolve_okx_error_message,
     };
     use crate::http::models::OKXFeeRate;
 
@@ -271,6 +290,22 @@ mod tests {
             resolve_okx_error_message(body, "All operations failed"),
             "Test detailed failure",
         );
+    }
+
+    #[rstest]
+    fn test_resolve_okx_error_code_prefers_item_s_code_over_envelope() {
+        let body = br#"{
+            "code": "1",
+            "msg": "All operations failed",
+            "data": [
+                {
+                    "sCode": "50013",
+                    "sMsg": "System busy, please retry later"
+                }
+            ]
+        }"#;
+
+        assert_eq!(resolve_okx_error_code(body, "1"), "50013");
     }
 
     #[rstest]
@@ -846,7 +881,7 @@ impl OKXRawHttpClient {
                             && okx_response.code == OKX_PARTIAL_SUCCESS_CODE)
                     {
                         return Err(OKXHttpError::OkxError {
-                            error_code: okx_response.code,
+                            error_code: resolve_okx_error_code(&resp.body, &okx_response.code),
                             message: resolve_okx_error_message(&resp.body, &okx_response.msg),
                         });
                     }
@@ -865,7 +900,7 @@ impl OKXRawHttpClient {
 
                     if let Ok(parsed_error) = deserialize_okx_response::<T>(&resp.body) {
                         return Err(OKXHttpError::OkxError {
-                            error_code: parsed_error.code,
+                            error_code: resolve_okx_error_code(&resp.body, &parsed_error.code),
                             message: resolve_okx_error_message(&resp.body, &parsed_error.msg),
                         });
                     }
@@ -896,7 +931,15 @@ impl OKXRawHttpClient {
                 RetryError::Canceled => {
                     OKXHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
                 }
-                error => OKXHttpError::ValidationError(error.to_string()),
+                RetryError::OperationTimeout { timeout_ms } => {
+                    OKXHttpError::OperationTimeout { timeout_ms }
+                }
+                RetryError::InvalidConfiguration { message } => {
+                    OKXHttpError::ValidationError(message)
+                }
+                error @ RetryError::ElapsedBudgetExceeded { .. } => {
+                    OKXHttpError::RetryBudgetExceeded(error.to_string())
+                }
             }
         };
 
@@ -5140,9 +5183,7 @@ impl OKXHttpClient {
             .send_request::<_, ()>(Method::POST, "/api/v5/trade/order", None, Some(body), true)
             .await?;
 
-        resp.into_iter()
-            .next()
-            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
+        resp.into_iter().next().ok_or(OKXHttpError::EmptyResponse)
     }
 
     /// Places multiple regular orders via HTTP.
@@ -5193,9 +5234,7 @@ impl OKXHttpClient {
             )
             .await?;
 
-        resp.into_iter()
-            .next()
-            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
+        resp.into_iter().next().ok_or(OKXHttpError::EmptyResponse)
     }
 
     /// Amends multiple regular orders via HTTP.
@@ -5234,10 +5273,7 @@ impl OKXHttpClient {
         request: OKXPlaceSpreadOrderRequest,
     ) -> Result<OKXPlaceOrderResponse, OKXHttpError> {
         let resp = self.inner.place_spread_order(request).await?;
-        let item = resp
-            .into_iter()
-            .next()
-            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))?;
+        let item = resp.into_iter().next().ok_or(OKXHttpError::EmptyResponse)?;
 
         if let Some(ref code) = item.s_code
             && code != OKX_SUCCESS_CODE
@@ -5262,10 +5298,7 @@ impl OKXHttpClient {
         request: OKXCancelSpreadOrderRequest,
     ) -> Result<OKXCancelOrderResponse, OKXHttpError> {
         let resp = self.inner.cancel_spread_order(request).await?;
-        let item = resp
-            .into_iter()
-            .next()
-            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))?;
+        let item = resp.into_iter().next().ok_or(OKXHttpError::EmptyResponse)?;
 
         if let Some(ref code) = item.s_code
             && code != OKX_SUCCESS_CODE
@@ -5333,9 +5366,7 @@ impl OKXHttpClient {
             cl_ord_id,
         };
         let mut resp = self.cancel_orders(vec![request]).await?;
-        let item = resp
-            .pop()
-            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))?;
+        let item = resp.pop().ok_or(OKXHttpError::EmptyResponse)?;
 
         if let Some(ref code) = item.s_code
             && code != OKX_SUCCESS_CODE
@@ -5477,10 +5508,7 @@ impl OKXHttpClient {
             )
             .await?;
 
-        let item = resp
-            .into_iter()
-            .next()
-            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))?;
+        let item = resp.into_iter().next().ok_or(OKXHttpError::EmptyResponse)?;
 
         if let Some(ref code) = item.s_code
             && code != "0"
@@ -5524,10 +5552,7 @@ impl OKXHttpClient {
             )
             .await?;
 
-        let item = resp
-            .into_iter()
-            .next()
-            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))?;
+        let item = resp.into_iter().next().ok_or(OKXHttpError::EmptyResponse)?;
 
         if let Some(ref code) = item.s_code
             && code != "0"
@@ -5667,9 +5692,7 @@ impl OKXHttpClient {
             )
             .await?;
 
-        resp.into_iter()
-            .next()
-            .ok_or_else(|| OKXHttpError::ValidationError("Empty response".to_string()))
+        resp.into_iter().next().ok_or(OKXHttpError::EmptyResponse)
     }
 
     /// Amends an algo order using domain types.

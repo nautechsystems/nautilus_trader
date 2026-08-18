@@ -34,7 +34,7 @@ use std::{
 use nautilus_model::identifiers::ClientOrderId;
 use nautilus_network::{
     RECONNECTED,
-    retry::{RetryManager, create_websocket_retry_manager},
+    retry::{RetryError, RetryManager, create_websocket_retry_manager},
     websocket::{AuthTracker, SubscriptionState, TEXT_PING, TEXT_PONG, WebSocketClient},
 };
 use serde_json::Value;
@@ -142,17 +142,15 @@ impl OKXWsFeedHandler {
                             client
                                 .send_text(payload, keys.as_deref())
                                 .await
-                                .map_err(|e| OKXWsError::ClientError(format!("Send failed: {e}")))
+                                .map_err(|e| OKXWsError::SendFailed(e.to_string()))
                         }
                     },
                     should_retry_okx_error,
-                    |e| create_okx_timeout_error(e.to_string()),
+                    create_okx_retry_error,
                 )
                 .await
         } else {
-            Err(OKXWsError::ClientError(
-                "No active WebSocket client".to_string(),
-            ))
+            Err(OKXWsError::NoActiveClient)
         }
     }
 
@@ -225,7 +223,7 @@ impl OKXWsFeedHandler {
                                         request_id,
                                         client_order_id,
                                         op,
-                                        error: format!("{e}"),
+                                        error: e,
                                     });
                                 }
                             }
@@ -677,18 +675,31 @@ const RETRYABLE_CLIENT_ERROR_PHRASES: &[&str] = &[
 fn should_retry_okx_error(error: &OKXWsError) -> bool {
     match error {
         OKXWsError::OkxError { error_code, .. } => should_retry_error_code(error_code),
-        OKXWsError::TungsteniteError(_) => true,
+        OKXWsError::TungsteniteError(_)
+        | OKXWsError::SendFailed(_)
+        | OKXWsError::OperationTimeout { .. } => true,
         OKXWsError::ClientError(msg) => RETRYABLE_CLIENT_ERROR_PHRASES
             .iter()
             .any(|phrase| contains_ignore_ascii_case(msg, phrase)),
         OKXWsError::AuthenticationError(_)
         | OKXWsError::JsonError(_)
-        | OKXWsError::ParsingError(_) => false,
+        | OKXWsError::ParsingError(_)
+        | OKXWsError::NoActiveClient
+        | OKXWsError::HandlerUnavailable(_) => false,
     }
 }
 
-fn create_okx_timeout_error(msg: String) -> OKXWsError {
-    OKXWsError::ClientError(msg)
+fn create_okx_retry_error(error: RetryError) -> OKXWsError {
+    match error {
+        RetryError::OperationTimeout { timeout_ms } => OKXWsError::OperationTimeout { timeout_ms },
+        RetryError::InvalidConfiguration { message } => OKXWsError::ClientError(message),
+        RetryError::Canceled => {
+            OKXWsError::SendFailed("Adapter disconnecting or shutting down".to_string())
+        }
+        error @ RetryError::ElapsedBudgetExceeded { .. } => {
+            OKXWsError::SendFailed(error.to_string())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -718,6 +729,20 @@ mod tests {
             AuthTracker::new(),
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
         )
+    }
+
+    #[rstest]
+    fn test_should_retry_typed_send_and_timeout_errors() {
+        assert!(should_retry_okx_error(&OKXWsError::SendFailed(
+            "connection reset".to_string()
+        )));
+        assert!(should_retry_okx_error(&OKXWsError::OperationTimeout {
+            timeout_ms: 1_000
+        }));
+        assert!(!should_retry_okx_error(&OKXWsError::NoActiveClient));
+        assert!(!should_retry_okx_error(&OKXWsError::HandlerUnavailable(
+            "closed".to_string()
+        )));
     }
 
     #[rstest]

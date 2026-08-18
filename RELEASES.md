@@ -181,6 +181,7 @@ Released on TBD (UTC).
 - Fixed OKX margin reconciliation omitting `SPOT` orders and fills (#4743), thanks @silarin
 - Fixed OKX `QueryOrder` routing for algo and regular orders (#4731), thanks @silarin
 - Fixed OKX algo child dispatch and triggered conditional query recovery
+- Fixed OKX retryable and timeout command failures being treated as venue rejections
 - Fixed Polymarket commissions to preserve exact decimal values in `Money` construction
 - Fixed Polymarket maker fill ownership and reported mass‑status trade drops (#4662), thanks @seungpyoson
 - Fixed Polymarket WebSocket asset and discovery subscription replay across reconnects
@@ -218,6 +219,7 @@ Released on TBD (UTC).
 - Replaced Chrono and Chrono-TZ with Jiff and bundled TZDB data (#4639), thanks @sunlei
 - Standardized remaining risk engine order‑denied reasons to coded values (#4744), thanks @folknor
 - Standardized Rust adapter order command failure classification with a shared `CommandFailure` type for Architect AX, Bybit, and Kraken
+- Standardized OKX order command failure classification with the shared `CommandFailure` type
 - Optimized pre-commit and local validation by reusing build artifacts and skipping unchanged checks, thanks @faysou
 - Optimized Polymarket interleaved price‑change dispatch and timestamp parsing
 - Updated concept and tutorial docs to describe current Rust and PyO3 behavior after the v1 removal

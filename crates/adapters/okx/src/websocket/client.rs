@@ -3422,7 +3422,7 @@ impl OKXWebSocketClient {
             .read()
             .await
             .send(cmd)
-            .map_err(|e| OKXWsError::ClientError(format!("Handler not available: {e}")))
+            .map_err(|e| OKXWsError::HandlerUnavailable(e.to_string()))
     }
 }
 

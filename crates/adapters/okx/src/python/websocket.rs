@@ -51,6 +51,7 @@ use nautilus_core::{
     python::{call_python_threadsafe, params::value_to_pyobject, to_pyruntime_err, to_pyvalue_err},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::execution::failure::CommandFailure;
 use nautilus_model::{
     data::{BarType, Data, InstrumentStatus},
     enums::{OrderSide, OrderType, PositionSide, TimeInForce},
@@ -83,6 +84,7 @@ use crate::{
             OKXBookAction, OKXGreeksType, OKXInstrumentStatus, OKXInstrumentType, OKXTradeMode,
             OKXVipLevel,
         },
+        failure::{classify_okx_venue_code, classify_okx_ws_failure},
         models::OKXInstrument,
         parse::{
             okx_status_to_market_action, parse_account_state, parse_instrument_any,
@@ -2770,6 +2772,16 @@ fn handle_order_response(
                 _ => {}
             }
         } else if !cl_ord_id.is_empty() {
+            if matches!(
+                classify_okx_venue_code(s_code, s_msg),
+                CommandFailure::Ambiguous(_) | CommandFailure::NotSent(_)
+            ) {
+                log::warn!(
+                    "Ambiguous order response for {cl_ord_id}, awaiting reconciliation: \
+                     op={op:?} s_code={s_code} s_msg={s_msg}"
+                );
+                continue;
+            }
             log::warn!(
                 "Order response rejected: op={op:?} cl_ord_id={cl_ord_id} \
                  s_code={s_code} s_msg={s_msg}"
@@ -2855,31 +2867,42 @@ fn handle_send_failed(
     request_id: &str,
     client_order_id: Option<ClientOrderId>,
     op: Option<&OKXWsOperation>,
-    error: &str,
+    error: &crate::websocket::error::OKXWsError,
     client: &OKXWebSocketClient,
     account_id: AccountId,
     clock: &AtomicTime,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
 ) {
-    log::error!("WebSocket send failed: request_id={request_id} error={error}");
+    let failure = classify_okx_ws_failure(error);
+    log::error!("WebSocket send failed: request_id={request_id} error={error} {failure:?}");
 
     let Some(client_order_id) = client_order_id else {
         return;
     };
     let cl_ord_str = client_order_id.to_string();
     let ts_init = clock.get_time_ns();
+    let emit_terminal = !matches!(failure, CommandFailure::Ambiguous(_));
+    let reason = match failure {
+        CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => reason,
+        CommandFailure::Ambiguous(reason) => {
+            log::warn!(
+                "Ambiguous send failure for {client_order_id}, awaiting reconciliation: {reason}"
+            );
+            reason
+        }
+    };
 
     match op {
         Some(OKXWsOperation::Order | OKXWsOperation::BatchOrders | OKXWsOperation::OrderAlgo) => {
-            if let Some((_, info)) = client.pending_orders.remove(&cl_ord_str) {
+            if emit_terminal && let Some((_, info)) = client.pending_orders.remove(&cl_ord_str) {
                 let rejected = OrderRejected::new(
                     info.trader_id,
                     info.strategy_id,
                     info.instrument_id,
                     client_order_id,
                     account_id,
-                    Ustr::from(error),
+                    Ustr::from(reason.as_str()),
                     UUID4::new(),
                     ts_init,
                     ts_init,
@@ -2895,31 +2918,21 @@ fn handle_send_failed(
             | OKXWsOperation::MassCancel
             | OKXWsOperation::CancelAlgos,
         ) => {
-            if let Some((_, info)) = client.pending_cancels.remove(&cl_ord_str) {
-                let rejected = OrderCancelRejected::new(
-                    info.trader_id,
-                    info.strategy_id,
-                    info.instrument_id,
-                    client_order_id,
-                    Ustr::from(error),
-                    UUID4::new(),
-                    ts_init,
-                    ts_init,
-                    false,
-                    None,
-                    Some(account_id),
+            if emit_terminal {
+                client.pending_cancels.remove(&cl_ord_str);
+                log::warn!(
+                    "Cancel command failed local validation for {client_order_id}: {reason}"
                 );
-                call_python_with_data(call_soon, callback, |py| rejected.into_py_any(py));
             }
         }
         Some(OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders) => {
-            if let Some((_, info)) = client.pending_amends.remove(&cl_ord_str) {
+            if emit_terminal && let Some((_, info)) = client.pending_amends.remove(&cl_ord_str) {
                 let rejected = OrderModifyRejected::new(
                     info.trader_id,
                     info.strategy_id,
                     info.instrument_id,
                     client_order_id,
-                    Ustr::from(error),
+                    Ustr::from(reason.as_str()),
                     UUID4::new(),
                     ts_init,
                     ts_init,

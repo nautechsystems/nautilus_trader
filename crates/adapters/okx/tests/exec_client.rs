@@ -103,6 +103,7 @@ use nautilus_okx::{
             emit_algo_cancel_rejections, emit_batch_cancel_failure,
         },
         enums::{OKXWsChannel, OKXWsOperation},
+        error::OKXWsError,
         messages::{ExecutionReport, OKXOrderMsg, OKXWebSocketArg, OKXWsFrame, OKXWsMessage},
         parse::OrderStateSnapshot,
     },
@@ -335,11 +336,53 @@ async fn recv_query_order_report(
 #[rstest]
 fn test_ambiguous_submit_send_failure_does_not_emit_order_rejected() {
     let cid = ClientOrderId::new("O-submit-send-failure");
-    let (events, state) = dispatch_send_failed_response(OKXWsOperation::Order, cid);
+    let (events, state) = dispatch_send_failed_response(
+        OKXWsOperation::Order,
+        cid,
+        OKXWsError::SendFailed("send failed after retries".to_string()),
+    );
 
     assert!(
         !contains_order_event(&events, |event| matches!(event, OrderEventAny::Rejected(_))),
         "ambiguous submit failure should not emit OrderRejected: {events:?}"
+    );
+    assert!(state.order_identities.contains_key(&cid));
+}
+
+#[rstest]
+fn test_unsent_submit_send_failure_emits_order_rejected() {
+    let cid = ClientOrderId::new("O-submit-handler-unavailable");
+    let (events, state) = dispatch_send_failed_response(
+        OKXWsOperation::Order,
+        cid,
+        OKXWsError::HandlerUnavailable("channel closed".to_string()),
+    );
+
+    assert!(
+        contains_order_event(&events, |event| matches!(
+            event,
+            OrderEventAny::Rejected(rejected) if rejected.client_order_id == cid
+        )),
+        "unsent submit failure should emit OrderRejected: {events:?}"
+    );
+    assert!(!state.order_identities.contains_key(&cid));
+}
+
+#[rstest]
+fn test_unsent_modify_send_failure_emits_order_modify_rejected() {
+    let cid = ClientOrderId::new("O-modify-handler-unavailable");
+    let (events, state) = dispatch_send_failed_response(
+        OKXWsOperation::AmendOrder,
+        cid,
+        OKXWsError::HandlerUnavailable("channel closed".to_string()),
+    );
+
+    assert!(
+        contains_order_event(&events, |event| matches!(
+            event,
+            OrderEventAny::ModifyRejected(rejected) if rejected.client_order_id == cid
+        )),
+        "unsent modify failure should emit OrderModifyRejected: {events:?}"
     );
     assert!(state.order_identities.contains_key(&cid));
 }
@@ -356,9 +399,42 @@ fn test_explicit_venue_submit_rejection_emits_order_rejected() {
 }
 
 #[rstest]
+fn test_retryable_venue_submit_code_does_not_emit_order_rejected() {
+    let cid = ClientOrderId::new("O-submit-system-busy");
+    let events = dispatch_venue_code_response(OKXWsOperation::Order, cid, "50013", "System busy");
+
+    assert!(
+        !contains_order_event(&events, |event| matches!(
+            event,
+            OrderEventAny::Rejected(rejected) if rejected.client_order_id == cid
+        )),
+        "retryable venue submit code should not emit OrderRejected: {events:?}"
+    );
+}
+
+#[rstest]
+fn test_missing_venue_submit_code_does_not_emit_order_rejected() {
+    let cid = ClientOrderId::new("O-submit-missing-scode");
+    let events =
+        dispatch_venue_code_response(OKXWsOperation::Order, cid, "", "All operations failed");
+
+    assert!(
+        !contains_order_event(&events, |event| matches!(
+            event,
+            OrderEventAny::Rejected(rejected) if rejected.client_order_id == cid
+        )),
+        "missing venue sCode should not emit OrderRejected: {events:?}"
+    );
+}
+
+#[rstest]
 fn test_ambiguous_cancel_send_failure_does_not_emit_order_cancel_rejected() {
     let cid = ClientOrderId::new("O-cancel-send-failure");
-    let (events, state) = dispatch_send_failed_response(OKXWsOperation::CancelOrder, cid);
+    let (events, state) = dispatch_send_failed_response(
+        OKXWsOperation::CancelOrder,
+        cid,
+        OKXWsError::SendFailed("send failed after retries".to_string()),
+    );
 
     assert!(
         !contains_order_event(&events, |event| matches!(
@@ -387,7 +463,11 @@ fn test_explicit_venue_cancel_rejection_emits_order_cancel_rejected() {
 #[rstest]
 fn test_ambiguous_modify_send_failure_does_not_emit_order_modify_rejected() {
     let cid = ClientOrderId::new("O-modify-send-failure");
-    let (events, state) = dispatch_send_failed_response(OKXWsOperation::AmendOrder, cid);
+    let (events, state) = dispatch_send_failed_response(
+        OKXWsOperation::AmendOrder,
+        cid,
+        OKXWsError::SendFailed("send failed after retries".to_string()),
+    );
 
     assert!(
         !contains_order_event(&events, |event| matches!(
@@ -607,6 +687,7 @@ async fn test_local_modify_validation_failure_emits_order_modify_rejected() {
 fn dispatch_send_failed_response(
     op: OKXWsOperation,
     client_order_id: ClientOrderId,
+    error: OKXWsError,
 ) -> (Vec<ExecutionEvent>, WsDispatchState) {
     let (emitter, mut rx) = test_emitter();
     let state = state_with_order_identity(client_order_id, InstrumentId::from("ETH-USDT-SWAP.OKX"));
@@ -616,7 +697,7 @@ fn dispatch_send_failed_response(
             request_id: "req-send-failure".to_string(),
             client_order_id: Some(client_order_id),
             op: Some(op),
-            error: "send failed after retries".to_string(),
+            error,
         },
         &emitter,
         &state,
@@ -629,6 +710,15 @@ fn dispatch_explicit_rejection_response(
     op: OKXWsOperation,
     client_order_id: ClientOrderId,
 ) -> Vec<ExecutionEvent> {
+    dispatch_venue_code_response(op, client_order_id, "51000", "Order rejected by venue")
+}
+
+fn dispatch_venue_code_response(
+    op: OKXWsOperation,
+    client_order_id: ClientOrderId,
+    s_code: &str,
+    s_msg: &str,
+) -> Vec<ExecutionEvent> {
     let (emitter, mut rx) = test_emitter();
     let state = state_with_order_identity(client_order_id, InstrumentId::from("ETH-USDT-SWAP.OKX"));
 
@@ -639,8 +729,8 @@ fn dispatch_explicit_rejection_response(
             code: "1".to_string(),
             msg: "All operations failed".to_string(),
             data: vec![json!({
-                "sCode": "51000",
-                "sMsg": "Order rejected by venue",
+                "sCode": s_code,
+                "sMsg": s_msg,
                 "clOrdId": client_order_id.as_str(),
                 "ordId": "12345",
             })],

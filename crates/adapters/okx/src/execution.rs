@@ -43,7 +43,10 @@ use nautilus_core::{
 };
 use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter,
-    execution::context::{OrderContext, OrderIdentity},
+    execution::{
+        context::{OrderContext, OrderIdentity},
+        failure::CommandFailure,
+    },
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -67,23 +70,22 @@ use crate::{
     common::{
         consts::{
             OKX_CONDITIONAL_ORDER_TYPES, OKX_SUCCESS_CODE, OKX_VENUE, OKX_WS_HEARTBEAT_SECS,
-            resolve_instrument_families, should_retry_error_code, validate_okx_client_order_id,
+            resolve_instrument_families, validate_okx_client_order_id,
         },
         enums::{OKXInstrumentType, OKXMarginMode, OKXTradeMode, is_advance_algo_order},
+        failure::{classify_okx_http_failure, classify_okx_venue_code, classify_okx_ws_failure},
         parse::{
             is_okx_spread_symbol, is_order_status_report_more_advanced, nanos_to_datetime,
             okx_instrument_type_from_symbol,
         },
     },
     config::OKXExecClientConfig,
-    http::{client::OKXHttpClient, error::OKXHttpError, models::OKXCancelAlgoOrderRequest},
+    http::{client::OKXHttpClient, models::OKXCancelAlgoOrderRequest},
     websocket::{
         client::OKXWebSocketClient,
         dispatch::{
             AlgoCancelContext, WsDispatchState, dispatch_ws_message, emit_algo_cancel_rejections,
-            emit_batch_cancel_failure,
         },
-        error::OKXWsError,
         parse::OrderStateSnapshot,
     },
 };
@@ -382,21 +384,14 @@ impl OKXExecutionClient {
                 .await;
 
             if let Err(e) = result {
-                if is_okx_ws_local_command_failure(&e) {
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        &format!("submit-order-error: {e}"),
-                        ts_event,
-                        false,
-                    );
-                } else {
-                    log::warn!(
-                        "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {e}"
-                    );
-                }
+                emit_submit_failure(
+                    classify_okx_ws_failure(&e),
+                    &emitter,
+                    clock,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                );
                 return Err(anyhow::Error::new(e).context("submit order failed"));
             }
 
@@ -462,21 +457,14 @@ impl OKXExecutionClient {
                 .await;
 
             if let Err(e) = result {
-                if is_okx_http_submit_rejection(&e) || is_okx_http_local_command_failure(&e) {
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        &format!("submit-order-error: {e}"),
-                        ts_event,
-                        false,
-                    );
-                } else {
-                    log::warn!(
-                        "Ambiguous HTTP submit failure for {client_order_id}, awaiting reconciliation: {e}"
-                    );
-                }
+                emit_submit_failure(
+                    classify_okx_http_failure(&e),
+                    &emitter,
+                    clock,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                );
                 return Err(anyhow::Error::new(e).context("submit order failed"));
             }
 
@@ -566,21 +554,14 @@ impl OKXExecutionClient {
                 .await;
 
             if let Err(e) = result {
-                if is_okx_http_submit_rejection(&e) || is_okx_http_local_command_failure(&e) {
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        &format!("submit-order-error: {e}"),
-                        ts_event,
-                        false,
-                    );
-                } else {
-                    log::warn!(
-                        "Ambiguous algo submit failure for {client_order_id}, awaiting reconciliation: {e}"
-                    );
-                }
+                emit_submit_failure(
+                    classify_okx_http_failure(&e),
+                    &emitter,
+                    clock,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                );
                 return Err(anyhow::Error::new(e).context("submit algo order failed"));
             }
 
@@ -608,17 +589,14 @@ impl OKXExecutionClient {
                 .await;
 
             if let Err(e) = result {
-                if is_okx_ws_local_command_failure(&e) {
-                    log::warn!(
-                        "Cancel command failed local validation for {}: {e}",
-                        command.client_order_id
-                    );
-                } else {
-                    log::warn!(
-                        "Ambiguous cancel failure for {}, awaiting reconciliation: {e}",
-                        command.client_order_id
-                    );
-                }
+                emit_cancel_failure(
+                    classify_okx_ws_failure(&e),
+                    None,
+                    command.client_order_id,
+                    command.instrument_id,
+                    command.strategy_id,
+                    command.venue_order_id,
+                );
                 return Err(anyhow::Error::new(e).context("cancel order failed"));
             }
 
@@ -644,27 +622,14 @@ impl OKXExecutionClient {
                 .await;
 
             if let Err(e) = result {
-                if is_okx_http_structured_venue_rejection(&e) {
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_cancel_rejected_event(
-                        command.strategy_id,
-                        command.instrument_id,
-                        command.client_order_id,
-                        command.venue_order_id,
-                        &format!("cancel-order-error: {e}"),
-                        ts_event,
-                    );
-                } else if is_okx_http_local_command_failure(&e) {
-                    log::warn!(
-                        "HTTP cancel command failed local validation for {}: {e}",
-                        command.client_order_id
-                    );
-                } else {
-                    log::warn!(
-                        "Ambiguous HTTP cancel failure for {}, awaiting reconciliation: {e}",
-                        command.client_order_id
-                    );
-                }
+                emit_cancel_failure(
+                    classify_okx_http_failure(&e),
+                    Some((&emitter, clock)),
+                    command.client_order_id,
+                    command.instrument_id,
+                    command.strategy_id,
+                    command.venue_order_id,
+                );
                 return Err(anyhow::Error::new(e).context("cancel order failed"));
             }
 
@@ -702,56 +667,43 @@ impl OKXExecutionClient {
                 http_client.cancel_algo_orders(vec![request]).await
             };
 
-            let reject_reason = match &responses {
-                Err(e) if is_okx_http_structured_venue_rejection(e) => {
-                    Some(format!("cancel-algo-order-error: {e}"))
-                }
-                Err(e) if is_okx_http_local_command_failure(e) => {
-                    log::warn!(
-                        "Algo cancel command failed local validation for {}: {e}",
-                        command.client_order_id
-                    );
-                    None
-                }
+            match responses {
                 Err(e) => {
-                    log::warn!(
-                        "Ambiguous algo cancel failure for {}, awaiting reconciliation: {e}",
-                        command.client_order_id
+                    emit_cancel_failure(
+                        classify_okx_http_failure(&e),
+                        Some((&emitter, clock)),
+                        command.client_order_id,
+                        command.instrument_id,
+                        command.strategy_id,
+                        command.venue_order_id,
                     );
-                    None
+                    return Err(anyhow::Error::new(e).context("cancel algo order failed"));
                 }
                 Ok(resps) => {
-                    // Check per-order business status code
-                    resps.first().and_then(|r| {
+                    if let Some((code, msg)) = resps.first().and_then(|r| {
                         r.s_code.as_deref().and_then(|code| {
-                            if code == OKX_SUCCESS_CODE {
-                                None
-                            } else {
-                                let msg = r.s_msg.as_deref().unwrap_or("unknown");
-                                Some(format!(
-                                    "cancel-algo-order-rejected: s_code={code}, s_msg={msg}"
-                                ))
-                            }
+                            (code != OKX_SUCCESS_CODE)
+                                .then_some((code, r.s_msg.as_deref().unwrap_or("unknown")))
                         })
-                    })
+                    }) {
+                        let reason =
+                            format!("cancel-algo-order-rejected: s_code={code}, s_msg={msg}");
+                        let failure = classify_okx_venue_code(code, reason.clone());
+                        let is_rejected = matches!(failure, CommandFailure::VenueRejected(_));
+                        emit_cancel_failure(
+                            failure,
+                            Some((&emitter, clock)),
+                            command.client_order_id,
+                            command.instrument_id,
+                            command.strategy_id,
+                            command.venue_order_id,
+                        );
+
+                        if is_rejected {
+                            anyhow::bail!("{reason}");
+                        }
+                    }
                 }
-            };
-
-            if let Some(reason) = reject_reason {
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_cancel_rejected_event(
-                    command.strategy_id,
-                    command.instrument_id,
-                    command.client_order_id,
-                    command.venue_order_id,
-                    &reason,
-                    ts_event,
-                );
-                anyhow::bail!("{reason}");
-            }
-
-            if let Err(e) = responses {
-                return Err(anyhow::Error::new(e).context("cancel algo order failed"));
             }
 
             Ok(())
@@ -762,10 +714,10 @@ impl OKXExecutionClient {
         if is_spread_instrument(instrument_id) {
             let http_client = self.http_client.clone();
             self.spawn_task("mass_cancel_orders_http", async move {
-                http_client
-                    .cancel_all_orders(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Mass cancel orders failed: {e}"))?;
+                if let Err(e) = http_client.cancel_all_orders(instrument_id).await {
+                    log_mass_cancel_failure(classify_okx_http_failure(&e), instrument_id);
+                    return Err(anyhow::Error::new(e).context("mass cancel orders failed"));
+                }
                 Ok(())
             });
             return;
@@ -774,7 +726,10 @@ impl OKXExecutionClient {
         let ws_private = self.ws_private.clone();
 
         self.spawn_task("mass_cancel_orders", async move {
-            ws_private.mass_cancel_orders(instrument_id).await?;
+            if let Err(e) = ws_private.mass_cancel_orders(instrument_id).await {
+                log_mass_cancel_failure(classify_okx_ws_failure(&e), instrument_id);
+                return Err(anyhow::Error::new(e).context("mass cancel orders failed"));
+            }
             Ok(())
         });
     }
@@ -866,17 +821,10 @@ impl OKXExecutionClient {
                         emit_algo_cancel_rejections(&responses, &regular_contexts, &emitter, clock);
                     }
                     Err(e) => {
-                        if is_okx_http_local_command_failure(&e) {
-                            for ctx in &regular_contexts {
-                                log::warn!(
-                                    "Algo batch cancel command failed local validation for {}: {e}",
-                                    ctx.client_order_id
-                                );
-                            }
-                        } else {
-                            let msg = format!("{e}");
-                            emit_batch_cancel_failure(&regular_contexts, &msg, &emitter, clock);
-                        }
+                        log_algo_batch_cancel_failure(
+                            classify_okx_http_failure(&e),
+                            &regular_contexts,
+                        );
                         return Err(anyhow::Error::new(e).context("cancel algo orders failed"));
                     }
                 }
@@ -895,17 +843,10 @@ impl OKXExecutionClient {
                         emit_algo_cancel_rejections(&responses, &advance_contexts, &emitter, clock);
                     }
                     Err(e) => {
-                        if is_okx_http_local_command_failure(&e) {
-                            for ctx in &advance_contexts {
-                                log::warn!(
-                                    "Advance algo batch cancel command failed local validation for {}: {e}",
-                                    ctx.client_order_id
-                                );
-                            }
-                        } else {
-                            let msg = format!("{e}");
-                            emit_batch_cancel_failure(&advance_contexts, &msg, &emitter, clock);
-                        }
+                        log_algo_batch_cancel_failure(
+                            classify_okx_http_failure(&e),
+                            &advance_contexts,
+                        );
                         return Err(
                             anyhow::Error::new(e).context("cancel advance algo orders failed")
                         );
@@ -2082,25 +2023,28 @@ impl ExecutionClient for OKXExecutionClient {
                 .await;
 
             if let Err(e) = result {
-                if is_okx_ws_local_command_failure(&e) {
-                    let ts_event = clock.get_time_ns();
+                match classify_okx_ws_failure(&e) {
+                    CommandFailure::NotSent(reason) => {
+                        let ts_event = clock.get_time_ns();
 
-                    for cid in &client_order_ids {
-                        dispatch_state.order_identities.remove(cid);
-                        emitter.emit_order_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            *cid,
-                            &format!("batch-submit-error: {e}"),
-                            ts_event,
-                            false,
+                        for cid in &client_order_ids {
+                            dispatch_state.order_identities.remove(cid);
+                            emitter.emit_order_rejected_event(
+                                strategy_id,
+                                instrument_id,
+                                *cid,
+                                &reason,
+                                ts_event,
+                                false,
+                            );
+                        }
+                    }
+                    CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason) => {
+                        log::warn!(
+                            "Ambiguous batch submit failure for {} orders on {instrument_id}, awaiting reconciliation: {reason}",
+                            client_order_ids.len()
                         );
                     }
-                } else {
-                    log::warn!(
-                        "Ambiguous batch submit failure for {} orders on {instrument_id}, awaiting reconciliation: {e}",
-                        client_order_ids.len()
-                    );
                 }
                 return Err(anyhow::Error::new(e).context("batch submit orders failed"));
             }
@@ -2157,22 +2101,15 @@ impl ExecutionClient for OKXExecutionClient {
                 .await;
 
             if let Err(e) = result {
-                if is_okx_ws_local_command_failure(&e) {
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_modify_rejected_event(
-                        command.strategy_id,
-                        command.instrument_id,
-                        command.client_order_id,
-                        command.venue_order_id,
-                        &format!("modify-order-error: {e}"),
-                        ts_event,
-                    );
-                } else {
-                    log::warn!(
-                        "Ambiguous modify failure for {}, awaiting reconciliation: {e}",
-                        command.client_order_id
-                    );
-                }
+                emit_modify_failure(
+                    classify_okx_ws_failure(&e),
+                    &emitter,
+                    clock,
+                    command.strategy_id,
+                    command.instrument_id,
+                    command.client_order_id,
+                    command.venue_order_id,
+                );
                 return Err(anyhow::Error::new(e).context("modify order failed"));
             }
 
@@ -2272,17 +2209,10 @@ impl ExecutionClient for OKXExecutionClient {
 
                     self.spawn_task("batch_cancel_orders", async move {
                         if let Err(e) = ws_private.batch_cancel_orders(regular_payload).await {
-                            if is_okx_ws_local_command_failure(&e) {
-                                log::warn!(
-                                    "Batch cancel command failed local validation for {} orders: {e}",
-                                    regular_cancel_contexts.len()
-                                );
-                            } else {
-                                log::warn!(
-                                    "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
-                                    regular_cancel_contexts.len()
-                                );
-                            }
+                            log_batch_cancel_failure(
+                                classify_okx_ws_failure(&e),
+                                regular_cancel_contexts.len(),
+                            );
                             return Err(anyhow::Error::new(e).context("batch cancel orders failed"));
                         }
                         Ok(())
@@ -2387,17 +2317,7 @@ impl ExecutionClient for OKXExecutionClient {
 
             self.spawn_task("batch_cancel_orders", async move {
                 if let Err(e) = ws_private.batch_cancel_orders(regular_payload).await {
-                    if is_okx_ws_local_command_failure(&e) {
-                        log::warn!(
-                            "Batch cancel command failed local validation for {} orders: {e}",
-                            cancel_contexts.len()
-                        );
-                    } else {
-                        log::warn!(
-                            "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
-                            cancel_contexts.len()
-                        );
-                    }
+                    log_batch_cancel_failure(classify_okx_ws_failure(&e), cancel_contexts.len());
                     return Err(anyhow::Error::new(e).context("batch cancel orders failed"));
                 }
                 Ok(())
@@ -2442,25 +2362,14 @@ impl ExecutionClient for OKXExecutionClient {
                         .cancel_order(instrument_id, Some(client_order_id), venue_order_id)
                         .await
                     {
-                        if is_okx_http_structured_venue_rejection(&e) {
-                            let ts_event = clock.get_time_ns();
-                            emitter.emit_order_cancel_rejected_event(
-                                strategy_id,
-                                instrument_id,
-                                client_order_id,
-                                venue_order_id,
-                                &format!("cancel-http-order-error: {e}"),
-                                ts_event,
-                            );
-                        } else if is_okx_http_local_command_failure(&e) {
-                            log::warn!(
-                                "HTTP cancel command failed local validation for {client_order_id}: {e}"
-                            );
-                        } else {
-                            log::warn!(
-                                "Ambiguous HTTP cancel failure for {client_order_id}, awaiting reconciliation: {e}"
-                            );
-                        }
+                        emit_cancel_failure(
+                            classify_okx_http_failure(&e),
+                            Some((&emitter, clock)),
+                            client_order_id,
+                            instrument_id,
+                            strategy_id,
+                            venue_order_id,
+                        );
                     }
                 }
                 Ok(())
@@ -2500,80 +2409,144 @@ enum CancelAllOrdersRoute {
     SpreadHttp,
 }
 
-fn is_okx_http_structured_venue_rejection(error: &OKXHttpError) -> bool {
-    matches!(error, OKXHttpError::OkxError { .. })
-}
-
-fn is_okx_http_submit_rejection(error: &OKXHttpError) -> bool {
-    match error {
-        OKXHttpError::OkxError {
-            error_code,
-            message,
-        } => {
-            !matches!(error_code.as_str(), "50004" | "51149")
-                && (should_retry_error_code(error_code) || !is_ambiguous_okx_http_failure(message))
+fn emit_submit_failure(
+    failure: CommandFailure,
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+) {
+    match failure {
+        CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+            emitter.emit_order_rejected_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                &reason,
+                clock.get_time_ns(),
+                false,
+            );
         }
-        _ => false,
+        CommandFailure::Ambiguous(reason) => {
+            log::warn!(
+                "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {reason}"
+            );
+        }
     }
 }
 
-fn is_okx_http_local_command_failure(error: &OKXHttpError) -> bool {
-    match error {
-        OKXHttpError::MissingCredentials => true,
-        OKXHttpError::ValidationError(message) => !is_ambiguous_okx_http_failure(message),
-        _ => false,
+fn emit_modify_failure(
+    failure: CommandFailure,
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: Option<VenueOrderId>,
+) {
+    match failure {
+        CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+            emitter.emit_order_modify_rejected_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                &reason,
+                clock.get_time_ns(),
+            );
+        }
+        CommandFailure::Ambiguous(reason) => {
+            log::warn!(
+                "Ambiguous modify failure for {client_order_id}, awaiting reconciliation: {reason}"
+            );
+        }
     }
 }
 
-fn is_okx_ws_local_command_failure(error: &OKXWsError) -> bool {
-    match error {
-        OKXWsError::ClientError(message) => !is_ambiguous_okx_ws_client_failure(message),
-        OKXWsError::JsonError(_) => true,
-        _ => false,
+fn emit_cancel_failure(
+    failure: CommandFailure,
+    emit_venue: Option<(&ExecutionEventEmitter, &'static AtomicTime)>,
+    client_order_id: ClientOrderId,
+    instrument_id: InstrumentId,
+    strategy_id: StrategyId,
+    venue_order_id: Option<VenueOrderId>,
+) {
+    match failure {
+        CommandFailure::VenueRejected(reason) => {
+            if let Some((emitter, clock)) = emit_venue {
+                emitter.emit_order_cancel_rejected_event(
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                    &reason,
+                    clock.get_time_ns(),
+                );
+            } else {
+                log::warn!(
+                    "Ambiguous cancel failure for {client_order_id}, awaiting reconciliation: {reason}"
+                );
+            }
+        }
+        CommandFailure::NotSent(reason) => {
+            log::warn!("Cancel command failed local validation for {client_order_id}: {reason}");
+        }
+        CommandFailure::Ambiguous(reason) => {
+            log::warn!(
+                "Ambiguous cancel failure for {client_order_id}, awaiting reconciliation: {reason}"
+            );
+        }
     }
 }
 
-fn is_ambiguous_okx_http_failure(message: &str) -> bool {
-    contains_any_ignore_ascii_case(
-        message,
-        &[
-            "empty response",
-            "timeout",
-            "timed out",
-            "retry",
-            "request canceled",
-            "network",
-            "unexpected http status",
-            "status code",
-            "failed to deserialize",
-            "failed to parse",
-        ],
-    )
+fn log_batch_cancel_failure(failure: CommandFailure, order_count: usize) {
+    match failure {
+        CommandFailure::NotSent(reason) => {
+            log::warn!(
+                "Batch cancel command failed local validation for {order_count} orders: {reason}"
+            );
+        }
+        CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason) => {
+            log::warn!(
+                "Ambiguous batch cancel failure for {order_count} orders, awaiting reconciliation: {reason}"
+            );
+        }
+    }
 }
 
-fn is_ambiguous_okx_ws_client_failure(message: &str) -> bool {
-    contains_any_ignore_ascii_case(
-        message,
-        &[
-            "handler not available",
-            "no active websocket client",
-            "send failed",
-            "timeout",
-            "timed out",
-            "retry",
-            "connection",
-            "network",
-        ],
-    )
+fn log_mass_cancel_failure(failure: CommandFailure, instrument_id: InstrumentId) {
+    match failure {
+        CommandFailure::NotSent(reason) => {
+            log::warn!("Mass cancel command failed local validation for {instrument_id}: {reason}");
+        }
+        CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason) => {
+            log::warn!(
+                "Ambiguous mass cancel failure for {instrument_id}, awaiting reconciliation: {reason}"
+            );
+        }
+    }
 }
 
-fn contains_any_ignore_ascii_case(value: &str, needles: &[&str]) -> bool {
-    needles.iter().any(|needle| {
-        value
-            .as_bytes()
-            .windows(needle.len())
-            .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
-    })
+fn log_algo_batch_cancel_failure(failure: CommandFailure, contexts: &[AlgoCancelContext]) {
+    match failure {
+        CommandFailure::NotSent(reason) => {
+            for ctx in contexts {
+                log::warn!(
+                    "Algo batch cancel command failed local validation for {}: {reason}",
+                    ctx.client_order_id
+                );
+            }
+        }
+        CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason) => {
+            for ctx in contexts {
+                log::warn!(
+                    "Ambiguous algo batch cancel failure for {}, awaiting reconciliation: {reason}",
+                    ctx.client_order_id
+                );
+            }
+        }
+    }
 }
 
 fn get_param_as_string(params: &Option<Params>, key: &str) -> Option<String> {
@@ -2817,36 +2790,6 @@ mod tests {
         #[case] expected: Vec<OKXInstrumentType>,
     ) {
         assert_eq!(order_routing_instrument_types(&instrument_types), expected);
-    }
-
-    #[rstest]
-    #[case::accepted_despite_timeout("51149", "Order timed out. Please try again.", false)]
-    #[case::documented_unknown_outcome(
-        "50004",
-        "API endpoint request timeout; please check the request result",
-        false
-    )]
-    #[case::unknown_timeout_code("59999", "Order request timed out", false)]
-    #[case::temporary_system_rejection("50013", "System busy, please retry later", true)]
-    #[case::parameter_rejection("51000", "Parameter state error", true)]
-    fn test_is_okx_http_submit_rejection(
-        #[case] error_code: &str,
-        #[case] message: &str,
-        #[case] expected: bool,
-    ) {
-        let error = OKXHttpError::OkxError {
-            error_code: error_code.to_string(),
-            message: message.to_string(),
-        };
-
-        assert_eq!(is_okx_http_submit_rejection(&error), expected);
-    }
-
-    #[rstest]
-    fn test_is_okx_http_submit_rejection_ignores_local_error() {
-        let error = OKXHttpError::ValidationError("invalid quantity".to_string());
-
-        assert!(!is_okx_http_submit_rejection(&error));
     }
 
     #[rstest]
