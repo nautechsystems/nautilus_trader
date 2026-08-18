@@ -1982,75 +1982,7 @@ pub trait Strategy: DataActor {
     where
         Self: StrategyNative,
     {
-        let core = StrategyNative::strategy_core_mut(self);
-        let Some(trader_id) = core.trader_id() else {
-            log::error!(
-                "Cannot deny order {}: trader_id is not set",
-                order.client_order_id()
-            );
-            return;
-        };
-        let Some(strategy_id) = core.strategy_id() else {
-            log::error!(
-                "Cannot deny order {}: strategy_id is not set",
-                order.client_order_id()
-            );
-            return;
-        };
-        let ts_now = core.clock_mut().timestamp_ns();
-
-        let event = OrderDenied::new(
-            trader_id,
-            strategy_id,
-            order.instrument_id(),
-            order.client_order_id(),
-            reason,
-            UUID4::new(),
-            ts_now,
-            ts_now,
-        );
-
-        log::warn!(
-            "{strategy_id} Order {} denied: {reason}",
-            order.client_order_id()
-        );
-
-        let publish_initialized = {
-            let cache_rc = core.cache_rc();
-            let mut cache = cache_rc.borrow_mut();
-            if cache.order_exists(&order.client_order_id()) {
-                false
-            } else {
-                match cache.add_order(order.clone(), None, None, true) {
-                    Ok(()) => true,
-                    Err(e) => {
-                        log::warn!("Failed to add denied order to cache: {e}");
-                        false
-                    }
-                }
-            }
-        };
-
-        if publish_initialized {
-            publish_order_initialized(order);
-        }
-
-        let event = OrderEventAny::Denied(event);
-        let applied = {
-            let cache_rc = core.cache_rc();
-            let mut cache = cache_rc.borrow_mut();
-            if let Err(e) = cache.update_order(&event) {
-                log::warn!("Failed to apply OrderDenied event: {e}");
-                false
-            } else {
-                true
-            }
-        };
-
-        if applied {
-            let topic = format!("events.order.{strategy_id}");
-            msgbus::publish_order_event(topic.into(), &event);
-        }
+        deny_order_impl(StrategyNative::strategy_core_mut(self), order, reason);
     }
 
     /// Denies all orders in an order list.
@@ -2286,7 +2218,11 @@ where
         core.is_exiting && !order.is_reduce_only() && !is_market_exit_order;
 
     if should_deny_for_market_exit {
-        strategy.deny_order(order, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
+        deny_order_impl(
+            StrategyNative::strategy_core_mut(strategy),
+            order,
+            Ustr::from("MARKET_EXIT_IN_PROGRESS"),
+        );
         return Ok(SubmitOrderHandoff::NotHandedOff);
     }
 
@@ -2336,6 +2272,77 @@ where
         .set_gtd_expiry(order)
         .map_err(|source| SubmitOrderError::handed_off(command_id, source))?;
     Ok(SubmitOrderHandoff::HandedOff { command_id })
+}
+
+fn deny_order_impl(core: &mut StrategyCore, order: &OrderAny, reason: Ustr) {
+    let Some(trader_id) = core.trader_id() else {
+        log::error!(
+            "Cannot deny order {}: trader_id is not set",
+            order.client_order_id()
+        );
+        return;
+    };
+    let Some(strategy_id) = core.strategy_id() else {
+        log::error!(
+            "Cannot deny order {}: strategy_id is not set",
+            order.client_order_id()
+        );
+        return;
+    };
+    let ts_now = core.clock_mut().timestamp_ns();
+
+    let event = OrderDenied::new(
+        trader_id,
+        strategy_id,
+        order.instrument_id(),
+        order.client_order_id(),
+        reason,
+        UUID4::new(),
+        ts_now,
+        ts_now,
+    );
+
+    log::warn!(
+        "{strategy_id} Order {} denied: {reason}",
+        order.client_order_id()
+    );
+
+    let publish_initialized = {
+        let cache_rc = core.cache_rc();
+        let mut cache = cache_rc.borrow_mut();
+        if cache.order_exists(&order.client_order_id()) {
+            false
+        } else {
+            match cache.add_order(order.clone(), None, None, true) {
+                Ok(()) => true,
+                Err(e) => {
+                    log::warn!("Failed to add denied order to cache: {e}");
+                    false
+                }
+            }
+        }
+    };
+
+    if publish_initialized {
+        publish_order_initialized(order);
+    }
+
+    let event = OrderEventAny::Denied(event);
+    let applied = {
+        let cache_rc = core.cache_rc();
+        let mut cache = cache_rc.borrow_mut();
+        if let Err(e) = cache.update_order(&event) {
+            log::warn!("Failed to apply OrderDenied event: {e}");
+            false
+        } else {
+            true
+        }
+    };
+
+    if applied {
+        let topic = format!("events.order.{strategy_id}");
+        msgbus::publish_order_event(topic.into(), &event);
+    }
 }
 
 fn publish_order_initialized(order: &OrderAny) {
@@ -2515,6 +2522,10 @@ mod tests {
             _params: Option<Params>,
         ) -> anyhow::Result<()> {
             anyhow::bail!("legacy submit override called")
+        }
+
+        fn deny_order(&mut self, _order: &OrderAny, _reason: Ustr) {
+            panic!("legacy deny override called")
         }
     });
 
@@ -3254,6 +3265,44 @@ mod tests {
                 command_id: command.command_id,
             },
         );
+    }
+
+    #[rstest]
+    fn test_submit_order_handoff_extension_bypasses_legacy_denial_override() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("TEST-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        let mut strategy = LegacySubmitOverrideStrategy {
+            core: StrategyCore::new(config),
+        };
+        let trader_id = TraderId::from("TRADER-001");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let portfolio = Rc::new(RefCell::new(Portfolio::new(
+            clock.clone(),
+            cache.clone(),
+            None,
+        )));
+        strategy
+            .core
+            .register(trader_id, clock, cache, portfolio)
+            .unwrap();
+        strategy.initialize().unwrap();
+        strategy.core.is_exiting = true;
+        let order = make_initialized_market_order("O-20250208-LEGACY-DENY-001");
+
+        let handoff = StrategySubmitOrderExt::submit_order_with_handoff(
+            &mut strategy,
+            order,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(handoff, SubmitOrderHandoff::NotHandedOff);
     }
 
     #[rstest]
