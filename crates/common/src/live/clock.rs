@@ -29,7 +29,7 @@ use crate::{
         validate_and_prepare_timer,
     },
     runner::{TimeEventSender, purge_closed_time_event_callbacks, try_get_time_event_sender},
-    timer::{TimeEvent, TimeEventCallback, TimeEventHandler, create_valid_interval},
+    timer::{TimeEventCallback, create_valid_interval},
 };
 
 /// A real-time clock which uses system time.
@@ -57,11 +57,6 @@ impl LiveClock {
             callbacks: CallbackRegistry::new(),
             sender,
         }
-    }
-
-    #[must_use]
-    pub const fn get_timers(&self) -> &BTreeMap<Ustr, LiveTimer> {
-        &self.timers
     }
 
     fn clear_expired_timers(&mut self) {
@@ -139,15 +134,6 @@ impl Clock for LiveClock {
 
     fn cancel_callbacks(&mut self) {
         self.callbacks.clear();
-    }
-
-    /// # Panics
-    ///
-    /// This function panics if:
-    /// - The event does not have an associated handler (see trait documentation).
-    #[allow(unused_variables)]
-    fn get_handler(&self, event: TimeEvent) -> TimeEventHandler {
-        self.callbacks.get_handler(event)
     }
 
     fn set_time_alert_ns(

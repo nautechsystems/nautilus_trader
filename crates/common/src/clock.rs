@@ -15,8 +15,6 @@
 
 //! Real-time and static `Clock` implementations.
 
-#![warn(clippy::clone_on_ref_ptr)]
-
 use std::{
     any::Any,
     cell::RefCell,
@@ -92,11 +90,6 @@ pub trait Clock: Debug + Any {
     /// `Trader::release_component` calls this at component retirement, breaking the same
     /// cycle as [`Clock::cancel_default_handler`].
     fn cancel_callbacks(&mut self);
-
-    /// Get handler for [`TimeEvent`].
-    ///
-    /// Note: Panics if the event does not have an associated handler
-    fn get_handler(&self, event: TimeEvent) -> TimeEventHandler;
 
     /// Set a timer to alert at the specified time.
     ///
@@ -875,12 +868,6 @@ impl TestClock {
         }
     }
 
-    /// Returns a reference to the internal timers for the clock.
-    #[must_use]
-    pub const fn get_timers(&self) -> &BTreeMap<Ustr, TestTimer> {
-        &self.timers
-    }
-
     /// Advances the internal clock to the specified `to_time_ns` and optionally sets the clock to that time.
     ///
     /// This function ensures that the clock behaves in a non-decreasing manner. If `set_time` is `true`,
@@ -1088,15 +1075,6 @@ impl Clock for TestClock {
 
     fn cancel_callbacks(&mut self) {
         self.callbacks.clear();
-    }
-
-    /// Returns the handler for the given `TimeEvent`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if no event-specific or default callback has been registered for the event.
-    fn get_handler(&self, event: TimeEvent) -> TimeEventHandler {
-        self.callbacks.get_handler(event)
     }
 
     fn set_time_alert_ns(

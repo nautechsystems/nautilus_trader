@@ -147,12 +147,6 @@ impl PythonTimeEventCallback {
         Self { callback }
     }
 
-    /// Returns the Python callable.
-    #[must_use]
-    pub const fn callback(&self) -> &Py<PyAny> {
-        &self.callback
-    }
-
     /// Invokes the Python callback for the given `TimeEvent`.
     pub fn call(&self, event: TimeEvent) {
         Python::attach(|py| {
@@ -230,12 +224,6 @@ impl Debug for TimeEventCallback {
 }
 
 impl TimeEventCallback {
-    /// Returns `true` if this is a thread-safe Rust callback.
-    #[must_use]
-    pub const fn is_rust(&self) -> bool {
-        matches!(self, Self::Rust(_))
-    }
-
     /// Returns `true` if this is a local (non-thread-safe) Rust callback.
     ///
     /// Local callbacks use `Rc` internally and require creation, cloning, dropping,
@@ -431,16 +419,6 @@ impl TestTimer {
         self.is_expired
     }
 
-    #[must_use]
-    pub const fn pop_event(&self, event_id: UUID4, ts_init: UnixNanos) -> TimeEvent {
-        TimeEvent {
-            name: self.name,
-            event_id,
-            ts_event: self.next_time_ns,
-            ts_init,
-        }
-    }
-
     /// Advance the test timer forward to the given time, generating a sequence
     /// of events. A [`TimeEvent`] is appended for each time a next event is
     /// <= the given `to_time_ns`.
@@ -547,22 +525,6 @@ mod tests {
     #[case(25, 25)]
     fn test_create_valid_interval(#[case] interval_ns: u64, #[case] expected: u64) {
         assert_eq!(create_valid_interval(interval_ns).get(), expected);
-    }
-
-    #[rstest]
-    fn test_test_timer_pop_event() {
-        let mut timer = TestTimer::new(
-            Ustr::from("TEST_TIMER"),
-            NonZeroU64::new(1).unwrap(),
-            UnixNanos::from(1),
-            None,
-            false,
-        );
-
-        assert!(timer.next().is_some());
-        assert!(timer.next().is_some());
-        timer.is_expired = true;
-        assert!(timer.next().is_none());
     }
 
     #[rstest]

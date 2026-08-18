@@ -17,7 +17,7 @@ use std::str::FromStr;
 
 use nautilus_core::{
     UUID4, UnixNanos,
-    python::{IntoPyObjectNautilusExt, clone_py_object, to_pyvalue_err},
+    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
 };
 use pyo3::{
     IntoPyObjectExt,
@@ -27,41 +27,7 @@ use pyo3::{
 };
 use ustr::Ustr;
 
-use crate::timer::{TimeEvent, TimeEventCallback, TimeEventHandler};
-
-#[pyo3::pyclass(module = "nautilus_trader.common", name = "TimeEventHandler")]
-/// Temporary time event handler for Python inter-operatbility
-///
-/// TODO: Remove once control flow moves into Rust
-///
-/// `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
-/// when the event's timestamp is reached.
-#[derive(Debug)]
-#[allow(non_camel_case_types)]
-pub struct TimeEventHandler_Py {
-    /// The time event.
-    pub event: TimeEvent,
-    /// The callable python object.
-    pub callback: Py<PyAny>,
-}
-
-impl From<TimeEventHandler> for TimeEventHandler_Py {
-    /// # Panics
-    ///
-    /// Panics if the provided `TimeEventHandler` contains a Rust callback,
-    /// since only Python callbacks are supported by this handler.
-    fn from(value: TimeEventHandler) -> Self {
-        Self {
-            event: value.event,
-            callback: match value.callback {
-                TimeEventCallback::Python(callback) => clone_py_object(callback.callback()),
-                TimeEventCallback::Rust(_) | TimeEventCallback::RustLocal(_) => {
-                    panic!("Python time event handler is not supported for Rust callbacks")
-                }
-            },
-        }
-    }
-}
+use crate::timer::TimeEvent;
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
