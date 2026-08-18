@@ -791,6 +791,9 @@ impl LiveNode {
 
             match mass_status_result {
                 Ok(Some(mass_status)) => {
+                    self.exec_manager
+                        .validate_mass_status_order_sources(&mass_status)?;
+
                     log_info!(
                         "Reconciling ExecutionMassStatus for {}",
                         client_id,
@@ -803,6 +806,15 @@ impl LiveNode {
                         .exec_manager
                         .reconcile_execution_mass_status(mass_status, exec_engine_rc)
                         .await;
+
+                    anyhow::ensure!(
+                        self.kernel
+                            .exec_engine
+                            .borrow()
+                            .get_client(&client_id)
+                            .is_some(),
+                        "Execution client {client_id} disappeared during startup reconciliation",
+                    );
 
                     if result.events.is_empty() {
                         log_info!(
@@ -822,8 +834,14 @@ impl LiveNode {
                     // Register external orders with execution clients for tracking
                     if !result.external_orders.is_empty() {
                         let exec_engine = self.kernel.exec_engine.borrow();
+                        let source_client = exec_engine.get_client(&client_id).ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Execution client {client_id} disappeared during startup reconciliation"
+                            )
+                        })?;
+
                         for external in result.external_orders {
-                            exec_engine.register_external_order(
+                            source_client.register_external_order(
                                 external.client_order_id,
                                 external.venue_order_id,
                                 external.instrument_id,
