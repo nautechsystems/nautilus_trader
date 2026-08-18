@@ -220,7 +220,7 @@ pub trait Strategy: DataActor {
             position_id,
             client_id,
             params,
-            |strategy, order, reason| strategy.deny_order(order, reason),
+            Self::deny_order,
         )
         .map(|_| ())
         .map_err(SubmitOrderError::into_source)
