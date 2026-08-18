@@ -145,7 +145,8 @@ impl StrategyCore {
     ///
     /// # Errors
     ///
-    /// Returns an error if the configured order ID tag contains the '-' strategy ID separator.
+    /// Returns an error if the configured order ID tag contains the '-' strategy ID separator,
+    /// or if composing it into the strategy ID does not produce a valid [`StrategyId`].
     pub fn new_checked(config: StrategyConfig) -> CorrectnessResult<Self> {
         if let Some(order_id_tag) = config.order_id_tag.as_deref() {
             check_order_id_tag(order_id_tag)?;
@@ -154,7 +155,8 @@ impl StrategyCore {
         let configured_strategy_id = config.strategy_id;
         let configured_order_id_tag = normalize_order_id_tag(config.order_id_tag.as_deref());
         let strategy_id = configured_strategy_id
-            .map(|id| strategy_id_with_order_id_tag(id, configured_order_id_tag));
+            .map(|id| strategy_id_with_order_id_tag(id, configured_order_id_tag))
+            .transpose()?;
         let order_id_tag = strategy_id
             .map(|id| id.get_tag().to_string())
             .or_else(|| configured_order_id_tag.map(str::to_string));
@@ -193,7 +195,8 @@ impl StrategyCore {
     ///
     /// # Panics
     ///
-    /// Panics if the configured order ID tag contains the '-' strategy ID separator.
+    /// Panics if the configured order ID tag contains the '-' strategy ID separator,
+    /// or if composing it into the strategy ID does not produce a valid [`StrategyId`].
     #[must_use]
     pub fn new(config: StrategyConfig) -> Self {
         Self::new_checked(config).expect_display(FAILED)
@@ -206,26 +209,36 @@ impl StrategyCore {
     }
 
     /// Changes the strategy ID before registration.
-    pub fn change_id(&mut self, strategy_id: StrategyId) {
-        let strategy_id = strategy_id_with_order_id_tag(strategy_id, self.order_id_tag());
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if composing the current order ID tag into `strategy_id` does not
+    /// produce a valid [`StrategyId`].
+    pub fn change_id(&mut self, strategy_id: StrategyId) -> anyhow::Result<()> {
+        let strategy_id = strategy_id_with_order_id_tag(strategy_id, self.order_id_tag())?;
         self.set_runtime_strategy_id(strategy_id);
+        Ok(())
     }
 
     /// Changes the order ID tag before registration.
     ///
     /// # Errors
     ///
-    /// Returns an error if `order_id_tag` contains the '-' strategy ID separator.
+    /// Returns an error if `order_id_tag` contains the '-' strategy ID separator, or if
+    /// composing it into the current strategy ID does not produce a valid [`StrategyId`].
     pub fn change_order_id_tag(&mut self, order_id_tag: &str) -> anyhow::Result<()> {
         check_order_id_tag(order_id_tag)?;
 
-        self.order_id_tag = normalize_order_id_tag(Some(order_id_tag)).map(str::to_string);
+        let normalized_order_id_tag =
+            normalize_order_id_tag(Some(order_id_tag)).map(str::to_string);
 
         if let Some(strategy_id) = self.strategy_id
-            && let Some(order_id_tag) = self.order_id_tag()
+            && let Some(order_id_tag) = normalized_order_id_tag.as_deref()
         {
-            let strategy_id = strategy_id_with_order_id_tag(strategy_id, Some(order_id_tag));
+            let strategy_id = strategy_id_with_order_id_tag(strategy_id, Some(order_id_tag))?;
             self.set_runtime_strategy_id(strategy_id);
+        } else {
+            self.order_id_tag = normalized_order_id_tag;
         }
 
         Ok(())
@@ -390,15 +403,15 @@ fn unassigned_strategy_actor_id() -> ActorId {
 fn strategy_id_with_order_id_tag(
     strategy_id: StrategyId,
     order_id_tag: Option<&str>,
-) -> StrategyId {
+) -> CorrectnessResult<StrategyId> {
     let Some(order_id_tag) = normalize_order_id_tag(order_id_tag) else {
-        return strategy_id;
+        return Ok(strategy_id);
     };
 
     if strategy_id.get_tag() == order_id_tag {
-        strategy_id
+        Ok(strategy_id)
     } else {
-        StrategyId::from(format!("{strategy_id}-{order_id_tag}"))
+        StrategyId::new_checked(format!("{strategy_id}-{order_id_tag}"))
     }
 }
 
@@ -502,7 +515,8 @@ mod tests {
         };
         let mut core = StrategyCore::new(config);
 
-        core.change_id(StrategyId::from("ExampleStrategy-XNAS"));
+        core.change_id(StrategyId::from("ExampleStrategy-XNAS"))
+            .unwrap();
 
         assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS-T01"));
         assert_eq!(
@@ -612,6 +626,110 @@ mod tests {
             Some(StrategyId::from("ExampleStrategy-XNAS"))
         );
         assert_eq!(core.order_id_tag(), Some("XNAS"));
+    }
+
+    #[rstest]
+    fn test_strategy_core_new_checked_rejects_non_ascii_order_id_tag() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            order_id_tag: Some("T01€".to_string()),
+            ..Default::default()
+        };
+
+        let error = StrategyCore::new_checked(config).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "invalid string for 'value' contained a non-ASCII char, was 'ExampleStrategy-XNAS-T01€'"
+        );
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "invalid string for 'value' contained a non-ASCII char, was 'ExampleStrategy-XNAS-T01€'"
+    )]
+    fn test_strategy_core_new_panics_on_non_ascii_order_id_tag() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            order_id_tag: Some("T01€".to_string()),
+            ..Default::default()
+        };
+
+        let _ = StrategyCore::new(config);
+    }
+
+    #[rstest]
+    fn test_strategy_core_change_order_id_tag_rejects_non_ascii() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            ..Default::default()
+        };
+        let mut core = StrategyCore::new(config);
+
+        let error = core.change_order_id_tag("T01€").unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "invalid string for 'value' contained a non-ASCII char, was 'ExampleStrategy-XNAS-T01€'"
+        );
+        assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS"));
+        assert_eq!(
+            core.strategy_id(),
+            Some(StrategyId::from("ExampleStrategy-XNAS"))
+        );
+        assert_eq!(core.order_id_tag(), Some("XNAS"));
+    }
+
+    #[rstest]
+    fn test_strategy_core_change_id_rejects_non_ascii_order_id_tag() {
+        let config = StrategyConfig {
+            order_id_tag: Some("T01€".to_string()),
+            ..Default::default()
+        };
+        let mut core = StrategyCore::new(config);
+
+        let error = core
+            .change_id(StrategyId::from("ExampleStrategy-XNAS"))
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "invalid string for 'value' contained a non-ASCII char, was 'ExampleStrategy-XNAS-T01€'"
+        );
+        assert_eq!(core.actor_id(), ActorId::from("Strategy-None"));
+        assert_eq!(core.strategy_id(), None);
+        assert_eq!(core.order_id_tag(), Some("T01€"));
+    }
+
+    #[rstest]
+    fn test_strategy_core_change_order_id_tag_without_strategy_id_stores_tag() {
+        let mut core = StrategyCore::new(StrategyConfig::default());
+
+        core.change_order_id_tag("T01").unwrap();
+
+        assert_eq!(core.actor_id(), ActorId::from("Strategy-None"));
+        assert_eq!(core.strategy_id(), None);
+        assert_eq!(core.order_id_tag(), Some("T01"));
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("None")]
+    fn test_strategy_core_change_order_id_tag_clears_unset_sentinel(#[case] order_id_tag: &str) {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            ..Default::default()
+        };
+        let mut core = StrategyCore::new(config);
+
+        core.change_order_id_tag(order_id_tag).unwrap();
+
+        assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS"));
+        assert_eq!(
+            core.strategy_id(),
+            Some(StrategyId::from("ExampleStrategy-XNAS"))
+        );
+        assert_eq!(core.order_id_tag(), None);
     }
 
     #[rstest]

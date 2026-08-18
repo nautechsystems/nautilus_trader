@@ -1327,7 +1327,8 @@ impl PyStrategy {
     ///
     /// # Errors
     ///
-    /// Returns an error if the configured order ID tag contains the '-' strategy ID separator.
+    /// Returns an error if the configured order ID tag contains the '-' strategy ID separator,
+    /// or if composing it into the strategy ID does not produce a valid `StrategyId`.
     pub fn new_checked(config: Option<StrategyConfig>) -> CorrectnessResult<Self> {
         let config = config.unwrap_or_default();
         let core = StrategyCore::new_checked(config)?;
@@ -1351,7 +1352,8 @@ impl PyStrategy {
     ///
     /// # Panics
     ///
-    /// Panics if the configured order ID tag contains the '-' strategy ID separator.
+    /// Panics if the configured order ID tag contains the '-' strategy ID separator,
+    /// or if composing it into the strategy ID does not produce a valid `StrategyId`.
     #[must_use]
     pub fn new(config: Option<StrategyConfig>) -> Self {
         Self::new_checked(config).expect_display(FAILED)
@@ -1402,9 +1404,14 @@ impl PyStrategy {
     /// Updates the runtime strategy ID.
     ///
     /// Must only be called before registration. See `PyDataActor::set_actor_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if composing the current order ID tag into `strategy_id` does not
+    /// produce a valid `StrategyId`.
     pub fn set_strategy_id(&mut self, strategy_id: StrategyId) -> anyhow::Result<()> {
         let inner = self.inner_mut();
-        inner.core.change_id(strategy_id);
+        inner.core.change_id(strategy_id)?;
         inner.logger = PyLogger::new(inner.core.actor.actor_id.as_str());
         Ok(())
     }
@@ -1413,7 +1420,8 @@ impl PyStrategy {
     ///
     /// # Errors
     ///
-    /// Returns an error if `order_id_tag` contains the '-' strategy ID separator.
+    /// Returns an error if `order_id_tag` contains the '-' strategy ID separator, or if
+    /// composing it into the current strategy ID does not produce a valid `StrategyId`.
     pub fn set_order_id_tag(&mut self, order_id_tag: &str) -> anyhow::Result<()> {
         let inner = self.inner_mut();
         inner.core.change_order_id_tag(order_id_tag)?;

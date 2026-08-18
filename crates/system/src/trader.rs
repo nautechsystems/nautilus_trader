@@ -539,6 +539,7 @@ impl Trader {
     /// # Errors
     ///
     /// Returns an error if the configured order ID tag contains the '-' strategy ID separator,
+    /// if composing it into a strategy ID does not produce a valid [`StrategyId`],
     /// or if the strategy ID or order ID tag is already registered.
     pub fn prepare_strategy_for_registration<T>(
         &self,
@@ -565,7 +566,7 @@ impl Trader {
 
         let strategy_id = if let Some(strategy_id) = configured_strategy_id {
             ensure_unique_order_id_tag(&existing_order_id_tags, strategy_id.get_tag())?;
-            StrategyNative::strategy_core_mut(strategy).change_id(strategy_id);
+            StrategyNative::strategy_core_mut(strategy).change_id(strategy_id)?;
             strategy_id
         } else {
             let order_id_tag = runtime_order_id_tag.map_or_else(
@@ -576,8 +577,8 @@ impl Trader {
 
             let base_id = strategy_registration_id::<T>(strategy);
             let strategy_id =
-                StrategyId::from(format!("{}-{order_id_tag}", base_strategy_id(&base_id)));
-            StrategyNative::strategy_core_mut(strategy).change_id(strategy_id);
+                StrategyId::new_checked(format!("{}-{order_id_tag}", base_strategy_id(&base_id)))?;
+            StrategyNative::strategy_core_mut(strategy).change_id(strategy_id)?;
             strategy_id
         };
 
@@ -2285,6 +2286,38 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "`order_id_tag` cannot contain the '-' strategy ID separator, was 'A-B'"
+        );
+        assert_eq!(trader.strategy_count(), 0);
+        assert_eq!(trader.component_count(), 0);
+    }
+
+    #[rstest]
+    fn test_add_strategy_rejects_non_ascii_order_id_tag() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let instance_id = UUID4::new();
+
+        let mut trader = Trader::new(
+            trader_id,
+            instance_id,
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let config = StrategyConfig {
+            order_id_tag: Some("T01€".to_string()),
+            ..Default::default()
+        };
+        let strategy = TestStrategy::new(config);
+
+        let error = trader.add_strategy(strategy).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "invalid string for 'value' contained a non-ASCII char, was 'TestStrategy-T01€'"
         );
         assert_eq!(trader.strategy_count(), 0);
         assert_eq!(trader.component_count(), 0);
