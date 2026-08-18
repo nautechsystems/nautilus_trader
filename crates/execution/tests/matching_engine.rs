@@ -13552,24 +13552,21 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
         "Failed settlement plan must expose both indexed settlement order IDs",
     );
     let cache_ref = cache.borrow();
-    let registered_order_ids: Vec<ClientOrderId> = added_order_ids
+    let registered_order_count = added_order_ids
         .iter()
-        .copied()
         .filter(|client_order_id| cache_ref.order(client_order_id).is_some())
-        .collect();
+        .count();
     assert_eq!(
-        registered_order_ids.len(),
-        1,
-        "Only the successfully registered close leg must resolve to an order object",
+        registered_order_count, 2,
+        "Both settlement legs must resolve to order objects after registration failure",
     );
-    let registered_order_id = registered_order_ids[0];
     assert_eq!(
         added_order_ids
             .iter()
             .filter(|client_order_id| cache_ref.order(client_order_id).is_none())
             .count(),
-        1,
-        "The failed second leg must leave one stale order ID index",
+        0,
+        "Registration failure must not leave a stale order ID index",
     );
     drop(cache_ref);
     assert!(
@@ -13580,20 +13577,37 @@ fn test_option_physical_settlement_second_registration_failure_dispatches_nothin
         .difference(&position_order_ids_before_failure)
         .copied()
         .collect();
+    let cache_ref = cache.borrow();
+    // Identify the legs by instrument rather than by set size: only the option close leg
+    // carries a position ID, the underlying open leg is planned with `position_id: None`.
+    let close_order_id = added_order_ids
+        .iter()
+        .copied()
+        .find(|client_order_id| {
+            cache_ref
+                .order(client_order_id)
+                .is_some_and(|order| order.instrument_id() == option_id)
+        })
+        .expect("option close settlement order");
+    let open_order_id = added_order_ids
+        .iter()
+        .copied()
+        .find(|client_order_id| *client_order_id != close_order_id)
+        .expect("underlying open settlement order");
     assert_eq!(
         added_position_order_ids,
-        HashSet::from([registered_order_id]),
-        "Successfully registered close leg must retain its position relationship",
-    );
-    let cache_ref = cache.borrow();
-    assert!(
-        cache_ref.order(&registered_order_id).is_some(),
-        "Registered settlement order ID must resolve to an order object",
+        HashSet::from([close_order_id]),
+        "Only the option close leg must retain the option position relationship",
     );
     assert_eq!(
-        cache_ref.position_id(&registered_order_id),
+        cache_ref.position_id(&close_order_id),
         Some(&option_position.id),
-        "Registered settlement order must resolve to its option position",
+        "The option close leg must resolve to its option position",
+    );
+    assert_eq!(
+        cache_ref.position_id(&open_order_id),
+        None,
+        "The underlying open leg is planned without a position ID",
     );
     drop(cache_ref);
 

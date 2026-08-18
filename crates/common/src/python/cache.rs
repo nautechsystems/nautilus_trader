@@ -1561,7 +1561,10 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if not `replace_existing` and the `order.client_order_id` is already contained in the cache.
+    /// Returns an error if not `replace_existing` and the `order.client_order_id` is already contained in the cache,
+    /// or if persisting the order to the backing database fails. The order and every index are
+    /// committed to memory before persistence is attempted, so a persistence error leaves the
+    /// cache internally consistent.
     #[pyo3(name = "add_order")]
     fn py_add_order(
         &mut self,
@@ -1727,7 +1730,9 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if persisting the position to the backing database fails.
+    /// Returns an error if persisting the position to the backing database fails. After
+    /// serialization succeeds, the complete operation is committed to memory before persistence
+    /// is attempted, so a persistence error leaves the cache internally consistent.
     #[pyo3(name = "add_position")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_position(

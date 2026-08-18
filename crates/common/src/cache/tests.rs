@@ -7408,6 +7408,9 @@ struct SnapshotBlobTestDatabase {
     positions: AHashMap<PositionId, Position>,
     order_positions: AHashMap<ClientOrderId, PositionId>,
     fail_add: bool,
+    fail_add_order: bool,
+    fail_add_position: bool,
+    fail_index_order_position: bool,
     fail_update_order: bool,
     fail_update_position: bool,
 }
@@ -7439,6 +7442,27 @@ impl SnapshotBlobTestDatabase {
     fn fail_add() -> Self {
         Self {
             fail_add: true,
+            ..Default::default()
+        }
+    }
+
+    fn fail_add_order() -> Self {
+        Self {
+            fail_add_order: true,
+            ..Default::default()
+        }
+    }
+
+    fn fail_add_position() -> Self {
+        Self {
+            fail_add_position: true,
+            ..Default::default()
+        }
+    }
+
+    fn fail_index_order_position() -> Self {
+        Self {
+            fail_index_order_position: true,
             ..Default::default()
         }
     }
@@ -7618,6 +7642,9 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn add_order(&self, _order: &OrderAny, _client_id: Option<ClientId>) -> anyhow::Result<()> {
+        if self.fail_add_order {
+            anyhow::bail!("add order failed");
+        }
         Ok(())
     }
 
@@ -7626,6 +7653,9 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn add_position(&self, _position: &Position) -> anyhow::Result<()> {
+        if self.fail_add_position {
+            anyhow::bail!("add position failed");
+        }
         Ok(())
     }
 
@@ -7694,6 +7724,9 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
         _client_order_id: ClientOrderId,
         _position_id: PositionId,
     ) -> anyhow::Result<()> {
+        if self.fail_index_order_position {
+            anyhow::bail!("index order position failed");
+        }
         Ok(())
     }
 
@@ -7747,6 +7780,273 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     fn heartbeat(&self, _timestamp: UnixNanos) -> anyhow::Result<()> {
         Ok(())
     }
+}
+
+#[rstest]
+fn test_add_order_commits_memory_when_database_add_fails(audusd_sim: CurrencyPair) {
+    let database = SnapshotBlobTestDatabase::fail_add_order();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+
+    let error = cache
+        .add_order(order.clone(), None, None, false)
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), "add order failed");
+    let cached = cache.order(&client_order_id).unwrap();
+    assert_eq!(
+        serde_json::to_value(&*cached).unwrap(),
+        serde_json::to_value(&order).unwrap(),
+    );
+    drop(cached);
+    assert!(cache.index.orders.contains(&client_order_id));
+    assert!(cache.index.orders_active_local.contains(&client_order_id));
+    assert_eq!(
+        cache.index.order_strategy.get(&client_order_id),
+        Some(&order.strategy_id()),
+    );
+    assert!(
+        cache
+            .index
+            .venue_orders
+            .get(&audusd_sim.id.venue)
+            .unwrap()
+            .contains(&client_order_id)
+    );
+    assert!(
+        cache
+            .index
+            .instrument_orders
+            .get(&audusd_sim.id)
+            .unwrap()
+            .contains(&client_order_id)
+    );
+    assert!(
+        cache
+            .index
+            .strategy_orders
+            .get(&order.strategy_id())
+            .unwrap()
+            .contains(&client_order_id)
+    );
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
+fn test_add_order_commits_position_indexes_when_database_index_fails(audusd_sim: CurrencyPair) {
+    let database = SnapshotBlobTestDatabase::fail_index_order_position();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    let position_id = PositionId::new("P-INDEX-FAILURE");
+
+    let error = cache
+        .add_order(order.clone(), Some(position_id), None, false)
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), "index order position failed");
+    assert_eq!(cache.position_id(&client_order_id), Some(&position_id));
+    // `OrderAny` compares on `client_order_id` alone, so compare structurally.
+    let related = cache.orders_for_position(&position_id);
+    assert_eq!(related.len(), 1);
+    assert_eq!(
+        serde_json::to_value(&*related[0]).unwrap(),
+        serde_json::to_value(&order).unwrap(),
+    );
+    assert_eq!(
+        cache.index.position_strategy.get(&position_id),
+        Some(&order.strategy_id()),
+    );
+    assert!(
+        cache
+            .index
+            .venue_positions
+            .get(&audusd_sim.id.venue)
+            .unwrap()
+            .contains(&position_id)
+    );
+    assert!(
+        cache
+            .index
+            .strategy_positions
+            .get(&order.strategy_id())
+            .unwrap()
+            .contains(&position_id)
+    );
+}
+
+#[rstest]
+fn test_add_position_commits_memory_when_database_add_fails(audusd_sim: CurrencyPair) {
+    let database = SnapshotBlobTestDatabase::fail_add_position();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-ADD-POSITION-FAILURE")),
+        Some(PositionId::new("P-ADD-POSITION-FAILURE")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+    let position_id = position.id;
+
+    let error = cache.add_position(&position, OmsType::Netting).unwrap_err();
+
+    assert_eq!(error.to_string(), "add position failed");
+    let cached = cache.position(&position_id).unwrap();
+    assert_eq!(
+        serde_json::to_value(&*cached).unwrap(),
+        serde_json::to_value(&position).unwrap(),
+    );
+    drop(cached);
+    assert!(
+        cache
+            .position_ids(Some(&position.instrument_id.venue), None, None, None)
+            .contains(&position_id)
+    );
+    assert!(
+        cache
+            .position_ids(None, Some(&position.instrument_id), None, None)
+            .contains(&position_id)
+    );
+    assert!(
+        cache
+            .position_ids(None, None, None, Some(&position.account_id))
+            .contains(&position_id)
+    );
+    let key = super::position_oms_key(position_id);
+    assert_eq!(
+        cache.get(&key).unwrap(),
+        Some(&Bytes::from(serde_json::to_vec(&OmsType::Netting).unwrap())),
+    );
+}
+
+/// Pins the earliest persistence boundary in `add_position_inner`: `index_order_position` is
+/// its FIRST database call, so every memory mutation must already be committed when it fails.
+#[rstest]
+fn test_add_position_commits_memory_when_database_index_fails(audusd_sim: CurrencyPair) {
+    let database = SnapshotBlobTestDatabase::fail_index_order_position();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-INDEX-FAILURE")),
+        Some(PositionId::new("P-INDEX-FAILURE")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+    let position_id = position.id;
+
+    let error = cache.add_position(&position, OmsType::Netting).unwrap_err();
+
+    assert_eq!(error.to_string(), "index order position failed");
+    let cached = cache.position(&position_id).unwrap();
+    assert_eq!(
+        serde_json::to_value(&*cached).unwrap(),
+        serde_json::to_value(&position).unwrap(),
+    );
+    drop(cached);
+    // The opening-order relationship in both directions.
+    assert_eq!(
+        cache.position_id(&position.opening_order_id),
+        Some(&position_id),
+    );
+    assert!(
+        cache
+            .index
+            .position_orders
+            .get(&position_id)
+            .unwrap()
+            .contains(&position.opening_order_id)
+    );
+    assert_eq!(
+        cache.index.position_strategy.get(&position_id),
+        Some(&position.strategy_id),
+    );
+    assert!(
+        cache
+            .position_ids(Some(&position.instrument_id.venue), None, None, None)
+            .contains(&position_id)
+    );
+    assert!(
+        cache
+            .position_ids(None, Some(&position.instrument_id), None, None)
+            .contains(&position_id)
+    );
+    assert!(
+        cache
+            .position_ids(None, None, Some(&position.strategy_id), None)
+            .contains(&position_id)
+    );
+    assert!(
+        cache
+            .position_ids(None, None, None, Some(&position.account_id))
+            .contains(&position_id)
+    );
+    let key = super::position_oms_key(position_id);
+    assert_eq!(
+        cache.get(&key).unwrap(),
+        Some(&Bytes::from(serde_json::to_vec(&OmsType::Netting).unwrap())),
+    );
+}
+
+#[rstest]
+fn test_replace_order_commits_canonical_state_when_database_update_fails(audusd_sim: CurrencyPair) {
+    let database = SnapshotBlobTestDatabase::fail_update_order();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+    let mut replacement = order;
+    let submitted = TestOrderEventStubs::submitted(&replacement, AccountId::new("SIM-001"));
+    replacement.apply(submitted).unwrap();
+
+    let error = cache.replace_order(&replacement).unwrap_err();
+
+    assert_eq!(error.to_string(), "update order failed");
+    let cached = cache.order(&client_order_id).unwrap();
+    assert_eq!(
+        serde_json::to_value(&*cached).unwrap(),
+        serde_json::to_value(&replacement).unwrap(),
+    );
+    assert_eq!(cached.status(), OrderStatus::Submitted);
 }
 
 #[rstest]
