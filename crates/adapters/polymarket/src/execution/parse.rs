@@ -35,7 +35,7 @@ use crate::{
         consts::{DUST_SNAP_THRESHOLD_DEC, USDC_DECIMALS},
         enums::{
             PolymarketEventType, PolymarketLiquiditySide, PolymarketOrderSide,
-            PolymarketOrderStatus, PolymarketOrderType,
+            PolymarketOrderStatus,
         },
         models::PolymarketMakerOrder,
     },
@@ -130,18 +130,16 @@ pub fn parse_order_status_report(
     let venue_order_id = VenueOrderId::from(order.id.as_str());
     let order_side = OrderSide::from(order.side);
     let time_in_force = TimeInForce::from(order.order_type);
-    let order_status = if order.status == PolymarketOrderStatus::Matched
-        && order.order_type == PolymarketOrderType::FAK
-        && order.size_matched < order.original_size
-    {
-        OrderStatus::Canceled
-    } else {
-        OrderStatus::from(order.status)
-    };
     let quantity = Quantity::from_decimal_dp(order.original_size, size_precision)
         .unwrap_or_else(|_| Quantity::zero(size_precision));
     let raw_filled_qty = Quantity::from_decimal_dp(order.size_matched, size_precision)
         .unwrap_or_else(|_| Quantity::zero(size_precision));
+    // `Matched` does not mean fully filled, so resolve the status from the filled quantity.
+    let order_status = if order.status == PolymarketOrderStatus::Matched {
+        recovered_terminal_order_status(time_in_force, quantity, raw_filled_qty)
+    } else {
+        OrderStatus::from(order.status)
+    };
     let filled_qty = snap_filled_qty_to_quantity(quantity, raw_filled_qty, order_status);
     let price = Price::from_decimal_dp(order.price, price_precision)
         .unwrap_or_else(|_| Price::zero(price_precision));
@@ -467,6 +465,27 @@ pub(crate) fn weighted_average_price(
         .map(|f| f.last_qty.as_decimal() * f.last_px.as_decimal())
         .sum();
     Some(weighted / total_filled)
+}
+
+/// Resolves the terminal status of a venue-terminal order from its filled quantity.
+///
+/// Polymarket reports a terminated order as `MATCHED` whether or not it filled completely: an IOC
+/// underfill was killed, any other non-dust remainder was canceled. Dust remainders stay `Filled`.
+pub(crate) fn recovered_terminal_order_status(
+    time_in_force: TimeInForce,
+    quantity: Quantity,
+    filled_qty: Quantity,
+) -> OrderStatus {
+    if time_in_force == TimeInForce::Ioc && filled_qty < quantity {
+        return OrderStatus::Canceled;
+    }
+
+    let dust_diff = (quantity.as_decimal() - filled_qty.as_decimal()).abs();
+    if filled_qty >= quantity || dust_diff < DUST_SNAP_THRESHOLD_DEC {
+        OrderStatus::Filled
+    } else {
+        OrderStatus::Canceled
+    }
 }
 
 /// At terminal `Filled` status, snap `filled_qty` to `quantity` when the
@@ -1347,6 +1366,62 @@ mod tests {
             report.quantity,
             Quantity::new(original_size.try_into().unwrap_or(0.0), 6)
         );
+    }
+
+    /// A `MATCHED` underfill must reach a terminal status, and `Filled` must never carry
+    /// `filled_qty < quantity`. Dust remainders still resolve as `Filled` (see #3728).
+    #[rstest]
+    // Partially filled then canceled: terminal, not `Filled`.
+    #[case::gtc_real_partial(PolymarketOrderType::GTC, dec!(10), dec!(7), OrderStatus::Canceled)]
+    // Dust underfill: stays `Filled`, `filled_qty` snaps up to `quantity`.
+    #[case::gtc_dust_underfill(PolymarketOrderType::GTC, dec!(100), dec!(99.997714), OrderStatus::Filled)]
+    // GTC exact fill.
+    #[case::gtc_exact(PolymarketOrderType::GTC, dec!(10), dec!(10), OrderStatus::Filled)]
+    // FAK underfill is killed by the venue: unchanged.
+    #[case::fak_partial(PolymarketOrderType::FAK, dec!(30), dec!(20), OrderStatus::Canceled)]
+    fn test_parse_order_status_report_matched_resolves_terminal_status(
+        #[case] order_type: PolymarketOrderType,
+        #[case] original_size: Decimal,
+        #[case] size_matched: Decimal,
+        #[case] expected_status: OrderStatus,
+    ) {
+        let order = PolymarketOpenOrder {
+            associate_trades: None,
+            id: "0xterminal".to_string(),
+            status: PolymarketOrderStatus::Matched,
+            market: Ustr::from("0xmarket"),
+            original_size,
+            outcome: PolymarketOutcome::yes(),
+            maker_address: "0xmaker".to_string(),
+            owner: "owner".to_string(),
+            price: dec!(0.5),
+            side: PolymarketOrderSide::Buy,
+            size_matched,
+            asset_id: Ustr::from("token"),
+            expiration: None,
+            order_type,
+            created_at: 1_784_118_677,
+        };
+
+        let report = parse_order_status_report(
+            &order,
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            AccountId::from("POLYMARKET-001"),
+            None,
+            3,
+            6,
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        assert_eq!(report.order_status, expected_status);
+        if report.order_status == OrderStatus::Filled {
+            assert!(
+                report.filled_qty >= report.quantity,
+                "a Filled report must not carry filled_qty < quantity, was filled_qty={} quantity={}",
+                report.filled_qty,
+                report.quantity
+            );
+        }
     }
 
     #[rstest]
