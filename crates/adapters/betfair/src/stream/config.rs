@@ -15,7 +15,9 @@
 
 //! Configuration for the Betfair stream client.
 
-use crate::common::consts::{BETFAIR_STREAM_HOST, BETFAIR_STREAM_PORT};
+use crate::common::consts::{
+    BETFAIR_STREAM_HEARTBEAT_SECS, BETFAIR_STREAM_HOST, BETFAIR_STREAM_PORT,
+};
 
 /// Configuration for the Betfair Exchange Stream API client.
 #[derive(Debug, Clone)]
@@ -42,7 +44,7 @@ impl Default for BetfairStreamConfig {
         Self {
             host: BETFAIR_STREAM_HOST.to_string(),
             port: BETFAIR_STREAM_PORT,
-            heartbeat_secs: 5,
+            heartbeat_secs: BETFAIR_STREAM_HEARTBEAT_SECS,
             heartbeat_timeout_secs: 60,
             reconnect_delay_initial_ms: 2_000,
             reconnect_delay_max_ms: 30_000,

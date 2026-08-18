@@ -822,7 +822,7 @@ instrument trading status. When a symbol transitions between states (e.g.
 Trading to Halt, or Trading to Delivering for a futures contract approaching
 expiry), the adapter emits an `InstrumentStatus` event.
 
-The polling interval defaults to 3600 seconds (60 minutes) and is configurable
+The polling interval defaults to 3,600 seconds (60 minutes) and is configurable
 via `instrument_status_poll_secs` in the data client config. Set to `0` to
 disable polling entirely.
 
@@ -836,7 +836,7 @@ Status polling does not reload instrument definitions. The separate
 `instrument_refresh_interval_secs` task performs a complete filtered catalogue load, atomically
 replaces the data-client and WebSocket lookup maps, sends the refreshed instruments to the data
 engine, and updates the status snapshot. It also refreshes the execution client precision cache.
-The default full refresh interval is 3600 seconds; set it to `0` to disable it. Disconnect cancels
+The default full refresh interval is 3,600 seconds; set it to `0` to disable it. Disconnect cancels
 the task, and reconnect starts one replacement task with a new cancellation token.
 
 ### Status mapping
@@ -1000,10 +1000,10 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `api_key` / `api_secret`           | `None`    | Required for Spot SBE; optional for public JSON and Futures data.              |
 | `spot_market_data_mode`            | `Sbe`     | `Json` keeps the credential‑free Global Spot path. Binance US requires `Json`. |
 | `instrument_provider`              | default   | Loading, filters, parser‑warning, and commission policy.                       |
-| `instrument_refresh_interval_secs` | `3600`    | Full catalogue refresh interval; `0` disables it.                              |
-| `instrument_status_poll_secs`      | `3600`    | Status‑only exchange‑info poll interval; `0` disables it.                      |
+| `instrument_refresh_interval_secs` | `3,600`   | Full catalogue refresh interval; `0` disables it.                              |
+| `instrument_status_poll_secs`      | `3,600`   | Status‑only exchange‑info poll interval; `0` disables it.                      |
 | `proxy_url`                        | `None`    | Proxy applied to HTTP and every market WebSocket connection.                   |
-| `recv_window_ms`                   | `5000`    | Signed HTTP receive window, inclusive range `1..=60000`.                       |
+| `recv_window_ms`                   | `5,000`   | Signed HTTP receive window, inclusive range `1..=60000`.                       |
 | `us`                               | `False`   | Route a live Spot JSON client to Binance US.                                   |
 | `transport_backend`                | `Sockudo` | WebSocket transport backend.                                                   |
 
@@ -1020,9 +1020,9 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `use_ws_trading`                   | `True`    | Use Global WebSocket order entry where supported; Binance US uses HTTP. |
 | `ws_trading_setup_timeout_ms`      | `10,000`  | WebSocket trading authentication and setup timeout.                     |
 | `instrument_provider`              | default   | Loading, filters, parser‑warning, and commission policy.                |
-| `instrument_refresh_interval_secs` | `3600`    | Execution precision‑cache refresh interval; `0` disables it.            |
+| `instrument_refresh_interval_secs` | `3,600`   | Execution precision‑cache refresh interval; `0` disables it.            |
 | `proxy_url`                        | `None`    | Proxy applied to HTTP, private streams, and WebSocket trading.          |
-| `recv_window_ms`                   | `5000`    | Signed HTTP and WebSocket receive window, inclusive range `1..=60000`.  |
+| `recv_window_ms`                   | `5,000`   | Signed HTTP and WebSocket receive window, inclusive range `1..=60000`.  |
 | `us`                               | `False`   | Route a live Spot execution client to Binance US.                       |
 | `api_key` / `api_secret`           | `None`    | Global uses Ed25519 WebSocket auth; Binance US uses HMAC HTTP signing.  |
 | `use_gtd`                          | `True`    | Use native USD-M GTD; see [GTD policy](#gtd-policy).                    |

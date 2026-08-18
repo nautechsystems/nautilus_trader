@@ -1226,7 +1226,7 @@ Class/struct: `PolymarketDataClientConfig`.
 | `resolve_poll_enabled`                 | `true`     | Poll expired watched conditions for resolution.                                           |
 | `resolve_poll_interval_secs`           | `30`       | Resolution polling interval.                                                              |
 | `resolve_poll_grace_secs`              | `10`       | Delay after expiry before polling begins.                                                 |
-| `resolve_poll_max_wait_secs`           | `1800`     | Pause automatic polling after this wait.                                                  |
+| `resolve_poll_max_wait_secs`           | `1,800`    | Pause automatic polling after this wait.                                                  |
 | `transport_backend`                    | `Sockudo`  | WebSocket transport implementation.                                                       |
 
 ### Execution client options
@@ -1245,8 +1245,8 @@ Class/struct: `PolymarketExecClientConfig`.
 | `proxy_url`                                         | `None`                | HTTP or HTTPS proxy for every execution transport.                                                                    |
 | `http_timeout_secs`                                 | `60`                  | HTTP timeout in seconds.                                                                                              |
 | `max_retries`                                       | `3`                   | Retries for single‑order submit/cancel requests and for each batch‑cancel chunk.                                      |
-| `retry_delay_initial_ms`                            | `1000`                | Initial retry delay.                                                                                                  |
-| `retry_delay_max_ms`                                | `10000`               | Maximum retry delay.                                                                                                  |
+| `retry_delay_initial_ms`                            | `1,000`               | Initial retry delay.                                                                                                  |
+| `retry_delay_max_ms`                                | `10,000`              | Maximum retry delay.                                                                                                  |
 | `heartbeat_enabled`                                 | `false`               | Send an authenticated order‑safety heartbeat immediately after execution readiness and every five seconds thereafter. |
 | `transport_backend`                                 | `Sockudo`             | WebSocket transport implementation.                                                                                   |
 

@@ -125,70 +125,6 @@ const CONTROLLER_FALLBACK_INTERVAL_MS: u64 = 100;
 /// The RFC 6455 control-frame payload limit.
 const MAX_CONTROL_FRAME_PAYLOAD_BYTES: usize = 125;
 
-/// Shared headers used by future automatic WebSocket reconnects.
-///
-/// Updating these headers does not affect the active connection or trigger a reconnect.
-#[derive(Clone)]
-pub struct ReconnectHeaders {
-    inner: Arc<RwLock<Vec<(String, String)>>>,
-}
-
-impl ReconnectHeaders {
-    fn new(headers: Vec<(String, String)>) -> Self {
-        Self {
-            inner: Arc::new(RwLock::new(headers)),
-        }
-    }
-
-    /// Replaces a header used by future automatic reconnect attempts.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the header name or value is invalid, or if the shared state is poisoned.
-    pub fn update(&self, name: &str, value: &str) -> Result<(), TransportError> {
-        let name = HeaderName::from_bytes(name.as_bytes()).map_err(|e| {
-            TransportError::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!("Invalid WebSocket reconnect header name: {e}"),
-            ))
-        })?;
-        HeaderValue::from_str(value).map_err(|e| {
-            TransportError::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!("Invalid WebSocket reconnect header value: {e}"),
-            ))
-        })?;
-
-        let name = name.as_str();
-        let mut headers = self.inner.write().map_err(|_| {
-            TransportError::Io(std::io::Error::other(
-                "WebSocket reconnect headers lock poisoned",
-            ))
-        })?;
-        headers.retain(|(existing, _)| !existing.eq_ignore_ascii_case(name));
-        headers.push((name.to_string(), value.to_string()));
-        Ok(())
-    }
-
-    fn snapshot(&self) -> Result<Vec<(String, String)>, TransportError> {
-        self.inner
-            .read()
-            .map(|headers| headers.clone())
-            .map_err(|_| {
-                TransportError::Io(std::io::Error::other(
-                    "WebSocket reconnect headers lock poisoned",
-                ))
-            })
-    }
-}
-
-impl Debug for ReconnectHeaders {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(ReconnectHeaders))
-            .finish_non_exhaustive()
-    }
-}
-
 /// Owns the transport tasks and reconnect state used by [`WebSocketClient`].
 ///
 /// # Connection ownership
@@ -236,43 +172,6 @@ pub struct WebSocketClientInner {
     auth_tracker: Arc<OnceLock<AuthTracker>>,
     reconnect_buffer_waits_for_auth: Arc<AtomicBool>,
     state_sink: Option<SocketStateSink>,
-}
-
-#[derive(Clone)]
-enum IncomingHandler {
-    Message(MessageHandler),
-    Epoch(EpochMessageHandler),
-}
-
-impl IncomingHandler {
-    fn handle(&self, connection_epoch: u64, message: Message) {
-        match self {
-            Self::Message(handler) => handler(message),
-            Self::Epoch(handler) => handler(connection_epoch, message),
-        }
-    }
-}
-
-#[derive(Clone)]
-enum IncomingPingHandler {
-    Ping(PingHandler),
-    Epoch(EpochPingHandler),
-}
-
-impl IncomingPingHandler {
-    fn handle(&self, connection_epoch: u64, data: Vec<u8>) {
-        match self {
-            Self::Ping(handler) => handler(data),
-            Self::Epoch(handler) => handler(connection_epoch, data),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ReconnectBufferAction {
-    Drain,
-    Wait,
-    Discard,
 }
 
 impl WebSocketClientInner {
@@ -1434,9 +1333,11 @@ impl WebSocketClientInner {
 
     /// Queues a message for replay on the replacement connection.
     ///
-    /// A control frame belongs to the connection it was issued on: a Pong answers that
-    /// connection's Ping, a heartbeat Ping probes it, and a Close terminates it. None carries
-    /// its meaning on a replacement connection, so control frames are dropped instead.
+    /// A keepalive belongs to the connection it was issued on: a Pong answers that
+    /// connection's Ping, a heartbeat probes it, and a Close terminates it. None
+    /// carries its meaning on a replacement connection, so those messages are dropped
+    /// instead. Text keepalives reach the writer as [`WriterCommand::Heartbeat`] and
+    /// never enter this buffer.
     fn buffer_for_replay(buffer: &mut VecDeque<Message>, msg: Message) {
         if msg.is_control() {
             return;
@@ -1702,12 +1603,14 @@ impl WebSocketClientInner {
                             WriterCommand::Send(msg) if mode.is_reconnect() => {
                                 Self::buffer_for_replay(&mut reconnect_buffer, msg);
                             }
+                            WriterCommand::Heartbeat(_)
+                            | WriterCommand::SendPongOnConnection { .. }
+                                if mode.is_reconnect() => {}
                             WriterCommand::SendOnConnection { response_tx, .. }
                                 if mode.is_reconnect() =>
                             {
                                 _ = response_tx.send(Err(SendError::ConnectionChanged));
                             }
-                            WriterCommand::SendPongOnConnection { .. } if mode.is_reconnect() => {}
                             WriterCommand::SendPongOnConnection {
                                 data,
                                 connection_epoch: expected_epoch,
@@ -1809,28 +1712,8 @@ impl WebSocketClientInner {
                                 }
                             }
                             WriterCommand::Send(msg) => {
-                                let send_result = dst::time::timeout(
-                                    Duration::from_secs(WRITE_TIMEOUT_SECS),
-                                    active_writer.send(msg.clone()),
-                                )
-                                .await;
-                                let send_failed = match send_result {
-                                    Ok(Ok(())) => false,
-                                    Ok(Err(e)) => {
-                                        if is_connection_drop_transport_error(&e) {
-                                            log::warn!("Failed to send message: {e}");
-                                        } else {
-                                            log::error!("Failed to send message: {e}");
-                                        }
-                                        true
-                                    }
-                                    Err(_) => {
-                                        log::warn!(
-                                            "Timed out sending message after {WRITE_TIMEOUT_SECS}s"
-                                        );
-                                        true
-                                    }
-                                };
+                                let send_failed =
+                                    Self::write_outbound(&mut active_writer, msg.clone()).await;
 
                                 if send_failed {
                                     Self::buffer_for_replay(&mut reconnect_buffer, msg);
@@ -1847,6 +1730,23 @@ impl WebSocketClientInner {
                                     {
                                         log::warn!("Writer triggering reconnect");
                                     }
+                                }
+                            }
+                            WriterCommand::Heartbeat(msg) => {
+                                let send_failed =
+                                    Self::write_outbound(&mut active_writer, msg).await;
+
+                                if send_failed
+                                    && request_websocket_reconnect(
+                                        &connection_state,
+                                        &reconnect_published,
+                                        state_sink.as_ref(),
+                                        &auth_tracker,
+                                        &controller_notify,
+                                        || {},
+                                    ) == ReconnectRequestOutcome::Accepted
+                                {
+                                    log::warn!("Writer triggering reconnect");
                                 }
                             }
                         }
@@ -1874,6 +1774,27 @@ impl WebSocketClientInner {
         })
     }
 
+    async fn write_outbound(writer: &mut MessageWriter, msg: Message) -> bool {
+        let send_result =
+            dst::time::timeout(Duration::from_secs(WRITE_TIMEOUT_SECS), writer.send(msg)).await;
+
+        match send_result {
+            Ok(Ok(())) => false,
+            Ok(Err(e)) => {
+                if is_connection_drop_transport_error(&e) {
+                    log::warn!("Failed to send message: {e}");
+                } else {
+                    log::error!("Failed to send message: {e}");
+                }
+                true
+            }
+            Err(_) => {
+                log::warn!("Timed out sending message after {WRITE_TIMEOUT_SECS}s");
+                true
+            }
+        }
+    }
+
     fn spawn_heartbeat_task(
         connection_state: Arc<AtomicU8>,
         heartbeat_secs: u64,
@@ -1891,8 +1812,10 @@ impl WebSocketClientInner {
                 match ConnectionMode::from_u8(connection_state.load(Ordering::SeqCst)) {
                     ConnectionMode::Active => {
                         let msg = match &message {
-                            Some(text) => WriterCommand::Send(Message::Text(text.clone().into())),
-                            None => WriterCommand::Send(Message::Ping(vec![].into())),
+                            Some(text) => {
+                                WriterCommand::Heartbeat(Message::Text(text.clone().into()))
+                            }
+                            None => WriterCommand::Heartbeat(Message::Ping(vec![].into())),
                         };
 
                         match writer_tx.send(msg) {
@@ -2008,6 +1931,43 @@ impl Debug for WebSocketClientInner {
     }
 }
 
+#[derive(Clone)]
+enum IncomingHandler {
+    Message(MessageHandler),
+    Epoch(EpochMessageHandler),
+}
+
+impl IncomingHandler {
+    fn handle(&self, connection_epoch: u64, message: Message) {
+        match self {
+            Self::Message(handler) => handler(message),
+            Self::Epoch(handler) => handler(connection_epoch, message),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum IncomingPingHandler {
+    Ping(PingHandler),
+    Epoch(EpochPingHandler),
+}
+
+impl IncomingPingHandler {
+    fn handle(&self, connection_epoch: u64, data: Vec<u8>) {
+        match self {
+            Self::Ping(handler) => handler(data),
+            Self::Epoch(handler) => handler(connection_epoch, data),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReconnectBufferAction {
+    Drain,
+    Wait,
+    Discard,
+}
+
 /// A WebSocket client with rate limiting, heartbeats, and automatic reconnection in handler mode.
 ///
 /// Handler mode owns the reader and writer tasks, buffers sends during reconnection, and replays
@@ -2030,6 +1990,70 @@ pub struct WebSocketClient {
     controller_notify: Arc<tokio::sync::Notify>,
     reconnect_published: Arc<AtomicBool>,
     reconnect_supported: bool,
+}
+
+/// Shared headers used by future automatic WebSocket reconnects.
+///
+/// Updating these headers does not affect the active connection or trigger a reconnect.
+#[derive(Clone)]
+pub struct ReconnectHeaders {
+    inner: Arc<RwLock<Vec<(String, String)>>>,
+}
+
+impl ReconnectHeaders {
+    fn new(headers: Vec<(String, String)>) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(headers)),
+        }
+    }
+
+    /// Replaces a header used by future automatic reconnect attempts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the header name or value is invalid, or if the shared state is poisoned.
+    pub fn update(&self, name: &str, value: &str) -> Result<(), TransportError> {
+        let name = HeaderName::from_bytes(name.as_bytes()).map_err(|e| {
+            TransportError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Invalid WebSocket reconnect header name: {e}"),
+            ))
+        })?;
+        HeaderValue::from_str(value).map_err(|e| {
+            TransportError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Invalid WebSocket reconnect header value: {e}"),
+            ))
+        })?;
+
+        let name = name.as_str();
+        let mut headers = self.inner.write().map_err(|_| {
+            TransportError::Io(std::io::Error::other(
+                "WebSocket reconnect headers lock poisoned",
+            ))
+        })?;
+        headers.retain(|(existing, _)| !existing.eq_ignore_ascii_case(name));
+        headers.push((name.to_string(), value.to_string()));
+        Ok(())
+    }
+
+    fn snapshot(&self) -> Result<Vec<(String, String)>, TransportError> {
+        self.inner
+            .read()
+            .map(|headers| headers.clone())
+            .map_err(|_| {
+                TransportError::Io(std::io::Error::other(
+                    "WebSocket reconnect headers lock poisoned",
+                ))
+            })
+    }
+}
+
+impl Debug for ReconnectHeaders {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ReconnectHeaders))
+            .finish_non_exhaustive()
+    }
 }
 
 /// Cloneable controller handle for requesting one transport reconnect.
@@ -7226,6 +7250,173 @@ mod rust_tests {
         state_notify.notify_waiters();
         drop(writer_tx);
         write_task.await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_stalled_text_heartbeat_is_not_replayed() {
+        let state = Arc::new(BlockingFailState::default());
+        let transport: BoxedWsTransport = Box::pin(BlockingFailTransport {
+            state: Arc::clone(&state),
+        });
+        let (writer, _reader) = transport.split();
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let write_task = WebSocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
+            writer,
+            writer_rx,
+            Arc::new(AtomicU64::new(0)),
+            Arc::new(OnceLock::new()),
+            Arc::new(AtomicBool::new(false)),
+            None,
+        );
+
+        writer_tx
+            .send(WriterCommand::Heartbeat(Message::text(
+                "{\"op\":\"heartbeat\"}",
+            )))
+            .unwrap();
+        state.send_entered_notify.notified().await;
+
+        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let recording_state = Arc::new(RecordingState {
+            messages: Arc::clone(&recorded),
+            recorded_notify: tokio::sync::Notify::new(),
+        });
+        let transport: BoxedWsTransport = Box::pin(RecordingTransport {
+            state: recording_state,
+        });
+        let (new_writer, _reader) = transport.split();
+        let (update_tx, update_rx) = tokio::sync::oneshot::channel();
+        writer_tx
+            .send(WriterCommand::Update(new_writer, update_tx))
+            .unwrap();
+
+        tokio::time::advance(Duration::from_secs(WRITE_TIMEOUT_SECS)).await;
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), update_rx)
+                .await
+                .expect("writer update should not remain queued behind a stalled send")
+                .unwrap(),
+            1,
+            "the replacement sink should install as connection epoch 1"
+        );
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_state),
+            ConnectionMode::Reconnect,
+            "a failed heartbeat write should still trigger a reconnect"
+        );
+
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+
+        for _ in 0..5 {
+            tokio::time::advance(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
+        }
+
+        let replayed = recorded.lock().unwrap().clone();
+        assert!(
+            replayed.is_empty(),
+            "a failed text heartbeat must not reach the replacement connection, was {replayed:?}"
+        );
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_text_heartbeat_enqueued_during_reconnect_is_not_replayed() {
+        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let recording_state = Arc::new(RecordingState {
+            messages: Arc::clone(&recorded),
+            recorded_notify: tokio::sync::Notify::new(),
+        });
+        let transport: BoxedWsTransport = Box::pin(RecordingTransport {
+            state: recording_state,
+        });
+        let (writer, _reader) = transport.split();
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let write_task = WebSocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            Arc::new(AtomicBool::new(true)),
+            writer,
+            writer_rx,
+            Arc::new(AtomicU64::new(0)),
+            Arc::new(OnceLock::new()),
+            Arc::new(AtomicBool::new(false)),
+            None,
+        );
+
+        writer_tx
+            .send(WriterCommand::Heartbeat(Message::text(
+                "{\"op\":\"heartbeat\"}",
+            )))
+            .unwrap();
+        tokio::time::advance(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
+
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+
+        for _ in 0..5 {
+            tokio::time::advance(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
+        }
+
+        let replayed = recorded.lock().unwrap().clone();
+        assert!(
+            replayed.is_empty(),
+            "a text heartbeat enqueued during reconnect must not reach the replacement connection, was {replayed:?}"
+        );
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.await.unwrap();
+    }
+
+    #[rstest]
+    #[case::text(
+        Some("{\"op\":\"heartbeat\"}"),
+        Message::text("{\"op\":\"heartbeat\"}")
+    )]
+    #[case::ping(None, Message::Ping(vec![].into()))]
+    #[tokio::test(start_paused = true)]
+    async fn test_heartbeat_task_enqueues_writer_heartbeat_command(
+        #[case] payload: Option<&str>,
+        #[case] expected: Message,
+    ) {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let (writer_tx, mut writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let task = WebSocketClientInner::spawn_heartbeat_task(
+            Arc::clone(&connection_state),
+            1,
+            payload.map(ToString::to_string),
+            writer_tx,
+        );
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let cmd = writer_rx
+            .recv()
+            .await
+            .expect("heartbeat task should enqueue");
+
+        match cmd {
+            WriterCommand::Heartbeat(msg) => assert_eq!(msg, expected),
+            other => panic!("expected Heartbeat, was {other:?}"),
+        }
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        tokio::time::advance(Duration::from_secs(1)).await;
+        task.await.unwrap();
     }
 
     #[rstest]

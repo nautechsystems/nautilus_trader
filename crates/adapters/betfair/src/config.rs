@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     common::{
+        consts::BETFAIR_STREAM_HEARTBEAT_SECS,
         credential::{BetfairCredential, CredentialError},
         parse::parse_betfair_timestamp,
     },
@@ -149,7 +150,7 @@ pub struct BetfairDataConfig {
     /// Optional override for stream port.
     pub stream_port: Option<u16>,
     /// Interval between stream heartbeat messages in seconds.
-    #[builder(default = 5)]
+    #[builder(default = BETFAIR_STREAM_HEARTBEAT_SECS)]
     pub stream_heartbeat_secs: u64,
     /// Dead-peer timeout in seconds; reconnects when no bytes arrive.
     #[builder(default = 60)]
@@ -336,7 +337,7 @@ pub struct BetfairExecConfig {
     /// Optional override for stream port.
     pub stream_port: Option<u16>,
     /// Interval between stream heartbeat messages in seconds.
-    #[builder(default = 5)]
+    #[builder(default = BETFAIR_STREAM_HEARTBEAT_SECS)]
     pub stream_heartbeat_secs: u64,
     /// Dead-peer timeout in seconds; reconnects when no bytes arrive.
     #[builder(default = 60)]

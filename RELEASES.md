@@ -28,6 +28,7 @@ Released on TBD (UTC).
 - Added runtime external‑order claim registration and removal to Rust `LiveNode` (#4620), thanks @folknor
 - Added `INFO` logs for socket and WebSocket connection loss and recovery (#4621), thanks @folknor
 - Added Rust and Python `SocketStateChanged` events for Binance Futures, Lighter, and Polymarket live clients
+- Added Coinbase heartbeat counter gap warnings, resetting after reconnect
 - Added Deribit book summaries as requestable custom data (#4576), thanks @graceyangfan
 - Added Derive fixed-window matching rate limits
 - Added Hyperliquid user TWAP history and slice fills as opt‑in custom data (#4674), thanks @graceyangfan
@@ -157,6 +158,7 @@ Released on TBD (UTC).
 - Fixed cache position updates applying the index change before the value write (#4767), thanks @folknor
 - Fixed DeFi pool positions dropping fees when fee‑growth counters wrap (#4768), thanks @folknor
 - Fixed `MovingAverageConvergenceDivergence` input counting (#4779), thanks @mkzung
+- Fixed WebSocket text heartbeats being replayed on the replacement connection
 - Fixed Betfair stream reauthentication and subscription replay after session replacement
 - Fixed Betfair rounding a sub-second stream heartbeat interval up instead of down
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
@@ -205,6 +207,7 @@ Released on TBD (UTC).
 - Fixed Polymarket unsent and rejected cancels remaining in flight
 - Fixed Tardis CSV funding rates dropping `next_funding_ns` without a predicted rate
 - Fixed Tardis Machine funding rates omitting `next_funding_ns`
+- Fixed Tardis Machine heartbeats continuing after the stream ended
 
 ### Internal Improvements
 
@@ -254,6 +257,7 @@ Released on TBD (UTC).
 ### Documentation Updates
 
 - Added Python concept guidance for runtime ownership, public APIs, and hosted live execution
+- Added thousands separators to adapter config-table quantity values
 - Consolidated Python v2 integration guides and examples on canonical paths
 - Corrected the Rust `DataTester` book depth support note in the data testing spec
 - Documented external Redis message fields and Python custom-data registration

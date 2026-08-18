@@ -767,7 +767,7 @@ previous session's `Disconnect` command lost a race with the shutdown signal.
 | `http_timeout_secs`      | `10`      | HTTP request timeout (seconds).                                                                                                            |
 | `max_retries`            | `3`       | Maximum retry attempts for HTTP requests.                                                                                                  |
 | `retry_delay_initial_ms` | `100`     | Initial retry delay (milliseconds).                                                                                                        |
-| `retry_delay_max_ms`     | `5000`    | Maximum retry delay (milliseconds).                                                                                                        |
+| `retry_delay_max_ms`     | `5,000`   | Maximum retry delay (milliseconds).                                                                                                        |
 | `account_type`           | `Cash`    | `Cash` for spot or `Margin` for CFM derivatives. See [Execution scope](#execution-scope).                                                  |
 | `default_margin_type`    | `None`    | Default `CoinbaseMarginType` (`Cross` or `Isolated`) applied to derivatives orders. Ignored on Cash.                                       |
 | `default_leverage`       | `None`    | Default leverage applied to derivatives orders. Ignored on Cash.                                                                           |

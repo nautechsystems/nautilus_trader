@@ -156,6 +156,7 @@ pub struct FeedHandler {
     bar_types: AHashMap<String, BarType>,
     account_id: Option<AccountId>,
     buffer: Vec<NautilusWsMessage>,
+    last_heartbeat_counter: Option<u64>,
 }
 
 impl FeedHandler {
@@ -177,6 +178,7 @@ impl FeedHandler {
             bar_types: AHashMap::new(),
             account_id: None,
             buffer: Vec::new(),
+            last_heartbeat_counter: None,
         }
     }
 
@@ -288,6 +290,7 @@ impl FeedHandler {
 
     fn handle_text(&mut self, text: &str) -> Option<NautilusWsMessage> {
         if text == RECONNECTED {
+            self.last_heartbeat_counter = None;
             return Some(NautilusWsMessage::Reconnected);
         }
 
@@ -315,7 +318,16 @@ impl FeedHandler {
                 timestamp, events, ..
             } => self.handle_ticker(&events, &timestamp, ts_init),
             CoinbaseWsMessage::Candles { events, .. } => self.handle_candles(&events, ts_init),
-            CoinbaseWsMessage::Heartbeats { .. } => None,
+            CoinbaseWsMessage::Heartbeats { events, .. } => {
+                for event in events {
+                    if let Some((expected, actual)) =
+                        self.note_heartbeat_counter(event.heartbeat_counter)
+                    {
+                        log::warn!("Heartbeat counter gap: expected {expected}, was {actual}");
+                    }
+                }
+                None
+            }
             CoinbaseWsMessage::Subscriptions { events, .. } => {
                 // Coinbase emits this after every subscribe and unsubscribe
                 // with the full current subscription set, so it's noisy at
@@ -333,6 +345,15 @@ impl FeedHandler {
                 timestamp, events, ..
             } => self.handle_status_events(&events, &timestamp, ts_init),
         }
+    }
+
+    fn note_heartbeat_counter(&mut self, counter: u64) -> Option<(u64, u64)> {
+        let gap = self.last_heartbeat_counter.and_then(|last| {
+            let expected = last.saturating_add(1);
+            (counter != expected).then_some((expected, counter))
+        });
+        self.last_heartbeat_counter = Some(counter);
+        gap
     }
 
     fn handle_l2_events(
@@ -1016,6 +1037,37 @@ mod tests {
         let mut handler = test_handler();
         let result = handler.handle_text(RECONNECTED);
         assert!(matches!(result, Some(NautilusWsMessage::Reconnected)));
+    }
+
+    #[rstest]
+    fn test_heartbeat_counter_tracks_sequence_and_detects_gaps() {
+        let mut handler = test_handler();
+
+        assert_eq!(handler.note_heartbeat_counter(42), None);
+        assert_eq!(handler.last_heartbeat_counter, Some(42));
+        assert_eq!(handler.note_heartbeat_counter(43), None);
+        assert_eq!(handler.last_heartbeat_counter, Some(43));
+        assert_eq!(handler.note_heartbeat_counter(45), Some((44, 45)));
+        assert_eq!(handler.last_heartbeat_counter, Some(45));
+        assert_eq!(handler.note_heartbeat_counter(40), Some((46, 40)));
+        assert_eq!(handler.last_heartbeat_counter, Some(40));
+    }
+
+    #[rstest]
+    fn test_handle_text_heartbeats_updates_counter_and_reconnect_resets_it() {
+        let json = load_test_fixture("ws_heartbeats.json");
+        let mut handler = test_handler();
+
+        assert!(handler.handle_text(&json).is_none());
+        assert_eq!(handler.last_heartbeat_counter, Some(42));
+
+        let next = json.replace("\"heartbeat_counter\": 42", "\"heartbeat_counter\": 43");
+        assert!(handler.handle_text(&next).is_none());
+        assert_eq!(handler.last_heartbeat_counter, Some(43));
+
+        let result = handler.handle_text(RECONNECTED);
+        assert!(matches!(result, Some(NautilusWsMessage::Reconnected)));
+        assert_eq!(handler.last_heartbeat_counter, None);
     }
 
     #[rstest]

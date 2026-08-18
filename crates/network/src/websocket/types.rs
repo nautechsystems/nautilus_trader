@@ -121,6 +121,8 @@ pub(crate) enum WriterCommand {
     Update(MessageWriter, tokio::sync::oneshot::Sender<u64>),
     /// Sends a message to the server.
     Send(Message),
+    /// Sends a connection keepalive. Never replayed on a replacement connection.
+    Heartbeat(Message),
     /// Sends once if the active connection still owns the message.
     SendOnConnection {
         message: Message,
@@ -139,6 +141,7 @@ impl Debug for WriterCommand {
         match self {
             Self::Update(_, _) => f.debug_tuple("Update").field(&"<writer>").finish(),
             Self::Send(msg) => f.debug_tuple("Send").field(msg).finish(),
+            Self::Heartbeat(msg) => f.debug_tuple("Heartbeat").field(msg).finish(),
             Self::SendOnConnection { message, .. } => {
                 f.debug_tuple("SendOnConnection").field(message).finish()
             }

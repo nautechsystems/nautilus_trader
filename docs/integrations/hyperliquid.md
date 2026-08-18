@@ -1403,7 +1403,7 @@ effect yet. See [Instrument loading](#instrument-loading) for how to refresh the
 | `base_url_exchange`            | `None`    | Override for the exchange API base URL.                                                                                                          |
 | `max_retries`                  | `3`       | Maximum retry attempts for submit, cancel, or modify order requests.                                                                             |
 | `retry_delay_initial_ms`       | `100`     | Initial delay (milliseconds) between retries.                                                                                                    |
-| `retry_delay_max_ms`           | `5000`    | Maximum delay (milliseconds) between retries.                                                                                                    |
+| `retry_delay_max_ms`           | `5,000`   | Maximum delay (milliseconds) between retries.                                                                                                    |
 | `http_timeout_secs`            | `60`      | Timeout (seconds) applied to REST calls.                                                                                                         |
 | `ws_post_timeout_secs`         | `10`      | Timeout (seconds) applied to WebSocket post trading requests.                                                                                    |
 | `normalize_prices`             | `True`    | Normalize order prices to 5 significant figures before submission.                                                                               |
