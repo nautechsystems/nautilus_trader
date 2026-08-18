@@ -108,6 +108,12 @@ impl SubmitOrderError {
     pub const fn handoff(&self) -> SubmitOrderHandoff {
         self.handoff
     }
+
+    /// Returns the original submission error without adding a wrapper layer.
+    #[must_use]
+    pub fn into_source(self) -> anyhow::Error {
+        self.source
+    }
 }
 
 impl std::fmt::Display for SubmitOrderError {
@@ -118,7 +124,8 @@ impl std::fmt::Display for SubmitOrderError {
 
 impl std::error::Error for SubmitOrderError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(self.source.as_ref())
+        let source: &(dyn std::error::Error + 'static) = self.source.as_ref();
+        source.source()
     }
 }
 
@@ -207,98 +214,9 @@ pub trait Strategy: DataActor {
     where
         Self: StrategyNative,
     {
-        self.submit_order_with_handoff(order, position_id, client_id, params)
+        submit_order_with_handoff_impl(self, &order, position_id, client_id, params)
             .map(|_| ())
-            .map_err(Into::into)
-    }
-
-    /// Submits an order and reports whether it crossed into NT command routing.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error carrying the handoff state if the strategy is not registered or order
-    /// submission fails.
-    fn submit_order_with_handoff(
-        &mut self,
-        order: OrderAny,
-        position_id: Option<PositionId>,
-        client_id: Option<ClientId>,
-        params: Option<Params>,
-    ) -> Result<SubmitOrderHandoff, SubmitOrderError>
-    where
-        Self: StrategyNative,
-    {
-        let core = StrategyNative::strategy_core_mut(self);
-
-        let trader_id = registered_trader_id(core).map_err(SubmitOrderError::not_handed_off)?;
-        let strategy_id =
-            registered_strategy_id(core).map_err(SubmitOrderError::not_handed_off)?;
-        let ts_init = core.clock_mut().timestamp_ns();
-
-        if order.status() != OrderStatus::Initialized {
-            return Err(SubmitOrderError::not_handed_off(anyhow::anyhow!(
-                "Order denied: invalid status for {}, expected INITIALIZED",
-                order.client_order_id()
-            )));
-        }
-
-        let market_exit_tag = core.market_exit_tag;
-        let is_market_exit_order = order
-            .tags()
-            .is_some_and(|tags| tags.contains(&market_exit_tag));
-        let should_deny_for_market_exit =
-            core.is_exiting && !order.is_reduce_only() && !is_market_exit_order;
-
-        if should_deny_for_market_exit {
-            self.deny_order(&order, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
-            return Ok(SubmitOrderHandoff::NotHandedOff);
-        }
-
-        let core = StrategyNative::strategy_core_mut(self);
-        let params = params.filter(|params| !params.is_empty());
-
-        {
-            let cache_rc = core.cache_rc();
-            let mut cache = cache_rc.try_borrow_mut().map_err(|_| {
-                SubmitOrderError::not_handed_off(anyhow::anyhow!(
-                    "Cannot submit order {}: cache is currently borrowed",
-                    order.client_order_id()
-                ))
-            })?;
-            cache
-                .add_order(order.clone(), position_id, client_id, true)
-                .map_err(SubmitOrderError::not_handed_off)?;
-        }
-
-        publish_order_initialized(&order);
-
-        let command = SubmitOrder::new(
-            trader_id,
-            client_id,
-            strategy_id,
-            order.instrument_id(),
-            order.client_order_id(),
-            order.init_event().clone(),
-            order.exec_algorithm_id(),
-            position_id,
-            params,
-            UUID4::new(),
-            ts_init,
-            None, // correlation_id
-        );
-        let command_id = command.command_id;
-
-        if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger) {
-            send_emulator_command(TradingCommand::SubmitOrder(command));
-        } else if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
-            send_algo_command(command, exec_algorithm_id);
-        } else {
-            send_risk_command(TradingCommand::SubmitOrder(command));
-        }
-
-        self.set_gtd_expiry(&order)
-            .map_err(|source| SubmitOrderError::handed_off(command_id, source))?;
-        Ok(SubmitOrderHandoff::HandedOff { command_id })
+            .map_err(SubmitOrderError::into_source)
     }
 
     /// Submits an order list.
@@ -2293,6 +2211,133 @@ pub trait Strategy: DataActor {
     }
 }
 
+mod strategy_submit_order_sealed {
+    pub trait Sealed {}
+
+    impl<T> Sealed for T where T: super::Strategy + super::StrategyNative + ?Sized {}
+}
+
+/// Adds the canonical NT submit operation with explicit command-handoff reporting.
+///
+/// This extension is blanket-implemented and sealed so strategy implementations cannot replace
+/// the handoff classification. It invokes the standard NT implementation directly rather than an
+/// override of the legacy [`Strategy::submit_order`] facade.
+pub trait StrategySubmitOrderExt:
+    Strategy + StrategyNative + strategy_submit_order_sealed::Sealed
+{
+    /// Submits an order and reports whether it crossed into NT command routing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error carrying the handoff state if the strategy is not registered or order
+    /// submission fails.
+    fn submit_order_with_handoff(
+        &mut self,
+        order: OrderAny,
+        position_id: Option<PositionId>,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) -> Result<SubmitOrderHandoff, SubmitOrderError>;
+}
+
+impl<T> StrategySubmitOrderExt for T
+where
+    T: Strategy + StrategyNative + ?Sized,
+{
+    fn submit_order_with_handoff(
+        &mut self,
+        order: OrderAny,
+        position_id: Option<PositionId>,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) -> Result<SubmitOrderHandoff, SubmitOrderError> {
+        submit_order_with_handoff_impl(self, &order, position_id, client_id, params)
+    }
+}
+
+fn submit_order_with_handoff_impl<S>(
+    strategy: &mut S,
+    order: &OrderAny,
+    position_id: Option<PositionId>,
+    client_id: Option<ClientId>,
+    params: Option<Params>,
+) -> Result<SubmitOrderHandoff, SubmitOrderError>
+where
+    S: Strategy + StrategyNative + ?Sized,
+{
+    let core = StrategyNative::strategy_core_mut(strategy);
+
+    let trader_id = registered_trader_id(core).map_err(SubmitOrderError::not_handed_off)?;
+    let strategy_id = registered_strategy_id(core).map_err(SubmitOrderError::not_handed_off)?;
+    let ts_init = core.clock_mut().timestamp_ns();
+
+    if order.status() != OrderStatus::Initialized {
+        return Err(SubmitOrderError::not_handed_off(anyhow::anyhow!(
+            "Order denied: invalid status for {}, expected INITIALIZED",
+            order.client_order_id()
+        )));
+    }
+
+    let market_exit_tag = core.market_exit_tag;
+    let is_market_exit_order = order
+        .tags()
+        .is_some_and(|tags| tags.contains(&market_exit_tag));
+    let should_deny_for_market_exit =
+        core.is_exiting && !order.is_reduce_only() && !is_market_exit_order;
+
+    if should_deny_for_market_exit {
+        strategy.deny_order(order, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
+        return Ok(SubmitOrderHandoff::NotHandedOff);
+    }
+
+    let core = StrategyNative::strategy_core_mut(strategy);
+    let params = params.filter(|params| !params.is_empty());
+
+    {
+        let cache_rc = core.cache_rc();
+        let mut cache = cache_rc.try_borrow_mut().map_err(|_| {
+            SubmitOrderError::not_handed_off(anyhow::anyhow!(
+                "Cannot submit order {}: cache is currently borrowed",
+                order.client_order_id()
+            ))
+        })?;
+        cache
+            .add_order((*order).clone(), position_id, client_id, true)
+            .map_err(SubmitOrderError::not_handed_off)?;
+    }
+
+    publish_order_initialized(order);
+
+    let command = SubmitOrder::new(
+        trader_id,
+        client_id,
+        strategy_id,
+        order.instrument_id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        order.exec_algorithm_id(),
+        position_id,
+        params,
+        UUID4::new(),
+        ts_init,
+        None, // correlation_id
+    );
+    let command_id = command.command_id;
+
+    if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger) {
+        send_emulator_command(TradingCommand::SubmitOrder(command));
+    } else if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
+        send_algo_command(command, exec_algorithm_id);
+    } else {
+        send_risk_command(TradingCommand::SubmitOrder(command));
+    }
+
+    strategy
+        .set_gtd_expiry(order)
+        .map_err(|source| SubmitOrderError::handed_off(command_id, source))?;
+    Ok(SubmitOrderHandoff::HandedOff { command_id })
+}
+
 fn publish_order_initialized(order: &OrderAny) {
     let topic = format!("events.order.{}", order.strategy_id());
     let event = OrderEventAny::Initialized(order.init_event().clone());
@@ -2421,6 +2466,11 @@ mod tests {
         started: bool,
     }
 
+    #[derive(Debug)]
+    struct LegacySubmitOverrideStrategy {
+        core: StrategyCore,
+    }
+
     impl Component for CoreFreeStrategy {
         fn component_id(&self) -> ComponentId {
             ComponentId::new("CoreFreeStrategy")
@@ -2453,6 +2503,20 @@ mod tests {
     }
 
     impl Strategy for CoreFreeStrategy {}
+
+    impl DataActor for LegacySubmitOverrideStrategy {}
+
+    nautilus_strategy!(LegacySubmitOverrideStrategy, {
+        fn submit_order(
+            &mut self,
+            _order: OrderAny,
+            _position_id: Option<PositionId>,
+            _client_id: Option<ClientId>,
+            _params: Option<Params>,
+        ) -> anyhow::Result<()> {
+            anyhow::bail!("legacy submit override called")
+        }
+    });
 
     impl TestStrategy {
         fn new(config: StrategyConfig) -> Self {
@@ -3120,6 +3184,75 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "Strategy not registered: trader_id is not set"
+        );
+        assert!(std::error::Error::source(&err).is_none());
+    }
+
+    #[rstest]
+    fn test_submit_order_compatibility_wrapper_preserves_original_error() {
+        let mut strategy = create_test_strategy();
+        let order = make_initialized_market_order("O-20250208-UNREGISTERED-LEGACY-001");
+
+        let err = strategy.submit_order(order, None, None, None).unwrap_err();
+
+        assert_eq!(
+            format!("{err:#}"),
+            "Strategy not registered: trader_id is not set"
+        );
+        assert_eq!(err.chain().count(), 1);
+        assert!(err.is::<&str>());
+    }
+
+    #[rstest]
+    fn test_submit_order_handoff_extension_bypasses_legacy_override() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("TEST-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        let mut strategy = LegacySubmitOverrideStrategy {
+            core: StrategyCore::new(config),
+        };
+        let trader_id = TraderId::from("TRADER-001");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let portfolio = Rc::new(RefCell::new(Portfolio::new(
+            clock.clone(),
+            cache.clone(),
+            None,
+        )));
+        strategy
+            .core
+            .register(trader_id, clock, cache, portfolio)
+            .unwrap();
+        strategy.initialize().unwrap();
+
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let order = make_initialized_market_order("O-20250208-LEGACY-OVERRIDE-001");
+
+        let handoff = StrategySubmitOrderExt::submit_order_with_handoff(
+            &mut strategy,
+            order,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let commands = risk_messages.get_messages();
+        let Some(TradingCommand::SubmitOrder(command)) = commands.first() else {
+            panic!("expected routed SubmitOrder command");
+        };
+
+        assert_eq!(
+            handoff,
+            SubmitOrderHandoff::HandedOff {
+                command_id: command.command_id,
+            },
         );
     }
 
@@ -4835,6 +4968,12 @@ mod tests {
             None,
         ));
         let topic = format!("events.order.{}", order.strategy_id());
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
         msgbus::subscribe_order_events(topic.clone().into(), event_handler.clone(), None);
         let client_order_id = order.client_order_id();
         let result = strategy.submit_order_with_handoff(order.clone(), None, None, None);
@@ -4842,6 +4981,7 @@ mod tests {
         msgbus::unsubscribe_order_events(topic.into(), &event_handler);
 
         assert_eq!(result.unwrap(), SubmitOrderHandoff::NotHandedOff,);
+        assert!(risk_messages.get_messages().is_empty());
         let cache = strategy.cache();
         let cached_order = cache.order(&client_order_id).unwrap();
         assert_eq!(cached_order.status(), OrderStatus::Denied);
