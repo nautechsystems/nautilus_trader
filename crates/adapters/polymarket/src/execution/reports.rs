@@ -34,8 +34,8 @@ use ustr::Ustr;
 use super::{
     PolymarketExecutionClient,
     parse::{
-        parse_balance_allowance, parse_order_status_report, sum_filled_quantity,
-        weighted_average_price,
+        parse_balance_allowance, parse_order_status_report, recovered_terminal_order_status,
+        sum_filled_quantity, weighted_average_price,
     },
     reconciliation::{
         FillContext, apply_fill_filters, build_fill_reports_from_trades, build_position_reports,
@@ -44,7 +44,7 @@ use super::{
     },
 };
 use crate::{
-    common::{consts::DUST_SNAP_THRESHOLD_DEC, enums::SignatureType},
+    common::enums::SignatureType,
     http::{
         clob::PolymarketClobHttpClient,
         query::{GetBalanceAllowanceParams, GetTradesParams},
@@ -609,23 +609,6 @@ impl PolymarketExecutionClient {
             self.config.reconciliation_load_ids(),
         )
         .await
-    }
-}
-
-fn recovered_terminal_order_status(
-    time_in_force: TimeInForce,
-    quantity: Quantity,
-    filled_qty: Quantity,
-) -> OrderStatus {
-    if time_in_force == TimeInForce::Ioc && filled_qty < quantity {
-        return OrderStatus::Canceled;
-    }
-
-    let dust_diff = (quantity.as_decimal() - filled_qty.as_decimal()).abs();
-    if filled_qty >= quantity || dust_diff < DUST_SNAP_THRESHOLD_DEC {
-        OrderStatus::Filled
-    } else {
-        OrderStatus::Canceled
     }
 }
 
