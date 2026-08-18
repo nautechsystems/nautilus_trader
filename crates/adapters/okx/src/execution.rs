@@ -80,7 +80,10 @@ use crate::{
         },
     },
     config::OKXExecClientConfig,
-    http::{client::OKXHttpClient, models::OKXCancelAlgoOrderRequest},
+    http::{
+        client::{OKXHttpClient, ReportInstrumentScope},
+        models::OKXCancelAlgoOrderRequest,
+    },
     websocket::{
         client::OKXWebSocketClient,
         dispatch::{
@@ -237,6 +240,302 @@ impl OKXExecutionClient {
         } else {
             self.config.instrument_types.clone()
         }
+    }
+
+    fn report_scope<'a>(
+        &'a self,
+        instrument_types: &'a [OKXInstrumentType],
+    ) -> ReportInstrumentScope<'a> {
+        ReportInstrumentScope {
+            instrument_types,
+            load_spreads: self.config.load_spreads,
+        }
+    }
+
+    async fn collect_order_status_reports(
+        &self,
+        cmd: &GenerateOrderStatusReports,
+    ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
+        let instrument_types = self.instrument_types();
+        let routing_types = order_routing_instrument_types(&instrument_types);
+        let scope = self.report_scope(&routing_types);
+        let start = nanos_to_datetime(cmd.start);
+        let end = nanos_to_datetime(cmd.end);
+        let mut reports = Vec::new();
+        let mut complete = true;
+
+        if let Some(instrument_id) = cmd.instrument_id {
+            let sweep = self
+                .http_client
+                .request_order_status_reports_scoped(
+                    self.core.account_id,
+                    None,
+                    Some(instrument_id),
+                    start,
+                    end,
+                    false,
+                    None,
+                    Some(scope),
+                )
+                .await?;
+            reports.extend(sweep.reports);
+            complete &= sweep.complete;
+
+            if !is_spread_instrument(instrument_id)
+                && supports_algo_orders(okx_instrument_type_from_symbol(
+                    instrument_id.symbol.as_str(),
+                ))
+            {
+                match self
+                    .http_client
+                    .request_algo_order_status_reports_sweep(
+                        self.core.account_id,
+                        None,
+                        Some(instrument_id),
+                        None,
+                        None,
+                        None,
+                        None,
+                        start,
+                        end,
+                    )
+                    .await
+                {
+                    Ok(sweep) => {
+                        merge_order_status_reports(&mut reports, sweep.reports);
+                        complete &= sweep.complete;
+                    }
+                    Err(e) if is_instrument_cache_miss(&e) => return Err(e),
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to fetch algo order status reports for {instrument_id}: {e}"
+                        );
+                        complete = false;
+                    }
+                }
+            }
+        } else {
+            for inst_type in &routing_types {
+                let sweep = self
+                    .http_client
+                    .request_order_status_reports_scoped(
+                        self.core.account_id,
+                        Some(*inst_type),
+                        None,
+                        start,
+                        end,
+                        false,
+                        None,
+                        Some(scope),
+                    )
+                    .await?;
+                reports.extend(sweep.reports);
+                complete &= sweep.complete;
+
+                if supports_algo_orders(*inst_type) {
+                    match self
+                        .http_client
+                        .request_algo_order_status_reports_sweep(
+                            self.core.account_id,
+                            Some(*inst_type),
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            start,
+                            end,
+                        )
+                        .await
+                    {
+                        Ok(sweep) => {
+                            merge_order_status_reports(&mut reports, sweep.reports);
+                            complete &= sweep.complete;
+                        }
+                        Err(e) if is_instrument_cache_miss(&e) => return Err(e),
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to fetch algo order status reports for {inst_type:?}: {e}"
+                            );
+                            complete = false;
+                        }
+                    }
+                }
+            }
+
+            if self.config.load_spreads {
+                match self
+                    .http_client
+                    .request_order_status_reports_scoped(
+                        self.core.account_id,
+                        None,
+                        None,
+                        start,
+                        end,
+                        false,
+                        None,
+                        Some(scope),
+                    )
+                    .await
+                {
+                    Ok(sweep) => {
+                        reports.extend(sweep.reports);
+                        complete &= sweep.complete;
+                    }
+                    Err(e) if is_instrument_cache_miss(&e) => return Err(e),
+                    Err(e) => {
+                        log::warn!("Failed to fetch spread order status reports: {e}");
+                        complete = false;
+                    }
+                }
+            }
+        }
+
+        if cmd.open_only {
+            reports.retain(|r| r.order_status.is_open());
+        }
+
+        if let Some(start) = cmd.start {
+            reports.retain(|r| r.ts_last >= start);
+        }
+
+        if let Some(end) = cmd.end {
+            reports.retain(|r| r.ts_last <= end);
+        }
+
+        Ok((reports, complete))
+    }
+
+    async fn collect_fill_reports(
+        &self,
+        cmd: GenerateFillReports,
+    ) -> anyhow::Result<(Vec<FillReport>, bool)> {
+        let instrument_types = self.instrument_types();
+        let routing_types = order_routing_instrument_types(&instrument_types);
+        let scope = self.report_scope(&routing_types);
+        let start_dt = nanos_to_datetime(cmd.start);
+        let end_dt = nanos_to_datetime(cmd.end);
+        let mut reports = Vec::new();
+        let mut complete = true;
+
+        if let Some(instrument_id) = cmd.instrument_id {
+            let sweep = self
+                .http_client
+                .request_fill_reports_scoped(
+                    self.core.account_id,
+                    None,
+                    Some(instrument_id),
+                    start_dt,
+                    end_dt,
+                    None,
+                    Some(scope),
+                )
+                .await?;
+            reports.extend(sweep.reports);
+            complete &= sweep.complete;
+        } else {
+            for inst_type in &routing_types {
+                let sweep = self
+                    .http_client
+                    .request_fill_reports_scoped(
+                        self.core.account_id,
+                        Some(*inst_type),
+                        None,
+                        start_dt,
+                        end_dt,
+                        None,
+                        Some(scope),
+                    )
+                    .await?;
+                reports.extend(sweep.reports);
+                complete &= sweep.complete;
+            }
+
+            if self.config.load_spreads {
+                let sweep = self
+                    .http_client
+                    .request_fill_reports_scoped(
+                        self.core.account_id,
+                        None,
+                        None,
+                        start_dt,
+                        end_dt,
+                        None,
+                        Some(scope),
+                    )
+                    .await?;
+                reports.extend(sweep.reports);
+                complete &= sweep.complete;
+            }
+        }
+
+        if let Some(venue_order_id) = cmd.venue_order_id {
+            reports.retain(|report| report.venue_order_id.as_str() == venue_order_id.as_str());
+        }
+
+        Ok((reports, complete))
+    }
+
+    async fn collect_position_status_reports(
+        &self,
+        cmd: &GeneratePositionStatusReports,
+    ) -> anyhow::Result<(Vec<PositionStatusReport>, bool)> {
+        let instrument_types = self.instrument_types();
+        let scope = self.report_scope(&instrument_types);
+        let mut reports = Vec::new();
+        let mut complete = true;
+
+        if let Some(instrument_id) = cmd.instrument_id {
+            if is_spread_instrument(instrument_id) {
+                return Ok((reports, complete));
+            }
+
+            let inst_type = okx_instrument_type_from_symbol(instrument_id.symbol.as_str());
+            if inst_type != OKXInstrumentType::Spot && inst_type != OKXInstrumentType::Margin {
+                let sweep = self
+                    .http_client
+                    .request_position_status_reports_scoped(
+                        self.core.account_id,
+                        None,
+                        Some(instrument_id),
+                        Some(scope),
+                    )
+                    .await?;
+                reports.extend(sweep.reports);
+                complete &= sweep.complete;
+            }
+        } else {
+            for inst_type in &instrument_types {
+                if *inst_type == OKXInstrumentType::Spot || *inst_type == OKXInstrumentType::Margin
+                {
+                    continue;
+                }
+                let sweep = self
+                    .http_client
+                    .request_position_status_reports_scoped(
+                        self.core.account_id,
+                        Some(*inst_type),
+                        None,
+                        Some(scope),
+                    )
+                    .await?;
+                reports.extend(sweep.reports);
+                complete &= sweep.complete;
+            }
+        }
+
+        let mut margin_reports = self
+            .http_client
+            .request_spot_margin_position_reports(self.core.account_id)
+            .await?;
+
+        if let Some(instrument_id) = cmd.instrument_id {
+            margin_reports.retain(|report| report.instrument_id == instrument_id);
+        }
+
+        reports.append(&mut margin_reports);
+
+        Ok((reports, complete))
     }
 
     fn update_account_state(&self) {
@@ -1515,303 +1814,172 @@ impl ExecutionClient for OKXExecutionClient {
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
         let Some(instrument_id) = cmd.instrument_id else {
-            log::warn!("generate_order_status_report requires instrument_id: {cmd:?}");
-            return Ok(None);
+            anyhow::bail!("generate_order_status_report requires instrument_id");
         };
 
-        let mut reports = self
-            .http_client
-            .request_order_status_reports(
-                self.core.account_id,
-                None,
-                Some(instrument_id),
-                None,
-                None,
-                false,
-                None,
-            )
-            .await?;
+        if cmd.client_order_id.is_none() && cmd.venue_order_id.is_none() {
+            anyhow::bail!(
+                "generate_order_status_report requires client_order_id or venue_order_id"
+            );
+        }
 
-        if !is_spread_instrument(instrument_id)
-            && supports_algo_orders(okx_instrument_type_from_symbol(
-                instrument_id.symbol.as_str(),
-            ))
-        {
-            // Merge algo orders (stop, OCO, TP/SL, trailing). They live on a
-            // separate OKX endpoint and would otherwise be dropped from
-            // reconciliation, leaving stop/conditional orders unrecovered after
-            // a restart.
+        let order_state = {
+            let cache = self.core.cache();
+            cmd.client_order_id.and_then(|client_order_id| {
+                cache
+                    .order(&client_order_id)
+                    .map(|order| CachedQueryOrderState {
+                        order_type: order.order_type(),
+                        venue_order_id: order.venue_order_id(),
+                    })
+            })
+        };
+        let cached_venue_order_id = order_state.and_then(|state| state.venue_order_id);
+        let regular_venue_order_id = order_state.and_then(|state| {
+            if OKX_CONDITIONAL_ORDER_TYPES.contains(&state.order_type) {
+                state.venue_order_id.or(cmd.venue_order_id)
+            } else {
+                state.venue_order_id
+            }
+        });
+        let selection_venue_order_id = cached_venue_order_id.or(cmd.venue_order_id);
+        let route = query_order_route(
+            instrument_id,
+            order_state.map(|state| state.order_type),
+            regular_venue_order_id.is_some(),
+        );
+
+        let mut reports = Vec::with_capacity(1);
+        let mut query_algo = matches!(
+            route,
+            QueryOrderRoute::Algo | QueryOrderRoute::RegularAndAlgo
+        );
+        let mut lookup_error = None;
+
+        match route {
+            QueryOrderRoute::Spread => {
+                let targeted_venue_order_id =
+                    cmd.venue_order_id.filter(|_| cmd.client_order_id.is_none());
+
+                match self
+                    .http_client
+                    .request_spread_order_status_report(
+                        self.core.account_id,
+                        instrument_id,
+                        cmd.client_order_id,
+                        targeted_venue_order_id,
+                    )
+                    .await
+                {
+                    Ok(Some(report)) => reports.push(report),
+                    Ok(None) => {}
+                    Err(e) => lookup_error = Some(e),
+                }
+            }
+            QueryOrderRoute::Regular | QueryOrderRoute::RegularThenAlgo => {
+                let targeted_venue_order_id = regular_venue_order_id
+                    .or(cmd.venue_order_id.filter(|_| cmd.client_order_id.is_none()));
+                let result = if let Some(venue_order_id) = targeted_venue_order_id {
+                    self.http_client
+                        .request_order_status_report_by_venue_order_id(
+                            self.core.account_id,
+                            instrument_id,
+                            venue_order_id,
+                        )
+                        .await
+                } else if let Some(client_order_id) = cmd.client_order_id {
+                    self.http_client
+                        .request_order_status_report(
+                            self.core.account_id,
+                            instrument_id,
+                            client_order_id,
+                        )
+                        .await
+                } else {
+                    anyhow::bail!(
+                        "generate_order_status_report requires client_order_id or venue_order_id"
+                    );
+                };
+
+                match result {
+                    Ok(Some(report)) => reports.push(report),
+                    Ok(None) => {
+                        query_algo |= route == QueryOrderRoute::RegularThenAlgo;
+                    }
+                    Err(e) => {
+                        lookup_error = Some(e);
+                        query_algo |= route == QueryOrderRoute::RegularThenAlgo;
+                    }
+                }
+            }
+            QueryOrderRoute::Algo | QueryOrderRoute::RegularAndAlgo => {}
+        }
+
+        if query_algo {
+            let (algo_id, algo_client_order_id) = match cmd.client_order_id {
+                Some(client_order_id) => (None, Some(client_order_id)),
+                None => (cmd.venue_order_id.map(|id| id.as_str().to_string()), None),
+            };
+
             match self
                 .http_client
                 .request_algo_order_status_reports(
                     self.core.account_id,
                     None,
                     Some(instrument_id),
+                    algo_id,
+                    algo_client_order_id,
                     None,
-                    cmd.client_order_id,
-                    None,
-                    None,
+                    Some(1),
                 )
                 .await
             {
                 Ok(algo_reports) => merge_order_status_reports(&mut reports, algo_reports),
                 Err(e) => {
-                    log::warn!(
-                        "Failed to fetch algo order status reports for {instrument_id}: {e}"
-                    );
+                    if lookup_error.is_none() {
+                        lookup_error = Some(e);
+                    }
                 }
             }
         }
 
+        if reports.is_empty() {
+            if let Some(e) = lookup_error {
+                return Err(e);
+            }
+            return Ok(None);
+        }
+
         if let Some(client_order_id) = cmd.client_order_id {
-            reports.retain(|report| report.client_order_id == Some(client_order_id));
+            Ok(select_query_order_report(
+                reports,
+                client_order_id,
+                selection_venue_order_id,
+            ))
+        } else {
+            Ok(Some(reports.remove(0)))
         }
-
-        if let Some(venue_order_id) = cmd.venue_order_id {
-            reports.retain(|report| report.venue_order_id.as_str() == venue_order_id.as_str());
-        }
-
-        Ok(reports.into_iter().next())
     }
 
     async fn generate_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let mut reports = Vec::new();
-
-        if let Some(instrument_id) = cmd.instrument_id {
-            let mut fetched = self
-                .http_client
-                .request_order_status_reports(
-                    self.core.account_id,
-                    None,
-                    Some(instrument_id),
-                    None,
-                    None,
-                    false,
-                    None,
-                )
-                .await?;
-            reports.append(&mut fetched);
-
-            if !is_spread_instrument(instrument_id)
-                && supports_algo_orders(okx_instrument_type_from_symbol(
-                    instrument_id.symbol.as_str(),
-                ))
-            {
-                // Merge algo orders for the requested instrument so reconciliation
-                // recovers stop, OCO, TP/SL, and trailing orders alongside regular
-                // ones. Failure here is logged but does not abort the regular
-                // reconciliation; an algo-endpoint outage should not blank the
-                // entire status report.
-                match self
-                    .http_client
-                    .request_algo_order_status_reports(
-                        self.core.account_id,
-                        None,
-                        Some(instrument_id),
-                        None,
-                        None,
-                        None,
-                        None,
-                    )
-                    .await
-                {
-                    Ok(algo) => merge_order_status_reports(&mut reports, algo),
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to fetch algo order status reports for {instrument_id}: {e}"
-                        );
-                    }
-                }
-            }
-        } else {
-            let instrument_types = self.instrument_types();
-
-            for inst_type in order_routing_instrument_types(&instrument_types) {
-                let mut fetched = self
-                    .http_client
-                    .request_order_status_reports(
-                        self.core.account_id,
-                        Some(inst_type),
-                        None,
-                        None,
-                        None,
-                        false,
-                        None,
-                    )
-                    .await?;
-                reports.append(&mut fetched);
-
-                if supports_algo_orders(inst_type) {
-                    match self
-                        .http_client
-                        .request_algo_order_status_reports(
-                            self.core.account_id,
-                            Some(inst_type),
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                        )
-                        .await
-                    {
-                        Ok(algo) => merge_order_status_reports(&mut reports, algo),
-                        Err(e) => log::warn!(
-                            "Failed to fetch algo order status reports for {inst_type:?}: {e}"
-                        ),
-                    }
-                }
-            }
-
-            if self.config.load_spreads {
-                match self
-                    .http_client
-                    .request_order_status_reports(
-                        self.core.account_id,
-                        None,
-                        None,
-                        None,
-                        None,
-                        false,
-                        None,
-                    )
-                    .await
-                {
-                    Ok(mut spreads) => reports.append(&mut spreads),
-                    Err(e) => log::warn!("Failed to fetch spread order status reports: {e}"),
-                }
-            }
-        }
-
-        if cmd.open_only {
-            reports.retain(|r| r.order_status.is_open());
-        }
-
-        if let Some(start) = cmd.start {
-            reports.retain(|r| r.ts_last >= start);
-        }
-
-        if let Some(end) = cmd.end {
-            reports.retain(|r| r.ts_last <= end);
-        }
-
-        Ok(reports)
+        Ok(self.collect_order_status_reports(cmd).await?.0)
     }
 
     async fn generate_fill_reports(
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        let start_dt = nanos_to_datetime(cmd.start);
-        let end_dt = nanos_to_datetime(cmd.end);
-        let mut reports = Vec::new();
-
-        if let Some(instrument_id) = cmd.instrument_id {
-            let mut fetched = self
-                .http_client
-                .request_fill_reports(
-                    self.core.account_id,
-                    None,
-                    Some(instrument_id),
-                    start_dt,
-                    end_dt,
-                    None,
-                )
-                .await?;
-            reports.append(&mut fetched);
-        } else {
-            let instrument_types = self.instrument_types();
-
-            for inst_type in order_routing_instrument_types(&instrument_types) {
-                let mut fetched = self
-                    .http_client
-                    .request_fill_reports(
-                        self.core.account_id,
-                        Some(inst_type),
-                        None,
-                        start_dt,
-                        end_dt,
-                        None,
-                    )
-                    .await?;
-                reports.append(&mut fetched);
-            }
-
-            if self.config.load_spreads {
-                match self
-                    .http_client
-                    .request_fill_reports(self.core.account_id, None, None, start_dt, end_dt, None)
-                    .await
-                {
-                    Ok(mut spreads) => reports.append(&mut spreads),
-                    Err(e) => log::warn!("Failed to fetch spread fill reports: {e}"),
-                }
-            }
-        }
-
-        if let Some(venue_order_id) = cmd.venue_order_id {
-            reports.retain(|report| report.venue_order_id.as_str() == venue_order_id.as_str());
-        }
-
-        Ok(reports)
+        Ok(self.collect_fill_reports(cmd).await?.0)
     }
 
     async fn generate_position_status_reports(
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        let mut reports = Vec::new();
-
-        // Query derivative positions (SWAP/FUTURES/OPTION) from /api/v5/account/positions
-        // Note: The positions endpoint does not support Spot or Margin - those are handled separately
-        if let Some(instrument_id) = cmd.instrument_id {
-            if is_spread_instrument(instrument_id) {
-                return Ok(reports);
-            }
-
-            let inst_type = okx_instrument_type_from_symbol(instrument_id.symbol.as_str());
-            if inst_type != OKXInstrumentType::Spot && inst_type != OKXInstrumentType::Margin {
-                let mut fetched = self
-                    .http_client
-                    .request_position_status_reports(
-                        self.core.account_id,
-                        None,
-                        Some(instrument_id),
-                    )
-                    .await?;
-                reports.append(&mut fetched);
-            }
-        } else {
-            for inst_type in self.instrument_types() {
-                // Skip Spot and Margin - positions API only supports derivatives
-                if inst_type == OKXInstrumentType::Spot || inst_type == OKXInstrumentType::Margin {
-                    continue;
-                }
-                let mut fetched = self
-                    .http_client
-                    .request_position_status_reports(self.core.account_id, Some(inst_type), None)
-                    .await?;
-                reports.append(&mut fetched);
-            }
-        }
-
-        // Query spot margin positions from /api/v5/account/balance
-        // Spot margin positions appear as balance sheet items (liab/spotInUseAmt fields)
-        let mut margin_reports = self
-            .http_client
-            .request_spot_margin_position_reports(self.core.account_id)
-            .await?;
-
-        if let Some(instrument_id) = cmd.instrument_id {
-            margin_reports.retain(|report| report.instrument_id == instrument_id);
-        }
-
-        reports.append(&mut margin_reports);
-
-        Ok(reports)
+        Ok(self.collect_position_status_reports(cmd).await?.0)
     }
 
     async fn generate_mass_status(
@@ -1846,11 +2014,16 @@ impl ExecutionClient for OKXExecutionClient {
             .build()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let (order_reports, fill_reports, position_reports) = tokio::try_join!(
-            self.generate_order_status_reports(&order_cmd),
-            self.generate_fill_reports(fill_cmd),
-            self.generate_position_status_reports(&position_cmd),
+        let (
+            (order_reports, orders_complete),
+            (fill_reports, fills_complete),
+            (position_reports, positions_complete),
+        ) = tokio::try_join!(
+            self.collect_order_status_reports(&order_cmd),
+            self.collect_fill_reports(fill_cmd),
+            self.collect_position_status_reports(&position_cmd),
         )?;
+        let reports_complete = orders_complete && fills_complete && positions_complete;
 
         log::info!("Received {} OrderStatusReports", order_reports.len());
         log::info!("Received {} FillReports", fill_reports.len());
@@ -1863,7 +2036,7 @@ impl ExecutionClient for OKXExecutionClient {
             ts_now,
             None,
         );
-
+        mass_status.set_report_window(start, reports_complete);
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
@@ -2617,6 +2790,12 @@ fn query_order_route(
 
 fn is_spread_instrument(instrument_id: InstrumentId) -> bool {
     is_okx_spread_symbol(instrument_id.symbol.as_str())
+}
+
+fn is_instrument_cache_miss(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("missing from cache"))
 }
 
 fn merge_order_status_reports(

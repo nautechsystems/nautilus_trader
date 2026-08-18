@@ -44,7 +44,7 @@ use nautilus_common::{
         execution::{
             BatchCancelOrders, CancelOrder, ExecutionReport as CommonExecutionReport, ModifyOrder,
             QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
-            report::{GenerateFillReports, GenerateOrderStatusReports},
+            report::{GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports},
         },
     },
     testing::wait_until_async,
@@ -1391,7 +1391,7 @@ fn test_dispatch_spread_order_live_update_emits_updated() {
 }
 
 #[rstest]
-fn test_dispatch_spread_order_fill_synthesizes_accepted_and_dedups_replay() {
+fn test_dispatch_spread_order_fill_fails_closed_without_fee() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
     let instruments = spread_instruments_cache();
@@ -1417,23 +1417,13 @@ fn test_dispatch_spread_order_fill_synthesizes_accepted_and_dedups_replay() {
     );
 
     let events = drain_events(&mut rx);
-    assert_eq!(events.len(), 2);
-    match (&events[0], &events[1]) {
-        (
-            ExecutionEvent::Order(OrderEventAny::Accepted(accepted)),
-            ExecutionEvent::Order(OrderEventAny::Filled(filled)),
-        ) => {
-            assert_eq!(accepted.client_order_id, cid);
-            assert_eq!(filled.client_order_id, cid);
-            assert_eq!(filled.trade_id, TradeId::new("TSPRD001"));
-            assert_eq!(filled.last_qty, Quantity::from("0.01"));
-            assert_eq!(filled.last_px, Price::from("1.0"));
-        }
-        other => panic!("Expected Accepted then Filled spread events, was {other:?}"),
-    }
-
-    assert!(state.order_identities.get(&cid).is_none());
-    assert!(state.contains_filled(&cid));
+    assert!(
+        events.is_empty(),
+        "WS sprd-orders omit fee so the fill must stay unprocessed, was {events:?}"
+    );
+    assert!(state.order_identities.get(&cid).is_some());
+    assert!(!state.contains_filled(&cid));
+    assert!(!state.check_and_insert_trade(TradeId::new("TSPRD001")));
 
     dispatch_spread_message(
         fill,
@@ -1445,7 +1435,8 @@ fn test_dispatch_spread_order_fill_synthesizes_accepted_and_dedups_replay() {
     );
 
     let replay_events = drain_events(&mut rx);
-    assert_eq!(replay_events.len(), 0);
+    assert!(replay_events.is_empty());
+    assert!(state.order_identities.get(&cid).is_some());
 }
 
 #[rstest]
@@ -2415,6 +2406,32 @@ async fn test_trade_dedup_concurrent_inserts_only_one_wins() {
     );
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_dispatch_fill_reports_claim_trade_id_across_tasks() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::default());
+    let fill = make_fill_report_with_trade_id("O-001", "t-race-dispatch");
+    let mut handles = Vec::new();
+
+    for _ in 0..8 {
+        let emitter = emitter.clone();
+        let state = Arc::clone(&state);
+        let fill = fill.clone();
+        handles.push(tokio::spawn(async move {
+            dispatch_execution_reports(vec![ExecutionReport::Fill(fill)], &emitter, &state);
+        }));
+    }
+
+    for handle in handles {
+        handle.await.unwrap();
+    }
+    let events = drain_events(&mut rx);
+
+    assert_eq!(events.len(), 1, "exactly one fill should be emitted");
+    assert!(state.contains_trade(&TradeId::new("t-race-dispatch")));
+}
+
 fn load_test_data(filename: &str) -> serde_json::Value {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("test_data")
@@ -2578,6 +2595,11 @@ fn algo_order_detail_response(params: &HashMap<String, String>) -> serde_json::V
             order["ordIdList"] = json!(["single-child-venue-id"]);
             order["slOrdPx"] = json!("800.00");
             order["state"] = json!("effective");
+        }
+        None if params.get("algoId").map(String::as_str) == Some("algo-venue-id") => {
+            order["algoClOrdId"] = json!("OQUERYALGO1");
+            order["ordId"] = json!("");
+            order["state"] = json!("live");
         }
         _ => {}
     }
@@ -2945,6 +2967,14 @@ fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
                     Json(load_test_data("http_get_spread_trades.json")).into_response()
                 }
             }),
+        )
+        .route(
+            "/api/v5/account/positions",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
         )
 }
 
@@ -4113,4 +4143,487 @@ async fn test_submit_order_list_denies_spread_instrument() {
             "reason was: {reason}"
         );
     }
+}
+
+fn generate_order_status_report_cmd(
+    instrument_id: Option<InstrumentId>,
+    client_order_id: Option<ClientOrderId>,
+    venue_order_id: Option<VenueOrderId>,
+) -> GenerateOrderStatusReport {
+    GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        None,
+        None,
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_requires_instrument_id() {
+    let (client, _rx, _cache, _state) = create_query_order_test_client().await;
+    let error = client
+        .generate_order_status_report(&generate_order_status_report_cmd(
+            None,
+            Some(ClientOrderId::from("OQUERYREGULAR1")),
+            None,
+        ))
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("requires instrument_id"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_uses_targeted_lookup() {
+    let (client, _rx, _cache, state) = create_query_order_test_client().await;
+    let client_order_id = ClientOrderId::from("OQUERYREGULAR1");
+    let report = client
+        .generate_order_status_report(&generate_order_status_report_cmd(
+            Some(InstrumentId::from("ETH-USDT-SWAP.OKX")),
+            Some(client_order_id),
+            None,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let regular_queries = state.regular_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+
+    assert_eq!(report.client_order_id, Some(client_order_id));
+    assert!(
+        regular_queries
+            .iter()
+            .any(|query| query.get("clOrdId").map(String::as_str) == Some("OQUERYREGULAR1"))
+    );
+    assert!(sequence.iter().any(|entry| entry.starts_with("regular:")));
+    assert!(
+        !sequence
+            .iter()
+            .any(|entry| entry.contains("orders-history"))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_venue_only_queries_algo_after_regular_miss() {
+    let (client, _rx, _cache, state) = create_query_order_test_client().await;
+    let venue_order_id = VenueOrderId::from("algo-venue-id");
+    let report = client
+        .generate_order_status_report(&generate_order_status_report_cmd(
+            Some(InstrumentId::from("ETH-USDT-SWAP.OKX")),
+            None,
+            Some(venue_order_id),
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let regular_queries = state.regular_queries.lock().await;
+    let algo_queries = state.algo_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+
+    assert_eq!(report.venue_order_id, venue_order_id);
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("OQUERYALGO1"))
+    );
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(
+        regular_queries[0].get("ordId").map(String::as_str),
+        Some("algo-venue-id")
+    );
+    assert!(!regular_queries[0].contains_key("clOrdId"));
+    assert_eq!(
+        algo_queries[0].get("algoId").map(String::as_str),
+        Some("algo-venue-id")
+    );
+    assert!(!algo_queries[0].contains_key("algoClOrdId"));
+    assert_eq!(
+        sequence.as_slice(),
+        ["regular:algo-venue-id", "algo:algo-venue-id"]
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_sets_report_window() {
+    let state = Arc::new(ReportRouteState::default());
+    let addr = start_exec_report_test_server(Arc::clone(&state)).await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    client.on_instrument(query_order_instrument());
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(mass_status.lookback_start().is_some());
+    assert!(mass_status.reports_complete());
+}
+
+async fn start_live_order_report_server(inst_type: &'static str) -> SocketAddr {
+    let router = Router::new()
+        .route("/health", get(|| async { Json(json!({"ok": true})) }))
+        .route(
+            "/api/v5/trade/orders-pending",
+            get(move || async move {
+                let mut response = load_test_data("http_get_orders_pending.json");
+                response["data"][0]["instType"] = json!(inst_type);
+                Json(response).into_response()
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-history",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-history",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    addr
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_in_scope_open_order_cache_miss_fails_report_request() {
+    let addr = start_live_order_report_server("SWAP").await;
+    let base_url = format!("http://{addr}");
+    let (client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let error = client
+        .generate_order_status_reports(&cmd)
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("missing from cache"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_margin_only_open_spot_cache_miss_fails_report_request() {
+    let addr = start_live_order_report_server("SPOT").await;
+    let base_url = format!("http://{addr}");
+    let (client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Margin];
+        config.margin_mode = Some(OKXMarginMode::Cross);
+        config.use_spot_margin = true;
+    });
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let error = client
+        .generate_order_status_reports(&cmd)
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("missing from cache"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_out_of_scope_open_order_cache_miss_is_dropped() {
+    let addr = start_live_order_report_server("SWAP").await;
+    let base_url = format!("http://{addr}");
+    let (client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Spot];
+    });
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_http_failure_is_error() {
+    let router = Router::new()
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/order",
+            get(|| async {
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"code": "1", "msg": "internal", "data": []})),
+                )
+                    .into_response()
+            }),
+        )
+        .route(
+            "/api/v5/trade/order-algo",
+            get(|| async {
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"code": "1", "msg": "internal", "data": []})),
+                )
+                    .into_response()
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+    client.on_instrument(query_order_instrument());
+
+    let error = client
+        .generate_order_status_report(&generate_order_status_report_cmd(
+            Some(InstrumentId::from("ETH-USDT-SWAP.OKX")),
+            Some(ClientOrderId::from("OQUERYREGULAR1")),
+            None,
+        ))
+        .await
+        .unwrap_err();
+
+    assert!(
+        !error.to_string().is_empty(),
+        "failed lookup must not become Ok(None)"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_marks_historical_cache_miss_incomplete() {
+    let router = Router::new()
+        .route("/health", get(|| async { Json(json!({"ok": true})) }))
+        .route(
+            "/api/v5/trade/orders-pending",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/orders-history",
+            get(|| async {
+                let mut response = load_test_data("http_get_orders_history.json");
+                response["data"][0]["uTime"] =
+                    json!(jiff::Timestamp::now().as_millisecond().to_string());
+                Json(response).into_response()
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-history",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/fills",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/account/positions",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(mass_status.lookback_start().is_some());
+    assert!(!mass_status.reports_complete());
+    assert!(mass_status.order_reports().is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_fails_on_open_algo_cache_miss() {
+    let router = Router::new()
+        .route(
+            "/api/v5/trade/orders-pending",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/orders-history",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|| async {
+                Json(load_test_data("http_get_orders_algo_pending.json")).into_response()
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-history",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let error = client
+        .generate_order_status_reports(&cmd)
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("missing from cache"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_fails_on_spread_missing_fee() {
+    let mut fill = load_test_data("http_get_spread_trades.json");
+    fill["data"][0]["fee"] = json!("");
+    fill["data"][0]["sprdId"] = json!("BCH-USDT_BCH-USDT-SWAP");
+    let router = Router::new()
+        .route(
+            "/api/v5/trade/fills",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/sprd/trades",
+            get(move || {
+                let fill = fill.clone();
+                async move { Json(fill).into_response() }
+            }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+            config.load_spreads = true;
+        });
+    client.on_instrument(make_spread_instrument());
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let error = client.generate_fill_reports(cmd).await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("missing fee"),
+        "was {error:#}"
+    );
+}
+
+#[rstest]
+fn test_dispatch_fill_claims_trade_id() {
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let fill = make_fill_report("O-ROUTE-1");
+    let trade_id = fill.trade_id;
+
+    assert!(!state.contains_trade(&trade_id));
+    dispatch_execution_reports(vec![ExecutionReport::Fill(fill)], &emitter, &state);
+    let events = drain_events(&mut rx);
+
+    assert_eq!(events.len(), 1);
+    assert!(state.contains_trade(&trade_id));
 }

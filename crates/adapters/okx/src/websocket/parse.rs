@@ -62,8 +62,8 @@ use crate::{
         models::OKXInstrument,
         parse::{
             determine_order_type_with_alt, is_market_price, okx_channel_to_bar_spec,
-            okx_status_to_market_action, parse_client_order_id, parse_fee, parse_fee_currency,
-            parse_funding_rate_msg, parse_instrument_any, parse_instrument_id, parse_message_vec,
+            okx_status_to_market_action, parse_fee, parse_fee_currency, parse_funding_rate_msg,
+            parse_instrument_any, parse_instrument_id, parse_message_vec,
             parse_millisecond_timestamp, parse_parent_client_order_id, parse_price, parse_quantity,
             parse_spread_order_status_report as parse_common_spread_order_status_report,
         },
@@ -433,29 +433,6 @@ fn synthesize_trade_id(msg: &OKXOrderMsg) -> String {
     update(msg.fill_sz.as_bytes());
     update(msg.fill_px.as_bytes());
     update(msg.acc_fill_sz.as_deref().unwrap_or("").as_bytes());
-
-    format!("synth-{hasher:016x}")
-}
-
-fn synthesize_spread_trade_id(msg: &OKXSpreadOrder) -> String {
-    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
-    const FNV_PRIME: u64 = 0x100000001b3;
-
-    let mut hasher: u64 = FNV_OFFSET;
-    let mut update = |bytes: &[u8]| {
-        for byte in bytes {
-            hasher ^= u64::from(*byte);
-            hasher = hasher.wrapping_mul(FNV_PRIME);
-        }
-        hasher ^= 0xff;
-        hasher = hasher.wrapping_mul(FNV_PRIME);
-    };
-
-    update(msg.ord_id.as_bytes());
-    update(msg.u_time.unwrap_or_default().to_string().as_bytes());
-    update(msg.fill_sz.as_bytes());
-    update(msg.fill_px.as_bytes());
-    update(msg.acc_fill_sz.as_bytes());
 
     format!("synth-{hasher:016x}")
 }
@@ -1280,12 +1257,14 @@ pub fn parse_order_msg_vec(
             filled_qty_cache,
             ts_init,
         ) {
-            Ok(report) => order_reports.push(report),
-            Err(e) => log::error!("Failed to parse execution report from message: {e}"),
-        }
+            Ok(report) => {
+                order_reports.push(report);
 
-        if let Some(instrument) = instruments.get(&msg.inst_id) {
-            update_fee_fill_caches(msg, instrument, fee_cache, filled_qty_cache);
+                if let Some(instrument) = instruments.get(&msg.inst_id) {
+                    update_fee_fill_caches(msg, instrument, fee_cache, filled_qty_cache);
+                }
+            }
+            Err(e) => log::error!("Failed to parse execution report from message: {e}"),
         }
     }
 
@@ -1967,40 +1946,15 @@ pub fn parse_order_status_report(
 fn parse_spread_order_fill_report(
     msg: &OKXSpreadOrder,
     instrument: &InstrumentAny,
-    account_id: AccountId,
+    _account_id: AccountId,
     previous_filled_qty: Option<Quantity>,
-    ts_init: UnixNanos,
+    _ts_init: UnixNanos,
 ) -> anyhow::Result<Option<FillReport>> {
-    let client_order_id = parse_client_order_id(msg.cl_ord_id.as_str());
-    let venue_order_id = VenueOrderId::new(msg.ord_id.as_str());
-    let trade_id = if msg.trade_id.is_empty() {
-        let synthetic = synthesize_spread_trade_id(msg);
-        TradeId::new(&synthetic)
-    } else {
-        TradeId::new(msg.trade_id.as_str())
-    };
-    let order_side: OrderSide = msg.side.into();
-    let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
-    let price_str = if !msg.fill_px.is_empty() {
-        &msg.fill_px
-    } else if !msg.avg_px.is_empty() {
-        &msg.avg_px
-    } else {
-        &msg.px
-    };
-    let last_px = parse_price(price_str, price_precision).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to parse spread price (fill_px='{}', avg_px='{}', px='{}'): {}",
-            msg.fill_px,
-            msg.avg_px,
-            msg.px,
-            e
-        )
-    })?;
-    let last_qty = if !msg.fill_sz.is_empty() && msg.fill_sz != "0" {
-        parse_quantity(&msg.fill_sz, size_precision)
-            .map_err(|e| anyhow::anyhow!("Failed to parse spread fill_sz='{}': {e}", msg.fill_sz))?
+    if !msg.fill_sz.is_empty() && msg.fill_sz != "0" {
+        parse_quantity(&msg.fill_sz, size_precision).map_err(|e| {
+            anyhow::anyhow!("Failed to parse spread fill_sz='{}': {e}", msg.fill_sz)
+        })?;
     } else if !msg.acc_fill_sz.is_empty() && msg.acc_fill_sz != "0" {
         let current_filled = parse_quantity(&msg.acc_fill_sz, size_precision).map_err(|e| {
             anyhow::anyhow!(
@@ -2019,8 +1973,7 @@ fn parse_spread_order_fill_report(
                 );
             }
 
-            let incremental = current_filled - prev_qty;
-            if incremental.is_zero() {
+            if (current_filled - prev_qty).is_zero() {
                 log::debug!(
                     "Skipping duplicate spread fill: acc_fill_sz='{}' unchanged from previous={}",
                     msg.acc_fill_sz,
@@ -2028,9 +1981,6 @@ fn parse_spread_order_fill_report(
                 );
                 return Ok(None);
             }
-            incremental
-        } else {
-            current_filled
         }
     } else {
         anyhow::bail!(
@@ -2038,30 +1988,12 @@ fn parse_spread_order_fill_report(
             msg.fill_sz,
             msg.acc_fill_sz
         );
-    };
-    // OKX sprd-orders updates do not carry fee data. REST spread trade reports include fees.
-    let commission = Money::zero(instrument.quote_currency());
-    let ts_event = msg
-        .u_time
-        .or(msg.c_time)
-        .map_or(ts_init, parse_millisecond_timestamp);
+    }
 
-    Ok(Some(FillReport::new(
-        account_id,
-        instrument.id(),
-        venue_order_id,
-        trade_id,
-        order_side,
-        last_qty,
-        last_px,
-        commission,
-        LiquiditySide::NoLiquiditySide,
-        client_order_id,
-        None,
-        ts_event,
-        ts_init,
-        None,
-    )))
+    anyhow::bail!(
+        "missing fee for spread fill report sprd_id={}; OKX sprd-orders updates omit fee",
+        msg.sprd_id
+    )
 }
 
 /// Parses an OKX order message into a Nautilus fill report.
@@ -2161,7 +2093,11 @@ pub fn parse_fill_report(
         );
     };
 
-    let fee_str = msg.fee.as_deref().unwrap_or("0");
+    let fee_str = msg
+        .fee
+        .as_deref()
+        .filter(|fee| !fee.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("missing fee for fill report inst_id={}", msg.inst_id))?;
     let fee_dec = Decimal::from_str(fee_str)
         .map_err(|e| anyhow::anyhow!("Failed to parse fee '{fee_str}': {e}"))?;
 
@@ -2170,7 +2106,7 @@ pub fn parse_fill_report(
     });
 
     // OKX sends fees as negative numbers (e.g., "-2.5" for a $2.5 charge), parse_fee negates to positive
-    let total_fee = parse_fee(msg.fee.as_deref(), fee_currency)
+    let total_fee = parse_fee(Some(fee_str), fee_currency)
         .map_err(|e| anyhow::anyhow!("Failed to parse fee={:?}: {}", msg.fee, e))?;
 
     // OKX sends cumulative fees, so we subtract the previous total to get this fill's fee
@@ -3301,6 +3237,25 @@ mod tests {
         assert_eq!(fill_report.last_px, Price::from("103698.90"));
         assert_eq!(fill_report.last_qty, Quantity::from("0.03000000"));
         assert_eq!(fill_report.liquidity_side, LiquiditySide::Maker);
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_rejects_missing_fee() {
+        let instrument = create_stub_instrument();
+        let mut msg = create_stub_order_msg("0.01", None, "ord-1", "trade-1");
+        msg.fee = None;
+
+        let error = parse_fill_report(
+            &msg,
+            &InstrumentAny::CryptoPerpetual(instrument),
+            AccountId::new("OKX-001"),
+            None,
+            None,
+            UnixNanos::default(),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("missing fee"));
     }
 
     #[rstest]
@@ -5825,15 +5780,8 @@ mod tests {
             ts_init,
         );
 
-        match result.unwrap() {
-            ParsedOrderEvent::Fill(fill) => {
-                assert_eq!(fill.client_order_id, Some(client_order_id));
-                assert_eq!(fill.venue_order_id, VenueOrderId::new("venue_456"));
-                assert_eq!(fill.trade_id, TradeId::from("trade_789"));
-                assert_eq!(fill.last_qty, Quantity::from("0.01000000"));
-            }
-            other => panic!("Expected Fill, was {other:?}"),
-        }
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("missing fee"));
     }
 
     #[rstest]
@@ -5850,18 +5798,17 @@ mod tests {
         msg.fill_sz = String::new();
         msg.fill_px = String::new();
 
-        let result = parse_spread_order_fill_report(
+        let error = parse_spread_order_fill_report(
             &msg,
             &InstrumentAny::CryptoPerpetual(instrument),
             AccountId::new("OKX-001"),
             Some(Quantity::from("0.01000000")),
             UnixNanos::from(1_000_000_000),
         )
-        .unwrap()
-        .unwrap();
+        .unwrap_err();
 
-        assert_eq!(result.last_qty, Quantity::from("0.02000000"));
-        assert_eq!(result.last_px, Price::from("1.00"));
+        assert!(error.to_string().contains("missing fee"));
+        assert!(error.to_string().contains("sprd-orders updates omit fee"));
     }
 
     #[rstest]

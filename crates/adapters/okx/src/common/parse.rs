@@ -419,13 +419,21 @@ pub fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
 ///
 /// # Errors
 ///
-/// Returns an error if the fee cannot be parsed into `Decimal` or fails internal
-/// validation in [`Money::from_decimal`].
+/// Returns an error if the fee is missing or empty, cannot be parsed into
+/// `Decimal`, or fails internal validation in [`Money::from_decimal`].
 pub fn parse_fee(value: Option<&str>, currency: Currency) -> anyhow::Result<Money> {
     // OKX uses opposite sign convention: negative = cost, positive = rebate.
     // Negate to match Nautilus convention: positive = cost, negative = rebate.
-    let decimal = Decimal::from_str(value.unwrap_or("0"))?;
+    let decimal = required_fee_amount(value)?;
     Money::from_decimal(-decimal, currency).map_err(Into::into)
+}
+
+fn required_fee_amount(value: Option<&str>) -> anyhow::Result<Decimal> {
+    let value = value
+        .map(str::trim)
+        .filter(|fee| !fee.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("missing fee"))?;
+    Decimal::from_str(value).map_err(Into::into)
 }
 
 /// Parses OKX fee currency code, handling empty strings.
@@ -1169,7 +1177,9 @@ pub fn parse_fill_report(
     let order_side: OrderSide = detail.side.into();
     let last_px = parse_price(&detail.fill_px, price_precision)?;
     let last_qty = parse_quantity(&detail.fill_sz, size_precision)?;
-    let fee_dec = Decimal::from_str(detail.fee.as_deref().unwrap_or("0"))?;
+    let fee_dec = required_fee_amount(detail.fee.as_deref()).with_context(|| {
+        format!("missing or invalid fee for fill report instrument_id={instrument_id}")
+    })?;
     let fee_currency = parse_fee_currency(&detail.fee_ccy, fee_dec, || {
         format!("fill report for instrument_id={instrument_id}")
     });
@@ -1294,7 +1304,9 @@ pub fn parse_spread_fill_report(
     let order_side: OrderSide = detail.side.into();
     let last_px = parse_price(&detail.fill_px, price_precision)?;
     let last_qty = parse_quantity(&detail.fill_sz, size_precision)?;
-    let fee_dec = Decimal::from_str(detail.fee.as_deref().unwrap_or("0"))?;
+    let fee_dec = required_fee_amount(detail.fee.as_deref()).with_context(|| {
+        format!("missing or invalid fee for spread fill report instrument_id={instrument_id}")
+    })?;
     let fee_currency = parse_fee_currency(&detail.fee_ccy, fee_dec, || {
         format!("spread fill report for instrument_id={instrument_id}")
     });
@@ -4635,6 +4647,71 @@ mod tests {
         assert_eq!(fill_report.last_px, Price::from("42219.50"));
         assert_eq!(fill_report.last_qty, Quantity::from("0.00100000"));
         assert_eq!(fill_report.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(
+            fill_report.commission,
+            Money::from_decimal(dec!(-0.042), Currency::USDT()).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_fee_rejects_missing_or_empty() {
+        let currency = Currency::USDT();
+
+        let missing = parse_fee(None, currency).unwrap_err();
+        assert!(missing.to_string().contains("missing fee"));
+
+        let empty = parse_fee(Some(""), currency).unwrap_err();
+        assert!(empty.to_string().contains("missing fee"));
+
+        let blank = parse_fee(Some("   "), currency).unwrap_err();
+        assert!(blank.to_string().contains("missing fee"));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_rejects_missing_fee() {
+        let json_data = load_test_json("http_transaction_detail_empty_fee.json");
+        let detail: OKXTransactionDetail = serde_json::from_str(&json_data).unwrap();
+        let error = parse_fill_report(
+            &detail,
+            AccountId::new("OKX-001"),
+            InstrumentId::from("BTC-USDT.OKX"),
+            2,
+            8,
+            UnixNanos::default(),
+        )
+        .unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("missing fee"), "was {message}");
+    }
+
+    #[rstest]
+    fn test_parse_spread_fill_report_rejects_missing_fee() {
+        let detail = OKXSpreadTrade {
+            sprd_id: Ustr::from("ETH-USD-SWAP_ETH-USD-231229"),
+            trade_id: Ustr::from("9001"),
+            ord_id: Ustr::from("12345"),
+            cl_ord_id: Ustr::from("O-spread-entry"),
+            fill_px: "1.20".to_string(),
+            fill_sz: "5".to_string(),
+            side: OKXSide::Buy,
+            exec_type: OKXExecType::Taker,
+            fee_ccy: "USDT".to_string(),
+            fee: None,
+            ts: 1_700_000_001_000,
+        };
+        let error = parse_spread_fill_report(
+            &detail,
+            AccountId::new("OKX-001"),
+            InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"),
+            2,
+            0,
+            UnixNanos::default(),
+        )
+        .unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("missing fee"), "was {message}");
     }
 
     #[rstest]

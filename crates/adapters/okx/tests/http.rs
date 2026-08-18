@@ -6792,3 +6792,119 @@ async fn test_http_request_spot_margin_position_reports_prefers_currency_pair() 
         "USD must lose to USDT in the quote-priority tiebreaker",
     );
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_fill_reports_fails_closed_on_missing_fee() {
+    let mut fill = load_test_data("http_transaction_detail_empty_fee.json");
+    fill["instType"] = json!("SWAP");
+    fill["instId"] = json!("ETH-USDT-SWAP");
+    fill["fillSz"] = json!("0.01");
+    let router = Router::new().route(
+        "/api/v5/trade/fills",
+        get(move || {
+            let fill = fill.clone();
+            async move { Json(okx_response(&[fill])) }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        0,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let instrument = load_swap_instruments_any()
+        .into_iter()
+        .find(|instrument| instrument.id() == InstrumentId::from("ETH-USDT-SWAP.OKX"))
+        .expect("ETH-USDT-SWAP fixture");
+    client.cache_instrument(instrument);
+
+    let error = client
+        .request_fill_reports(
+            AccountId::new("OKX-001"),
+            Some(OKXInstrumentType::Swap),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("missing fee"),
+        "was {error:#}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_fill_reports_skips_out_of_window_missing_fee() {
+    let mut fill = load_test_data("http_transaction_detail_empty_fee.json");
+    fill["instType"] = json!("SWAP");
+    fill["instId"] = json!("ETH-USDT-SWAP");
+    fill["fillSz"] = json!("0.01");
+    fill["ts"] = json!("1");
+    let router = Router::new().route(
+        "/api/v5/trade/fills",
+        get(move || {
+            let fill = fill.clone();
+            async move { Json(okx_response(&[fill])) }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        0,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let instrument = load_swap_instruments_any()
+        .into_iter()
+        .find(|instrument| instrument.id() == InstrumentId::from("ETH-USDT-SWAP.OKX"))
+        .expect("ETH-USDT-SWAP fixture");
+    client.cache_instrument(instrument);
+
+    let reports = client
+        .request_fill_reports(
+            AccountId::new("OKX-001"),
+            Some(OKXInstrumentType::Swap),
+            None,
+            Some(Timestamp::now()),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert!(reports.is_empty());
+}

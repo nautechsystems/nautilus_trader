@@ -225,6 +225,11 @@ impl WsDispatchState {
         !self.emitted_trades.insert(trade_id)
     }
 
+    #[must_use]
+    pub fn contains_trade(&self, trade_id: &TradeId) -> bool {
+        self.emitted_trades.contains(trade_id)
+    }
+
     fn remove_accepted(&self, cid: &ClientOrderId) {
         self.accepted_venue_order_ids
             .lock()
@@ -686,14 +691,7 @@ fn dispatch_order_messages(
                 ts_init,
             ) {
                 Ok(event) => {
-                    update_order_caches(
-                        msg,
-                        instrument,
-                        client_order_id,
-                        fee_cache,
-                        filled_qty_cache,
-                        order_state_cache,
-                    );
+                    update_order_state_cache(msg, instrument, client_order_id, order_state_cache);
                     dispatch_parsed_order_event(
                         event,
                         client_order_id,
@@ -707,6 +705,7 @@ fn dispatch_order_messages(
                         order_state_cache,
                         ts_init,
                     );
+                    update_fee_fill_caches(msg, instrument, fee_cache, filled_qty_cache);
                 }
                 Err(e) => log::error!("Failed to parse order event for {client_order_id}: {e}"),
             }
@@ -814,11 +813,10 @@ fn dispatch_spread_order_messages(
                 ts_init,
             ) {
                 Ok(event) => {
-                    update_spread_order_caches(
+                    update_spread_order_state_cache(
                         msg,
                         instrument,
                         client_order_id,
-                        filled_qty_cache,
                         order_state_cache,
                     );
                     dispatch_parsed_order_event(
@@ -834,6 +832,7 @@ fn dispatch_spread_order_messages(
                         order_state_cache,
                         ts_init,
                     );
+                    update_spread_fill_cache(msg, instrument, filled_qty_cache);
                 }
                 Err(e) => {
                     log::error!("Failed to parse spread order event for {client_order_id}: {e}");
@@ -982,10 +981,9 @@ fn dispatch_parsed_order_event(
             emitter.send_order_event(OrderEventAny::Updated(e));
         }
         ParsedOrderEvent::Fill(fill_report) => {
-            let is_duplicate = state.check_and_insert_trade(fill_report.trade_id);
             is_terminal = venue_status == OKXOrderStatus::Filled;
 
-            if is_duplicate {
+            if state.check_and_insert_trade(fill_report.trade_id) {
                 log::debug!(
                     "Skipping duplicate fill for {client_order_id}: trade_id={}",
                     fill_report.trade_id
@@ -1171,10 +1169,11 @@ fn dispatch_order_msg_as_report(
         ts_init,
     ) {
         Ok(report) => {
+            dispatch_execution_reports(vec![report], emitter, state);
+
             if let Some(instrument) = instruments.get(&msg.inst_id) {
                 update_fee_fill_caches(msg, instrument, fee_cache, filled_qty_cache);
             }
-            dispatch_execution_reports(vec![report], emitter, state);
         }
         Err(e) => log::error!("Failed to parse order message as report: {e}"),
     }
@@ -1191,26 +1190,23 @@ fn dispatch_spread_order_msg_as_report(
 ) {
     match parse_spread_order_msg(msg, account_id, instruments, filled_qty_cache, ts_init) {
         Ok(report) => {
+            dispatch_execution_reports(vec![report], emitter, state);
+
             if let Some(instrument) = instruments.get(&msg.sprd_id) {
                 update_spread_fill_cache(msg, instrument, filled_qty_cache);
             }
-            dispatch_execution_reports(vec![report], emitter, state);
         }
         Err(e) => log::error!("Failed to parse spread order message as report: {e}"),
     }
 }
 
 /// Updates fee, fill, and order state caches from a raw OKX order message.
-fn update_order_caches(
+fn update_order_state_cache(
     msg: &OKXOrderMsg,
     instrument: &InstrumentAny,
     client_order_id: ClientOrderId,
-    fee_cache: &mut AHashMap<Ustr, Money>,
-    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
     order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
 ) {
-    update_fee_fill_caches(msg, instrument, fee_cache, filled_qty_cache);
-
     let venue_order_id = VenueOrderId::new(msg.ord_id);
     let quantity = parse_quantity(&msg.sz, instrument.size_precision()).unwrap_or_default();
     let price = if is_market_price(&msg.px) {
@@ -1229,15 +1225,12 @@ fn update_order_caches(
     );
 }
 
-fn update_spread_order_caches(
+fn update_spread_order_state_cache(
     msg: &OKXSpreadOrder,
     instrument: &InstrumentAny,
     client_order_id: ClientOrderId,
-    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
     order_state_cache: &mut AHashMap<ClientOrderId, OrderStateSnapshot>,
 ) {
-    update_spread_fill_cache(msg, instrument, filled_qty_cache);
-
     let venue_order_id = VenueOrderId::new(msg.ord_id.as_str());
     let quantity = parse_quantity(&msg.sz, instrument.size_precision()).unwrap_or_default();
     let price = if is_market_price(&msg.px) {
