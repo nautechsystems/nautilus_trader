@@ -26,6 +26,7 @@ use std::sync::{
 
 use bytes::Bytes;
 use nautilus_network::{
+    SocketStateSink,
     mode::ReconnectRequestOutcome,
     socket::{
         SocketClient, SocketConfig, SocketHeartbeat, SocketReconnectHandle, SocketReconnectReplay,
@@ -86,6 +87,32 @@ impl BetfairStreamClient {
         session_token: String,
         handler: TcpMessageHandler,
         config: BetfairStreamConfig,
+    ) -> Result<Self, BetfairStreamError> {
+        Self::connect_with_options(credential, session_token, handler, config, None).await
+    }
+
+    /// Connects to the Betfair stream API and reports transport availability changes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection fails or authentication cannot be sent.
+    pub(crate) async fn connect_with_state_sink(
+        credential: &BetfairCredential,
+        session_token: String,
+        handler: TcpMessageHandler,
+        config: BetfairStreamConfig,
+        state_sink: SocketStateSink,
+    ) -> Result<Self, BetfairStreamError> {
+        Self::connect_with_options(credential, session_token, handler, config, Some(state_sink))
+            .await
+    }
+
+    async fn connect_with_options(
+        credential: &BetfairCredential,
+        session_token: String,
+        handler: TcpMessageHandler,
+        config: BetfairStreamConfig,
+        state_sink: Option<SocketStateSink>,
     ) -> Result<Self, BetfairStreamError> {
         let auth = Authentication::new(credential.app_key().to_string(), session_token);
         let auth_bytes_vec = serde_json::to_vec(&auth)?;
@@ -240,9 +267,13 @@ impl BetfairStreamClient {
             certs_dir: None,
         };
 
-        let socket = SocketClient::connect_with_reconnect_replay(socket_config, reconnect_replay)
-            .await
-            .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
+        let socket = SocketClient::connect_with_state_sink_and_reconnect_replay(
+            socket_config,
+            state_sink,
+            reconnect_replay,
+        )
+        .await
+        .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
         reconnect_auth.set_handle(socket.reconnect_handle());
 
         socket

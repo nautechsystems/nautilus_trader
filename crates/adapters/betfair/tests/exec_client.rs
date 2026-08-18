@@ -35,6 +35,7 @@ use nautilus_betfair::{
     },
     config::BetfairExecConfig,
     execution::BetfairExecutionClient,
+    stream::config::BetfairStreamConfig,
 };
 use nautilus_common::{
     cache::Cache,
@@ -58,7 +59,7 @@ use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     data::Data,
     enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce},
-    events::OrderEventAny,
+    events::{OrderDeniedReason, OrderEventAny},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
     },
@@ -73,6 +74,19 @@ use crate::common::*;
 fn create_test_execution_client_with_config(
     addr: SocketAddr,
     stream_port: u16,
+    config: BetfairExecConfig,
+) -> (
+    BetfairExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    create_test_execution_client_with_configs(addr, plain_stream_config(stream_port), config)
+}
+
+fn create_test_execution_client_with_configs(
+    addr: SocketAddr,
+    stream_config: BetfairStreamConfig,
     config: BetfairExecConfig,
 ) -> (
     BetfairExecutionClient,
@@ -109,7 +123,7 @@ fn create_test_execution_client_with_config(
         core,
         http_client,
         test_credential(),
-        plain_stream_config(stream_port),
+        stream_config,
         config,
         currency,
     );
@@ -4107,6 +4121,268 @@ async fn test_ocm_duplicate_terminal_event_is_deduped() {
 
 const RECONNECT_CONNECTION_MSG: &[u8] =
     b"{\"op\":\"connection\",\"connectionId\":\"reconnect\"}\r\n";
+const STREAM_CLOSED_MSG: &[u8] =
+    b"{\"op\":\"status\",\"id\":1,\"statusCode\":\"FAILURE\",\"connectionClosed\":true}\r\n";
+
+fn betting_method_count(state: &MockState, method: &str) -> usize {
+    state
+        .betting_methods
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|seen| seen.as_str() == method)
+        .count()
+}
+
+fn submit_single_and_list(
+    client: &BetfairExecutionClient,
+    cache: &Rc<RefCell<Cache>>,
+    suffix: &str,
+) -> Vec<ClientOrderId> {
+    let ids = [
+        format!("O-{suffix}-SINGLE"),
+        format!("O-{suffix}-LIST-1"),
+        format!("O-{suffix}-LIST-2"),
+    ];
+    let orders = ids
+        .iter()
+        .map(|id| make_test_order("1.181005744-86362-0.BETFAIR", id, "2.58", "10"))
+        .collect::<Vec<_>>();
+
+    for order in &orders {
+        add_order_to_cache(cache, order.clone());
+    }
+
+    client
+        .submit_order(make_submit_order_cmd(&orders[0]))
+        .unwrap();
+    let (cmd, _) = make_submit_order_list_cmd(
+        "1.181005744-86362-0.BETFAIR",
+        &[orders[1].clone(), orders[2].clone()],
+    );
+    client.submit_order_list(cmd).unwrap();
+
+    ids.iter()
+        .map(|id| ClientOrderId::from(id.as_str()))
+        .collect()
+}
+
+async fn stream_reconciling_denials(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    expected: usize,
+) -> Vec<ClientOrderId> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    let expected_reason = OrderDeniedReason::StreamReconciling.to_string();
+    let mut denied = Vec::new();
+
+    while denied.len() < expected && tokio::time::Instant::now() < deadline {
+        if let Ok(Some(ExecutionEvent::Order(OrderEventAny::Denied(event)))) =
+            tokio::time::timeout(Duration::from_millis(250), rx.recv()).await
+        {
+            assert_eq!(event.reason.as_str(), expected_reason);
+            denied.push(event.client_order_id);
+        }
+    }
+
+    denied
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_transport_loss_denies_submit_before_reconnect() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        drop(listener);
+        drop(reader);
+        drop(write_half);
+        closed_tx.send(()).unwrap();
+    });
+
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+    closed_rx.await.unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let order = make_test_order(
+        "1.181005744-86362-0.BETFAIR",
+        "O-INACTIVE-HALT",
+        "2.58",
+        "10",
+    );
+    add_order_to_cache(&cache, order.clone());
+    client.submit_order(make_submit_order_cmd(&order)).unwrap();
+    let denied = stream_reconciling_denials(&mut rx, 1).await;
+
+    assert!(client.is_reconciling());
+    assert_eq!(denied, vec![ClientOrderId::from("O-INACTIVE-HALT")]);
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
+
+    client.disconnect().await.unwrap();
+    assert!(!client.is_reconciling());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_active_replacement_stream_denies_submit_before_connection_message() {
+    let (addr, state) = start_mock_http().await;
+    let fixture = load_fixture("rest/list_current_orders_empty.json");
+    let response: Value = serde_json::from_str(&fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        response["result"].clone(),
+    );
+    let (stream_port, listener) = start_mock_stream().await;
+    let mut stream_config = plain_stream_config(stream_port);
+    stream_config.heartbeat_secs = 1;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client_with_configs(
+        addr,
+        stream_config,
+        BetfairExecConfig::default(),
+    );
+    let (replacement_active_tx, replacement_active_rx) = tokio::sync::oneshot::channel();
+    let (send_connection_tx, send_connection_rx) = tokio::sync::oneshot::channel();
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut initial_reader, initial_writer) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut initial_reader, &mut line)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(line.trim()).unwrap()["op"],
+            "orderSubscription",
+        );
+        drop(initial_reader);
+        drop(initial_writer);
+
+        let (replacement, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = replacement.into_split();
+        let mut reader = tokio::io::BufReader::new(read_half);
+
+        for expected in ["authentication", "orderSubscription"] {
+            line.clear();
+            tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::from_str::<Value>(line.trim()).unwrap()["op"],
+                expected,
+            );
+        }
+
+        loop {
+            line.clear();
+            tokio::time::timeout(
+                Duration::from_secs(3),
+                tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line),
+            )
+            .await
+            .expect("replacement stream did not become active")
+            .unwrap();
+            if serde_json::from_str::<Value>(line.trim()).unwrap()["op"] == "heartbeat" {
+                break;
+            }
+        }
+        replacement_active_tx.send(()).unwrap();
+
+        send_connection_rx.await.unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
+        let _ = server_done_rx.await;
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    tokio::time::timeout(Duration::from_secs(4), replacement_active_rx)
+        .await
+        .expect("replacement stream did not become active")
+        .unwrap();
+
+    let expected = submit_single_and_list(&client, &cache, "ACTIVE-NO-CONNECTION");
+    let denied = stream_reconciling_denials(&mut rx, expected.len()).await;
+
+    assert!(client.is_reconciling());
+    assert_eq!(denied, expected);
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
+
+    send_connection_tx.send(()).unwrap();
+    wait_until_async(
+        || {
+            let halted = client.is_reconciling();
+            async move { !halted }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_stream_closed_status_denies_submit_before_reconnect() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, STREAM_CLOSED_MSG)
+            .await
+            .unwrap();
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    wait_until_async(
+        || {
+            let halted = client.is_reconciling();
+            async move { halted }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let order = make_test_order(
+        "1.181005744-86362-0.BETFAIR",
+        "O-STREAM-CLOSED-HALT",
+        "2.58",
+        "10",
+    );
+    add_order_to_cache(&cache, order.clone());
+    client.submit_order(make_submit_order_cmd(&order)).unwrap();
+    let denied = stream_reconciling_denials(&mut rx, 1).await;
+
+    assert_eq!(denied, vec![ClientOrderId::from("O-STREAM-CLOSED-HALT")]);
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
 
 #[rstest]
 #[tokio::test]
@@ -4300,6 +4576,205 @@ async fn test_post_reconnect_relogin_waits_for_reconciliation_and_does_not_loop(
 
 #[rstest]
 #[tokio::test]
+async fn test_reconnect_auth_failure_keeps_submissions_halted() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (trigger_tx, trigger_rx) = tokio::sync::oneshot::channel();
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        trigger_rx.await.unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    *state.keep_alive_response_override.lock().unwrap() =
+        Some(load_fixture("rest/login_failure.json"));
+    *state.login_response_override.lock().unwrap() = Some(load_fixture("rest/login_failure.json"));
+    trigger_tx.send(()).unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state.keep_alive_count.load(Ordering::Relaxed) >= 1
+                    && state.login_count.load(Ordering::Relaxed) >= 2
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let expected = submit_single_and_list(&client, &cache, "AUTH-HALT");
+    let denied = stream_reconciling_denials(&mut rx, expected.len()).await;
+
+    assert!(client.is_reconciling());
+    assert_eq!(denied, expected);
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
+
+    client.disconnect().await.unwrap();
+    assert!(!client.is_reconciling());
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
+    let (addr, state) = start_mock_http().await;
+    let fixture = load_fixture("rest/list_current_orders_empty.json");
+    let response: Value = serde_json::from_str(&fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        response["result"].clone(),
+    );
+    state
+        .betting_error_one_shot_overrides
+        .lock()
+        .unwrap()
+        .insert(
+            METHOD_LIST_CURRENT_ORDERS.to_string(),
+            (-32603, "mass status unavailable".to_string()),
+        );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (retry_tx, retry_rx) = tokio::sync::oneshot::channel();
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
+        retry_rx.await.unwrap();
+        tokio::io::AsyncWriteExt::write_all(
+            &mut write_half,
+            b"{\"op\":\"connection\",\"connectionId\":\"reconnect-after-failure\"}\r\n",
+        )
+        .await
+        .unwrap();
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS) == 2 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let failed_expected = submit_single_and_list(&client, &cache, "MASS-FAILED-HALT");
+    let failed_denied = stream_reconciling_denials(&mut rx, failed_expected.len()).await;
+
+    assert!(client.is_reconciling());
+    assert_eq!(failed_denied, failed_expected);
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
+
+    let response_gate = BettingResponseGate {
+        method: METHOD_LIST_CURRENT_ORDERS.to_string(),
+        waiters: Arc::new(AtomicUsize::new(0)),
+        semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
+    };
+    *state.betting_response_gate.lock().unwrap() = Some(response_gate.clone());
+    retry_tx.send(()).unwrap();
+
+    wait_until_async(
+        || {
+            let waiters = Arc::clone(&response_gate.waiters);
+            async move { waiters.load(Ordering::Relaxed) == 2 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let expected = submit_single_and_list(&client, &cache, "MASS-HALT");
+    let denied = stream_reconciling_denials(&mut rx, expected.len()).await;
+
+    assert!(client.is_reconciling());
+    assert_eq!(denied, expected);
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
+
+    response_gate.semaphore.add_permits(2);
+
+    let mut saw_mass_status = false;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    while tokio::time::Instant::now() < deadline {
+        if let Ok(Some(ExecutionEvent::Report(ExecutionReport::MassStatus(_)))) =
+            tokio::time::timeout(Duration::from_millis(250), rx.recv()).await
+        {
+            saw_mass_status = true;
+            break;
+        }
+    }
+    wait_until_async(
+        || {
+            let halted = client.is_reconciling();
+            async move { !halted }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let allowed = make_test_order(
+        "1.181005744-86362-0.BETFAIR",
+        "O-MASS-RECOVERED",
+        "2.58",
+        "10",
+    );
+    add_order_to_cache(&cache, allowed.clone());
+    client
+        .submit_order(make_submit_order_cmd(&allowed))
+        .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { betting_method_count(&state, METHOD_PLACE_ORDERS) == 1 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    assert!(saw_mass_status);
+    assert!(!client.is_reconciling());
+    assert_eq!(response_gate.waiters.load(Ordering::Relaxed), 2);
+    assert_eq!(betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS), 4);
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 1);
+
+    client.disconnect().await.unwrap();
+    assert!(!client.is_reconciling());
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_submit_denied_during_reconciliation() {
     let (addr, state) = start_mock_http().await;
 
@@ -4310,11 +4785,12 @@ async fn test_submit_denied_during_reconciliation() {
         .lock()
         .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
-    // Wide window so a submit can land while `is_reconciling` is still set.
-    state.betting_response_delays.lock().unwrap().insert(
-        METHOD_LIST_CURRENT_ORDERS.to_string(),
-        Duration::from_millis(800),
-    );
+    let response_gate = BettingResponseGate {
+        method: METHOD_LIST_CURRENT_ORDERS.to_string(),
+        waiters: Arc::new(AtomicUsize::new(0)),
+        semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
+    };
+    *state.betting_response_gate.lock().unwrap() = Some(response_gate.clone());
 
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
@@ -4338,8 +4814,8 @@ async fn test_submit_denied_during_reconciliation() {
 
     wait_until_async(
         || {
-            let halted = client.is_reconciling();
-            async move { halted }
+            let waiters = Arc::clone(&response_gate.waiters);
+            async move { waiters.load(Ordering::Relaxed) == 2 }
         },
         Duration::from_secs(2),
     )
@@ -4352,22 +4828,53 @@ async fn test_submit_denied_during_reconciliation() {
     add_order_to_cache(&cache, order.clone());
     client.submit_order(make_submit_order_cmd(&order)).unwrap();
 
-    let event = tokio::time::timeout(Duration::from_millis(500), rx.recv())
-        .await
-        .expect("timeout waiting for denied event")
-        .expect("channel closed");
+    let denied = stream_reconciling_denials(&mut rx, 1).await;
+    assert_eq!(denied, vec![ClientOrderId::from("O-HALT-001")]);
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
 
-    match event {
-        ExecutionEvent::Order(OrderEventAny::Denied(denied)) => {
-            assert_eq!(denied.client_order_id, ClientOrderId::from("O-HALT-001"));
-            assert!(
-                denied.reason.as_str().contains("STREAM_RECONCILING"),
-                "Expected STREAM_RECONCILING reason, found: {}",
-                denied.reason,
-            );
+    response_gate.semaphore.add_permits(2);
+
+    let mut saw_mass_status = false;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    while tokio::time::Instant::now() < deadline {
+        if let Ok(Some(ExecutionEvent::Report(ExecutionReport::MassStatus(_)))) =
+            tokio::time::timeout(Duration::from_millis(250), rx.recv()).await
+        {
+            saw_mass_status = true;
+            break;
         }
-        other => panic!("Expected OrderDenied event, found: {other:?}"),
     }
+    wait_until_async(
+        || {
+            let halted = client.is_reconciling();
+            async move { !halted }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let allowed = make_test_order(
+        "1.181005744-86362-0.BETFAIR",
+        "O-HALT-ALLOWED",
+        "2.58",
+        "10",
+    );
+    add_order_to_cache(&cache, allowed.clone());
+    client
+        .submit_order(make_submit_order_cmd(&allowed))
+        .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { betting_method_count(&state, METHOD_PLACE_ORDERS) == 1 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    assert!(saw_mass_status);
+    assert!(!client.is_reconciling());
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 1);
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -4376,9 +4883,7 @@ async fn test_submit_denied_during_reconciliation() {
 
 #[rstest]
 #[tokio::test]
-async fn test_queued_reconnect_re_asserts_halt() {
-    // Without the per-iteration store(true), iter#2 runs with the flag cleared
-    // by iter#1 and submits slip through during the second reconciliation.
+async fn test_queued_reconnect_generation_stays_halted() {
     let (addr, state) = start_mock_http().await;
 
     let fixture = load_fixture("rest/list_current_orders_empty.json");
@@ -4388,15 +4893,18 @@ async fn test_queued_reconnect_re_asserts_halt() {
         .lock()
         .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
-    // Slow each reconcile so the second Connection lands while iter#1 runs.
-    state.betting_response_delays.lock().unwrap().insert(
-        METHOD_LIST_CURRENT_ORDERS.to_string(),
-        Duration::from_millis(500),
-    );
+    let response_gate = BettingResponseGate {
+        method: METHOD_LIST_CURRENT_ORDERS.to_string(),
+        waiters: Arc::new(AtomicUsize::new(0)),
+        semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
+    };
+    *state.betting_response_gate.lock().unwrap() = Some(response_gate.clone());
+    let server_gate = response_gate.clone();
 
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
 
+    let (release_second_tx, release_second_rx) = tokio::sync::oneshot::channel();
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
@@ -4410,8 +4918,14 @@ async fn test_queued_reconnect_re_asserts_halt() {
             .await
             .unwrap();
 
-        // Land the second reconnect mid-flight to exercise the queue race.
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        wait_until_async(
+            || {
+                let waiters = Arc::clone(&server_gate.waiters);
+                async move { waiters.load(Ordering::Relaxed) == 2 }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
 
         tokio::io::AsyncWriteExt::write_all(
             &mut write_half,
@@ -4419,6 +4933,18 @@ async fn test_queued_reconnect_re_asserts_halt() {
         )
         .await
         .unwrap();
+
+        server_gate.semaphore.add_permits(2);
+        wait_until_async(
+            || {
+                let waiters = Arc::clone(&server_gate.waiters);
+                async move { waiters.load(Ordering::Relaxed) == 4 }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+        release_second_rx.await.unwrap();
+        server_gate.semaphore.add_permits(2);
 
         let _ = server_done_rx.await;
         drop(write_half);
@@ -4428,6 +4954,7 @@ async fn test_queued_reconnect_re_asserts_halt() {
 
     let mut mass_status_count = 0usize;
     let mut iter1_dispatched_at_halt_state: Option<bool> = None;
+    let mut release_second_tx = Some(release_second_tx);
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     while mass_status_count < 2 && tokio::time::Instant::now() < deadline {
@@ -4435,16 +4962,16 @@ async fn test_queued_reconnect_re_asserts_halt() {
             Ok(Some(ExecutionEvent::Report(ExecutionReport::MassStatus(_)))) => {
                 mass_status_count += 1;
                 if mass_status_count == 1 {
-                    // iter#2 should re-assert the halt at the top of its iteration.
                     wait_until_async(
                         || {
-                            let halted = client.is_reconciling();
-                            async move { halted }
+                            let waiters = Arc::clone(&response_gate.waiters);
+                            async move { waiters.load(Ordering::Relaxed) == 4 }
                         },
-                        Duration::from_secs(1),
+                        Duration::from_secs(2),
                     )
                     .await;
                     iter1_dispatched_at_halt_state = Some(client.is_reconciling());
+                    release_second_tx.take().unwrap().send(()).unwrap();
                 }
             }
             Ok(Some(_)) => {}
@@ -4459,8 +4986,9 @@ async fn test_queued_reconnect_re_asserts_halt() {
     assert_eq!(
         iter1_dispatched_at_halt_state,
         Some(true),
-        "expected iter#2 to re-assert is_reconciling after iter#1 cleared it",
+        "expected the first generation to leave the newer reconnect halted",
     );
+    assert_eq!(response_gate.waiters.load(Ordering::Relaxed), 4);
 
     wait_until_async(
         || {

@@ -308,10 +308,8 @@ pub enum OrderDeniedReason {
     /// The order submission rate limit was exceeded.
     #[error("RATE_LIMIT_EXCEEDED")]
     RateLimitExceeded,
-    /// A post-reconnect stream reconciliation is in progress; retry once it completes.
-    #[error(
-        "STREAM_RECONCILING: post-reconnect reconciliation in progress, retry once it completes"
-    )]
+    /// The execution stream is unavailable or recovering; retry after recovery.
+    #[error("STREAM_RECONCILING: execution stream unavailable or recovering, retry after recovery")]
     StreamReconciling,
 
     /// No execution client was found for the routed command.
@@ -468,7 +466,7 @@ impl OrderDeniedCode {
             Self::TradingStateReducing => "Trading is reducing; the order would increase exposure.",
             Self::RateLimitExceeded => "The order submission rate limit was exceeded.",
             Self::StreamReconciling => {
-                "A post‑reconnect stream reconciliation is in progress; retry once it completes."
+                "The execution stream is unavailable or recovering; retry after recovery."
             }
             Self::NoExecutionClient => "No execution client was found for the routed command.",
             Self::ClientVenueMismatch => "The execution client does not handle the order venue.",
@@ -795,7 +793,7 @@ mod tests {
         );
         assert_eq!(
             OrderDeniedReason::StreamReconciling.to_string(),
-            "STREAM_RECONCILING: post-reconnect reconciliation in progress, retry once it completes"
+            "STREAM_RECONCILING: execution stream unavailable or recovering, retry after recovery"
         );
     }
 

@@ -1006,6 +1006,20 @@ impl SocketClient {
         Self::connect_with_options(config, None, None, Some(reconnect_replay)).await
     }
 
+    /// Connects, reports semantic transport availability changes, and sends protocol replay before
+    /// messages buffered during each reconnect.
+    ///
+    /// # Errors
+    ///
+    /// Returns any error connecting to the server.
+    pub async fn connect_with_state_sink_and_reconnect_replay(
+        config: SocketConfig,
+        state_sink: Option<SocketStateSink>,
+        reconnect_replay: SocketReconnectReplay,
+    ) -> anyhow::Result<Self> {
+        Self::connect_with_options(config, None, state_sink, Some(reconnect_replay)).await
+    }
+
     /// Connects to the server and reports semantic transport availability changes.
     ///
     /// # Errors

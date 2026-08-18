@@ -15,28 +15,38 @@
 
 //! Live execution client for the Betfair adapter.
 //!
-//! # Stream reconnect lifecycle
+//! # Submission gate
 //!
-//! On every reconnect (second `Connection` message), the OCM handler raises
-//! both `pending_resync` (drains buffered OCMs on the next command) and
-//! `is_reconciling` (halts exposure-increasing commands). The reconnect
-//! background task then refreshes the session, fetches account state, and
-//! pulls a `list_current_orders` mass status to recover any fills that
-//! completed and rolled off the unmatched book during the gap. Once the
-//! mass status is dispatched the halt clears.
+//! The client halts new-order submissions whenever the execution stream is unavailable or
+//! recovering. `submit_order` and `submit_order_list` emit `OrderDenied` with
+//! `STREAM_RECONCILING`, while cancel and modify commands remain available. Transport availability
+//! alone does not reopen the gate: an active replacement socket remains halted until Betfair sends
+//! a `Connection` message and the matching recovery task dispatches mass status.
 //!
-//! While `is_reconciling` is set, `submit_order` and `submit_order_list`
-//! emit `OrderDenied` with `STREAM_RECONCILING`; cancels and modifies
-//! pass through unchanged. The halt is fail-open: a transient reconnect
-//! failure clears the flag rather than locking trading indefinitely,
-//! consistent with the rest of Nautilus.
+//! # Reconnect recovery
+//!
+//! A transport loss or server `connectionClosed` status advances the reconciliation generation
+//! immediately. Each replacement `Connection` message advances it again and raises
+//! `pending_resync`; subsequent OCMs remain buffered until `process_pending_resync` runs on the
+//! engine thread. Connectivity polling and command or report entry points invoke it to synchronize
+//! OCM state from the cache and drain the buffer.
+//!
+//! The recovery task refreshes the session, requests account state on a best-effort basis, and
+//! builds a mass status from `list_current_orders`. The mass status recovers fills that completed
+//! and rolled off the unmatched book during the gap.
+//!
+//! After dispatching mass status, the task clears only the generation it handled; it does not wait
+//! for a separate cache-application acknowledgement. A newer transport loss or replacement
+//! connection therefore keeps submissions halted when an older task finishes. A failed session
+//! refresh or mass-status request leaves the gate closed until a later reconnect succeeds or the
+//! client disconnects.
 
 use std::{
     fmt,
     future::Future,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
@@ -79,7 +89,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, MarginBalance},
 };
-use nautilus_network::socket::TcpMessageHandler;
+use nautilus_network::{SocketState, SocketStateSink, socket::TcpMessageHandler};
 use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 use ustr::Ustr;
@@ -144,7 +154,7 @@ pub struct BetfairExecutionClient {
     currency: Currency,
     ocm_state: Arc<Mutex<OcmState>>,
     pending_resync: Arc<AtomicBool>,
-    is_reconciling: Arc<AtomicBool>,
+    reconciliation_gate: Arc<ReconciliationGate>,
     replay_buffer: Arc<Mutex<Vec<ReceivedOcm>>>,
     pending_tasks: TaskHandles,
     keep_alive_handle: Option<JoinHandle<()>>,
@@ -185,7 +195,7 @@ impl BetfairExecutionClient {
             currency,
             ocm_state: Arc::new(Mutex::new(OcmState::default())),
             pending_resync: Arc::new(AtomicBool::new(false)),
-            is_reconciling: Arc::new(AtomicBool::new(false)),
+            reconciliation_gate: Arc::new(ReconciliationGate::default()),
             replay_buffer: Arc::new(Mutex::new(Vec::new())),
             pending_tasks: TaskHandles::default(),
             keep_alive_handle: None,
@@ -195,10 +205,19 @@ impl BetfairExecutionClient {
         }
     }
 
-    /// Returns true while post-reconnect reconciliation is in flight.
+    /// Returns true while new-order submissions are halted for stream recovery.
     #[must_use]
     pub fn is_reconciling(&self) -> bool {
-        self.is_reconciling.load(Ordering::Acquire)
+        self.reconciliation_gate.is_halted()
+    }
+
+    fn submissions_halted(&self) -> bool {
+        !self.core.is_connected()
+            || self.reconciliation_gate.is_halted()
+            || self
+                .stream_client
+                .as_ref()
+                .is_none_or(|client| !client.is_active())
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -385,8 +404,7 @@ impl BetfairExecutionClient {
         buf.clear();
         self.pending_resync.store(false, Ordering::Release);
 
-        // An aborted reconnect must not leave submits permanently halted
-        self.is_reconciling.store(false, Ordering::Release);
+        self.reconciliation_gate.clear();
     }
 
     fn abort_pending_tasks(&self) {
@@ -417,9 +435,9 @@ impl BetfairExecutionClient {
         data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
         market_ids_filter: Option<ahash::AHashSet<String>>,
         ignore_external_orders: bool,
-        reconnect_tx: tokio::sync::mpsc::UnboundedSender<()>,
+        reconnect_tx: tokio::sync::mpsc::UnboundedSender<u64>,
         pending_resync: Arc<AtomicBool>,
-        is_reconciling: Arc<AtomicBool>,
+        reconciliation_gate: Arc<ReconciliationGate>,
         replay_buffer: Arc<Mutex<Vec<ReceivedOcm>>>,
         account_refresh_tx: tokio::sync::mpsc::UnboundedSender<()>,
         clock: &'static AtomicTime,
@@ -470,17 +488,24 @@ impl BetfairExecutionClient {
                     );
                 }
                 StreamMessage::Connection(_) => {
-                    if has_initial_connection.swap(true, Ordering::SeqCst) {
-                        log::info!("Betfair execution stream reconnected");
-                        pending_resync.store(true, Ordering::Release);
-                        is_reconciling.store(true, Ordering::Release);
-                        let _ = reconnect_tx.send(());
-                    } else {
+                    let initial = !has_initial_connection.swap(true, Ordering::SeqCst)
+                        && !reconciliation_gate.is_halted();
+
+                    if initial {
                         log::debug!("Betfair execution stream connected");
+                    } else {
+                        log::info!("Betfair execution stream reconnected");
+                        let generation = reconciliation_gate.halt();
+                        pending_resync.store(true, Ordering::Release);
+
+                        if reconnect_tx.send(generation).is_err() {
+                            log::warn!("Failed to schedule Betfair reconnect reconciliation");
+                        }
                     }
                 }
                 StreamMessage::Status(status) => {
                     if status.connection_closed {
+                        reconciliation_gate.halt();
                         log::warn!(
                             "Betfair execution stream closed: {:?} - {:?}",
                             status.error_code,
@@ -1162,17 +1187,25 @@ impl ExecutionClient for BetfairExecutionClient {
             self.config.ignore_external_orders,
             reconnect_tx,
             Arc::clone(&self.pending_resync),
-            Arc::clone(&self.is_reconciling),
+            Arc::clone(&self.reconciliation_gate),
             Arc::clone(&self.replay_buffer),
             account_refresh_tx,
             self.clock,
         );
 
-        let stream_client = BetfairStreamClient::connect(
+        let transport_gate = Arc::clone(&self.reconciliation_gate);
+        let state_sink = SocketStateSink::new(move |state| {
+            if state == SocketState::Disconnected {
+                transport_gate.halt();
+            }
+        });
+
+        let stream_client = BetfairStreamClient::connect_with_state_sink(
             &self.credential,
             session_token,
             handler,
             self.stream_config.clone(),
+            state_sink,
         )
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -1287,20 +1320,15 @@ impl ExecutionClient for BetfairExecutionClient {
         let reconnect_market_ids = self.reconcile_market_ids();
         let reconnect_lookback_mins = self.config.stream_gap_recovery_lookback_mins;
         let reconnect_ocm_state = Arc::clone(&self.ocm_state);
-        let reconnect_is_reconciling = Arc::clone(&self.is_reconciling);
+        let reconnect_gate = Arc::clone(&self.reconciliation_gate);
 
         self.reconnect_handle = Some(get_runtime().spawn(async move {
-            while reconnect_rx.recv().await.is_some() {
+            while let Some(generation) = reconnect_rx.recv().await {
                 log::info!("Handling execution stream reconnection");
-
-                // Re-assert so a queued reconnect doesn't run with the halt cleared
-                // by the previous iteration.
-                reconnect_is_reconciling.store(true, Ordering::Release);
 
                 let mut session_refresh = SessionRefresh::default();
 
-                // Inner async block so early returns still hit the clear below.
-                let () = async {
+                let reconciled = async {
                     let (_, session_replaced) = match reconnect_http.keep_alive_with_token().await {
                         Ok(token) => (token, false),
                         Err(ref e) if e.is_login_failed() => {
@@ -1310,13 +1338,13 @@ impl ExecutionClient for BetfairExecutionClient {
                                 Ok(token) => (token, true),
                                 Err(e) => {
                                     log::warn!("Re-login failed on reconnect: {e}");
-                                    return;
+                                    return false;
                                 }
                             }
                         }
                         Err(e) => {
                             log::warn!("Keep-alive failed on reconnect (transient): {e}");
-                            return;
+                            return false;
                         }
                     };
 
@@ -1384,9 +1412,11 @@ impl ExecutionClient for BetfairExecutionClient {
                                 "Post-reconnect reconciliation submitted: \
                                  orders={order_count}, fills={fill_count}",
                             );
+                            true
                         }
                         Err(e) => {
                             log::warn!("Post-reconnect reconciliation failed: {e}");
+                            false
                         }
                     }
                 }
@@ -1400,8 +1430,9 @@ impl ExecutionClient for BetfairExecutionClient {
                 )
                 .await;
 
-                // Fail-open: a failed iteration must not deny submits indefinitely.
-                reconnect_is_reconciling.store(false, Ordering::Release);
+                if reconciled && !reconnect_gate.try_resume(generation) {
+                    log::info!("A newer execution stream reconnect remains unreconciled");
+                }
             }
         }));
 
@@ -1738,9 +1769,9 @@ impl ExecutionClient for BetfairExecutionClient {
 
         let order = self.core.get_order(&cmd.client_order_id)?;
 
-        if self.is_reconciling.load(Ordering::Acquire) {
+        if self.submissions_halted() {
             log::warn!(
-                "Halting submit for {} during post-reconnect reconciliation",
+                "Halting submit for {} while the execution stream is unavailable or reconciling",
                 order.client_order_id(),
             );
             self.emitter
@@ -2609,9 +2640,10 @@ impl ExecutionClient for BetfairExecutionClient {
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         self.process_pending_resync();
 
-        if self.is_reconciling.load(Ordering::Acquire) {
+        if self.submissions_halted() {
             log::warn!(
-                "Halting submit_order_list ({} orders) during post-reconnect reconciliation",
+                "Halting submit_order_list ({} orders) while the execution stream is \
+                 unavailable or reconciling",
                 cmd.order_list.client_order_ids.len(),
             );
 
@@ -2877,6 +2909,77 @@ impl ExecutionClient for BetfairExecutionClient {
         });
 
         Ok(())
+    }
+}
+
+// Even states admit submissions; each halt advances to a distinct odd generation.
+// Generation exhaustion stays halted until lifecycle cleanup wraps the gate to zero.
+#[derive(Debug, Default)]
+struct ReconciliationGate {
+    state: AtomicU64,
+}
+
+impl ReconciliationGate {
+    fn is_halted(&self) -> bool {
+        self.state.load(Ordering::Acquire) & 1 == 1
+    }
+
+    fn halt(&self) -> u64 {
+        let mut current = self.state.load(Ordering::Acquire);
+
+        loop {
+            let next = if current == u64::MAX {
+                current
+            } else if current & 1 == 0 {
+                current + 1
+            } else {
+                current.saturating_add(2)
+            };
+
+            if next == current {
+                return current;
+            }
+
+            match self.state.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return next,
+                Err(actual) => current = actual,
+            }
+        }
+    }
+
+    fn try_resume(&self, generation: u64) -> bool {
+        generation != u64::MAX
+            && generation & 1 == 1
+            && self
+                .state
+                .compare_exchange(
+                    generation,
+                    generation + 1,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_ok()
+    }
+
+    fn clear(&self) {
+        let mut current = self.state.load(Ordering::Acquire);
+
+        while current & 1 == 1 {
+            match self.state.compare_exchange_weak(
+                current,
+                current.wrapping_add(1),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return,
+                Err(actual) => current = actual,
+            }
+        }
     }
 }
 
@@ -3778,7 +3881,7 @@ mod tests {
             false,
             reconnect_tx,
             Arc::new(AtomicBool::new(pending_resync)),
-            Arc::new(AtomicBool::new(false)),
+            Arc::new(ReconciliationGate::default()),
             Arc::clone(&replay_buffer),
             account_refresh_tx,
             clock,
@@ -4438,29 +4541,85 @@ mod tests {
     }
 
     #[rstest]
-    fn test_reconnect_sets_is_reconciling_flag() {
-        // Mirrors the production handler: a second Connection raises both flags.
-        let has_initial_connection = Arc::new(AtomicBool::new(false));
+    fn test_reconnect_sets_reconciliation_gate() {
         let pending_resync = Arc::new(AtomicBool::new(false));
-        let is_reconciling = Arc::new(AtomicBool::new(false));
-
-        let has_initial = Arc::clone(&has_initial_connection);
-        let pending = Arc::clone(&pending_resync);
-        let reconciling = Arc::clone(&is_reconciling);
-        let handler = move |_data: &[u8]| {
-            if has_initial.swap(true, Ordering::SeqCst) {
-                pending.store(true, Ordering::Release);
-                reconciling.store(true, Ordering::Release);
-            }
-        };
+        let reconciliation_gate = Arc::new(ReconciliationGate::default());
+        let (reconnect_tx, mut reconnect_rx) = tokio::sync::mpsc::unbounded_channel();
+        let handler = ocm_reconnect_handler(
+            reconnect_tx,
+            Arc::clone(&pending_resync),
+            Arc::clone(&reconciliation_gate),
+        );
 
         handler(br#"{"op":"connection","connectionId":"first"}"#);
+        assert!(reconnect_rx.try_recv().is_err());
         assert!(!pending_resync.load(Ordering::Acquire));
-        assert!(!is_reconciling.load(Ordering::Acquire));
+        assert!(!reconciliation_gate.is_halted());
 
         handler(br#"{"op":"connection","connectionId":"second"}"#);
+        assert_eq!(reconnect_rx.try_recv().unwrap(), 1);
         assert!(pending_resync.load(Ordering::Acquire));
-        assert!(is_reconciling.load(Ordering::Acquire));
+        assert!(reconciliation_gate.is_halted());
+    }
+
+    #[rstest]
+    fn test_first_connection_after_transport_loss_schedules_reconciliation() {
+        let pending_resync = Arc::new(AtomicBool::new(false));
+        let reconciliation_gate = Arc::new(ReconciliationGate::default());
+        let (reconnect_tx, mut reconnect_rx) = tokio::sync::mpsc::unbounded_channel();
+        let handler = ocm_reconnect_handler(
+            reconnect_tx,
+            Arc::clone(&pending_resync),
+            Arc::clone(&reconciliation_gate),
+        );
+
+        assert_eq!(reconciliation_gate.halt(), 1);
+        handler(br#"{"op":"connection","connectionId":"replacement"}"#);
+
+        assert_eq!(reconnect_rx.try_recv().unwrap(), 3);
+        assert!(pending_resync.load(Ordering::Acquire));
+        assert!(reconciliation_gate.is_halted());
+    }
+
+    fn ocm_reconnect_handler(
+        reconnect_tx: tokio::sync::mpsc::UnboundedSender<u64>,
+        pending_resync: Arc<AtomicBool>,
+        reconciliation_gate: Arc<ReconciliationGate>,
+    ) -> TcpMessageHandler {
+        let account_id = AccountId::from("BETFAIR-001");
+        let (emitter, _execution_rx) = emitter_with_receiver(account_id);
+        let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (account_refresh_tx, _account_refresh_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        BetfairExecutionClient::create_ocm_handler(
+            emitter,
+            account_id,
+            Currency::GBP(),
+            Arc::new(Mutex::new(OcmState::default())),
+            data_tx,
+            None,
+            false,
+            reconnect_tx,
+            pending_resync,
+            reconciliation_gate,
+            Arc::new(Mutex::new(Vec::new())),
+            account_refresh_tx,
+            get_atomic_clock_realtime(),
+        )
+    }
+
+    #[rstest]
+    fn test_reconciliation_gate_rejects_stale_completion() {
+        let gate = ReconciliationGate::default();
+
+        let stale = gate.halt();
+        let current = gate.halt();
+
+        assert!(gate.is_halted());
+        assert!(!gate.try_resume(stale));
+        assert!(gate.is_halted());
+        assert!(gate.try_resume(current));
+        assert!(!gate.is_halted());
     }
 
     #[rstest]
