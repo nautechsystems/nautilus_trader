@@ -46,96 +46,115 @@ pub const BAR_SPEC_1_SECOND_LAST: BarSpecification = BarSpecification {
     aggregation: BarAggregation::Second,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_1_MINUTE_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(1).unwrap(),
     aggregation: BarAggregation::Minute,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_3_MINUTE_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(3).unwrap(),
     aggregation: BarAggregation::Minute,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_5_MINUTE_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(5).unwrap(),
     aggregation: BarAggregation::Minute,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_15_MINUTE_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(15).unwrap(),
     aggregation: BarAggregation::Minute,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_30_MINUTE_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(30).unwrap(),
     aggregation: BarAggregation::Minute,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_1_HOUR_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(1).unwrap(),
     aggregation: BarAggregation::Hour,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_2_HOUR_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(2).unwrap(),
     aggregation: BarAggregation::Hour,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_4_HOUR_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(4).unwrap(),
     aggregation: BarAggregation::Hour,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_6_HOUR_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(6).unwrap(),
     aggregation: BarAggregation::Hour,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_12_HOUR_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(12).unwrap(),
     aggregation: BarAggregation::Hour,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_1_DAY_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(1).unwrap(),
     aggregation: BarAggregation::Day,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_2_DAY_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(2).unwrap(),
     aggregation: BarAggregation::Day,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_3_DAY_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(3).unwrap(),
     aggregation: BarAggregation::Day,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_5_DAY_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(5).unwrap(),
     aggregation: BarAggregation::Day,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_1_WEEK_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(1).unwrap(),
     aggregation: BarAggregation::Week,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_1_MONTH_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(1).unwrap(),
     aggregation: BarAggregation::Month,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_3_MONTH_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(3).unwrap(),
     aggregation: BarAggregation::Month,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_6_MONTH_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(6).unwrap(),
     aggregation: BarAggregation::Month,
     price_type: PriceType::Last,
 };
+
 pub const BAR_SPEC_12_MONTH_LAST: BarSpecification = BarSpecification {
     step: NonZero::new(12).unwrap(),
     aggregation: BarAggregation::Month,
@@ -336,8 +355,59 @@ fn find_closest_smaller_time(
 }
 
 fn duration_days(days: i64) -> SignedDuration {
-    let hours = days.checked_mul(24).expect("days overflow i64 hours");
-    SignedDuration::try_from_hours(hours).expect("days exceed signed duration range")
+    try_duration_days(days).unwrap_or_else(|e| panic!("{e}"))
+}
+
+fn try_duration_days(days: i64) -> anyhow::Result<SignedDuration> {
+    let hours = days
+        .checked_mul(24)
+        .ok_or_else(|| anyhow::anyhow!("days overflow i64 hours"))?;
+    SignedDuration::try_from_hours(hours)
+        .ok_or_else(|| anyhow::anyhow!("days exceed signed duration range"))
+}
+
+fn try_time_interval(step: usize, aggregation: BarAggregation) -> anyhow::Result<SignedDuration> {
+    let step_i64 = i64::try_from(step)
+        .map_err(|_| invalid_interval_step(step, aggregation, "step exceeds i64 range"))?;
+
+    let duration = match aggregation {
+        BarAggregation::Millisecond => SignedDuration::from_millis(step_i64),
+        BarAggregation::Second => SignedDuration::from_secs(step_i64),
+        BarAggregation::Minute => SignedDuration::try_from_mins(step_i64).ok_or_else(|| {
+            invalid_interval_step(step, aggregation, "step exceeds signed duration range")
+        })?,
+        BarAggregation::Hour => SignedDuration::try_from_hours(step_i64).ok_or_else(|| {
+            invalid_interval_step(step, aggregation, "step exceeds signed duration range")
+        })?,
+        BarAggregation::Day => try_scaled_days(step, aggregation, step_i64, 1)?,
+        BarAggregation::Week => try_scaled_days(step, aggregation, step_i64, 7)?,
+        BarAggregation::Month => try_scaled_days(step, aggregation, step_i64, 30)?,
+        BarAggregation::Year => try_scaled_days(step, aggregation, step_i64, 365)?,
+        _ => anyhow::bail!("Timedelta not supported for aggregation type: {aggregation:?}"),
+    };
+
+    u64::try_from(duration.as_nanos())
+        .map_err(|_| invalid_interval_step(step, aggregation, "interval overflows nanoseconds"))?;
+
+    Ok(duration)
+}
+
+fn try_scaled_days(
+    step: usize,
+    aggregation: BarAggregation,
+    step_i64: i64,
+    multiplier: i64,
+) -> anyhow::Result<SignedDuration> {
+    let days = step_i64
+        .checked_mul(multiplier)
+        .ok_or_else(|| invalid_interval_step(step, aggregation, "step overflows i64 days"))?;
+    try_duration_days(days).map_err(|e| invalid_interval_step(step, aggregation, &e.to_string()))
+}
+
+fn invalid_interval_step(step: usize, aggregation: BarAggregation, reason: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "Invalid step in bar_type.spec.step: {step} for aggregation={aggregation}. {reason}"
+    )
 }
 
 /// Converts a bar specification step to `i64` for time arithmetic.
@@ -406,8 +476,9 @@ impl BarSpecification {
     ///
     /// # Errors
     ///
-    /// Returns an error if `step` is not positive (> 0), or if `step` is not
-    /// valid for a fixed-subunit time aggregation.
+    /// Returns an error if `step` is not positive (> 0), if `step` is not
+    /// valid for a fixed-subunit time aggregation, or if a time-aggregated
+    /// `step` overflows the representable duration or nanosecond interval.
     ///
     /// # Notes
     ///
@@ -431,17 +502,20 @@ impl BarSpecification {
     fn validate_step(step: usize, aggregation: BarAggregation) -> anyhow::Result<()> {
         match aggregation {
             BarAggregation::Millisecond => {
-                Self::validate_periodic_step(step, aggregation, 1000, false)
+                Self::validate_periodic_step(step, aggregation, 1000, false)?;
             }
             BarAggregation::Second | BarAggregation::Minute => {
-                Self::validate_periodic_step(step, aggregation, 60, false)
+                Self::validate_periodic_step(step, aggregation, 60, false)?;
             }
-            BarAggregation::Hour => Self::validate_periodic_step(step, aggregation, 24, false),
+            BarAggregation::Hour => Self::validate_periodic_step(step, aggregation, 24, false)?,
             // 12-MONTH is allowed (unlike other full-subunit steps) because the shipped
             // BAR_SPEC_12_MONTH_LAST constant and OKX yearly candles depend on it
-            BarAggregation::Month => Self::validate_periodic_step(step, aggregation, 12, true),
-            _ => Ok(()),
+            BarAggregation::Month => Self::validate_periodic_step(step, aggregation, 12, true)?,
+            BarAggregation::Day | BarAggregation::Week | BarAggregation::Year => {}
+            _ => return Ok(()),
         }
+
+        try_time_interval(step, aggregation).map(|_| ())
     }
 
     fn validate_periodic_step(
@@ -471,8 +545,9 @@ impl BarSpecification {
     ///
     /// # Panics
     ///
-    /// Panics if `step` is not positive (> 0), or if `step` is not valid for
-    /// a fixed-subunit time aggregation.
+    /// Panics if `step` is not positive (> 0), if `step` is not valid for
+    /// a fixed-subunit time aggregation, or if a time-aggregated `step`
+    /// overflows the representable duration or nanosecond interval.
     #[must_use]
     pub fn new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
         Self::new_checked(step, aggregation, price_type).expect(FAILED)
@@ -1299,6 +1374,142 @@ mod tests {
         let result = BarSpecification::new_checked(7, aggregation, PriceType::Last);
 
         assert!(result.is_ok());
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Day, 213_503)]
+    #[case(BarAggregation::Week, 30_500)]
+    #[case(BarAggregation::Year, 584)]
+    fn test_bar_specification_new_checked_accepts_max_interval_step(
+        #[case] aggregation: BarAggregation,
+        #[case] step: usize,
+    ) {
+        let spec = BarSpecification::new_checked(step, aggregation, PriceType::Last).unwrap();
+        let interval = spec.timedelta();
+        let interval_ns = u64::try_from(interval.as_nanos()).unwrap();
+
+        assert_eq!(spec.step.get(), step);
+        assert_eq!(spec.aggregation, aggregation);
+        assert_eq!(
+            get_bar_interval_ns(&BarType::new(
+                InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+                spec,
+                AggregationSource::Internal,
+            ))
+            .as_u64(),
+            interval_ns
+        );
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Day, 213_504)]
+    #[case(BarAggregation::Week, 30_501)]
+    #[case(BarAggregation::Year, 585)]
+    fn test_bar_specification_new_checked_rejects_unrepresentable_interval(
+        #[case] aggregation: BarAggregation,
+        #[case] step: usize,
+    ) {
+        let result = BarSpecification::new_checked(step, aggregation, PriceType::Last);
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("interval overflows nanoseconds")
+        );
+    }
+
+    #[rstest]
+    #[should_panic(expected = "interval overflows nanoseconds")]
+    fn test_bar_specification_new_unrepresentable_interval_panics() {
+        let _ = BarSpecification::new(213_504, BarAggregation::Day, PriceType::Last);
+    }
+
+    #[rstest]
+    fn test_bar_specification_new_checked_accepts_12_month_interval() {
+        let spec =
+            BarSpecification::new_checked(12, BarAggregation::Month, PriceType::Last).unwrap();
+
+        assert_eq!(spec, BAR_SPEC_12_MONTH_LAST);
+        assert_eq!(spec.timedelta(), duration_days(360));
+        assert_eq!(
+            u64::try_from(spec.timedelta().as_nanos()).unwrap(),
+            31_104_000_000_000_000
+        );
+    }
+
+    #[rstest]
+    fn test_try_time_interval_covers_derived_multipliers() {
+        let i64_max = usize::try_from(i64::MAX).unwrap();
+
+        assert!(
+            BarSpecification::new_checked(i64_max, BarAggregation::Week, PriceType::Last)
+                .unwrap_err()
+                .to_string()
+                .contains("step overflows i64 days")
+        );
+        assert!(
+            try_time_interval(usize::MAX, BarAggregation::Day)
+                .unwrap_err()
+                .to_string()
+                .contains("step exceeds i64 range")
+        );
+        assert!(
+            try_time_interval(i64_max, BarAggregation::Week)
+                .unwrap_err()
+                .to_string()
+                .contains("step overflows i64 days")
+        );
+        assert!(
+            try_time_interval(i64_max, BarAggregation::Month)
+                .unwrap_err()
+                .to_string()
+                .contains("step overflows i64 days")
+        );
+        assert!(
+            try_time_interval(i64_max, BarAggregation::Year)
+                .unwrap_err()
+                .to_string()
+                .contains("step overflows i64 days")
+        );
+        assert!(
+            try_duration_days(i64::MAX)
+                .unwrap_err()
+                .to_string()
+                .contains("days overflow i64 hours")
+        );
+        assert!(
+            try_duration_days(i64::MAX / 24)
+                .unwrap_err()
+                .to_string()
+                .contains("days exceed signed duration range")
+        );
+    }
+
+    #[rstest]
+    fn test_bar_specification_parse_and_builder_reject_unrepresentable_interval() {
+        let step = 30_501;
+        let json = format!(r#"{{"step":{step},"aggregation":"WEEK","price_type":"LAST"}}"#);
+
+        assert!(serde_json::from_str::<BarSpecification>(&json).is_err());
+        assert!(
+            BarSpecificationBuilder::default()
+                .step(NonZeroUsize::new(step).unwrap())
+                .aggregation(BarAggregation::Week)
+                .price_type(PriceType::Last)
+                .build()
+                .is_err()
+        );
+        assert!(
+            BarType::from_str(&format!("BTCUSDT-PERP.BINANCE-{step}-WEEK-LAST-INTERNAL")).is_err()
+        );
+        assert_eq!(
+            BarType::from_str("BTCUSDT-PERP.BINANCE-30500-WEEK-LAST-INTERNAL")
+                .unwrap()
+                .spec()
+                .timedelta(),
+            duration_days(213_500)
+        );
     }
 
     #[rstest]

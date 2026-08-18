@@ -179,7 +179,8 @@ with their parent clock or calendar unit. `MILLISECOND` steps must divide 1000 a
 and be less than 24; and `MONTH` steps must divide 12 and may equal 12. Except for `12-MONTH`, use
 the next larger aggregation when the step equals a parent unit, such as `1-HOUR` instead of
 `60-MINUTE`. In this model, `DAY`, `WEEK`, `YEAR`, threshold, information‑driven, and `RENKO` bars
-are not restricted by this fixed‑subunit rule.
+are not restricted by this fixed‑subunit rule. Time aggregations must also convert to a duration
+and nanosecond interval, so an oversized `DAY`, `WEEK`, or `YEAR` step is rejected.
 :::
 
 Bar types can also be classified as either *standard* or *composite*:

@@ -148,6 +148,7 @@ Released on TBD (UTC).
 - Fixed `AverageTrueRange` ignoring its configured `ma_type` and always using a simple moving average, which also affected the inner ATR for `KeltnerChannel`, `KeltnerPosition`, `Pressure`, and `VolatilityRatio`
 - Fixed Python `MessageBus` accepting empty or whitespace‑only subscription patterns
 - Fixed the `OptionSeriesId` Python constructor panicking on an invalid venue, which aborted the process in release builds; it now raises `ValueError`
+- Fixed Python `BarSpecification` panicking on oversized time intervals; construction now raises `ValueError`
 - Fixed stale venue book snapshots logging one out‑of‑order warning per delta
 - Fixed backtest timer callbacks inheriting the next data event's timestamp (#4747), thanks @faysou
 - Fixed `AverageTrueRange.reset()` leaving the inner moving average populated (#4749), thanks @mkzung
