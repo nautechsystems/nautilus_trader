@@ -15,9 +15,12 @@
 
 //! Tests module for `Cache`.
 
-#[cfg(feature = "defi")]
-use std::sync::Arc;
-use std::{borrow::Cow, cell::RefCell, rc::Rc};
+use std::{
+    borrow::Cow,
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
 use ahash::{AHashMap, AHashSet, RandomState};
 use bytes::Bytes;
@@ -7401,15 +7404,19 @@ fn snapshot_test_position() -> Position {
     Position::new(&audusd_sim, fill.into())
 }
 
+type OrderClientClaimBatches = Arc<Mutex<Vec<Vec<(ClientOrderId, ClientId)>>>>;
+
 #[derive(Default)]
 struct SnapshotBlobTestDatabase {
     general: AHashMap<String, Bytes>,
     orders: AHashMap<ClientOrderId, OrderAny>,
     positions: AHashMap<PositionId, Position>,
     order_positions: AHashMap<ClientOrderId, PositionId>,
+    order_client_claims: OrderClientClaimBatches,
     fail_add: bool,
     fail_add_order: bool,
     fail_add_position: bool,
+    fail_index_order_clients: bool,
     fail_index_order_position: bool,
     fail_update_order: bool,
     fail_update_position: bool,
@@ -7465,6 +7472,20 @@ impl SnapshotBlobTestDatabase {
             fail_index_order_position: true,
             ..Default::default()
         }
+    }
+
+    fn order_client_claim_recorder(
+        fail_index_order_clients: bool,
+    ) -> (Self, OrderClientClaimBatches) {
+        let order_client_claims = Arc::new(Mutex::new(Vec::new()));
+        (
+            Self {
+                order_client_claims: order_client_claims.clone(),
+                fail_index_order_clients,
+                ..Default::default()
+            },
+            order_client_claims,
+        )
     }
 
     fn fail_update_order() -> Self {
@@ -7730,6 +7751,18 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
         Ok(())
     }
 
+    fn index_order_clients(&self, claims: &[(ClientOrderId, ClientId)]) -> anyhow::Result<()> {
+        self.order_client_claims
+            .lock()
+            .unwrap()
+            .push(claims.to_vec());
+
+        if self.fail_index_order_clients {
+            anyhow::bail!("index order clients failed");
+        }
+        Ok(())
+    }
+
     fn update_actor(
         &self,
         _actor_id: &ActorId,
@@ -7780,6 +7813,162 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     fn heartbeat(&self, _timestamp: UnixNanos) -> anyhow::Result<()> {
         Ok(())
     }
+}
+
+#[rstest]
+fn test_claim_order_clients_persists_one_batch_and_is_idempotent(audusd_sim: CurrencyPair) {
+    let (database, recorded_claims) = SnapshotBlobTestDatabase::order_client_claim_recorder(false);
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let client_id = ClientId::from("CLIENT-B");
+    let order_1 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .client_order_id(ClientOrderId::from("O-CLAIM-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let order_2 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .client_order_id(ClientOrderId::from("O-CLAIM-002"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let claims = [
+        (order_1.client_order_id(), client_id),
+        (order_2.client_order_id(), client_id),
+        (order_1.client_order_id(), client_id),
+    ];
+
+    cache.add_order(order_1.clone(), None, None, false).unwrap();
+    cache.add_order(order_2.clone(), None, None, false).unwrap();
+
+    cache.claim_order_clients(&claims).unwrap();
+    cache.claim_order_clients(&claims).unwrap();
+
+    assert_eq!(
+        cache.client_id(&order_1.client_order_id()).copied(),
+        Some(client_id),
+    );
+    assert_eq!(
+        cache.client_id(&order_2.client_order_id()).copied(),
+        Some(client_id),
+    );
+    assert_eq!(
+        recorded_claims.lock().unwrap().as_slice(),
+        &[vec![
+            (order_1.client_order_id(), client_id),
+            (order_2.client_order_id(), client_id),
+        ]],
+    );
+}
+
+#[rstest]
+fn test_claim_order_clients_rejects_conflict_without_partial_commit(audusd_sim: CurrencyPair) {
+    let (database, recorded_claims) = SnapshotBlobTestDatabase::order_client_claim_recorder(false);
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let existing_client_id = ClientId::from("CLIENT-A");
+    let claimant_client_id = ClientId::from("CLIENT-B");
+    let order_1 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .client_order_id(ClientOrderId::from("O-CONFLICT-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let order_2 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .client_order_id(ClientOrderId::from("O-CONFLICT-002"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    cache.add_order(order_1.clone(), None, None, false).unwrap();
+    cache
+        .add_order(order_2.clone(), None, Some(existing_client_id), false)
+        .unwrap();
+
+    let error = cache
+        .claim_order_clients(&[
+            (order_1.client_order_id(), claimant_client_id),
+            (order_2.client_order_id(), claimant_client_id),
+        ])
+        .unwrap_err();
+
+    assert!(error.to_string().contains("already claimed"));
+    assert_eq!(cache.client_id(&order_1.client_order_id()), None);
+    assert_eq!(
+        cache.client_id(&order_2.client_order_id()).copied(),
+        Some(existing_client_id),
+    );
+    assert!(recorded_claims.lock().unwrap().is_empty());
+}
+
+#[rstest]
+fn test_claim_order_clients_rejects_invalid_batch_without_mutation(audusd_sim: CurrencyPair) {
+    let (database, recorded_claims) = SnapshotBlobTestDatabase::order_client_claim_recorder(false);
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let client_a = ClientId::from("CLIENT-A");
+    let client_b = ClientId::from("CLIENT-B");
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .client_order_id(ClientOrderId::from("O-INVALID-BATCH-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let conflicting_batch_error = cache
+        .claim_order_clients(&[
+            (order.client_order_id(), client_a),
+            (order.client_order_id(), client_b),
+        ])
+        .unwrap_err();
+    let missing_order_error = cache
+        .claim_order_clients(&[
+            (order.client_order_id(), client_a),
+            (ClientOrderId::from("O-MISSING"), client_a),
+        ])
+        .unwrap_err();
+
+    assert!(conflicting_batch_error.to_string().contains("Conflicting"));
+    assert!(missing_order_error.to_string().contains("order not found"));
+    assert_eq!(cache.client_id(&order.client_order_id()), None);
+    assert!(recorded_claims.lock().unwrap().is_empty());
+}
+
+#[rstest]
+fn test_claim_order_clients_database_error_leaves_memory_unmodified(audusd_sim: CurrencyPair) {
+    let (database, recorded_claims) = SnapshotBlobTestDatabase::order_client_claim_recorder(true);
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let client_id = ClientId::from("CLIENT-B");
+    let order_1 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .client_order_id(ClientOrderId::from("O-DB-FAIL-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let order_2 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .client_order_id(ClientOrderId::from("O-DB-FAIL-002"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let claims = [
+        (order_1.client_order_id(), client_id),
+        (order_2.client_order_id(), client_id),
+    ];
+
+    cache.add_order(order_1.clone(), None, None, false).unwrap();
+    cache.add_order(order_2.clone(), None, None, false).unwrap();
+
+    let error = cache.claim_order_clients(&claims).unwrap_err();
+
+    assert_eq!(error.to_string(), "index order clients failed");
+    assert_eq!(cache.client_id(&order_1.client_order_id()), None);
+    assert_eq!(cache.client_id(&order_2.client_order_id()), None);
+    assert_eq!(
+        recorded_claims.lock().unwrap().as_slice(),
+        &[claims.to_vec()]
+    );
 }
 
 #[rstest]

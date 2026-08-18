@@ -2078,8 +2078,7 @@ impl ExecutionEngine {
         let (order, added_to_cache) = match cached_order {
             Some(order) => (order, false),
             None => {
-                let Some(order) =
-                    self.add_order_from_init(&cmd.order_init, cmd.position_id, cmd.client_id, &cmd)
+                let Some(order) = self.add_order_from_init(&cmd.order_init, cmd.position_id, &cmd)
                 else {
                     return;
                 };
@@ -2132,6 +2131,25 @@ impl ExecutionEngine {
             }
         }
 
+        let client_id = client.client_id();
+        let claim_result = self
+            .cache
+            .borrow_mut()
+            .claim_order_clients(&[(client_order_id, client_id)]);
+
+        if let Err(e) = claim_result {
+            self.deny_order(
+                &order,
+                &OrderDeniedReason::ValidationFailed {
+                    detail: format!(
+                        "Failed to claim execution client {client_id} for {client_order_id}: {e}"
+                    ),
+                }
+                .to_string(),
+            );
+            return;
+        }
+
         if self.config.manage_own_order_books && should_handle_own_book_order(&order) {
             let mut own_book = self.get_or_init_own_order_book(&order.instrument_id());
             own_book.add(order.to_own_book_order());
@@ -2173,9 +2191,7 @@ impl ExecutionEngine {
                 continue;
             };
 
-            let Some(order) =
-                self.add_order_from_init(order_init, cmd.position_id, cmd.client_id, &cmd)
-            else {
+            let Some(order) = self.add_order_from_init(order_init, cmd.position_id, &cmd) else {
                 continue;
             };
 
@@ -2272,6 +2288,27 @@ impl ExecutionEngine {
             }
         }
 
+        let client_id = client.client_id();
+        let claims = orders
+            .iter()
+            .map(|order| (order.client_order_id(), client_id))
+            .collect::<Vec<_>>();
+        let claim_result = self.cache.borrow_mut().claim_order_clients(&claims);
+        if let Err(e) = claim_result {
+            let reason = OrderDeniedReason::ValidationFailed {
+                detail: format!(
+                    "Failed to claim execution client {client_id} for order list {}: {e}",
+                    cmd.order_list.id,
+                ),
+            }
+            .to_string();
+
+            for order in &orders {
+                self.deny_order(order, &reason);
+            }
+            return;
+        }
+
         if self.config.manage_own_order_books {
             for order in &orders {
                 if should_handle_own_book_order(order) {
@@ -2300,7 +2337,6 @@ impl ExecutionEngine {
         &self,
         order_init: &OrderInitialized,
         position_id: Option<PositionId>,
-        client_id: Option<ClientId>,
         context: &dyn Display,
     ) -> Option<OrderAny> {
         let client_order_id = order_init.client_order_id;
@@ -2316,10 +2352,10 @@ impl ExecutionEngine {
             }
         };
 
-        if let Err(e) =
-            self.cache
-                .borrow_mut()
-                .add_order(order.clone(), position_id, client_id, true)
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), position_id, None, true)
         {
             log::error!(
                 "Cannot add reconstructed order to cache for {client_order_id}: {e}, {context}"

@@ -206,6 +206,7 @@ pub enum DatabaseQuery {
     UpdateOrder(OrderEventAny),
     UpdatePosition(OrderFilled),
     IndexOrderPosition(ClientOrderId, PositionId),
+    IndexOrderClients(Vec<(ClientOrderId, ClientId)>),
 }
 
 impl PostgresCacheDatabase {
@@ -1146,6 +1147,19 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
+    fn index_order_clients(&self, claims: &[(ClientOrderId, ClientId)]) -> anyhow::Result<()> {
+        if claims.is_empty() {
+            return Ok(());
+        }
+
+        let query = DatabaseQuery::IndexOrderClients(claims.to_vec());
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to send query index_order_clients to database message handler: {e}"
+            )
+        })
+    }
+
     fn update_actor(
         &self,
         actor_id: &ActorId,
@@ -1343,6 +1357,9 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
             }
             DatabaseQuery::IndexOrderPosition(client_order_id, position_id) => {
                 DatabaseQueries::index_order_position(pool, client_order_id, position_id).await
+            }
+            DatabaseQuery::IndexOrderClients(claims) => {
+                DatabaseQueries::index_order_clients(pool, &claims).await
             }
         };
 
