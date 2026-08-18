@@ -143,6 +143,8 @@ class PolymarketExecClientConfig:
     def heartbeat_enabled(self) -> bool: ...
     @property
     def transport_backend(self) -> network.TransportBackend: ...
+    @property
+    def instrument_config(self) -> PolymarketInstrumentProviderConfig | None: ...
     def __init__(
         self,
         trader_id: str | None = None,
@@ -163,6 +165,7 @@ class PolymarketExecClientConfig:
         heartbeat_enabled: bool | None = None,
         transport_backend: network.TransportBackend | None = None,
         proxy_url: str | None = None,
+        instrument_config: PolymarketInstrumentProviderConfig | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...

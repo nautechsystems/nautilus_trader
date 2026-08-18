@@ -232,7 +232,7 @@ impl PolymarketExecClientConfig {
     /// derive list.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (trader_id=None, account_id=None, private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_data_api=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_enabled=None, transport_backend=None, proxy_url=None))]
+    #[pyo3(signature = (trader_id=None, account_id=None, private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_data_api=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_enabled=None, transport_backend=None, proxy_url=None, instrument_config=None))]
     fn py_new(
         trader_id: Option<String>,
         account_id: Option<String>,
@@ -252,6 +252,7 @@ impl PolymarketExecClientConfig {
         heartbeat_enabled: Option<bool>,
         transport_backend: Option<TransportBackend>,
         proxy_url: Option<String>,
+        instrument_config: Option<PolymarketInstrumentProviderConfig>,
     ) -> PyResult<Self> {
         let default = Self::default();
         let config = Self {
@@ -274,6 +275,7 @@ impl PolymarketExecClientConfig {
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(default.retry_delay_max_ms),
             heartbeat_enabled: heartbeat_enabled.unwrap_or(default.heartbeat_enabled),
             transport_backend: transport_backend.unwrap_or(default.transport_backend),
+            instrument_config,
         };
         config
             .validated_proxy_url()

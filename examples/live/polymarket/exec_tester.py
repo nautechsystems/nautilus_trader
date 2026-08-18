@@ -58,6 +58,11 @@ def main() -> None:
     trader_id = TraderId.from_str(args.trader_id)
     instrument_id = InstrumentId.from_str(args.instrument)
     order_qty = Quantity.from_str(args.quantity)
+    instrument_config = PolymarketInstrumentProviderConfig(
+        event_slugs=[args.event_slug],
+        load_ids=[instrument_id],
+        use_gamma_markets=True,
+    )
 
     builder = (
         LiveNode.builder("POLYMARKET-EXEC-TESTER-001", trader_id, Environment.LIVE)
@@ -76,10 +81,7 @@ def main() -> None:
             None,
             PolymarketDataClientFactory(),
             PolymarketDataClientConfig(
-                instrument_config=PolymarketInstrumentProviderConfig(
-                    event_slugs=[args.event_slug],
-                    use_gamma_markets=True,
-                ),
+                instrument_config=instrument_config,
             ),
         )
         .add_exec_client(
@@ -94,6 +96,7 @@ def main() -> None:
                 passphrase=None if args.run else args.passphrase,
                 funder=None if args.run else args.funder,
                 signature_type=SignatureType.PolyGnosisSafe,
+                instrument_config=instrument_config,
             ),
         )
     )

@@ -82,7 +82,7 @@ use nautilus_polymarket::{
         consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
         enums::SignatureType,
     },
-    config::PolymarketExecClientConfig,
+    config::{PolymarketExecClientConfig, PolymarketInstrumentProviderConfig},
     execution::PolymarketExecutionClient,
     http::models::PolymarketOrder,
     signing::eip712::order_hash,
@@ -1513,7 +1513,7 @@ async fn test_exec_client_get_account_after_cache_add() {
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_order_status_reports_empty_without_instruments() {
+async fn test_generate_order_status_reports_errors_on_in_scope_unmapped_order() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (client, _rx, _cache) = create_test_execution_client(addr);
@@ -1531,10 +1531,12 @@ async fn test_generate_order_status_reports_empty_without_instruments() {
         causation_id: None,
     };
 
-    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    let error = client
+        .generate_order_status_reports(&cmd)
+        .await
+        .expect_err("in-scope open-order miss must fail");
 
-    // Without loaded instruments, orders cannot be resolved to instrument IDs
-    assert!(reports.is_empty());
+    assert!(error.to_string().contains("unmapped in-scope open order"));
 }
 
 #[rstest]
@@ -1602,6 +1604,170 @@ async fn test_generate_order_status_reports_recovers_confirmed_rest_fill() {
 
 #[rstest]
 #[tokio::test]
+async fn test_generate_mass_status_lookback_sets_report_window() {
+    let state = TestServerState::default();
+    let order = load_json("http_open_orders_page.json")["data"][0].clone();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [order],
+        "next_cursor": "LTE=",
+    }));
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("mass status")
+        .expect("mass status available");
+
+    assert!(mass_status.lookback_start().is_some());
+    assert!(mass_status.reports_complete());
+    assert_eq!(mass_status.order_reports().len(), 1);
+    let query = state.last_query.lock().await;
+    assert!(query.contains_key("after"));
+    assert!(query.contains_key("before"));
+    let after: u64 = query["after"].parse().expect("after unix seconds");
+    let before: u64 = query["before"].parse().expect("before unix seconds");
+    assert!(before > after);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_lookback_keeps_open_order_filled_qty() {
+    let state = TestServerState::default();
+    let mut order = load_json("http_open_orders_page.json")["data"][0].clone();
+    order["size_matched"] = json!("4.0000");
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [order],
+        "next_cursor": "LTE=",
+    }));
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("mass status")
+        .expect("mass status available");
+    let reports = mass_status.order_reports();
+    let report = reports.values().next().expect("open order report");
+
+    assert_eq!(report.filled_qty, Quantity::from("4.0000"));
+    assert!(mass_status.lookback_start().is_some());
+    assert!(mass_status.reports_complete());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_lookback_marks_unparsable_trade_time_incomplete() {
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    let mut trade = load_json("http_trades_page.json")["data"][0].clone();
+    trade["match_time"] = json!("not-a-timestamp");
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [trade],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (client, _rx, _cache) = create_test_execution_client(addr);
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("mass status")
+        .expect("mass status available");
+
+    assert!(mass_status.lookback_start().is_some());
+    assert!(!mass_status.reports_complete());
+    assert!(mass_status.fill_reports().is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_lookback_marks_in_scope_historical_incomplete() {
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time after epoch")
+        .as_secs();
+    let mut trade = load_json("http_trades_page.json")["data"][0].clone();
+    trade["match_time"] = json!(now_secs.to_string());
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [trade],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (client, _rx, _cache) = create_test_execution_client(addr);
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("mass status")
+        .expect("mass status available");
+
+    assert!(mass_status.lookback_start().is_some());
+    assert!(!mass_status.reports_complete());
+    assert!(mass_status.fill_reports().is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_drops_out_of_scope_unmapped_history() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let mut config = create_test_exec_config(addr);
+    config.instrument_config = Some(PolymarketInstrumentProviderConfig {
+        load_ids: Some(vec![InstrumentId::from("OTHER.POLYMARKET")]),
+        ..Default::default()
+    });
+    let (client, _rx, _cache) = create_test_execution_client_from_config(config);
+
+    let reports = client
+        .generate_fill_reports(GenerateFillReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: None,
+            venue_order_id: None,
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect("out-of-scope historical misses must not fail");
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_fill_reports_empty_without_instruments() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
@@ -1632,6 +1798,10 @@ async fn test_commission_failure_errors_direct_mass_and_targeted_rest_requests()
         VenueOrderId::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12");
     let state = TestServerState::default();
     *state.single_order_response.lock().await = Some(Value::Null);
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
     *state.trades_response_override.lock().await = Some(recovery_trades_response(
         venue_order_id.as_str(),
         "10.0000",
@@ -1750,9 +1920,12 @@ async fn test_generate_order_status_report_single_requires_venue_order_id() {
         causation_id: None,
     };
 
-    let result = client.generate_order_status_report(&cmd).await.unwrap();
+    let error = client
+        .generate_order_status_report(&cmd)
+        .await
+        .expect_err("missing venue_order_id is not venue absence");
 
-    assert!(result.is_none());
+    assert!(error.to_string().contains("requires venue_order_id"));
 }
 
 #[rstest]
@@ -1773,9 +1946,12 @@ async fn test_generate_order_status_report_single_requires_instrument_id() {
         causation_id: None,
     };
 
-    let result = client.generate_order_status_report(&cmd).await.unwrap();
+    let error = client
+        .generate_order_status_report(&cmd)
+        .await
+        .expect_err("missing instrument_id is not venue absence");
 
-    assert!(result.is_none());
+    assert!(error.to_string().contains("requires instrument_id"));
 }
 
 #[rstest]

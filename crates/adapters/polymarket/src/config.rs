@@ -550,6 +550,13 @@ pub struct PolymarketExecClientConfig {
     /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Same instrument provider configuration used by the data client.
+    ///
+    /// Reconciliation classifies unmapped records from `load_ids` on this
+    /// config. When that set is non-empty, venue records for other instruments
+    /// are out of scope. When this field is unset, or `load_ids` is unset or
+    /// empty, every record is in scope.
+    pub instrument_config: Option<PolymarketInstrumentProviderConfig>,
 }
 
 #[cfg(feature = "python")]
@@ -567,6 +574,7 @@ nautilus_core::impl_pyo3_config_getters!(PolymarketExecClientConfig {
     retry_delay_max_ms: u64,
     heartbeat_enabled: bool,
     transport_backend: TransportBackend,
+    instrument_config: Option<PolymarketInstrumentProviderConfig>,
 });
 
 impl Debug for PolymarketExecClientConfig {
@@ -589,6 +597,7 @@ impl Debug for PolymarketExecClientConfig {
             .field("retry_delay_initial_ms", &self.retry_delay_initial_ms)
             .field("retry_delay_max_ms", &self.retry_delay_max_ms)
             .field("heartbeat_enabled", &self.heartbeat_enabled)
+            .field("instrument_config", &self.instrument_config)
             .finish()
     }
 }
@@ -628,6 +637,14 @@ impl PolymarketExecClientConfig {
                 .api_key
                 .as_deref()
                 .is_some_and(|s| !s.trim().is_empty())
+    }
+
+    /// Returns provider `load_ids` used to classify unmapped reconciliation records.
+    #[must_use]
+    pub fn reconciliation_load_ids(&self) -> Option<&[InstrumentId]> {
+        self.instrument_config
+            .as_ref()
+            .and_then(|config| config.load_ids.as_deref())
     }
 
     #[must_use]
@@ -836,6 +853,22 @@ log_warnings = false
         assert_eq!(config.max_retries, expected.max_retries);
         assert!(!config.heartbeat_enabled);
         assert_eq!(config.transport_backend, expected.transport_backend);
+        assert!(config.instrument_config.is_none());
+        assert!(config.reconciliation_load_ids().is_none());
+    }
+
+    #[rstest]
+    fn test_exec_config_reconciliation_load_ids_come_from_instrument_config() {
+        let scoped = InstrumentId::from("0xabc-123.POLYMARKET");
+        let config: PolymarketExecClientConfig = toml::from_str(
+            r#"
+[instrument_config]
+load_ids = ["0xabc-123.POLYMARKET"]
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.reconciliation_load_ids(), Some([scoped].as_slice()));
     }
 
     #[rstest]

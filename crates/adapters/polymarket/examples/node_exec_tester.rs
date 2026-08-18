@@ -70,11 +70,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let instrument_id = InstrumentId::from(INSTRUMENT_ID);
     let live_orders = std::env::args().any(|arg| arg == "--live-orders");
 
+    let instrument_config = PolymarketInstrumentProviderConfig {
+        event_slugs: Some(vec![EVENT_SLUG.to_string()]),
+        load_ids: Some(vec![instrument_id]),
+        ..Default::default()
+    };
     let data_config = PolymarketDataClientConfig {
-        instrument_config: Some(PolymarketInstrumentProviderConfig {
-            event_slugs: Some(vec![EVENT_SLUG.to_string()]),
-            ..Default::default()
-        }),
+        instrument_config: Some(instrument_config.clone()),
         ..Default::default()
     };
     let data_factory = PolymarketDataClientFactory;
@@ -84,6 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         account_id,
         signature_type: SignatureType::PolyGnosisSafe,
+        instrument_config: Some(instrument_config),
         ..Default::default()
     };
     let exec_factory = PolymarketExecutionClientFactory;

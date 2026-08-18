@@ -43,7 +43,7 @@ use nautilus_model::{
 use nautilus_network::{http::HttpClient, retry::RetryConfig};
 use nautilus_polymarket::{
     common::{
-        credential::Credential,
+        credential::{Credential, Secrets},
         enums::{PolymarketOrderType, SignatureType},
     },
     config::{PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig},
@@ -4883,4 +4883,34 @@ async fn test_request_trade_ticks_rejects_start_at_offset_ceiling(#[case] limit:
             .contains("cannot guarantee complete start-anchored results")
     );
     assert_eq!(queries.len(), 20);
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "requires live Polymarket credentials"]
+async fn test_live_get_trades_accepts_lookback_window() {
+    let secrets = Secrets::resolve(None, None, None, None, None).expect("live credentials");
+    let client = PolymarketClobHttpClient::new(
+        secrets.credential.clone(),
+        secrets.address.clone(),
+        None,
+        30,
+    )
+    .expect("live client");
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time after epoch")
+        .as_secs();
+    let params = GetTradesParams {
+        after: Some(now_secs.saturating_sub(3_601)),
+        before: Some(now_secs),
+        ..Default::default()
+    };
+
+    let trades = client
+        .get_trades(params)
+        .await
+        .expect("live lookback trade request");
+
+    let _ = trades.len();
 }

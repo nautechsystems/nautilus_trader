@@ -721,11 +721,13 @@ states do not.
 
 Mass-status reconciliation pairs each order report with its venue fill reports. It applies the
 real fills first to preserve trade IDs and commissions, then infers only any residual quantity
-needed to reach the venue-reported status. REST order reports cap matched quantity to the greater
-of locally applied fills and authenticated `CONFIRMED` trade history, so pending settlement cannot
-create an inferred fill. Runtime order checks fetch confirmed trade history when the venue reports
-more matched quantity than the local order and WebSocket fill tracker contain. Unpaired fill reports
-retain the normal fill-only path.
+needed to reach the venue-reported status. When mass status declares no lookback, REST order
+reports cap matched quantity to the greater of locally applied fills and authenticated
+`CONFIRMED` trade history, so pending settlement cannot create an inferred fill. A bounded mass
+status keeps the venue open‑order `size_matched` so a live partial fill outside the lookback
+window is not understated. Runtime order checks fetch confirmed trade history when the venue
+reports more matched quantity than the local order and WebSocket fill tracker contain. Unpaired
+fill reports retain the normal fill-only path.
 
 A commission construction error fails the complete REST report request. Startup returns the error
 without applying a mass status; periodic and targeted reconciliation defer the affected work. The
@@ -1249,6 +1251,7 @@ Class/struct: `PolymarketExecClientConfig`.
 | `retry_delay_max_ms`                                | `10,000`              | Maximum retry delay.                                                                                                  |
 | `heartbeat_enabled`                                 | `false`               | Send an authenticated order‑safety heartbeat immediately after execution readiness and every five seconds thereafter. |
 | `transport_backend`                                 | `Sockudo`             | WebSocket transport implementation.                                                                                   |
+| `instrument_config`                                 | `None`                | Same `PolymarketInstrumentProviderConfig` as the data client. Unmapped records use its `load_ids`.                    |
 
 :::warning
 Enabling `heartbeat_enabled` starts Polymarket's order‑safety heartbeat contract for the configured
@@ -1290,7 +1293,15 @@ signing address.
 
 ### Instrument provider options
 
-Pass `PolymarketInstrumentProviderConfig` as `instrument_config` on the data client config.
+Pass the same `PolymarketInstrumentProviderConfig` as `instrument_config` on the data client
+config and the execution client config.
+
+`load_ids` is the only reconciliation scope. When that set is non‑empty, unmapped records
+outside it are expected absences. When `load_ids` is unset or empty, every unmapped open
+order and position is in scope and fails the report request. `event_slugs`, `market_slugs`,
+`series_ids`, `filters`, and `event_slug_builder` discover instruments; they do not classify
+unmapped records. A node that scopes discovery with those fields and still wants scoped
+reconciliation must also set `load_ids`.
 
 | Option               | Default | Description                                             |
 | -------------------- | ------- | ------------------------------------------------------- |
