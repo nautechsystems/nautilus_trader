@@ -141,6 +141,7 @@ pub trait ExecutionAlgorithm: DataActor {
                 let orders = core.get_orders_for_list(&cmd.order_list)?;
                 self.on_order_list(cmd.order_list, orders)
             }
+            TradingCommand::ModifyOrder(cmd) => self.handle_modify_order(cmd),
             TradingCommand::CancelOrder(cmd) => self.handle_cancel_order(cmd),
             _ => {
                 log::warn!("Unhandled command type: {command:?}");
@@ -307,6 +308,52 @@ pub trait ExecutionAlgorithm: DataActor {
             &event,
         );
 
+        Ok(())
+    }
+
+    /// Handles a modify order command for algorithm-managed orders.
+    ///
+    /// Active-local orders are left unchanged because the algorithm owns their execution state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if command handling fails.
+    fn handle_modify_order(&mut self, command: ModifyOrder) -> anyhow::Result<()>
+    where
+        Self: ExecutionAlgorithmNative,
+    {
+        let order = {
+            let cache = ExecutionAlgorithmNative::exec_algorithm_core_mut(self).cache_ref();
+
+            let Some(order) = cache.order(&command.client_order_id) else {
+                log::warn!(
+                    "Cannot modify order: {} not found in cache",
+                    command.client_order_id
+                );
+                return Ok(());
+            };
+
+            order.clone()
+        };
+
+        if order.is_closed() {
+            log::warn!("Order already closed for {command:?}");
+            return Ok(());
+        }
+
+        if order.is_active_local() {
+            log::warn!(
+                "Cannot modify {}: order is being executed by this algorithm",
+                command.client_order_id
+            );
+            return Ok(());
+        }
+
+        // A venue-active order is routed to the execution path, not here
+        log::warn!(
+            "Cannot modify {}: order is not active-local",
+            command.client_order_id
+        );
         Ok(())
     }
 
@@ -1499,6 +1546,12 @@ mod tests {
     }
 
     #[derive(Debug)]
+    struct ModifyDispatchAlgorithm {
+        core: ExecutionAlgorithmCore,
+        modify_client_order_ids: Vec<ClientOrderId>,
+    }
+
+    #[derive(Debug)]
     struct CoreFreeExecutionAlgorithm {
         orders_seen: usize,
     }
@@ -1539,6 +1592,28 @@ mod tests {
     nautilus_execution_algorithm!(TestAlgorithm, {
         fn on_order(&mut self, order: OrderAny) -> anyhow::Result<()> {
             self.order_client_ids.push(order.client_order_id());
+            Ok(())
+        }
+    });
+
+    impl ModifyDispatchAlgorithm {
+        fn new(config: ExecutionAlgorithmConfig) -> Self {
+            Self {
+                core: ExecutionAlgorithmCore::new(config),
+                modify_client_order_ids: Vec::new(),
+            }
+        }
+    }
+
+    impl DataActor for ModifyDispatchAlgorithm {}
+
+    nautilus_execution_algorithm!(ModifyDispatchAlgorithm, {
+        fn on_order(&mut self, _order: OrderAny) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn handle_modify_order(&mut self, command: ModifyOrder) -> anyhow::Result<()> {
+            self.modify_client_order_ids.push(command.client_order_id);
             Ok(())
         }
     });
@@ -2868,6 +2943,96 @@ mod tests {
         assert!(matches!(received[0], OrderEventAny::Canceled(_)));
         assert_eq!(received[0].client_order_id(), order.client_order_id());
         assert_eq!(received[0].instrument_id(), instrument_id);
+    }
+
+    #[rstest]
+    fn test_algorithm_execute_dispatches_modify_order_to_handler() {
+        let unique_id = format!("TEST-{}", UUID4::new());
+        let config = ExecutionAlgorithmConfig {
+            exec_algorithm_id: Some(ExecAlgorithmId::new(&unique_id)),
+            ..Default::default()
+        };
+        let mut algo = ModifyDispatchAlgorithm::new(config);
+        algo.core
+            .register(
+                TraderId::from("TRADER-001"),
+                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(Cache::default())),
+            )
+            .unwrap();
+        algo.transition_state(ComponentTrigger::Initialize).unwrap();
+        algo.transition_state(ComponentTrigger::Start).unwrap();
+        algo.transition_state(ComponentTrigger::StartCompleted)
+            .unwrap();
+
+        let client_order_id = ClientOrderId::from("O-ALGO-DISPATCH");
+        let command = ModifyOrder::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("STRAT-ALGO-DISPATCH"),
+            InstrumentId::from("BTC/USDT.BINANCE"),
+            client_order_id,
+            None,
+            Some(Quantity::from("0.5")),
+            None,
+            None,
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        );
+
+        algo.execute(TradingCommand::ModifyOrder(command)).unwrap();
+
+        assert_eq!(algo.modify_client_order_ids, vec![client_order_id]);
+    }
+
+    #[rstest]
+    fn test_algorithm_handle_modify_order_refuses_active_local_order_without_events() {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let strategy_id = StrategyId::from("STRAT-ALGO-MODIFY");
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(strategy_id)
+            .instrument_id(InstrumentId::from("BTC/USDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-ALGO-MODIFY"))
+            .quantity(Quantity::from("1.0"))
+            .exec_algorithm_id(algo.id())
+            .exec_spawn_id(ClientOrderId::from("O-ALGO-MODIFY"))
+            .build();
+        {
+            let cache_rc = algo.core.cache_rc();
+            cache_rc
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+        let (handler, events) = subscribe_order_topic(strategy_id);
+        let command = ModifyOrder::new(
+            order.trader_id(),
+            None,
+            strategy_id,
+            order.instrument_id(),
+            order.client_order_id(),
+            None,
+            Some(Quantity::from("0.5")),
+            None,
+            None,
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        );
+
+        algo.execute(TradingCommand::ModifyOrder(command)).unwrap();
+
+        msgbus::unsubscribe_order_events(format!("events.order.{strategy_id}").into(), &handler);
+        let cached_order = algo.cache().order(&order.client_order_id()).unwrap();
+        assert_eq!(cached_order.status(), OrderStatus::Initialized);
+        assert_eq!(cached_order.quantity(), Quantity::from("1.0"));
+        assert!(events.borrow().is_empty());
     }
 
     #[rstest]

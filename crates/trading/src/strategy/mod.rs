@@ -463,6 +463,12 @@ pub trait Strategy: DataActor {
 
         if order.is_emulated() {
             send_emulator_command(TradingCommand::ModifyOrder(command));
+        } else if let Some(algo_id) = order
+            .exec_algorithm_id()
+            .filter(|_| order.is_active_local())
+        {
+            let endpoint = format!("{algo_id}.execute");
+            msgbus::send_any(endpoint.into(), &TradingCommand::ModifyOrder(command));
         } else {
             send_risk_command(TradingCommand::ModifyOrder(command));
         }
@@ -2339,8 +2345,8 @@ mod tests {
         events::{
             OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted,
             order::spec::{
-                OrderAcceptedSpec, OrderCanceledSpec, OrderExpiredSpec, OrderFillVoidedSpec,
-                OrderFilledSpec, OrderRejectedSpec,
+                OrderAcceptedSpec, OrderCanceledSpec, OrderEmulatedSpec, OrderExpiredSpec,
+                OrderFillVoidedSpec, OrderFilledSpec, OrderRejectedSpec,
             },
         },
         identifiers::{
@@ -2682,6 +2688,30 @@ mod tests {
             None,
             None,
             None,
+            None,
+        ))
+    }
+
+    fn make_initialized_algorithm_order(client_order_id: &str) -> OrderAny {
+        OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("TEST-001"),
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            ClientOrderId::from(client_order_id),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            Some(ExecAlgorithmId::from("TWAP")),
+            None,
+            Some(ClientOrderId::from(client_order_id)),
             None,
         ))
     }
@@ -3471,6 +3501,172 @@ mod tests {
             Some(TradingCommand::ModifyOrder(_))
         ));
         assert!(exec_messages.is_empty());
+    }
+
+    #[rstest]
+    fn test_modify_order_routes_active_local_algorithm_order_to_algorithm() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+        let (algo_handler, algo_messages) =
+            get_any_saving_handler::<TradingCommand>(Some(Ustr::from("TWAP.execute")));
+        msgbus::register_any("TWAP.execute".into(), algo_handler);
+
+        let order = make_initialized_algorithm_order("O-20250208-ALGO-MODIFY-001");
+        add_order_to_cache(&strategy, &order);
+
+        strategy
+            .modify_order(
+                order.client_order_id(),
+                Some(Quantity::from(200_000)),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        let algo_messages = algo_messages.get_messages();
+        assert_eq!(algo_messages.len(), 1);
+        assert!(matches!(
+            algo_messages.first(),
+            Some(TradingCommand::ModifyOrder(command))
+                if command.client_order_id == order.client_order_id()
+        ));
+        assert!(risk_messages.get_messages().is_empty());
+        assert!(exec_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_modify_order_routes_accepted_algorithm_order_to_risk() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let (algo_handler, algo_messages) =
+            get_any_saving_handler::<TradingCommand>(Some(Ustr::from("TWAP.execute")));
+        msgbus::register_any("TWAP.execute".into(), algo_handler);
+
+        let mut order = make_initialized_algorithm_order("O-20250208-ALGO-MODIFY-002");
+        let account_id = AccountId::from("ACC-001");
+        order
+            .apply(TestOrderEventStubs::submitted(&order, account_id))
+            .unwrap();
+        order
+            .apply(TestOrderEventStubs::accepted(
+                &order,
+                account_id,
+                VenueOrderId::from("O-20250208-ALGO-MODIFY-002"),
+            ))
+            .unwrap();
+        add_order_to_cache(&strategy, &order);
+
+        strategy
+            .modify_order(
+                order.client_order_id(),
+                Some(Quantity::from(200_000)),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        let risk_messages = risk_messages.get_messages();
+        assert_eq!(risk_messages.len(), 1);
+        assert!(matches!(
+            risk_messages.first(),
+            Some(TradingCommand::ModifyOrder(command))
+                if command.client_order_id == order.client_order_id()
+        ));
+        assert!(algo_messages.get_messages().is_empty());
+        assert_eq!(
+            strategy
+                .cache()
+                .order(&order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::PendingUpdate
+        );
+    }
+
+    #[rstest]
+    fn test_modify_order_routes_emulated_order_to_order_emulator() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (emulator_handler, emulator_messages): (
+            _,
+            TypedIntoMessageSavingHandler<TradingCommand>,
+        ) = get_typed_into_message_saving_handler(Some(Ustr::from("OrderEmulator.execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::order_emulator_execute(),
+            emulator_handler,
+        );
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let mut order = OrderTestBuilder::new(OrderType::StopMarket)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-20250208-EMULATED-MODIFY-001"))
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("51000.0"))
+            .quantity(Quantity::from(100_000))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        order
+            .apply(OrderEventAny::Emulated(
+                OrderEmulatedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .build(),
+            ))
+            .unwrap();
+        add_order_to_cache(&strategy, &order);
+
+        strategy
+            .modify_order(
+                order.client_order_id(),
+                None,
+                None,
+                Some(Price::from("52000.0")),
+                None,
+                None,
+            )
+            .unwrap();
+
+        let emulator_messages = emulator_messages.get_messages();
+        assert_eq!(emulator_messages.len(), 1);
+        assert!(matches!(
+            emulator_messages.first(),
+            Some(TradingCommand::ModifyOrder(command))
+                if command.client_order_id == order.client_order_id()
+        ));
+        assert!(risk_messages.get_messages().is_empty());
     }
 
     #[rstest]

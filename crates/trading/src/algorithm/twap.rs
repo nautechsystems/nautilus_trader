@@ -515,7 +515,7 @@ mod tests {
         clock::{Clock, TestClock},
         component::Component,
         enums::ComponentTrigger,
-        messages::execution::{SubmitOrder, TradingCommand},
+        messages::execution::{ModifyOrder, SubmitOrder, TradingCommand},
         msgbus::{self, MessagingSwitchboard, TypedHandler},
     };
     use nautilus_core::{Params, UUID4, UnixNanos};
@@ -927,6 +927,47 @@ mod tests {
         assert_eq!(primary.quantity(), Quantity::from("0.6"));
         assert_eq!(spawned.quantity(), Quantity::from("0.6"));
         assert_eq!(spawned.exec_spawn_id(), Some(primary_id));
+    }
+
+    #[rstest]
+    fn test_twap_refused_modify_preserves_remaining_quantity_schedule() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+        add_instrument_to_cache(&algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+        algo.on_order(order).unwrap();
+
+        let command = ModifyOrder::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("STRAT-001"),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            primary_id,
+            None,
+            Some(Quantity::from("0.4")),
+            None,
+            None,
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        );
+
+        algo.handle_modify_order(command).unwrap();
+
+        let primary_quantity = algo.cache().order(&primary_id).unwrap().quantity();
+        let scheduled_quantity = algo.scheduled_sizes[&primary_id]
+            .iter()
+            .fold(Decimal::ZERO, |total, quantity| {
+                total + quantity.as_decimal()
+            });
+        assert_eq!(primary_quantity.as_decimal(), scheduled_quantity);
+        assert_eq!(primary_quantity, Quantity::from("0.8"));
     }
 
     #[rstest]
