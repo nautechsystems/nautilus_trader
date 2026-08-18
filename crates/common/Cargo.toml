@@ -22,6 +22,8 @@ crate-type = ["rlib"]
 
 [features]
 default = []
+build-info-event-store = []
+build-info-mimalloc = []
 extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",

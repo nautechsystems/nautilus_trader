@@ -95,7 +95,7 @@ high-precision = [
   "nautilus-tardis/high-precision",
 ]
 hypersync = ["defi", "nautilus-blockchain/hypersync"]
-mimalloc = ["dep:mimalloc"]
+mimalloc = ["dep:mimalloc", "nautilus-common/build-info-mimalloc"]
 postgres = ["nautilus-infrastructure/postgres"]
 redis = ["nautilus-infrastructure/redis"]
 tracing-bridge = ["nautilus-common/tracing-bridge"]

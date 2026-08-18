@@ -19,11 +19,18 @@ use std::{
     process::Command,
 };
 
-const VERSION_PACKAGES: [(&str, &str); 4] = [
+const DIRECT_VERSION_PACKAGES: [(&str, &str); 4] = [
     ("libc", "NAUTILUS_BUILD_LIBC_VERSION"),
     ("pyo3", "NAUTILUS_BUILD_PYO3_VERSION"),
     ("rust_decimal", "NAUTILUS_BUILD_RUST_DECIMAL_VERSION"),
     ("tokio", "NAUTILUS_BUILD_TOKIO_VERSION"),
+];
+
+const LOCK_VERSION_PACKAGES: [(&str, &str); 4] = [
+    ("aws-lc-rs", "NAUTILUS_BUILD_AWS_LC_RS_VERSION"),
+    ("mimalloc", "NAUTILUS_BUILD_MIMALLOC_VERSION"),
+    ("redb", "NAUTILUS_BUILD_REDB_VERSION"),
+    ("rustls", "NAUTILUS_BUILD_RUSTLS_VERSION"),
 ];
 
 fn main() {
@@ -58,9 +65,14 @@ fn main() {
     let current_package = env::var("CARGO_PKG_NAME").unwrap_or_default();
     let current_version = env::var("CARGO_PKG_VERSION").unwrap_or_default();
 
-    for (package, variable) in VERSION_PACKAGES {
+    for (package, variable) in DIRECT_VERSION_PACKAGES {
         let version = resolved_package_version(&lock, &current_package, &current_version, package)
             .unwrap_or_default();
+        println!("cargo:rustc-env={variable}={version}");
+    }
+
+    for (package, variable) in LOCK_VERSION_PACKAGES {
+        let version = resolved_unique_package_version(&lock, package).unwrap_or_default();
         println!("cargo:rustc-env={variable}={version}");
     }
 }
@@ -75,7 +87,11 @@ fn find_ancestor_file(name: &str) -> Option<PathBuf> {
 
 fn emit_unavailable_lock_metadata() {
     println!("cargo:rustc-env=NAUTILUS_BUILD_CARGO_LOCK_CRC32=");
-    for (_, variable) in VERSION_PACKAGES {
+
+    for (_, variable) in DIRECT_VERSION_PACKAGES
+        .into_iter()
+        .chain(LOCK_VERSION_PACKAGES)
+    {
         println!("cargo:rustc-env={variable}=");
     }
 }
@@ -206,6 +222,11 @@ fn resolved_package_version(
             .then(|| version.to_string());
     }
 
+    resolved_unique_package_version(lock, package)
+}
+
+fn resolved_unique_package_version(lock: &toml::Value, package: &str) -> Option<String> {
+    let packages = lock.get("package")?.as_array()?;
     let mut versions = packages.iter().filter_map(|entry| {
         (entry.get("name").and_then(toml::Value::as_str) == Some(package))
             .then(|| entry.get("version").and_then(toml::Value::as_str))
