@@ -223,7 +223,7 @@ rand = { version = "0.10.2", default-features = false, features = [
   "std",
   "thread_rng",
 ] }
-redb = { version = "4.1.0", default-features = false }
+redb = { version = "4.2.0", default-features = false }
 redis = { version = "1.6.0", default-features = false, features = [
   "connection-manager",
   "sentinel",
@@ -429,6 +429,7 @@ days = 3
 bollard = "0.21.1" # Docker API client patch; published crate is a version/metadata bump
 h2 = "0.4.16" # HTTP/2 small-DATA-frame budget and flow-control fixes
 quinn-proto = "0.11.17" # QUIC key-phase selection refactor; no algorithm change
+redb = "4.2.0" # Event-store backend; durability, repair, and write-path fixes
 redis = "1.6.0" # Streams XNACK, reconnect cap, sentinel role check
 uuid = "1.24.1" # Parse-diagnostics fix; delta reviewed via cargo vet diff
 

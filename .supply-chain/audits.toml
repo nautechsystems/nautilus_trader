@@ -1550,6 +1550,12 @@ criteria = "safe-to-run"
 delta = "0.14.8 -> 0.14.9"
 notes = "Refactors CA extension emission and encodes ExplicitNoCa as the DER-default empty BasicConstraints sequence, with parser-backed tests. No unsafe or ambient-capability change."
 
+[[audits.redb]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.1.0 -> 4.2.0"
+notes = "Reviewed the published 4.1.0 -> 4.2.0 crate. Adds table entry/owned-guard APIs, an experimental cursor feature this workspace does not enable, and a std/no_std split that keeps default-features=false on the std path. Repair, grow, and commit hardening stay in the existing file backend; grow now syncs the extended file before the header update. New unsafe is the no_std spinlock module, compiled only under experimental-api-5 without std, plus pre-existing SIMD and pread/pwrite with an EOF check. No new dependencies, build-script network or process, filesystem destinations, or credential behavior."
+
 [[audits.redis]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"

@@ -214,7 +214,14 @@ fn truncate_stored_entry(path: &std::path::Path, seq: u64) {
 
 fn zero_tail_truncate(path: &std::path::Path) {
     let original_len = fs::metadata(path).expect("metadata").len();
-    let retained_len = original_len / 2;
+    // redb 4.2 packs ascending-key tables in about half the previous space, so
+    // zeroing the second half leaves live pages intact. Keep two 4KiB pages
+    // (super-header plus slack) and zero the rest so the mutation hits data.
+    let retained_len = 8192;
+    assert!(
+        original_len > retained_len,
+        "zero-tail file too small: {original_len}"
+    );
     let zeroed_len = usize::try_from(original_len - retained_len).expect("tail length fits");
     let mut file = fs::OpenOptions::new()
         .read(true)
@@ -601,7 +608,9 @@ fn zero_tail_truncated_run_file_reports_corrupt() {
     write_sealed_run_of(&tmp, run_id, 128);
 
     let path = run_path(&tmp, run_id);
+    let original_len = fs::metadata(&path).expect("metadata").len();
     zero_tail_truncate(&path);
+    assert_eq!(fs::metadata(&path).expect("metadata").len(), original_len);
 
     let output = verify_bin(&path);
 
