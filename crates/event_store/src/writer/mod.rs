@@ -208,7 +208,9 @@ mod imp {
             let initial_hwm = backend.high_watermark()?;
             let high_watermark = Arc::new(AtomicU64::new(initial_hwm));
             let halted = Arc::new(AtomicBool::new(false));
-            let (tx, rx) = mpsc::sync_channel::<WriterMessage>(config.channel_capacity);
+            // Zero capacity is a rendezvous channel: a commit stall longer than
+            // the halt threshold would fail-stop instead of being absorbed.
+            let (tx, rx) = mpsc::sync_channel::<WriterMessage>(config.channel_capacity.max(1));
 
             let watermark_for_thread = Arc::clone(&high_watermark);
             let halt_for_thread = Arc::clone(&halt);
@@ -1306,6 +1308,65 @@ mod tests {
             "halt must fire exactly once across stall and backend failure",
         );
         assert_backpressure_stall(reasons.first(), halt_threshold);
+    }
+
+    #[rstest]
+    fn zero_channel_capacity_is_clamped_and_submit_buffers(
+        captured_halt: (HaltCallback, Arc<Mutex<Vec<HaltReason>>>),
+    ) {
+        let (halt, captured) = captured_halt;
+        let inner = Arc::new(Mutex::new(MemoryBackend::new()));
+        inner
+            .lock()
+            .expect("inner")
+            .open_run(manifest("run-zero-capacity"))
+            .expect("open");
+
+        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let appends_seen = Arc::new(AtomicUsize::new(0));
+        let backend = BlockingBackend::new(
+            Arc::clone(&inner),
+            Arc::clone(&gate),
+            Arc::clone(&appends_seen),
+        );
+
+        let config = WriterConfig {
+            channel_capacity: 0,
+            max_batch_entries: 1,
+            max_batch_latency: Duration::from_millis(1),
+            halt_threshold: Duration::from_millis(250),
+        };
+
+        let clock = get_atomic_clock_static();
+        let boxed = Box::new(backend);
+
+        let writer = EventStoreWriter::spawn(boxed, clock, halt, config).expect("spawn");
+
+        writer.submit(entry_draft(10)).expect("first submit fits");
+
+        let mut waited = Duration::ZERO;
+        while appends_seen.load(Ordering::SeqCst) == 0 && waited < Duration::from_secs(2) {
+            std::thread::sleep(Duration::from_millis(5));
+            waited += Duration::from_millis(5);
+        }
+        assert_eq!(
+            appends_seen.load(Ordering::SeqCst),
+            1,
+            "writer thread did not reach the gated append",
+        );
+
+        // Release the gate before asserting so a regression fails instead of
+        // hanging the writer join.
+        let second_submit = writer.submit(entry_draft(11));
+
+        let (lock, cvar) = &*gate;
+        *lock.lock().expect("gate") = true;
+        cvar.notify_all();
+
+        let final_hwm = writer.close(run_ended_draft()).expect("close");
+        second_submit.expect("second submit must be buffered by the clamped capacity");
+        assert_eq!(final_hwm, 3);
+        assert!(captured.lock().expect("captured").is_empty());
     }
 
     #[rstest]

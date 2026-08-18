@@ -145,6 +145,8 @@ Released on TBD (UTC).
 - Fixed cache resets retaining stale `OptionGreeks` values (#4701), thanks @folknor
 - Fixed `f32` exponential approximation outside its normal exponent range (#4709), thanks @folknor
 - Fixed orderless position cache indexes and replayed flips (#4688), thanks @pengpengyi92
+- Fixed event-store `verify` reporting a timeout when a large corrupt report filled the worker pipes
+- Fixed event-store writer treating a zero channel capacity as a rendezvous that fail-stopped the run
 - Fixed portfolio Greeks failing on closed positions (#4700), thanks @folknor
 - Fixed `AverageTrueRange` ignoring its configured `ma_type` and always using a simple moving average, which also affected the inner ATR for `KeltnerChannel`, `KeltnerPosition`, `Pressure`, and `VolatilityRatio`
 - Fixed Python `MessageBus` accepting empty or whitespace‑only subscription patterns
