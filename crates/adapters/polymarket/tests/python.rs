@@ -30,14 +30,16 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderType},
-    identifiers::{AccountId, ClientId, TraderId},
+    identifiers::{AccountId, ClientId, InstrumentId, TraderId},
     instruments::{Instrument, InstrumentAny},
     orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
     types::{Price, Quantity},
 };
 use nautilus_polymarket::{
     common::consts::POLYMARKET,
-    config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
+    config::{
+        PolymarketDataClientConfig, PolymarketExecClientConfig, PolymarketInstrumentProviderConfig,
+    },
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
     http::{
         models::GammaMarket,
@@ -193,6 +195,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
 fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     let trader_id = TraderId::from("TRADER-001");
     let account_id = AccountId::from("POLYMARKET-001");
+    let scoped = InstrumentId::from("0xabc-123.POLYMARKET");
     let factory = Py::new(py, PolymarketExecutionClientFactory)
         .expect("factory should convert to Python object")
         .into_any();
@@ -206,6 +209,10 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             api_secret: Some(SMOKE_API_SECRET.to_string()),
             passphrase: Some(SMOKE_PASSPHRASE.to_string()),
             heartbeat_enabled: true,
+            instrument_config: Some(PolymarketInstrumentProviderConfig {
+                load_ids: Some(vec![scoped]),
+                ..Default::default()
+            }),
             ..PolymarketExecClientConfig::default()
         },
     )
@@ -240,6 +247,10 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     assert_eq!(polymarket_config.trader_id, trader_id);
     assert_eq!(polymarket_config.account_id, account_id);
     assert!(polymarket_config.heartbeat_enabled);
+    assert_eq!(
+        polymarket_config.reconciliation_load_ids(),
+        Some([scoped].as_slice())
+    );
     assert_eq!(
         client.client_id(),
         ClientId::from("POLYMARKET-EXEC-EXTRACTED")

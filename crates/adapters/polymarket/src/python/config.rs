@@ -608,6 +608,37 @@ mod tests {
     }
 
     #[rstest]
+    fn direct_pyo3_exec_config_wires_instrument_config_load_ids() {
+        Python::initialize();
+        Python::attach(|py| {
+            let scoped = InstrumentId::from("0xabc-123.POLYMARKET");
+            let provider_kwargs = PyDict::new(py);
+            provider_kwargs.set_item("load_ids", vec![scoped]).unwrap();
+            let provider = py
+                .get_type::<PolymarketInstrumentProviderConfig>()
+                .call((), Some(&provider_kwargs))
+                .expect("construct provider config");
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("instrument_config", &provider).unwrap();
+            let obj = py
+                .get_type::<PolymarketExecClientConfig>()
+                .call((), Some(&kwargs))
+                .expect("construct execution config");
+            let exposed = obj
+                .getattr("instrument_config")
+                .expect("instrument_config getter")
+                .extract::<PolymarketInstrumentProviderConfig>()
+                .expect("extract provider config");
+            let config = obj
+                .extract::<PolymarketExecClientConfig>()
+                .expect("extract execution config");
+
+            assert_eq!(exposed.load_ids.as_deref(), Some([scoped].as_slice()));
+            assert_eq!(config.reconciliation_load_ids(), Some([scoped].as_slice()));
+        });
+    }
+
+    #[rstest]
     fn direct_pyo3_proxy_validation_error_redacts_credentials() {
         const SECRET: &str = "invalid-python-proxy-secret";
         Python::initialize();

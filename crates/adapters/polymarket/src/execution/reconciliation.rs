@@ -226,9 +226,12 @@ pub(crate) fn build_order_reports_from_orders(
                     instrument_id_from_market_token(order.market.as_str(), token_id.as_str());
 
                 if instrument_in_load_ids_scope(instrument_id, load_ids) {
-                    anyhow::bail!(
-                        "unmapped in-scope open order instrument {instrument_id} (token {token_id})"
-                    );
+                    anyhow::bail!(unmapped_in_scope_message(
+                        "open order",
+                        instrument_id,
+                        Some(&format!("token {token_id}")),
+                        load_ids,
+                    ));
                 }
                 log::debug!("Dropping out-of-scope unmapped open order instrument {instrument_id}");
                 filtered += 1;
@@ -340,10 +343,12 @@ pub(crate) fn retain_mapped_position_reports(
         }
 
         if instrument_in_load_ids_scope(report.instrument_id, load_ids) {
-            anyhow::bail!(
-                "unmapped in-scope position instrument {}",
-                report.instrument_id
-            );
+            anyhow::bail!(unmapped_in_scope_message(
+                "position",
+                report.instrument_id,
+                None,
+                load_ids,
+            ));
         }
         log::debug!(
             "Dropping out-of-scope unmapped position instrument {}",
@@ -514,6 +519,27 @@ fn instrument_in_load_ids_scope(
     match load_ids {
         Some(ids) if !ids.is_empty() => ids.contains(&instrument_id),
         _ => true,
+    }
+}
+
+fn unmapped_in_scope_message(
+    kind: &str,
+    instrument_id: InstrumentId,
+    detail: Option<&str>,
+    load_ids: Option<&[InstrumentId]>,
+) -> String {
+    let hint = match load_ids {
+        Some(ids) if ids.contains(&instrument_id) => {
+            "this instrument is in instrument_config.load_ids but was not loaded"
+        }
+        _ => "set instrument_config.load_ids to the instruments this node should reconcile",
+    };
+
+    match detail {
+        Some(detail) => {
+            format!("unmapped in-scope {kind} instrument {instrument_id} ({detail}); {hint}")
+        }
+        None => format!("unmapped in-scope {kind} instrument {instrument_id}; {hint}"),
     }
 }
 
@@ -750,7 +776,28 @@ mod tests {
         )
         .expect_err("in-scope open-order miss must fail");
 
-        assert!(error.to_string().contains("unmapped in-scope open order"));
+        let message = error.to_string();
+
+        assert!(message.contains("unmapped in-scope open order"));
+        assert!(message.contains("set instrument_config.load_ids"));
+    }
+
+    #[rstest]
+    fn named_load_ids_unmapped_open_order_names_failed_load() {
+        let instrument_id = InstrumentId::from("0xmarket-token.POLYMARKET");
+        let error = build_order_reports_from_orders(
+            &[unmapped_open_order()],
+            &AtomicMap::new(),
+            AccountId::from("POLY-001"),
+            None,
+            UnixNanos::from(1),
+            Some(std::slice::from_ref(&instrument_id)),
+        )
+        .expect_err("named in-scope open-order miss must fail");
+        let message = error.to_string();
+
+        assert!(message.contains("unmapped in-scope open order"));
+        assert!(message.contains("in instrument_config.load_ids but was not loaded"));
     }
 
     #[rstest]
@@ -788,6 +835,9 @@ mod tests {
         let error = retain_mapped_position_reports(reports, &AtomicMap::new(), None)
             .expect_err("in-scope position miss must fail");
 
-        assert!(error.to_string().contains("unmapped in-scope position"));
+        let message = error.to_string();
+
+        assert!(message.contains("unmapped in-scope position"));
+        assert!(message.contains("set instrument_config.load_ids"));
     }
 }
