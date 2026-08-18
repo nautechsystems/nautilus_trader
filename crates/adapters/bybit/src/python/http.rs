@@ -1167,6 +1167,11 @@ impl BybitHttpClient {
     ///
     /// Orders for instruments not currently loaded in cache will be skipped.
     ///
+    /// When `open_only` is true the realtime endpoint is queried for currently
+    /// open orders and again for recently closed orders, so terminal reports
+    /// are included. The closed pass fetches the most recent page only and is
+    /// not constrained by `start` or `end`.
+    ///
     /// # Errors
     ///
     /// Returns an error if:

@@ -160,6 +160,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
 - Fixed Binance Futures hedge‑mode `positionSide` for `close_position` exits (#4732), thanks @hashtagdenis
 - Fixed Bybit REST and WebSocket order `smpGroup` string decoding (#4655), thanks for reporting @a-green-hand-jack
+- Fixed Bybit `open_only` reports missing recently closed orders (#4765), thanks @NoiceHax
 - Fixed Databento MBO snapshots advancing the incremental sequence (#4686), thanks @faysou
 - Fixed Databento parent book-delta responses splitting by child instrument
 - Fixed Deribit losing its `set_heartbeat` contract after reconnecting, disabling venue `test_request` for the session
