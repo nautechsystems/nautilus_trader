@@ -1298,12 +1298,7 @@ fn create_test_execution_client_with_provider(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
-    create_test_execution_client_with_options(
-        base_url_http,
-        base_url_ws,
-        None,
-        instrument_provider,
-    )
+    create_test_execution_client_with_options(base_url_http, base_url_ws, None, instrument_provider)
 }
 
 fn create_test_execution_client_with_options(
@@ -3004,9 +2999,11 @@ async fn test_reconciliation_fails_when_execution_instrument_catalogue_cannot_re
         ))
         .await
         .unwrap_err();
-    assert!(order_error
-        .to_string()
-        .contains("open order has unresolved instrument"));
+    assert!(
+        order_error
+            .to_string()
+            .contains("open order has unresolved instrument")
+    );
 
     let position_error = client
         .generate_position_status_reports(&GeneratePositionStatusReports::new(
@@ -3020,9 +3017,11 @@ async fn test_reconciliation_fails_when_execution_instrument_catalogue_cannot_re
         ))
         .await
         .unwrap_err();
-    assert!(position_error
-        .to_string()
-        .contains("position has unresolved instrument"));
+    assert!(
+        position_error
+            .to_string()
+            .contains("position has unresolved instrument")
+    );
 
     let fills = client
         .generate_fill_reports(GenerateFillReports::new(

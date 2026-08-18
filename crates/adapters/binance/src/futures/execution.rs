@@ -941,11 +941,7 @@ impl BinanceFuturesExecutionClient {
         let size_precision = u8::try_from(instrument.quantity_precision())
             .context("invalid Binance Futures quantity precision")?;
 
-        Ok(Some((
-            instrument.id(),
-            price_precision,
-            size_precision,
-        )))
+        Ok(Some((instrument.id(), price_precision, size_precision)))
     }
 
     /// Returns the (price_precision, size_precision) for an instrument.
@@ -1908,10 +1904,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         reports.push(report);
                     }
                 } else {
-                    let instrument_id = format_instrument_id(
-                        &Ustr::from(order.symbol.as_str()),
-                        self.product_type,
-                    );
+                    let instrument_id = format_instrument_id(&order.symbol, self.product_type);
+
                     match self.resolve_cached_instrument(order.symbol.as_str())? {
                         Some((resolved_id, price_precision, size_precision)) => {
                             if let Ok(report) = order.to_order_status_report(
@@ -1954,10 +1948,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         reports.push(report);
                     }
                 } else {
-                    let instrument_id = format_instrument_id(
-                        &Ustr::from(algo_order.symbol.as_str()),
-                        self.product_type,
-                    );
+                    let instrument_id = format_instrument_id(&algo_order.symbol, self.product_type);
+
                     match self.resolve_cached_instrument(algo_order.symbol.as_str())? {
                         Some((resolved_id, price_precision, size_precision)) => {
                             if let Ok(report) = algo_order.to_order_status_report(
@@ -2005,8 +1997,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             let params = builder.build().map_err(|e| anyhow::anyhow!("{e}"))?;
 
             let orders = self.http_client.query_all_orders(&params).await?;
-            let Some((_, price_precision, size_precision)) = self
-                .resolve_cached_instrument(&format_binance_symbol(&instrument_id))?
+            let Some((_, price_precision, size_precision)) =
+                self.resolve_cached_instrument(&format_binance_symbol(&instrument_id))?
             else {
                 if self.is_out_of_scope(instrument_id) {
                     log::debug!(
@@ -2047,8 +2039,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         };
 
         let symbol = format_binance_symbol(&instrument_id);
-        let Some((_, price_precision, size_precision)) = self
-            .resolve_cached_instrument(&symbol)?
+        let Some((_, price_precision, size_precision)) = self.resolve_cached_instrument(&symbol)?
         else {
             if self.is_out_of_scope(instrument_id) {
                 log::debug!(
@@ -2225,10 +2216,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 continue;
             }
 
-            let instrument_id = format_instrument_id(
-                &Ustr::from(position.symbol.as_str()),
-                self.product_type,
-            );
+            let instrument_id = format_instrument_id(&position.symbol, self.product_type);
+
             match self.resolve_cached_instrument(position.symbol.as_str())? {
                 Some((resolved_id, _, size_precision)) => {
                     match self.create_position_report(&position, resolved_id, size_precision) {
@@ -3576,5 +3565,4 @@ mod tests {
         assert!(!is_instrument_for_product(&spot, BinanceProductType::UsdM));
         assert!(!is_instrument_for_product(&spot, BinanceProductType::CoinM));
     }
-
 }
