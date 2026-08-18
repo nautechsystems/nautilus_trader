@@ -10,24 +10,23 @@
 # %%
 import os
 import shutil
-from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
 
+from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
-from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
-from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.model import BarType
+from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.testkit.providers import CSVTickDataLoader
 from nautilus_trader.testkit.providers import TestInstrumentProvider
+from nautilus_trader.trading import EmaCrossConfig
 
 
 # %% [markdown]
@@ -97,9 +96,9 @@ ticks[:10]
 # %% [markdown]
 # ## Configure and run the backtest
 #
-# Set up venue, data, and strategy configs, then run through `BacktestNode`.
-# The strategies and actors you build here carry forward to live trading
-# with `LiveNode`.
+# Set up venue and data configs, build the node, then register the built-in
+# `EmaCross` strategy. The same node and strategy pattern carries forward to
+# live trading with `LiveNode`.
 
 # %%
 instrument = catalog.instruments()[0]
@@ -124,28 +123,25 @@ data_configs = [
     ),
 ]
 
-strategies = [
-    ImportableStrategyConfig(
-        strategy_path="nautilus_trader.examples.strategies.ema_cross:EMACross",
-        config_path="nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
-        config={
-            "instrument_id": instrument.id,
-            "bar_type": BarType.from_str(f"{instrument.id.value}-15-MINUTE-BID-INTERNAL"),
-            "fast_ema_period": 10,
-            "slow_ema_period": 20,
-            "trade_size": Decimal(1_000_000),
-        },
-    ),
-]
-
 config = BacktestRunConfig(
-    engine=BacktestEngineConfig(strategies=strategies),
+    engine=BacktestEngineConfig(),
     data=data_configs,
     venues=venue_configs,
 )
 
 # %%
 node = BacktestNode(configs=[config])
+node.build()
+node.add_builtin_strategy(
+    config.id,
+    "EmaCross",
+    EmaCrossConfig(
+        instrument_id=instrument.id,
+        trade_size=Quantity.from_int(1_000_000),
+        fast_period=10,
+        slow_period=20,
+    ),
+)
 
 [result] = node.run()
 

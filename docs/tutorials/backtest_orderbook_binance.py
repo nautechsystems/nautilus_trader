@@ -329,6 +329,6 @@ node.generate_account_report(config.id, venue=Venue("BINANCE"))
 #   rate.
 # - **Longer window**. Bump `nrows` to ten or twenty million to replay
 #   several hours and see the strategy stress against more diverse sessions.
-# - **Quote ticks instead of deltas**. Set `use_quote_ticks=True` in the
-#   strategy config and feed the engine a quote-tick dataset for an L1 view
-#   that costs less to source.
+# - **Quote ticks instead of deltas**. See the
+#   [Gold Perpetual Book Imbalance](gold_book_imbalance_ax.md) tutorial for a
+#   quote-driven imbalance strategy.

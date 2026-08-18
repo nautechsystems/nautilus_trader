@@ -57,9 +57,10 @@ A node can register multiple data and execution clients. Pass `client_id` from a
 when a specific client must handle a request, subscription, or order. Without an explicit client,
 the data and execution engines use the venue and default routes configured by the node.
 
-:::note
-Python v2 does not yet provide a custom‑adapter API that matches Python v1.
-See the [Python concept guide](python.md#support-boundaries) for the public package boundary.
+:::note[Custom adapter support]
+The public Python API does not define an interface for implementing an out‑of‑tree adapter
+entirely in Python. Use the Rust adapter traits. See the
+[Python concept guide](python.md#support-boundaries).
 :::
 
 ## Instrument providers
@@ -76,7 +77,7 @@ An `InstrumentProvider` serves two use cases:
 
 ### Research and backtesting
 
-This example loads one Binance USD‑M instrument through the public Python v2 API:
+This example loads one Binance USD‑M instrument through the public Python API:
 
 ```python
 import asyncio

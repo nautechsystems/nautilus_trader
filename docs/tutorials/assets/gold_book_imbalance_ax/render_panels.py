@@ -7,16 +7,17 @@ Usage:
     GC_DBN=test_data/local/Databento/gc_gold_quotes.dbn.zst \
         python3 docs/tutorials/assets/gold_book_imbalance_ax/render_panels.py
 
-Replays a Databento ``GC.v.0`` mbp-1 file through the shipped
-``OrderBookImbalance`` strategy with `use_quote_ticks=True`. Quote ticks are
-sampled once per second by an actor for the panels, then four PNGs are
-written using the ``nautilus_dark`` tearsheet theme.
+Replays a Databento ``GC.v.0`` mbp-1 file through the AX example
+``OrderBookImbalance`` strategy. Quote ticks are sampled once per second by an
+actor for the panels, then four PNGs are written using the ``nautilus_dark``
+tearsheet theme.
 
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from decimal import Decimal
 from pathlib import Path
 
@@ -35,8 +36,6 @@ from nautilus_trader.common import DataActor
 from nautilus_trader.common import LogLevel
 from nautilus_trader.config import DataActorConfig
 from nautilus_trader.config import LoggerConfig
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import AccountType
@@ -50,6 +49,10 @@ from nautilus_trader.model.instruments import PerpetualContract
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "examples" / "live" / "architect_ax"))
+from strategies import OrderBookImbalance
+from strategies import OrderBookImbalanceConfig
 
 
 OUT = Path(__file__).resolve().parent
@@ -179,19 +182,17 @@ def run_backtest():
         OrderBookImbalanceConfig(
             instrument_id=instrument_id,
             max_trade_size=Decimal(10),
-            trigger_min_size=MIN_TRIGGER_SIZE,
-            trigger_imbalance_ratio=TRIGGER_RATIO,
+            trigger_min_size=Decimal(str(MIN_TRIGGER_SIZE)),
+            trigger_imbalance_ratio=Decimal(str(TRIGGER_RATIO)),
             min_seconds_between_triggers=5.0,
-            book_type="L1_MBP",
-            use_quote_ticks=True,
         ),
     )
     engine.add_strategy(strategy)
     engine.run()
 
     samples = pd.DataFrame(sampler.samples)
-    fills = engine.trader.generate_fills_report()
-    positions = engine.trader.generate_positions_report()
+    fills = engine.generate_fills_report()
+    positions = engine.generate_positions_report()
     return samples, fills, positions
 
 

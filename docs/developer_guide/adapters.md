@@ -2,14 +2,15 @@
 
 ## Introduction
 
-Use this guide to build or extend a Rust‑native adapter for NautilusTrader v2. Adapters connect the
+Use this guide to build or extend a Rust‑native adapter for NautilusTrader. Adapters connect the
 platform to venues and data providers, preserve venue semantics, produce valid Nautilus domain
 events, and make uncertain outcomes explicit. They implement the platform data and execution
 client traits in Rust, then expose configs, factories, and selected low‑level APIs to Python
 through PyO3.
 
 :::note
-Python v2 will eventually provide a custom‑adapter API that matches Python v1.
+The public Python API does not define an interface for implementing an out‑of‑tree
+adapter entirely in Python. Implement custom adapters against the Rust client traits.
 :::
 
 Use reference adapters selectively. Their layouts reflect different venue protocols, product

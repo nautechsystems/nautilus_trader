@@ -28,9 +28,8 @@ Before running data tests:
 
 **Python node setup**:
 
-Legacy examples still use `nautilus_trader.live.node.TradingNode`, but current Rust‑backed
-PyO3 adapters use `nautilus_trader.live.LiveNode`. Use `LiveNode.builder(...)`
-when you need to register adapter client factories before the node is built.
+Use `nautilus_trader.live.LiveNode`. Call `LiveNode.builder(...)` when you need to
+register adapter client factories before the node is built.
 
 ```python
 from nautilus_trader.common import Environment

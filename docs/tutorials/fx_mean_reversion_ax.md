@@ -178,13 +178,20 @@ NautilusTrader RSI returns values in `[0.0, 1.0]`, not `[0, 100]`. The
 
 ## Backtest setup
 
+From the repository root:
+
 ```python
+import sys
+from pathlib import Path
+
 from nautilus_trader.common import LogLevel
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import LoggerConfig
-from nautilus_trader.examples.strategies.bb_mean_reversion import BBMeanReversion
-from nautilus_trader.examples.strategies.bb_mean_reversion import BBMeanReversionConfig
+
+sys.path.insert(0, str(Path("examples/live/architect_ax")))
+from strategies import BBMeanReversion
+from strategies import BBMeanReversionConfig
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
@@ -227,12 +234,12 @@ engine.add_strategy(strategy)
 engine.run()
 ```
 
-Reports come straight off `engine.trader`:
+Reports come off the engine:
 
 ```python
-print(engine.trader.generate_account_report(AX))
-print(engine.trader.generate_order_fills_report())
-print(engine.trader.generate_positions_report())
+print(engine.generate_account_report(AX))
+print(engine.generate_order_fills_report())
+print(engine.generate_positions_report())
 
 engine.reset()
 engine.dispose()
@@ -317,6 +324,6 @@ For connection setup and API key configuration, see the
 
 ## Further reading
 
-- [`BBMeanReversion` strategy source](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/examples/strategies/bb_mean_reversion.py)
+- [`BBMeanReversion` strategy source](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/architect_ax/strategies.py)
 - [Gold perpetual book imbalance tutorial](gold_book_imbalance_ax.md)
 - [Architect Exchange documentation](https://docs.architect.exchange/)

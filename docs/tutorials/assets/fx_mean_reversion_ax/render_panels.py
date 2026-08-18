@@ -15,6 +15,7 @@ then writes four PNG panels using the ``nautilus_dark`` tearsheet theme.
 from __future__ import annotations
 
 import os
+import sys
 from decimal import Decimal
 from pathlib import Path
 
@@ -30,8 +31,6 @@ from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import LoggerConfig
-from nautilus_trader.examples.strategies.bb_mean_reversion import BBMeanReversion
-from nautilus_trader.examples.strategies.bb_mean_reversion import BBMeanReversionConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
@@ -46,6 +45,10 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "examples" / "live" / "architect_ax"))
+from strategies import BBMeanReversion
+from strategies import BBMeanReversionConfig
 
 
 OUT = Path(__file__).resolve().parent
@@ -158,8 +161,8 @@ def run_backtest():
     engine.run()
 
     bars = engine.cache.bars(bar_type)
-    fills = engine.trader.generate_fills_report()
-    positions = engine.trader.generate_positions_report()
+    fills = engine.generate_fills_report()
+    positions = engine.generate_positions_report()
 
     bars_df = (
         pd.DataFrame(

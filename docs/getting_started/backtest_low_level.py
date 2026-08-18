@@ -286,7 +286,7 @@ engine.reset()
 # %% [markdown]
 # Remove and add individual components (actors, strategies, execution algorithms) as required.
 #
-# See the [Trader](../api_reference/trading.md) API reference for a description of all methods available to achieve this.
+# See the [BacktestEngine](../api_reference/backtest.md) API reference for the add and clear methods.
 #
 
 # %%

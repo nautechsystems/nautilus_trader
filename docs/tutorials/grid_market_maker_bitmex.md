@@ -223,10 +223,10 @@ engine.add_data(quotes + trades)
 ### Strategy configuration
 
 ```python
-from nautilus_trader.examples.strategies.grid_market_maker import GridMarketMaker
-from nautilus_trader.examples.strategies.grid_market_maker import GridMarketMakerConfig
+from nautilus_trader.trading import GridMarketMakerConfig
 
-strategy = GridMarketMaker(
+engine.add_builtin_strategy(
+    "GridMarketMaker",
     GridMarketMakerConfig(
         instrument_id=instrument_id,
         max_position=Quantity.from_int(300),
@@ -237,7 +237,6 @@ strategy = GridMarketMaker(
         requote_threshold_bps=10,
     ),
 )
-engine.add_strategy(strategy)
 ```
 
 ### Run and review results
@@ -248,9 +247,9 @@ import pandas as pd
 engine.run()
 
 with pd.option_context("display.max_rows", 100, "display.max_columns", None, "display.width", 300):
-    print(engine.trader.generate_account_report(BITMEX))
-    print(engine.trader.generate_order_fills_report())
-    print(engine.trader.generate_positions_report())
+    print(engine.generate_account_report(BITMEX))
+    print(engine.generate_order_fills_report())
+    print(engine.generate_positions_report())
 
 engine.reset()
 engine.dispose()

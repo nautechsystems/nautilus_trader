@@ -14,6 +14,7 @@ to the same directory using the ``nautilus_dark`` tearsheet theme.
 
 from __future__ import annotations
 
+import sys
 from decimal import Decimal
 from pathlib import Path
 
@@ -31,8 +32,6 @@ from nautilus_trader.backtest import InterestRateRecord
 from nautilus_trader.config import LoggerConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.execution import ProbabilisticFillModel
-from nautilus_trader.examples.strategies.ema_cross import EMACross
-from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model import BarType
 from nautilus_trader.model import Money
 from nautilus_trader.model import Venue
@@ -43,6 +42,10 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.testkit.providers import TestDataProvider
 from nautilus_trader.testkit.providers import TestInstrumentProvider
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from ema_cross import EMACross
+from ema_cross import EMACrossConfig
 
 
 OUT = Path(__file__).resolve().parent
@@ -137,7 +140,7 @@ def run_backtest():
     engine.run()
 
     bars = engine.cache.bars(bar_type)
-    fills = engine.trader.generate_fills_report()
+    fills = engine.generate_fills_report()
     bars_df = (
         pd.DataFrame(
             [

@@ -72,6 +72,8 @@
 # - [NautilusTrader](https://pypi.org/project/nautilus_trader/) installed
 #   (`pip install nautilus_trader`). The `visualization` extra is only needed
 #   if you also want to regenerate the panels at the end of the tutorial.
+# - The sibling [`ema_cross.py`](./ema_cross.py) file. Keep it next to this
+#   tutorial when downloading or converting it with Jupytext.
 
 # %%
 from decimal import Decimal
@@ -84,8 +86,6 @@ from nautilus_trader.backtest import InterestRateRecord
 from nautilus_trader.config import LoggerConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.execution import ProbabilisticFillModel
-from nautilus_trader.examples.strategies.ema_cross import EMACross
-from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model import BarType
 from nautilus_trader.model import Money
 from nautilus_trader.model import Venue
@@ -96,6 +96,9 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.testkit.providers import TestDataProvider
 from nautilus_trader.testkit.providers import TestInstrumentProvider
+
+from ema_cross import EMACross
+from ema_cross import EMACrossConfig
 
 
 # %% [markdown]
@@ -213,17 +216,17 @@ engine.run()
 # %% [markdown]
 # ## Reports
 #
-# `engine.trader.generate_*` returns DataFrames covering the account state, the
+# `engine.generate_*` returns DataFrames covering the account state, the
 # fills, and the closed positions.
 
 # %%
-engine.trader.generate_account_report(SIM)
+engine.generate_account_report(SIM)
 
 # %%
-engine.trader.generate_order_fills_report()
+engine.generate_order_fills_report()
 
 # %%
-engine.trader.generate_positions_report()
+engine.generate_positions_report()
 
 # %% [markdown]
 # ## What the run produces

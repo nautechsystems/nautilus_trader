@@ -2,8 +2,8 @@
 
 Nautilus has a complete Rust implementation under the `crates/` directory.
 You can write actors, strategies, run backtests, and trade live without Python.
-The domain model is shared across all paths, and the v2 PyO3 path runs
-Python strategies on the Rust engine directly.
+The domain model is shared with the Python package, which runs user components
+on the same Rust engine through PyO3.
 
 :::warning
 The Rust API is under active development. Method signatures and trait
@@ -12,80 +12,74 @@ requirements may change between releases.
 
 ## System implementations
 
-Nautilus has two paths. Understanding where each stands helps
-you choose the right one for your use case.
+Nautilus has two paths. Choose the one that matches how you want to author
+and deploy the system.
 
-- **v2 Rust**: Pure Rust under `crates/`. Runs without Python.
-- **v2 PyO3**: [Python user components](python.md) running on the Rust core through PyO3 bindings
-  under `python/nautilus_trader/`. Combines Python convenience with Rust engine performance.
-
-:::note
-The legacy v1 (Cython) implementation has been removed. This guide covers
-the v2 Rust and v2 PyO3 paths only.
-:::
+- **Rust**: Pure Rust under `crates/`. Runs without Python.
+- **Python**: [Python user components](python.md) running on the Rust core through PyO3
+  bindings under `python/nautilus_trader/`.
 
 ### Capability matrix
 
-| Component       | v2 Rust | v2 PyO3 (Python on Rust) |
-| --------------- | ------- | ------------------------ |
-| Strategy        | ✓       | ✓                        |
-| Actor           | ✓       | ✓                        |
-| DataEngine      | ✓       | ✓                        |
-| ExecutionEngine | ✓       | ✓                        |
-| RiskEngine      | ✓       | ✓                        |
-| BacktestEngine  | ✓       | ✓                        |
-| BacktestNode    | ✓       | ✓                        |
-| LiveNode        | ✓       | ✓                        |
-| OrderEmulator   | ✓       | ✓                        |
-| Matching engine | ✓       | ✓                        |
-| Portfolio       | ✓       | ✓                        |
-| Accounts        | ✓       | ✓                        |
-| Cache           | ✓       | ✓                        |
-| MessageBus      | ✓       | ✓                        |
-| Data catalog    | ✓       | ✓                        |
-| Indicators      | ✓       | ✓                        |
-| Exec algorithms | TWAP    | TWAP                     |
-| Controller      | -       | ✓                        |
-| Tearsheets      | -       | ✓                        |
+| Component       | Rust | Python |
+| --------------- | ---- | ------ |
+| Strategy        | ✓    | ✓      |
+| Actor           | ✓    | ✓      |
+| DataEngine      | ✓    | ✓      |
+| ExecutionEngine | ✓    | ✓      |
+| RiskEngine      | ✓    | ✓      |
+| BacktestEngine  | ✓    | ✓      |
+| BacktestNode    | ✓    | ✓      |
+| LiveNode        | ✓    | ✓      |
+| OrderEmulator   | ✓    | ✓      |
+| Matching engine | ✓    | ✓      |
+| Portfolio       | ✓    | ✓      |
+| Accounts        | ✓    | ✓      |
+| Cache           | ✓    | ✓      |
+| MessageBus      | ✓    | ✓      |
+| Data catalog    | ✓    | ✓      |
+| Indicators      | ✓    | ✓      |
+| Exec algorithms | TWAP | TWAP   |
+| Controller      | -    | ✓      |
+| Tearsheets      | -    | ✓      |
 
 :::note
 The Controller runtime is implemented in Rust and powers the Python `Controller`
-base class. The matrix marks it absent for v2 Rust because the supported
+base class. The matrix marks it absent for Rust because the supported
 registration path (importable controller configs) is Python-only.
 :::
 
 ### Adapters
 
-| Adapter             | v2 Rust | v2 PyO3 |
-| ------------------- | ------- | ------- |
-| Architect AX        | ✓       | ✓       |
-| Betfair             | ✓       | ✓       |
-| Binance             | ✓       | ✓       |
-| BitMEX              | ✓       | ✓       |
-| Blockchain          | ✓       | ✓       |
-| Bybit               | ✓       | ✓       |
-| Coinbase            | ✓       | ✓       |
-| Databento           | ✓       | ✓       |
-| Deribit             | ✓       | ✓       |
-| Derive              | ✓       | ✓       |
-| dYdX                | ✓       | ✓       |
-| Hyperliquid         | ✓       | ✓       |
-| Interactive Brokers | ✓       | ✓       |
-| Kraken              | ✓       | ✓       |
-| Lighter             | ✓       | ✓       |
-| OKX                 | ✓       | ✓       |
-| Polymarket          | ✓       | ✓       |
-| Sandbox             | ✓       | ✓       |
-| Tardis              | ✓       | ✓       |
+| Adapter             | Rust | Python |
+| ------------------- | ---- | ------ |
+| Architect AX        | ✓    | ✓      |
+| Betfair             | ✓    | ✓      |
+| Binance             | ✓    | ✓      |
+| BitMEX              | ✓    | ✓      |
+| Blockchain          | ✓    | ✓      |
+| Bybit               | ✓    | ✓      |
+| Coinbase            | ✓    | ✓      |
+| Databento           | ✓    | ✓      |
+| Deribit             | ✓    | ✓      |
+| Derive              | ✓    | ✓      |
+| dYdX                | ✓    | ✓      |
+| Hyperliquid         | ✓    | ✓      |
+| Interactive Brokers | ✓    | ✓      |
+| Kraken              | ✓    | ✓      |
+| Lighter             | ✓    | ✓      |
+| OKX                 | ✓    | ✓      |
+| Polymarket          | ✓    | ✓      |
+| Sandbox             | ✓    | ✓      |
+| Tardis              | ✓    | ✓      |
 
 ### Choosing a path
 
-- **v2 Rust** gives native performance without a Python runtime. All core
+- **Rust** gives native performance without a Python runtime. All core
   trading functionality is available. Use it for latency-sensitive
   deployments or teams that prefer a compiled language.
-- **v2 PyO3**: Python user-components (actors, strategies) run on the
-  Rust core engine with Rust performance for data processing and
-  execution, while keeping the Python authoring experience.
+- **Python** keeps the Python authoring experience. User components (actors,
+  strategies) run on the Rust core for data processing and execution.
 
 ## Project setup
 

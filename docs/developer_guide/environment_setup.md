@@ -6,7 +6,7 @@ Use an editor with current Rust and Python language support, such as PyCharm or 
 
 [prek](https://github.com/j178/prek) is used to automatically run various pre-commit checks, auto-formatters, and linting tools at commit.
 
-NautilusTrader uses increasingly more [Rust](https://www.rust-lang.org), so Rust should be installed on your system as well
+Source builds and the Rust crates require [Rust](https://www.rust-lang.org)
 ([installation guide](https://www.rust-lang.org/tools/install)).
 
 [Cap'n Proto](https://capnproto.org/) is required for serialization schema compilation. The required

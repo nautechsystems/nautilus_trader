@@ -39,8 +39,6 @@ from nautilus_trader.common import DataActor
 from nautilus_trader.common import LogLevel
 from nautilus_trader.config import DataActorConfig
 from nautilus_trader.config import LoggerConfig
-from nautilus_trader.examples.strategies.grid_market_maker import GridMarketMaker
-from nautilus_trader.examples.strategies.grid_market_maker import GridMarketMakerConfig
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import QuoteTick
@@ -55,6 +53,7 @@ from nautilus_trader.model.instruments import PerpetualContract
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.trading import GridMarketMakerConfig
 
 
 OUT = Path(__file__).resolve().parent
@@ -181,7 +180,8 @@ def run_backtest():
     sampler = QuoteSampler(QuoteSamplerConfig(instrument_id=instrument_id))
     engine.add_actor(sampler)
 
-    strategy = GridMarketMaker(
+    engine.add_builtin_strategy(
+        "GridMarketMaker",
         GridMarketMakerConfig(
             instrument_id=instrument_id,
             max_position=Quantity.from_int(300),
@@ -192,11 +192,10 @@ def run_backtest():
             requote_threshold_bps=REQUOTE_BPS,
         ),
     )
-    engine.add_strategy(strategy)
     engine.run()
 
     samples = pd.DataFrame(sampler.samples)
-    fills = engine.trader.generate_fills_report()
+    fills = engine.generate_fills_report()
     return samples, fills
 
 

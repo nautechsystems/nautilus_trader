@@ -141,7 +141,7 @@ saved baseline.
 
 ### Canonical backtest workloads
 
-The canonical v2 backtest cases use the first 10,000 rows of the checked‑in
+The canonical backtest cases use the first 10,000 rows of the checked‑in
 `test_data/btc-perp-20211231-20220201_1m.csv` file. A shared fixture drives replay‑only, scheduled
 market‑order, passive limit‑order, and bar‑EMA scenarios. The correctness test and both timed paths
 use the same fixture loader and exact result fingerprints.
