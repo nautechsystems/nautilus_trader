@@ -214,9 +214,16 @@ pub trait Strategy: DataActor {
     where
         Self: StrategyNative,
     {
-        submit_order_with_handoff_impl(self, &order, position_id, client_id, params)
-            .map(|_| ())
-            .map_err(SubmitOrderError::into_source)
+        submit_order_with_handoff_impl(
+            self,
+            &order,
+            position_id,
+            client_id,
+            params,
+            |strategy, order, reason| strategy.deny_order(order, reason),
+        )
+        .map(|_| ())
+        .map_err(SubmitOrderError::into_source)
     }
 
     /// Submits an order list.
@@ -2183,19 +2190,30 @@ where
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) -> Result<SubmitOrderHandoff, SubmitOrderError> {
-        submit_order_with_handoff_impl(self, &order, position_id, client_id, params)
+        submit_order_with_handoff_impl(
+            self,
+            &order,
+            position_id,
+            client_id,
+            params,
+            |strategy, order, reason| {
+                deny_order_impl(StrategyNative::strategy_core_mut(strategy), order, reason);
+            },
+        )
     }
 }
 
-fn submit_order_with_handoff_impl<S>(
+fn submit_order_with_handoff_impl<S, D>(
     strategy: &mut S,
     order: &OrderAny,
     position_id: Option<PositionId>,
     client_id: Option<ClientId>,
     params: Option<Params>,
+    deny_order: D,
 ) -> Result<SubmitOrderHandoff, SubmitOrderError>
 where
     S: Strategy + StrategyNative + ?Sized,
+    D: FnOnce(&mut S, &OrderAny, Ustr),
 {
     let core = StrategyNative::strategy_core_mut(strategy);
 
@@ -2218,11 +2236,7 @@ where
         core.is_exiting && !order.is_reduce_only() && !is_market_exit_order;
 
     if should_deny_for_market_exit {
-        deny_order_impl(
-            StrategyNative::strategy_core_mut(strategy),
-            order,
-            Ustr::from("MARKET_EXIT_IN_PROGRESS"),
-        );
+        deny_order(strategy, order, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
         return Ok(SubmitOrderHandoff::NotHandedOff);
     }
 
@@ -2478,6 +2492,12 @@ mod tests {
         core: StrategyCore,
     }
 
+    #[derive(Debug)]
+    struct LegacyDenialOverrideStrategy {
+        core: StrategyCore,
+        denial_called: bool,
+    }
+
     impl Component for CoreFreeStrategy {
         fn component_id(&self) -> ComponentId {
             ComponentId::new("CoreFreeStrategy")
@@ -2526,6 +2546,14 @@ mod tests {
 
         fn deny_order(&mut self, _order: &OrderAny, _reason: Ustr) {
             panic!("legacy deny override called")
+        }
+    });
+
+    impl DataActor for LegacyDenialOverrideStrategy {}
+
+    nautilus_strategy!(LegacyDenialOverrideStrategy, {
+        fn deny_order(&mut self, _order: &OrderAny, _reason: Ustr) {
+            self.denial_called = true;
         }
     });
 
@@ -3276,6 +3304,40 @@ mod tests {
         .unwrap();
 
         assert_eq!(handoff, SubmitOrderHandoff::NotHandedOff);
+    }
+
+    #[rstest]
+    fn test_submit_order_facades_classify_legacy_denial_override_explicitly() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("TEST-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        let mut strategy = LegacyDenialOverrideStrategy {
+            core: StrategyCore::new(config),
+            denial_called: false,
+        };
+        register_strategy_core(&mut strategy.core);
+        strategy.initialize().unwrap();
+        strategy.core.is_exiting = true;
+
+        let legacy_order = make_initialized_market_order("O-20250208-LEGACY-DENY-FACADE-001");
+        Strategy::submit_order(&mut strategy, legacy_order, None, None, None).unwrap();
+        assert!(strategy.denial_called);
+
+        strategy.denial_called = false;
+        let canonical_order = make_initialized_market_order("O-20250208-CANONICAL-DENY-001");
+        let handoff = StrategySubmitOrderExt::submit_order_with_handoff(
+            &mut strategy,
+            canonical_order,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(handoff, SubmitOrderHandoff::NotHandedOff);
+        assert!(!strategy.denial_called);
     }
 
     #[rstest]
