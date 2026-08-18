@@ -104,6 +104,9 @@ Released on TBD (UTC).
 
 - Fixed overflowing order fill raw sums becoming undefined quantities or panicking
 - Fixed `MarginAccount` total margin getters panicking on out-of-range raw sums
+- Fixed clocks accepting oversized timer intervals and unrepresentable first event times
+- Fixed live timers firing up to 1 ms before their nominal deadlines
+- Fixed `LiveClock::default()` missing time-event senders initialized after clock construction
 - Fixed Python `on_historical_data` to receive `CustomData` response batches as a single list
 - Fixed `Cache::get_xrate` for instrument symbols that do not use the `BASE/QUOTE` format
 - Fixed market order risk checks to use cached bars and deny orders without a usable price

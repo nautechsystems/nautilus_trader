@@ -45,6 +45,7 @@ pub struct LiveClock {
     timers: BTreeMap<Ustr, LiveTimer>,
     callbacks: CallbackRegistry,
     sender: Option<Arc<dyn TimeEventSender>>,
+    sender_deferred: bool,
 }
 
 impl LiveClock {
@@ -56,6 +57,7 @@ impl LiveClock {
             timers: BTreeMap::new(),
             callbacks: CallbackRegistry::new(),
             sender,
+            sender_deferred: false,
         }
     }
 
@@ -74,7 +76,9 @@ impl Default for LiveClock {
     ///
     /// Uses `try_get_time_event_sender()` to allow creation before channels are initialized.
     fn default() -> Self {
-        Self::new(try_get_time_event_sender())
+        let mut clock = Self::new(try_get_time_event_sender());
+        clock.sender_deferred = clock.sender.is_none();
+        clock
     }
 }
 
@@ -166,6 +170,7 @@ impl Clock for LiveClock {
         // Safe to calculate interval now that we've ensured alert_time_ns >= ts_now
         let interval_ns = create_valid_interval((alert_time_ns - ts_now).into());
         let fire_immediately = alert_time_ns == ts_now;
+        let sender = self.resolve_time_event_sender();
 
         let mut timer = LiveTimer::new(
             name,
@@ -174,7 +179,7 @@ impl Clock for LiveClock {
             Some(alert_time_ns),
             callback,
             fire_immediately,
-            self.sender.clone(),
+            sender,
         );
 
         timer.start();
@@ -224,6 +229,7 @@ impl Clock for LiveClock {
         };
 
         let interval_ns = create_valid_interval(interval_ns);
+        let sender = self.resolve_time_event_sender();
 
         let mut timer = LiveTimer::new(
             name,
@@ -232,7 +238,7 @@ impl Clock for LiveClock {
             stop_time_ns,
             callback,
             fire_immediately,
-            self.sender.clone(),
+            sender,
         );
         timer.start();
 
@@ -270,6 +276,16 @@ impl Clock for LiveClock {
     }
 }
 
+impl LiveClock {
+    fn resolve_time_event_sender(&mut self) -> Option<Arc<dyn TimeEventSender>> {
+        if self.sender.is_none() && self.sender_deferred {
+            self.sender = try_get_time_event_sender();
+        }
+
+        self.sender.clone()
+    }
+}
+
 #[cfg(test)]
 #[cfg(not(all(feature = "simulation", madsim)))]
 mod tests {
@@ -289,7 +305,7 @@ mod tests {
     use super::*;
     use crate::{
         clock::Clock,
-        runner::{TimeEventMessage, TimeEventSender},
+        runner::{TimeEventMessage, TimeEventSender, replace_time_event_sender},
         testing::wait_until,
         timer::{TimeEvent, TimeEventCallback},
     };
@@ -420,6 +436,38 @@ mod tests {
         );
 
         clock.cancel_timers();
+    }
+
+    #[rstest]
+    fn test_default_live_clock_resolves_sender_after_initialization() {
+        std::thread::spawn(|| {
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
+            let mut clock = LiveClock::default();
+            assert!(clock.sender.is_none());
+
+            replace_time_event_sender(sender);
+            let mut explicit_senderless = LiveClock::new(None);
+            assert!(explicit_senderless.resolve_time_event_sender().is_none());
+
+            let alert_time = clock.timestamp_ns();
+            clock
+                .set_time_alert_ns(
+                    "late-sender",
+                    alert_time,
+                    Some(TimeEventCallback::from(|_| {})),
+                    None,
+                )
+                .unwrap();
+            wait_for_events(&events, 1, Duration::from_secs(2));
+
+            assert!(clock.sender.is_some());
+            let events = events.lock().expect(MUTEX_POISONED);
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].0.name, Ustr::from("late-sender"));
+        })
+        .join()
+        .expect("live clock sender test thread should join");
     }
 
     #[rstest]

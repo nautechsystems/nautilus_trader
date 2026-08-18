@@ -17,9 +17,9 @@
 //!
 //! # Scheduling
 //!
-//! The runtime interval starts `TIMER_STARTUP_OVERHEAD` before the nominal schedule to offset
-//! task startup latency. Shorter delays saturate to immediate execution, while event timestamps
-//! retain their nominal schedule. Stop times are inclusive.
+//! Runtime deadlines use the remaining duration to the nominal schedule and are computed before
+//! the timer task is spawned. A deadline already in the past starts immediately. Event timestamps
+//! retain the nominal schedule, and stop times are inclusive.
 //!
 //! # Task lifecycle
 //!
@@ -67,7 +67,6 @@ use crate::{
     timer::{TimeEvent, TimeEventCallback, Timer},
 };
 
-const TIMER_STARTUP_OVERHEAD: Duration = Duration::from_millis(1);
 const TASK_ACTIVE: u8 = 0;
 const TASK_FIRING: u8 = 1;
 const TASK_RETIRED: u8 = 2;
@@ -112,10 +111,7 @@ fn normalize_start_time_ns(
 }
 
 fn timer_start_delay(next_time_ns: UnixNanos, now_ns: UnixNanos) -> Duration {
-    let delay = Duration::from_nanos(next_time_ns.saturating_sub(now_ns.as_u64()));
-
-    // Subtract the estimated startup overhead, saturating to zero for sub-overhead delays
-    delay.saturating_sub(TIMER_STARTUP_OVERHEAD)
+    Duration::from_nanos(next_time_ns.saturating_sub(now_ns.as_u64()))
 }
 
 /// A live timer for use with a `LiveClock`.
@@ -177,7 +173,9 @@ impl LiveTimer {
     ///
     /// # Panics
     ///
-    /// Panics if `name` is not a valid string.
+    /// Panics if:
+    /// - `name` is not a valid string.
+    /// - `fire_immediately` is false and `start_time_ns + interval_ns` overflows `UnixNanos`.
     #[must_use]
     pub fn new(
         name: Ustr,
@@ -193,7 +191,7 @@ impl LiveTimer {
         let next_time_ns = if fire_immediately {
             start_time_ns.as_u64()
         } else {
-            start_time_ns.as_u64() + interval_ns.get()
+            (start_time_ns + interval_ns.get()).as_u64()
         };
 
         log::trace!("Creating timer '{name}'");
@@ -335,11 +333,11 @@ impl LiveTimer {
         self.task_state = Some(task_state.clone());
 
         let sender = self.sender.clone();
+        let now_ns = clock.get_time_ns();
+        let start = Instant::now() + timer_start_delay(next_time_ns, now_ns);
 
         let task = async move {
             let clock = get_atomic_clock_realtime();
-
-            let start = Instant::now() + timer_start_delay(next_time_ns, now_ns);
 
             let mut timer = dst::time::interval_at(start, Duration::from_nanos(interval_ns));
 
@@ -745,24 +743,24 @@ mod tests {
     }
 
     #[rstest]
-    fn test_live_timer_start_delay_subtracts_startup_overhead() {
+    fn test_live_timer_start_delay_preserves_full_delay() {
         let next_time_ns = UnixNanos::from(12_000_000);
         let now = UnixNanos::from(10_000_000);
 
         assert_eq!(
             super::timer_start_delay(next_time_ns, now),
-            tokio::time::Duration::from_millis(1)
+            tokio::time::Duration::from_millis(2)
         );
     }
 
     #[rstest]
-    fn test_live_timer_start_delay_saturates_below_startup_overhead() {
+    fn test_live_timer_start_delay_preserves_sub_millisecond_delay() {
         let next_time_ns = UnixNanos::from(10_500_000);
         let now = UnixNanos::from(10_000_000);
 
         assert_eq!(
             super::timer_start_delay(next_time_ns, now),
-            tokio::time::Duration::from_nanos(0)
+            tokio::time::Duration::from_micros(500)
         );
     }
 
