@@ -42,6 +42,8 @@
 //! or as part of a Rust only build.
 //!
 //! - `examples`: Enables example strategies and the EMA crossover backtest example.
+//! - `mimalloc`: Uses [mimalloc](https://github.com/microsoft/mimalloc) as the global allocator for
+//!   bundled Rust examples.
 //! - `defi`: Enables DeFi replay APIs and data-engine routing.
 //! - `streaming`: Enables `persistence` dependency for streaming configuration.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).

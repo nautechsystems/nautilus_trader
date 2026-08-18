@@ -149,10 +149,19 @@ mimalloc = "0.1"
 
 ```rust
 use mimalloc::MiMalloc;
+use nautilus_common::logging::headers::register_allocator_mimalloc;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
+
+fn main() {
+    register_allocator_mimalloc();
+}
 ```
+
+Declaring `GLOBAL` selects mimalloc. Call `register_allocator_mimalloc` at the start of `main`,
+before constructing a Nautilus node, so the version header reports `allocator: mimalloc <version>`.
+Registration only updates the header metadata; it does not select the allocator.
 
 The default system allocator also works, but backtest throughput drops materially,
 especially on Windows, where allocator overhead can reach half of hot-loop run time.

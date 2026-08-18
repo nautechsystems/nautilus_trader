@@ -24,6 +24,7 @@ crate-type = ["rlib"]
 default = []
 examples = ["nautilus-trading/examples"]
 high-precision = ["nautilus-model/high-precision"]
+mimalloc = ["dep:mimalloc"]
 defi = ["nautilus-common/defi", "nautilus-data/defi", "nautilus-model/defi"]
 plugin = []
 streaming = ["nautilus-persistence", "nautilus-system/streaming"]
@@ -83,6 +84,7 @@ rust_decimal = { workspace = true }
 serde = { workspace = true }
 ustr = { workspace = true }
 
+mimalloc = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 serde_json = { workspace = true }

@@ -74,6 +74,9 @@ fn _shutdown_nautilus_runtime() {
 /// See <https://github.com/PyO3/pyo3/issues/2644>.
 #[pymodule] // The name of the function must match `lib.name` in `Cargo.toml`
 fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    #[cfg(feature = "mimalloc")]
+    nautilus_common::logging::headers::register_allocator_mimalloc();
+
     let sys = PyModule::import(py, "sys")?;
     let modules = sys.getattr("modules")?;
     let sys_modules: &Bound<'_, PyAny> = modules.cast()?;

@@ -5633,6 +5633,7 @@ dependencies = [
  "indexmap 2.14.0",
  "jiff",
  "log",
+ "mimalloc",
  "nautilus-analysis",
  "nautilus-common",
  "nautilus-core",

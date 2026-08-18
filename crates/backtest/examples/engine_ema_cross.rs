@@ -23,6 +23,9 @@
 //!
 //! Run with: `cargo run -p nautilus-backtest --features examples --example engine-ema-cross`
 
+#[cfg(feature = "mimalloc")]
+mod allocator;
+
 use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
@@ -94,6 +97,9 @@ fn generate_quotes(instrument_id: InstrumentId) -> Vec<Data> {
 }
 
 fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "mimalloc")]
+    allocator::register();
+
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default())?;
 
     engine.add_venue(

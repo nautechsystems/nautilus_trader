@@ -19,9 +19,13 @@ use std::{
     process::Command,
 };
 
-const DIRECT_VERSION_PACKAGES: [(&str, &str); 4] = [
+const DIRECT_VERSION_PACKAGES: [(&str, &str); 5] = [
     ("libc", "NAUTILUS_BUILD_LIBC_VERSION"),
     ("pyo3", "NAUTILUS_BUILD_PYO3_VERSION"),
+    (
+        "pyo3-async-runtimes",
+        "NAUTILUS_BUILD_PYO3_ASYNC_RUNTIMES_VERSION",
+    ),
     ("rust_decimal", "NAUTILUS_BUILD_RUST_DECIMAL_VERSION"),
     ("tokio", "NAUTILUS_BUILD_TOKIO_VERSION"),
 ];

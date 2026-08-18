@@ -13,31 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![warn(clippy::pedantic)]
-
-use std::process::ExitCode;
-
-use clap::FromArgMatches;
 use mimalloc::MiMalloc;
-use nautilus_cli::opt::NautilusCli;
-use nautilus_common::logging::{ensure_logging_initialized, headers::register_allocator_mimalloc};
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-#[tokio::main]
-async fn main() -> ExitCode {
-    register_allocator_mimalloc();
-    dotenvy::dotenv().ok();
-    ensure_logging_initialized();
-
-    let matches = nautilus_cli::cli_command().get_matches();
-    let cli = NautilusCli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
-
-    if let Err(e) = Box::pin(nautilus_cli::run(cli)).await {
-        log::error!("Error executing Nautilus CLI: {e}");
-        return ExitCode::FAILURE;
-    }
-
-    ExitCode::SUCCESS
+pub(crate) fn register() {
+    nautilus_common::logging::headers::register_allocator_mimalloc();
 }
