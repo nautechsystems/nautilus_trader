@@ -25,7 +25,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
     cache::fifo::FifoCache,
-    clients::ExecutionClient,
+    clients::{ExecutionClient, SocketReconnectRegistry},
     live::{runner::get_exec_event_sender, runtime::get_runtime, task::TaskHandles},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
@@ -166,6 +166,7 @@ use crate::{
             order_to_hyperliquid_request_with_asset_and_cloid,
             parse_combined_account_balances_and_margins, round_to_sig_figs,
         },
+        socket::{SocketStatePublisher, USER_STREAMS_ENDPOINT},
     },
     config::HyperliquidExecClientConfig,
     http::{
@@ -204,6 +205,7 @@ pub struct HyperliquidExecutionClient {
     ws_dispatch_state: Arc<WsDispatchState>,
     staged_brackets: Arc<Mutex<StagedBracketState>>,
     outcome_settlement_tracker: Arc<Mutex<OutcomeSettlementTracker>>,
+    socket_registry: SocketReconnectRegistry,
 }
 
 impl HyperliquidExecutionClient {
@@ -443,6 +445,11 @@ impl HyperliquidExecutionClient {
             config.transport_backend,
             config.proxy_url.clone(),
         );
+        let socket_registry = SocketReconnectRegistry::default();
+        if let Some(publisher) = SocketStatePublisher::new(core.client_id, socket_registry.clone())
+        {
+            ws_client = ws_client.with_socket_control(publisher.control(USER_STREAMS_ENDPOINT));
+        }
         ws_client.set_post_timeout(Duration::from_secs(config.ws_post_timeout_secs));
 
         let clock = get_atomic_clock_realtime();
@@ -467,6 +474,7 @@ impl HyperliquidExecutionClient {
             ws_dispatch_state: Arc::new(WsDispatchState::new()),
             staged_brackets: Arc::new(Mutex::new(StagedBracketState::default())),
             outcome_settlement_tracker: Arc::new(Mutex::new(OutcomeSettlementTracker::new())),
+            socket_registry,
         })
     }
 
@@ -700,6 +708,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
     fn venue(&self) -> Venue {
         *HYPERLIQUID_VENUE
+    }
+
+    fn socket_reconnect_registry(&self) -> Option<&SocketReconnectRegistry> {
+        Some(&self.socket_registry)
     }
 
     fn oms_type(&self) -> OmsType {
@@ -1626,7 +1638,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 .request_order_status_report(&account_address, oid)
                 .await
             {
-                Ok(Some(report)) => {
+                Ok(Some(mut report)) => {
                     if is_inflight_modify_old_leg_cancel(
                         &dispatch_state,
                         &client_order_id,
@@ -1636,6 +1648,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             "Suppressing stale old-leg Canceled for {client_order_id}: modify in flight"
                         );
                     } else {
+                        attach_known_client_order_id(&mut report, client_order_id);
                         log::debug!("Queried order status for oid {oid}");
                         emitter.send_order_status_report(report);
                     }
@@ -1803,7 +1816,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             },
         };
 
-        let report = self
+        let mut report = self
             .http_client
             .request_order_status_report(&account_address, oid)
             .await
@@ -1817,6 +1830,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 "Suppressing stale old-leg Canceled for {client_order_id}: modify in flight"
             );
             return Ok(None);
+        }
+
+        if let Some(report) = &mut report
+            && let Some(client_order_id) = cmd.client_order_id
+        {
+            attach_known_client_order_id(report, client_order_id);
         }
 
         if report.is_some() {
@@ -2202,9 +2221,9 @@ impl HyperliquidExecutionClient {
                                 }
                             }
                         }
-                        // Reconnected is handled by WS client internally
-                        // (resubscribe_all) and never forwarded here
-                        NautilusWsMessage::Reconnected => {}
+                        NautilusWsMessage::Reconnected => {
+                            log::info!("WebSocket reconnected");
+                        }
                         NautilusWsMessage::Error(e) => {
                             log::warn!("WebSocket error: {e}");
                         }
@@ -2254,6 +2273,12 @@ fn filter_order_status_reports_for_command(
         (Some(start), None) => reports.into_iter().filter(|r| r.ts_last >= start).collect(),
         (None, Some(end)) => reports.into_iter().filter(|r| r.ts_last <= end).collect(),
         (None, None) => reports,
+    }
+}
+
+fn attach_known_client_order_id(report: &mut OrderStatusReport, client_order_id: ClientOrderId) {
+    if report.client_order_id.is_none() {
+        report.client_order_id = Some(client_order_id);
     }
 }
 
@@ -3261,9 +3286,10 @@ mod tests {
     use super::{
         CancelEntry, ExecutionReport, FifoCache, HyperliquidHttpClient, HyperliquidWebSocketClient,
         PostRejectionRoute, StagedBracketChild, StagedBracketState, WsDispatchState,
-        build_ouo_resize_request, can_fast_cancel_order, determine_order_list_grouping,
-        filter_order_status_reports_for_command, handle_execution_report,
-        register_order_context_into, split_fast_cancel_requests, validate_order_for_hyperliquid,
+        attach_known_client_order_id, build_ouo_resize_request, can_fast_cancel_order,
+        determine_order_list_grouping, filter_order_status_reports_for_command,
+        handle_execution_report, register_order_context_into, split_fast_cancel_requests,
+        validate_order_for_hyperliquid,
     };
     use crate::{
         common::enums::HyperliquidEnvironment,
@@ -3339,6 +3365,37 @@ mod tests {
             is_reduce_only: false,
             is_quote_quantity: false,
         }
+    }
+
+    #[rstest]
+    fn oid_query_attaches_the_known_client_order_id() {
+        let mut report = make_status_report(None, "55030848197", OrderStatus::Accepted);
+        let client_order_id = ClientOrderId::new("O-ATTACH-001");
+
+        attach_known_client_order_id(&mut report, client_order_id);
+
+        assert_eq!(report.client_order_id, Some(client_order_id));
+        assert_eq!(report.venue_order_id, VenueOrderId::new("55030848197"));
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+    }
+
+    #[rstest]
+    fn oid_query_keeps_the_api_reported_client_order_id() {
+        let mut report = make_status_report(
+            Some("0x72a3c2f2de33c2c74640ad7f8d11ed74"),
+            "222222",
+            OrderStatus::Canceled,
+        );
+        let client_order_id = ClientOrderId::new("O-20240101-000002");
+
+        attach_known_client_order_id(&mut report, client_order_id);
+
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::new("0x72a3c2f2de33c2c74640ad7f8d11ed74"))
+        );
+        assert_eq!(report.venue_order_id, VenueOrderId::new("222222"));
+        assert_eq!(report.order_status, OrderStatus::Canceled);
     }
 
     fn make_status_report(

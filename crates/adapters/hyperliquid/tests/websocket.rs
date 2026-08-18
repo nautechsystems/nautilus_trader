@@ -901,10 +901,73 @@ async fn test_public_trade_replay_is_suppressed_after_reconnection() {
     )
     .await;
 
-    let replay = tokio::time::timeout(Duration::from_millis(250), client.next_event()).await;
+    let replay = tokio::time::timeout(Duration::from_secs(2), client.next_event())
+        .await
+        .expect("timeout waiting for reconnect notification");
     assert!(
-        replay.is_err(),
-        "replayed public trade must not reach the strategy-facing stream: {replay:?}"
+        matches!(replay, Some(NautilusWsMessage::Reconnected)),
+        "reconnect must forward Reconnected before later market data: {replay:?}"
+    );
+
+    let extra = tokio::time::timeout(Duration::from_millis(250), client.next_event()).await;
+    assert!(
+        extra.is_err(),
+        "replayed public trade must not reach the strategy-facing stream: {extra:?}"
+    );
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reconnect_forwards_reconnected_after_resubscribe() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
+        .await
+        .expect("subscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events()
+                    .await
+                    .iter()
+                    .any(|(topic, ok)| topic == "trades" && *ok)
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    tokio::time::timeout(Duration::from_secs(2), client.next_event())
+        .await
+        .expect("timeout waiting for the initial trade snapshot")
+        .expect("trade stream closed before the initial snapshot");
+
+    assert!(
+        client.request_reconnect(),
+        "an active connection must accept the reconnect request"
+    );
+
+    let event = tokio::time::timeout(Duration::from_secs(5), client.next_event())
+        .await
+        .expect("timeout waiting for Reconnected")
+        .expect("stream closed before Reconnected");
+    assert!(
+        matches!(event, NautilusWsMessage::Reconnected),
+        "expected Reconnected after resubscribe commands were queued, was {event:?}"
     );
 
     client.disconnect().await.expect("close failed");

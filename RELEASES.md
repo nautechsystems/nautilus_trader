@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Added Coinbase heartbeat counter gap warnings, resetting after reconnect
 - Added Deribit book summaries as requestable custom data (#4576), thanks @graceyangfan
 - Added Derive fixed-window matching rate limits
+- Added Hyperliquid socket-state reporting and `reconnect_socket` on data and execution WebSockets
 - Added Hyperliquid user TWAP history and slice fills as opt‑in custom data (#4674), thanks @graceyangfan
 - Added Interactive Brokers support for canonical 21‑character OPRA option IDs (#4774), thanks @xxxxxx-oss
 - Added Lighter inbound liveness timeout and socket-state reporting on data and execution WebSockets
@@ -99,6 +100,7 @@ Released on TBD (UTC).
 - Pinned the direct `alloy` crate dependency to v2.2.0 to limit its larger supply‑chain risk surface
 - Fixed Rust network and WebSocket adapter logs that could expose credentials and payload contents
 - Removed `OrderBookDeltas.from_pycapsule`, which reinterpreted unvalidated capsule pointers and could cause invalid memory access
+- Fixed Hyperliquid client configs leaking private keys in `Debug` output
 
 ### Fixes
 
@@ -181,6 +183,10 @@ Released on TBD (UTC).
 - Fixed Derive historical trade aggressor side and forward-price event times
 - Fixed Hyperliquid historical candle timestamps and unfinished candle filtering (#4727), thanks @HKOWL
 - Fixed Hyperliquid order and position reconciliation across standard and HIP‑3 dexes
+- Fixed Hyperliquid WebSocket reconnect events being swallowed after resubscription
+- Fixed Hyperliquid oid queries dropping the known client order ID
+- Fixed Hyperliquid REST user fills dropping venue `tid` and `builderFee`
+- Fixed Hyperliquid historical order and order‑status parsing for `FrontendMarket` and `LiquidationMarket` TIF
 - Fixed Interactive Brokers continuous futures historical bar requests (#4664), thanks @dfjmax
 - Fixed Interactive Brokers deactivated open‑order processing
 - Fixed Interactive Brokers delayed market data not emitting `QuoteTick` values (#4719), thanks @faysou
@@ -235,6 +241,7 @@ Released on TBD (UTC).
 - Standardized Polymarket submit and cancel HTTP failures with `CommandFailure`
 - Standardized Polymarket local order denials to coded `OrderDeniedReason` values
 - Optimized pre-commit and local validation by reusing build artifacts and skipping unchanged checks, thanks @faysou
+- Optimized Hyperliquid allMids projection to update on subscribe instead of every message
 - Optimized Polymarket interleaved price‑change dispatch and timestamp parsing
 - Updated concept and tutorial docs to describe current Rust and PyO3 behavior after the v1 removal
 - Upgraded Python and workflow tools: `uv` v0.12.5, `pypi-attestations` v0.0.30, and `zizmor` v1.29.0
@@ -268,6 +275,7 @@ Released on TBD (UTC).
 - Documented external Redis message fields and Python custom-data registration
 - Documented order book out‑of‑order update and stale snapshot reporting behavior
 - Documented Polymarket command‑failure classes and coded local denial reasons
+- Documented Hyperliquid reconnect event forwarding, dead‑peer timeout, and socket-state endpoints
 - Documented the transient startup position-check race in the Lighter integration guide
 - Fixed broken README links on PyPI (#4644, #4648), thanks for reporting @ZhongxuanWang; thanks @xxxjqm
 

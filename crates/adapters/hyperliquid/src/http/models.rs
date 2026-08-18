@@ -616,9 +616,21 @@ pub struct HyperliquidFill {
         deserialize_with = "deserialize_decimal_from_str"
     )]
     pub fee: Decimal,
+    /// Official venue trade identifier from `userFills`.
+    #[serde(default)]
+    pub tid: u64,
     /// Token the fee was paid in (e.g. "USDC", "HYPE").
     #[serde(rename = "feeToken")]
     pub fee_token: Ustr,
+    /// Optional builder fee reported by the venue.
+    #[serde(
+        rename = "builderFee",
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub builder_fee: Option<Decimal>,
 }
 
 /// Represents order status response from `POST /info` with `type: "orderStatus"`.
@@ -913,6 +925,89 @@ mod tests {
         assert_eq!(trade.sz, dec!(0.0123));
         assert_eq!(trade.time, 1769916000000);
         assert_eq!(trade.tid, 987654321);
+    }
+
+    #[rstest]
+    fn test_order_status_deserializes_frontend_market_tif() {
+        let status: HyperliquidOrderStatus =
+            crate::common::testing::load_test_data("http_order_status_frontend_market.json");
+        let entry = status.into_order().expect("order status entry");
+
+        assert_eq!(entry.order.oid, 1);
+        assert_eq!(
+            entry.order.tif,
+            Some(HyperliquidTimeInForce::FrontendMarket)
+        );
+        assert_eq!(entry.status, HyperliquidOrderStatusEnum::Filled);
+    }
+
+    #[rstest]
+    fn test_historical_order_deserializes_liquidation_market_tif() {
+        let entry: HyperliquidOrderStatusEntry =
+            crate::common::testing::load_test_data("http_historical_order_liquidation_market.json");
+
+        assert_eq!(entry.order.oid, 42);
+        assert_eq!(
+            entry.order.tif,
+            Some(HyperliquidTimeInForce::LiquidationMarket)
+        );
+        assert_eq!(entry.status, HyperliquidOrderStatusEnum::Filled);
+    }
+
+    #[rstest]
+    fn test_user_fill_deserializes_tid_and_builder_fee() {
+        let json = r#"{
+            "coin": "BTC",
+            "px": "60000.5",
+            "sz": "0.001",
+            "side": "B",
+            "time": 1704470400000,
+            "startPosition": "0",
+            "dir": "Open Long",
+            "closedPnl": "1.25",
+            "hash": "0xabc",
+            "oid": 7001,
+            "crossed": true,
+            "fee": "0.02",
+            "feeToken": "USDC",
+            "tid": 9001,
+            "builderFee": "0.001"
+        }"#;
+
+        let fill: HyperliquidFill = serde_json::from_str(json).unwrap();
+
+        assert_eq!(fill.coin.as_str(), "BTC");
+        assert_eq!(fill.oid, 7001);
+        assert_eq!(fill.tid, 9001);
+        assert_eq!(fill.builder_fee, Some(dec!(0.001)));
+        assert_eq!(fill.fee, dec!(0.02));
+    }
+
+    #[rstest]
+    fn test_user_fill_defaults_missing_tid_and_builder_fee() {
+        let json = r#"{
+            "coin": "ETH",
+            "px": "2500.25",
+            "sz": "0.5",
+            "side": "A",
+            "time": 1704470401000,
+            "startPosition": "1.0",
+            "dir": "Close Long",
+            "closedPnl": "2.5",
+            "hash": "0xdef",
+            "oid": 8002,
+            "crossed": false,
+            "fee": "0.01",
+            "feeToken": "USDC"
+        }"#;
+
+        let fill: HyperliquidFill = serde_json::from_str(json).unwrap();
+
+        assert_eq!(fill.oid, 8002);
+        assert_eq!(fill.tid, 0);
+        assert_eq!(fill.builder_fee, None);
+        assert_eq!(fill.fee, dec!(0.01));
+        assert!(!fill.crossed);
     }
 
     #[rstest]

@@ -1031,6 +1031,10 @@ def round_to_sig_figs(price: Decimal, sig_figs: int = 5) -> Decimal:
 | `FOK`         | -          | -    | *Not supported*.     |
 | `GTD`         | -          | -    | *Not supported*.     |
 
+Venue `orderStatus` and `historicalOrders` payloads can report `FrontendMarket`
+or `LiquidationMarket` instead of `IOC`. The adapter maps both to `IOC` and does
+not submit those labels.
+
 :::note
 When an IOC order cannot match any resting liquidity, Hyperliquid reports
 `iocCancelRejected` with `Order could not immediately match against any resting orders`.
@@ -1238,10 +1242,16 @@ Upstream references:
 
 The adapter automatically reconnects on WebSocket disconnection using exponential backoff
 (starting at 250ms, up to 5s). On reconnect, all active subscriptions are resubscribed
-automatically, and order book snapshots are rebuilt. No manual intervention is required.
+automatically, order book snapshots are rebuilt, and a `Reconnected` event is forwarded after
+those resubscription commands are queued. No manual intervention is required.
 
 A heartbeat ping is sent every 30 seconds to keep the connection alive (Hyperliquid closes
-idle connections after 60 seconds).
+idle connections after 60 seconds). The shared transport treats 90 seconds without any inbound
+frame as a dead peer and starts the same reconnect path.
+
+Live data and execution clients publish `SocketStateChanged` on `hyperliquid-data-streams` and
+`hyperliquid-user-streams`. Both endpoints register a reconnect handle, so `reconnect_socket` can
+target them without cycling the containing client.
 
 ### Stream health and recovery
 

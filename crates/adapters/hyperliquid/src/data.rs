@@ -27,7 +27,7 @@ use anyhow::Context;
 use jiff::Timestamp;
 use nautilus_common::{
     cache::InstrumentLookupError,
-    clients::DataClient,
+    clients::{DataClient, SocketReconnectRegistry},
     live::{runner::get_data_event_sender, runtime::get_runtime, task::TaskHandles},
     messages::{
         DataEvent,
@@ -67,6 +67,7 @@ use crate::{
         consts::HYPERLIQUID_VENUE,
         credential::{Secrets, credential_env_vars},
         parse::{bar_type_to_interval, millis_to_nanos},
+        socket::{DATA_STREAMS_ENDPOINT, SocketStatePublisher},
     },
     config::HyperliquidDataClientConfig,
     data_types::register_hyperliquid_custom_data,
@@ -94,6 +95,7 @@ pub struct HyperliquidDataClient {
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: Arc<AtomicMap<Ustr, InstrumentId>>,
     stream_health: Arc<Mutex<MarketDataStreamHealthMonitor>>,
+    socket_registry: SocketReconnectRegistry,
 }
 
 impl HyperliquidDataClient {
@@ -131,6 +133,7 @@ impl HyperliquidDataClient {
             http_client.set_base_info_url(url.clone());
         }
 
+        let socket_registry = SocketReconnectRegistry::default();
         let ws_url = config.base_url_ws.clone();
         let ws_client = HyperliquidWebSocketClient::new(
             ws_url,
@@ -139,6 +142,12 @@ impl HyperliquidDataClient {
             config.transport_backend,
             config.proxy_url.clone(),
         );
+        let ws_client = match SocketStatePublisher::new(client_id, socket_registry.clone()) {
+            Some(publisher) => {
+                ws_client.with_socket_control(publisher.control(DATA_STREAMS_ENDPOINT))
+            }
+            None => ws_client,
+        };
         let mut stream_health_monitor = MarketDataStreamHealthMonitor::new(
             Duration::from_secs(config.stale_stream_receive_timeout_secs),
             Duration::from_secs(config.stale_stream_warning_cooldown_secs),
@@ -175,6 +184,7 @@ impl HyperliquidDataClient {
             instruments: Arc::new(AtomicMap::new()),
             coin_to_instrument_id: Arc::new(AtomicMap::new()),
             stream_health,
+            socket_registry,
         })
     }
 
@@ -517,6 +527,10 @@ impl DataClient for HyperliquidDataClient {
 
     fn venue(&self) -> Option<Venue> {
         Some(self.venue())
+    }
+
+    fn socket_reconnect_registry(&self) -> Option<&SocketReconnectRegistry> {
+        Some(&self.socket_registry)
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
@@ -2333,6 +2347,26 @@ mod tests {
             );
 
         assert!(warnings.is_empty());
+    }
+
+    #[rstest]
+    fn data_client_exposes_empty_socket_reconnect_registry() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+        let client = HyperliquidDataClient::new(
+            *crate::common::consts::HYPERLIQUID_CLIENT_ID,
+            HyperliquidDataClientConfig::default(),
+        )
+        .unwrap();
+
+        let registry = client
+            .socket_reconnect_registry()
+            .expect("data client must expose a socket reconnect registry");
+        assert!(
+            registry
+                .get(Ustr::from(crate::common::socket::DATA_STREAMS_ENDPOINT))
+                .is_none()
+        );
     }
 
     #[rstest]

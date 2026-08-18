@@ -16,7 +16,7 @@
 //! WebSocket message handler for Hyperliquid.
 
 use std::{
-    collections::VecDeque,
+    collections::{BTreeSet, VecDeque},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -156,6 +156,62 @@ impl AssetContextCaches {
     }
 }
 
+#[derive(Debug)]
+struct AllMidsDataTypeCache {
+    dexes: BTreeSet<Option<String>>,
+    projected: Vec<DataType>,
+}
+
+impl Default for AllMidsDataTypeCache {
+    fn default() -> Self {
+        let mut cache = Self {
+            dexes: BTreeSet::new(),
+            projected: Vec::new(),
+        };
+        cache.rebuild();
+        cache
+    }
+}
+
+impl AllMidsDataTypeCache {
+    fn apply(&mut self, subscription: &SubscriptionRequest, subscribed: bool) {
+        let SubscriptionRequest::AllMids { dex } = subscription else {
+            return;
+        };
+        let changed = if subscribed {
+            self.dexes.insert(dex.clone())
+        } else {
+            self.dexes.remove(dex)
+        };
+
+        if changed {
+            self.rebuild();
+        }
+    }
+
+    fn as_slice(&self) -> &[DataType] {
+        &self.projected
+    }
+
+    fn rebuild(&mut self) {
+        self.projected.clear();
+        if self.dexes.is_empty() {
+            self.projected
+                .push(DataType::new("HyperliquidAllMids", None, None));
+            return;
+        }
+
+        self.projected.extend(self.dexes.iter().map(|dex| {
+            let metadata = dex.as_ref().map(|dex| {
+                let mut metadata = Params::new();
+                metadata.insert("dex".to_owned(), serde_json::Value::String(dex.clone()));
+                metadata
+            });
+            DataType::new("HyperliquidAllMids", metadata, None)
+        }));
+    }
+}
+
 pub(super) struct FeedHandler {
     clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
@@ -165,6 +221,7 @@ pub(super) struct FeedHandler {
     out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     account_id: Option<AccountId>,
     subscriptions: SubscriptionState,
+    all_mids_data_types: AllMidsDataTypeCache,
     post_router: Arc<PostRouter>,
     retry_manager: RetryManager<HyperliquidWsError>,
     message_buffer: VecDeque<NautilusWsMessage>,
@@ -206,6 +263,7 @@ impl FeedHandler {
             out_tx,
             account_id,
             subscriptions,
+            all_mids_data_types: AllMidsDataTypeCache::default(),
             post_router,
             retry_manager: create_websocket_retry_manager(),
             message_buffer: VecDeque::new(),
@@ -284,6 +342,7 @@ impl FeedHandler {
                             for subscription in subscriptions {
                                 let key = subscription_to_key(&subscription);
                                 self.subscriptions.mark_subscribe(&key);
+                                self.all_mids_data_types.apply(&subscription, true);
 
                                 let request = HyperliquidWsRequest::Subscribe { subscription };
                                 match serde_json::to_string(&request) {
@@ -305,6 +364,7 @@ impl FeedHandler {
                             for subscription in subscriptions {
                                 let key = subscription_to_key(&subscription);
                                 self.subscriptions.mark_unsubscribe(&key);
+                                self.all_mids_data_types.apply(&subscription, false);
 
                                 let request = HyperliquidWsRequest::Unsubscribe { subscription };
                                 match serde_json::to_string(&request) {
@@ -406,8 +466,6 @@ impl FeedHandler {
                                     }
 
                                     let ts_init = self.clock.get_time_ns();
-                                    let all_mids_data_types =
-                                        Self::all_mids_data_types(&self.subscriptions);
 
                                     let nautilus_msgs = Self::parse_to_nautilus_messages(
                                         msg,
@@ -424,7 +482,7 @@ impl FeedHandler {
                                         &mut self.asset_context_caches,
                                         &mut self.bar_cache,
                                         &self.all_dex_asset_ctxs_instrument_ids,
-                                        &all_mids_data_types,
+                                        self.all_mids_data_types.as_slice(),
                                     );
 
                                     if !nautilus_msgs.is_empty() {
@@ -1142,35 +1200,6 @@ impl FeedHandler {
         })
     }
 
-    fn all_mids_data_types(subscriptions: &SubscriptionState) -> Vec<DataType> {
-        let mut topics = subscriptions.all_topics();
-        topics.sort_unstable();
-        topics.dedup();
-
-        let all_mids_channel = HyperliquidWsChannel::AllMids.as_str();
-        let all_mids_prefix = format!("{all_mids_channel}:");
-        let mut data_types = Vec::new();
-
-        for topic in topics {
-            if topic == all_mids_channel {
-                data_types.push(DataType::new("HyperliquidAllMids", None, None));
-            } else if let Some(dex) = topic.strip_prefix(&all_mids_prefix) {
-                let mut metadata = Params::new();
-                metadata.insert(
-                    "dex".to_string(),
-                    serde_json::Value::String(dex.to_string()),
-                );
-                data_types.push(DataType::new("HyperliquidAllMids", Some(metadata), None));
-            }
-        }
-
-        if data_types.is_empty() {
-            data_types.push(DataType::new("HyperliquidAllMids", None, None));
-        }
-
-        data_types
-    }
-
     fn open_interest_data_type(instrument_id: InstrumentId) -> DataType {
         let mut metadata = Params::new();
         metadata.insert(
@@ -1409,7 +1438,7 @@ mod tests {
             },
             post::PostRouter,
         },
-        AssetContextCaches, FeedHandler, HandlerCommand,
+        AllMidsDataTypeCache, AssetContextCaches, FeedHandler, HandlerCommand,
     };
     use crate::{
         common::consts::HYPERLIQUID_VENUE,
@@ -1452,6 +1481,46 @@ mod tests {
         }
 
         fn flush(&self) {}
+    }
+
+    #[rstest]
+    fn all_mids_cache_projects_subscriptions_without_scanning_every_websocket_message() {
+        let mut cache = AllMidsDataTypeCache::default();
+
+        assert_eq!(cache.as_slice().len(), 1);
+        assert!(cache.as_slice()[0].metadata().is_none());
+
+        cache.apply(
+            &SubscriptionRequest::AllMids {
+                dex: Some("xyz".to_owned()),
+            },
+            true,
+        );
+        assert_eq!(cache.as_slice().len(), 1);
+        assert_eq!(
+            cache.as_slice()[0]
+                .metadata()
+                .and_then(|metadata| metadata.get_str("dex")),
+            Some("xyz"),
+        );
+
+        cache.apply(&SubscriptionRequest::AllMids { dex: None }, true);
+        assert_eq!(cache.as_slice().len(), 2);
+
+        cache.apply(
+            &SubscriptionRequest::AllMids {
+                dex: Some("xyz".to_owned()),
+            },
+            false,
+        );
+        assert_eq!(cache.as_slice().len(), 1);
+        assert_eq!(cache.as_slice()[0].type_name(), "HyperliquidAllMids");
+        assert!(cache.as_slice()[0].metadata().is_none());
+
+        cache.apply(&SubscriptionRequest::AllMids { dex: None }, false);
+        assert_eq!(cache.as_slice().len(), 1);
+        assert_eq!(cache.as_slice()[0].type_name(), "HyperliquidAllMids");
+        assert!(cache.as_slice()[0].metadata().is_none());
     }
 
     fn btc_perp() -> InstrumentAny {

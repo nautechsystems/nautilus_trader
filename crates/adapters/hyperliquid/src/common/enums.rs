@@ -180,6 +180,10 @@ pub enum HyperliquidTimeInForce {
     Ioc,
     /// Good Till Cancel - remain on book until filled or cancelled.
     Gtc,
+    /// UI market order reported on `orderStatus` and `historicalOrders`.
+    FrontendMarket,
+    /// Liquidation market order reported on historical order queries.
+    LiquidationMarket,
 }
 
 /// Represents the order type configuration.
@@ -1159,6 +1163,11 @@ mod tests {
             (HyperliquidTimeInForce::Alo, "\"Alo\""),
             (HyperliquidTimeInForce::Ioc, "\"Ioc\""),
             (HyperliquidTimeInForce::Gtc, "\"Gtc\""),
+            (HyperliquidTimeInForce::FrontendMarket, "\"FrontendMarket\""),
+            (
+                HyperliquidTimeInForce::LiquidationMarket,
+                "\"LiquidationMarket\"",
+            ),
         ];
 
         for (tif, expected_json) in test_cases {

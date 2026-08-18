@@ -40,6 +40,7 @@ use super::messages::{
 };
 use crate::{
     common::{
+        converters::hyperliquid_time_in_force_to_nautilus,
         enums::{HyperliquidFillDirection, HyperliquidTimeInForce},
         parse::{
             is_conditional_order_data, make_fill_trade_id, millis_to_nanos,
@@ -329,10 +330,10 @@ pub fn parse_ws_order_status_report(
         OrderType::Limit // Regular limit order
     };
 
-    let time_in_force = match order.order.tif {
-        Some(HyperliquidTimeInForce::Ioc) => TimeInForce::Ioc,
-        _ => TimeInForce::Gtc,
-    };
+    let time_in_force = order
+        .order
+        .tif
+        .map_or(TimeInForce::Gtc, hyperliquid_time_in_force_to_nautilus);
     let order_status = OrderStatus::from(order.status);
 
     // orig_sz is the original order quantity, sz is the remaining quantity

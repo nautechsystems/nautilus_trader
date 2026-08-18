@@ -2027,6 +2027,15 @@ async fn test_exec_client_creation() {
     assert_eq!(client.venue(), *HYPERLIQUID_VENUE);
     assert_eq!(client.oms_type(), OmsType::Netting);
     assert!(!client.is_connected());
+
+    let registry = client
+        .socket_reconnect_registry()
+        .expect("exec client must expose a socket reconnect registry");
+    assert!(
+        registry
+            .get(ustr::Ustr::from("hyperliquid-user-streams"))
+            .is_none()
+    );
 }
 
 #[rstest]

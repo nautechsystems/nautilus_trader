@@ -308,7 +308,7 @@ bus, and the event has no wire representation for external message‑bus streami
 ### Publication and routing
 
 Actors can observe transport availability for adapters that opt into socket state reporting.
-Binance Futures and Polymarket provide reference implementations. `LiveNode` publishes
+Binance Futures, Hyperliquid, Lighter, and Polymarket report live transport state. `LiveNode` publishes
 `SocketStateChanged` on `events.system.SocketStateChanged` with the trader ID, client ID, optional
 venue, stable endpoint label, state, fresh event ID, and event timestamps. It sets both timestamps
 from the kernel clock when it handles the transport's neutral state notification. Adapters send the
@@ -353,9 +353,11 @@ pool shards. It uses `polymarket-rtds-streams` for RTDS data and `polymarket-use
 execution events. Each Polymarket WebSocket has its own state sink and reconnect handle under the
 same label.
 
-Lighter uses `lighter-data-streams` for the data client and `lighter-user-streams` for the execution
-client. Both report transport state, and neither registers a reconnect handle, so
-`reconnect_socket` does not target a Lighter endpoint.
+Hyperliquid uses `hyperliquid-data-streams` for the data client and `hyperliquid-user-streams` for
+the execution client. Both report transport state and register reconnect handles, so
+`reconnect_socket` can target those endpoints. Lighter uses `lighter-data-streams` for the data
+client and `lighter-user-streams` for the execution client. Lighter reports transport state and does
+not register a reconnect handle, so `reconnect_socket` does not target a Lighter endpoint.
 
 ### Adapter and actor integration
 
