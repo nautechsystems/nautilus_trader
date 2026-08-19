@@ -277,7 +277,8 @@ fn bench_compute_commission(c: &mut Criterion) {
                 black_box(dec!(25)),
                 black_box(dec!(0.50)),
                 black_box(LiquiditySide::Taker),
-            );
+            )
+            .unwrap();
             black_box(commission);
         });
     });

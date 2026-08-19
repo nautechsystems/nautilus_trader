@@ -762,7 +762,10 @@ mod tests {
     // Mirrors the live Gamma funnel, which records closure state the historical loader must not
     // carry. See `parse_markets_with_transient`.
     fn past_end_open_instrument() -> BinaryOption {
-        let market = serde_json::from_value(past_end_open_market()).unwrap();
+        let mut value = past_end_open_market();
+        value["feesEnabled"] = serde_json::Value::Bool(false);
+        value.as_object_mut().unwrap().remove("feeSchedule");
+        let market = serde_json::from_value(value).unwrap();
         let definitions = crate::http::parse::parse_gamma_market(&market).unwrap();
         let instrument =
             crate::http::parse::create_instrument_from_def(&definitions[0], UnixNanos::default())

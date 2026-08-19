@@ -1043,7 +1043,9 @@ mod tests {
     }
 
     fn test_instrument() -> InstrumentAny {
-        let market: GammaMarket = load("gamma_market.json");
+        let mut market: GammaMarket = load("gamma_market.json");
+        market.fees_enabled = Some(false);
+        market.fee_schedule = None;
         let defs = parse_gamma_market(&market).unwrap();
         create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap()
     }
@@ -1640,15 +1642,21 @@ mod tests {
 
     #[rstest]
     fn test_fill_report_batch_fails_instead_of_returning_valid_prefix() {
-        let mut instrument = test_instrument();
-        let InstrumentAny::BinaryOption(binary_option) = &mut instrument else {
-            panic!("expected binary option test instrument");
-        };
-        binary_option.taker_fee =
-            Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0);
+        let mut market: GammaMarket = load("gamma_market.json");
+        market.fees_enabled = Some(true);
+        market.fee_schedule = Some(crate::http::models::FeeSchedule {
+            exponent: Decimal::ONE,
+            rate: Decimal::new(3, 2),
+            taker_only: true,
+            rebate_rate: Decimal::new(25, 2),
+        });
+        let definition = parse_gamma_market(&market).unwrap().remove(0);
+        let instrument =
+            create_instrument_from_def(&definition, UnixNanos::from(1_000_000_000u64)).unwrap();
 
         let mut taker: crate::http::models::PolymarketTradeReport = load("http_trade_report.json");
         taker.id = "trade-unrepresentable-taker".to_string();
+        taker.size = Decimal::MAX;
         let mut maker = taker.clone();
         maker.id = "trade-valid-maker".to_string();
         maker.trader_side = PolymarketLiquiditySide::Maker;

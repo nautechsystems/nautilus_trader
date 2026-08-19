@@ -452,8 +452,13 @@ async fn build_loader(
         return Err(to_pyvalue_err("Gamma market has an empty condition ID"));
     }
 
-    if market.fee_schedule.is_none() {
-        market.fee_schedule = gamma
+    let fee_metadata_complete = matches!(
+        (market.fees_enabled, market.fee_schedule.as_ref()),
+        (Some(false), None) | (Some(true), Some(_))
+    );
+
+    if !fee_metadata_complete
+        && let Some(candidate) = gamma
             .request_markets_by_params(GetGammaMarketsParams {
                 condition_ids: Some(vec![market.condition_id.clone()]),
                 max_markets: Some(1),
@@ -463,7 +468,9 @@ async fn build_loader(
             .map_err(to_pyruntime_err)?
             .into_iter()
             .find(|candidate| candidate.condition_id == market.condition_id)
-            .and_then(|candidate| candidate.fee_schedule);
+    {
+        market.fees_enabled = candidate.fees_enabled;
+        market.fee_schedule = candidate.fee_schedule;
     }
 
     let details = clob
@@ -613,6 +620,9 @@ fn trades_to_py(py: Python<'_>, trades: Vec<TradeTick>) -> PyResult<Py<PyAny>> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use axum::{Json, Router, extract::State, routing::get};
     use pyo3::exceptions::PyValueError;
     use rstest::rstest;
     use serde_json::json;
@@ -640,6 +650,7 @@ mod tests {
             "orderPriceMinTickSize": 0.01,
             "slug": "test-market",
             "negRisk": false,
+            "feesEnabled": true,
             "feeSchedule": {
                 "exponent": 2.0,
                 "rate": 0.02,
@@ -666,6 +677,79 @@ mod tests {
     fn data_api() -> PolymarketDataApiHttpClient {
         PolymarketDataApiHttpClient::new(Some("http://127.0.0.1:1".to_string()), 1)
             .expect("valid test client")
+    }
+
+    #[derive(Clone)]
+    struct FeeMetadataServerState {
+        market: GammaMarket,
+        details: ClobMarketResponse,
+    }
+
+    async fn serve_gamma_fee_metadata(
+        State(state): State<Arc<FeeMetadataServerState>>,
+    ) -> Json<serde_json::Value> {
+        Json(json!({
+            "markets": [state.market.clone()],
+            "next_cursor": null,
+        }))
+    }
+
+    async fn serve_clob_market(
+        State(state): State<Arc<FeeMetadataServerState>>,
+    ) -> Json<ClobMarketResponse> {
+        Json(state.details.clone())
+    }
+
+    async fn start_fee_metadata_server(market: GammaMarket, details: ClobMarketResponse) -> String {
+        let state = Arc::new(FeeMetadataServerState { market, details });
+        let app = Router::new()
+            .route("/markets/keyset", get(serve_gamma_fee_metadata))
+            .route("/markets/{condition_id}", get(serve_clob_market))
+            .with_state(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        format!("http://{address}")
+    }
+
+    #[tokio::test]
+    async fn build_loader_hydrates_fee_metadata_atomically() {
+        let mut initial = gamma_market();
+        initial.fees_enabled = None;
+        initial.fee_schedule = None;
+        let candidate = gamma_market();
+        let base_url = start_fee_metadata_server(candidate, clob_market()).await;
+        let gamma = gamma_client(Some(base_url.clone()), 1).unwrap();
+        let clob = clob_client(Some(base_url), 1).unwrap();
+
+        let loader = build_loader(initial, 0, &gamma, &clob, data_api())
+            .await
+            .unwrap();
+        let info = loader.instrument.info.as_ref().unwrap();
+
+        assert_eq!(loader.instrument.taker_fee.to_string(), "0.02");
+        assert_eq!(info.get_bool("fees_enabled"), Some(true));
+        assert!(info.get("fee_schedule").is_some());
+    }
+
+    #[tokio::test]
+    async fn build_loader_rejects_contradictory_hydrated_fee_metadata() {
+        Python::initialize();
+        let mut initial = gamma_market();
+        initial.fees_enabled = None;
+        initial.fee_schedule = None;
+        let mut candidate = gamma_market();
+        candidate.fees_enabled = Some(true);
+        candidate.fee_schedule = None;
+        let base_url = start_fee_metadata_server(candidate, clob_market()).await;
+        let gamma = gamma_client(Some(base_url.clone()), 1).unwrap();
+        let clob = clob_client(Some(base_url), 1).unwrap();
+
+        let error = build_loader(initial, 0, &gamma, &clob, data_api())
+            .await
+            .expect_err("contradictory fee metadata should be rejected");
+
+        Python::attach(|py| assert!(error.is_instance_of::<PyValueError>(py)));
     }
 
     #[rstest]

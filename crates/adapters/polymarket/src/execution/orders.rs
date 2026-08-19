@@ -32,7 +32,8 @@ use super::{
     PolymarketExecutionClient,
     cancellations::execute_deferred_cancel,
     order_builder::PolymarketOrderBuilder,
-    parse::{compute_commission, instrument_fee_exponent, instrument_taker_fee},
+    parse::compute_commission,
+    report_validation::instrument_fee_policy,
     reports::fetch_collateral_balance_pusd,
     responses::{
         check_fok_status, emit_market_order_submitted, fok_check_order_id,
@@ -224,15 +225,22 @@ impl PolymarketExecutionClient {
         let is_quote_qty = order.is_quote_quantity();
 
         let needs_fee_adjustment = side == OrderSide::Buy && is_quote_qty;
-        let fee_rate = if needs_fee_adjustment {
-            instrument_taker_fee(&instrument)
+        let (fee_rate, fee_exponent) = if needs_fee_adjustment {
+            match instrument_fee_policy(&instrument) {
+                Ok(policy) => policy,
+                Err(e) => {
+                    self.emitter.emit_order_denied(
+                        &order,
+                        &OrderDeniedReason::ValidationFailed {
+                            detail: e.to_string(),
+                        }
+                        .to_string(),
+                    );
+                    return;
+                }
+            }
         } else {
-            Decimal::ZERO
-        };
-        let fee_exponent = if needs_fee_adjustment {
-            instrument_fee_exponent(&instrument)
-        } else {
-            1.0
+            (Decimal::ZERO, 1.0)
         };
 
         let submitter = self.submitter.clone();
@@ -797,8 +805,7 @@ pub(super) fn calculate_commission(
     last_px: Price,
     liquidity_side: LiquiditySide,
 ) -> anyhow::Result<Money> {
-    let fee_rate = instrument_taker_fee(instrument);
-    let fee_exponent = instrument_fee_exponent(instrument);
+    let (fee_rate, fee_exponent) = instrument_fee_policy(instrument)?;
 
     let commission = compute_commission(
         fee_rate,
@@ -806,7 +813,7 @@ pub(super) fn calculate_commission(
         last_qty.as_decimal(),
         last_px.as_decimal(),
         liquidity_side,
-    );
+    )?;
 
     Money::from_decimal(commission, instrument.quote_currency()).with_context(|| {
         format!(
@@ -818,14 +825,27 @@ pub(super) fn calculate_commission(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::instruments::stubs::binary_option;
+    use nautilus_core::UnixNanos;
     use rstest::rstest;
 
     use super::*;
+    use crate::http::{
+        models::GammaMarket,
+        parse::{create_instrument_from_def, parse_gamma_market},
+    };
+
+    fn fee_enabled_instrument() -> InstrumentAny {
+        let market: GammaMarket = serde_json::from_str(include_str!(
+            "../../test_data/gamma_market_sports_market_money_line.json"
+        ))
+        .unwrap();
+        let definition = parse_gamma_market(&market).unwrap().remove(0);
+        create_instrument_from_def(&definition, UnixNanos::default()).unwrap()
+    }
 
     #[rstest]
     fn test_calculate_commission_returns_exact_money() {
-        let instrument = InstrumentAny::BinaryOption(binary_option());
+        let instrument = fee_enabled_instrument();
 
         let commission = calculate_commission(
             &instrument,
@@ -838,19 +858,14 @@ mod tests {
         assert_eq!(commission.currency, instrument.quote_currency());
         assert_eq!(
             commission.as_decimal(),
-            compute_commission(
-                instrument_taker_fee(&instrument),
-                instrument_fee_exponent(&instrument),
-                dec!(100),
-                dec!(0.50),
-                LiquiditySide::Taker,
-            )
+            compute_commission(dec!(0.03), 1.0, dec!(100), dec!(0.50), LiquiditySide::Taker,)
+                .unwrap()
         );
     }
 
     #[rstest]
     fn test_calculate_commission_is_zero_for_maker_liquidity() {
-        let instrument = InstrumentAny::BinaryOption(binary_option());
+        let instrument = fee_enabled_instrument();
 
         let commission = calculate_commission(
             &instrument,

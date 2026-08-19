@@ -15,7 +15,7 @@
 
 //! Exact value validation for Polymarket execution reports.
 
-use anyhow::{Context, bail, ensure};
+use anyhow::Context;
 use nautilus_core::{
     UnixNanos,
     datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
@@ -26,6 +26,8 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
+
+use crate::http::models::FeeSchedule;
 
 const VENUE_ORDER_ID_MAX_LEN: usize = 66;
 
@@ -39,14 +41,14 @@ pub(crate) fn positive_quantity(
     precision: u8,
     field: &str,
 ) -> anyhow::Result<Quantity> {
-    ensure!(
+    anyhow::ensure!(
         value > Decimal::ZERO,
         "{field} must be positive, was {value}"
     );
 
     let quantity = Quantity::from_decimal_dp(value, precision)
         .with_context(|| format!("{field} {value} is not representable as Quantity"))?;
-    ensure!(
+    anyhow::ensure!(
         quantity.as_decimal() == value,
         "{field} {value} is not exact at precision {precision}"
     );
@@ -59,14 +61,14 @@ pub(crate) fn non_negative_quantity(
     precision: u8,
     field: &str,
 ) -> anyhow::Result<Quantity> {
-    ensure!(
+    anyhow::ensure!(
         value >= Decimal::ZERO,
         "{field} must be non-negative, was {value}"
     );
 
     let quantity = Quantity::from_decimal_dp(value, precision)
         .with_context(|| format!("{field} {value} is not representable as Quantity"))?;
-    ensure!(
+    anyhow::ensure!(
         quantity.as_decimal() == value,
         "{field} {value} is not exact at precision {precision}"
     );
@@ -79,7 +81,7 @@ pub(crate) fn non_negative_quantity(
 /// Historical reports can retain a price from an earlier tick regime, so current instrument tick
 /// precision is not an authority boundary for provider evidence.
 pub(crate) fn exact_binary_price(value: Decimal, field: &str) -> anyhow::Result<Price> {
-    ensure!(
+    anyhow::ensure!(
         value > Decimal::ZERO && value < Decimal::ONE,
         "{field} must satisfy 0 < price < 1, was {value}"
     );
@@ -87,13 +89,13 @@ pub(crate) fn exact_binary_price(value: Decimal, field: &str) -> anyhow::Result<
     let normalized = value.normalize();
     let price = Price::from_decimal(normalized)
         .with_context(|| format!("{field} {value} is not representable as Price"))?;
-    ensure!(price.as_decimal() == value, "{field} {value} is not exact");
+    anyhow::ensure!(price.as_decimal() == value, "{field} {value} is not exact");
 
     Ok(price)
 }
 
 pub(crate) fn venue_order_id(value: &str, field: &str) -> anyhow::Result<VenueOrderId> {
-    ensure!(
+    anyhow::ensure!(
         value.len() <= VENUE_ORDER_ID_MAX_LEN,
         "{field} length {} exceeds Polymarket order hash capacity {VENUE_ORDER_ID_MAX_LEN}",
         value.len()
@@ -108,7 +110,7 @@ pub(crate) fn trade_id(value: &str, field: &str) -> anyhow::Result<TradeId> {
 }
 
 pub(crate) fn positive_unix_seconds(value: u64, field: &str) -> anyhow::Result<UnixNanos> {
-    ensure!(value > 0, "{field} must be positive, was {value}");
+    anyhow::ensure!(value > 0, "{field} must be positive, was {value}");
     value
         .checked_mul(NANOSECONDS_IN_SECOND)
         .map(UnixNanos::from)
@@ -128,12 +130,12 @@ pub(crate) fn parse_match_time(value: &str, field: &str) -> anyhow::Result<UnixN
         .with_context(|| format!("{field} {value:?} is not a valid timestamp"))?;
     let nanos = u64::try_from(timestamp.as_nanosecond())
         .with_context(|| format!("{field} {value:?} is before the Unix epoch"))?;
-    ensure!(nanos > 0, "{field} must be positive");
+    anyhow::ensure!(nanos > 0, "{field} must be positive");
     Ok(UnixNanos::from(nanos))
 }
 
 pub(crate) fn parse_user_channel_timestamp(value: &str, field: &str) -> anyhow::Result<UnixNanos> {
-    ensure!(
+    anyhow::ensure!(
         value.bytes().all(|byte| byte.is_ascii_digit()),
         "{field} {value:?} must contain only ASCII digits"
     );
@@ -143,12 +145,12 @@ pub(crate) fn parse_user_channel_timestamp(value: &str, field: &str) -> anyhow::
     let multiplier = match value.len() {
         10 => NANOSECONDS_IN_SECOND,
         13 => NANOSECONDS_IN_MILLISECOND,
-        length => bail!("{field} {value:?} has unsupported digit length {length}"),
+        length => anyhow::bail!("{field} {value:?} has unsupported digit length {length}"),
     };
     let nanos = raw
         .checked_mul(multiplier)
         .with_context(|| format!("{field} {value:?} overflows Unix nanoseconds"))?;
-    ensure!(nanos > 0, "{field} must be positive");
+    anyhow::ensure!(nanos > 0, "{field} must be positive");
     Ok(UnixNanos::from(nanos))
 }
 
@@ -163,6 +165,73 @@ pub(crate) fn parse_expiration(value: &str, field: &str) -> anyhow::Result<Optio
     positive_unix_seconds(seconds, field).map(Some)
 }
 
+pub(crate) fn validate_fee_schedule(
+    schedule: &FeeSchedule,
+    context: &str,
+) -> anyhow::Result<(Decimal, f64)> {
+    anyhow::ensure!(
+        (Decimal::ZERO..=Decimal::ONE).contains(&schedule.rate),
+        "{context} fee rate must be in [0, 1], was {}",
+        schedule.rate
+    );
+    anyhow::ensure!(
+        (Decimal::ZERO..=Decimal::ONE).contains(&schedule.rebate_rate),
+        "{context} rebate rate must be in [0, 1], was {}",
+        schedule.rebate_rate
+    );
+    anyhow::ensure!(
+        schedule.taker_only,
+        "{context} requires a taker-only fee schedule"
+    );
+    anyhow::ensure!(
+        schedule.exponent > Decimal::ZERO,
+        "{context} fee exponent must be positive, was {}",
+        schedule.exponent
+    );
+    let exponent = f64::try_from(schedule.exponent)
+        .with_context(|| format!("{context} fee exponent is not representable as f64"))?;
+    anyhow::ensure!(
+        exponent.is_finite() && exponent > 0.0,
+        "{context} fee exponent must be positive and finite, was {exponent}"
+    );
+    Ok((schedule.rate, exponent))
+}
+
+pub(crate) fn instrument_fee_policy(instrument: &InstrumentAny) -> anyhow::Result<(Decimal, f64)> {
+    let InstrumentAny::BinaryOption(binary) = instrument else {
+        anyhow::bail!("Polymarket fee policy requires a BinaryOption instrument");
+    };
+    let info = binary
+        .info
+        .as_ref()
+        .context("Polymarket instrument is missing fee metadata")?;
+    let enabled = info.get_bool("fees_enabled");
+    let schedule = info
+        .get("fee_schedule")
+        .map(|value| serde_json::from_value::<FeeSchedule>(value.clone()))
+        .transpose()
+        .context("invalid Polymarket fee schedule")?;
+
+    match (enabled, schedule.as_ref()) {
+        (Some(false), None) => {
+            anyhow::ensure!(
+                binary.maker_fee.is_zero() && binary.taker_fee.is_zero(),
+                "disabled Polymarket fees disagree with instrument fee fields"
+            );
+            Ok((Decimal::ZERO, 1.0))
+        }
+        (Some(true), Some(schedule)) => {
+            let (rate, exponent) = validate_fee_schedule(schedule, "Polymarket instrument")?;
+            anyhow::ensure!(
+                binary.maker_fee.is_zero() && binary.taker_fee == rate,
+                "Polymarket fee schedule disagrees with instrument fee fields"
+            );
+            Ok((rate, exponent))
+        }
+        _ => anyhow::bail!("inconsistent Polymarket instrument fee metadata"),
+    }
+}
+
 pub(crate) fn ensure_instrument_binding(
     instrument: &InstrumentAny,
     provider_condition: &str,
@@ -171,7 +240,7 @@ pub(crate) fn ensure_instrument_binding(
     context: &str,
 ) -> anyhow::Result<()> {
     let InstrumentAny::BinaryOption(binary) = instrument else {
-        bail!("{context} requires a BinaryOption instrument");
+        anyhow::bail!("{context} requires a BinaryOption instrument");
     };
     let condition = binary
         .info
@@ -181,11 +250,11 @@ pub(crate) fn ensure_instrument_binding(
 
     ensure_condition_id(condition, "instrument condition_id")?;
     ensure_condition_id(provider_condition, "provider condition_id")?;
-    ensure!(
+    anyhow::ensure!(
         condition.eq_ignore_ascii_case(provider_condition),
         "{context} condition {provider_condition:?} does not match instrument condition {condition:?}"
     );
-    ensure!(
+    anyhow::ensure!(
         binary.raw_symbol.as_str() == provider_token,
         "{context} token {provider_token:?} does not match instrument token {:?}",
         binary.raw_symbol.as_str()
@@ -195,7 +264,7 @@ pub(crate) fn ensure_instrument_binding(
         let outcome = binary
             .outcome
             .with_context(|| format!("{context} instrument is missing outcome metadata"))?;
-        ensure!(
+        anyhow::ensure!(
             outcome.as_str().eq_ignore_ascii_case(provider_outcome),
             "{context} outcome {provider_outcome:?} does not match instrument outcome {:?}",
             outcome.as_str()
@@ -209,11 +278,11 @@ fn ensure_condition_id(value: &str, field: &str) -> anyhow::Result<()> {
     let (prefix, hex) = value
         .split_at_checked(2)
         .with_context(|| format!("{field} {value:?} must start with a 0x prefix"))?;
-    ensure!(
+    anyhow::ensure!(
         prefix.eq_ignore_ascii_case("0x"),
         "{field} {value:?} must start with a 0x prefix"
     );
-    ensure!(
+    anyhow::ensure!(
         hex.len() == 64 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()),
         "{field} {value:?} must contain exactly 32 hexadecimal bytes"
     );
@@ -226,10 +295,11 @@ mod tests {
     use nautilus_model::instruments::InstrumentAny;
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::http::{
-        models::GammaMarket,
+        models::{FeeSchedule, GammaMarket},
         parse::{create_instrument_from_def, parse_gamma_market},
     };
 
@@ -238,8 +308,10 @@ mod tests {
         "104239898038807136052399800151408521467737075933964991162589336683346093173875";
 
     fn test_instrument() -> InstrumentAny {
-        let market: GammaMarket =
+        let mut market: GammaMarket =
             serde_json::from_str(include_str!("../../test_data/gamma_market.json")).unwrap();
+        market.fees_enabled = Some(false);
+        market.fee_schedule = None;
         let definition = parse_gamma_market(&market).unwrap().remove(0);
         create_instrument_from_def(&definition, UnixNanos::default()).unwrap()
     }
@@ -392,5 +464,29 @@ mod tests {
         assert!(
             ensure_instrument_binding(&instrument, condition, token, outcome, "trade").is_err()
         );
+    }
+
+    #[rstest]
+    #[case(Decimal::ZERO, dec!(0.03), dec!(0.25), true)]
+    #[case(dec!(-1), dec!(0.03), dec!(0.25), true)]
+    #[case(Decimal::ONE, dec!(-0.01), dec!(0.25), true)]
+    #[case(Decimal::ONE, dec!(1.01), dec!(0.25), true)]
+    #[case(Decimal::ONE, dec!(0.03), dec!(-0.01), true)]
+    #[case(Decimal::ONE, dec!(0.03), dec!(1.01), true)]
+    #[case(Decimal::ONE, dec!(0.03), dec!(0.25), false)]
+    fn test_commission_policy_rejects_invalid_fee_schedules(
+        #[case] exponent: Decimal,
+        #[case] rate: Decimal,
+        #[case] rebate_rate: Decimal,
+        #[case] taker_only: bool,
+    ) {
+        let schedule = FeeSchedule {
+            exponent,
+            rate,
+            taker_only,
+            rebate_rate,
+        };
+
+        assert!(validate_fee_schedule(&schedule, "test schedule").is_err());
     }
 }

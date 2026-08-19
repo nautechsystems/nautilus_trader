@@ -29,9 +29,12 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::models::{FeeSchedule, GammaMarket};
-use crate::common::{
-    consts::{POLYMARKET_VENUE, PUSD},
-    enums::PolymarketOutcome,
+use crate::{
+    common::{
+        consts::{POLYMARKET_VENUE, PUSD},
+        enums::PolymarketOutcome,
+    },
+    execution::report_validation::validate_fee_schedule,
 };
 
 const DEFAULT_TICK_SIZE: Decimal = dec!(0.001);
@@ -80,6 +83,8 @@ pub struct PolymarketInstrumentDef {
     pub market_slug: Option<String>,
     /// Whether the market uses the neg-risk CTF exchange contract.
     pub neg_risk: Option<bool>,
+    /// Whether fees are enabled for this market.
+    pub fees_enabled: Option<bool>,
     /// Fee schedule for this market.
     pub fee_schedule: Option<FeeSchedule>,
     /// Game ID for sport markets, kept verbatim because Gamma emits both
@@ -164,6 +169,7 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
             closed: market.closed.unwrap_or(false),
             market_slug: market.market_slug.clone(),
             neg_risk,
+            fees_enabled: market.fees_enabled,
             fee_schedule: market.fee_schedule.clone(),
             game_id: game_id.clone(),
         });
@@ -177,6 +183,14 @@ pub fn create_instrument_from_def(
     def: &PolymarketInstrumentDef,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
+    let (maker_fee, taker_fee) = match (def.fees_enabled, def.fee_schedule.as_ref()) {
+        (Some(false), None) => (Decimal::ZERO, Decimal::ZERO),
+        (Some(true), Some(schedule)) => {
+            let (rate, _) = validate_fee_schedule(schedule, def.symbol.as_str())?;
+            (Decimal::ZERO, rate)
+        }
+        _ => anyhow::bail!("inconsistent fee metadata for {}", def.symbol),
+    };
     let symbol = Symbol::new(def.symbol);
     let venue = *POLYMARKET_VENUE;
     let instrument_id = InstrumentId::new(symbol, venue);
@@ -230,8 +244,8 @@ pub fn create_instrument_from_def(
         Some(min_price),
         None, // margin_init
         None, // margin_maint
-        def.maker_fee,
-        def.taker_fee,
+        Some(maker_fee),
+        Some(taker_fee),
         None,
         Some(info),
         ts_init,
@@ -350,6 +364,13 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
         map.insert("neg_risk".to_string(), serde_json::Value::Bool(neg_risk));
     }
 
+    if let Some(fees_enabled) = def.fees_enabled {
+        map.insert(
+            "fees_enabled".to_string(),
+            serde_json::Value::Bool(fees_enabled),
+        );
+    }
+
     if let Some(min_size) = def.min_size {
         map.insert(
             "min_order_size".to_string(),
@@ -413,6 +434,22 @@ mod tests {
         serde_json::from_str(&content).expect("Failed to parse test data")
     }
 
+    fn fee_free_gamma_market(filename: &str) -> GammaMarket {
+        let mut market = load_gamma_market(filename);
+        market.fees_enabled = Some(false);
+        market.fee_schedule = None;
+        market
+    }
+
+    fn valid_fee_schedule() -> FeeSchedule {
+        FeeSchedule {
+            exponent: dec!(1),
+            rate: dec!(0.03),
+            taker_only: true,
+            rebate_rate: dec!(0.25),
+        }
+    }
+
     fn limit_order_at(price: Price) -> OrderAny {
         OrderAny::Limit(LimitOrder::new(
             TraderId::from("TESTER-001"),
@@ -451,6 +488,38 @@ mod tests {
         assert_eq!(defs.len(), 2);
         assert_eq!(defs[0].outcome, PolymarketOutcome::from("Up"));
         assert_eq!(defs[1].outcome, PolymarketOutcome::from("Down"));
+    }
+
+    #[rstest]
+    fn test_instrument_admission_requires_consistent_fee_metadata() {
+        let mut market = load_gamma_market("gamma_market.json");
+
+        for (enabled, schedule, accepted) in [
+            (Some(false), None, true),
+            (Some(true), Some(valid_fee_schedule()), true),
+            (None, None, false),
+            (Some(true), None, false),
+            (Some(false), Some(valid_fee_schedule()), false),
+        ] {
+            market.fees_enabled = enabled;
+            market.fee_schedule = schedule;
+            let definition = parse_gamma_market(&market).unwrap().remove(0);
+
+            assert_eq!(
+                create_instrument_from_def(&definition, UnixNanos::from(1)).is_ok(),
+                accepted,
+                "enabled={enabled:?}, schedule={:?}",
+                definition.fee_schedule,
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_captured_enabled_market_without_schedule_is_rejected() {
+        let market = load_gamma_market("gamma_market.json");
+        let definition = parse_gamma_market(&market).unwrap().remove(0);
+
+        assert!(create_instrument_from_def(&definition, UnixNanos::from(1)).is_err());
     }
 
     #[rstest]
@@ -582,7 +651,7 @@ mod tests {
 
     #[rstest]
     fn test_create_instrument_from_def() {
-        let market = load_gamma_market("gamma_market.json");
+        let market = fee_free_gamma_market("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
@@ -608,7 +677,7 @@ mod tests {
 
     #[rstest]
     fn test_create_instrument_info_params() {
-        let market = load_gamma_market("gamma_market.json");
+        let market = fee_free_gamma_market("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
@@ -645,7 +714,7 @@ mod tests {
 
     #[rstest]
     fn test_create_instrument_info_omits_missing_neg_risk() {
-        let mut market = load_gamma_market("gamma_market.json");
+        let mut market = fee_free_gamma_market("gamma_market.json");
         market.neg_risk = None;
         let defs = parse_gamma_market(&market).unwrap();
 
@@ -661,7 +730,7 @@ mod tests {
 
     #[rstest]
     fn test_past_end_market_carries_closure_state_on_the_definition_only() {
-        let mut market = load_gamma_market("gamma_market_past_end_date_open.json");
+        let mut market = fee_free_gamma_market("gamma_market_past_end_date_open.json");
         let defs = parse_gamma_market(&market).unwrap();
 
         assert!(!defs[0].closed);
@@ -706,7 +775,7 @@ mod tests {
 
     #[rstest]
     fn test_instruments_from_defs_batch() {
-        let market = load_gamma_market("gamma_market.json");
+        let market = fee_free_gamma_market("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
@@ -717,7 +786,7 @@ mod tests {
 
     #[rstest]
     fn test_instruments_from_defs_skips_unsupported_tick_precision() {
-        let mut market = load_gamma_market("gamma_market.json");
+        let mut market = fee_free_gamma_market("gamma_market.json");
         let valid_defs = parse_gamma_market(&market).unwrap();
         market.order_price_min_tick_size = Some(UNSUPPORTED_TICK_SIZE.parse().unwrap());
         let invalid_defs = parse_gamma_market(&market).unwrap();
@@ -747,7 +816,7 @@ mod tests {
         #[case] expected_max: &str,
         #[case] expected_precision: u8,
     ) {
-        let mut market = load_gamma_market("gamma_market.json");
+        let mut market = fee_free_gamma_market("gamma_market.json");
         market.order_price_min_tick_size = Some(tick_size.parse().unwrap());
         let defs = parse_gamma_market(&market).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
@@ -771,7 +840,7 @@ mod tests {
         // On a 0.01-tick market, clamping to the advertised bounds must land inside the
         // venue's [tick, 1 - tick] range that `validate_limit_price` enforces, and the old
         // static 0.001/0.999 bounds must be rejected by that same validation.
-        let mut market = load_gamma_market("gamma_market.json");
+        let mut market = fee_free_gamma_market("gamma_market.json");
         market.order_price_min_tick_size = Some(dec!(0.01));
         let defs = parse_gamma_market(&market).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
@@ -797,7 +866,7 @@ mod tests {
 
     #[rstest]
     fn test_rebuild_instrument_with_tick_size() {
-        let market = load_gamma_market("gamma_market.json");
+        let market = fee_free_gamma_market("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
@@ -825,7 +894,7 @@ mod tests {
         #[case] expected_precision: u8,
         #[case] expected_max: &str,
     ) {
-        let market = load_gamma_market("gamma_market.json");
+        let market = fee_free_gamma_market("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
         let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
@@ -844,7 +913,7 @@ mod tests {
 
     #[rstest]
     fn test_rebuild_instrument_with_tick_size_rejects_unsupported_tick_precision() {
-        let market = load_gamma_market("gamma_market.json");
+        let market = fee_free_gamma_market("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
         let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
@@ -860,7 +929,7 @@ mod tests {
 
     #[rstest]
     fn test_rebuild_instrument_preserves_fields() {
-        let market = load_gamma_market("gamma_market.json");
+        let market = fee_free_gamma_market("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 

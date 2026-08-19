@@ -252,6 +252,8 @@ pub struct GammaMarket {
     /// Neg-risk market ID for CTF exchange interaction.
     #[serde(rename = "negRiskMarketID")]
     pub neg_risk_market_id: Option<String>,
+    /// Whether fees are enabled for this market.
+    pub fees_enabled: Option<bool>,
     /// Fee schedule for this market.
     pub fee_schedule: Option<FeeSchedule>,
     /// Game ID for sport markets, kept verbatim because Gamma emits both

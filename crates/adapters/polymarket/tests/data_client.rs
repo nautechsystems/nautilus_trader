@@ -113,6 +113,8 @@ fn set_future_end_date(value: &mut Value) {
 
 fn gamma_market_request_fixture() -> Value {
     let mut value = load_json("gamma_market.json");
+    value["feesEnabled"] = Value::Bool(false);
+    value.as_object_mut().unwrap().remove("feeSchedule");
     set_future_end_date(&mut value);
     value
 }

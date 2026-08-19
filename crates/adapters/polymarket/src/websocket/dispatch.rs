@@ -66,10 +66,10 @@ use crate::{
         is_post_only_crossing,
         order_fill_tracker::{BufferedFill, FillCorrectionMetadata, OrderFillTrackerMap},
         parse::{
-            build_maker_fill_report, compute_commission, determine_order_side,
-            instrument_fee_exponent, instrument_taker_fee, parse_liquidity_side,
+            build_maker_fill_report, compute_commission, determine_order_side, parse_liquidity_side,
         },
         pending::PendingSubmitTracker,
+        report_validation::instrument_fee_policy,
     },
     http::error::sanitize_error_text,
 };
@@ -833,14 +833,9 @@ fn build_ws_taker_fill_report(
     let last_px = Price::from_decimal_dp(price_dec, price_precision)
         .unwrap_or_else(|_| Price::zero(price_precision));
 
-    let fee_rate = instrument_taker_fee(instrument);
-    let commission_value = compute_commission(
-        fee_rate,
-        instrument_fee_exponent(instrument),
-        size_dec,
-        price_dec,
-        liquidity_side,
-    );
+    let (fee_rate, fee_exponent) = instrument_fee_policy(instrument)?;
+    let commission_value =
+        compute_commission(fee_rate, fee_exponent, size_dec, price_dec, liquidity_side)?;
     let pusd = crate::execution::get_pusd_currency();
 
     Ok(FillReport {
@@ -1215,7 +1210,9 @@ mod tests {
     }
 
     fn test_instrument() -> InstrumentAny {
-        let market: GammaMarket = load("gamma_market.json");
+        let mut market: GammaMarket = load("gamma_market.json");
+        market.fees_enabled = Some(false);
+        market.fee_schedule = None;
         let defs = parse_gamma_market(&market).unwrap();
         create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap()
     }

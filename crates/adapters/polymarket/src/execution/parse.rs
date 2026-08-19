@@ -15,7 +15,7 @@
 
 //! Parsing functions for Polymarket execution reports.
 
-use anyhow::Context;
+use anyhow::{Context, ensure};
 use jiff::Timestamp;
 use nautilus_core::{
     UUID4, UnixNanos,
@@ -24,7 +24,6 @@ use nautilus_core::{
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
-    instruments::InstrumentAny,
     reports::{FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
@@ -224,7 +223,7 @@ pub fn parse_fill_report(
         trade.size,
         trade.price,
         liquidity_side,
-    );
+    )?;
     let commission = Money::from_decimal(commission_value, currency).with_context(|| {
         format!("failed to represent commission {commission_value} for {instrument_id} as Money")
     })?;
@@ -298,7 +297,7 @@ pub fn build_maker_fill_report(
         mo.matched_amount,
         mo.price,
         liquidity_side,
-    );
+    )?;
     let commission = Money::from_decimal(commission_value, currency).with_context(|| {
         format!("failed to represent commission {commission_value} for {instrument_id} as Money")
     })?;
@@ -327,32 +326,6 @@ pub fn build_maker_fill_report(
 /// Polymarket sets this from the Gamma market's `feeSchedule.rate`. When the
 /// feeSchedule is unavailable (e.g. CLOB-only flow) the instrument's taker fee
 /// defaults to zero and no commission is charged.
-#[must_use]
-pub fn instrument_taker_fee(instrument: &InstrumentAny) -> Decimal {
-    match instrument {
-        InstrumentAny::BinaryOption(bo) => bo.taker_fee,
-        _ => Decimal::ZERO,
-    }
-}
-
-/// Returns the fee-schedule exponent for a Polymarket instrument. Polymarket
-/// stores `feeSchedule.exponent` in the instrument's `info` map at parse
-/// time. Defaults to `1.0` when missing so the fee curve degenerates to the
-/// simple `fee = C * rate * p * (1 - p)` form used by [`compute_commission`].
-#[must_use]
-pub fn instrument_fee_exponent(instrument: &InstrumentAny) -> f64 {
-    match instrument {
-        InstrumentAny::BinaryOption(bo) => bo
-            .info
-            .as_ref()
-            .and_then(|info| info.get("fee_schedule"))
-            .and_then(|fs| fs.get("exponent"))
-            .and_then(serde_json::Value::as_f64)
-            .unwrap_or(1.0),
-        _ => 1.0,
-    }
-}
-
 /// Adjusts a market-BUY pUSD amount to fit within the user's pUSD balance once
 /// platform and builder taker fees are deducted. Mirrors `adjust_market_buy_amount`
 /// in `polymarket-rs-clob-client-v2`'s `clob/utilities.rs`.
@@ -389,7 +362,7 @@ pub fn adjust_market_buy_amount(
         );
     }
 
-    let platform_fee_rate = fee_curve_rate(fee_rate, price, fee_exponent);
+    let platform_fee_rate = fee_curve_rate(fee_rate, price, fee_exponent)?;
 
     let platform_fee = amount / price * platform_fee_rate;
     let total_cost = amount + platform_fee + amount * builder_taker_fee_rate;
@@ -430,20 +403,68 @@ pub fn compute_commission(
     size: Decimal,
     price: Decimal,
     liquidity_side: LiquiditySide,
-) -> Decimal {
-    if liquidity_side != LiquiditySide::Taker || fee_rate.is_zero() {
-        return Decimal::ZERO;
-    }
+) -> anyhow::Result<Decimal> {
+    ensure!(
+        (Decimal::ZERO..=Decimal::ONE).contains(&fee_rate),
+        "fee rate must be in [0, 1], was {fee_rate}"
+    );
+    ensure!(
+        size >= Decimal::ZERO,
+        "fill size must be non-negative, was {size}"
+    );
+    ensure!(
+        (Decimal::ZERO..=Decimal::ONE).contains(&price),
+        "fill price must be in [0, 1], was {price}"
+    );
 
-    let commission = size * fee_curve_rate(fee_rate, price, fee_exponent);
-    commission.round_dp(5)
+    if liquidity_side != LiquiditySide::Taker || fee_rate.is_zero() {
+        return Ok(Decimal::ZERO);
+    }
+    ensure!(
+        fee_exponent.is_finite() && fee_exponent > 0.0,
+        "fee exponent must be positive and finite, was {fee_exponent}"
+    );
+
+    let commission = size
+        .checked_mul(fee_curve_rate(fee_rate, price, fee_exponent)?)
+        .context("commission calculation overflow")?;
+    Ok(commission.round_dp(5))
 }
 
-fn fee_curve_rate(fee_rate: Decimal, price: Decimal, fee_exponent: f64) -> Decimal {
-    let base = price * (Decimal::ONE - price);
-    let base_f64: f64 = base.try_into().unwrap_or(0.0);
-    let curve = Decimal::try_from(base_f64.powf(fee_exponent)).unwrap_or(Decimal::ZERO);
-    fee_rate * curve
+fn fee_curve_rate(fee_rate: Decimal, price: Decimal, fee_exponent: f64) -> anyhow::Result<Decimal> {
+    ensure!(
+        (Decimal::ZERO..=Decimal::ONE).contains(&fee_rate),
+        "fee rate must be in [0, 1], was {fee_rate}"
+    );
+    ensure!(
+        (Decimal::ZERO..=Decimal::ONE).contains(&price),
+        "fee price must be in [0, 1], was {price}"
+    );
+    if fee_rate.is_zero() {
+        return Ok(Decimal::ZERO);
+    }
+    ensure!(
+        fee_exponent.is_finite() && fee_exponent > 0.0,
+        "fee exponent must be positive and finite, was {fee_exponent}"
+    );
+
+    let complement = Decimal::ONE
+        .checked_sub(price)
+        .context("fee curve subtraction overflow")?;
+    let base = price
+        .checked_mul(complement)
+        .context("fee curve multiplication overflow")?;
+    let base_f64 = f64::try_from(base).context("fee curve base is not representable as f64")?;
+    let curve_f64 = base_f64.powf(fee_exponent);
+    ensure!(
+        curve_f64.is_finite() && curve_f64 >= 0.0,
+        "fee curve result is not finite"
+    );
+    let curve =
+        Decimal::try_from(curve_f64).context("fee curve result is not representable as Decimal")?;
+    fee_rate
+        .checked_mul(curve)
+        .context("fee curve multiplication overflow")
 }
 
 /// Sums `last_qty` across fills as a decimal.
@@ -798,7 +819,8 @@ mod tests {
             dec!(100),
             Decimal::from_str_exact(price).unwrap(),
             LiquiditySide::Taker,
-        );
+        )
+        .unwrap();
         assert_eq!(commission, expected);
     }
 
@@ -813,7 +835,8 @@ mod tests {
             Decimal::from_str_exact("15.463900").unwrap(),
             dec!(0.97),
             LiquiditySide::Taker,
-        );
+        )
+        .unwrap();
         assert_eq!(commission, dec!(0.03240));
     }
 
@@ -829,7 +852,8 @@ mod tests {
             Decimal::from_str_exact("0.033400").unwrap(),
             dec!(0.98),
             LiquiditySide::Taker,
-        );
+        )
+        .unwrap();
         assert_eq!(commission, dec!(0.00005));
     }
 
@@ -841,15 +865,59 @@ mod tests {
             dec!(100),
             Decimal::from_str_exact("0.50").unwrap(),
             LiquiditySide::Maker,
-        );
+        )
+        .unwrap();
         assert_eq!(commission, dec!(0));
     }
 
     #[rstest]
     fn test_compute_commission_uses_fee_exponent() {
         let commission =
-            compute_commission(dec!(0.04), 2.0, dec!(10), dec!(0.5), LiquiditySide::Taker);
+            compute_commission(dec!(0.04), 2.0, dec!(10), dec!(0.5), LiquiditySide::Taker).unwrap();
         assert_eq!(commission, dec!(0.025));
+    }
+
+    #[rstest]
+    #[case("0.02", dec!(0.00001))]
+    #[case("0.01", dec!(0.00000))]
+    fn test_compute_commission_rounds_once_to_five_decimal_places(
+        #[case] size: &str,
+        #[case] expected: Decimal,
+    ) {
+        let commission = compute_commission(
+            dec!(0.05),
+            1.0,
+            Decimal::from_str_exact(size).unwrap(),
+            dec!(0.01),
+            LiquiditySide::Taker,
+        )
+        .unwrap();
+
+        assert_eq!(commission, expected);
+    }
+
+    #[rstest]
+    fn test_compute_commission_returns_error_for_invalid_or_overflowing_inputs() {
+        assert!(
+            compute_commission(
+                dec!(0.05),
+                f64::NAN,
+                dec!(1),
+                dec!(0.50),
+                LiquiditySide::Taker,
+            )
+            .is_err()
+        );
+        assert!(
+            compute_commission(
+                Decimal::MAX,
+                1.0,
+                Decimal::MAX,
+                dec!(0.50),
+                LiquiditySide::Taker,
+            )
+            .is_err()
+        );
     }
 
     #[rstest]
@@ -884,7 +952,8 @@ mod tests {
             dec!(100),
             Decimal::from_str_exact(price).unwrap(),
             liquidity_side,
-        );
+        )
+        .unwrap();
 
         assert_eq!(commission.as_decimal(), expected);
     }
@@ -1595,7 +1664,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_instrument_taker_fee_reads_binary_option() {
+    fn test_instrument_fee_policy_reads_binary_option() {
         use crate::http::parse::{create_instrument_from_def, parse_gamma_market};
 
         let path = "test_data/gamma_market_sports_market_money_line.json";
@@ -1605,8 +1674,38 @@ mod tests {
         let instrument =
             create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
 
-        assert_eq!(instrument_taker_fee(&instrument), dec!(0.03));
-        assert_eq!(instrument_fee_exponent(&instrument), 1.0);
+        assert_eq!(
+            crate::execution::report_validation::instrument_fee_policy(&instrument).unwrap(),
+            (dec!(0.03), 1.0)
+        );
+    }
+
+    #[rstest]
+    fn test_enabled_zero_rate_schedule_produces_zero_taker_commission() {
+        use crate::http::parse::{create_instrument_from_def, parse_gamma_market};
+
+        let path = "test_data/gamma_market_sports_market_money_line.json";
+        let content = std::fs::read_to_string(path).expect("Failed to read test data");
+        let mut market: crate::http::models::GammaMarket =
+            serde_json::from_str(&content).expect("Failed to parse test data");
+        market.fee_schedule.as_mut().unwrap().rate = Decimal::ZERO;
+        let definition = parse_gamma_market(&market).unwrap().remove(0);
+        let instrument =
+            create_instrument_from_def(&definition, UnixNanos::from(1_000_000_000u64)).unwrap();
+        let (fee_rate, exponent) =
+            crate::execution::report_validation::instrument_fee_policy(&instrument).unwrap();
+
+        assert_eq!(
+            compute_commission(
+                fee_rate,
+                exponent,
+                dec!(100),
+                dec!(0.50),
+                LiquiditySide::Taker,
+            )
+            .unwrap(),
+            Decimal::ZERO
+        );
     }
 
     #[rstest]

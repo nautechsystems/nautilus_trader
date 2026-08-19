@@ -502,7 +502,9 @@ mod tests {
     }
 
     fn test_instrument() -> InstrumentAny {
-        let market: crate::http::models::GammaMarket = load("gamma_market.json");
+        let mut market: crate::http::models::GammaMarket = load("gamma_market.json");
+        market.fees_enabled = Some(false);
+        market.fee_schedule = None;
         let defs = parse_gamma_market(&market).unwrap();
         create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap()
     }

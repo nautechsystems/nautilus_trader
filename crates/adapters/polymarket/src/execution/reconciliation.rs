@@ -33,9 +33,9 @@ use ustr::Ustr;
 use super::{
     order_fill_tracker::OrderFillTrackerMap,
     parse::{
-        build_maker_fill_report, instrument_fee_exponent, instrument_taker_fee, parse_fill_report,
-        parse_order_status_report, parse_timestamp,
+        build_maker_fill_report, parse_fill_report, parse_order_status_report, parse_timestamp,
     },
+    report_validation::instrument_fee_policy,
 };
 use crate::{
     common::{
@@ -160,13 +160,16 @@ pub(crate) fn build_fill_reports_from_trades(
             let instrument = instruments.get_cloned(&token_id);
             let (instrument_id, price_prec, size_prec, taker_fee_rate, fee_exponent) =
                 match instrument {
-                    Some(i) => (
-                        i.id(),
-                        i.price_precision(),
-                        i.size_precision(),
-                        instrument_taker_fee(&i),
-                        instrument_fee_exponent(&i),
-                    ),
+                    Some(i) => {
+                        let (taker_fee_rate, fee_exponent) = instrument_fee_policy(&i)?;
+                        (
+                            i.id(),
+                            i.price_precision(),
+                            i.size_precision(),
+                            taker_fee_rate,
+                            fee_exponent,
+                        )
+                    }
                     None => {
                         classify_unmapped_historical(
                             &mut discards,

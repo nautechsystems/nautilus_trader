@@ -158,7 +158,8 @@ mod tests {
         #[case] rebate_rate: Decimal,
         #[case] expected: Decimal,
     ) {
-        let instrument = instrument_with_schedule(Some(fee_schedule(fee_rate, rebate_rate)));
+        let instrument =
+            instrument_with_schedule(Some(fee_schedule(fee_rate, rebate_rate))).unwrap();
         let order = fill_order(&instrument, LiquiditySide::Maker);
 
         let commission = PolymarketFeeModel
@@ -176,7 +177,8 @@ mod tests {
 
     #[rstest]
     fn test_taker_fee() {
-        let instrument = instrument_with_schedule(Some(fee_schedule(dec!(0.05), dec!(0.15))));
+        let instrument =
+            instrument_with_schedule(Some(fee_schedule(dec!(0.05), dec!(0.15)))).unwrap();
         let order = fill_order(&instrument, LiquiditySide::Taker);
 
         let commission = PolymarketFeeModel
@@ -199,7 +201,8 @@ mod tests {
         #[case] fill_quantity: &str,
         #[case] expected: Decimal,
     ) {
-        let instrument = instrument_with_schedule(Some(fee_schedule(dec!(0.05), dec!(0.15))));
+        let instrument =
+            instrument_with_schedule(Some(fee_schedule(dec!(0.05), dec!(0.15)))).unwrap();
         let order = fill_order(&instrument, LiquiditySide::Taker);
 
         let commission = PolymarketFeeModel
@@ -221,7 +224,8 @@ mod tests {
         #[case] fill_quantity: &str,
         #[case] expected: Decimal,
     ) {
-        let instrument = instrument_with_schedule(Some(fee_schedule(dec!(0.05), dec!(0.15))));
+        let instrument =
+            instrument_with_schedule(Some(fee_schedule(dec!(0.05), dec!(0.15)))).unwrap();
         let order = fill_order(&instrument, LiquiditySide::Maker);
 
         let commission = PolymarketFeeModel
@@ -238,7 +242,7 @@ mod tests {
 
     #[rstest]
     fn test_missing_fee_schedule_returns_zero() {
-        let instrument = instrument_with_schedule(None);
+        let instrument = instrument_with_schedule(None).unwrap();
         let order = fill_order(&instrument, LiquiditySide::Maker);
 
         let commission = PolymarketFeeModel
@@ -256,7 +260,8 @@ mod tests {
 
     #[rstest]
     fn test_runtime_handle_dispatches_polymarket_model() {
-        let instrument = instrument_with_schedule(Some(fee_schedule(dec!(0.07), dec!(0.20))));
+        let instrument =
+            instrument_with_schedule(Some(fee_schedule(dec!(0.07), dec!(0.20)))).unwrap();
         let order = fill_order(&instrument, LiquiditySide::Maker);
         let model = FeeModelHandle::new(PolymarketFeeModel);
 
@@ -292,7 +297,8 @@ mod tests {
 
     #[rstest]
     fn test_requires_liquidity_side() {
-        let instrument = instrument_with_schedule(Some(fee_schedule(dec!(0.05), dec!(0.15))));
+        let instrument =
+            instrument_with_schedule(Some(fee_schedule(dec!(0.05), dec!(0.15)))).unwrap();
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
@@ -313,39 +319,32 @@ mod tests {
 
     #[rstest]
     #[case(
-        dec!(2),
-        dec!(0.05),
-        dec!(0.15),
-        true,
-        "PolymarketFeeModel requires fee schedule exponent 1, was 2"
-    )]
-    #[case(
         dec!(1),
         dec!(-0.01),
         dec!(0.15),
         true,
-        "Polymarket fee rate must be greater than or equal to zero"
+        "fee rate must be in [0, 1], was -0.01"
     )]
     #[case(
         dec!(1),
         dec!(0.05),
         dec!(-0.01),
         true,
-        "Polymarket rebate rate must be in [0, 1]"
+        "rebate rate must be in [0, 1], was -0.01"
     )]
     #[case(
         dec!(1),
         dec!(0.05),
         dec!(1.01),
         true,
-        "Polymarket rebate rate must be in [0, 1]"
+        "rebate rate must be in [0, 1], was 1.01"
     )]
     #[case(
         dec!(1),
         dec!(0.05),
         dec!(0.15),
         false,
-        "PolymarketFeeModel requires a taker-only fee schedule"
+        "requires a taker-only fee schedule"
     )]
     fn test_requires_supported_schedule(
         #[case] exponent: Decimal,
@@ -360,17 +359,9 @@ mod tests {
             taker_only,
             rebate_rate,
         };
-        let instrument = instrument_with_schedule(Some(schedule));
-        let order = fill_order(&instrument, LiquiditySide::Taker);
+        let result = instrument_with_schedule(Some(schedule));
 
-        let result = PolymarketFeeModel.get_commission(
-            &order,
-            Quantity::from("100"),
-            Price::from("0.50"),
-            &instrument,
-        );
-
-        assert_eq!(result.unwrap_err().to_string(), expected);
+        assert!(result.unwrap_err().to_string().contains(expected));
     }
 
     fn fee_schedule(rate: Decimal, rebate_rate: Decimal) -> FeeSchedule {
@@ -382,14 +373,15 @@ mod tests {
         }
     }
 
-    fn instrument_with_schedule(schedule: Option<FeeSchedule>) -> InstrumentAny {
+    fn instrument_with_schedule(schedule: Option<FeeSchedule>) -> anyhow::Result<InstrumentAny> {
         let mut market: GammaMarket = serde_json::from_str(include_str!(
             "../test_data/gamma_market_sports_market_money_line.json"
         ))
         .unwrap();
+        market.fees_enabled = Some(schedule.is_some());
         market.fee_schedule = schedule;
         let def = parse_gamma_market(&market).unwrap().remove(0);
-        create_instrument_from_def(&def, UnixNanos::default()).unwrap()
+        create_instrument_from_def(&def, UnixNanos::default())
     }
 
     fn fill_order(instrument: &InstrumentAny, liquidity_side: LiquiditySide) -> OrderAny {

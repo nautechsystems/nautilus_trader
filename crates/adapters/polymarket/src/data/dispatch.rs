@@ -1288,8 +1288,12 @@ mod tests {
     }
 
     fn gamma_market_expired_fixture_value() -> Value {
-        serde_json::from_str(include_str!("../../test_data/gamma_market.json"))
-            .expect("gamma market fixture json")
+        let mut value: Value =
+            serde_json::from_str(include_str!("../../test_data/gamma_market.json"))
+                .expect("gamma market fixture json");
+        value["feesEnabled"] = Value::Bool(false);
+        value.as_object_mut().unwrap().remove("feeSchedule");
+        value
     }
 
     fn gamma_market_future_closed_fixture_value() -> Value {
@@ -1365,7 +1369,9 @@ mod tests {
             .expect("fixture instrument")
     }
 
-    fn instruments_from_gamma_fixture(value: Value) -> Vec<InstrumentAny> {
+    fn instruments_from_gamma_fixture(mut value: Value) -> Vec<InstrumentAny> {
+        value["feesEnabled"] = Value::Bool(false);
+        value.as_object_mut().unwrap().remove("feeSchedule");
         let market = serde_json::from_value(value).expect("gamma market fixture");
         let definitions = crate::http::parse::parse_gamma_market(&market).expect("parse fixture");
         definitions
@@ -2247,6 +2253,7 @@ mod tests {
             "closed": closed,
             "acceptingOrders": accepting_orders,
             "enableOrderBook": false,
+            "feesEnabled": false,
             "slug": "test-market",
             "events": []
         });
