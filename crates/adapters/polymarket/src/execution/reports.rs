@@ -727,8 +727,8 @@ async fn fetch_confirmed_fill_reports(
 ) -> anyhow::Result<Option<Vec<FillReport>>> {
     let trades = match http_client.get_trades(params).await {
         Ok(trades) => trades,
-        Err(error) => {
-            log::warn!("Failed to fetch confirmed trades: {error}");
+        Err(e) => {
+            log::warn!("Failed to fetch confirmed trades: {e}");
             return Ok(None);
         }
     };
