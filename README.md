@@ -161,8 +161,9 @@ practices:
   and Rust dependencies are sourced only from crates.io.
 - **Dependency intake**: lock files pin every dependency with cryptographic checksums, third-party
   Python packages install from wheels only, new dependency and tooling versions observe a
-  publication cooldown before adoption, cargo-vet audits Rust provenance, and license checks enforce
-  LGPL-3.0-or-later compatibility.
+  publication cooldown before adoption, cargo-vet audits Rust provenance, and cargo-deny checks Rust
+  dependencies against an allow list of licenses compatible with NautilusTrader's `LGPL-3.0-only`
+  license.
 - **Scanning and fuzzing**: Gitleaks secret screening and Zizmor Actions auditing run pre-commit;
   CodeQL runs on PRs to `master` and pushes to `nightly`; cargo-audit, cargo-deny, cargo-vet,
   OSV Scanner, and pip-audit run on audit-relevant PRs and daily schedules; cargo-fuzz targets cover

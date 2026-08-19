@@ -106,7 +106,8 @@ The sections below detail the controls at each layer of that lifecycle.
 - **Toolchain pinning**: `python/pyproject.toml` limits local uv use to the supported minor series.
   `tools.toml` pins the exact uv version used by CI, Docker, pre‑commit, and project install commands.
   Release and audit tool Python CLIs are also pinned in `tools.toml`.
-- **License compliance**: Automated checks ensure LGPL-3.0-or-later compatibility.
+- **License compliance**: Automated checks verify Rust dependencies against an allow list of
+  licenses compatible with NautilusTrader's `LGPL-3.0-only` license.
 
 ### Pre-merge and scheduled scanning
 
