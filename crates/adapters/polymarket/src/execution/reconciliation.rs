@@ -427,7 +427,7 @@ pub(crate) async fn generate_mass_status(
     );
 
     if lookback_start.is_none() {
-        cap_order_reports_to_confirmed_fills(&mut order_reports, &fill_reports);
+        cap_order_reports_to_confirmed_fills(&mut order_reports, &fill_reports)?;
     }
 
     let mut mass_status = ExecutionMassStatus::new(client_id, ctx.account_id, venue, ts_init, None);
@@ -526,14 +526,9 @@ pub(crate) fn confirmed_trade_in_static_scope(
     };
 
     if trade.trader_side == PolymarketLiquiditySide::Maker {
-        let has_owned_order = trade
-            .maker_orders
-            .iter()
-            .filter(|order| venue_order_in_scope(&order.order_id, venue_order_filter))
-            .any(|order| order.is_owned_by(ctx.user_address, ctx.api_key));
         for order in &trade.maker_orders {
             if !venue_order_in_scope(&order.order_id, venue_order_filter)
-                || (has_owned_order && !order.is_owned_by(ctx.user_address, ctx.api_key))
+                || !order.is_owned_by(ctx.user_address, ctx.api_key)
             {
                 continue;
             }
@@ -630,41 +625,92 @@ fn classify_unmapped_historical(
 fn cap_order_reports_to_confirmed_fills(
     order_reports: &mut [OrderStatusReport],
     fill_reports: &[FillReport],
-) {
-    let confirmed_by_order = confirmed_filled_quantities(fill_reports);
+) -> anyhow::Result<()> {
+    let confirmed_by_order = confirmed_filled_quantities(fill_reports)?;
 
     for report in order_reports {
         let local_filled = Quantity::zero(report.quantity.precision);
         cap_order_report_filled_qty(
             report,
             local_filled,
+            local_filled,
             confirmed_by_order.get(&report.venue_order_id).copied(),
-        );
+        )?;
     }
+    Ok(())
 }
 
 pub(crate) fn confirmed_filled_quantities(
     fill_reports: &[FillReport],
-) -> AHashMap<VenueOrderId, Decimal> {
+) -> anyhow::Result<AHashMap<VenueOrderId, Decimal>> {
     let mut confirmed_by_order = AHashMap::new();
     for fill in fill_reports {
-        *confirmed_by_order.entry(fill.venue_order_id).or_default() += fill.last_qty.as_decimal();
+        let total = confirmed_by_order
+            .entry(fill.venue_order_id)
+            .or_insert(Decimal::ZERO);
+        *total = checked_confirmed_filled_total(
+            *total,
+            fill.last_qty.as_decimal(),
+            fill.venue_order_id,
+        )?;
     }
 
-    confirmed_by_order
+    Ok(confirmed_by_order)
+}
+
+fn checked_confirmed_filled_total(
+    current: Decimal,
+    added: Decimal,
+    venue_order_id: VenueOrderId,
+) -> anyhow::Result<Decimal> {
+    current
+        .checked_add(added)
+        .with_context(|| format!("confirmed filled quantity overflow for order {venue_order_id}"))
 }
 
 pub(crate) fn cap_order_report_filled_qty(
     report: &mut OrderStatusReport,
-    local_filled: Quantity,
+    cached_filled: Quantity,
+    tracked_filled: Quantity,
     confirmed_filled: Option<Decimal>,
-) {
-    let confirmed_filled = confirmed_filled
-        .and_then(|qty| Quantity::from_decimal_dp(qty, report.quantity.precision).ok())
-        .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
+) -> anyhow::Result<()> {
+    let local_filled = cached_filled.max(tracked_filled);
+    anyhow::ensure!(
+        local_filled <= report.quantity,
+        "local filled quantity {local_filled} exceeds order quantity {} for {}",
+        report.quantity,
+        report.venue_order_id,
+    );
+    let confirmed_filled = match confirmed_filled {
+        Some(qty) => {
+            non_negative_quantity(qty, report.quantity.precision, "confirmed filled quantity")?
+        }
+        None => Quantity::zero(report.quantity.precision),
+    };
+    anyhow::ensure!(
+        confirmed_filled <= report.quantity,
+        "confirmed filled quantity {confirmed_filled} exceeds order quantity {} for {}",
+        report.quantity,
+        report.venue_order_id,
+    );
     let capped = report.filled_qty.min(local_filled.max(confirmed_filled));
     report.filled_qty = capped;
     normalize_terminal_order_report_quantity(report);
+    anyhow::ensure!(
+        report.filled_qty <= report.quantity,
+        "filled quantity {} exceeds order quantity {} for {}",
+        report.filled_qty,
+        report.quantity,
+        report.venue_order_id,
+    );
+    anyhow::ensure!(
+        report.order_status != OrderStatus::Filled || report.filled_qty == report.quantity,
+        "Filled order {} has filled quantity {} but order quantity {}",
+        report.venue_order_id,
+        report.filled_qty,
+        report.quantity,
+    );
+    Ok(())
 }
 
 pub(crate) fn normalize_terminal_order_report_quantity(report: &mut OrderStatusReport) {
@@ -786,17 +832,59 @@ mod tests {
             None,
         )];
 
-        cap_order_reports_to_confirmed_fills(&mut reports, &fills);
+        cap_order_reports_to_confirmed_fills(&mut reports, &fills).unwrap();
 
         assert_eq!(reports[0].filled_qty, Quantity::from("4.0000"));
     }
 
     #[rstest]
-    #[case::below_threshold("99.995", "99.995")]
-    #[case::at_threshold("99.990", "100.000")]
+    fn test_cumulative_cap_uses_max_for_overlapping_cache_tracker_and_confirmed_evidence() {
+        let mut report = OrderStatusReport::new(
+            AccountId::from("POLY-001"),
+            InstrumentId::from("TEST.POLYMARKET"),
+            None,
+            VenueOrderId::from("V-OVERLAP"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::PartiallyFilled,
+            Quantity::from("10.0000"),
+            Quantity::from("10.0000"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            None,
+        );
+
+        cap_order_report_filled_qty(
+            &mut report,
+            Quantity::from("4.0000"),
+            Quantity::from("4.0000"),
+            Some(dec!(4.0000)),
+        )
+        .unwrap();
+
+        assert_eq!(report.filled_qty, Quantity::from("4.0000"));
+    }
+
+    #[rstest]
+    fn test_confirmed_filled_quantities_returns_overflow_error() {
+        let error = checked_confirmed_filled_total(
+            Decimal::MAX,
+            Decimal::ONE,
+            VenueOrderId::from("V-OVERFLOW"),
+        )
+        .expect_err("overflow must be surfaced");
+
+        assert!(error.to_string().contains("overflow"));
+    }
+
+    #[rstest]
+    #[case::below_threshold("99.995", Some("99.995"))]
+    #[case::at_threshold("99.990", None)]
     fn normalizes_confirmed_dust_residual_to_order_quantity(
         #[case] confirmed: &str,
-        #[case] expected_quantity: &str,
+        #[case] expected_quantity: Option<&str>,
     ) {
         let account_id = AccountId::from("POLY-001");
         let instrument_id = InstrumentId::from("TEST.POLYMARKET");
@@ -834,10 +922,16 @@ mod tests {
             None,
         )];
 
-        cap_order_reports_to_confirmed_fills(&mut reports, &fills);
+        let result = cap_order_reports_to_confirmed_fills(&mut reports, &fills);
 
-        assert_eq!(reports[0].quantity, Quantity::from(expected_quantity));
-        assert_eq!(reports[0].filled_qty, Quantity::from(confirmed));
+        if let Some(expected_quantity) = expected_quantity {
+            result.unwrap();
+            assert_eq!(reports[0].quantity, Quantity::from(expected_quantity));
+            assert_eq!(reports[0].filled_qty, Quantity::from(confirmed));
+        } else {
+            let error = result.expect_err("non-dust partial evidence cannot remain Filled");
+            assert!(error.to_string().contains("Filled order"));
+        }
     }
 
     #[rstest]

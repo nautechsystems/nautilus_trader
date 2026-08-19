@@ -21,10 +21,10 @@ use nautilus_common::messages::execution::{
 use nautilus_core::{UnixNanos, collections::AtomicMap, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
-    enums::{OrderStatus, OrderType, TimeInForce},
+    enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
-    orders::Order,
+    orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Quantity},
 };
@@ -40,15 +40,15 @@ use super::{
     reconciliation::{
         FillContext, apply_fill_filters, build_fill_reports_from_trades,
         build_position_reports_scoped, cap_order_report_filled_qty, confirmed_filled_quantities,
-        confirmed_trade_in_static_scope, normalize_terminal_order_report_quantity,
+        confirmed_trade_in_static_scope,
     },
-    report_validation::{non_negative_quantity, parse_match_time},
+    report_validation::{ensure_instrument_binding, non_negative_quantity, parse_match_time},
 };
 use crate::{
     common::enums::SignatureType,
     http::{
         clob::PolymarketClobHttpClient,
-        models::PolymarketTradeReport,
+        models::{PolymarketOpenOrder, PolymarketTradeReport},
         query::{GetBalanceAllowanceParams, GetTradesParams},
     },
 };
@@ -71,10 +71,11 @@ impl PolymarketExecutionClient {
     pub(super) async fn recover_terminal_status_from_trades(
         &self,
         venue_order_id: VenueOrderId,
-        instrument_id: InstrumentId,
+        instrument: &InstrumentAny,
         client_order_id: Option<ClientOrderId>,
-        size_prec: u8,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
+        let instrument_id = instrument.id();
+        let size_prec = instrument.size_precision();
         let ts_init = self.clock.get_time_ns();
         let ctx = self.fill_context();
 
@@ -87,6 +88,13 @@ impl PolymarketExecutionClient {
         let resolved_client_order_id =
             client_order_id.or_else(|| self.core.cache().client_order_id(&venue_order_id).copied());
         let cached = resolved_client_order_id.and_then(|cid| self.core.cache().order_owned(&cid));
+        if let Some(cached) = cached.as_ref() {
+            anyhow::ensure!(
+                cached.instrument_id() == instrument_id,
+                "tracked order instrument {} does not match requested recovery instrument {instrument_id}",
+                cached.instrument_id(),
+            );
+        }
         let cached_quantity = cached.as_ref().map(Order::quantity);
         let cached_order_type = cached.as_ref().map_or(OrderType::Limit, Order::order_type);
         let cached_tif = cached
@@ -95,14 +103,21 @@ impl PolymarketExecutionClient {
         let cached_price = cached.as_ref().and_then(Order::price);
         let cached_side = cached.as_ref().map(Order::order_side);
 
-        let has_pending_trade = trades.iter().any(|trade| {
-            trade.status.is_pending_settlement()
-                && (trade.taker_order_id == venue_order_id.as_str()
-                    || trade
-                        .maker_orders
-                        .iter()
-                        .any(|order| order.order_id == venue_order_id.as_str()))
-        });
+        let has_pending_trade =
+            trades
+                .iter()
+                .try_fold(false, |found, trade| -> anyhow::Result<bool> {
+                    if !trade.status.is_pending_settlement() {
+                        return Ok(found);
+                    }
+                    let matches = pending_trade_matches_known_order(
+                        trade,
+                        venue_order_id,
+                        instrument,
+                        cached_side,
+                    )?;
+                    Ok(found || matches)
+                })?;
 
         if has_pending_trade {
             let Some(cached) = cached.as_ref() else {
@@ -231,7 +246,19 @@ impl PolymarketExecutionClient {
         );
         report.price = cached_price;
         report.avg_px = avg_px;
-        normalize_terminal_order_report_quantity(&mut report);
+        let cached_filled = cached
+            .as_ref()
+            .map_or_else(|| Quantity::zero(size_prec), |order| order.filled_qty());
+        let tracked_filled = self
+            .fill_tracker
+            .get_cumulative_filled(&venue_order_id)
+            .unwrap_or_else(|| Quantity::zero(size_prec));
+        cap_order_report_filled_qty(
+            &mut report,
+            cached_filled,
+            tracked_filled,
+            Some(total_filled_dec),
+        )?;
 
         Ok(Some(report))
     }
@@ -274,6 +301,7 @@ impl PolymarketExecutionClient {
             }
         };
         let size_prec = instrument.size_precision();
+        let expected_order = cache.order(&client_order_id).map(|order| order.cloned());
 
         let http_client = self.http_client.clone();
         let fill_tracker = self.fill_tracker.clone();
@@ -302,12 +330,24 @@ impl PolymarketExecutionClient {
                         clock.get_time_ns(),
                     ) {
                         Ok(report) => report,
-                        Err(error) => {
-                            log::warn!("Failed to validate queried order {venue_order_id}: {error}");
+                        Err(e) => {
+                            log::warn!("Failed to validate queried order {venue_order_id}: {e}");
                             return Ok(());
                         }
                     };
-                    let venue_order_id = VenueOrderId::from(venue_order_id.as_str());
+                    let requested_venue_order_id = VenueOrderId::from(venue_order_id.as_str());
+
+                    if let Err(e) = validate_order_response_scope(
+                        &order,
+                        &report,
+                        requested_venue_order_id,
+                        &instrument,
+                        expected_order.as_ref(),
+                    ) {
+                        log::warn!("Rejected queried order {venue_order_id}: {e}");
+                        return Ok(());
+                    }
+                    let venue_order_id = requested_venue_order_id;
                     let tracked_filled = fill_tracker
                         .get_cumulative_filled(&venue_order_id)
                         .unwrap_or_else(|| Quantity::zero(size_prec));
@@ -331,7 +371,7 @@ impl PolymarketExecutionClient {
                         )
                         .await
                         {
-                            Ok(fills) => confirmed_filled_quantities(&fills)
+                            Ok(fills) => confirmed_filled_quantities(&fills)?
                                 .get(&venue_order_id)
                                 .copied(),
                             Err(e) => {
@@ -346,9 +386,10 @@ impl PolymarketExecutionClient {
                     };
                     cap_order_report_filled_qty(
                         &mut report,
-                        local_filled,
+                        cached_filled,
+                        tracked_filled,
                         confirmed_filled,
-                    );
+                    )?;
                     emitter.send_order_status_report(report);
                 }
                 Ok(None) => {
@@ -398,6 +439,23 @@ impl PolymarketExecutionClient {
                 cmd.client_order_id,
                 self.clock.get_time_ns(),
             )?;
+            let expected_order = {
+                let cache = self.core.cache();
+                cmd.client_order_id
+                    .and_then(|id| cache.order(&id).map(|order| order.cloned()))
+                    .or_else(|| {
+                        cache
+                            .client_order_id(&venue_order_id)
+                            .and_then(|id| cache.order(id).map(|order| order.cloned()))
+                    })
+            };
+            validate_order_response_scope(
+                &order,
+                &report,
+                venue_order_id,
+                &instrument,
+                expected_order.as_ref(),
+            )?;
             let cached_filled = cmd
                 .client_order_id
                 .and_then(|id| self.core.cache().order(&id).map(|order| order.filled_qty()))
@@ -425,7 +483,7 @@ impl PolymarketExecutionClient {
                 )
                 .await
                 {
-                    Ok(fills) => confirmed_filled_quantities(&fills)
+                    Ok(fills) => confirmed_filled_quantities(&fills)?
                         .get(&venue_order_id)
                         .copied(),
                     Err(e) => {
@@ -438,17 +496,17 @@ impl PolymarketExecutionClient {
             } else {
                 None
             };
-            cap_order_report_filled_qty(&mut report, local_filled, confirmed_filled);
+            cap_order_report_filled_qty(
+                &mut report,
+                cached_filled,
+                tracked_filled,
+                confirmed_filled,
+            )?;
             return Ok(Some(report));
         }
 
-        self.recover_terminal_status_from_trades(
-            venue_order_id,
-            instrument_id,
-            cmd.client_order_id,
-            size_prec,
-        )
-        .await
+        self.recover_terminal_status_from_trades(venue_order_id, &instrument, cmd.client_order_id)
+            .await
     }
 
     fn resolve_venue_order_id(
@@ -499,7 +557,7 @@ impl PolymarketExecutionClient {
             )
             .await
             {
-                Ok(fills) => confirmed_filled_quantities(&fills),
+                Ok(fills) => confirmed_filled_quantities(&fills)?,
                 Err(e) => {
                     log::warn!("Failed to fetch confirmed fills for open-order check: {e}");
                     Default::default()
@@ -526,9 +584,10 @@ impl PolymarketExecutionClient {
                 .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
             cap_order_report_filled_qty(
                 report,
-                cached_filled.max(tracked_filled),
+                cached_filled,
+                tracked_filled,
                 confirmed_fills.get(&report.venue_order_id).copied(),
-            );
+            )?;
         }
 
         let reports = if cmd.open_only {
@@ -640,10 +699,6 @@ fn trades_in_window(
     venue_order_filter: Option<VenueOrderId>,
     load_ids: Option<&[InstrumentId]>,
 ) -> anyhow::Result<Vec<PolymarketTradeReport>> {
-    if start.is_none() && end.is_none() {
-        return Ok(trades);
-    }
-
     let mut in_window = Vec::with_capacity(trades.len());
     for trade in trades {
         if !confirmed_trade_in_static_scope(
@@ -657,8 +712,14 @@ fn trades_in_window(
             continue;
         }
 
+        if start.is_none() && end.is_none() {
+            in_window.push(trade);
+            continue;
+        }
+
         let ts_event = parse_match_time(&trade.match_time, "fill match_time")
             .with_context(|| format!("invalid match_time for confirmed trade {}", trade.id))?;
+
         if start.is_none_or(|value| ts_event >= value) && end.is_none_or(|value| ts_event <= value)
         {
             in_window.push(trade);
@@ -690,6 +751,120 @@ async fn fetch_confirmed_fill_reports(
         load_ids,
     )?;
     Ok(reports)
+}
+
+pub(super) fn validate_order_response_scope(
+    order: &PolymarketOpenOrder,
+    report: &OrderStatusReport,
+    requested_venue_order_id: VenueOrderId,
+    instrument: &InstrumentAny,
+    expected_order: Option<&OrderAny>,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        report.venue_order_id == requested_venue_order_id,
+        "returned order ID {} does not match requested order ID {requested_venue_order_id}",
+        report.venue_order_id,
+    );
+    anyhow::ensure!(
+        report.instrument_id == instrument.id(),
+        "returned instrument {} does not match requested instrument {}",
+        report.instrument_id,
+        instrument.id(),
+    );
+
+    if let Some(expected_order) = expected_order {
+        if let Some(expected_venue_order_id) = expected_order.venue_order_id() {
+            anyhow::ensure!(
+                expected_venue_order_id == requested_venue_order_id,
+                "requested order ID {requested_venue_order_id} does not match tracked order ID {expected_venue_order_id}",
+            );
+        }
+        anyhow::ensure!(
+            expected_order.instrument_id() == instrument.id(),
+            "tracked order instrument {} does not match requested instrument {}",
+            expected_order.instrument_id(),
+            instrument.id(),
+        );
+        anyhow::ensure!(
+            report.order_side == expected_order.order_side(),
+            "returned order side {} does not match tracked order side {}",
+            report.order_side,
+            expected_order.order_side(),
+        );
+        let provider_tif = TimeInForce::from(order.order_type);
+        anyhow::ensure!(
+            provider_tif == expected_order.time_in_force(),
+            "returned order time in force {provider_tif} does not match tracked order time in force {}",
+            expected_order.time_in_force(),
+        );
+    }
+
+    Ok(())
+}
+
+fn pending_trade_matches_known_order(
+    trade: &PolymarketTradeReport,
+    venue_order_id: VenueOrderId,
+    instrument: &InstrumentAny,
+    expected_side: Option<OrderSide>,
+) -> anyhow::Result<bool> {
+    let target = venue_order_id.as_str();
+    let taker_matches = trade.taker_order_id == target;
+    let maker_matches = trade
+        .maker_orders
+        .iter()
+        .any(|order| order.order_id == target);
+
+    if !taker_matches && !maker_matches {
+        return Ok(false);
+    }
+
+    if taker_matches {
+        ensure_instrument_binding(
+            instrument,
+            trade.market.as_str(),
+            trade.asset_id.as_str(),
+            Some(trade.outcome.as_str()),
+            "pending taker trade",
+        )?;
+
+        if let Some(expected_side) = expected_side {
+            let provider_side = OrderSide::from(trade.side);
+            anyhow::ensure!(
+                provider_side == expected_side,
+                "pending taker side {provider_side} does not match tracked order side {expected_side}",
+            );
+        }
+    }
+
+    for maker_order in trade
+        .maker_orders
+        .iter()
+        .filter(|order| order.order_id == target)
+    {
+        ensure_instrument_binding(
+            instrument,
+            trade.market.as_str(),
+            maker_order.asset_id.as_str(),
+            Some(maker_order.outcome.as_str()),
+            "pending maker trade",
+        )?;
+
+        if let Some(expected_side) = expected_side {
+            let provider_side = OrderSide::from(maker_order.side.with_context(|| {
+                format!(
+                    "pending maker order {} is missing its side",
+                    maker_order.order_id
+                )
+            })?);
+            anyhow::ensure!(
+                provider_side == expected_side,
+                "pending maker side {provider_side} does not match tracked order side {expected_side}",
+            );
+        }
+    }
+
+    Ok(true)
 }
 
 pub(crate) fn get_pusd_currency() -> Currency {

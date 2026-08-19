@@ -36,7 +36,7 @@ use super::{
     parse::parse_order_status_report,
     pending::{PendingCancelTracker, PendingSubmitTracker},
     reconciliation::cap_order_report_filled_qty,
-    reports::get_pusd_currency,
+    reports::{get_pusd_currency, validate_order_response_scope},
     submitter::{
         OrderSubmitter, SubmitResponseOutcome, is_fok_unfilled, submit_response_outcome,
         submit_response_unknown_reason, submit_response_venue_order_id,
@@ -950,6 +950,24 @@ pub(super) async fn check_fok_status(
             return;
         }
     };
+    if let Err(e) = validate_order_response_scope(
+        &venue_order,
+        &report,
+        venue_order_id,
+        instrument,
+        Some(order),
+    ) {
+        log::warn!("FOK status check rejected contradictory order evidence for {order_id}: {e}");
+        return;
+    }
+    let cached_filled = order.filled_qty();
+    let tracked_filled = fill_tracker
+        .get_cumulative_filled(&venue_order_id)
+        .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
+    if let Err(e) = cap_order_report_filled_qty(&mut report, cached_filled, tracked_filled, None) {
+        log::warn!("FOK status check rejected cumulative order evidence for {order_id}: {e}");
+        return;
+    }
     let order_status = report.order_status;
 
     if matches!(
@@ -978,11 +996,6 @@ pub(super) async fn check_fok_status(
             emitter.emit_order_expired(order, Some(venue_order_id), ts_now);
         }
         OrderStatus::Filled => {
-            let confirmed_filled = fill_tracker
-                .get_cumulative_filled(&venue_order_id)
-                .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
-            cap_order_report_filled_qty(&mut report, confirmed_filled, None);
-
             log::debug!(
                 "FOK order {order_id} resolved via REST as Filled; deferring fill quantity until confirmation"
             );
@@ -1011,11 +1024,11 @@ mod tests {
     use super::*;
     use crate::{
         common::enums::{
-            PolymarketEventType, PolymarketLiquiditySide, PolymarketOrderSide, PolymarketOutcome,
-            PolymarketTradeStatus,
+            PolymarketEventType, PolymarketLiquiditySide, PolymarketOrderSide, PolymarketOrderType,
+            PolymarketOutcome, PolymarketTradeStatus,
         },
         http::{
-            models::GammaMarket,
+            models::{GammaMarket, PolymarketOpenOrder},
             parse::{create_instrument_from_def, parse_gamma_market},
         },
         websocket::{
@@ -1093,6 +1106,14 @@ mod tests {
     }
 
     fn test_quote_market_order(client_order_id: &str, instrument_id: InstrumentId) -> OrderAny {
+        test_quote_market_order_with_tif(client_order_id, instrument_id, TimeInForce::Ioc)
+    }
+
+    fn test_quote_market_order_with_tif(
+        client_order_id: &str,
+        instrument_id: InstrumentId,
+        time_in_force: TimeInForce,
+    ) -> OrderAny {
         OrderAny::Market(MarketOrder::new(
             TraderId::from("TESTER-001"),
             StrategyId::from("S-001"),
@@ -1100,7 +1121,7 @@ mod tests {
             ClientOrderId::from(client_order_id),
             OrderSide::Buy,
             Quantity::new(10.0, 0),
-            TimeInForce::Ioc,
+            time_in_force,
             UUID4::new(),
             UnixNanos::default(),
             false,
@@ -1188,6 +1209,64 @@ mod tests {
         );
 
         assert_eq!(fok_check_order_id(&response, TimeInForce::Fok), None);
+    }
+
+    #[rstest]
+    fn test_fok_accepts_market_order_with_provider_fok_time_in_force() {
+        let instrument = test_instrument();
+        let order = test_quote_market_order_with_tif(
+            "O-FOK-MARKET-CONTROL",
+            instrument.id(),
+            TimeInForce::Fok,
+        );
+        let mut venue_order: PolymarketOpenOrder = load("http_open_order.json");
+        venue_order.order_type = PolymarketOrderType::FOK;
+        venue_order.original_size = Decimal::from(10);
+        venue_order.size_matched = Decimal::ZERO;
+        let report = parse_order_status_report(
+            &venue_order,
+            &instrument,
+            AccountId::from("POLY-001"),
+            Some(order.client_order_id()),
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        validate_order_response_scope(
+            &venue_order,
+            &report,
+            report.venue_order_id,
+            &instrument,
+            Some(&order),
+        )
+        .unwrap();
+    }
+
+    #[rstest]
+    fn test_fok_check_caps_unconfirmed_cumulative_fill() {
+        let instrument = test_instrument();
+        let mut venue_order: PolymarketOpenOrder = load("http_open_order.json");
+        venue_order.status = crate::common::enums::PolymarketOrderStatus::Matched;
+        venue_order.order_type = PolymarketOrderType::FOK;
+        venue_order.original_size = Decimal::from(10);
+        venue_order.size_matched = Decimal::from(10);
+        let mut report = parse_order_status_report(
+            &venue_order,
+            &instrument,
+            AccountId::from("POLY-001"),
+            None,
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        let size_precision = report.quantity.precision;
+        cap_order_report_filled_qty(
+            &mut report,
+            Quantity::zero(size_precision),
+            Quantity::zero(size_precision),
+            None,
+        )
+        .expect_err("uncorroborated FOK Filled evidence must not survive the cap");
     }
 
     #[rstest]
