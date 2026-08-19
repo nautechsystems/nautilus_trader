@@ -40,7 +40,7 @@ use async_trait::async_trait;
 use harness::{
     CHAIN_ID, ROUTER, SIGNER_ENV, SLIPPAGE_BPS, SWAP_AMOUNT, USDC, WETH, WRAP_AMOUNT_WEI,
     build_full_range_snapshot, ensure_execution_schema, fund_anvil_wallet, git_diff_sha256,
-    start_anvil, weth_usdc_pool,
+    quote_buy_amount_in, start_anvil, weth_usdc_pool,
 };
 use nautilus_blockchain::{
     config::BlockchainExecutionClientConfig,
@@ -59,7 +59,7 @@ use nautilus_common::{
     defi::RequestPoolSnapshot,
     factories::{ClientConfig, DataClientFactory},
     live::runner::{get_data_event_sender, replace_exec_event_sender},
-    messages::DataEvent,
+    messages::{DataEvent, execution::SubmitOrder},
     msgbus::{self, TypedHandler},
     timer::TimeEvent,
 };
@@ -72,11 +72,12 @@ use nautilus_live::{
 };
 use nautilus_model::{
     data::{Data, QuoteTick},
-    defi::{DefiData, Pool, chain::chains, pool_analysis::snapshot::PoolSnapshot},
-    enums::{AccountType, OmsType, OrderSide},
+    defi::{DefiData, Pool, PoolProfiler, chain::chains, pool_analysis::snapshot::PoolSnapshot},
+    enums::{AccountType, OmsType, OrderSide, OrderType},
     events::{AccountState, OrderEventAny, OrderFilled, OrderSubmitted},
-    identifiers::{AccountId, ClientId, InstrumentId, TraderId, Venue},
-    types::{Price, Quantity},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue},
+    orders::{Order, OrderTestBuilder},
+    types::{Price, Quantity, fixed::FIXED_PRECISION},
 };
 use nautilus_trading::{
     nautilus_strategy,
@@ -214,6 +215,7 @@ struct SwapStrategy {
     pool_seen: Rc<Cell<bool>>,
     order_events: Rc<RefCell<Vec<OrderEventAny>>>,
     submitted: bool,
+    order_side: OrderSide,
 }
 
 impl SwapStrategy {
@@ -222,6 +224,7 @@ impl SwapStrategy {
         handle: LiveNodeHandle,
         pool_seen: Rc<Cell<bool>>,
         order_events: Rc<RefCell<Vec<OrderEventAny>>>,
+        order_side: OrderSide,
     ) -> Self {
         Self {
             core: StrategyCore::new(StrategyConfig::default()),
@@ -230,6 +233,7 @@ impl SwapStrategy {
             pool_seen,
             order_events,
             submitted: false,
+            order_side,
         }
     }
 }
@@ -253,7 +257,7 @@ impl DataActor for SwapStrategy {
         self.clock().cancel_timer(SUBMIT_TIMER);
         let order = self.order().market(
             self.instrument_id,
-            OrderSide::Sell,
+            self.order_side,
             Quantity::from(SWAP_AMOUNT),
             None,
             None,
@@ -335,6 +339,7 @@ fn build_fork_node(
         delay_post_stop: Duration::from_millis(200),
         exec_engine: LiveExecutionEngineConfig {
             inflight_check_interval_ms: 0,
+            allow_overfills: true,
             ..Default::default()
         },
         ..Default::default()
@@ -383,7 +388,10 @@ fn execution_config(
         .base_fee_buffer_bps(2_000)
         .gas_limit(5_000_000)
         .gas_buffer_bps(2_000)
-        .allowed_token_pairs(vec![(WETH.to_string(), USDC.to_string())])
+        .allowed_token_pairs(vec![
+            (WETH.to_string(), USDC.to_string()),
+            (USDC.to_string(), WETH.to_string()),
+        ])
         .slippage_bps(SLIPPAGE_BPS)
         .max_slippage_bps(200)
         .max_order_amount(1_000_000_000_000_000_000)
@@ -581,6 +589,7 @@ async fn anvil_fork_livenode_routed_swap_and_reconnect() {
         handle.clone(),
         pool_seen.clone(),
         order_events.clone(),
+        OrderSide::Sell,
     ))
     .unwrap();
 
@@ -861,6 +870,284 @@ async fn anvil_fork_livenode_routed_swap_and_reconnect() {
         "LiveNode fork test evidence packet written to {}",
         evidence_dir.display()
     );
+
+    unsafe { std::env::remove_var(SIGNER_ENV) };
+}
+
+#[tokio::test]
+async fn anvil_fork_livenode_routed_buy_and_reconnect() {
+    if std::env::var("BLOCKCHAIN_FORK_TESTS").as_deref() != Ok("1") {
+        eprintln!("BLOCKCHAIN_FORK_TESTS is not 1; skipping fork test");
+        return;
+    }
+
+    let fork_rpc_url = std::env::var("BLOCKCHAIN_FORK_RPC_URL")
+        .expect("BLOCKCHAIN_FORK_RPC_URL must be set when BLOCKCHAIN_FORK_TESTS=1");
+    let pg_config = get_postgres_connect_options(None, None, None, None, None);
+    let admin_options: PgConnectOptions = pg_config.clone().into();
+    let admin_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect_with(admin_options)
+        .await
+        .expect("Postgres must be reachable when BLOCKCHAIN_FORK_TESTS=1");
+
+    let (_anvil, _startup) = start_anvil(&fork_rpc_url)
+        .await
+        .expect("Anvil must start when BLOCKCHAIN_FORK_TESTS=1");
+    let anvil_url = format!("http://127.0.0.1:{}", _startup.port);
+    let signer = PrivateKeySigner::random();
+    let wallet = signer.address();
+    let signer_private_key = nautilus_core::hex::encode_prefixed(signer.to_bytes());
+    fund_anvil_wallet(&anvil_url, wallet).await;
+    ensure_execution_schema(&admin_pool).await;
+
+    let rpc_client = Arc::new(BlockchainHttpRpcClient::new(anvil_url.clone(), None, None));
+    let erc20 = Erc20Contract::new(rpc_client.clone(), true);
+    let pool = weth_usdc_pool();
+    let venue_string = pool.instrument_id.venue.to_string();
+
+    // SAFETY: this opt-in test runs in its own process.
+    unsafe { std::env::set_var(SIGNER_ENV, signer_private_key) };
+
+    let operator_cache = Rc::new(RefCell::new(Cache::default()));
+    operator_cache.borrow_mut().add_pool(pool.clone()).unwrap();
+    let operator_core = ExecutionClientCore::new(
+        TraderId::from("TRADER-001"),
+        ClientId::from(EXEC_CLIENT_NAME),
+        *BLOCKCHAIN_VENUE,
+        OmsType::Netting,
+        AccountId::from(EXEC_CLIENT_NAME),
+        AccountType::Wallet,
+        None,
+        operator_cache.clone(),
+    );
+    let mut operator = BlockchainExecutionClient::new(
+        operator_core,
+        execution_config(wallet, anvil_url.clone(), pg_config.clone()),
+    )
+    .unwrap();
+    let (operator_event_sender, _operator_event_receiver) = tokio::sync::mpsc::unbounded_channel();
+    replace_exec_event_sender(operator_event_sender);
+    operator.start().unwrap();
+    operator.connect().await.unwrap();
+    assert!(
+        rpc_client
+            .get_transaction_receipt(
+                &operator
+                    .wrap(U256::from(WRAP_AMOUNT_WEI) * U256::from(2))
+                    .await
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .status
+    );
+    assert!(
+        rpc_client
+            .get_transaction_receipt(
+                &operator
+                    .approve(
+                        WETH_ADDRESS,
+                        U256::from(WRAP_AMOUNT_WEI) * U256::from(2),
+                        ROUTER.parse().unwrap(),
+                    )
+                    .await
+                    .unwrap()
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .status
+    );
+    let (sell_snapshot, _) = build_full_range_snapshot(&rpc_client, &pool).await;
+    let mut sell_profiler = PoolProfiler::new(Arc::new(pool.clone()));
+    sell_profiler.restore_from_snapshot(sell_snapshot).unwrap();
+    operator_cache
+        .borrow_mut()
+        .add_pool_profiler(sell_profiler)
+        .unwrap();
+    let setup_sell_id = format!("O-FORK-LIVENODE-BUY-SETUP-{}", nautilus_core::UUID4::new());
+    let setup_sell = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(pool.instrument_id)
+        .client_order_id(ClientOrderId::new_checked(&setup_sell_id).unwrap())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("0.002"))
+        .build();
+    operator_cache
+        .borrow_mut()
+        .add_order(setup_sell.clone(), None, None, false)
+        .unwrap();
+    operator
+        .submit_order(SubmitOrder::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from(EXEC_CLIENT_NAME)),
+            StrategyId::from("S-001"),
+            setup_sell.instrument_id(),
+            setup_sell.client_order_id(),
+            setup_sell.init_event().clone(),
+            None,
+            None,
+            None,
+            nautilus_core::UUID4::new(),
+            nautilus_core::UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(60), async {
+        loop {
+            let row: Option<(String, bool)> = sqlx::query_as(
+                "SELECT intent.status, intent.fill_emitted \
+                 FROM execution_intent AS intent \
+                 WHERE intent.chain_id = 42161 AND intent.client_order_id = $1",
+            )
+            .bind(&setup_sell_id)
+            .fetch_optional(&admin_pool)
+            .await
+            .unwrap();
+
+            if let Some((status, fill_emitted)) = row
+                && status == "finalized"
+                && fill_emitted
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("setup SELL must finalize before the LiveNode BUY");
+
+    let (snapshot, _) = build_full_range_snapshot(&rpc_client, &pool).await;
+    let amount_in = quote_buy_amount_in(&snapshot, &pool);
+    let min_amount_out =
+        U256::from(WRAP_AMOUNT_WEI) * U256::from(10_000 - SLIPPAGE_BPS) / U256::from(10_000);
+    let quote = fork_quote_tick(&rpc_client, &pool).await;
+    assert!(
+        rpc_client
+            .get_transaction_receipt(
+                &operator
+                    .approve(USDC_ADDRESS, amount_in, ROUTER.parse().unwrap())
+                    .await
+                    .unwrap()
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .status
+    );
+    drop(operator);
+
+    let usdc_balance_before = erc20.balance_of(&USDC_ADDRESS, &wallet).await.unwrap();
+    let weth_balance_before = erc20.balance_of(&WETH_ADDRESS, &wallet).await.unwrap();
+
+    let mut node = build_fork_node(
+        "BlockchainForkLiveNodeBuy",
+        wallet,
+        anvil_url.clone(),
+        pg_config.clone(),
+        pool.clone(),
+        snapshot.clone(),
+        quote,
+        venue_string,
+    )
+    .unwrap();
+    let handle = node.handle();
+    let pool_seen = Rc::new(Cell::new(false));
+    let order_events: Rc<RefCell<Vec<OrderEventAny>>> = Rc::new(RefCell::new(Vec::new()));
+    msgbus::subscribe_defi_pools(
+        defi::switchboard::get_defi_pool_topic(pool.instrument_id).into(),
+        TypedHandler::<Pool>::from({
+            let pool_seen = pool_seen.clone();
+            move |_pool: &Pool| pool_seen.set(true)
+        }),
+        None,
+    );
+    node.add_strategy(SwapStrategy::new(
+        pool.instrument_id,
+        handle.clone(),
+        pool_seen,
+        order_events.clone(),
+        OrderSide::Buy,
+    ))
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(300), node.run())
+        .await
+        .expect("buy node must run to completion after the fill")
+        .unwrap();
+
+    let events = order_events.borrow().clone();
+    assert_eq!(events.len(), 2, "was: {events:?}");
+    let OrderEventAny::Filled(fill) = &events[1] else {
+        panic!("expected OrderFilled, was {:?}", events[1]);
+    };
+    assert_eq!(fill.order_side, OrderSide::Buy);
+    assert!(fill.commission.is_some(), "gas commission missing");
+    let swap_hash_string = fill.venue_order_id.as_str().to_string();
+
+    let weth_balance_after = erc20.balance_of(&WETH_ADDRESS, &wallet).await.unwrap();
+    let usdc_balance_after = erc20.balance_of(&USDC_ADDRESS, &wallet).await.unwrap();
+    let weth_received = weth_balance_after.checked_sub(weth_balance_before).unwrap();
+    let usdc_spent = usdc_balance_before.checked_sub(usdc_balance_after).unwrap();
+    assert_eq!(usdc_spent, amount_in);
+    assert!(weth_received >= min_amount_out);
+    let scale = U256::from(10u64).pow(U256::from(18 - u32::from(FIXED_PRECISION)));
+    assert_eq!(U256::from(fill.last_qty.raw), weth_received / scale);
+
+    let (status, fill_emitted): (String, bool) = sqlx::query_as(
+        "SELECT intent.status, intent.fill_emitted \
+         FROM execution_intent AS intent \
+         JOIN execution_transaction_hash AS hash \
+           ON hash.intent_id = intent.id AND hash.current \
+         WHERE intent.chain_id = 42161 AND hash.transaction_hash = $1",
+    )
+    .bind(&swap_hash_string)
+    .fetch_one(&admin_pool)
+    .await
+    .unwrap();
+    assert_eq!(status, "finalized");
+    assert!(fill_emitted);
+
+    let nonce_before_reconnect = rpc_client
+        .get_transaction_count_latest(&wallet)
+        .await
+        .unwrap();
+    let intents_before_reconnect: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM execution_intent WHERE chain_id = 42161")
+            .fetch_one(&admin_pool)
+            .await
+            .unwrap();
+    let mut probe = build_fork_node(
+        "BlockchainForkLiveNodeBuyReconnect",
+        wallet,
+        anvil_url,
+        pg_config,
+        pool,
+        snapshot,
+        fork_quote_tick(&rpc_client, &weth_usdc_pool()).await,
+        weth_usdc_pool().instrument_id.venue.to_string(),
+    )
+    .unwrap();
+    probe
+        .add_strategy(ReconnectProbeStrategy::new(probe.handle()))
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(120), probe.run())
+        .await
+        .expect("buy reconnect probe must complete")
+        .unwrap();
+    let nonce_after_reconnect = rpc_client
+        .get_transaction_count_latest(&wallet)
+        .await
+        .unwrap();
+    let intents_after_reconnect: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM execution_intent WHERE chain_id = 42161")
+            .fetch_one(&admin_pool)
+            .await
+            .unwrap();
+    assert_eq!(nonce_after_reconnect, nonce_before_reconnect);
+    assert_eq!(intents_after_reconnect, intents_before_reconnect);
 
     unsafe { std::env::remove_var(SIGNER_ENV) };
 }

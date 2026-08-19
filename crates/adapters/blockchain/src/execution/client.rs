@@ -56,7 +56,9 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, MarginBalance, Money, Quantity, fixed::FIXED_PRECISION},
+    types::{
+        AccountBalance, Currency, MarginBalance, Money, Price, Quantity, fixed::FIXED_PRECISION,
+    },
 };
 
 use crate::{
@@ -887,8 +889,11 @@ impl BlockchainExecutionClient {
             &quote_token.name,
             CurrencyType::Crypto,
         )?;
-        let token_in = pool.get_base_token().address;
-        let token_out = quote_token.address;
+        let (token_in, token_out) = swap_token_pair(
+            order.order_side(),
+            pool.get_base_token().address,
+            quote_token.address,
+        )?;
 
         Ok(SwapPlan {
             order,
@@ -1162,9 +1167,9 @@ impl BlockchainExecutionClient {
             );
         }
 
-        if order.order_side() != OrderSide::Sell {
+        if !matches!(order.order_side(), OrderSide::Buy | OrderSide::Sell) {
             anyhow::bail!(
-                "Unsupported order side {}; only Sell is supported",
+                "Unsupported order side {}; only Buy and Sell are supported",
                 order.order_side()
             );
         }
@@ -1190,23 +1195,23 @@ impl BlockchainExecutionClient {
             &quote_token.name,
             CurrencyType::Crypto,
         )?;
+        let (token_in, token_out) =
+            swap_token_pair(order.order_side(), base_token.address, quote_token.address)?;
 
         if !self
             .transaction_limits
             .allowed_token_pairs
-            .contains(&(base_token.address, quote_token.address))
+            .contains(&(token_in, token_out))
         {
             anyhow::bail!(
-                "Token pair {} -> {} is not in the `allowed_token_pairs` allowlist",
-                base_token.address,
-                quote_token.address
+                "Token pair {token_in} -> {token_out} is not in the `allowed_token_pairs` allowlist"
             );
         }
 
-        let amount_in = quantity_to_raw_amount(order.quantity(), base_token.decimals)?;
-        if amount_in > U256::from(self.transaction_limits.max_order_amount) {
+        let base_amount = quantity_to_raw_amount(order.quantity(), base_token.decimals)?;
+        if base_amount > U256::from(self.transaction_limits.max_order_amount) {
             anyhow::bail!(
-                "Order amount {amount_in} exceeds the configured `max_order_amount` {}",
+                "Order amount {base_amount} exceeds the configured `max_order_amount` {}",
                 self.transaction_limits.max_order_amount
             );
         }
@@ -1251,24 +1256,37 @@ impl BlockchainExecutionClient {
                 anyhow::anyhow!("Pool profiler for {instrument_id} has processed no events")
             })?;
 
-        let zero_for_one = base_token.address == pool.token0.address;
-        let quote = profiler
-            .swap_exact_in(amount_in, zero_for_one, None)
-            .map_err(|e| anyhow::anyhow!("Swap quote failed for {instrument_id}: {e}"))?;
+        let zero_for_one = token_in == pool.token0.address;
+        let (amount_in, quoted_amount_out) = match order.order_side() {
+            OrderSide::Sell => {
+                let quote = profiler
+                    .swap_exact_in(base_amount, zero_for_one, None)
+                    .map_err(|e| anyhow::anyhow!("Swap quote failed for {instrument_id}: {e}"))?;
+                let amount_filled = if zero_for_one {
+                    quote.amount0
+                } else {
+                    quote.amount1
+                };
 
-        let amount_filled = if zero_for_one {
-            quote.amount0
-        } else {
-            quote.amount1
+                if amount_filled != I256::from(base_amount) {
+                    anyhow::bail!(
+                        "Local quote for {instrument_id} filled {amount_filled} of the {base_amount} order amount; pool liquidity cannot fill the order"
+                    );
+                }
+                (base_amount, exact_output_amount(&quote, zero_for_one)?)
+            }
+            OrderSide::Buy => {
+                let quote = profiler
+                    .swap_exact_out(base_amount, zero_for_one, None)
+                    .map_err(|e| anyhow::anyhow!("Swap quote failed for {instrument_id}: {e}"))?;
+                let amount_in = quote.get_input_amount();
+                if amount_in.is_zero() {
+                    anyhow::bail!("Local quote for {instrument_id} produced a zero quote input");
+                }
+                (amount_in, base_amount)
+            }
+            _ => unreachable!("order side already validated"),
         };
-
-        if amount_filled != I256::from(amount_in) {
-            anyhow::bail!(
-                "Local quote for {instrument_id} filled {amount_filled} of the {amount_in} order amount; pool liquidity cannot fill the order"
-            );
-        }
-
-        let quoted_amount_out = exact_output_amount(&quote, zero_for_one)?;
         let min_amount_out = derive_min_amount_out(quoted_amount_out, slippage_bps)?;
 
         self.ensure_transaction_ready(TransactionPurpose::Swap)?;
@@ -1278,8 +1296,6 @@ impl BlockchainExecutionClient {
         }
 
         let pool_address = pool.address;
-        let token_in = base_token.address;
-        let token_out = quote_token.address;
 
         Ok(SwapPlan {
             order: order.clone(),
@@ -2249,16 +2265,38 @@ async fn emit_finalized_swap_fill(
             )
         })?;
     let event = dex.parse_swap_event_rpc(log)?;
-    let base_amount = if plan.pool.get_base_token().address == plan.pool.token0.address {
-        event.amount0
-    } else {
-        event.amount1
+    let (base_amount, quote_amount) =
+        if plan.pool.get_base_token().address == plan.pool.token0.address {
+            (event.amount0, event.amount1)
+        } else {
+            (event.amount1, event.amount0)
+        };
+    let last_qty = match plan.order.order_side() {
+        OrderSide::Sell => {
+            anyhow::ensure!(
+                base_amount.is_positive() && base_amount.unsigned_abs() == plan.amount_in,
+                "Finalized Swap input {base_amount} does not match the persisted amount {}",
+                plan.amount_in
+            );
+            plan.order.quantity()
+        }
+        OrderSide::Buy => {
+            anyhow::ensure!(
+                quote_amount.is_positive() && quote_amount.unsigned_abs() == plan.amount_in,
+                "Finalized Swap input {quote_amount} does not match the persisted amount {}",
+                plan.amount_in
+            );
+            anyhow::ensure!(
+                base_amount.is_negative(),
+                "Finalized Swap base amount {base_amount} is not a BUY output"
+            );
+            raw_amount_to_quantity(
+                base_amount.unsigned_abs(),
+                plan.pool.get_base_token().decimals,
+            )?
+        }
+        side => anyhow::bail!("Finalized Swap has unsupported order side {side}"),
     };
-    anyhow::ensure!(
-        base_amount.is_positive() && base_amount.unsigned_abs() == plan.amount_in,
-        "Finalized Swap input {base_amount} does not match the persisted amount {}",
-        plan.amount_in
-    );
 
     let block = executor
         .http_rpc_client
@@ -2287,9 +2325,10 @@ async fn emit_finalized_swap_fill(
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Finalized Swap has no calculated trade information"))?;
     anyhow::ensure!(
-        trade.order_side == OrderSide::Sell,
-        "Finalized Swap side {} does not match Sell order",
-        trade.order_side
+        trade.order_side == plan.order.order_side(),
+        "Finalized Swap side {} does not match {} order",
+        trade.order_side,
+        plan.order.order_side()
     );
     let gas_cost = included
         .receipt
@@ -2310,18 +2349,28 @@ async fn emit_finalized_swap_fill(
         return Ok(());
     }
 
+    let venue_order_id = VenueOrderId::new_checked(included.tx_hash.to_string())?;
+    let ts_event = UnixNanos::from(timestamp_ns);
+    let last_px = match plan.order.order_side() {
+        OrderSide::Buy => fill_price_from_quote(last_qty, plan.amount_in, plan.quote_currency)?,
+        _ => trade.execution_price,
+    };
     emitter.emit_order_filled(
         &plan.order,
-        VenueOrderId::new_checked(included.tx_hash.to_string())?,
+        venue_order_id,
         None,
         trade_id,
-        plan.order.quantity(),
-        trade.execution_price,
+        last_qty,
+        last_px,
         plan.quote_currency,
         Some(commission),
         LiquiditySide::Taker,
-        UnixNanos::from(timestamp_ns),
+        ts_event,
     );
+
+    if last_qty < plan.order.quantity() {
+        emitter.emit_order_canceled(&plan.order, Some(venue_order_id), ts_event);
+    }
     Ok(())
 }
 
@@ -2474,6 +2523,49 @@ fn quantity_to_raw_amount(quantity: Quantity, decimals: u8) -> anyhow::Result<U2
         }
         Ok(raw / divisor)
     }
+}
+
+fn swap_token_pair(
+    side: OrderSide,
+    base: Address,
+    quote: Address,
+) -> anyhow::Result<(Address, Address)> {
+    match side {
+        OrderSide::Sell => Ok((base, quote)),
+        OrderSide::Buy => Ok((quote, base)),
+        _ => anyhow::bail!("Unsupported order side {side}; only Buy and Sell are supported"),
+    }
+}
+
+fn fill_price_from_quote(
+    last_qty: Quantity,
+    quote_amount: U256,
+    quote_currency: Currency,
+) -> anyhow::Result<Price> {
+    let quote = Money::from_u256(quote_amount, quote_currency)?;
+    Price::from_decimal_dp(quote.as_decimal() / last_qty.as_decimal(), FIXED_PRECISION)
+        .map_err(anyhow::Error::from)
+}
+
+fn raw_amount_to_quantity(amount: U256, decimals: u8) -> anyhow::Result<Quantity> {
+    if amount.is_zero() {
+        anyhow::bail!("Executed amount must be positive");
+    }
+    let quantity = if decimals >= FIXED_PRECISION {
+        let scale = U256::from(10u64)
+            .checked_pow(U256::from(decimals - FIXED_PRECISION))
+            .ok_or_else(|| anyhow::anyhow!("Executed amount scaling overflow"))?;
+        Quantity::from_u256(amount / scale, FIXED_PRECISION).map_err(anyhow::Error::from)?
+    } else {
+        Quantity::from_u256(amount, decimals).map_err(anyhow::Error::from)?
+    };
+
+    if quantity.is_zero() {
+        anyhow::bail!(
+            "Executed amount {amount} is below representable quantity precision {FIXED_PRECISION}"
+        );
+    }
+    Ok(quantity)
 }
 
 /// Extracts the positive output amount from an exact-input swap quote.
@@ -2981,6 +3073,7 @@ mod tests {
     const USDC: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
 
     const WETH_ADDRESS: Address = address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1");
+    const USDC_ADDRESS: Address = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
     const ROUTER_ADDRESS: Address = address!("E592427A0AEce92De3Edee1F18E0157C05861564");
 
     // Anvil development key for WALLET (public, test-only)
@@ -3050,6 +3143,15 @@ mod tests {
             .max_quote_age_blocks(100)
             .receipt_timeout_secs(1)
             .build()
+    }
+
+    fn buy_test_config(http_rpc_url: String) -> BlockchainExecutionClientConfig {
+        let mut config = test_config(http_rpc_url);
+        config.allowed_token_pairs = Some(vec![
+            (WETH.to_string(), USDC.to_string()),
+            (USDC.to_string(), WETH.to_string()),
+        ]);
+        config
     }
 
     fn test_client_from_config(
@@ -3294,6 +3396,10 @@ mod tests {
         market_sell_order_with_id(instrument_id, "O-SWAP-001")
     }
 
+    fn test_market_buy_order(instrument_id: InstrumentId) -> OrderAny {
+        market_buy_order_with_id(instrument_id, "O-SWAP-BUY-001")
+    }
+
     fn submit_order_cmd(order: &OrderAny) -> SubmitOrder {
         SubmitOrder::new(
             TraderId::from("TRADER-001"),
@@ -3358,6 +3464,33 @@ mod tests {
         MockRpcState,
         Rc<RefCell<Cache>>,
     )> {
+        swap_client_with_database_config(test_name, state, test_config).await
+    }
+
+    async fn swap_client_with_buy_database(
+        test_name: &str,
+        state: MockRpcState,
+    ) -> Option<(
+        sqlx::PgPool,
+        String,
+        BlockchainExecutionClient,
+        MockRpcState,
+        Rc<RefCell<Cache>>,
+    )> {
+        swap_client_with_database_config(test_name, state, buy_test_config).await
+    }
+
+    async fn swap_client_with_database_config(
+        test_name: &str,
+        state: MockRpcState,
+        config: fn(String) -> BlockchainExecutionClientConfig,
+    ) -> Option<(
+        sqlx::PgPool,
+        String,
+        BlockchainExecutionClient,
+        MockRpcState,
+        Rc<RefCell<Cache>>,
+    )> {
         let (admin_pool, pg_config) = connect_test_postgres(test_name).await?;
         let schema = format!("{test_name}_{}", std::process::id());
         setup_execution_schema(&admin_pool, &schema).await;
@@ -3368,7 +3501,7 @@ mod tests {
             .await
             .unwrap();
         let addr = start_mock_rpc_server(state.clone()).await;
-        let (mut client, cache) = swap_client_with_cache(test_config(format!("http://{addr}")));
+        let (mut client, cache) = swap_client_with_cache(config(format!("http://{addr}")));
         client.cache.database = Some(database);
         // Mirror the connect-time migration: tests create the pre-submission table shape
         client
@@ -3534,6 +3667,143 @@ mod tests {
         .await
         .map(|(hash, raw)| (hash, nautilus_core::hex::encode_prefixed(&raw)))
         .unwrap()
+    }
+
+    fn expected_buy_base_amount() -> U256 {
+        U256::from(1_000_000_000_000_000u64)
+    }
+
+    fn expected_buy_amount_in() -> U256 {
+        let profiler = test_profiler(&test_pool(), FIXTURE_BLOCK);
+        profiler
+            .swap_exact_out(expected_buy_base_amount(), false, None)
+            .unwrap()
+            .get_input_amount()
+    }
+
+    fn expected_buy_min_amount_out(slippage_bps: u32) -> U256 {
+        derive_min_amount_out(expected_buy_base_amount(), slippage_bps).unwrap()
+    }
+
+    fn expected_buy_swap_calldata(min_amount_out: U256, amount_in: U256) -> Vec<u8> {
+        UniswapV3SwapRouter::exactInputSingleCall {
+            params: UniswapV3SwapRouter::ExactInputSingleParams {
+                tokenIn: USDC_ADDRESS,
+                tokenOut: WETH_ADDRESS,
+                fee: U24::try_from(500u32).unwrap(),
+                recipient: address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
+                deadline: U256::from(FIXTURE_BLOCK_TIMESTAMP + 300),
+                amountIn: amount_in,
+                amountOutMinimum: min_amount_out,
+                sqrtPriceLimitX96: U160::ZERO,
+            },
+        }
+        .abi_encode()
+    }
+
+    async fn expected_buy_swap_tx(min_amount_out: U256, amount_in: U256) -> (B256, String) {
+        let expected_tx = build_eip1559_transaction(
+            42161,
+            7,
+            78_000,
+            130_000_000,
+            10_000_000,
+            ROUTER_ADDRESS,
+            U256::ZERO,
+            Bytes::from(expected_buy_swap_calldata(min_amount_out, amount_in)),
+        );
+        sign_eip1559_transaction(
+            expected_tx,
+            &PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        )
+        .await
+        .map(|(hash, raw)| (hash, nautilus_core::hex::encode_prefixed(&raw)))
+        .unwrap()
+    }
+
+    fn finalized_buy_swap_receipt(tx_hash: B256, amount_in: U256) -> String {
+        finalized_buy_swap_receipt_with_base_out(tx_hash, amount_in, expected_buy_base_amount())
+    }
+
+    fn finalized_buy_swap_receipt_with_base_out(
+        tx_hash: B256,
+        amount_in: U256,
+        base_out: U256,
+    ) -> String {
+        let data = (
+            -I256::try_from(u128::try_from(base_out).unwrap()).unwrap(),
+            I256::try_from(u128::try_from(amount_in).unwrap()).unwrap(),
+            U160::from(1_u128 << 96),
+            TEST_LIQUIDITY,
+            I24::try_from(0).unwrap(),
+        )
+            .abi_encode();
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "transactionHash": tx_hash.to_string(),
+                "blockHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+                "blockNumber": "0x1cf0d41",
+                "transactionIndex": "0x2",
+                "gasUsed": "0xc3c0",
+                "effectiveGasPrice": "0x5f5e100",
+                "status": "0x1",
+                "logs": [{
+                    "removed": false,
+                    "logIndex": "0x6",
+                    "transactionIndex": "0x2",
+                    "transactionHash": tx_hash.to_string(),
+                    "blockHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+                    "blockNumber": "0x1cf0d41",
+                    "address": test_pool().address.to_string(),
+                    "data": hex::encode_prefixed(data),
+                    "topics": [
+                        "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67",
+                        "0x000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+                        "0x000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+                    ]
+                }]
+            }
+        })
+        .to_string()
+    }
+
+    fn finalized_buy_swap_block(tx_hash: B256, min_amount_out: U256, amount_in: U256) -> String {
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "number": "0x1cf0d41",
+                "hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+                "timestamp": "0x69044a21",
+                "baseFeePerGas": "0x5f5e100",
+                "transactions": [{
+                    "hash": tx_hash.to_string(),
+                    "from": WALLET,
+                    "nonce": "0x7",
+                    "to": ROUTER,
+                    "input": hex::encode_prefixed(expected_buy_swap_calldata(min_amount_out, amount_in)),
+                    "value": "0x0"
+                }]
+            }
+        })
+        .to_string()
+    }
+
+    fn finalized_buy_swap_rpc_state(
+        tx_hash: B256,
+        min_amount_out: U256,
+        amount_in: U256,
+    ) -> MockRpcState {
+        let receipt = finalized_buy_swap_receipt(tx_hash, amount_in);
+        let block = finalized_buy_swap_block(tx_hash, min_amount_out, amount_in);
+        signing_rpc_state()
+            .with_response("eth_getTransactionReceipt", &receipt)
+            .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block)
+            .with_send_raw_transaction_echo()
+            .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE)
+            .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE)
     }
 
     fn finalized_swap_receipt(tx_hash: B256) -> String {
@@ -3728,6 +3998,93 @@ mod tests {
     }
 
     #[rstest]
+    fn raw_amount_to_quantity_inverts_base_quantity() {
+        let quantity = Quantity::from("0.001");
+        let amount = quantity_to_raw_amount(quantity, 18).unwrap();
+
+        assert_eq!(raw_amount_to_quantity(amount, 18).unwrap(), quantity);
+    }
+
+    #[rstest]
+    fn raw_amount_to_quantity_rejects_positive_amount_truncated_to_zero() {
+        let error = raw_amount_to_quantity(U256::from(99u64), 18).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("is below representable quantity precision"),
+            "was: {error}"
+        );
+    }
+
+    #[rstest]
+    fn fill_price_from_quote_recovers_spent_quote_after_quantity_truncation() {
+        let last_qty = raw_amount_to_quantity(U256::from(1_000_000_403_079_044u64), 18).unwrap();
+        let quote_amount = U256::from(1_891_348u64);
+        let quote = Currency::new_checked("USDC", 6, 0, "USD Coin", CurrencyType::Crypto).unwrap();
+        let last_px = fill_price_from_quote(last_qty, quote_amount, quote).unwrap();
+
+        assert_eq!(
+            Money::from_decimal(last_qty.as_decimal() * last_px.as_decimal(), quote).unwrap(),
+            Money::from_u256(quote_amount, quote).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn swap_token_pair_is_directional() {
+        assert_eq!(
+            swap_token_pair(OrderSide::Sell, WETH_ADDRESS, USDC_ADDRESS).unwrap(),
+            (WETH_ADDRESS, USDC_ADDRESS)
+        );
+        assert_eq!(
+            swap_token_pair(OrderSide::Buy, WETH_ADDRESS, USDC_ADDRESS).unwrap(),
+            (USDC_ADDRESS, WETH_ADDRESS)
+        );
+    }
+
+    #[rstest]
+    fn restore_swap_plan_buy_uses_quote_input() {
+        let (client, cache) =
+            swap_client_with_cache(buy_test_config("http://127.0.0.1:1".to_string()));
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let amount_in = U256::from(2_345_678u64);
+        let intent = ExecutionIntentRow {
+            id: 7,
+            schema_version: crate::execution::transaction::EXECUTION_SCHEMA_VERSION,
+            chain_id: 42161,
+            wallet_address: WALLET.to_string(),
+            nonce: Some(7),
+            purpose: "swap".to_string(),
+            status: "finalized".to_string(),
+            client_order_id: Some(order.client_order_id().to_string()),
+            trader_id: Some(order.trader_id().to_string()),
+            strategy_id: Some(order.strategy_id().to_string()),
+            account_id: Some("BLOCKCHAIN-001".to_string()),
+            instrument_id: Some(order.instrument_id().to_string()),
+            pool_address: Some(test_pool().address.to_string()),
+            transaction_to: ROUTER.to_string(),
+            transaction_input: "0x".to_string(),
+            transaction_value: "0".to_string(),
+            amount_in: Some(amount_in.to_string()),
+            created_block: FIXTURE_BLOCK,
+            acknowledgement_emitted: true,
+            fill_emitted: false,
+            terminal_emitted: false,
+            active: true,
+        };
+
+        let plan = client.restore_swap_plan(&intent).unwrap();
+
+        assert_eq!(plan.token_in, USDC_ADDRESS);
+        assert_eq!(plan.token_out, WETH_ADDRESS);
+        assert_eq!(plan.amount_in, amount_in);
+    }
+
+    #[rstest]
     #[case(1_000_000, 50, 995_000)]
     #[case(1_000_000, 0, 1_000_000)]
     #[case(1_000_000, 200, 980_000)]
@@ -3796,17 +4153,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn submit_order_denies_buy_side() {
+    async fn submit_order_denies_buy_without_allowlisted_pair() {
         let (mut client, cache) =
             swap_client_with_cache(test_config("http://127.0.0.1:1".to_string()));
+        let pool = test_pool();
+        let order = test_market_buy_order(pool.instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied
+                .reason
+                .as_str()
+                .contains("not in the `allowed_token_pairs` allowlist"),
+            "was: {}",
+            denied.reason
+        );
+        assert!(
+            denied.reason.as_str().contains(&USDC_ADDRESS.to_string()),
+            "was: {}",
+            denied.reason
+        );
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_buy_quote_denominated_quantity() {
+        let (mut client, cache) =
+            swap_client_with_cache(buy_test_config("http://127.0.0.1:1".to_string()));
         let pool = test_pool();
         let order = OrderTestBuilder::new(OrderType::Market)
             .trader_id(TraderId::from("TRADER-001"))
             .strategy_id(StrategyId::from("S-001"))
             .instrument_id(pool.instrument_id)
-            .client_order_id(ClientOrderId::from("O-SWAP-001"))
+            .client_order_id(ClientOrderId::from("O-SWAP-BUY-001"))
             .side(OrderSide::Buy)
             .quantity(Quantity::from("0.001"))
+            .quote_quantity(true)
             .build();
         cache
             .borrow_mut()
@@ -3822,7 +4214,36 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("only Sell is supported"),
+            denied.reason.as_str().contains("Quote-denominated"),
+            "was: {}",
+            denied.reason
+        );
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_buy_amount_above_max_order_amount() {
+        let mut config = buy_test_config("http://127.0.0.1:1".to_string());
+        config.max_order_amount = Some(999_999_999_999_999);
+        let (mut client, cache) = swap_client_with_cache(config);
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied
+                .reason
+                .as_str()
+                .contains("exceeds the configured `max_order_amount`"),
             "was: {}",
             denied.reason
         );
@@ -3926,6 +4347,36 @@ mod tests {
         };
         assert!(
             denied.reason.as_str().contains("Unknown pool"),
+            "was: {}",
+            denied.reason
+        );
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_sell_when_only_buy_pair_allowlisted() {
+        let mut config = test_config("http://127.0.0.1:1".to_string());
+        config.allowed_token_pairs = Some(vec![(USDC.to_string(), WETH.to_string())]);
+        let (mut client, _) = swap_client_with_cache(config);
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied
+                .reason
+                .as_str()
+                .contains("not in the `allowed_token_pairs` allowlist"),
+            "was: {}",
+            denied.reason
+        );
+        assert!(
+            denied.reason.as_str().contains(&WETH_ADDRESS.to_string()),
             "was: {}",
             denied.reason
         );
@@ -4390,6 +4841,407 @@ mod tests {
                 .filter(|request| request["method"] == "eth_getBalance")
                 .count(),
             2
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn prepare_swap_buy_uses_quote_input_and_base_min_out() {
+        let amount_in = expected_buy_amount_in();
+        let min_amount_out = expected_buy_min_amount_out(50);
+        let (expected_hash, _) = expected_buy_swap_tx(min_amount_out, amount_in).await;
+        let state = finalized_buy_swap_rpc_state(expected_hash, min_amount_out, amount_in);
+        let Some((admin_pool, schema, client, _, cache)) =
+            swap_client_with_buy_database("execution_prepare_buy_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+
+        let plan = client
+            .prepare_swap(&submit_order_cmd(&order), &order)
+            .unwrap();
+
+        assert_eq!(plan.token_in, USDC_ADDRESS);
+        assert_eq!(plan.token_out, WETH_ADDRESS);
+        assert_eq!(plan.amount_in, amount_in);
+        assert_eq!(plan.min_amount_out, min_amount_out);
+        assert_ne!(plan.token_in, WETH_ADDRESS);
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn submit_order_broadcasts_buy_swap() {
+        let amount_in = expected_buy_amount_in();
+        let min_amount_out = expected_buy_min_amount_out(50);
+        let (expected_hash, expected_raw) = expected_buy_swap_tx(min_amount_out, amount_in).await;
+        let state = finalized_buy_swap_rpc_state(expected_hash, min_amount_out, amount_in);
+        let Some((admin_pool, schema, mut client, state, cache)) =
+            swap_client_with_buy_database("execution_submit_buy_success_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert_swap_submitted_and_filled(&events);
+        let broadcasts: Vec<_> = state
+            .recorded_requests()
+            .into_iter()
+            .filter(|request| request["method"] == "eth_sendRawTransaction")
+            .collect();
+        assert_eq!(broadcasts.len(), 1);
+        assert_eq!(broadcasts[0]["params"][0].as_str().unwrap(), expected_raw);
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn finalized_buy_swap_emits_fill_from_output_leg() {
+        let amount_in = expected_buy_amount_in();
+        let min_amount_out = expected_buy_min_amount_out(50);
+        let (expected_hash, _) = expected_buy_swap_tx(min_amount_out, amount_in).await;
+        let state = finalized_buy_swap_rpc_state(expected_hash, min_amount_out, amount_in);
+        let Some((admin_pool, schema, mut client, state, cache)) =
+            swap_client_with_buy_database("execution_submit_buy_fill_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+        let plan = client
+            .prepare_swap(&submit_order_cmd(&order), &order)
+            .unwrap();
+
+        execute_swap(
+            plan,
+            client.transaction_executor().unwrap(),
+            client.emitter.clone(),
+            client.transaction_limits.max_quote_age_blocks,
+            client.transaction_limits.deadline_seconds,
+        )
+        .await
+        .unwrap();
+
+        let mut order_events = Vec::new();
+
+        while let Ok(event) = receiver.try_recv() {
+            if let ExecutionEvent::Order(event) = event {
+                order_events.push(event);
+            }
+        }
+        assert_eq!(order_events.len(), 2, "was: {order_events:?}");
+        assert!(matches!(&order_events[0], OrderEventAny::Submitted(_)));
+        let OrderEventAny::Filled(fill) = &order_events[1] else {
+            panic!("expected OrderFilled, was {:?}", order_events[1]);
+        };
+        let expected_commission = Money::from_u256(
+            U256::from(50_112_u64) * U256::from(100_000_000_u64),
+            test_pool().chain.native_currency(),
+        )
+        .unwrap();
+        assert_eq!(fill.client_order_id, order.client_order_id());
+        assert_eq!(fill.venue_order_id.as_str(), expected_hash.to_string());
+        assert_eq!(fill.order_side, OrderSide::Buy);
+        assert_eq!(fill.last_qty, Quantity::from("0.001"));
+        assert_eq!(fill.currency.code.as_str(), "USDC");
+        assert_eq!(fill.commission, Some(expected_commission));
+        assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(
+            Money::from_decimal(
+                fill.last_qty.as_decimal() * fill.last_px.as_decimal(),
+                fill.currency,
+            )
+            .unwrap(),
+            Money::from_u256(amount_in, fill.currency).unwrap()
+        );
+
+        let (fill_emitted, active): (bool, bool) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT fill_emitted, active FROM {schema}.execution_intent"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert!(fill_emitted);
+        assert!(!active);
+
+        let database = client.cache.database.as_ref().unwrap().clone();
+        let restart_config = client.config.clone();
+        drop(client);
+        let (mut restarted, _) = swap_client_with_cache(restart_config);
+        restarted.cache.database = Some(database);
+        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        let mut restart_receiver = start_with_events(&mut restarted);
+        restarted.reconcile_unresolved_execution().await.unwrap();
+        restarted.reconcile_unresolved_execution().await.unwrap();
+        assert!(collect_order_events(&mut restart_receiver).is_empty());
+        assert_eq!(
+            state
+                .recorded_requests()
+                .iter()
+                .filter(|request| request["method"] == "eth_sendRawTransaction")
+                .count(),
+            1
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn finalized_buy_swap_cancels_remainder_when_output_is_short() {
+        let amount_in = expected_buy_amount_in();
+        let min_amount_out = expected_buy_min_amount_out(50);
+        let (expected_hash, _) = expected_buy_swap_tx(min_amount_out, amount_in).await;
+        let short_base_out = min_amount_out;
+        let mut state = finalized_buy_swap_rpc_state(expected_hash, min_amount_out, amount_in);
+        state = state.with_response(
+            "eth_getTransactionReceipt",
+            &finalized_buy_swap_receipt_with_base_out(expected_hash, amount_in, short_base_out),
+        );
+        let Some((admin_pool, schema, mut client, _, cache)) =
+            swap_client_with_buy_database("execution_submit_buy_short_fill_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+        let plan = client
+            .prepare_swap(&submit_order_cmd(&order), &order)
+            .unwrap();
+
+        execute_swap(
+            plan,
+            client.transaction_executor().unwrap(),
+            client.emitter.clone(),
+            client.transaction_limits.max_quote_age_blocks,
+            client.transaction_limits.deadline_seconds,
+        )
+        .await
+        .unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 3, "was: {events:?}");
+        assert!(matches!(&events[0], OrderEventAny::Submitted(_)));
+        let OrderEventAny::Filled(fill) = &events[1] else {
+            panic!("expected OrderFilled, was {:?}", events[1]);
+        };
+        let expected_qty = raw_amount_to_quantity(short_base_out, 18).unwrap();
+        assert_eq!(fill.order_side, OrderSide::Buy);
+        assert_eq!(fill.last_qty, expected_qty);
+        assert!(fill.last_qty < order.quantity());
+        let OrderEventAny::Canceled(canceled) = &events[2] else {
+            panic!("expected OrderCanceled, was {:?}", events[2]);
+        };
+        assert_eq!(canceled.client_order_id, order.client_order_id());
+        assert_eq!(
+            canceled.venue_order_id.as_ref().map(VenueOrderId::as_str),
+            Some(expected_hash.to_string().as_str())
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn finalized_buy_swap_reports_full_output_when_above_order_quantity() {
+        let amount_in = expected_buy_amount_in();
+        let min_amount_out = expected_buy_min_amount_out(50);
+        let (expected_hash, _) = expected_buy_swap_tx(min_amount_out, amount_in).await;
+        let overshoot_base_out = expected_buy_base_amount() * U256::from(2) + U256::from(44);
+        let mut state = finalized_buy_swap_rpc_state(expected_hash, min_amount_out, amount_in);
+        state = state.with_response(
+            "eth_getTransactionReceipt",
+            &finalized_buy_swap_receipt_with_base_out(expected_hash, amount_in, overshoot_base_out),
+        );
+        let Some((admin_pool, schema, mut client, _, cache)) =
+            swap_client_with_buy_database("execution_submit_buy_overshoot_fill_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+        let plan = client
+            .prepare_swap(&submit_order_cmd(&order), &order)
+            .unwrap();
+
+        execute_swap(
+            plan,
+            client.transaction_executor().unwrap(),
+            client.emitter.clone(),
+            client.transaction_limits.max_quote_age_blocks,
+            client.transaction_limits.deadline_seconds,
+        )
+        .await
+        .unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 2, "was: {events:?}");
+        assert!(matches!(&events[0], OrderEventAny::Submitted(_)));
+        let OrderEventAny::Filled(fill) = &events[1] else {
+            panic!("expected OrderFilled, was {:?}", events[1]);
+        };
+        let expected_qty = raw_amount_to_quantity(overshoot_base_out, 18).unwrap();
+        assert_eq!(fill.order_side, OrderSide::Buy);
+        assert_eq!(fill.last_qty, expected_qty);
+        assert!(fill.last_qty > order.quantity());
+        assert_eq!(
+            Money::from_decimal(
+                fill.last_qty.as_decimal() * fill.last_px.as_decimal(),
+                fill.currency,
+            )
+            .unwrap(),
+            Money::from_u256(amount_in, fill.currency).unwrap()
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn finalized_buy_swap_rejects_sell_oriented_log() {
+        let amount_in = expected_buy_amount_in();
+        let min_amount_out = expected_buy_min_amount_out(50);
+        let (expected_hash, _) = expected_buy_swap_tx(min_amount_out, amount_in).await;
+        let state = finalized_buy_swap_rpc_state(expected_hash, min_amount_out, amount_in)
+            .with_response(
+                "eth_getTransactionReceipt",
+                &finalized_swap_receipt(expected_hash),
+            );
+        let Some((admin_pool, schema, mut client, _, cache)) =
+            swap_client_with_buy_database("execution_submit_buy_sell_log_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+        let plan = client
+            .prepare_swap(&submit_order_cmd(&order), &order)
+            .unwrap();
+
+        execute_swap(
+            plan,
+            client.transaction_executor().unwrap(),
+            client.emitter.clone(),
+            client.transaction_limits.max_quote_age_blocks,
+            client.transaction_limits.deadline_seconds,
+        )
+        .await
+        .unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 2, "was: {events:?}");
+        assert!(matches!(&events[0], OrderEventAny::Submitted(_)));
+        let OrderEventAny::Rejected(rejected) = &events[1] else {
+            panic!("expected OrderRejected, was {:?}", events[1]);
+        };
+        assert!(
+            rejected
+                .reason
+                .as_str()
+                .contains("does not match the persisted amount")
+                || rejected.reason.as_str().contains("is not a BUY output"),
+            "was: {}",
+            rejected.reason
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn submit_order_applies_buy_slippage_to_base_output() {
+        let amount_in = expected_buy_amount_in();
+        let min_amount_out = expected_buy_min_amount_out(200);
+        let (expected_hash, expected_raw) = expected_buy_swap_tx(min_amount_out, amount_in).await;
+        let state = finalized_buy_swap_rpc_state(expected_hash, min_amount_out, amount_in);
+        let Some((admin_pool, schema, mut client, state, cache)) =
+            swap_client_with_buy_database("execution_submit_buy_slippage_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let mut cmd = submit_order_cmd(&order);
+        cmd.params = Some(serde_json::from_str(r#"{"slippage_bps": 200}"#).unwrap());
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(cmd).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert_swap_submitted_and_filled(&events);
+        let broadcasts: Vec<_> = state
+            .recorded_requests()
+            .into_iter()
+            .filter(|request| request["method"] == "eth_sendRawTransaction")
+            .collect();
+        assert_eq!(broadcasts.len(), 1);
+        assert_eq!(broadcasts[0]["params"][0].as_str().unwrap(), expected_raw);
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_buy_on_insufficient_quote_balance() {
+        let amount_in = expected_buy_amount_in();
+        let min_amount_out = expected_buy_min_amount_out(50);
+        let (expected_hash, _) = expected_buy_swap_tx(min_amount_out, amount_in).await;
+        let state = finalized_buy_swap_rpc_state(expected_hash, min_amount_out, amount_in)
+            .with_call_response(BALANCE_OF_SELECTOR, CALL_ZERO);
+        let Some((admin_pool, schema, mut client, _, cache)) =
+            swap_client_with_buy_database("execution_submit_buy_balance_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied.reason.as_str().contains("is below the swap amount"),
+            "was: {}",
+            denied.reason
         );
 
         drop_execution_schema(&admin_pool, &schema).await;
@@ -8504,6 +9356,17 @@ mod tests {
             .instrument_id(instrument_id)
             .client_order_id(ClientOrderId::from(client_order_id))
             .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.001"))
+            .build()
+    }
+
+    fn market_buy_order_with_id(instrument_id: InstrumentId, client_order_id: &str) -> OrderAny {
+        OrderTestBuilder::new(OrderType::Market)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("S-001"))
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from(client_order_id))
+            .side(OrderSide::Buy)
             .quantity(Quantity::from("0.001"))
             .build()
     }

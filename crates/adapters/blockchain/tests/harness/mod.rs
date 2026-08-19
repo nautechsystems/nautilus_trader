@@ -406,6 +406,19 @@ pub(crate) async fn build_full_range_snapshot(
     (snapshot, quoted_out)
 }
 
+#[allow(
+    dead_code,
+    reason = "used by execution_fork and execution_livenode_fork; this harness is compiled into each fork binary"
+)]
+pub(crate) fn quote_buy_amount_in(snapshot: &PoolSnapshot, pool: &Pool) -> U256 {
+    let mut profiler = PoolProfiler::new(Arc::new(pool.clone()));
+    profiler.restore_from_snapshot(snapshot.clone()).unwrap();
+    profiler
+        .swap_exact_out(U256::from(WRAP_AMOUNT_WEI), false, None)
+        .unwrap()
+        .get_input_amount()
+}
+
 pub(crate) fn git_diff_sha256(args: &[&str]) -> String {
     Command::new("git")
         .arg("diff")

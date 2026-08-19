@@ -185,7 +185,7 @@ pub struct BlockchainExecutionClientConfig {
     pub slippage_bps: Option<u32>,
     /// Maximum slippage in basis points accepted from a per-order parameter override.
     pub max_slippage_bps: Option<u32>,
-    /// Per-order ceiling for the input amount, in raw units of the order's base token.
+    /// Per-order ceiling for the submitted base quantity, in raw units of the pool's base token.
     pub max_order_amount: Option<u64>,
     /// Swap deadline offset in seconds from the latest block timestamp.
     pub deadline_seconds: Option<u64>,

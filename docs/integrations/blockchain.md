@@ -475,16 +475,16 @@ a disconnected client before any execution RPC call.
 
 ### Supported order slice
 
-The client accepts one order shape:
+The client accepts one market-order shape:
 
-| Axis        | Accepted                                                                 | Rejected                                                   |
-| ----------- | ------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| Chain       | The chain configured on the execution client.                            | An instrument venue for another chain.                     |
-| DEX         | Uniswap V3.                                                              | Every other DEX, including PancakeSwap V3.                 |
+| Axis        | Accepted                                                                | Rejected                                                   |
+| ----------- | ----------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Chain       | The chain configured on the execution client.                           | An instrument venue for another chain.                     |
+| DEX         | Uniswap V3.                                                             | Every other DEX, including PancakeSwap V3.                 |
 | Pool        | An address-based pool in `Cache::pool` with a fee tier.                  | Unknown pools, V4 pool IDs, and pools without a fee tier.  |
-| Order       | A single `MarketOrder` with side `SELL`.                                 | BUY and non-market orders submitted through `SubmitOrder`. |
-| Quantity    | Base-denominated input that fits the configured raw-unit amount ceiling. | Quote-denominated input and amounts above the ceiling.     |
-| Orientation | Tokens with distinct model priorities.                                   | A pair whose tokens have equal priority and are ambiguous. |
+| Order       | A single `MarketOrder` with side `BUY` or `SELL`.                        | Non-market orders submitted through `SubmitOrder`.         |
+| Quantity    | Base-denominated size that fits the configured raw-unit amount ceiling.  | Quote-denominated input and amounts above the ceiling.     |
+| Orientation | Tokens with distinct model priorities.                                  | A pair whose tokens have equal priority and are ambiguous. |
 
 The `InstrumentId` selects the pool, for example
 `0xC6962004f452bE9203591991D15f6b388e09E8D0.Arbitrum:UniswapV3`. Its venue must parse as
@@ -517,18 +517,20 @@ venue whose parsed chain matches the client configuration and whose DEX is suppo
 The instrument retains its `<Chain>:<DexType>` venue rather than being rewritten to `BLOCKCHAIN`.
 
 The order maps to a single `exactInputSingle` call on the original Uniswap SwapRouter (the
-deployment whose signature carries a deadline):
+deployment whose signature carries a deadline). `allowed_token_pairs` is directional
+`(token_in, token_out)`: a SELL requires the base-to-quote pair, and a BUY requires the
+quote-to-base pair. Listing only one direction does not admit the other.
 
-| Parameter           | Source                                                      |
-| ------------------- | ----------------------------------------------------------- |
-| `tokenIn`           | Pool base token address                                     |
-| `tokenOut`          | Pool quote token address                                    |
-| `fee`               | Pool fee tier                                               |
-| `recipient`         | Execution wallet address                                    |
-| `deadline`          | Latest block timestamp plus configured `deadline_seconds`   |
-| `amountIn`          | `Quantity` converted to raw `U256` with base token decimals |
-| `amountOutMinimum`  | Derived from a current quote (see below)                    |
-| `sqrtPriceLimitX96` | `0` (slippage is bounded by `amountOutMinimum`)             |
+| Parameter           | Source                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------ |
+| `tokenIn`           | SELL: pool base token. BUY: pool quote token.                                              |
+| `tokenOut`          | SELL: pool quote token. BUY: pool base token.                                              |
+| `fee`               | Pool fee tier.                                                                             |
+| `recipient`         | Execution wallet address.                                                                  |
+| `deadline`          | Latest block timestamp plus configured `deadline_seconds`.                                 |
+| `amountIn`          | SELL: `Quantity` as raw base units. BUY: quote input derived from a local exact-out quote. |
+| `amountOutMinimum`  | Derived from a current quote (see below).                                                  |
+| `sqrtPriceLimitX96` | `0` (slippage is bounded by `amountOutMinimum`).                                           |
 
 ### Slippage protection
 
@@ -537,14 +539,17 @@ deployment whose signature carries a deadline):
 1. Require an active data-side subscription to the pool so the `PoolProfiler` in the shared engine
    cache (`Cache::pool_profiler`) is live; without a live profiler no quote exists and the order
    is rejected.
-1. Simulate the exact-input swap locally with `PoolProfiler::swap_exact_in` on that profiler, and
-   require the simulation to consume the full input amount; a partially filled quote means the
-   pool's liquidity cannot fill the order, and the order is rejected.
+1. Simulate the swap locally on that profiler. A SELL uses `swap_exact_in` on the base quantity and
+   requires the simulation to consume the full input. A BUY uses `swap_exact_out` on the base
+   quantity to derive the quote input, then submits that input as `exactInputSingle`. A BUY quote
+   that returns a zero input is rejected; an on-chain BUY may still deliver less base than the
+   order quantity, down to `amountOutMinimum`.
 1. Require the pool state to be fresh within `max_quote_age_blocks` of the chain's latest block;
    with no running data engine the profiler stops tracking the chain, the quote is stale, and the
    order is rejected.
 1. Compute `amountOutMinimum = quoted_amount_out * (10_000 - slippage_bps) / 10_000` in integer
-   arithmetic and reject the order when the result is zero.
+   arithmetic and reject the order when the result is zero. For a BUY, `quoted_amount_out` is the
+   submitted base quantity, so slippage protects the base output.
 
 The slippage comes from the `slippage_bps` configuration field, overridable per order through a
 `slippage_bps` entry in the submit command's `params`; an override above the `max_slippage_bps`
@@ -579,6 +584,10 @@ Before signing a swap, order submission checks:
 - Deployed bytecode at the pool, router, and token addresses.
 - Router allowance and input-token balance sufficient for the raw input amount.
 - Native balance sufficient for transaction value plus the maximum gas cost.
+
+The input token is the base token for a SELL and the quote token for a BUY. Preflight readiness
+still reports the base-token allowance used by SELL setup. A BUY needs a separate quote-token
+approval; submission denies the order if that allowance or balance is short.
 
 Submission never wraps or approves. An insufficient allowance or balance emits `OrderDenied`.
 
@@ -648,17 +657,17 @@ Broadcast and receipt handling follow these rules:
 Generic pre-trade risk stays in the engine. Venue-specific gates live in the adapter as a
 configuration-driven limiter:
 
-| Check                 | Boundary       | Enforcement                                               |
-| --------------------- | -------------- | --------------------------------------------------------- |
-| Chain ID              | Adapter        | Preflight at connect and before every signature           |
-| Router allowlist      | Risk (adapter) | `router_addresses` only                                   |
-| Token-pair allowlist  | Risk (adapter) | `allowed_token_pairs` only                                |
-| Order amount          | Risk (adapter) | `max_order_amount` in raw units of the order's base token |
-| Gas and fee           | Risk (adapter) | `gas_limit` and `max_fee_per_gas_wei` ceilings            |
-| Balance sufficiency   | Adapter + risk | Wallet balances as account state; limiter rejects short   |
-| Allowance sufficiency | Adapter        | Preflight and submission check against router allowance   |
-| Slippage              | Risk (adapter) | `max_slippage_bps` ceiling; quote derives the minimum     |
-| In-flight limit       | Adapter + DB   | Local slot plus persisted signer and nonce uniqueness     |
+| Check                 | Boundary       | Enforcement                                                                                |
+| --------------------- | -------------- | ------------------------------------------------------------------------------------------ |
+| Chain ID              | Adapter        | Preflight at connect and before every signature                                            |
+| Router allowlist      | Risk (adapter) | `router_addresses` only                                                                    |
+| Token-pair allowlist  | Risk (adapter) | `allowed_token_pairs` only                                                                 |
+| Order amount          | Risk (adapter) | `max_order_amount` on submitted base quantity; BUY quote spend is not separately ceilinged |
+| Gas and fee           | Risk (adapter) | `gas_limit` and `max_fee_per_gas_wei` ceilings                                             |
+| Balance sufficiency   | Adapter + risk | Wallet balances as account state; limiter rejects short                                    |
+| Allowance sufficiency | Adapter        | Preflight and submission check against router allowance                                    |
+| Slippage              | Risk (adapter) | `max_slippage_bps` ceiling; quote derives the minimum                                      |
+| In-flight limit       | Adapter + DB   | Local slot plus persisted signer and nonce uniqueness                                      |
 
 Every limiter rejection refuses the order before signing and reports a structured reason.
 
@@ -666,14 +675,14 @@ Every limiter rejection refuses the order before signing and reports a structure
 
 Order submission emits only events justified by known transaction state:
 
-| Observation                                                | Event             | Result                                                           |
-| ---------------------------------------------------------- | ----------------- | ---------------------------------------------------------------- |
-| Failure before the persisted broadcast transition.         | `OrderDenied`     | No transaction left the client.                                  |
-| Persisted broadcast attempt, including an ambiguous reply. | `OrderSubmitted`  | The signed intent remains the observation authority.             |
-| Stable finalized revert.                                   | `OrderRejected`   | The terminal marker releases signer ownership.                   |
-| Stable finalized transaction that mismatches the intent.   | `OrderRejected`   | The client refuses to derive a fill.                             |
-| Stable finalized success with exact transaction and log.   | `OrderFilled`     | Wallet refresh and marker persistence then complete the intent.  |
-| Timeout, disappearing receipt, or pre-finality reorg.      | No terminal event | The order stays submitted and signer ownership remains occupied. |
+| Observation                                                | Event             | Result                                                                                                                                                                                                                           |
+| ---------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Failure before the persisted broadcast transition.         | `OrderDenied`     | No transaction left the client.                                                                                                                                                                                                  |
+| Persisted broadcast attempt, including an ambiguous reply. | `OrderSubmitted`  | The signed intent remains the observation authority.                                                                                                                                                                             |
+| Stable finalized revert.                                   | `OrderRejected`   | The terminal marker releases signer ownership.                                                                                                                                                                                   |
+| Stable finalized transaction that mismatches the intent.   | `OrderRejected`   | The client refuses to derive a fill.                                                                                                                                                                                             |
+| Stable finalized success with exact transaction and log.   | `OrderFilled`     | Wallet refresh and marker persistence then complete the intent. A BUY that executes below the order quantity also emits `OrderCanceled` for the remainder. A BUY that executes above the order quantity reports the full output. |
+| Timeout, disappearing receipt, or pre-finality reorg.      | No terminal event | The order stays submitted and signer ownership remains occupied.                                                                                                                                                                 |
 
 A successful receipt at first inclusion does not emit a fill. The client waits for the stable
 finalized boundary described below.
@@ -763,19 +772,25 @@ The RPC endpoint must support the `finalized` tag. An unsupported tag fails reco
 
 For a successful swap, the full finalized transaction must match the persisted signer, nonce,
 destination, calldata, and value. The receipt must contain exactly one `Swap` log from the selected
-pool, and its raw positive base input must equal the persisted SELL amount. Existing Uniswap V3
-parsing derives the executed amount and price.
+pool. A SELL requires the log's positive base input to equal the persisted amount. A BUY requires
+the log's positive quote input to equal the persisted amount and a negative base output. Existing
+Uniswap V3 parsing derives the executed amount. A BUY fill price is the quote spent divided by
+the emitted last quantity.
 
 The fill contains:
 
-- The original order quantity.
+- The original order quantity for a SELL. For a BUY, the executed base output converted at
+  `FIXED_PRECISION`. A BUY can fill more than the submitted quantity when the pool price
+  improves; set `allow_overfills = true` on the live execution engine so that fill is applied.
+- The average fill price. For a BUY, quote spent divided by the emitted last quantity.
 - The transaction hash as venue order ID.
 - A deterministic trade ID derived from the transaction hash and log index.
 - `effectiveGasPrice * gasUsed` as native-currency commission.
 
-After emitting the fill, the client refreshes native and tracked token balances, publishes wallet
-account state, stores the fill marker, and releases signer ownership. A wallet refresh failure keeps
-the finalized intent active for reconciliation.
+After emitting the fill, the client adds both pool tokens to the tracked balance set, refreshes
+native and tracked token balances, publishes wallet account state, stores the fill marker, and
+releases signer ownership. A wallet refresh failure keeps the finalized intent active for
+reconciliation.
 
 #### Event delivery across restarts
 
@@ -806,10 +821,10 @@ The `BlockchainExecutionClientConfig` fields, exposed to Python following the
 | `gas_buffer_bps`                 | Required  | Buffer applied over `eth_estimateGas`.                               |
 | `unlimited_approval`             | `false`   | Request unlimited approval instead of the exact amount.              |
 | `weth_address`                   | Required  | Wrapped native token used by `wrap`.                                 |
-| `allowed_token_pairs`            | Required  | Allowed input and output token address pairs.                        |
+| `allowed_token_pairs`            | Required  | Directional input/output pairs; BUY needs the reverse pair.          |
 | `slippage_bps`                   | Required  | Default slippage used to derive the minimum output.                  |
 | `max_slippage_bps`               | Required  | Ceiling for a per-order slippage override.                           |
-| `max_order_amount`               | Required  | `u64` ceiling in raw base-token units.                               |
+| `max_order_amount`               | Required  | `u64` ceiling on submitted base quantity, in raw base-token units.   |
 | `deadline_seconds`               | Required  | Swap deadline offset from the latest block timestamp.                |
 | `max_quote_age_blocks`           | Required  | Maximum age of the local quote in blocks.                            |
 | `receipt_timeout_secs`           | Required  | Deadline for the receipt and finality polling loop.                  |
@@ -867,25 +882,26 @@ The opt-in integration suites share this environment:
 
 The direct-client suite (`execution_fork`) runs these scenarios:
 
-| Scenario                                 | Expected result                                                        |
-| ---------------------------------------- | ---------------------------------------------------------------------- |
-| PancakeSwap V3 market SELL.              | `OrderDenied`; no nonce use or durable intent.                         |
-| Uniswap V3 limit SELL.                   | `OrderDenied`; no nonce use or durable intent.                         |
-| Uniswap V3 market BUY.                   | `OrderDenied`; no nonce use or durable intent.                         |
-| Uniswap V3 market SELL before approval.  | `OrderDenied`; no nonce use or durable intent.                         |
-| WETH wrap and router approval.           | Successful receipts, balance delta, allowance, and terminal records.   |
-| WETH to USDC Uniswap V3 market SELL.     | Exact submitted/fill events, asset deltas, gas, and final transitions. |
-| Disconnect and reconnect after finality. | No nonce use, rebroadcast, or repeated order event.                    |
-| Restart a dropped wrap or approve.       | Call identity and postcondition pass; the intent becomes inactive.     |
-| Restart after a mismatched replacement.  | Connect fails closed; the wrap is not treated as success.              |
+| Scenario                                        | Expected result                                                        |
+| ----------------------------------------------- | ---------------------------------------------------------------------- |
+| PancakeSwap V3 market SELL.                     | `OrderDenied`; no nonce use or durable intent.                         |
+| Uniswap V3 limit SELL.                          | `OrderDenied`; no nonce use or durable intent.                         |
+| Uniswap V3 market BUY without the reverse pair. | `OrderDenied`; no nonce use or durable intent.                         |
+| Uniswap V3 market SELL before approval.         | `OrderDenied`; no nonce use or durable intent.                         |
+| WETH wrap and router approval.                  | Successful receipts, balance delta, allowance, and terminal records.   |
+| WETH to USDC Uniswap V3 market SELL.            | Exact submitted/fill events, asset deltas, gas, and final transitions. |
+| USDC to WETH Uniswap V3 market BUY.             | Exact submitted/fill events, asset deltas, gas, and reconnect.         |
+| Disconnect and reconnect after finality.        | No nonce use, rebroadcast, or repeated order event.                    |
+| Restart a dropped wrap or approve.              | Call identity and postcondition pass; the intent becomes inactive.     |
+| Restart after a mismatched replacement.         | Connect fails closed; the wrap is not treated as success.              |
 
 Anvil does not reproduce Arbitrum ArbOS gas pricing. Mocked RPC tests cover gas estimation and fee
 policy.
 
 A second suite, `execution_livenode_fork`, proves the supported swap slice through the full node
 path: `BlockchainExecutionClientFactory` registration, venue routing, and a strategy submitting a
-SELL market order through the risk and execution engines to a finalized fill with refreshed wallet
-account state. A second node then reconnects after finality with no nonce use, no new intent or
+SELL or BUY market order through the risk and execution engines to a finalized fill with refreshed
+wallet account state. A second node then reconnects after finality with no nonce use, no new intent or
 transaction hash, and its terminal emission markers still in place, so restart reconciliation
 cannot re-emit order events; the direct-client suite's channel-level check covers duplicate event
 emission. Operator wrap and router approval run first through direct client construction, matching
@@ -1206,12 +1222,12 @@ A new protocol family needs the design pass above.
 
 ## Current limitations
 
-- Order submission supports only SELL market orders swapping a Uniswap V3 pool's base token for
-  its quote token on the client's chain. Order lists are denied, modify and cancel operations are
-  rejected, and venue report probes return an error except mass status, which returns `Ok(None)`;
-  all fail closed with no on-chain or durable side effects. LiveNode must disable in-flight checks
-  and leave open-order checks off. BUY-side, quote-denominated, and multi-hop orders are not
-  supported. See [Execution](#execution).
+- Order submission supports BUY and SELL market orders through a registered Uniswap V3 deployment
+  on the client's chain. Order lists are denied, modify and cancel operations are rejected, and
+  venue report probes return an error except mass status, which returns `Ok(None)`; all fail closed
+  with no on-chain or durable side effects. LiveNode must disable in-flight checks and leave
+  open-order checks off.
+  Quote-denominated and multi-hop orders are not supported. See [Execution](#execution).
 - Order event publication and its durable marker are separate writes, so the adapter does not
   guarantee atomic exactly-once event delivery across a process crash.
 - Very large Uniswap V3 pools can still hit provider payload, timeout, or rate limits during
