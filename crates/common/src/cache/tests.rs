@@ -2933,6 +2933,180 @@ fn test_update_position_reuses_existing_cell(mut cache: Cache, audusd_sim: Curre
     );
 }
 
+#[rstest]
+fn test_update_position_refuses_purged_position(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let filled = TestOrderEventStubs::filled(
+        &order,
+        &audusd_sim,
+        None,
+        Some(PositionId::new("P-PURGED-UPDATE")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let mut position = Position::new(&audusd_sim, filled.into());
+    let position_id = position.id;
+    let venue = position.instrument_id.venue;
+    let instrument_id = position.instrument_id;
+    let strategy_id = position.strategy_id;
+    let account_id = position.account_id;
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    let close_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-2"))
+        .build();
+    let close_filled = TestOrderEventStubs::filled(
+        &close_order,
+        &audusd_sim,
+        Some(TradeId::new("T-PURGED-UPDATE-CLOSE")),
+        Some(position_id),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    position.apply(&close_filled.into());
+    cache.update_position(&position).unwrap();
+    cache.purge_position(position_id);
+
+    let error = cache.update_position(&position).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!("Cannot update position {position_id}: not found in cache")
+    );
+    assert!(cache.position(&position_id).is_none());
+    assert!(!cache.index.positions.contains(&position_id));
+    assert!(!cache.index.positions_open.contains(&position_id));
+    assert!(!cache.index.positions_closed.contains(&position_id));
+    assert!(
+        cache
+            .positions(Some(&venue), None, None, None, None)
+            .is_empty()
+    );
+    assert!(
+        cache
+            .positions(None, Some(&instrument_id), None, None, None)
+            .is_empty()
+    );
+    assert!(
+        cache
+            .positions(None, None, Some(&strategy_id), None, None)
+            .is_empty()
+    );
+    assert!(
+        cache
+            .positions(None, None, None, Some(&account_id), None)
+            .is_empty()
+    );
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
+fn test_update_position_refuses_never_added_position(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let filled = TestOrderEventStubs::filled(
+        &order,
+        &audusd_sim,
+        None,
+        Some(PositionId::new("P-NEVER-ADDED")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&audusd_sim, filled.into());
+    let position_id = position.id;
+
+    let error = cache.update_position(&position).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!("Cannot update position {position_id}: not found in cache")
+    );
+    assert!(cache.positions.is_empty());
+    assert!(cache.index.positions.is_empty());
+    assert!(cache.index.positions_open.is_empty());
+    assert!(cache.index.positions_closed.is_empty());
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
+fn test_update_position_moves_held_position_to_closed_index(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let filled = TestOrderEventStubs::filled(
+        &order,
+        &audusd_sim,
+        None,
+        Some(PositionId::new("P-HELD-UPDATE")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let mut position = Position::new(&audusd_sim, filled.into());
+    let position_id = position.id;
+
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    let close_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .client_order_id(ClientOrderId::new("O-19700101-000000-001-001-3"))
+        .build();
+    let close_filled = TestOrderEventStubs::filled(
+        &close_order,
+        &audusd_sim,
+        Some(TradeId::new("T-HELD-UPDATE-CLOSE")),
+        Some(position_id),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    position.apply(&close_filled.into());
+
+    cache.update_position(&position).unwrap();
+
+    assert!(cache.position(&position_id).unwrap().is_closed());
+    assert!(!cache.index.positions_open.contains(&position_id));
+    assert!(cache.index.positions_closed.contains(&position_id));
+}
+
 // -- DATA ------------------------------------------------------------------------------------
 
 #[rstest]
