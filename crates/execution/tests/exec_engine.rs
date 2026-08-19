@@ -12404,6 +12404,216 @@ fn test_reconcile_order_status_report_order_not_in_cache(mut execution_engine: E
 }
 
 #[rstest]
+fn test_reconcile_order_status_report_external_order_stamps_client_origin(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+    let client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine.register_client(Box::new(client)).unwrap();
+
+    let client_order_id = ClientOrderId::from("O-EXTERNAL-ORIGIN");
+    let report = create_order_status_report(
+        Some(client_order_id),
+        VenueOrderId::from("V-EXTERNAL-ORIGIN"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(100_000),
+        Quantity::from(0),
+    );
+
+    execution_engine.reconcile_order_status_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    assert!(cache.order_exists(&client_order_id));
+    let expected_client_id = ClientId::from("STUB");
+    assert_eq!(cache.client_id(&client_order_id), Some(&expected_client_id));
+}
+
+#[rstest]
+fn test_reconcile_order_status_report_external_order_without_matching_client_keeps_origin_free(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("O-EXTERNAL-NO-ORIGIN");
+    let report = create_order_status_report(
+        Some(client_order_id),
+        VenueOrderId::from("V-EXTERNAL-NO-ORIGIN"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(100_000),
+        Quantity::from(0),
+    );
+
+    execution_engine.reconcile_order_status_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    assert!(cache.order_exists(&client_order_id));
+    assert!(cache.client_id(&client_order_id).is_none());
+}
+
+#[rstest]
+fn test_reconcile_order_status_report_external_order_ambiguous_client_keeps_origin_free(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+    execution_engine
+        .register_client(Box::new(
+            StubExecutionClient::new(
+                ClientId::from("STUB"),
+                AccountId::test_default(),
+                Venue::test_default(),
+                OmsType::Netting,
+                None,
+            )
+            .with_handles_all_order_venues(),
+        ))
+        .unwrap();
+    execution_engine
+        .register_client(Box::new(
+            StubExecutionClient::new(
+                ClientId::from("ROUTING"),
+                AccountId::test_default(),
+                Venue::from("OTHER"),
+                OmsType::Netting,
+                None,
+            )
+            .with_handles_all_order_venues(),
+        ))
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("O-EXTERNAL-AMBIGUOUS");
+    let report = create_order_status_report(
+        Some(client_order_id),
+        VenueOrderId::from("V-EXTERNAL-AMBIGUOUS"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(100_000),
+        Quantity::from(0),
+    );
+
+    execution_engine.reconcile_order_status_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    assert!(cache.order_exists(&client_order_id));
+    assert!(cache.client_id(&client_order_id).is_none());
+}
+
+#[rstest]
+fn test_reconcile_order_status_report_external_order_account_mismatch_keeps_origin_free(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+    // Client handles the report venue but serves a different account.
+    execution_engine
+        .register_client(Box::new(StubExecutionClient::new(
+            ClientId::from("STUB"),
+            AccountId::from("OTHER-ACCOUNT"),
+            Venue::test_default(),
+            OmsType::Netting,
+            None,
+        )))
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("O-EXTERNAL-ACCOUNT-MISMATCH");
+    let report = create_order_status_report(
+        Some(client_order_id),
+        VenueOrderId::from("V-EXTERNAL-ACCOUNT-MISMATCH"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(100_000),
+        Quantity::from(0),
+    );
+
+    execution_engine.reconcile_order_status_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    assert!(cache.order_exists(&client_order_id));
+    assert!(cache.client_id(&client_order_id).is_none());
+}
+
+#[rstest]
+fn test_reconcile_order_status_report_external_order_registers_with_source_client(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+    // The venue router owns the SIM route while the account-matched source
+    // client handles its orders from another client venue.
+    let venue_router = StubExecutionClient::new(
+        ClientId::from("VENUE-ROUTER"),
+        AccountId::from("ROUTER-ACCOUNT"),
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    let venue_router_registrations = venue_router.registered_external_order_ids();
+    let source = StubExecutionClient::new(
+        ClientId::from("SOURCE"),
+        AccountId::test_default(),
+        Venue::from("OTHER"),
+        OmsType::Netting,
+        None,
+    )
+    .with_handles_all_order_venues();
+    let source_registrations = source.registered_external_order_ids();
+    execution_engine
+        .register_client(Box::new(venue_router))
+        .unwrap();
+    execution_engine.register_client(Box::new(source)).unwrap();
+
+    let client_order_id = ClientOrderId::from("O-EXTERNAL-SOURCE-ROUTE");
+    let report = create_order_status_report(
+        Some(client_order_id),
+        VenueOrderId::from("V-EXTERNAL-SOURCE-ROUTE"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(100_000),
+        Quantity::from(0),
+    );
+
+    execution_engine.reconcile_order_status_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    assert!(cache.order_exists(&client_order_id));
+    let expected_client_id = ClientId::from("SOURCE");
+    assert_eq!(cache.client_id(&client_order_id), Some(&expected_client_id));
+    drop(cache);
+    assert_eq!(source_registrations.borrow().as_slice(), &[client_order_id]);
+    assert!(venue_router_registrations.borrow().is_empty());
+}
+
+#[rstest]
 fn test_reconcile_order_status_report_generates_canceled_event(
     mut execution_engine: ExecutionEngine,
 ) {

@@ -481,10 +481,14 @@ impl ExecutionEngine {
         ts_init: UnixNanos,
     ) {
         let venue = instrument_id.venue;
+        // Prefer the cached origin over venue routing so tracking lands on the
+        // client whose stream materialized the order.
         let client_id = self
-            .routing_map
-            .get(&venue)
+            .cache
+            .borrow()
+            .client_id(&client_order_id)
             .copied()
+            .or_else(|| self.routing_map.get(&venue).copied())
             .or(self.default_client_id);
 
         if let Some(client_id) = client_id
@@ -1241,6 +1245,7 @@ impl ExecutionEngine {
             strategy_id,
             ts_now,
             Some(report.order_status),
+            self.source_client_id_for_account(report.account_id, &report.instrument_id),
         )
     }
 
@@ -1331,6 +1336,7 @@ impl ExecutionEngine {
             strategy_id,
             ts_now,
             None,
+            self.source_client_id_for_account(report.account_id, &report.instrument_id),
         )
     }
 
@@ -1360,6 +1366,7 @@ impl ExecutionEngine {
         strategy_id: StrategyId,
         ts_now: UnixNanos,
         order_status: Option<OrderStatus>,
+        source_client_id: Option<ClientId>,
     ) -> Option<OrderAny> {
         let initialized = OrderEventAny::Initialized(initialized);
         let order = match OrderAny::from_events(vec![initialized.clone()]) {
@@ -1377,7 +1384,7 @@ impl ExecutionEngine {
                 return None;
             }
 
-            if let Err(e) = cache.add_order(order.clone(), None, None, false) {
+            if let Err(e) = cache.add_order(order.clone(), None, source_client_id, false) {
                 log::error!("Failed to add external order to cache: {e}");
                 return None;
             }
@@ -1403,6 +1410,28 @@ impl ExecutionEngine {
         );
 
         Some(order)
+    }
+
+    /// Resolves the execution client origin for a live-stream report by matching
+    /// the report account against registered clients. A unique match stamps the
+    /// materialized order's client origin; no match or an ambiguous match keeps
+    /// the order origin-free.
+    fn source_client_id_for_account(
+        &self,
+        account_id: AccountId,
+        instrument_id: &InstrumentId,
+    ) -> Option<ClientId> {
+        let mut matches = self
+            .clients
+            .values()
+            .filter(|adapter| {
+                adapter.account_id == account_id && adapter.handles_order_venue(instrument_id.venue)
+            })
+            .map(|adapter| adapter.client_id);
+
+        let first = matches.next()?;
+
+        matches.next().is_none().then_some(first)
     }
 
     /// Reconciles a fill report received at runtime.
@@ -4253,6 +4282,7 @@ mod tests {
             instrument.id(),
             order.strategy_id(),
             UnixNanos::default(),
+            None,
             None,
         );
 

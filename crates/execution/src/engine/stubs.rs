@@ -32,7 +32,9 @@ use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
-    identifiers::{AccountId, ClientId, ClientOrderId, Venue},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
+    },
     instruments::InstrumentAny,
     types::{AccountBalance, MarginBalance},
 };
@@ -59,6 +61,7 @@ pub struct StubExecutionClient {
     submitted_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     modified_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     queried_account_ids: Rc<RefCell<Vec<AccountId>>>,
+    registered_external_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     handles_all_order_venues: bool,
     submit_order_error: Option<String>,
     submit_order_list_error: Option<String>,
@@ -90,6 +93,7 @@ impl StubExecutionClient {
             submitted_order_ids: Rc::new(RefCell::new(Vec::new())),
             modified_order_ids: Rc::new(RefCell::new(Vec::new())),
             queried_account_ids: Rc::new(RefCell::new(Vec::new())),
+            registered_external_order_ids: Rc::new(RefCell::new(Vec::new())),
             handles_all_order_venues: false,
             submit_order_error: None,
             submit_order_list_error: None,
@@ -115,6 +119,13 @@ impl StubExecutionClient {
     pub fn with_submit_order_list_error(mut self, error: impl Into<String>) -> Self {
         self.submit_order_list_error = Some(error.into());
         self
+    }
+
+    /// Returns a shared handle to the order IDs registered via
+    /// [`ExecutionClient::register_external_order`].
+    #[must_use]
+    pub fn registered_external_order_ids(&self) -> Rc<RefCell<Vec<ClientOrderId>>> {
+        self.registered_external_order_ids.clone()
     }
 
     /// Returns a shared handle to the instruments delivered via [`ExecutionClient::on_instrument`].
@@ -291,6 +302,19 @@ impl ExecutionClient for StubExecutionClient {
 
     fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
         Ok(()) // Stub implementation always succeeds
+    }
+
+    fn register_external_order(
+        &self,
+        client_order_id: ClientOrderId,
+        _venue_order_id: VenueOrderId,
+        _instrument_id: InstrumentId,
+        _strategy_id: StrategyId,
+        _ts_init: UnixNanos,
+    ) {
+        self.registered_external_order_ids
+            .borrow_mut()
+            .push(client_order_id);
     }
 
     fn on_instrument(&mut self, instrument: InstrumentAny) {
