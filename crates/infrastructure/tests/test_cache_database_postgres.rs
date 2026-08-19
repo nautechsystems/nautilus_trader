@@ -563,6 +563,77 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_index_order_clients_conflict_rolls_back_batch() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+        let instrument = currency_pair_ethusdt();
+        let existing_client = ClientId::new("CLIENT-EXISTING");
+        let conflicting_client = ClientId::new("CLIENT-CONFLICTING");
+        let unclaimed_order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-PG-ORIGIN-ROLLBACK-001"))
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .build();
+        let claimed_order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-PG-ORIGIN-ROLLBACK-002"))
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.0"))
+            .build();
+
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache
+            .add_instrument(&InstrumentAny::CurrencyPair(instrument))
+            .unwrap();
+        pg_cache.add_order(&unclaimed_order, None).unwrap();
+        pg_cache
+            .add_order(&claimed_order, Some(existing_client))
+            .unwrap();
+
+        wait_until_async(
+            || async {
+                let index = pg_cache.load_index_order_client().unwrap();
+                pg_cache
+                    .load_order(&unclaimed_order.client_order_id())
+                    .await
+                    .unwrap()
+                    .is_some()
+                    && index.get(&claimed_order.client_order_id()) == Some(&existing_client)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let error = DatabaseQueries::index_order_clients(
+            &pg_cache.pool,
+            &[
+                (unclaimed_order.client_order_id(), conflicting_client),
+                (claimed_order.client_order_id(), conflicting_client),
+            ],
+        )
+        .await
+        .unwrap_err();
+        let index_after_rollback = pg_cache.load_index_order_client().unwrap();
+
+        assert!(
+            error
+                .to_string()
+                .contains("already claimed by execution client")
+        );
+        assert!(!index_after_rollback.contains_key(&unclaimed_order.client_order_id()));
+        assert_eq!(
+            index_after_rollback.get(&claimed_order.client_order_id()),
+            Some(&existing_client)
+        );
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_index_order_position_round_trip() {
         let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
