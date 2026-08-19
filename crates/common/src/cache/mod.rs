@@ -60,7 +60,7 @@ use nautilus_core::{
         check_key_not_in_map, check_predicate_false, check_slice_not_empty,
         check_valid_string_ascii,
     },
-    datetime::secs_to_nanos_unchecked,
+    datetime::secs_to_nanos,
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{Pool, PoolProfiler};
@@ -3279,7 +3279,13 @@ impl Cache {
             }
         );
 
-        let buffer_ns = secs_to_nanos_unchecked(buffer_secs as f64);
+        let Ok(buffer_ns) = secs_to_nanos(buffer_secs as f64) else {
+            log::warn!(
+                "Cannot purge closed orders: buffer_secs {buffer_secs} is not representable in `u64` nanoseconds"
+            );
+            return;
+        };
+        let purge_cutoff = ts_now.checked_sub(buffer_ns);
 
         let mut affected_order_list_ids: AHashSet<OrderListId> = AHashSet::new();
         let mut purged_client_order_ids: AHashSet<ClientOrderId> = AHashSet::new();
@@ -3289,7 +3295,7 @@ impl Cache {
                 let order = order_cell.borrow();
                 if order.is_closed()
                     && let Some(ts_closed) = order.ts_closed()
-                    && ts_closed + buffer_ns <= ts_now
+                    && purge_cutoff.is_some_and(|cutoff| ts_closed <= cutoff)
                 {
                     let linked = order.linked_order_ids().map(<[_]>::to_vec);
                     let order_list_id = order.order_list_id();
@@ -3356,15 +3362,21 @@ impl Cache {
             }
         );
 
-        let buffer_ns = secs_to_nanos_unchecked(buffer_secs as f64);
+        let Ok(buffer_ns) = secs_to_nanos(buffer_secs as f64) else {
+            log::warn!(
+                "Cannot purge closed positions: buffer_secs {buffer_secs} is not representable in `u64` nanoseconds"
+            );
+            return;
+        };
+        let purge_cutoff = ts_now.checked_sub(buffer_ns);
 
         for position_id in self.index.positions_closed.clone() {
             let should_purge = self.positions.get(&position_id).is_some_and(|cell| {
                 let position = cell.borrow();
                 position.is_closed()
-                    && position
-                        .ts_closed
-                        .is_some_and(|ts_closed| ts_closed + buffer_ns <= ts_now)
+                    && position.ts_closed.is_some_and(|ts_closed| {
+                        purge_cutoff.is_some_and(|cutoff| ts_closed <= cutoff)
+                    })
             });
 
             if should_purge {

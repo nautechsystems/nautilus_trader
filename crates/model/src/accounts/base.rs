@@ -26,7 +26,7 @@ use nautilus_core::{
         CorrectnessError, CorrectnessResult, FAILED, check_equal, check_predicate_false,
         check_predicate_true,
     },
-    datetime::secs_to_nanos_unchecked,
+    datetime::secs_to_nanos,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -238,12 +238,18 @@ impl BaseAccount {
     ///
     /// Panics if the purging implementation is changed and all events are purged.
     pub fn base_purge_account_events(&mut self, ts_now: UnixNanos, lookback_secs: u64) {
-        let lookback_ns = UnixNanos::from(secs_to_nanos_unchecked(lookback_secs as f64));
+        let Ok(lookback_ns) = secs_to_nanos(lookback_secs as f64) else {
+            log::warn!(
+                "Cannot purge account events: lookback_secs {lookback_secs} is not representable in `u64` nanoseconds"
+            );
+            return;
+        };
+        let purge_cutoff = ts_now.checked_sub(lookback_ns);
 
         let mut retained_events = Vec::new();
 
         for event in &self.events {
-            if event.ts_event + lookback_ns > ts_now {
+            if purge_cutoff.is_none_or(|cutoff| event.ts_event > cutoff) {
                 retained_events.push(event.clone());
             }
         }
@@ -597,6 +603,29 @@ mod tests {
         assert_eq!(account.events.len(), 1);
         assert_eq!(account.events[0].ts_event, event3.ts_event);
         assert_eq!(account.base_last_event().unwrap().ts_event, event3.ts_event);
+    }
+
+    #[rstest]
+    fn test_base_purge_account_events_retains_all_for_overflowing_lookback() {
+        let mut account = BaseAccount::new(cash_account_state(), true);
+        let mut event = cash_account_state();
+        event.ts_event = UnixNanos::from(1);
+        account.base_apply(event);
+
+        account.base_purge_account_events(UnixNanos::from(u64::MAX), u64::MAX);
+
+        assert_eq!(account.events.len(), 2);
+    }
+
+    #[rstest]
+    fn test_base_purge_account_events_retains_future_event_without_overflow() {
+        let mut event = cash_account_state();
+        event.ts_event = UnixNanos::from(u64::MAX - 1);
+        let mut account = BaseAccount::new(event, true);
+
+        account.base_purge_account_events(UnixNanos::from(u64::MAX), 60);
+
+        assert_eq!(account.events.len(), 1);
     }
 
     #[rstest]
