@@ -3035,26 +3035,27 @@ impl Debug for DataActorCore {
 }
 
 impl DataActorCore {
-    /// Adds a subscription handler for the `topic`.
+    /// Adds a subscription handler for the `topic` and returns whether it was added.
     ///
-    //// Logs a warning if the actor is already subscribed to the topic.
+    /// Logs a warning if the actor is already subscribed to the topic.
     pub(crate) fn add_subscription_any(
         &mut self,
         topic: MStr<Topic>,
         handler: ShareableMessageHandler,
         priority: Option<u32>,
-    ) {
+    ) -> bool {
         let pattern: MStr<Pattern> = topic.into();
         if self.topic_handlers.contains_key(&pattern) {
             log::warn!(
                 "Actor {} attempted duplicate subscription to topic '{topic}'",
                 self.actor_id,
             );
-            return;
+            return false;
         }
 
         self.topic_handlers.insert(pattern, handler.clone());
         msgbus::subscribe_any(pattern, handler, priority);
+        true
     }
 
     /// Removes a subscription handler for the `topic` if present.
@@ -3072,20 +3073,22 @@ impl DataActorCore {
         }
     }
 
+    /// Adds a quote subscription handler and returns whether it was added.
     pub(crate) fn add_quote_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<QuoteTick>,
-    ) {
+    ) -> bool {
         if self.quote_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate quote subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.quote_handlers.insert(topic, handler.clone());
         msgbus::subscribe_quotes(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
@@ -3095,20 +3098,22 @@ impl DataActorCore {
         }
     }
 
+    /// Adds a trade subscription handler and returns whether it was added.
     pub(crate) fn add_trade_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<TradeTick>,
-    ) {
+    ) -> bool {
         if self.trade_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate trade subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.trade_handlers.insert(topic, handler.clone());
         msgbus::subscribe_trades(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
@@ -3118,16 +3123,22 @@ impl DataActorCore {
         }
     }
 
-    pub(crate) fn add_bar_subscription(&mut self, topic: MStr<Topic>, handler: TypedHandler<Bar>) {
+    /// Adds a bar subscription handler and returns whether it was added.
+    pub(crate) fn add_bar_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<Bar>,
+    ) -> bool {
         if self.bar_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate bar subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.bar_handlers.insert(topic, handler.clone());
         msgbus::subscribe_bars(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
@@ -3137,20 +3148,22 @@ impl DataActorCore {
         }
     }
 
+    /// Adds a deltas subscription handler and returns whether it was added.
     pub(crate) fn add_deltas_subscription(
         &mut self,
         pattern: MStr<Pattern>,
         handler: TypedHandler<OrderBookDeltas>,
-    ) {
+    ) -> bool {
         if self.deltas_handlers.contains_key(&pattern) {
             log::warn!(
                 "Actor {} attempted duplicate deltas subscription to '{pattern}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.deltas_handlers.insert(pattern, handler.clone());
         msgbus::subscribe_book_deltas(pattern, handler, None);
+        true
     }
 
     #[allow(dead_code)]
@@ -3160,20 +3173,22 @@ impl DataActorCore {
         }
     }
 
+    /// Adds a depth10 subscription handler and returns whether it was added.
     pub(crate) fn add_depth10_subscription(
         &mut self,
         pattern: MStr<Pattern>,
         handler: TypedHandler<OrderBookDepth10>,
-    ) {
+    ) -> bool {
         if self.depth10_handlers.contains_key(&pattern) {
             log::warn!(
                 "Actor {} attempted duplicate depth10 subscription to '{pattern}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.depth10_handlers.insert(pattern, handler.clone());
         msgbus::subscribe_book_depth10(pattern, handler, None);
+        true
     }
 
     pub(crate) fn remove_depth10_subscription(&mut self, pattern: MStr<Pattern>) {
@@ -3182,20 +3197,22 @@ impl DataActorCore {
         }
     }
 
+    /// Adds an instrument subscription handler and returns whether it was added.
     pub(crate) fn add_instrument_subscription(
         &mut self,
         pattern: MStr<Pattern>,
         handler: TypedHandler<InstrumentAny>,
-    ) {
+    ) -> bool {
         if self.instrument_handlers.contains_key(&pattern) {
             log::warn!(
                 "Actor {} attempted duplicate instrument subscription to '{pattern}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.instrument_handlers.insert(pattern, handler.clone());
         msgbus::subscribe_instruments(pattern, handler, None);
+        true
     }
 
     #[allow(dead_code)]
@@ -3205,21 +3222,23 @@ impl DataActorCore {
         }
     }
 
+    /// Adds an instrument close subscription handler and returns whether it was added.
     pub(crate) fn add_instrument_close_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: ShareableMessageHandler,
-    ) {
+    ) -> bool {
         let pattern: MStr<Pattern> = topic.into();
         if self.topic_handlers.contains_key(&pattern) {
             log::warn!(
                 "Actor {} attempted duplicate instrument close subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.topic_handlers.insert(pattern, handler.clone());
         msgbus::subscribe_any(pattern, handler, None);
+        true
     }
 
     #[allow(dead_code)]
@@ -3230,20 +3249,22 @@ impl DataActorCore {
         }
     }
 
+    /// Adds a book snapshot subscription handler and returns whether it was added.
     pub(crate) fn add_book_snapshot_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<OrderBook>,
-    ) {
+    ) -> bool {
         if self.book_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate book snapshot subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.book_handlers.insert(topic, handler.clone());
         msgbus::subscribe_book_snapshots(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
@@ -3253,20 +3274,22 @@ impl DataActorCore {
         }
     }
 
+    /// Adds a mark price subscription handler and returns whether it was added.
     pub(crate) fn add_mark_price_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<MarkPriceUpdate>,
-    ) {
+    ) -> bool {
         if self.mark_price_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate mark price subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.mark_price_handlers.insert(topic, handler.clone());
         msgbus::subscribe_mark_prices(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
@@ -3276,20 +3299,22 @@ impl DataActorCore {
         }
     }
 
+    /// Adds an index price subscription handler and returns whether it was added.
     pub(crate) fn add_index_price_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<IndexPriceUpdate>,
-    ) {
+    ) -> bool {
         if self.index_price_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate index price subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.index_price_handlers.insert(topic, handler.clone());
         msgbus::subscribe_index_prices(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
@@ -3299,20 +3324,22 @@ impl DataActorCore {
         }
     }
 
+    /// Adds a funding rate subscription handler and returns whether it was added.
     pub(crate) fn add_funding_rate_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<FundingRateUpdate>,
-    ) {
+    ) -> bool {
         if self.funding_rate_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate funding rate subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.funding_rate_handlers.insert(topic, handler.clone());
         msgbus::subscribe_funding_rates(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
@@ -3322,20 +3349,22 @@ impl DataActorCore {
         }
     }
 
+    /// Adds an option greeks subscription handler and returns whether it was added.
     pub(crate) fn add_option_greeks_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<OptionGreeks>,
-    ) {
+    ) -> bool {
         if self.option_greeks_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate option greeks subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.option_greeks_handlers.insert(topic, handler.clone());
         msgbus::subscribe_option_greeks(topic.into(), handler, None);
+        true
     }
 
     #[allow(dead_code)]
@@ -3345,20 +3374,22 @@ impl DataActorCore {
         }
     }
 
+    /// Adds an option chain subscription handler and returns whether it was added.
     pub(crate) fn add_option_chain_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<OptionChainSlice>,
-    ) {
+    ) -> bool {
         if self.option_chain_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate option chain subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.option_chain_handlers.insert(topic, handler.clone());
         msgbus::subscribe_option_chain(topic.into(), handler, None);
+        true
     }
 
     pub(crate) fn remove_option_chain_subscription(&mut self, topic: MStr<Topic>) {
@@ -3367,21 +3398,23 @@ impl DataActorCore {
         }
     }
 
+    /// Adds a block subscription handler and returns whether it was added.
     #[cfg(feature = "defi")]
     pub(crate) fn add_block_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<Block>,
-    ) {
+    ) -> bool {
         if self.block_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate block subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.block_handlers.insert(topic, handler.clone());
         msgbus::subscribe_defi_blocks(topic.into(), handler, None);
+        true
     }
 
     #[cfg(feature = "defi")]
@@ -3392,21 +3425,23 @@ impl DataActorCore {
         }
     }
 
+    /// Adds a pool subscription handler and returns whether it was added.
     #[cfg(feature = "defi")]
     pub(crate) fn add_pool_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<Pool>,
-    ) {
+    ) -> bool {
         if self.pool_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate pool subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.pool_handlers.insert(topic, handler.clone());
         msgbus::subscribe_defi_pools(topic.into(), handler, None);
+        true
     }
 
     #[cfg(feature = "defi")]
@@ -3417,21 +3452,23 @@ impl DataActorCore {
         }
     }
 
+    /// Adds a pool swap subscription handler and returns whether it was added.
     #[cfg(feature = "defi")]
     pub(crate) fn add_pool_swap_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<PoolSwap>,
-    ) {
+    ) -> bool {
         if self.pool_swap_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate pool swap subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.pool_swap_handlers.insert(topic, handler.clone());
         msgbus::subscribe_defi_swaps(topic.into(), handler, None);
+        true
     }
 
     #[cfg(feature = "defi")]
@@ -3442,21 +3479,23 @@ impl DataActorCore {
         }
     }
 
+    /// Adds a pool liquidity subscription handler and returns whether it was added.
     #[cfg(feature = "defi")]
     pub(crate) fn add_pool_liquidity_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<PoolLiquidityUpdate>,
-    ) {
+    ) -> bool {
         if self.pool_liquidity_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate pool liquidity subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.pool_liquidity_handlers.insert(topic, handler.clone());
         msgbus::subscribe_defi_liquidity(topic.into(), handler, None);
+        true
     }
 
     #[cfg(feature = "defi")]
@@ -3467,21 +3506,23 @@ impl DataActorCore {
         }
     }
 
+    /// Adds a pool collect subscription handler and returns whether it was added.
     #[cfg(feature = "defi")]
     pub(crate) fn add_pool_collect_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<PoolFeeCollect>,
-    ) {
+    ) -> bool {
         if self.pool_collect_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate pool collect subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.pool_collect_handlers.insert(topic, handler.clone());
         msgbus::subscribe_defi_collects(topic.into(), handler, None);
+        true
     }
 
     #[cfg(feature = "defi")]
@@ -3492,21 +3533,23 @@ impl DataActorCore {
         }
     }
 
+    /// Adds a pool flash subscription handler and returns whether it was added.
     #[cfg(feature = "defi")]
     pub(crate) fn add_pool_flash_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<PoolFlash>,
-    ) {
+    ) -> bool {
         if self.pool_flash_handlers.contains_key(&topic) {
             log::warn!(
                 "Actor {} attempted duplicate pool flash subscription to '{topic}'",
                 self.actor_id
             );
-            return;
+            return false;
         }
         self.pool_flash_handlers.insert(topic, handler.clone());
         msgbus::subscribe_defi_flash(topic.into(), handler, None);
+        true
     }
 
     #[cfg(feature = "defi")]
@@ -4002,7 +4045,9 @@ impl DataActorCore {
         );
 
         let topic = get_custom_topic(&data_type);
-        self.add_subscription_any(topic, handler, None);
+        if !self.add_subscription_any(topic, handler, None) {
+            return;
+        }
 
         // If no client ID specified, just subscribe to the topic
         if client_id.is_none() {
@@ -4062,7 +4107,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = MessagingSwitchboard::queue_state_changed_topic();
-        self.add_subscription_any(topic, handler, priority);
+        let _ = self.add_subscription_any(topic, handler, priority);
     }
 
     /// Registers a socket state change subscription from the trait.
@@ -4078,7 +4123,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = MessagingSwitchboard::socket_state_changed_topic();
-        self.add_subscription_any(topic, handler, priority);
+        let _ = self.add_subscription_any(topic, handler, priority);
     }
 
     /// Helper method for registering quotes subscriptions from the trait.
@@ -4092,7 +4137,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_quote_subscription(topic, handler);
+        if !self.add_quote_subscription(topic, handler) {
+            return;
+        }
 
         let command = SubscribeCommand::Quotes(SubscribeQuotes {
             instrument_id,
@@ -4118,7 +4165,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_instrument_subscription(pattern, handler);
+        if !self.add_instrument_subscription(pattern, handler) {
+            return;
+        }
 
         let command = SubscribeCommand::Instruments(SubscribeInstruments {
             client_id,
@@ -4143,7 +4192,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_instrument_subscription(topic.into(), handler);
+        if !self.add_instrument_subscription(topic.into(), handler) {
+            return;
+        }
 
         let command = SubscribeCommand::Instrument(SubscribeInstrument {
             instrument_id,
@@ -4173,7 +4224,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_deltas_subscription(pattern, handler);
+        if !self.add_deltas_subscription(pattern, handler) {
+            return;
+        }
 
         let command = SubscribeCommand::BookDeltas(SubscribeBookDeltas {
             instrument_id,
@@ -4205,7 +4258,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_depth10_subscription(pattern, handler);
+        if !self.add_depth10_subscription(pattern, handler) {
+            return;
+        }
 
         let command = SubscribeCommand::BookDepth10(SubscribeBookDepth10 {
             instrument_id,
@@ -4238,7 +4293,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_book_snapshot_subscription(topic, handler);
+        if !self.add_book_snapshot_subscription(topic, handler) {
+            return;
+        }
 
         let command = SubscribeCommand::BookSnapshots(SubscribeBookSnapshots {
             instrument_id,
@@ -4267,7 +4324,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_trade_subscription(topic, handler);
+        if !self.add_trade_subscription(topic, handler) {
+            return;
+        }
 
         let command = SubscribeCommand::Trades(SubscribeTrades {
             instrument_id,
@@ -4293,7 +4352,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_bar_subscription(topic, handler);
+        if !self.add_bar_subscription(topic, handler) {
+            return;
+        }
 
         let command = SubscribeCommand::Bars(SubscribeBars {
             bar_type,
@@ -4319,7 +4380,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_mark_price_subscription(topic, handler);
+        if !self.add_mark_price_subscription(topic, handler) {
+            return;
+        }
 
         let command = SubscribeCommand::MarkPrices(SubscribeMarkPrices {
             instrument_id,
@@ -4345,7 +4408,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_index_price_subscription(topic, handler);
+        if !self.add_index_price_subscription(topic, handler) {
+            return;
+        }
 
         let command = SubscribeCommand::IndexPrices(SubscribeIndexPrices {
             instrument_id,
@@ -4371,7 +4436,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_funding_rate_subscription(topic, handler);
+        if !self.add_funding_rate_subscription(topic, handler) {
+            return;
+        }
 
         let command = SubscribeCommand::FundingRates(SubscribeFundingRates {
             instrument_id,
@@ -4397,7 +4464,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_option_greeks_subscription(topic, handler);
+        if !self.add_option_greeks_subscription(topic, handler) {
+            return;
+        }
 
         let command = SubscribeCommand::OptionGreeks(SubscribeOptionGreeks {
             instrument_id,
@@ -4423,7 +4492,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_subscription_any(topic, handler, None);
+        if !self.add_subscription_any(topic, handler, None) {
+            return;
+        }
 
         let command = SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus {
             instrument_id,
@@ -4449,7 +4520,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_instrument_close_subscription(topic, handler);
+        if !self.add_instrument_close_subscription(topic, handler) {
+            return;
+        }
 
         let command = SubscribeCommand::InstrumentClose(SubscribeInstrumentClose {
             instrument_id,
@@ -4481,7 +4554,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_option_chain_subscription(topic, handler);
+        if !self.add_option_chain_subscription(topic, handler) {
+            return;
+        }
 
         let command = SubscribeCommand::OptionChain(SubscribeOptionChain::new(
             series_id,

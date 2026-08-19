@@ -70,8 +70,9 @@ use {
 
 use super::{Actor, DataActor, DataActorCore, DataActorNative, data_actor::DataActorConfig};
 #[cfg(feature = "defi")]
-use crate::defi::switchboard::{
-    get_defi_blocks_topic, get_defi_pool_swaps_topic, get_defi_pool_topic,
+use crate::defi::{
+    DefiSubscribeCommand,
+    switchboard::{get_defi_blocks_topic, get_defi_pool_swaps_topic, get_defi_pool_topic},
 };
 use crate::{
     actor::registry::{get_actor, get_actor_unchecked, register_actor},
@@ -1736,6 +1737,34 @@ fn test_duplicate_book_depth10_subscription_delivers_once(
 
     assert_eq!(actor.core.depth10_handler_count(), 1);
     assert_eq!(actor.received_depths, vec![depth]);
+}
+
+#[rstest]
+fn test_duplicate_book_depth10_subscription_sends_one_command(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+
+    actor.subscribe_book_depth10(audusd_sim.id, BookType::L2_MBP, None, false, None);
+    actor.subscribe_book_depth10(audusd_sim.id, BookType::L2_MBP, None, false, None);
+
+    let commands = saver.get_messages();
+    assert_eq!(commands.len(), 1);
+    assert!(matches!(
+        commands.as_slice(),
+        [DataCommand::Subscribe(SubscribeCommand::BookDepth10(_))]
+    ));
 }
 
 #[rstest]
@@ -3455,6 +3484,34 @@ fn test_subscribe_and_receive_blocks(
 
     assert_eq!(actor.received_blocks.len(), 1);
     assert_eq!(actor.received_blocks[0], block);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_duplicate_block_subscription_sends_one_command(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+
+    actor.subscribe_blocks(Blockchain::Ethereum, None, None);
+    actor.subscribe_blocks(Blockchain::Ethereum, None, None);
+
+    let commands = saver.get_messages();
+    assert_eq!(commands.len(), 1);
+    assert!(matches!(
+        commands.as_slice(),
+        [DataCommand::DefiSubscribe(DefiSubscribeCommand::Blocks(_))]
+    ));
 }
 
 #[cfg(feature = "defi")]

@@ -52,7 +52,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_block_subscription(topic, handler);
+        if !self.add_block_subscription(topic, handler) {
+            return;
+        }
 
         let command = DefiSubscribeCommand::Blocks(SubscribeBlocks {
             chain,
@@ -76,7 +78,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_pool_subscription(topic, handler);
+        if !self.add_pool_subscription(topic, handler) {
+            return;
+        }
 
         let command = DefiSubscribeCommand::Pool(SubscribePool {
             instrument_id,
@@ -100,7 +104,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_pool_swap_subscription(topic, handler);
+        if !self.add_pool_swap_subscription(topic, handler) {
+            return;
+        }
 
         let command = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
             instrument_id,
@@ -124,7 +130,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_pool_liquidity_subscription(topic, handler);
+        if !self.add_pool_liquidity_subscription(topic, handler) {
+            return;
+        }
 
         let command = DefiSubscribeCommand::PoolLiquidityUpdates(SubscribePoolLiquidityUpdates {
             instrument_id,
@@ -148,7 +156,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_pool_collect_subscription(topic, handler);
+        if !self.add_pool_collect_subscription(topic, handler) {
+            return;
+        }
 
         let command = DefiSubscribeCommand::PoolFeeCollects(SubscribePoolFeeCollects {
             instrument_id,
@@ -172,7 +182,9 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_pool_flash_subscription(topic, handler);
+        if !self.add_pool_flash_subscription(topic, handler) {
+            return;
+        }
 
         let command = DefiSubscribeCommand::PoolFlashEvents(SubscribePoolFlashEvents {
             instrument_id,
