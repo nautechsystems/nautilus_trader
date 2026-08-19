@@ -78,7 +78,7 @@ or public methods judged to be hot paths. Examples:
   passive matching, resting fills, modify, and cancel paths through
   `OrderMatchingEngine`.
 - `crates/common/benches/matching.rs`: message-bus topic matching.
-- `crates/common/benches/cache_orders.rs`: order cache query and ingest.
+- `crates/common/benches/cache/orders.rs`: order cache query and ingest.
 
 Add one when:
 

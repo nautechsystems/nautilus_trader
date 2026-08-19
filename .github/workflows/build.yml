@@ -207,7 +207,6 @@ jobs:
           # Full history so changed-file scripts can resolve CHANGED_BASE_SHA.
           fetch-depth: 0
 
-      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (post-checkout)
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
 
@@ -336,7 +335,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (post-checkout)
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
 
@@ -375,7 +373,6 @@ jobs:
         run: |
           bash ../scripts/ci/update-pyproject-version.sh
 
-      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (pre-wheel build)
         run: bash scripts/ci/verify-ci-inputs.sh pre-wheel-build
 

@@ -65,7 +65,8 @@ artifact integrity records, and verification flow. This section records CI‑spe
   two weeks.
 - Docker base images and workflow service containers use immutable digest pins.
 - Tool and dependency versions are pinned in the repository. Python dependency resolution applies
-  the publication cooldowns defined in `python/pyproject.toml`, including a three‑day default.
+  the seven‑day publication cooldown defined in `python/pyproject.toml`, and Rust crate updates
+  observe the three‑day cooldown defined in `Cargo.toml`.
 - `security-audit.yml` runs `cargo audit`, `cargo-deny`, `cargo-vet`, `pip-audit`, OSV‑Scanner, and
   Zizmor. CodeQL and OpenSSF Scorecard run in dedicated workflows.
 
