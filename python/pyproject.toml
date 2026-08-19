@@ -20,6 +20,7 @@ classifiers = [
   "Intended Audience :: Science/Research",
 ]
 license = "LGPL-3.0-only"
+license-files = ["LICENSE"]
 readme = "../README.md"
 requires-python = ">=3.12,<3.15"
 dependencies = []
