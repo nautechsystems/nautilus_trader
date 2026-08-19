@@ -479,18 +479,27 @@ impl OrderFillTrackerMap {
             .unwrap_or_default()
     }
 
-    /// Returns a snapshot of buffered order reports without removing them.
-    pub(crate) fn pending_reports_for(
+    /// Drops contradictory buffered reports and returns a snapshot of those retained.
+    pub(crate) fn retain_pending_reports_for<F>(
         &self,
         venue_order_id: &VenueOrderId,
-    ) -> Vec<OrderStatusReport> {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .pending_reports
-            .get(venue_order_id)
-            .cloned()
-            .unwrap_or_default()
+        mut retain: F,
+    ) -> Vec<OrderStatusReport>
+    where
+        F: FnMut(&OrderStatusReport) -> bool,
+    {
+        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let (snapshot, remove_entry) = match guard.pending_reports.get_mut(venue_order_id) {
+            Some(reports) => {
+                reports.retain(&mut retain);
+                (reports.clone(), reports.is_empty())
+            }
+            None => return Vec::new(),
+        };
+        if remove_entry {
+            guard.pending_reports.remove(venue_order_id);
+        }
+        snapshot
     }
 
     /// Snapshots all buffered and applied evidence for one correction under one lock.

@@ -405,6 +405,20 @@ pub(super) fn handle_unknown_submit_result(
     None
 }
 
+fn buffered_order_report_matches(
+    identity: &OrderIdentity,
+    venue_order_id: VenueOrderId,
+    report: &OrderStatusReport,
+) -> bool {
+    match identity.validate_order_report(report, venue_order_id, None) {
+        Ok(()) => true,
+        Err(error) => {
+            log::warn!("Discarding contradictory buffered order report {venue_order_id}: {error}");
+            false
+        }
+    }
+}
+
 #[expect(clippy::too_many_arguments)]
 pub(super) fn drain_pending_reports_for_known_order(
     order: &OrderAny,
@@ -418,7 +432,10 @@ pub(super) fn drain_pending_reports_for_known_order(
     size_precision: u8,
     price_precision: u8,
 ) {
-    let buffered_snapshot = fill_tracker.pending_reports_for(&venue_order_id);
+    let identity = OrderIdentity::from_order(order);
+    let buffered_snapshot = fill_tracker.retain_pending_reports_for(&venue_order_id, |report| {
+        buffered_order_report_matches(&identity, venue_order_id, report)
+    });
     if buffered_snapshot.is_empty() {
         accept_order_with_pending_fills(
             order,
@@ -442,7 +459,9 @@ pub(super) fn drain_pending_reports_for_known_order(
     if !should_register {
         if !fill_tracker.emit_pending_reports_if_no_pending_fill(&venue_order_id, |reports| {
             for report in reports {
-                emit_drained_order_report(order, report, emitter);
+                if buffered_order_report_matches(&identity, venue_order_id, report) {
+                    emit_drained_order_report(order, report, emitter);
+                }
             }
         }) {
             log::warn!(
@@ -477,7 +496,11 @@ pub(super) fn drain_pending_reports_for_known_order(
             return;
         }
     };
-    let buffered = fill_tracker.take_pending_reports(&venue_order_id);
+    let buffered = fill_tracker
+        .take_pending_reports(&venue_order_id)
+        .into_iter()
+        .filter(|report| buffered_order_report_matches(&identity, venue_order_id, report))
+        .collect::<Vec<_>>();
 
     emit_drained_activity(
         order,
@@ -564,9 +587,13 @@ pub(super) fn handle_order_response(
                 if let Some(venue_order_id) = submit_response_venue_order_id(&response) {
                     let decision = order_response_decision(response.status);
                     let ts_now = clock.get_time_ns();
+                    let identity = OrderIdentity::from_order(order);
 
-                    order_identities
-                        .register_order_identity(venue_order_id, OrderIdentity::from_order(order));
+                    fill_tracker.retain_pending_reports_for(&venue_order_id, |report| {
+                        buffered_order_report_matches(&identity, venue_order_id, report)
+                    });
+
+                    order_identities.register_order_identity(venue_order_id, identity);
                     if decision.emit_accepted && order_identities.mark_accepted(venue_order_id) {
                         emitter.emit_order_accepted(order, venue_order_id, ts_now);
                     }
@@ -606,7 +633,13 @@ pub(super) fn handle_order_response(
                     };
 
                     // The register above precedes this drain, so a racing report can't be orphaned
-                    let buffered = fill_tracker.take_pending_reports(&venue_order_id);
+                    let buffered = fill_tracker
+                        .take_pending_reports(&venue_order_id)
+                        .into_iter()
+                        .filter(|report| {
+                            buffered_order_report_matches(&identity, venue_order_id, report)
+                        })
+                        .collect::<Vec<_>>();
                     let activity_proves_accepted = !fills.is_empty()
                         || buffered.iter().any(|report| {
                             matches!(
@@ -1403,6 +1436,65 @@ mod tests {
     }
 
     #[rstest]
+    fn test_successful_submit_does_not_relabel_mismatched_buffered_cancel() {
+        let instrument = test_instrument();
+        let mut order = test_limit_order("O-SUCCESS-CANCEL-BINDING", instrument.id());
+        order
+            .apply(TestOrderEventStubs::submitted(
+                &order,
+                AccountId::from("POLY-001"),
+            ))
+            .unwrap();
+        let venue_order_id = VenueOrderId::from("0xsuccess-cancel-binding");
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        fill_tracker.buffer_report_for_test(
+            venue_order_id,
+            OrderStatusReport::new(
+                AccountId::from("POLY-001"),
+                InstrumentId::from("OTHER.POLYMARKET"),
+                None,
+                venue_order_id,
+                order.order_side(),
+                order.order_type(),
+                order.time_in_force(),
+                OrderStatus::Canceled,
+                order.quantity(),
+                Quantity::zero(order.quantity().precision),
+                UnixNanos::from(1_000u64),
+                UnixNanos::from(1_000u64),
+                UnixNanos::from(1_000u64),
+                None,
+            ),
+        );
+        let (emitter, mut receiver) = test_emitter();
+
+        let result = handle_order_response(
+            Ok(successful_order_response(
+                venue_order_id,
+                Some(OrderResponseStatus::Live),
+            )),
+            &order,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &fill_tracker,
+            &OrderIdentityRegistry::default(),
+            &PendingCancelTracker::default(),
+            AccountId::from("POLY-001"),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+
+        assert!(result.is_none());
+        assert!(matches!(
+            receiver.try_recv().expect("expected accepted event"),
+            ExecutionEvent::Order(OrderEventAny::Accepted(_))
+        ));
+        assert!(receiver.try_recv().is_err());
+        assert!(fill_tracker.contains(&venue_order_id));
+        assert!(!fill_tracker.has_pending_report(&venue_order_id));
+    }
+
+    #[rstest]
     fn test_captured_delayed_response_stays_submitted_and_registers_tracking() {
         let instrument = test_instrument();
         let mut order = test_limit_order("O-DELAYED", instrument.id());
@@ -1919,6 +2011,57 @@ mod tests {
         }
 
         assert!(!fill_tracker.has_pending_report(&expected_venue_order_id));
+    }
+
+    #[rstest]
+    fn test_unknown_submit_does_not_relabel_mismatched_buffered_rejection() {
+        let instrument = test_instrument();
+        let order = test_limit_order("O-UNKNOWN-REJECT-BINDING", instrument.id());
+        let venue_order_id = VenueOrderId::from("0xunknown-reject-binding");
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        fill_tracker.buffer_report_for_test(
+            venue_order_id,
+            OrderStatusReport::new(
+                AccountId::from("POLY-001"),
+                InstrumentId::from("OTHER.POLYMARKET"),
+                None,
+                venue_order_id,
+                order.order_side(),
+                order.order_type(),
+                order.time_in_force(),
+                OrderStatus::Rejected,
+                order.quantity(),
+                Quantity::zero(order.quantity().precision),
+                UnixNanos::from(1_000u64),
+                UnixNanos::from(1_000u64),
+                UnixNanos::from(1_000u64),
+                None,
+            ),
+        );
+        let (emitter, mut receiver) = test_emitter();
+        let order_identities = OrderIdentityRegistry::default();
+        let pending_submits = PendingSubmitTracker::default();
+
+        let result = handle_unknown_submit_result(
+            &order,
+            venue_order_id,
+            "transport timeout",
+            None,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &fill_tracker,
+            &order_identities,
+            &pending_submits,
+            &PendingCancelTracker::default(),
+            AccountId::from("POLY-001"),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+
+        assert!(result.is_none());
+        assert!(receiver.try_recv().is_err());
+        assert!(!fill_tracker.contains(&venue_order_id));
+        assert!(!fill_tracker.has_pending_report(&venue_order_id));
     }
 
     #[rstest]

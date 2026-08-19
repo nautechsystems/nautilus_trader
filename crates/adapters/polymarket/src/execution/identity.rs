@@ -30,6 +30,7 @@ use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId, StrategyId, VenueOrderId},
     orders::{Order, OrderAny},
+    reports::OrderStatusReport,
 };
 
 /// Identity fields captured at submit so the cache-free WS dispatch can build order events.
@@ -58,6 +59,55 @@ impl OrderIdentity {
             order_type: order.order_type(),
             time_in_force: order.time_in_force(),
         }
+    }
+
+    /// Validates that a provider report belongs to this tracked order before it can mutate state.
+    pub(crate) fn validate_order_report(
+        &self,
+        report: &OrderStatusReport,
+        venue_order_id: VenueOrderId,
+        expected_client_order_id: Option<ClientOrderId>,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            report.venue_order_id == venue_order_id,
+            "order report venue order ID {} does not match expected venue order ID {venue_order_id}",
+            report.venue_order_id
+        );
+        anyhow::ensure!(
+            self.instrument_id == report.instrument_id,
+            "order report instrument {} does not match tracked instrument {}",
+            report.instrument_id,
+            self.instrument_id
+        );
+        anyhow::ensure!(
+            self.order_side == report.order_side,
+            "order report side {} does not match tracked side {}",
+            report.order_side,
+            self.order_side
+        );
+        anyhow::ensure!(
+            self.time_in_force == report.time_in_force,
+            "order report time in force {} does not match tracked time in force {}",
+            report.time_in_force,
+            self.time_in_force
+        );
+
+        if let Some(client_order_id) = report.client_order_id {
+            anyhow::ensure!(
+                self.client_order_id == client_order_id,
+                "order report client order ID {client_order_id} does not match tracked client order ID {}",
+                self.client_order_id
+            );
+        }
+
+        if let Some(client_order_id) = expected_client_order_id {
+            anyhow::ensure!(
+                self.client_order_id == client_order_id,
+                "pending submit client order ID {client_order_id} does not match tracked client order ID {}",
+                self.client_order_id
+            );
+        }
+        Ok(())
     }
 
     /// Returns true when any taker fill implies full completion.
