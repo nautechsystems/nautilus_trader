@@ -2200,11 +2200,6 @@ mod tests {
                 |fill, new_qty| emit_drained_fill(&order, fill, new_qty, &emitter, clock),
             )
             .unwrap();
-        if !confirm_before_emit {
-            // A confirmation arriving after emission owns finalization on the WS path. The
-            // response drain must not retroactively infer its timestamp from tracker state.
-            fill_tracker.mark_trade_confirmed(correction_key);
-        }
         emit_drained_activity(
             &order,
             venue_order_id,
@@ -2229,7 +2224,6 @@ mod tests {
                 UnixNanos::from(1_700_000_000_123_000_000u64)
             );
         }
-        assert!(fill_tracker.is_trade_confirmed(correction_key));
         assert!(receiver.try_recv().is_err());
     }
 

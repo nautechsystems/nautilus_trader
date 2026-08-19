@@ -87,7 +87,6 @@ struct TrackerInner {
     pending_fills: FifoCacheMap<VenueOrderId, Vec<BufferedFill>, 1_000>,
     pending_reports: FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>,
     voided_trades: FifoCache<String, 10_000>,
-    confirmed_trades: FifoCache<String, 10_000>,
     applied_buffered_fills: FifoCacheMap<String, Vec<OrderFilled>, 10_000>,
 }
 
@@ -548,7 +547,6 @@ impl OrderFillTrackerMap {
     pub(crate) fn void_buffered_trade(&self, correction_key: &str) -> Vec<OrderFilled> {
         let key = correction_key.to_string();
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
-        guard.confirmed_trades.remove(&key);
         guard.voided_trades.add(key.clone());
         let fills = guard
             .applied_buffered_fills
@@ -559,24 +557,6 @@ impl OrderFillTrackerMap {
             reverse_fill_in(&mut guard.orders, &fill.venue_order_id, fill.last_qty);
         }
         fills
-    }
-
-    pub(crate) fn mark_trade_confirmed(&self, correction_key: &str) {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .confirmed_trades
-            .add(correction_key.to_string());
-    }
-
-    #[must_use]
-    #[cfg(test)]
-    pub(crate) fn is_trade_confirmed(&self, correction_key: &str) -> bool {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .confirmed_trades
-            .contains(&correction_key.to_string())
     }
 
     pub(crate) fn reverse_fill(&self, venue_order_id: &VenueOrderId, quantity: Quantity) {
@@ -853,11 +833,6 @@ where
                 inner
                     .applied_buffered_fills
                     .insert(correction.correction_key.clone(), vec![filled]);
-            }
-            if correction.is_confirmed {
-                inner
-                    .confirmed_trades
-                    .add(correction.correction_key.clone());
             }
         }
         emissions.push(BufferedFillEmission {
