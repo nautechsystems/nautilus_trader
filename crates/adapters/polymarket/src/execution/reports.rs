@@ -42,6 +42,7 @@ use super::{
         cap_order_report_filled_qty, confirmed_filled_quantities,
         normalize_terminal_order_report_quantity,
     },
+    report_validation::non_negative_quantity,
 };
 use crate::{
     common::enums::SignatureType,
@@ -62,7 +63,6 @@ impl PolymarketExecutionClient {
             account_id: self.core.account_id,
             user_address,
             api_key: self.secrets.credential.api_key().as_str(),
-            pusd: get_pusd_currency(),
             clock: self.clock,
         }
     }
@@ -188,10 +188,10 @@ impl PolymarketExecutionClient {
             return Ok(None);
         };
 
-        let total_filled_dec = sum_filled_quantity(&order_fills);
-        let avg_px = weighted_average_price(&order_fills, total_filled_dec);
-        let raw_filled_qty = Quantity::from_decimal_dp(total_filled_dec, size_prec)
-            .unwrap_or_else(|_| Quantity::zero(size_prec));
+        let total_filled_dec = sum_filled_quantity(&order_fills)?;
+        let avg_px = weighted_average_price(&order_fills, total_filled_dec)?;
+        let raw_filled_qty =
+            non_negative_quantity(total_filled_dec, size_prec, "recovered filled quantity")?;
         let order_side = cached_side.unwrap_or(order_fills[0].order_side);
         let ts_event = order_fills
             .iter()
@@ -265,10 +265,14 @@ impl PolymarketExecutionClient {
         let account_id = self.core.account_id;
         let cache = self.core.cache();
 
-        let (price_prec, size_prec) = match cache.instrument(&instrument_id) {
-            Some(i) => (i.price_precision(), i.size_precision()),
-            None => (4, 6),
+        let instrument = match cache.instrument(&instrument_id).cloned() {
+            Some(instrument) => instrument,
+            None => {
+                log::warn!("Cannot query order for unloaded instrument {instrument_id}");
+                return;
+            }
         };
+        let size_prec = instrument.size_precision();
 
         let http_client = self.http_client.clone();
         let fill_tracker = self.fill_tracker.clone();
@@ -289,15 +293,19 @@ impl PolymarketExecutionClient {
         self.spawn_task("query_order", async move {
             match http_client.get_order_optional(&venue_order_id).await {
                 Ok(Some(order)) => {
-                    let mut report = parse_order_status_report(
+                    let mut report = match parse_order_status_report(
                         &order,
-                        instrument_id,
+                        &instrument,
                         account_id,
                         Some(client_order_id),
-                        price_prec,
-                        size_prec,
                         clock.get_time_ns(),
-                    );
+                    ) {
+                        Ok(report) => report,
+                        Err(error) => {
+                            log::warn!("Failed to validate queried order {venue_order_id}: {error}");
+                            return Ok(());
+                        }
+                    };
                     let venue_order_id = VenueOrderId::from(venue_order_id.as_str());
                     let tracked_filled = fill_tracker
                         .get_cumulative_filled(&venue_order_id)
@@ -308,7 +316,6 @@ impl PolymarketExecutionClient {
                             account_id,
                             user_address: &user_address,
                             api_key: &api_key,
-                            pusd: get_pusd_currency(),
                             clock,
                         };
 
@@ -374,22 +381,22 @@ impl PolymarketExecutionClient {
             .await
             .context("failed to fetch order")?;
 
-        let instrument = self.core.cache().instrument(&instrument_id).cloned();
-        let (price_prec, size_prec) = match &instrument {
-            Some(i) => (i.price_precision(), i.size_precision()),
-            None => (4, 6),
-        };
+        let instrument = self
+            .core
+            .cache()
+            .instrument(&instrument_id)
+            .cloned()
+            .with_context(|| format!("instrument {instrument_id} is not loaded"))?;
+        let size_prec = instrument.size_precision();
 
         if let Some(order) = order {
             let mut report = parse_order_status_report(
                 &order,
-                instrument_id,
+                &instrument,
                 self.core.account_id,
                 cmd.client_order_id,
-                price_prec,
-                size_prec,
                 self.clock.get_time_ns(),
-            );
+            )?;
             let cached_filled = cmd
                 .client_order_id
                 .and_then(|id| self.core.cache().order(&id).map(|order| order.filled_qty()))

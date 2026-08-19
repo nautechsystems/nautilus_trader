@@ -156,12 +156,11 @@ impl PolymarketExecutionClient {
                             &submitter,
                             &order_id,
                             &order,
+                            &instrument,
                             &fill_tracker,
                             &order_identities,
                             &emitter,
                             account_id,
-                            size_precision,
-                            price_precision,
                             clock,
                         )
                         .await;
@@ -352,12 +351,11 @@ impl PolymarketExecutionClient {
                             &submitter,
                             &order_id,
                             &order,
+                            &instrument,
                             &fill_tracker,
                             &order_identities,
                             &emitter,
                             account_id,
-                            size_precision,
-                            price_precision,
                             clock,
                         )
                         .await;
@@ -563,6 +561,7 @@ impl PolymarketExecutionClient {
                 .price()
                 .expect("validated limit order must have a price");
             batch_orders.push(BatchLimitOrderContext {
+                instrument: instrument.clone(),
                 request: LimitOrderSubmitRequest {
                     token_id: instrument.raw_symbol().to_string(),
                     side: order.order_side(),

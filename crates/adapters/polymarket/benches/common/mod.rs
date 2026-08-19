@@ -27,7 +27,7 @@
 #![allow(dead_code)]
 
 use ahash::AHashMap;
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     enums::AssetClass,
     identifiers::{AccountId, InstrumentId, Symbol},
@@ -77,6 +77,12 @@ fn binary_option(token_id: &str, outcome: &str) -> InstrumentAny {
     let symbol = Symbol::new(&symbol_str);
     let raw_symbol = Symbol::new(token_id);
     let instrument_id = InstrumentId::new(symbol, *POLYMARKET_VENUE);
+    let mut info = Params::new();
+    info.insert(
+        "condition_id".to_string(),
+        serde_json::Value::String(CONDITION_ID.to_string()),
+    );
+    info.insert("fees_enabled".to_string(), serde_json::Value::Bool(false));
 
     let binary = BinaryOption::new(
         instrument_id,
@@ -102,7 +108,7 @@ fn binary_option(token_id: &str, outcome: &str) -> InstrumentAny {
         None,
         None,
         None,
-        None,
+        Some(info),
         UnixNanos::default(),
         UnixNanos::default(),
     );

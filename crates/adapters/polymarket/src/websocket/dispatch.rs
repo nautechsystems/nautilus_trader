@@ -25,23 +25,21 @@
 //! methods. Trade fills are emitted at `MATCHED`, retained until terminal settlement, and reversed
 //! with `OrderFillVoided` if the trade reaches `FAILED`.
 
-use std::str::FromStr;
-
 use anyhow::Context;
 use indexmap::IndexMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::{UUID4, UnixNanos, collections::AtomicMap, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{
         OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled,
         OrderRejected, OrderUpdated,
     },
-    identifiers::{AccountId, TradeId, VenueOrderId},
+    identifiers::{AccountId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
-    types::{Money, Price, Quantity},
+    types::{Money, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -66,10 +64,15 @@ use crate::{
         is_post_only_crossing,
         order_fill_tracker::{BufferedFill, FillCorrectionMetadata, OrderFillTrackerMap},
         parse::{
-            build_maker_fill_report, compute_commission, determine_order_side, parse_liquidity_side,
+            build_maker_fill_report, compute_commission, determine_order_side,
+            parse_liquidity_side, snap_filled_qty_to_quantity,
         },
         pending::PendingSubmitTracker,
-        report_validation::instrument_fee_policy,
+        report_validation::{
+            decimal_from_str_exact, ensure_instrument_binding, exact_binary_price,
+            instrument_fee_policy, non_negative_quantity, parse_expiration, parse_match_time,
+            parse_user_channel_timestamp, positive_quantity, trade_id, venue_order_id,
+        },
     },
     http::error::sanitize_error_text,
 };
@@ -175,11 +178,17 @@ fn dispatch_order_update(
         }
     };
 
-    let ts_event = parse_timestamp_ms(&order.timestamp).unwrap_or_else(|_| ctx.clock.get_time_ns());
-    let venue_order_id = VenueOrderId::from(order.id.as_str());
+    let ts_event = match parse_user_channel_timestamp(&order.timestamp, "WebSocket order timestamp")
+    {
+        Ok(timestamp) => timestamp,
+        Err(error) => {
+            log::warn!("Ignoring invalid order update {}: {error}", order.id);
+            return;
+        }
+    };
 
     let ts_init = ctx.clock.get_time_ns();
-    let mut report = build_ws_order_status_report(
+    let mut report = match build_ws_order_status_report(
         order,
         status,
         order_type,
@@ -187,7 +196,14 @@ fn dispatch_order_update(
         ctx.account_id,
         ts_event,
         ts_init,
-    );
+    ) {
+        Ok(report) => report,
+        Err(error) => {
+            log::warn!("Ignoring invalid order update {}: {error}", order.id);
+            return;
+        }
+    };
+    let venue_order_id = report.venue_order_id;
     let local_client_order_id = ctx.pending_submits.client_order_id(&venue_order_id);
     let mut is_accepted = ctx.fill_tracker.contains(&venue_order_id);
     report.client_order_id = local_client_order_id;
@@ -547,7 +563,7 @@ fn build_ws_maker_fill_reports(
 
     let instruments = ctx.token_instruments.load();
     let liquidity_side = parse_liquidity_side(trade.trader_side);
-    let ts_event = parse_timestamp_ms(&trade.timestamp).unwrap_or_else(|_| ctx.clock.get_time_ns());
+    let ts_event = parse_match_time(&trade.match_time, "WebSocket maker fill match_time")?;
     let ts_init = ctx.clock.get_time_ns();
     let mut reports = Vec::with_capacity(user_orders.len());
 
@@ -562,11 +578,9 @@ fn build_ws_maker_fill_reports(
             trade.trader_side,
             trade.side,
             trade.asset_id.as_str(),
+            trade.market.as_str(),
             ctx.account_id,
-            instrument.id(),
-            instrument.price_precision(),
-            instrument.size_precision(),
-            crate::execution::get_pusd_currency(),
+            instrument,
             liquidity_side,
             ts_event,
             ts_init,
@@ -636,19 +650,10 @@ fn build_ws_taker_fill_report_for_trade(
     let instrument = instruments
         .get(&trade.asset_id)
         .with_context(|| format!("unknown asset_id in trade: {}", trade.asset_id))?;
-    let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
-    let liquidity_side = parse_liquidity_side(trade.trader_side);
-    let ts_event = parse_timestamp_ms(&trade.timestamp).unwrap_or_else(|_| ctx.clock.get_time_ns());
     let ts_init = ctx.clock.get_time_ns();
 
-    let mut report = build_ws_taker_fill_report(
-        trade,
-        instrument,
-        ctx.account_id,
-        liquidity_side,
-        ts_event,
-        ts_init,
-    )?;
+    let mut report = build_ws_taker_fill_report(trade, instrument, ctx.account_id, ts_init)?;
+    let venue_order_id = report.venue_order_id;
     report.client_order_id = ctx.pending_submits.client_order_id(&venue_order_id);
     report.last_qty = ctx
         .fill_tracker
@@ -725,26 +730,61 @@ fn build_ws_order_status_report(
     account_id: AccountId,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> OrderStatusReport {
-    let venue_order_id = VenueOrderId::from(order.id.as_str());
+) -> anyhow::Result<OrderStatusReport> {
+    ensure_instrument_binding(
+        instrument,
+        order.market.as_str(),
+        order.asset_id.as_str(),
+        order.outcome.as_ref().map(|outcome| outcome.as_str()),
+        "WebSocket order report",
+    )?;
+
+    let venue_order_id = venue_order_id(&order.id, "WebSocket order venue order ID")?;
     let order_status =
         crate::execution::parse::resolve_order_status(status.status, order.event_type);
     let order_side = OrderSide::from(order.side);
     let time_in_force = TimeInForce::from(order_type);
     let size_precision = instrument.size_precision();
-    let price_precision = instrument.price_precision();
-    let price_dec = Decimal::from_str(&order.price).unwrap_or_default();
-    let quantity = Decimal::from_str(&order.original_size)
-        .ok()
-        .map(|size| original_size_to_shares(size, price_dec, order.side, order_type))
-        .and_then(|d| Quantity::from_decimal_dp(d, size_precision).ok())
-        .unwrap_or_else(|| Quantity::zero(size_precision));
-    let filled_qty = Decimal::from_str(&order.size_matched)
-        .ok()
-        .and_then(|d| Quantity::from_decimal_dp(d, size_precision).ok())
-        .unwrap_or_else(|| Quantity::zero(size_precision));
-    let price = Price::from_decimal_dp(price_dec, price_precision)
-        .unwrap_or_else(|_| Price::zero(price_precision));
+    let price_dec = decimal_from_str_exact(&order.price, "WebSocket order price")?;
+    let price = exact_binary_price(price_dec, "WebSocket order price")?;
+    let original_size =
+        decimal_from_str_exact(&order.original_size, "WebSocket order original_size")?;
+    let quantity = if order.side == PolymarketOrderSide::Buy
+        && matches!(
+            order_type,
+            PolymarketOrderType::FAK | PolymarketOrderType::FOK
+        ) {
+        let shares = original_size_to_shares(original_size, price_dec, order.side, order_type)?;
+        let quantity = Quantity::from_decimal_dp(shares, size_precision)
+            .context("converted WebSocket BUY quantity is not representable")?;
+        anyhow::ensure!(
+            quantity.as_decimal() > Decimal::ZERO,
+            "converted WebSocket BUY quantity must be positive"
+        );
+        quantity
+    } else {
+        positive_quantity(
+            original_size,
+            size_precision,
+            "WebSocket order original_size",
+        )?
+    };
+    let size_matched = if order.size_matched.is_empty() {
+        Decimal::ZERO
+    } else {
+        decimal_from_str_exact(&order.size_matched, "WebSocket order size_matched")?
+    };
+    let raw_filled_qty =
+        non_negative_quantity(size_matched, size_precision, "WebSocket order size_matched")?;
+    let filled_qty = snap_filled_qty_to_quantity(quantity, raw_filled_qty, order_status);
+    anyhow::ensure!(
+        filled_qty <= quantity,
+        "WebSocket order size_matched {filled_qty} exceeds quantity {quantity}"
+    );
+    anyhow::ensure!(
+        order_status != OrderStatus::Filled || filled_qty == quantity,
+        "filled WebSocket order requires filled_qty {filled_qty} to equal quantity {quantity}"
+    );
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -763,12 +803,15 @@ fn build_ws_order_status_report(
         None,
     );
     report.price = Some(price);
+    if let Some(expiration) = order.expiration.as_deref() {
+        report.expire_time = parse_expiration(expiration, "WebSocket order expiration")?;
+    }
 
     if order_status == OrderStatus::Rejected {
         report.cancel_reason.clone_from(&status.reason);
     }
 
-    report
+    Ok(report)
 }
 
 /// Converts a venue-reported `original_size` on a user-channel order message into shares.
@@ -786,37 +829,42 @@ fn original_size_to_shares(
     price: Decimal,
     side: PolymarketOrderSide,
     order_type: PolymarketOrderType,
-) -> Decimal {
+) -> anyhow::Result<Decimal> {
     if side != PolymarketOrderSide::Buy
         || !matches!(
             order_type,
             PolymarketOrderType::FAK | PolymarketOrderType::FOK
         )
     {
-        return original_size;
+        return Ok(original_size);
     }
 
-    if price <= Decimal::ZERO {
-        log::warn!(
-            "Cannot convert {order_type} BUY size {original_size} pUSD to shares \
-             without a positive price, reporting the venue amount"
-        );
-        return original_size;
-    }
+    anyhow::ensure!(
+        price > Decimal::ZERO,
+        "cannot convert {order_type} BUY size {original_size} pUSD without a positive price"
+    );
 
-    original_size / price
+    original_size
+        .checked_div(price)
+        .context("WebSocket BUY quote-to-shares conversion failed")
 }
 
 fn build_ws_taker_fill_report(
     trade: &PolymarketUserTrade,
     instrument: &InstrumentAny,
     account_id: AccountId,
-    liquidity_side: LiquiditySide,
-    ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
-    let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
-    let trade_id = TradeId::from(trade.id.as_str());
+    ensure_instrument_binding(
+        instrument,
+        trade.market.as_str(),
+        trade.asset_id.as_str(),
+        Some(trade.outcome.as_str()),
+        "WebSocket taker fill",
+    )?;
+    let venue_order_id =
+        venue_order_id(&trade.taker_order_id, "WebSocket taker fill venue order ID")?;
+    let trade_id = trade_id(&trade.id, "WebSocket taker fill trade ID")?;
     let order_side = determine_order_side(
         trade.trader_side,
         trade.side,
@@ -824,19 +872,16 @@ fn build_ws_taker_fill_report(
         trade.asset_id.as_str(),
     );
 
-    let size_precision = instrument.size_precision();
-    let price_precision = instrument.price_precision();
-    let size_dec = Decimal::from_str(&trade.size).unwrap_or_default();
-    let price_dec = Decimal::from_str(&trade.price).unwrap_or_default();
-    let last_qty = Quantity::from_decimal_dp(size_dec, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
-    let last_px = Price::from_decimal_dp(price_dec, price_precision)
-        .unwrap_or_else(|_| Price::zero(price_precision));
+    let size_dec = decimal_from_str_exact(&trade.size, "WebSocket fill size")?;
+    let price_dec = decimal_from_str_exact(&trade.price, "WebSocket fill price")?;
+    let last_qty = positive_quantity(size_dec, instrument.size_precision(), "WebSocket fill size")?;
+    let last_px = exact_binary_price(price_dec, "WebSocket fill price")?;
+    let liquidity_side = parse_liquidity_side(trade.trader_side);
+    let ts_event = parse_match_time(&trade.match_time, "WebSocket fill match_time")?;
 
     let (fee_rate, fee_exponent) = instrument_fee_policy(instrument)?;
     let commission_value =
         compute_commission(fee_rate, fee_exponent, size_dec, price_dec, liquidity_side)?;
-    let pusd = crate::execution::get_pusd_currency();
 
     Ok(FillReport {
         account_id,
@@ -846,7 +891,7 @@ fn build_ws_taker_fill_report(
         order_side,
         last_qty,
         last_px,
-        commission: Money::from_decimal(commission_value, pusd)
+        commission: Money::from_decimal(commission_value, instrument.quote_currency())
             .context("commission is not representable as Money")?,
         liquidity_side,
         avg_px: None,
@@ -1168,20 +1213,29 @@ mod tests {
     use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
     use nautilus_core::time::AtomicTime;
     use nautilus_model::{
-        enums::{AccountType, OrderStatus},
+        enums::{AccountType, LiquiditySide, OrderStatus},
         events::OrderEventAny,
-        identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
+        identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId},
         orders::{Order, builder::OrderTestBuilder},
-        types::Currency,
+        types::{Currency, Price},
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use super::*;
+    use crate::common::enums::PolymarketOutcome;
     use crate::http::{
         models::GammaMarket,
         parse::{create_instrument_from_def, parse_gamma_market},
     };
+
+    const TEST_CONDITION_ID: &str =
+        "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917";
+
+    fn bind_order_to_test_instrument(order: &mut PolymarketUserOrder) {
+        order.market = Ustr::from(TEST_CONDITION_ID);
+        order.outcome = Some(PolymarketOutcome::yes());
+    }
 
     /// Registers a tracked-order identity so the dispatch routes the order through events.
     fn register_identity(
@@ -1211,6 +1265,14 @@ mod tests {
 
     fn test_instrument() -> InstrumentAny {
         let mut market: GammaMarket = load("gamma_market.json");
+        market.condition_id =
+            "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917".to_string();
+        market.clob_token_ids = serde_json::to_string(&[
+            "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+            "synthetic-other-token",
+        ])
+        .unwrap();
+        market.outcomes = serde_json::to_string(&["Yes", "No"]).unwrap();
         market.fees_enabled = Some(false);
         market.fee_schedule = None;
         let defs = parse_gamma_market(&market).unwrap();
@@ -1293,7 +1355,8 @@ mod tests {
             AccountId::from("POLY-001"),
             ts_event,
             ts_init,
-        );
+        )
+        .unwrap();
 
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.order_type, OrderType::Limit);
@@ -1309,7 +1372,8 @@ mod tests {
 
     #[rstest]
     fn test_build_ws_order_status_report_venue_cancel_maps_to_canceled() {
-        let order: PolymarketUserOrder = load("ws_user_order_venue_cancel.json");
+        let mut order: PolymarketUserOrder = load("ws_user_order_venue_cancel.json");
+        bind_order_to_test_instrument(&mut order);
         let instrument = test_instrument();
         let ts_event = UnixNanos::from(1_000_000_000u64);
         let ts_init = UnixNanos::from(2_000_000_000u64);
@@ -1322,7 +1386,8 @@ mod tests {
             AccountId::from("POLY-001"),
             ts_event,
             ts_init,
-        );
+        )
+        .unwrap();
 
         assert_eq!(report.order_status, OrderStatus::Canceled);
     }
@@ -1372,13 +1437,6 @@ mod tests {
         dec!(0.6),
         dec!(20)
     )]
-    #[case(
-        PolymarketOrderSide::Buy,
-        PolymarketOrderType::FOK,
-        dec!(1.01),
-        dec!(0),
-        dec!(1.01)
-    )]
     fn test_original_size_to_shares(
         #[case] side: PolymarketOrderSide,
         #[case] order_type: PolymarketOrderType,
@@ -1386,16 +1444,14 @@ mod tests {
         #[case] price: Decimal,
         #[case] expected: Decimal,
     ) {
-        let shares = original_size_to_shares(original_size, price, side, order_type);
+        let shares = original_size_to_shares(original_size, price, side, order_type).unwrap();
 
         assert_eq!(shares, expected);
     }
 
-    // A non-terminating division must still round to the instrument's size precision, and a
-    // price the venue omits must leave the size unconverted rather than drop the report to zero.
+    // A non-terminating division must still round to the instrument's size precision.
     #[rstest]
     #[case("1", "0.03", "33.333333", "0.03")]
-    #[case("1.01", "", "1.01", "0")]
     fn test_build_ws_order_status_report_fok_buy_quantity(
         #[case] original_size: &str,
         #[case] price: &str,
@@ -1403,6 +1459,7 @@ mod tests {
         #[case] expected_price: &str,
     ) {
         let mut order: PolymarketUserOrder = load("ws_user_order_fok_buy_pusd_size.json");
+        bind_order_to_test_instrument(&mut order);
         order.original_size = original_size.to_string();
         order.price = price.to_string();
         let instrument = test_instrument();
@@ -1415,7 +1472,8 @@ mod tests {
             AccountId::from("POLY-001"),
             UnixNanos::from(1_000_000_000u64),
             UnixNanos::from(2_000_000_000u64),
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             report.quantity.as_decimal(),
@@ -1428,8 +1486,30 @@ mod tests {
     }
 
     #[rstest]
+    fn test_build_ws_order_status_report_rejects_missing_fok_buy_price() {
+        let mut order: PolymarketUserOrder = load("ws_user_order_fok_buy_pusd_size.json");
+        bind_order_to_test_instrument(&mut order);
+        order.price.clear();
+        let instrument = test_instrument();
+
+        assert!(
+            build_ws_order_status_report(
+                &order,
+                order.status.as_ref().unwrap(),
+                order.order_type.unwrap(),
+                &instrument,
+                AccountId::from("POLY-001"),
+                UnixNanos::from(1_000_000_000u64),
+                UnixNanos::from(2_000_000_000u64),
+            )
+            .is_err()
+        );
+    }
+
+    #[rstest]
     fn test_dispatch_fok_buy_registers_share_quantity_for_in_flight_submit() {
-        let order: PolymarketUserOrder = load("ws_user_order_fok_buy_pusd_size.json");
+        let mut order: PolymarketUserOrder = load("ws_user_order_fok_buy_pusd_size.json");
+        bind_order_to_test_instrument(&mut order);
         let instrument = test_instrument();
 
         let token_instruments = AtomicMap::new();
@@ -1477,7 +1557,8 @@ mod tests {
 
     #[rstest]
     fn test_dispatch_fok_buy_report_quantity_is_shares_without_identity() {
-        let order: PolymarketUserOrder = load("ws_user_order_fok_buy_pusd_size.json");
+        let mut order: PolymarketUserOrder = load("ws_user_order_fok_buy_pusd_size.json");
+        bind_order_to_test_instrument(&mut order);
         let instrument = test_instrument();
 
         let token_instruments = AtomicMap::new();
@@ -1537,23 +1618,19 @@ mod tests {
     fn test_build_ws_taker_fill_report() {
         let trade: PolymarketUserTrade = load("ws_user_trade.json");
         let instrument = test_instrument();
-        let ts_event = UnixNanos::from(1_000_000_000u64);
         let ts_init = UnixNanos::from(2_000_000_000u64);
 
-        let report = build_ws_taker_fill_report(
-            &trade,
-            &instrument,
-            AccountId::from("POLY-001"),
-            LiquiditySide::Taker,
-            ts_event,
-            ts_init,
-        )
-        .expect("representable commission builds a fill report");
+        let report =
+            build_ws_taker_fill_report(&trade, &instrument, AccountId::from("POLY-001"), ts_init)
+                .expect("representable commission builds a fill report");
 
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.trade_id.as_str(), trade.id);
-        assert_eq!(report.ts_event, ts_event);
+        assert_eq!(
+            report.ts_event,
+            parse_match_time(&trade.match_time, "test match_time").unwrap()
+        );
         assert_eq!(report.ts_init, ts_init);
     }
 
@@ -2073,7 +2150,11 @@ mod tests {
     #[rstest]
     fn test_dispatch_late_fill_stays_tracked_after_later_registrations() {
         let trade: PolymarketUserTrade = load("ws_user_trade.json");
-        let market: GammaMarket = load("gamma_market_sports_market_money_line.json");
+        let mut market: GammaMarket = load("gamma_market_sports_market_money_line.json");
+        market.condition_id = trade.market.to_string();
+        market.clob_token_ids =
+            serde_json::to_string(&[trade.asset_id.as_str(), "synthetic-other-token"]).unwrap();
+        market.outcomes = serde_json::to_string(&[trade.outcome.as_str(), "Other"]).unwrap();
         let defs = parse_gamma_market(&market).unwrap();
         let instrument =
             create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
@@ -2748,7 +2829,7 @@ mod tests {
         };
 
         let instrument = test_instrument();
-        let asset_id = instrument.id().symbol.inner();
+        let asset_id = instrument.raw_symbol().inner();
 
         let order_id =
             "0xe743f6c823ecdfa9ddaaf08673b2441d15a38d89e14dcb25b3b70c284be4f6ad".to_string();
@@ -2797,7 +2878,7 @@ mod tests {
                 expiration: Some("0".to_string()),
                 id: order_id.clone(),
                 maker_address: Some(Ustr::from("0xabc")),
-                market: Ustr::from("0x4134"),
+                market: Ustr::from(TEST_CONDITION_ID),
                 order_owner: Some(Ustr::from("xxx")),
                 order_type: Some(PolymarketOrderType::GTC),
                 original_size: "20".to_string(),
@@ -2812,7 +2893,7 @@ mod tests {
             };
 
         // Helper to build maker trades
-        let make_trade = |trade_id: &str, matched_amount: f64, ts: &str| PolymarketUserTrade {
+        let make_trade = |trade_id: &str, matched_amount: Decimal, ts: &str| PolymarketUserTrade {
             asset_id,
             bucket_index: 0,
             fee_rate_bps: "1000".to_string(),
@@ -2822,14 +2903,14 @@ mod tests {
             maker_orders: vec![PolymarketMakerOrder {
                 asset_id,
                 maker_address: "0xabc".to_string(),
-                matched_amount: Decimal::from_f64_retain(matched_amount).unwrap_or(Decimal::ZERO),
+                matched_amount,
                 order_id: order_id.clone(),
                 outcome: PolymarketOutcome::yes(),
                 owner: "xxx".to_string(),
-                price: Decimal::from_f64_retain(0.18).unwrap_or(Decimal::ZERO),
+                price: dec!(0.18),
                 side: None,
             }],
-            market: Ustr::from("0x4134"),
+            market: Ustr::from(TEST_CONDITION_ID),
             match_time: "1775074735".to_string(),
             outcome: PolymarketOutcome::yes(),
             owner: Ustr::from("other-owner"),
@@ -2858,7 +2939,7 @@ mod tests {
         }
 
         // (B) Trade fill 1.219511
-        let msg_b = make_trade("trade-b", 1.219511, "1775074738032");
+        let msg_b = make_trade("trade-b", dec!(1.219511), "1775074738032");
         dispatch_user_message(&UserWsMessage::Trade(msg_b), &ctx, &mut state);
 
         let evt = receiver.try_recv().expect("(B) filled event");
@@ -2902,7 +2983,7 @@ mod tests {
         }
 
         // (E) Trade fill 1.341461
-        let msg_e = make_trade("trade-e", 1.341461, "1775074738036");
+        let msg_e = make_trade("trade-e", dec!(1.341461), "1775074738036");
         dispatch_user_message(&UserWsMessage::Trade(msg_e), &ctx, &mut state);
 
         let evt = receiver.try_recv().expect("(E) filled event");
@@ -2940,7 +3021,7 @@ mod tests {
         };
 
         let instrument = test_instrument();
-        let asset_id = instrument.id().symbol.inner();
+        let asset_id = instrument.raw_symbol().inner();
         let token_instruments = AtomicMap::new();
         token_instruments.insert(asset_id, instrument.clone());
 
@@ -2991,7 +3072,7 @@ mod tests {
             last_update: "1700000001".to_string(),
             maker_address: Ustr::from("0xmaker"),
             maker_orders: vec![],
-            market: Ustr::from("0xmarket"),
+            market: Ustr::from(TEST_CONDITION_ID),
             match_time: "1700000000".to_string(),
             outcome: PolymarketOutcome::yes(),
             owner: Ustr::from("00000000-0000-0000-0000-000000000001"),
@@ -3097,7 +3178,7 @@ mod tests {
         };
 
         let instrument = test_instrument();
-        let asset_id = instrument.id().symbol.inner();
+        let asset_id = instrument.raw_symbol().inner();
         let token_instruments = AtomicMap::new();
         token_instruments.insert(asset_id, instrument.clone());
 
@@ -3156,7 +3237,7 @@ mod tests {
             last_update: "1700000001".to_string(),
             maker_address: Ustr::from("0xmaker"),
             maker_orders: vec![],
-            market: Ustr::from("0xmarket"),
+            market: Ustr::from(TEST_CONDITION_ID),
             match_time: "1700000000".to_string(),
             outcome: PolymarketOutcome::yes(),
             owner: Ustr::from("00000000-0000-0000-0000-000000000001"),
@@ -3250,7 +3331,7 @@ mod tests {
         };
 
         let instrument = test_instrument();
-        let asset_id = instrument.id().symbol.inner();
+        let asset_id = instrument.raw_symbol().inner();
         let size_precision = instrument.size_precision();
         let token_instruments = AtomicMap::new();
         token_instruments.insert(asset_id, instrument.clone());
@@ -3302,7 +3383,7 @@ mod tests {
             last_update: "1700000001".to_string(),
             maker_address: Ustr::from("0xmaker"),
             maker_orders: vec![],
-            market: Ustr::from("0xmarket"),
+            market: Ustr::from(TEST_CONDITION_ID),
             match_time: "1700000000".to_string(),
             outcome: PolymarketOutcome::yes(),
             owner: Ustr::from("00000000-0000-0000-0000-000000000001"),
@@ -3363,7 +3444,7 @@ mod tests {
         };
 
         let instrument = test_instrument();
-        let asset_id = instrument.id().symbol.inner();
+        let asset_id = instrument.raw_symbol().inner();
         let order_id = "0xterminal-order".to_string();
         let venue_order_id = VenueOrderId::from(order_id.as_str());
 
@@ -3413,7 +3494,7 @@ mod tests {
             expiration: Some("0".to_string()),
             id: order_id,
             maker_address: Some(Ustr::from("0xabc")),
-            market: Ustr::from("0x4134"),
+            market: Ustr::from(TEST_CONDITION_ID),
             order_owner: Some(Ustr::from("xxx")),
             order_type: Some(PolymarketOrderType::FOK),
             original_size: "10".to_string(),

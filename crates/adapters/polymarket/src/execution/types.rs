@@ -20,6 +20,7 @@ use nautilus_live::execution::failure::CommandFailure;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
     identifiers::VenueOrderId,
+    instruments::InstrumentAny,
     orders::OrderAny,
     types::{Price, Quantity},
 };
@@ -80,6 +81,7 @@ pub(crate) struct SignedLimitOrderSubmission {
 #[derive(Clone, Debug)]
 pub(crate) struct BatchLimitOrderContext {
     pub(crate) order: OrderAny,
+    pub(crate) instrument: InstrumentAny,
     pub(crate) request: LimitOrderSubmitRequest,
     pub(crate) size_precision: u8,
     pub(crate) price_precision: u8,

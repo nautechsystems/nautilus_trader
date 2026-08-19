@@ -19,12 +19,13 @@ use nautilus_common::live::{get_runtime, task::TaskHandles};
 use nautilus_core::{UUID4, time::AtomicTime};
 use nautilus_live::{ExecutionEventEmitter, execution::failure::CommandFailure};
 use nautilus_model::{
-    enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{OrderSide, OrderStatus, TimeInForce},
     events::{OrderEventAny, OrderFilled, OrderUpdated},
     identifiers::{AccountId, VenueOrderId},
+    instruments::InstrumentAny,
     orders::{Order, OrderAny},
     reports::{FillReport, OrderStatusReport},
-    types::{Price, Quantity},
+    types::Quantity,
 };
 use rust_decimal::Decimal;
 
@@ -32,6 +33,7 @@ use super::{
     cancellations::execute_deferred_cancel,
     identity::{OrderIdentity, OrderIdentityRegistry},
     order_fill_tracker::{BufferedFill, FillCorrectionMetadata, OrderFillTrackerMap},
+    parse::parse_order_status_report,
     pending::{PendingCancelTracker, PendingSubmitTracker},
     reconciliation::cap_order_report_filled_qty,
     reports::get_pusd_currency,
@@ -175,12 +177,11 @@ pub(super) async fn handle_batch_order_responses(
                     &submitter,
                     &order_id,
                     &batch_order.order,
+                    &batch_order.instrument,
                     &fill_tracker,
                     &order_identities,
                     &emitter,
                     account_id,
-                    batch_order.size_precision,
-                    batch_order.price_precision,
                     clock,
                 )
                 .await;
@@ -310,12 +311,11 @@ pub(super) async fn handle_single_order_response(
                     submitter,
                     &order_id,
                     &batch_order.order,
+                    &batch_order.instrument,
                     fill_tracker,
                     order_identities,
                     emitter,
                     account_id,
-                    batch_order.size_precision,
-                    batch_order.price_precision,
                     clock,
                 )
                 .await;
@@ -902,12 +902,11 @@ pub(super) async fn check_fok_status(
     submitter: &OrderSubmitter,
     order_id: &str,
     order: &OrderAny,
+    instrument: &InstrumentAny,
     fill_tracker: &Arc<OrderFillTrackerMap>,
     order_identities: &OrderIdentityRegistry,
     emitter: &ExecutionEventEmitter,
     account_id: AccountId,
-    size_precision: u8,
-    price_precision: u8,
     clock: &'static AtomicTime,
 ) {
     const FOK_CHECK_DELAY: Duration = Duration::from_secs(5);
@@ -937,8 +936,21 @@ pub(super) async fn check_fok_status(
         return;
     }
 
-    let order_status = OrderStatus::from(venue_order.status);
     let ts_now = clock.get_time_ns();
+    let mut report = match parse_order_status_report(
+        &venue_order,
+        instrument,
+        account_id,
+        Some(order.client_order_id()),
+        ts_now,
+    ) {
+        Ok(report) => report,
+        Err(e) => {
+            log::warn!("FOK status check rejected invalid order evidence for {order_id}: {e}");
+            return;
+        }
+    };
+    let order_status = report.order_status;
 
     if matches!(
         order_status,
@@ -966,33 +978,9 @@ pub(super) async fn check_fok_status(
             emitter.emit_order_expired(order, Some(venue_order_id), ts_now);
         }
         OrderStatus::Filled => {
-            let quantity = Quantity::from_decimal_dp(venue_order.original_size, size_precision)
-                .unwrap_or_else(|_| Quantity::zero(size_precision));
-            let filled_qty = Quantity::from_decimal_dp(venue_order.size_matched, size_precision)
-                .unwrap_or_else(|_| Quantity::zero(size_precision));
             let confirmed_filled = fill_tracker
                 .get_cumulative_filled(&venue_order_id)
-                .unwrap_or_else(|| Quantity::zero(size_precision));
-            let price = Price::from_decimal_dp(venue_order.price, price_precision)
-                .unwrap_or_else(|_| Price::zero(price_precision));
-
-            let mut report = OrderStatusReport::new(
-                account_id,
-                order.instrument_id(),
-                Some(order.client_order_id()),
-                venue_order_id,
-                order.order_side(),
-                OrderType::Limit,
-                TimeInForce::Fok,
-                order_status,
-                quantity,
-                filled_qty,
-                ts_now,
-                ts_now,
-                ts_now,
-                None,
-            );
-            report.price = Some(price);
+                .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
             cap_order_report_filled_qty(&mut report, confirmed_filled, None);
 
             log::debug!(
@@ -1010,11 +998,11 @@ mod tests {
     use nautilus_common::messages::ExecutionEvent;
     use nautilus_core::{UnixNanos, collections::AtomicMap};
     use nautilus_model::{
-        enums::{AccountType, LiquiditySide},
+        enums::{AccountType, LiquiditySide, OrderType},
         identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId},
         instruments::{Instrument, InstrumentAny},
         orders::{LimitOrder, MarketOrder, Order, stubs::TestOrderEventStubs},
-        types::{Currency, Money},
+        types::{Currency, Money, Price},
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
@@ -1044,6 +1032,14 @@ mod tests {
 
     fn test_instrument() -> InstrumentAny {
         let mut market: GammaMarket = load("gamma_market.json");
+        market.condition_id =
+            "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917".to_string();
+        market.clob_token_ids = serde_json::to_string(&[
+            "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+            "synthetic-other-token",
+        ])
+        .unwrap();
+        market.outcomes = serde_json::to_string(&["Yes", "No"]).unwrap();
         market.fees_enabled = Some(false);
         market.fee_schedule = None;
         let defs = parse_gamma_market(&market).unwrap();
@@ -1494,7 +1490,6 @@ mod tests {
             account_id: AccountId::from("POLY-001"),
             user_address: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
             api_key: "00000000-0000-0000-0000-000000000001",
-            pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
         };
 
@@ -1539,7 +1534,6 @@ mod tests {
             account_id: AccountId::from("POLY-001"),
             user_address: &configured_address,
             api_key: foreign_api_key,
-            pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
         };
 
@@ -1579,7 +1573,6 @@ mod tests {
             account_id: AccountId::from("POLY-001"),
             user_address: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
             api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
-            pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
         };
 
@@ -1618,7 +1611,6 @@ mod tests {
             account_id: AccountId::from("POLY-001"),
             user_address: "0x000000000000000000000000000000000000dead",
             api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
-            pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
         };
 
@@ -1643,6 +1635,14 @@ mod tests {
     #[rstest]
     fn test_fill_report_batch_fails_instead_of_returning_valid_prefix() {
         let mut market: GammaMarket = load("gamma_market.json");
+        market.condition_id =
+            "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917".to_string();
+        market.clob_token_ids = serde_json::to_string(&[
+            "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+            "synthetic-other-token",
+        ])
+        .unwrap();
+        market.outcomes = serde_json::to_string(&["Yes", "No"]).unwrap();
         market.fees_enabled = Some(true);
         market.fee_schedule = Some(crate::http::models::FeeSchedule {
             exponent: Decimal::ONE,
@@ -1668,7 +1668,6 @@ mod tests {
             account_id: AccountId::from("POLY-001"),
             user_address: &configured_address,
             api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
-            pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
         };
 
@@ -2277,7 +2276,9 @@ mod tests {
             last_update: "1700000001".to_string(),
             maker_address: Ustr::from("0xmaker"),
             maker_orders: vec![],
-            market: Ustr::from("0xmarket"),
+            market: Ustr::from(
+                "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+            ),
             match_time: "1700000000".to_string(),
             outcome: PolymarketOutcome::yes(),
             owner: Ustr::from("00000000-0000-0000-0000-000000000001"),
@@ -2301,7 +2302,7 @@ mod tests {
     fn test_ws_taker_fill_before_submit_response_can_be_voided_after_drain() {
         let instrument = test_instrument();
         let instrument_id = instrument.id();
-        let asset_id = instrument_id.symbol.inner();
+        let asset_id = instrument.raw_symbol().inner();
         let size_precision = instrument.size_precision();
         let price_precision = instrument.price_precision();
         let account_id = AccountId::from("POLY-001");
@@ -2526,7 +2527,7 @@ mod tests {
     fn test_ws_taker_overfill_bumps_order_qty_then_fills() {
         let instrument = test_instrument();
         let instrument_id = instrument.id();
-        let asset_id = instrument_id.symbol.inner();
+        let asset_id = instrument.raw_symbol().inner();
         let size_precision = instrument.size_precision();
         let price_precision = instrument.price_precision();
         let account_id = AccountId::from("POLY-001");

@@ -15,17 +15,14 @@
 
 //! Parsing functions for Polymarket execution reports.
 
-use anyhow::{Context, ensure};
-use jiff::Timestamp;
-use nautilus_core::{
-    UUID4, UnixNanos,
-    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
-};
+use anyhow::Context;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, TradeId},
+    instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Quantity},
 };
 use rust_decimal::Decimal;
 
@@ -37,6 +34,11 @@ use crate::{
             PolymarketOrderStatus,
         },
         models::PolymarketMakerOrder,
+    },
+    execution::report_validation::{
+        ensure_instrument_binding, exact_binary_price, instrument_fee_policy,
+        non_negative_quantity, parse_expiration, parse_match_time, positive_quantity, trade_id,
+        venue_order_id,
     },
     http::models::{ClobBookLevel, PolymarketOpenOrder, PolymarketTradeReport},
 };
@@ -119,20 +121,27 @@ pub fn make_composite_trade_id(trade_id: &str, venue_order_id: &str) -> TradeId 
 /// Parses a [`PolymarketOpenOrder`] into an [`OrderStatusReport`].
 pub fn parse_order_status_report(
     order: &PolymarketOpenOrder,
-    instrument_id: InstrumentId,
+    instrument: &InstrumentAny,
     account_id: AccountId,
     client_order_id: Option<ClientOrderId>,
-    price_precision: u8,
-    size_precision: u8,
     ts_init: UnixNanos,
-) -> OrderStatusReport {
-    let venue_order_id = VenueOrderId::from(order.id.as_str());
+) -> anyhow::Result<OrderStatusReport> {
+    ensure_instrument_binding(
+        instrument,
+        order.market.as_str(),
+        order.asset_id.as_str(),
+        Some(order.outcome.as_str()),
+        "Polymarket order report",
+    )?;
+
+    let instrument_id = instrument.id();
+    let size_precision = instrument.size_precision();
+    let venue_order_id = venue_order_id(&order.id, "order report venue order ID")?;
     let order_side = OrderSide::from(order.side);
     let time_in_force = TimeInForce::from(order.order_type);
-    let quantity = Quantity::from_decimal_dp(order.original_size, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
-    let raw_filled_qty = Quantity::from_decimal_dp(order.size_matched, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
+    let quantity = positive_quantity(order.original_size, size_precision, "order original_size")?;
+    let raw_filled_qty =
+        non_negative_quantity(order.size_matched, size_precision, "order size_matched")?;
     // `Matched` does not mean fully filled, so resolve the status from the filled quantity.
     let order_status = if order.status == PolymarketOrderStatus::Matched {
         recovered_terminal_order_status(time_in_force, quantity, raw_filled_qty)
@@ -140,10 +149,20 @@ pub fn parse_order_status_report(
         OrderStatus::from(order.status)
     };
     let filled_qty = snap_filled_qty_to_quantity(quantity, raw_filled_qty, order_status);
-    let price = Price::from_decimal_dp(order.price, price_precision)
-        .unwrap_or_else(|_| Price::zero(price_precision));
+    anyhow::ensure!(
+        filled_qty <= quantity,
+        "order size_matched {filled_qty} exceeds original_size {quantity}"
+    );
+    anyhow::ensure!(
+        order_status != OrderStatus::Filled || filled_qty == quantity,
+        "filled order requires filled_qty {filled_qty} to equal quantity {quantity}"
+    );
+    let price = exact_binary_price(order.price, "order price")?;
 
-    let ts_accepted = UnixNanos::from(order.created_at * NANOSECONDS_IN_SECOND);
+    let ts_accepted = crate::execution::report_validation::positive_unix_seconds(
+        order.created_at,
+        "order created_at",
+    )?;
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -163,25 +182,12 @@ pub fn parse_order_status_report(
     );
     report.price = Some(price);
     // CLOB V2 emits `expiration` as Unix seconds; "0" means no expiration.
-    if let Some(nanos) = order.expiration.as_deref().and_then(parse_expiration_nanos) {
-        report.expire_time = Some(UnixNanos::from(nanos));
+    if let Some(value) = order.expiration.as_deref() {
+        report.expire_time = parse_expiration(value, "order expiration")?;
     }
-    report
+    Ok(report)
 }
 
-/// Parses a CLOB V2 `expiration` string into a Unix-nanos value. Returns
-/// `None` for `"0"`, missing values, unparsable input, or values that
-/// overflow `u64` when scaled to nanoseconds (e.g. accidentally-passed
-/// millisecond timestamps that exceed Unix-seconds bounds).
-fn parse_expiration_nanos(value: &str) -> Option<u64> {
-    let secs: u64 = value.parse().ok()?;
-    if secs == 0 {
-        return None;
-    }
-    secs.checked_mul(NANOSECONDS_IN_SECOND)
-}
-
-// panics-doc-ok (transitive via validating identifier constructors)
 /// Parses a [`PolymarketTradeReport`] into a [`FillReport`].
 ///
 /// Produces one fill report for the overall trade. The `trade_id` is
@@ -190,32 +196,33 @@ fn parse_expiration_nanos(value: &str) -> Option<u64> {
 ///
 /// # Errors
 ///
-/// Returns an error if the computed commission cannot be represented as [`Money`].
-///
-/// # Panics
-///
-/// Panics if the trade identifiers are invalid.
+/// Returns an error if any identity, economic value, timestamp, binding, fee policy, or computed
+/// commission is invalid or cannot be represented exactly.
 #[expect(clippy::too_many_arguments)]
 pub fn parse_fill_report(
     trade: &PolymarketTradeReport,
-    instrument_id: InstrumentId,
+    instrument: &InstrumentAny,
     account_id: AccountId,
     client_order_id: Option<ClientOrderId>,
-    price_precision: u8,
-    size_precision: u8,
-    currency: Currency,
-    taker_fee_rate: Decimal,
-    fee_exponent: f64,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
-    let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
-    let trade_id = TradeId::from(trade.id.as_str());
+    ensure_instrument_binding(
+        instrument,
+        trade.market.as_str(),
+        trade.asset_id.as_str(),
+        Some(trade.outcome.as_str()),
+        "Polymarket taker fill",
+    )?;
+
+    let instrument_id = instrument.id();
+    let size_precision = instrument.size_precision();
+    let venue_order_id = venue_order_id(&trade.taker_order_id, "fill venue order ID")?;
+    let trade_id = trade_id(&trade.id, "fill trade ID")?;
     let order_side = OrderSide::from(trade.side);
-    let last_qty = Quantity::from_decimal_dp(trade.size, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
-    let last_px = Price::from_decimal_dp(trade.price, price_precision)
-        .unwrap_or_else(|_| Price::zero(price_precision));
+    let last_qty = positive_quantity(trade.size, size_precision, "fill size")?;
+    let last_px = exact_binary_price(trade.price, "fill price")?;
     let liquidity_side = parse_liquidity_side(trade.trader_side);
+    let (taker_fee_rate, fee_exponent) = instrument_fee_policy(instrument)?;
 
     let commission_value = compute_commission(
         taker_fee_rate,
@@ -224,11 +231,14 @@ pub fn parse_fill_report(
         trade.price,
         liquidity_side,
     )?;
-    let commission = Money::from_decimal(commission_value, currency).with_context(|| {
-        format!("failed to represent commission {commission_value} for {instrument_id} as Money")
-    })?;
+    let commission = Money::from_decimal(commission_value, instrument.quote_currency())
+        .with_context(|| {
+            format!(
+                "failed to represent commission {commission_value} for {instrument_id} as Money"
+            )
+        })?;
 
-    let ts_event = parse_timestamp(&trade.match_time).unwrap_or(ts_init);
+    let ts_event = parse_match_time(&trade.match_time, "fill match_time")?;
 
     Ok(FillReport {
         account_id,
@@ -249,7 +259,6 @@ pub fn parse_fill_report(
     })
 }
 
-// panics-doc-ok (transitive via validating identifier constructors)
 /// Builds a [`FillReport`] from a [`PolymarketMakerOrder`] and trade-level context.
 ///
 /// Used by both the WS stream handler and REST fill report generation since both
@@ -258,11 +267,8 @@ pub fn parse_fill_report(
 ///
 /// # Errors
 ///
-/// Returns an error if the computed commission cannot be represented as [`Money`].
-///
-/// # Panics
-///
-/// Panics if the maker order or generated trade identifier is invalid.
+/// Returns an error if any identity, economic value, or instrument binding is invalid or cannot
+/// be represented exactly.
 #[expect(clippy::too_many_arguments)]
 pub fn build_maker_fill_report(
     mo: &PolymarketMakerOrder,
@@ -270,16 +276,31 @@ pub fn build_maker_fill_report(
     trader_side: PolymarketLiquiditySide,
     trade_side: PolymarketOrderSide,
     taker_asset_id: &str,
+    market: &str,
     account_id: AccountId,
-    instrument_id: InstrumentId,
-    price_precision: u8,
-    size_precision: u8,
-    currency: Currency,
+    instrument: &InstrumentAny,
     liquidity_side: LiquiditySide,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
-    let venue_order_id = VenueOrderId::from(mo.order_id.as_str());
+    ensure_instrument_binding(
+        instrument,
+        market,
+        mo.asset_id.as_str(),
+        Some(mo.outcome.as_str()),
+        "Polymarket maker fill",
+    )?;
+
+    let instrument_id = instrument.id();
+    let size_precision = instrument.size_precision();
+    let venue_order_id = venue_order_id(&mo.order_id, "maker fill venue order ID")?;
+    anyhow::ensure!(
+        !trade_id.is_empty()
+            && trade_id.is_ascii()
+            && !trade_id.as_bytes().contains(&0)
+            && !trade_id.bytes().all(|byte| byte.is_ascii_whitespace()),
+        "maker native trade ID must be non-empty ASCII without NUL bytes"
+    );
     let fill_trade_id = make_composite_trade_id(trade_id, &mo.order_id);
     let order_side = determine_order_side(
         trader_side,
@@ -287,20 +308,9 @@ pub fn build_maker_fill_report(
         taker_asset_id,
         mo.asset_id.as_str(),
     );
-    let last_qty = Quantity::from_decimal_dp(mo.matched_amount, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
-    let last_px = Price::from_decimal_dp(mo.price, price_precision)
-        .unwrap_or_else(|_| Price::zero(price_precision));
-    let commission_value = compute_commission(
-        Decimal::ZERO,
-        1.0,
-        mo.matched_amount,
-        mo.price,
-        liquidity_side,
-    )?;
-    let commission = Money::from_decimal(commission_value, currency).with_context(|| {
-        format!("failed to represent commission {commission_value} for {instrument_id} as Money")
-    })?;
+    let last_qty = positive_quantity(mo.matched_amount, size_precision, "maker matched_amount")?;
+    let last_px = exact_binary_price(mo.price, "maker price")?;
+    let commission = Money::zero(instrument.quote_currency());
 
     Ok(FillReport {
         account_id,
@@ -321,11 +331,6 @@ pub fn build_maker_fill_report(
     })
 }
 
-/// Returns the effective taker fee rate for a Polymarket instrument.
-///
-/// Polymarket sets this from the Gamma market's `feeSchedule.rate`. When the
-/// feeSchedule is unavailable (e.g. CLOB-only flow) the instrument's taker fee
-/// defaults to zero and no commission is charged.
 /// Adjusts a market-BUY pUSD amount to fit within the user's pUSD balance once
 /// platform and builder taker fees are deducted. Mirrors `adjust_market_buy_amount`
 /// in `polymarket-rs-clob-client-v2`'s `clob/utilities.rs`.
@@ -404,15 +409,15 @@ pub fn compute_commission(
     price: Decimal,
     liquidity_side: LiquiditySide,
 ) -> anyhow::Result<Decimal> {
-    ensure!(
+    anyhow::ensure!(
         (Decimal::ZERO..=Decimal::ONE).contains(&fee_rate),
         "fee rate must be in [0, 1], was {fee_rate}"
     );
-    ensure!(
+    anyhow::ensure!(
         size >= Decimal::ZERO,
         "fill size must be non-negative, was {size}"
     );
-    ensure!(
+    anyhow::ensure!(
         (Decimal::ZERO..=Decimal::ONE).contains(&price),
         "fill price must be in [0, 1], was {price}"
     );
@@ -420,7 +425,7 @@ pub fn compute_commission(
     if liquidity_side != LiquiditySide::Taker || fee_rate.is_zero() {
         return Ok(Decimal::ZERO);
     }
-    ensure!(
+    anyhow::ensure!(
         fee_exponent.is_finite() && fee_exponent > 0.0,
         "fee exponent must be positive and finite, was {fee_exponent}"
     );
@@ -432,18 +437,19 @@ pub fn compute_commission(
 }
 
 fn fee_curve_rate(fee_rate: Decimal, price: Decimal, fee_exponent: f64) -> anyhow::Result<Decimal> {
-    ensure!(
+    anyhow::ensure!(
         (Decimal::ZERO..=Decimal::ONE).contains(&fee_rate),
         "fee rate must be in [0, 1], was {fee_rate}"
     );
-    ensure!(
+    anyhow::ensure!(
         (Decimal::ZERO..=Decimal::ONE).contains(&price),
         "fee price must be in [0, 1], was {price}"
     );
+
     if fee_rate.is_zero() {
         return Ok(Decimal::ZERO);
     }
-    ensure!(
+    anyhow::ensure!(
         fee_exponent.is_finite() && fee_exponent > 0.0,
         "fee exponent must be positive and finite, was {fee_exponent}"
     );
@@ -456,7 +462,7 @@ fn fee_curve_rate(fee_rate: Decimal, price: Decimal, fee_exponent: f64) -> anyho
         .context("fee curve multiplication overflow")?;
     let base_f64 = f64::try_from(base).context("fee curve base is not representable as f64")?;
     let curve_f64 = base_f64.powf(fee_exponent);
-    ensure!(
+    anyhow::ensure!(
         curve_f64.is_finite() && curve_f64 >= 0.0,
         "fee curve result is not finite"
     );
@@ -468,8 +474,12 @@ fn fee_curve_rate(fee_rate: Decimal, price: Decimal, fee_exponent: f64) -> anyho
 }
 
 /// Sums `last_qty` across fills as a decimal.
-pub(crate) fn sum_filled_quantity(fills: &[FillReport]) -> Decimal {
-    fills.iter().map(|f| f.last_qty.as_decimal()).sum()
+pub(crate) fn sum_filled_quantity(fills: &[FillReport]) -> anyhow::Result<Decimal> {
+    fills.iter().try_fold(Decimal::ZERO, |total, fill| {
+        total
+            .checked_add(fill.last_qty.as_decimal())
+            .context("filled quantity sum overflow")
+    })
 }
 
 /// Quantity-weighted average price across fills, or `None` when total filled
@@ -477,15 +487,28 @@ pub(crate) fn sum_filled_quantity(fills: &[FillReport]) -> Decimal {
 pub(crate) fn weighted_average_price(
     fills: &[FillReport],
     total_filled: Decimal,
-) -> Option<Decimal> {
+) -> anyhow::Result<Option<Decimal>> {
     if total_filled.is_zero() {
-        return None;
+        return Ok(None);
     }
-    let weighted: Decimal = fills
-        .iter()
-        .map(|f| f.last_qty.as_decimal() * f.last_px.as_decimal())
-        .sum();
-    Some(weighted / total_filled)
+    anyhow::ensure!(
+        total_filled > Decimal::ZERO,
+        "total filled quantity must be non-negative, was {total_filled}"
+    );
+    let weighted = fills.iter().try_fold(Decimal::ZERO, |total, fill| {
+        let notional = fill
+            .last_qty
+            .as_decimal()
+            .checked_mul(fill.last_px.as_decimal())
+            .context("fill notional multiplication overflow")?;
+        total
+            .checked_add(notional)
+            .context("weighted fill notional sum overflow")
+    })?;
+    weighted
+        .checked_div(total_filled)
+        .map(Some)
+        .context("weighted average price division failed")
 }
 
 /// Resolves the terminal status of a venue-terminal order from its filled quantity.
@@ -640,38 +663,207 @@ pub fn calculate_market_price(
     })
 }
 
-/// Parses a timestamp string into [`UnixNanos`].
-///
-/// Accepts millisecond integers ("1703875200000"), second integers ("1703875200"),
-/// and RFC3339 strings ("2024-01-01T00:00:00Z").
-pub fn parse_timestamp(ts_str: &str) -> Option<UnixNanos> {
-    if let Ok(n) = ts_str.parse::<u64>() {
-        return if n > 1_000_000_000_000 {
-            Some(UnixNanos::from(n * NANOSECONDS_IN_MILLISECOND))
-        } else {
-            Some(UnixNanos::from(n * NANOSECONDS_IN_SECOND))
-        };
-    }
-    let dt = ts_str.parse::<Timestamp>().ok()?;
-    Some(UnixNanos::from(u64::try_from(dt.as_nanosecond()).ok()?))
-}
-
 #[cfg(test)]
 mod tests {
     use nautilus_execution::models::fee::{FeeModel, ProbabilityPriceFeeModel};
     use nautilus_model::{
         enums::OrderType,
+        identifiers::{InstrumentId, VenueOrderId},
         instruments::{Instrument, InstrumentAny, stubs::binary_option},
         orders::{OrderAny, builder::OrderTestBuilder, stubs::TestOrderStubs},
+        types::Price,
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::enums::{
-        PolymarketOrderSide, PolymarketOrderStatus, PolymarketOrderType, PolymarketOutcome,
+    use crate::{
+        common::enums::{
+            PolymarketOrderSide, PolymarketOrderStatus, PolymarketOrderType, PolymarketOutcome,
+        },
+        http::{
+            models::{FeeSchedule, GammaMarket},
+            parse::{create_instrument_from_def, parse_gamma_market},
+        },
     };
+
+    const TEST_CONDITION_ID: &str =
+        "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917";
+    const OTHER_CONDITION_ID: &str =
+        "0xad22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917";
+    const TEST_TOKEN_ID: &str =
+        "71321045679252212594626385532706912750332728571942532289631379312455583992563";
+
+    fn instrument_for_provider_values(
+        condition_id: &str,
+        token_id: &str,
+        outcome: &str,
+        fee_schedule: Option<FeeSchedule>,
+    ) -> InstrumentAny {
+        let mut market: GammaMarket =
+            serde_json::from_str(include_str!("../../test_data/gamma_market.json")).unwrap();
+        market.condition_id = condition_id.to_string();
+        market.clob_token_ids =
+            serde_json::to_string(&[token_id, "synthetic-other-token"]).unwrap();
+        market.outcomes = serde_json::to_string(&[outcome, "Other"]).unwrap();
+        market.fees_enabled = Some(fee_schedule.is_some());
+        market.fee_schedule = fee_schedule;
+        let definition = parse_gamma_market(&market).unwrap().remove(0);
+        create_instrument_from_def(&definition, UnixNanos::default()).unwrap()
+    }
+
+    fn instrument_for_order(order: &PolymarketOpenOrder) -> InstrumentAny {
+        instrument_for_provider_values(
+            order.market.as_str(),
+            order.asset_id.as_str(),
+            order.outcome.inner().as_str(),
+            None,
+        )
+    }
+
+    fn instrument_for_trade(
+        trade: &PolymarketTradeReport,
+        fee_schedule: Option<FeeSchedule>,
+    ) -> InstrumentAny {
+        instrument_for_provider_values(
+            trade.market.as_str(),
+            trade.asset_id.as_str(),
+            trade.outcome.inner().as_str(),
+            fee_schedule,
+        )
+    }
+
+    fn test_fee_schedule(rate: Decimal, exponent: Decimal) -> FeeSchedule {
+        FeeSchedule {
+            exponent,
+            rate,
+            taker_only: true,
+            rebate_rate: dec!(0.25),
+        }
+    }
+
+    fn parse_test_order(
+        order: &PolymarketOpenOrder,
+        instrument: &InstrumentAny,
+    ) -> anyhow::Result<OrderStatusReport> {
+        parse_order_status_report(
+            order,
+            instrument,
+            AccountId::from("POLYMARKET-001"),
+            None,
+            UnixNanos::from(1_000_000_000u64),
+        )
+    }
+
+    fn parse_test_fill(
+        trade: &PolymarketTradeReport,
+        instrument: &InstrumentAny,
+    ) -> anyhow::Result<FillReport> {
+        parse_fill_report(
+            trade,
+            instrument,
+            AccountId::from("POLYMARKET-001"),
+            None,
+            UnixNanos::from(1_000_000_000u64),
+        )
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_preserves_older_tick_price() {
+        let mut order: PolymarketOpenOrder =
+            serde_json::from_str(include_str!("../../test_data/http_open_order.json")).unwrap();
+        order.price = dec!(0.1234);
+        let instrument = instrument_for_order(&order);
+
+        let report = parse_order_status_report(
+            &order,
+            &instrument,
+            AccountId::from("POLYMARKET-001"),
+            None,
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .unwrap();
+
+        assert_eq!(report.price.unwrap().as_decimal(), dec!(0.1234));
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_rejects_unrepresentable_price() {
+        let mut order: PolymarketOpenOrder =
+            serde_json::from_str(include_str!("../../test_data/http_open_order.json")).unwrap();
+        let instrument = instrument_for_order(&order);
+        order.price = Decimal::from_str_exact("0.123456789012345678").unwrap();
+
+        assert!(parse_test_order(&order, &instrument).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_preserves_positive_created_at_and_expiration() {
+        let mut order: PolymarketOpenOrder =
+            serde_json::from_str(include_str!("../../test_data/http_open_order.json")).unwrap();
+        order.created_at = 1_735_689_599;
+        order.expiration = Some("1735689600".to_string());
+        let instrument = instrument_for_order(&order);
+
+        let report = parse_test_order(&order, &instrument).unwrap();
+
+        assert_eq!(
+            report.ts_accepted,
+            UnixNanos::from(1_735_689_599_000_000_000u64)
+        );
+        assert_eq!(report.ts_last, report.ts_accepted);
+        assert_eq!(
+            report.expire_time,
+            Some(UnixNanos::from(1_735_689_600_000_000_000u64))
+        );
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_rejects_invalid_identity_quantity_and_time() {
+        let base: PolymarketOpenOrder =
+            serde_json::from_str(include_str!("../../test_data/http_open_order.json")).unwrap();
+        let instrument = instrument_for_order(&base);
+
+        let mut invalid = base.clone();
+        invalid.id.clear();
+        assert!(parse_test_order(&invalid, &instrument).is_err());
+
+        let mut invalid = base.clone();
+        invalid.original_size = Decimal::ZERO;
+        assert!(parse_test_order(&invalid, &instrument).is_err());
+
+        let mut invalid = base.clone();
+        invalid.original_size = dec!(1.0000001);
+        assert!(parse_test_order(&invalid, &instrument).is_err());
+
+        let mut invalid = base.clone();
+        invalid.size_matched = dec!(-1);
+        assert!(parse_test_order(&invalid, &instrument).is_err());
+
+        let mut invalid = base;
+        invalid.created_at = 0;
+        assert!(parse_test_order(&invalid, &instrument).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_rejects_condition_token_and_outcome_mismatch() {
+        let base: PolymarketOpenOrder =
+            serde_json::from_str(include_str!("../../test_data/http_open_order.json")).unwrap();
+        let instrument = instrument_for_order(&base);
+
+        let mut invalid = base.clone();
+        invalid.market = Ustr::from(OTHER_CONDITION_ID);
+        assert!(parse_test_order(&invalid, &instrument).is_err());
+
+        let mut invalid = base.clone();
+        invalid.asset_id = Ustr::from("123");
+        assert!(parse_test_order(&invalid, &instrument).is_err());
+
+        let mut invalid = base;
+        invalid.outcome = PolymarketOutcome::no();
+        assert!(parse_test_order(&invalid, &instrument).is_err());
+    }
 
     // Symmetric dust band: at terminal Filled, snap filled_qty to quantity
     // when within 0.01 shares. Other statuses (Accepted, Canceled, etc.)
@@ -741,7 +933,7 @@ mod tests {
 
     #[rstest]
     fn test_sum_filled_quantity_empty() {
-        assert_eq!(sum_filled_quantity(&[]), Decimal::ZERO);
+        assert_eq!(sum_filled_quantity(&[]).unwrap(), Decimal::ZERO);
     }
 
     #[rstest]
@@ -751,27 +943,51 @@ mod tests {
             make_test_fill(1.0, 0.60),
             make_test_fill(3.0, 0.55),
         ];
-        assert_eq!(sum_filled_quantity(&fills), dec!(6.5));
+        assert_eq!(sum_filled_quantity(&fills).unwrap(), dec!(6.5));
     }
 
     #[rstest]
     fn test_weighted_average_price_zero_total_returns_none() {
-        assert!(weighted_average_price(&[], Decimal::ZERO).is_none());
+        assert!(
+            weighted_average_price(&[], Decimal::ZERO)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[rstest]
     fn test_weighted_average_price_single_fill() {
         let fills = vec![make_test_fill(10.0, 0.5)];
-        let total = sum_filled_quantity(&fills);
-        assert_eq!(weighted_average_price(&fills, total), Some(dec!(0.5)));
+        let total = sum_filled_quantity(&fills).unwrap();
+        assert_eq!(
+            weighted_average_price(&fills, total).unwrap(),
+            Some(dec!(0.5))
+        );
     }
 
     #[rstest]
     fn test_weighted_average_price_weighted_by_quantity() {
         // 2 @ 0.40 + 8 @ 0.60 -> (0.8 + 4.8) / 10 = 0.56
         let fills = vec![make_test_fill(2.0, 0.40), make_test_fill(8.0, 0.60)];
-        let total = sum_filled_quantity(&fills);
-        assert_eq!(weighted_average_price(&fills, total), Some(dec!(0.56)));
+        let total = sum_filled_quantity(&fills).unwrap();
+        assert_eq!(
+            weighted_average_price(&fills, total).unwrap(),
+            Some(dec!(0.56))
+        );
+    }
+
+    #[rstest]
+    fn test_checked_fill_aggregates_return_errors() {
+        let fills = vec![make_test_fill(100.0, 0.5)];
+
+        assert!(weighted_average_price(&fills, dec!(-1)).is_err());
+        assert!(
+            weighted_average_price(
+                &fills,
+                Decimal::from_str_exact("0.0000000000000000000000000001").unwrap(),
+            )
+            .is_err()
+        );
     }
 
     #[rstest]
@@ -1313,19 +1529,23 @@ mod tests {
 
     #[rstest]
     fn test_parse_timestamp_ms() {
-        let ts = parse_timestamp("1703875200000").unwrap();
+        let ts = crate::execution::report_validation::parse_user_channel_timestamp(
+            "1703875200000",
+            "test timestamp",
+        )
+        .unwrap();
         assert_eq!(ts, UnixNanos::from(1_703_875_200_000_000_000u64));
     }
 
     #[rstest]
     fn test_parse_timestamp_secs() {
-        let ts = parse_timestamp("1703875200").unwrap();
+        let ts = parse_match_time("1703875200", "test match_time").unwrap();
         assert_eq!(ts, UnixNanos::from(1_703_875_200_000_000_000u64));
     }
 
     #[rstest]
     fn test_parse_timestamp_rfc3339() {
-        let ts = parse_timestamp("2024-01-01T00:00:00Z").unwrap();
+        let ts = parse_match_time("2024-01-01T00:00:00Z", "test match_time").unwrap();
         assert_eq!(ts, UnixNanos::from(1_704_067_200_000_000_000u64));
     }
 
@@ -1352,18 +1572,18 @@ mod tests {
         let order: PolymarketOpenOrder =
             serde_json::from_str(&content).expect("Failed to parse test data");
 
-        let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+        let instrument = instrument_for_order(&order);
+        let instrument_id = instrument.id();
         let account_id = AccountId::from("POLYMARKET-001");
 
         let report = parse_order_status_report(
             &order,
-            instrument_id,
+            &instrument,
             account_id,
             None,
-            4,
-            6,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .unwrap();
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
@@ -1406,7 +1626,7 @@ mod tests {
             associate_trades: None,
             id: "0xid".to_string(),
             status,
-            market: Ustr::from("0xm"),
+            market: Ustr::from(TEST_CONDITION_ID),
             original_size,
             outcome: PolymarketOutcome::yes(),
             maker_address: "0xmaker".to_string(),
@@ -1414,21 +1634,21 @@ mod tests {
             price: dec!(0.5),
             side: PolymarketOrderSide::Buy,
             size_matched,
-            asset_id: Ustr::from("token"),
+            asset_id: Ustr::from(TEST_TOKEN_ID),
             expiration: None,
             order_type: PolymarketOrderType::GTC,
             created_at: 1_703_875_200,
         };
 
+        let instrument = instrument_for_order(&order);
         let report = parse_order_status_report(
             &order,
-            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            &instrument,
             AccountId::from("POLYMARKET-001"),
             None,
-            3,
-            6,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .unwrap();
 
         assert_eq!(report.filled_qty, Quantity::new(expected_filled, 6));
         assert_eq!(
@@ -1448,7 +1668,7 @@ mod tests {
     #[case::gtc_exact(PolymarketOrderType::GTC, dec!(10), dec!(10), OrderStatus::Filled)]
     // FAK underfill is killed by the venue: unchanged.
     #[case::fak_partial(PolymarketOrderType::FAK, dec!(30), dec!(20), OrderStatus::Canceled)]
-    fn test_parse_order_status_report_matched_resolves_terminal_status(
+    fn test_filled_status_requires_full_normalized_quantity(
         #[case] order_type: PolymarketOrderType,
         #[case] original_size: Decimal,
         #[case] size_matched: Decimal,
@@ -1458,7 +1678,7 @@ mod tests {
             associate_trades: None,
             id: "0xterminal".to_string(),
             status: PolymarketOrderStatus::Matched,
-            market: Ustr::from("0xmarket"),
+            market: Ustr::from(TEST_CONDITION_ID),
             original_size,
             outcome: PolymarketOutcome::yes(),
             maker_address: "0xmaker".to_string(),
@@ -1466,27 +1686,27 @@ mod tests {
             price: dec!(0.5),
             side: PolymarketOrderSide::Buy,
             size_matched,
-            asset_id: Ustr::from("token"),
+            asset_id: Ustr::from(TEST_TOKEN_ID),
             expiration: None,
             order_type,
             created_at: 1_784_118_677,
         };
 
+        let instrument = instrument_for_order(&order);
         let report = parse_order_status_report(
             &order,
-            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            &instrument,
             AccountId::from("POLYMARKET-001"),
             None,
-            3,
-            6,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .unwrap();
 
         assert_eq!(report.order_status, expected_status);
         if report.order_status == OrderStatus::Filled {
             assert!(
-                report.filled_qty >= report.quantity,
-                "a Filled report must not carry filled_qty < quantity, was filled_qty={} quantity={}",
+                report.filled_qty == report.quantity,
+                "a Filled report must carry filled_qty == quantity, was filled_qty={} quantity={}",
                 report.filled_qty,
                 report.quantity
             );
@@ -1499,7 +1719,7 @@ mod tests {
             associate_trades: Some(vec!["trade-partial-fak".to_string()]),
             id: "0xpartial-fak".to_string(),
             status: PolymarketOrderStatus::Matched,
-            market: Ustr::from("0xmarket"),
+            market: Ustr::from(TEST_CONDITION_ID),
             original_size: dec!(30),
             outcome: PolymarketOutcome::yes(),
             maker_address: "0xmaker".to_string(),
@@ -1507,21 +1727,21 @@ mod tests {
             price: dec!(0.093),
             side: PolymarketOrderSide::Buy,
             size_matched: dec!(20),
-            asset_id: Ustr::from("token"),
+            asset_id: Ustr::from(TEST_TOKEN_ID),
             expiration: Some("0".to_string()),
             order_type: PolymarketOrderType::FAK,
             created_at: 1_784_118_677,
         };
 
+        let instrument = instrument_for_order(&order);
         let report = parse_order_status_report(
             &order,
-            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            &instrument,
             AccountId::from("POLYMARKET-001"),
             None,
-            3,
-            6,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .unwrap();
 
         assert_eq!(report.order_status, OrderStatus::Canceled);
         assert_eq!(report.time_in_force, TimeInForce::Ioc);
@@ -1532,8 +1752,6 @@ mod tests {
     #[rstest]
     #[case::null(None, None)]
     #[case::zero_string(Some("0"), None)]
-    #[case::empty_string(Some(""), None)]
-    #[case::garbage(Some("not-a-number"), None)]
     #[case::positive_seconds(
         Some("1735689600"),
         Some(UnixNanos::from(1_735_689_600_000_000_000u64))
@@ -1546,7 +1764,7 @@ mod tests {
             associate_trades: None,
             id: "0xid".to_string(),
             status: PolymarketOrderStatus::Live,
-            market: Ustr::from("0xm"),
+            market: Ustr::from(TEST_CONDITION_ID),
             original_size: dec!(100),
             outcome: PolymarketOutcome::yes(),
             maker_address: "0xmaker".to_string(),
@@ -1554,44 +1772,168 @@ mod tests {
             price: dec!(0.5),
             side: PolymarketOrderSide::Buy,
             size_matched: dec!(0),
-            asset_id: Ustr::from("token"),
+            asset_id: Ustr::from(TEST_TOKEN_ID),
             expiration: raw.map(|s| s.to_string()),
             order_type: PolymarketOrderType::GTD,
             created_at: 1_703_875_200,
         };
 
+        let instrument = instrument_for_order(&order);
         let report = parse_order_status_report(
             &order,
-            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            &instrument,
             AccountId::from("POLYMARKET-001"),
             None,
-            4,
-            6,
             UnixNanos::from(1_000_000_000u64),
-        );
+        )
+        .unwrap();
 
         assert_eq!(report.expire_time, expected);
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("not-a-number")]
+    fn test_parse_order_status_report_rejects_invalid_expiration(#[case] expiration: &str) {
+        let mut order: PolymarketOpenOrder =
+            serde_json::from_str(include_str!("../../test_data/http_open_order.json")).unwrap();
+        order.expiration = Some(expiration.to_string());
+        let instrument = instrument_for_order(&order);
+
+        assert!(
+            parse_order_status_report(
+                &order,
+                &instrument,
+                AccountId::from("POLYMARKET-001"),
+                None,
+                UnixNanos::from(1_000_000_000u64),
+            )
+            .is_err()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_preserves_older_tick_price_and_match_time() {
+        let mut trade: PolymarketTradeReport =
+            serde_json::from_str(include_str!("../../test_data/http_trade_report.json")).unwrap();
+        trade.price = dec!(0.1234);
+        trade.match_time = "1704067200".to_string();
+        let instrument = instrument_for_trade(&trade, None);
+
+        let report = parse_test_fill(&trade, &instrument).unwrap();
+
+        assert_eq!(report.last_px.as_decimal(), dec!(0.1234));
+        assert_eq!(
+            report.ts_event,
+            UnixNanos::from(1_704_067_200_000_000_000u64)
+        );
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_rejects_invalid_identity_economics_and_binding() {
+        let base: PolymarketTradeReport =
+            serde_json::from_str(include_str!("../../test_data/http_trade_report.json")).unwrap();
+        let instrument = instrument_for_trade(&base, None);
+
+        let mut invalid = base.clone();
+        invalid.taker_order_id.clear();
+        assert!(parse_test_fill(&invalid, &instrument).is_err());
+
+        let mut invalid = base.clone();
+        invalid.id.clear();
+        assert!(parse_test_fill(&invalid, &instrument).is_err());
+
+        let mut invalid = base.clone();
+        invalid.size = Decimal::ZERO;
+        assert!(parse_test_fill(&invalid, &instrument).is_err());
+
+        let mut invalid = base.clone();
+        invalid.size = dec!(1.0000001);
+        assert!(parse_test_fill(&invalid, &instrument).is_err());
+
+        let mut invalid = base.clone();
+        invalid.price = Decimal::ONE;
+        assert!(parse_test_fill(&invalid, &instrument).is_err());
+
+        let mut invalid = base.clone();
+        invalid.match_time = "not-a-time".to_string();
+        assert!(parse_test_fill(&invalid, &instrument).is_err());
+
+        let mut invalid = base.clone();
+        invalid.market = Ustr::from(OTHER_CONDITION_ID);
+        assert!(parse_test_fill(&invalid, &instrument).is_err());
+
+        let mut invalid = base.clone();
+        invalid.asset_id = Ustr::from("123");
+        assert!(parse_test_fill(&invalid, &instrument).is_err());
+
+        let mut invalid = base;
+        invalid.outcome = PolymarketOutcome::no();
+        assert!(parse_test_fill(&invalid, &instrument).is_err());
+    }
+
+    #[rstest]
+    fn test_build_maker_fill_report_preserves_older_tick_price_and_binding() {
+        let trade: PolymarketTradeReport =
+            serde_json::from_str(include_str!("../../test_data/http_trade_report.json")).unwrap();
+        let mut maker = trade.maker_orders[0].clone();
+        maker.price = dec!(0.1234);
+        let instrument = instrument_for_provider_values(
+            trade.market.as_str(),
+            maker.asset_id.as_str(),
+            maker.outcome.as_str(),
+            None,
+        );
+        let ts_event = parse_match_time(&trade.match_time, "test match_time").unwrap();
+        let build = |maker: &PolymarketMakerOrder, market: &str, native_trade_id: &str| {
+            build_maker_fill_report(
+                maker,
+                native_trade_id,
+                trade.trader_side,
+                trade.side,
+                trade.asset_id.as_str(),
+                market,
+                AccountId::from("POLYMARKET-001"),
+                &instrument,
+                LiquiditySide::Maker,
+                ts_event,
+                UnixNanos::from(1_000_000_000u64),
+            )
+        };
+
+        let report = build(&maker, trade.market.as_str(), &trade.id).unwrap();
+        assert_eq!(report.last_px.as_decimal(), dec!(0.1234));
+
+        let long_native_trade_id = "a".repeat(68);
+        let report = build(&maker, trade.market.as_str(), long_native_trade_id.as_str()).unwrap();
+        assert!(report.trade_id.as_str().len() <= 36);
+
+        assert!(build(&maker, OTHER_CONDITION_ID, &trade.id).is_err());
+        assert!(build(&maker, trade.market.as_str(), "").is_err());
+
+        let mut invalid = maker.clone();
+        invalid.asset_id = Ustr::from("123");
+        assert!(build(&invalid, trade.market.as_str(), &trade.id).is_err());
+
+        let mut invalid = maker;
+        invalid.outcome = PolymarketOutcome::no();
+        assert!(build(&invalid, trade.market.as_str(), &trade.id).is_err());
     }
 
     #[rstest]
     fn test_parse_fill_report_errors_when_commission_is_unrepresentable() {
         let path = "test_data/http_trade_report.json";
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
-        let trade: PolymarketTradeReport =
+        let mut trade: PolymarketTradeReport =
             serde_json::from_str(&content).expect("Failed to parse test data");
+        trade.size = Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0);
+        let instrument = instrument_for_trade(&trade, Some(test_fee_schedule(dec!(1), dec!(1))));
 
         let result = parse_fill_report(
             &trade,
-            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            &instrument,
             AccountId::from("POLYMARKET-001"),
             None,
-            4,
-            6,
-            Currency::pUSD(),
-            // Large enough that the commission exceeds Money's fixed-point range, while the
-            // Decimal arithmetic itself stays well inside its own limits
-            Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0),
-            1.0,
             UnixNanos::from(1_000_000_000u64),
         );
 
@@ -1608,20 +1950,15 @@ mod tests {
         let trade: PolymarketTradeReport =
             serde_json::from_str(&content).expect("Failed to parse test data");
 
-        let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+        let instrument = instrument_for_trade(&trade, None);
+        let instrument_id = instrument.id();
         let account_id = AccountId::from("POLYMARKET-001");
-        let currency = Currency::pUSD();
 
         let report = parse_fill_report(
             &trade,
-            instrument_id,
+            &instrument,
             account_id,
             None,
-            4,
-            6,
-            currency,
-            Decimal::ZERO,
-            1.0,
             UnixNanos::from(1_000_000_000u64),
         )
         .expect("fixture commission is representable");
@@ -1640,21 +1977,15 @@ mod tests {
         let trade: PolymarketTradeReport =
             serde_json::from_str(&content).expect("Failed to parse test data");
 
-        let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+        let instrument = instrument_for_trade(&trade, Some(test_fee_schedule(dec!(0.03), dec!(2))));
         let account_id = AccountId::from("POLYMARKET-001");
-        let currency = Currency::pUSD();
 
         // Expected: 25 * 0.03 * (0.5 * 0.5)^2 = 0.04688 pUSD after rounding.
         let report = parse_fill_report(
             &trade,
-            instrument_id,
+            &instrument,
             account_id,
             None,
-            4,
-            6,
-            currency,
-            dec!(0.03),
-            2.0,
             UnixNanos::from(1_000_000_000u64),
         )
         .expect("fixture commission is representable");

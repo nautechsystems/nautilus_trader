@@ -30,8 +30,7 @@ use common::{fixtures, instrument_cache, instrument_precisions, yes_instrument};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::OrderBookDeltas, enums::LiquiditySide, identifiers::InstrumentId,
-    instruments::Instrument, types::Currency,
+    data::OrderBookDeltas, enums::LiquiditySide, identifiers::InstrumentId, instruments::Instrument,
 };
 use nautilus_polymarket::{
     common::enums::PolymarketOrderSide,
@@ -45,7 +44,6 @@ use nautilus_polymarket::{
         },
     },
 };
-use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 #[derive(Clone, Copy)]
@@ -324,7 +322,6 @@ fn bench_order_event(c: &mut Criterion) {
     // is the canonical equivalent and exercises the same string-decimal +
     // status-resolution work that the WS path does internally.
     let instrument = yes_instrument();
-    let (px_prec, sz_prec) = instrument_precisions();
     let account_id = common::account_id();
     let ts_init = UnixNanos::default();
 
@@ -334,15 +331,8 @@ fn bench_order_event(c: &mut Criterion) {
         b.iter(|| {
             let order: PolymarketOpenOrder =
                 serde_json::from_str(black_box(fixtures::HTTP_OPEN_ORDER)).unwrap();
-            let report = parse_order_status_report(
-                &order,
-                instrument.id(),
-                account_id,
-                None,
-                px_prec,
-                sz_prec,
-                ts_init,
-            );
+            let report = parse_order_status_report(&order, &instrument, account_id, None, ts_init)
+                .expect("benchmark order fixture is valid");
             black_box(report);
         });
     });
@@ -353,11 +343,7 @@ fn bench_order_fill(c: &mut Criterion) {
     // Same rationale as `order_event`: REST `GET /trades` parse stands in for
     // the (private) WS user-trade -> FillReport conversion.
     let instrument = yes_instrument();
-    let (px_prec, sz_prec) = instrument_precisions();
     let account_id = common::account_id();
-    let currency = Currency::pUSD();
-    let taker_fee = dec!(0.03);
-    let fee_exponent = 2.0;
     let ts_init = UnixNanos::default();
 
     let mut group = c.benchmark_group("inbound_pipeline");
@@ -366,19 +352,8 @@ fn bench_order_fill(c: &mut Criterion) {
         b.iter(|| {
             let trade: PolymarketTradeReport =
                 serde_json::from_str(black_box(fixtures::HTTP_TRADE_REPORT)).unwrap();
-            let report = parse_fill_report(
-                &trade,
-                instrument.id(),
-                account_id,
-                None,
-                px_prec,
-                sz_prec,
-                currency,
-                taker_fee,
-                fee_exponent,
-                ts_init,
-            )
-            .expect("benchmark fixture commission is representable");
+            let report = parse_fill_report(&trade, &instrument, account_id, None, ts_init)
+                .expect("benchmark fixture commission is representable");
             black_box(report);
         });
     });
@@ -387,9 +362,7 @@ fn bench_order_fill(c: &mut Criterion) {
 
 fn bench_order_fill_maker(c: &mut Criterion) {
     let instrument = yes_instrument();
-    let (px_prec, sz_prec) = instrument_precisions();
     let account_id = common::account_id();
-    let currency = Currency::pUSD();
     let ts_init = UnixNanos::default();
 
     let mut group = c.benchmark_group("inbound_pipeline");
@@ -408,11 +381,9 @@ fn bench_order_fill_maker(c: &mut Criterion) {
                         trade.trader_side,
                         trade.side,
                         trade.asset_id.as_str(),
+                        trade.market.as_str(),
                         account_id,
-                        instrument.id(),
-                        px_prec,
-                        sz_prec,
-                        currency,
+                        &instrument,
                         LiquiditySide::Maker,
                         ts_init,
                         ts_init,

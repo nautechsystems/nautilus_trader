@@ -56,7 +56,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, cash::CashAccount},
@@ -84,7 +84,7 @@ use nautilus_polymarket::{
     },
     config::{PolymarketExecClientConfig, PolymarketInstrumentProviderConfig},
     execution::PolymarketExecutionClient,
-    http::models::PolymarketOrder,
+    http::models::{FeeSchedule, PolymarketOrder},
     signing::eip712::order_hash,
 };
 use rstest::rstest;
@@ -1642,6 +1642,37 @@ async fn test_generate_mass_status_lookback_sets_report_window() {
 
 #[rstest]
 #[tokio::test]
+async fn test_mass_status_valid_then_malformed_relevant_row_returns_error() {
+    let state = TestServerState::default();
+    let valid = load_json("http_open_orders_page.json")["data"][0].clone();
+    let mut malformed = valid.clone();
+    malformed["created_at"] = json!(0);
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [valid, malformed],
+        "next_cursor": "LTE=",
+    }));
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_mass_status(None)
+        .await
+        .expect_err("a malformed relevant row must discard the valid prefix");
+
+    assert!(format!("{error:#}").contains("created_at"));
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_mass_status_lookback_keeps_open_order_filled_qty() {
     let state = TestServerState::default();
     let mut order = load_json("http_open_orders_page.json")["data"][0].clone();
@@ -1811,8 +1842,7 @@ async fn test_commission_failure_errors_direct_mass_and_targeted_rest_requests()
     let (mut client, _rx, cache) = create_test_execution_client(addr);
 
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
-    let out_of_range_fee =
-        Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0);
+    let out_of_range_fee = dec!(2);
     add_instrument_to_cache_with_tick_and_taker_fee(
         &cache,
         instrument_id,
@@ -1873,7 +1903,11 @@ async fn test_commission_failure_errors_direct_mass_and_targeted_rest_requests()
         .expect_err("targeted recovery must not omit the failed fill");
 
     for error in [fill_error, mass_error, targeted_error] {
-        assert!(format!("{error:#}").contains("failed to represent commission"));
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("fee rate must be in [0, 1]"),
+            "unexpected error: {message}"
+        );
     }
 }
 
@@ -1959,9 +1993,12 @@ async fn test_generate_order_status_report_single_requires_instrument_id() {
 async fn test_generate_order_status_report_single_returns_report() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
-    let (client, _rx, _cache) = create_test_execution_client(addr);
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
 
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
     let cmd = GenerateOrderStatusReport {
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
@@ -3649,7 +3686,7 @@ async fn test_fok_deferred_check_emits_terminal_event(
         "associate_trades": [],
         "id": "test-fok-order-id",
         "status": venue_status,
-        "market": "0xtest",
+        "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
         "original_size": "10.0000",
         "outcome": "Yes",
         "maker_address": "0xtest",
@@ -3657,10 +3694,10 @@ async fn test_fok_deferred_check_emits_terminal_event(
         "price": "0.5100",
         "side": "BUY",
         "size_matched": "0.0000",
-        "asset_id": "TEST-TOKEN",
+        "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
         "expiration": null,
         "order_type": "FOK",
-        "created_at": 1_703_875_200_000_i64
+        "created_at": 1_703_875_200_i64
     }));
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -3729,7 +3766,7 @@ async fn test_limit_fok_absent_submit_status_uses_deferred_check() {
         "associate_trades": [],
         "id": "test-limit-fok-order-id",
         "status": "UNMATCHED",
-        "market": "0xtest",
+        "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
         "original_size": "10.0000",
         "outcome": "Yes",
         "maker_address": "0xtest",
@@ -3737,10 +3774,10 @@ async fn test_limit_fok_absent_submit_status_uses_deferred_check() {
         "price": "0.5100",
         "side": "BUY",
         "size_matched": "0.0000",
-        "asset_id": "TEST-TOKEN",
+        "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
         "expiration": null,
         "order_type": "FOK",
-        "created_at": 1_703_875_200_000_i64
+        "created_at": 1_703_875_200_i64
     }));
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -3786,7 +3823,7 @@ async fn test_fok_deferred_check_filled_emits_report_for_reconciliation() {
         "associate_trades": [],
         "id": "test-fok-order-id",
         "status": "MATCHED",
-        "market": "0xtest",
+        "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
         "original_size": "10.0000",
         "outcome": "Yes",
         "maker_address": "0xtest",
@@ -3794,10 +3831,10 @@ async fn test_fok_deferred_check_filled_emits_report_for_reconciliation() {
         "price": "0.5100",
         "side": "BUY",
         "size_matched": "10.0000",
-        "asset_id": "TEST-TOKEN",
+        "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
         "expiration": null,
         "order_type": "FOK",
-        "created_at": 1_703_875_200_000_i64
+        "created_at": 1_703_875_200_i64
     }));
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -3868,7 +3905,7 @@ async fn test_matched_fok_submit_response_skips_deferred_check() {
         "associate_trades": [],
         "id": "0x1111111111111111111111111111111111111111111111111111111111111111",
         "status": "UNMATCHED",
-        "market": "0xtest",
+        "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
         "original_size": "10.0000",
         "outcome": "Yes",
         "maker_address": "0xtest",
@@ -3876,10 +3913,10 @@ async fn test_matched_fok_submit_response_skips_deferred_check() {
         "price": "0.5100",
         "side": "BUY",
         "size_matched": "0.0000",
-        "asset_id": "TEST-TOKEN",
+        "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
         "expiration": null,
         "order_type": "FOK",
-        "created_at": 1_703_875_200_000_i64
+        "created_at": 1_703_875_200_i64
     }));
     let addr = start_mock_server(state).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -4169,6 +4206,28 @@ fn add_instrument_to_cache_with_tick_and_taker_fee(
         ))
     };
     let raw_symbol = Symbol::from(symbol);
+    let mut info = Params::new();
+    info.insert(
+        "condition_id".to_string(),
+        Value::String(
+            "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917".to_string(),
+        ),
+    );
+    if taker_fee.is_zero() {
+        info.insert("fees_enabled".to_string(), Value::Bool(false));
+    } else {
+        info.insert("fees_enabled".to_string(), Value::Bool(true));
+        info.insert(
+            "fee_schedule".to_string(),
+            serde_json::to_value(FeeSchedule {
+                exponent: Decimal::ONE,
+                rate: taker_fee,
+                taker_only: true,
+                rebate_rate: dec!(0.25),
+            })
+            .unwrap(),
+        );
+    }
 
     let instrument = BinaryOption::new(
         instrument_id,
@@ -4181,7 +4240,7 @@ fn add_instrument_to_cache_with_tick_and_taker_fee(
         size_precision,
         price_increment,
         size_increment,
-        None, // outcome
+        Some(ustr::Ustr::from("Yes")),
         None, // description
         None, // max_quantity
         None, // min_quantity
@@ -4194,7 +4253,7 @@ fn add_instrument_to_cache_with_tick_and_taker_fee(
         None, // maker_fee
         Some(taker_fee),
         None, // tick_scheme
-        None, // info
+        Some(info),
         UnixNanos::default(),
         UnixNanos::default(),
     );
@@ -8548,7 +8607,7 @@ async fn test_order_queries_use_registered_identity_after_delayed_submit() {
         "associate_trades": [],
         "id": venue_order_id.clone(),
         "status": "LIVE",
-        "market": "0xtest",
+        "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
         "original_size": "10.0000",
         "outcome": "Yes",
         "maker_address": "0xtest",
@@ -8556,7 +8615,7 @@ async fn test_order_queries_use_registered_identity_after_delayed_submit() {
         "price": "0.5100",
         "side": "BUY",
         "size_matched": "0.0000",
-        "asset_id": "TEST-TOKEN",
+        "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
         "expiration": null,
         "order_type": "GTC",
         "created_at": 1_703_875_200_i64
@@ -8656,7 +8715,7 @@ async fn test_query_order_excludes_unconfirmed_matched_quantity() {
         "associate_trades": ["pending-trade"],
         "id": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
         "status": "MATCHED",
-        "market": "0xtest",
+        "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
         "original_size": "10.0000",
         "outcome": "Yes",
         "maker_address": "0xtest",
@@ -8664,7 +8723,7 @@ async fn test_query_order_excludes_unconfirmed_matched_quantity() {
         "price": "0.5100",
         "side": "BUY",
         "size_matched": "10.0000",
-        "asset_id": "TEST-TOKEN",
+        "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
         "expiration": null,
         "order_type": "GTC",
         "created_at": 1_703_875_200_i64

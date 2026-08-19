@@ -29,8 +29,6 @@ use rust_decimal::Decimal;
 
 use crate::http::models::FeeSchedule;
 
-const VENUE_ORDER_ID_MAX_LEN: usize = 66;
-
 pub(crate) fn decimal_from_str_exact(value: &str, field: &str) -> anyhow::Result<Decimal> {
     Decimal::from_str_exact(value)
         .with_context(|| format!("{field} {value:?} is not an exact decimal"))
@@ -95,11 +93,6 @@ pub(crate) fn exact_binary_price(value: Decimal, field: &str) -> anyhow::Result<
 }
 
 pub(crate) fn venue_order_id(value: &str, field: &str) -> anyhow::Result<VenueOrderId> {
-    anyhow::ensure!(
-        value.len() <= VENUE_ORDER_ID_MAX_LEN,
-        "{field} length {} exceeds Polymarket order hash capacity {VENUE_ORDER_ID_MAX_LEN}",
-        value.len()
-    );
     VenueOrderId::new_checked(value)
         .with_context(|| format!("{field} {value:?} is not a valid venue order ID"))
 }
@@ -359,11 +352,11 @@ mod tests {
     }
 
     #[rstest]
-    fn test_checked_identifiers_reject_empty_and_oversized_values() {
+    fn test_checked_identifiers_reject_invalid_values() {
         let oversized = "X".repeat(100);
 
         assert!(venue_order_id("", "order ID").is_err());
-        assert!(venue_order_id(&oversized, "order ID").is_err());
+        assert!(venue_order_id("non-ascii-☃", "order ID").is_err());
         assert!(trade_id("", "trade ID").is_err());
         assert!(trade_id(&oversized, "trade ID").is_err());
     }
