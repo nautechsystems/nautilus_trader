@@ -59,7 +59,7 @@ use crate::algorithm::{
     ImportableExecAlgorithmConfig,
 };
 
-/// Inner state of `PyExecutionAlgorithm`, shared between Python and Rust registries.
+/// Inner state of `PyExecutionAlgorithm`, shared by the Python and Rust registries.
 pub struct PyExecutionAlgorithmInner {
     core: ExecutionAlgorithmCore,
     py_self: Option<Py<PyWeakrefReference>>,
@@ -554,6 +554,7 @@ impl DataActor for PyExecutionAlgorithm {
     }
 
     fn on_resume(&mut self) -> anyhow::Result<()> {
+        ExecutionAlgorithm::on_resume(self)?;
         self.dispatch_no_args("on_resume")
             .map_err(|e| anyhow::anyhow!("Python on_resume failed: {e}"))
     }
