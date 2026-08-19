@@ -63,7 +63,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UUID4, UnixNanos, WeakCell,
-    datetime::{mins_to_nanos, mins_to_secs, secs_to_nanos},
+    datetime::{checked_mins_to_nanos, mins_to_secs, secs_to_nanos},
 };
 use nautilus_model::{
     accounts::Account,
@@ -808,10 +808,6 @@ impl ExecutionEngine {
     }
 
     /// Starts the purge timers if configured.
-    #[expect(
-        clippy::missing_panics_doc,
-        reason = "timer registration is not expected to fail"
-    )]
     pub fn start_purge_timers(&mut self) {
         if let Some(interval_mins) = self
             .config
@@ -823,22 +819,29 @@ impl ExecutionEngine {
                 .timer_names()
                 .contains(&TIMER_PURGE_CLOSED_ORDERS)
         {
-            let interval_ns = mins_to_nanos(u64::from(interval_mins));
-            let buffer_mins = self.config.purge_closed_orders_buffer_mins.unwrap_or(0);
-            let buffer_secs = mins_to_secs(u64::from(buffer_mins));
-            let cache = self.cache.clone();
-            let clock = self.clock.clone();
+            'purge_closed_orders: {
+                let Some(interval_ns) = checked_mins_to_nanos(u64::from(interval_mins)) else {
+                    log::error!(
+                        "Invalid purge_closed_orders_interval_mins {interval_mins}: minutes to nanoseconds conversion overflow"
+                    );
+                    break 'purge_closed_orders;
+                };
+                let buffer_mins = self.config.purge_closed_orders_buffer_mins.unwrap_or(0);
+                let buffer_secs = mins_to_secs(u64::from(buffer_mins));
+                let cache = self.cache.clone();
+                let clock = self.clock.clone();
 
-            let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
-                let ts_now = clock.borrow().timestamp_ns();
-                cache.borrow_mut().purge_closed_orders(ts_now, buffer_secs);
-            });
-            let callback = TimeEventCallback::from(callback_fn);
+                let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
+                    let ts_now = clock.borrow().timestamp_ns();
+                    cache.borrow_mut().purge_closed_orders(ts_now, buffer_secs);
+                });
+                let callback = TimeEventCallback::from(callback_fn);
 
-            log::info!("Starting purge closed orders timer at {interval_mins} minute intervals");
-            self.clock
-                .borrow_mut()
-                .set_timer_ns(
+                log::info!(
+                    "Starting purge closed orders timer at {interval_mins} minute intervals"
+                );
+
+                if let Err(e) = self.clock.borrow_mut().set_timer_ns(
                     TIMER_PURGE_CLOSED_ORDERS,
                     interval_ns,
                     None,
@@ -846,8 +849,10 @@ impl ExecutionEngine {
                     Some(callback),
                     None,
                     None,
-                )
-                .expect("Failed to set purge closed orders timer");
+                ) {
+                    log::error!("Failed to set {TIMER_PURGE_CLOSED_ORDERS} timer: {e}");
+                }
+            }
         }
 
         if let Some(interval_mins) = self
@@ -860,24 +865,31 @@ impl ExecutionEngine {
                 .timer_names()
                 .contains(&TIMER_PURGE_CLOSED_POSITIONS)
         {
-            let interval_ns = mins_to_nanos(u64::from(interval_mins));
-            let buffer_mins = self.config.purge_closed_positions_buffer_mins.unwrap_or(0);
-            let buffer_secs = mins_to_secs(u64::from(buffer_mins));
-            let cache = self.cache.clone();
-            let clock = self.clock.clone();
+            'purge_closed_positions: {
+                let Some(interval_ns) = checked_mins_to_nanos(u64::from(interval_mins)) else {
+                    log::error!(
+                        "Invalid purge_closed_positions_interval_mins {interval_mins}: minutes to nanoseconds conversion overflow"
+                    );
+                    break 'purge_closed_positions;
+                };
+                let buffer_mins = self.config.purge_closed_positions_buffer_mins.unwrap_or(0);
+                let buffer_secs = mins_to_secs(u64::from(buffer_mins));
+                let cache = self.cache.clone();
+                let clock = self.clock.clone();
 
-            let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
-                let ts_now = clock.borrow().timestamp_ns();
-                cache
-                    .borrow_mut()
-                    .purge_closed_positions(ts_now, buffer_secs);
-            });
-            let callback = TimeEventCallback::from(callback_fn);
+                let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
+                    let ts_now = clock.borrow().timestamp_ns();
+                    cache
+                        .borrow_mut()
+                        .purge_closed_positions(ts_now, buffer_secs);
+                });
+                let callback = TimeEventCallback::from(callback_fn);
 
-            log::info!("Starting purge closed positions timer at {interval_mins} minute intervals");
-            self.clock
-                .borrow_mut()
-                .set_timer_ns(
+                log::info!(
+                    "Starting purge closed positions timer at {interval_mins} minute intervals"
+                );
+
+                if let Err(e) = self.clock.borrow_mut().set_timer_ns(
                     TIMER_PURGE_CLOSED_POSITIONS,
                     interval_ns,
                     None,
@@ -885,8 +897,10 @@ impl ExecutionEngine {
                     Some(callback),
                     None,
                     None,
-                )
-                .expect("Failed to set purge closed positions timer");
+                ) {
+                    log::error!("Failed to set {TIMER_PURGE_CLOSED_POSITIONS} timer: {e}");
+                }
+            }
         }
 
         if let Some(interval_mins) = self
@@ -899,24 +913,31 @@ impl ExecutionEngine {
                 .timer_names()
                 .contains(&TIMER_PURGE_ACCOUNT_EVENTS)
         {
-            let interval_ns = mins_to_nanos(u64::from(interval_mins));
-            let lookback_mins = self.config.purge_account_events_lookback_mins.unwrap_or(0);
-            let lookback_secs = mins_to_secs(u64::from(lookback_mins));
-            let cache = self.cache.clone();
-            let clock = self.clock.clone();
+            'purge_account_events: {
+                let Some(interval_ns) = checked_mins_to_nanos(u64::from(interval_mins)) else {
+                    log::error!(
+                        "Invalid purge_account_events_interval_mins {interval_mins}: minutes to nanoseconds conversion overflow"
+                    );
+                    break 'purge_account_events;
+                };
+                let lookback_mins = self.config.purge_account_events_lookback_mins.unwrap_or(0);
+                let lookback_secs = mins_to_secs(u64::from(lookback_mins));
+                let cache = self.cache.clone();
+                let clock = self.clock.clone();
 
-            let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
-                let ts_now = clock.borrow().timestamp_ns();
-                cache
-                    .borrow_mut()
-                    .purge_account_events(ts_now, lookback_secs);
-            });
-            let callback = TimeEventCallback::from(callback_fn);
+                let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
+                    let ts_now = clock.borrow().timestamp_ns();
+                    cache
+                        .borrow_mut()
+                        .purge_account_events(ts_now, lookback_secs);
+                });
+                let callback = TimeEventCallback::from(callback_fn);
 
-            log::info!("Starting purge account events timer at {interval_mins} minute intervals");
-            self.clock
-                .borrow_mut()
-                .set_timer_ns(
+                log::info!(
+                    "Starting purge account events timer at {interval_mins} minute intervals"
+                );
+
+                if let Err(e) = self.clock.borrow_mut().set_timer_ns(
                     TIMER_PURGE_ACCOUNT_EVENTS,
                     interval_ns,
                     None,
@@ -924,8 +945,10 @@ impl ExecutionEngine {
                     Some(callback),
                     None,
                     None,
-                )
-                .expect("Failed to set purge account events timer");
+                ) {
+                    log::error!("Failed to set {TIMER_PURGE_ACCOUNT_EVENTS} timer: {e}");
+                }
+            }
         }
     }
 

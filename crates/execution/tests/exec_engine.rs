@@ -14705,6 +14705,60 @@ fn test_start_purge_timers_zero_interval_skipped() {
 }
 
 #[rstest]
+fn test_start_purge_timers_overflowing_interval_skipped() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        purge_closed_orders_interval_mins: Some(u32::MAX),
+        purge_closed_positions_interval_mins: Some(10),
+        purge_account_events_interval_mins: Some(15),
+        ..Default::default()
+    };
+
+    let mut engine = ExecutionEngine::new(clock.clone(), cache, Some(config));
+    engine.start();
+
+    let names = clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
+    assert!(!names.contains(&"ExecEngine_PURGE_CLOSED_ORDERS".to_string()));
+    assert!(names.contains(&"ExecEngine_PURGE_CLOSED_POSITIONS".to_string()));
+    assert!(names.contains(&"ExecEngine_PURGE_ACCOUNT_EVENTS".to_string()));
+    assert_eq!(clock.borrow().timer_count(), 2);
+}
+
+#[rstest]
+fn test_start_purge_timers_first_event_time_overflow_skipped() {
+    let test_clock = TestClock::new();
+    test_clock.set_time(UnixNanos::from(1_000_000_000_000_u64));
+    let clock = Rc::new(RefCell::new(test_clock));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        purge_closed_orders_interval_mins: Some(5),
+        purge_closed_positions_interval_mins: Some(307_445_734),
+        purge_account_events_interval_mins: Some(15),
+        ..Default::default()
+    };
+
+    let mut engine = ExecutionEngine::new(clock.clone(), cache, Some(config));
+    engine.start();
+
+    let names = clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
+    assert!(names.contains(&"ExecEngine_PURGE_CLOSED_ORDERS".to_string()));
+    assert!(!names.contains(&"ExecEngine_PURGE_CLOSED_POSITIONS".to_string()));
+    assert!(names.contains(&"ExecEngine_PURGE_ACCOUNT_EVENTS".to_string()));
+    assert_eq!(clock.borrow().timer_count(), 2);
+}
+
+#[rstest]
 fn test_stop_purge_timers_cancels_timers() {
     let clock = Rc::new(RefCell::new(TestClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
