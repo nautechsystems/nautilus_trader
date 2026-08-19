@@ -850,7 +850,7 @@ fn dispatch_trade_fills(
             is_confirmed,
             ctx,
             state,
-        )
+        )?
     };
 
     if !result.reversible_fills.is_empty() {
@@ -986,7 +986,7 @@ fn dispatch_maker_fill_reports(
 
     let admission = ctx
         .fill_tracker
-        .accept_or_buffer_fills(candidates, |report| reversible_fill_target(report, ctx));
+        .accept_or_buffer_fills(candidates, |report| reversible_fill_target(report, ctx))?;
     if let Some(error) = admission.binding_error {
         log::warn!(
             "Retaining maker correction {} after binding changed: {error}",
@@ -1040,7 +1040,7 @@ fn dispatch_taker_fill_report(
     is_confirmed: bool,
     ctx: &WsDispatchContext<'_>,
     state: &WsDispatchState,
-) -> FillDispatchResult {
+) -> anyhow::Result<FillDispatchResult> {
     let venue_order_id = report.venue_order_id;
     let admission = ctx.fill_tracker.accept_or_buffer_fills(
         vec![(
@@ -1055,21 +1055,21 @@ fn dispatch_taker_fill_report(
             },
         )],
         |report| reversible_fill_target(report, ctx),
-    );
+    )?;
     if let Some(error) = admission.binding_error {
         log::warn!("Retaining taker correction {correction_key} after binding changed: {error}");
-        return FillDispatchResult::default();
+        return Ok(FillDispatchResult::default());
     }
 
     if let Some((report, identity)) = admission.reports.into_iter().next().flatten() {
         let fill = emit_order_filled(&identity, &report, trade_fill_info(trade), ctx);
         reemit_terminal_cancel(&identity, venue_order_id, state, ctx);
-        return FillDispatchResult {
+        return Ok(FillDispatchResult {
             reversible_fills: vec![fill],
             authority_applied: true,
-        };
+        });
     }
-    FillDispatchResult::default()
+    Ok(FillDispatchResult::default())
 }
 
 fn reversible_fill_target(
@@ -2725,8 +2725,10 @@ mod tests {
         trade.trader_side = PolymarketLiquiditySide::Maker;
         trade.maker_orders.truncate(1);
         trade.maker_orders[0].maker_address = "0xtest".to_string();
+        let corrected_trade = trade.clone();
         trade.maker_orders.push(trade.maker_orders[0].clone());
         let venue_order_id = VenueOrderId::from(trade.maker_orders[0].order_id.as_str());
+        let correction_key = format!("{}-{}", trade.id, trade.taker_order_id);
         let mut harness = TradeDispatchHarness::new(&trade, false);
         harness
             .token_instruments
@@ -2754,6 +2756,18 @@ mod tests {
             Some(Quantity::zero(harness.instrument.size_precision()))
         );
         assert!(!harness.fill_tracker.has_pending_fill(&venue_order_id));
+        assert!(!harness.state.processed_fills.contains(&correction_key));
+
+        harness.dispatch(UserWsMessage::Trade(corrected_trade));
+
+        let mut fill_count = 0;
+        while let Ok(event) = harness.receiver.try_recv() {
+            if matches!(event, ExecutionEvent::Order(OrderEventAny::Filled(_))) {
+                fill_count += 1;
+            }
+        }
+        assert_eq!(fill_count, 1);
+        assert!(harness.state.processed_fills.contains(&correction_key));
     }
 
     #[rstest]
@@ -2778,26 +2792,29 @@ mod tests {
             user_api_key: "test-key",
         };
         let report = build_ws_taker_fill_report_for_trade(&trade, &ctx).unwrap();
-        let admission = harness.fill_tracker.accept_or_buffer_fills(
-            vec![(
-                venue_order_id,
-                report,
-                FillCorrectionMetadata {
-                    correction_key: format!("{}-{}", trade.id, trade.taker_order_id),
-                    raw_trade_id: trade.id.clone(),
-                    raw_corrective_timestamp: trade.timestamp.clone(),
-                    info: trade_fill_info(&trade),
-                    is_confirmed: false,
+        let admission = harness
+            .fill_tracker
+            .accept_or_buffer_fills(
+                vec![(
+                    venue_order_id,
+                    report,
+                    FillCorrectionMetadata {
+                        correction_key: format!("{}-{}", trade.id, trade.taker_order_id),
+                        raw_trade_id: trade.id.clone(),
+                        raw_corrective_timestamp: trade.timestamp.clone(),
+                        info: trade_fill_info(&trade),
+                        is_confirmed: false,
+                    },
+                )],
+                |report| {
+                    let identity = reversible_fill_target(report, &ctx)?;
+                    harness
+                        .order_identities
+                        .register_order_identity(venue_order_id, replacement_identity);
+                    Ok(identity)
                 },
-            )],
-            |report| {
-                let identity = reversible_fill_target(report, &ctx)?;
-                harness
-                    .order_identities
-                    .register_order_identity(venue_order_id, replacement_identity);
-                Ok(identity)
-            },
-        );
+            )
+            .unwrap();
         let (report, admitted_identity) = admission
             .reports
             .into_iter()

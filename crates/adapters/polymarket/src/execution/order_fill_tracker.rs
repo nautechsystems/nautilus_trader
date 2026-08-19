@@ -198,7 +198,7 @@ impl OrderFillTrackerMap {
         let mut outcome = self
             .accept_or_buffer_fills(vec![(venue_order_id, report, correction)], |report| {
                 reversible_target(report).map(|can_emit| can_emit.then_some(()))
-            });
+            })?;
         if let Some(error) = outcome.binding_error {
             return Err(error);
         }
@@ -207,14 +207,15 @@ impl OrderFillTrackerMap {
 
     /// Admits one native correction batch only after every participant binding is checked.
     ///
-    /// A binding error retains the entire untouched batch. A replay matching already-pending
-    /// correction participants is also retained without duplication, so the eventual registered
-    /// order drain remains the only authority transition for that evidence.
+    /// A structurally invalid batch is rejected without retention. A target-binding error retains
+    /// the entire untouched batch. A replay matching already-pending correction participants is
+    /// also retained without duplication, so the eventual registered order drain remains the only
+    /// authority transition for that evidence.
     pub(crate) fn accept_or_buffer_fills<T, F>(
         &self,
         fills: Vec<(VenueOrderId, FillReport, FillCorrectionMetadata)>,
         mut reversible_target: F,
-    ) -> FillBatchAdmission<T>
+    ) -> anyhow::Result<FillBatchAdmission<T>>
     where
         F: FnMut(&FillReport) -> anyhow::Result<Option<T>>,
     {
@@ -228,15 +229,12 @@ impl OrderFillTrackerMap {
                 report.trade_id,
             );
             if !participants.insert(participant) {
-                return FillBatchAdmission {
-                    reports: (0..report_count).map(|_| None).collect(),
-                    binding_error: Some(anyhow::anyhow!(
-                        "duplicate correction participant {} for order {} and trade {}",
-                        correction.correction_key,
-                        venue_order_id,
-                        report.trade_id
-                    )),
-                };
+                anyhow::bail!(
+                    "duplicate correction participant {} for order {} and trade {}",
+                    correction.correction_key,
+                    venue_order_id,
+                    report.trade_id
+                );
             }
         }
 
@@ -249,10 +247,10 @@ impl OrderFillTrackerMap {
             .collect::<Vec<_>>();
 
         if already_pending.iter().any(|pending| *pending) {
-            return FillBatchAdmission {
+            return Ok(FillBatchAdmission {
                 reports: (0..report_count).map(|_| None).collect(),
                 binding_error: None,
-            };
+            });
         }
 
         let mut decisions = Vec::with_capacity(fills.len());
@@ -271,10 +269,10 @@ impl OrderFillTrackerMap {
                             },
                         );
                     }
-                    return FillBatchAdmission {
+                    return Ok(FillBatchAdmission {
                         reports: (0..report_count).map(|_| None).collect(),
                         binding_error: Some(error),
-                    };
+                    });
                 }
             }
         }
@@ -302,10 +300,10 @@ impl OrderFillTrackerMap {
                 },
             )
             .collect();
-        FillBatchAdmission {
+        Ok(FillBatchAdmission {
             reports,
             binding_error: None,
-        }
+        })
     }
 
     /// Registers an accepted order while retaining fills until reversible identity is available.
@@ -1511,19 +1509,22 @@ mod tests {
             is_confirmed: false,
         };
 
-        let first = tracker.accept_or_buffer_fills(
-            vec![(venue_order_id, report.clone(), correction.clone())],
-            |_| -> anyhow::Result<Option<()>> {
-                anyhow::bail!("identity changed before the atomic decision")
-            },
-        );
+        let first = tracker
+            .accept_or_buffer_fills(
+                vec![(venue_order_id, report.clone(), correction.clone())],
+                |_| -> anyhow::Result<Option<()>> {
+                    anyhow::bail!("identity changed before the atomic decision")
+                },
+            )
+            .unwrap();
         assert!(first.binding_error.is_some());
         assert!(first.reports.iter().all(Option::is_none));
         assert_eq!(tracker.pending_fills_for(&venue_order_id).len(), 1);
 
         tracker.register_without_draining(venue_order_id, Quantity::new(100.0, 6), OrderSide::Buy);
         let replay = tracker
-            .accept_or_buffer_fills(vec![(venue_order_id, report, correction)], |_| Ok(Some(())));
+            .accept_or_buffer_fills(vec![(venue_order_id, report, correction)], |_| Ok(Some(())))
+            .unwrap();
         assert!(replay.binding_error.is_none());
         assert!(replay.reports.iter().all(Option::is_none));
         assert_eq!(tracker.pending_fills_for(&venue_order_id).len(), 1);
@@ -1594,26 +1595,28 @@ mod tests {
             is_confirmed: false,
         };
 
-        let outcome = tracker.accept_or_buffer_fills(
-            vec![
-                (
-                    first_order,
-                    first_report,
-                    metadata("maker-trade-batch-first"),
-                ),
-                (
-                    second_order,
-                    second_report,
-                    metadata("maker-trade-batch-second"),
-                ),
-            ],
-            |report| {
-                if report.venue_order_id == second_order {
-                    anyhow::bail!("second maker identity changed before admission");
-                }
-                Ok(Some(()))
-            },
-        );
+        let outcome = tracker
+            .accept_or_buffer_fills(
+                vec![
+                    (
+                        first_order,
+                        first_report,
+                        metadata("maker-trade-batch-first"),
+                    ),
+                    (
+                        second_order,
+                        second_report,
+                        metadata("maker-trade-batch-second"),
+                    ),
+                ],
+                |report| {
+                    if report.venue_order_id == second_order {
+                        anyhow::bail!("second maker identity changed before admission");
+                    }
+                    Ok(Some(()))
+                },
+            )
+            .unwrap();
 
         assert!(outcome.binding_error.is_some());
         assert!(outcome.reports.iter().all(Option::is_none));
@@ -1672,7 +1675,9 @@ mod tests {
             ]
         };
 
-        let first = tracker.accept_or_buffer_fills(batch(), |_| Ok(Some(())));
+        let first = tracker
+            .accept_or_buffer_fills(batch(), |_| Ok(Some(())))
+            .unwrap();
         assert!(first.binding_error.is_none());
         assert!(first.reports[0].is_some());
         assert!(first.reports[1].is_none());
@@ -1683,7 +1688,9 @@ mod tests {
             Some(Quantity::new(10.0, 6))
         );
 
-        let replay = tracker.accept_or_buffer_fills(batch(), |_| Ok(Some(())));
+        let replay = tracker
+            .accept_or_buffer_fills(batch(), |_| Ok(Some(())))
+            .unwrap();
         assert!(replay.binding_error.is_none());
         assert!(replay.reports.iter().all(Option::is_none));
         assert!(!tracker.has_pending_fill(&first_order));
