@@ -2614,6 +2614,50 @@ mod tests {
     }
 
     #[rstest]
+    fn test_ws_pending_submit_rejects_mismatched_client_order_id() {
+        let mut order: PolymarketUserOrder = load("ws_user_order_placement.json");
+        bind_order_to_test_instrument(&mut order);
+        let instrument = test_instrument();
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(order.asset_id, instrument.clone());
+        let venue_order_id = VenueOrderId::from(order.id.as_str());
+        let fill_tracker = OrderFillTrackerMap::new();
+        let pending_submits = PendingSubmitTracker::default();
+        pending_submits.insert(venue_order_id, ClientOrderId::from("O-PENDING-B"));
+        let order_identities = OrderIdentityRegistry::default();
+        register_identity(
+            &order_identities,
+            venue_order_id,
+            instrument.id(),
+            "O-IDENTITY-A",
+        );
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            order_identities: &order_identities,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+
+        dispatch_user_message(
+            &UserWsMessage::Order(order),
+            &ctx,
+            &mut WsDispatchState::default(),
+        );
+
+        assert!(receiver.try_recv().is_err());
+        assert!(!fill_tracker.contains(&venue_order_id));
+        assert!(!fill_tracker.has_pending_report(&venue_order_id));
+    }
+
+    #[rstest]
     #[case::instrument(0)]
     #[case::side(1)]
     #[case::time_in_force(2)]
