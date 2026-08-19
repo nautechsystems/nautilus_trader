@@ -202,20 +202,21 @@ handles renewal and recovery through four mechanisms:
 | -------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Periodic keep‑alive  | Every 10 hours (36,000 seconds).            | Renew the session token and update retained stream authentication without reconnecting.              |
 | Keep‑alive fallback  | Keep‑alive returns `LoginFailed`.           | Re‑login, update all active stream authentication, then request replacement stream transports.       |
-| Stream reconnect     | `Connection` message after initial connect. | Try keep‑alive and fall back to the full re‑login path on `LoginFailed`.                             |
+| Stream reconnect     | `Connection` message after initial connect. | Try keep‑alive. `LoginFailed` triggers full re‑login; other failures retain the existing session.    |
 | HTTP report recovery | A report query returns a session error.     | Try keep‑alive and retry once; any keep‑alive failure falls back to full re‑login before that retry. |
 
-The periodic keep‑alive tasks and stream reconnect handlers log and skip transient keep‑alive
-errors such as network timeouts and 5xx responses. They preserve the existing session token, and
-only `LoginFailed` triggers full re‑login in those paths. HTTP report recovery differs: after a
+The periodic keep‑alive tasks and data stream reconnect handler log and skip transient keep‑alive
+errors such as network timeouts and 5xx responses. The execution reconnect handler also preserves
+the existing session token, but continues report reconciliation. At the periodic or handler‑level
+keep‑alive step, only `LoginFailed` triggers full re‑login. HTTP report recovery differs: after a
 session error, any keep‑alive failure falls back to full re‑login before the report‑level retry.
 
-Both the data and execution clients run the same session‑recovery policy. Each spawns:
+Both the data and execution clients use the same session‑renewal policy. Each spawns:
 
 - A **keep‑alive task** that periodically attempts renewal. An ordinary successful keep‑alive
   updates retained authentication without replacing the transport.
 - A **reconnect handler** that listens for `Connection` messages after a stream reconnect and
-  refreshes the session.
+  attempts to refresh the session.
 
 After a full re‑login, the adapter updates authentication for every affected active stream before it
 requests any reconnect. Each replacement connection sends the latest authentication before retained
@@ -239,19 +240,20 @@ unavailable. In particular, fills can complete and roll off the unmatched book b
 post‑reconnect stream image arrives. The adapter therefore fetches and dispatches a mass status over
 a recent window before allowing new submissions.
 
-| Step | Trigger                                               | Action                                                                                                                   |
-| ---- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| 1    | Transport loss or a server `connectionClosed` status. | Advances the reconciliation generation and halts new submissions immediately.                                            |
-| 2    | Replacement `Connection` message.                     | Advances the generation again, raises `pending_resync`, and queues that generation.                                      |
-| 3    | Reconnect task receives the generation.               | Refreshes the session, publishes retained authentication, requests `getAccountFunds`, and queries orders and fills.      |
-| 4    | Both `listCurrentOrders` queries succeed.             | Builds and dispatches `ExecutionReport::MassStatus` through the execution event channel.                                 |
-| 5    | Recovery task finishes.                               | Requests a replacement after full re‑login. Clears the halt if mass status was dispatched and the generation is current. |
+| Step | Trigger                                               | Action                                                                                                                                                  |
+| ---- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Transport loss or a server `connectionClosed` status. | Advances the reconciliation generation and halts new submissions immediately.                                                                           |
+| 2    | Replacement `Connection` message.                     | Advances the generation again, raises `pending_resync`, and queues that generation.                                                                     |
+| 3    | Reconnect task receives the generation.               | Attempts a session refresh, publishes authentication after a successful refresh, requests `getAccountFunds`, then queries orders and fills in sequence. |
+| 4    | Both `listCurrentOrders` queries succeed.             | Builds and dispatches `ExecutionReport::MassStatus` through the execution event channel.                                                                |
+| 5    | Recovery task finishes.                               | Requests a replacement after full re‑login. Clears the halt if mass status was dispatched and the generation is current.                                |
 
 The account‑state refresh is best effort: a request or parse failure is logged but does not prevent
-mass‑status dispatch or reopening the gate. A failed session refresh or either report query leaves
-the gate halted until a later reconnect succeeds or the client disconnects. This fail‑closed
-behavior also covers the interval where the replacement socket is active but Betfair has not sent
-its `Connection` message.
+mass‑status dispatch or reopening the gate. A keep‑alive failure other than `LoginFailed` continues
+with the retained session because the report queries retain their own retry and session‑recovery
+logic. A failed full re‑login or either report query leaves the gate halted until a later reconnect
+succeeds or the client disconnects. This fail‑closed behavior also covers the interval where the
+replacement socket is active but Betfair has not sent its `Connection` message.
 
 Mass‑status dispatch is the completion boundary for the handled generation. The gate does not wait
 for a separate acknowledgement that the execution engine has applied the report to its cache.

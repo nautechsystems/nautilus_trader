@@ -31,15 +31,16 @@
 //! engine thread. Connectivity polling and command or report entry points invoke it to synchronize
 //! OCM state from the cache and drain the buffer.
 //!
-//! The recovery task refreshes the session, requests account state on a best-effort basis, and
-//! builds a mass status from `list_current_orders`. The mass status recovers fills that completed
-//! and rolled off the unmatched book during the gap.
+//! The recovery task attempts to refresh the session, requests account state on a best-effort basis,
+//! and builds a mass status from `list_current_orders`. The mass status recovers fills that
+//! completed and rolled off the unmatched book during the gap.
 //!
 //! After dispatching mass status, the task clears only the generation it handled; it does not wait
 //! for a separate cache-application acknowledgement. A newer transport loss or replacement
-//! connection therefore keeps submissions halted when an older task finishes. A failed session
-//! refresh or mass-status request leaves the gate closed until a later reconnect succeeds or the
-//! client disconnects.
+//! connection therefore keeps submissions halted when an older task finishes. A failed full
+//! re-login or mass-status request leaves the gate closed until a later reconnect succeeds or the
+//! client disconnects. A keep-alive failure other than explicit `LoginFailed` continues recovery
+//! with the retained session; the gate still reopens only after mass status is dispatched.
 
 use std::{
     fmt,
@@ -1329,13 +1330,16 @@ impl ExecutionClient for BetfairExecutionClient {
                 let mut session_refresh = SessionRefresh::default();
 
                 let reconciled = async {
-                    let (_, session_replaced) = match reconnect_http.keep_alive_with_token().await {
-                        Ok(token) => (token, false),
+                    match reconnect_http.keep_alive_with_token().await {
+                        Ok(_) => session_refresh.refreshed = true,
                         Err(ref e) if e.is_login_failed() => {
                             log::warn!("Session expired on reconnect, attempting re-login: {e}",);
 
                             match reconnect_http.reconnect_with_token().await {
-                                Ok(token) => (token, true),
+                                Ok(_) => {
+                                    session_refresh.refreshed = true;
+                                    session_refresh.replaced = true;
+                                }
                                 Err(e) => {
                                     log::warn!("Re-login failed on reconnect: {e}");
                                     return false;
@@ -1343,18 +1347,21 @@ impl ExecutionClient for BetfairExecutionClient {
                             }
                         }
                         Err(e) => {
-                            log::warn!("Keep-alive failed on reconnect (transient): {e}");
-                            return false;
+                            log::warn!(
+                                "Keep-alive failed on reconnect; continuing recovery with the \
+                                 retained session: {e}",
+                            );
                         }
-                    };
+                    }
 
-                    session_refresh.refreshed = true;
-                    session_refresh.replaced = session_replaced;
                     let stream_session = StreamSession {
                         client: Some(&reconnect_stream),
                         app_key: &reconnect_app_key,
                     };
-                    stream_session.publish(&reconnect_http).await;
+
+                    if session_refresh.refreshed {
+                        stream_session.publish(&reconnect_http).await;
+                    }
 
                     match reconnect_http
                         .send_accounts::<AccountFundsResponse, _>(
@@ -1622,7 +1629,7 @@ impl ExecutionClient for BetfairExecutionClient {
             app_key: self.credential.app_key(),
         };
         let (order_reports, fill_reports) = tokio::join!(
-            fetch_order_status_reports_via_http(
+            fetch_order_status_reports_http(
                 &self.http_client,
                 self.core.account_id,
                 self.clock.get_time_ns(),
@@ -1632,7 +1639,7 @@ impl ExecutionClient for BetfairExecutionClient {
                 stream_session,
                 &mut order_refresh,
             ),
-            fetch_fill_reports_via_http(
+            fetch_fill_reports_http(
                 &self.http_client,
                 self.core.account_id,
                 self.currency,
@@ -1686,7 +1693,7 @@ impl ExecutionClient for BetfairExecutionClient {
             client: self.stream_client.as_ref(),
             app_key: self.credential.app_key(),
         };
-        let result = fetch_order_status_reports_via_http(
+        let result = fetch_order_status_reports_http(
             &self.http_client,
             self.core.account_id,
             self.clock.get_time_ns(),
@@ -1738,7 +1745,7 @@ impl ExecutionClient for BetfairExecutionClient {
             client: self.stream_client.as_ref(),
             app_key: self.credential.app_key(),
         };
-        let result = fetch_fill_reports_via_http(
+        let result = fetch_fill_reports_http(
             &self.http_client,
             self.core.account_id,
             self.currency,
@@ -3017,7 +3024,7 @@ struct UnmatchedOrderContext<'a> {
     clippy::too_many_arguments,
     reason = "report context and stream session state remain explicit at the HTTP boundary"
 )]
-async fn fetch_order_status_reports_via_http(
+async fn fetch_order_status_reports_http(
     http_client: &Arc<BetfairHttpClient>,
     account_id: AccountId,
     ts_init: UnixNanos,
@@ -3090,7 +3097,7 @@ async fn fetch_order_status_reports_via_http(
     clippy::too_many_arguments,
     reason = "report context and session refresh state remain explicit at the HTTP boundary"
 )]
-async fn fetch_fill_reports_via_http(
+async fn fetch_fill_reports_http(
     http_client: &Arc<BetfairHttpClient>,
     account_id: AccountId,
     currency: Currency,
@@ -3249,36 +3256,30 @@ async fn fetch_post_reconnect_mass_status(
         to: None,
     };
 
-    let mut order_refresh = SessionRefresh::default();
-    let mut fill_refresh = SessionRefresh::default();
-    let (order_reports, fill_reports) = tokio::join!(
-        fetch_order_status_reports_via_http(
-            http_client,
-            account_id,
-            ts_now,
-            market_ids.clone(),
-            false,
-            ocm_state,
-            stream_session,
-            &mut order_refresh,
-        ),
-        fetch_fill_reports_via_http(
-            http_client,
-            account_id,
-            currency,
-            ts_now,
-            market_ids,
-            Some(date_range),
-            ocm_state,
-            stream_session,
-            &mut fill_refresh,
-        ),
-    );
+    let order_reports = fetch_order_status_reports_http(
+        http_client,
+        account_id,
+        ts_now,
+        market_ids.clone(),
+        false,
+        ocm_state,
+        stream_session,
+        session_refresh,
+    )
+    .await?;
 
-    session_refresh.merge(&order_refresh);
-    session_refresh.merge(&fill_refresh);
-    let order_reports = order_reports?;
-    let fill_reports = fill_reports?;
+    let fill_reports = fetch_fill_reports_http(
+        http_client,
+        account_id,
+        currency,
+        ts_now,
+        market_ids,
+        Some(date_range),
+        ocm_state,
+        stream_session,
+        session_refresh,
+    )
+    .await?;
 
     let mut mass_status =
         ExecutionMassStatus::new(client_id, account_id, *BETFAIR_VENUE, ts_now, None);
@@ -3631,7 +3632,13 @@ fn instruction_fallback(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
+    use std::{cell::RefCell, rc::Rc, time::Duration};
+
+    use nautilus_common::{
+        cache::Cache,
+        live::runner::{replace_data_event_sender, replace_exec_event_sender},
+        messages::{ExecutionEvent, ExecutionReport},
+    };
     use nautilus_model::{
         identifiers::{StrategyId, TraderId},
         types::Quantity,
@@ -3640,7 +3647,13 @@ mod tests {
     use rust_decimal::Decimal;
 
     use super::*;
-    use crate::common::testing::{load_test_json, parse_jsonrpc};
+    use crate::{
+        common::{
+            consts::METHOD_GET_ACCOUNT_DETAILS,
+            testing::{load_test_json, parse_jsonrpc},
+        },
+        http::models::AccountDetailsResponse,
+    };
 
     #[rstest]
     #[case(
@@ -4494,6 +4507,118 @@ mod tests {
         assert!(state.terminal_orders.contains("bet2"));
         let rfo2 = make_customer_order_ref("O-002");
         assert!(state.resolve_client_order_id(Some(&rfo2)).is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    #[ignore = "requires authorized live Betfair mainnet access"]
+    async fn live_execution_reconnect_reconciles_before_resuming() {
+        let credential = BetfairCredential::from_env()
+            .expect("BETFAIR_USERNAME, BETFAIR_PASSWORD, and BETFAIR_APP_KEY must be set");
+        let http_client = BetfairHttpClient::new(
+            credential.clone(),
+            None,
+            None,
+            None,
+            None,
+            Some(5),
+            Some(20),
+        )
+        .expect("live HTTP client");
+        http_client.connect().await.expect("Betfair login");
+
+        let account_details: AccountDetailsResponse = http_client
+            .send_accounts(METHOD_GET_ACCOUNT_DETAILS, serde_json::json!({}))
+            .await
+            .expect("account details");
+        let currency_code = account_details
+            .currency_code
+            .expect("account details must include currencyCode");
+        let currency = currency_code
+            .as_str()
+            .parse::<Currency>()
+            .expect("registered account currency");
+
+        let config = BetfairExecConfig {
+            account_currency: currency_code.to_string(),
+            calculate_account_state: false,
+            ignore_external_orders: true,
+            ..Default::default()
+        };
+        let stream_config = config.stream_config();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let core = ExecutionClientCore::new(
+            config.trader_id,
+            ClientId::from("BETFAIR-LIVE-SMOKE"),
+            *BETFAIR_VENUE,
+            OmsType::Netting,
+            config.account_id,
+            AccountType::Betting,
+            None,
+            cache,
+        );
+
+        let (exec_tx, mut exec_rx) = tokio::sync::mpsc::unbounded_channel();
+        replace_exec_event_sender(exec_tx);
+        let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(data_tx);
+
+        let mut client = BetfairExecutionClient::new(
+            core,
+            http_client,
+            credential,
+            stream_config,
+            config,
+            currency,
+        );
+        client.start().expect("execution client start");
+        client.connect().await.expect("execution client connect");
+
+        while exec_rx.try_recv().is_ok() {}
+
+        let stream_client = Arc::clone(
+            client
+                .stream_client
+                .as_ref()
+                .expect("execution stream after connect"),
+        );
+        assert!(
+            stream_client.request_reconnect(),
+            "live smoke must start a stream transport replacement",
+        );
+
+        let (order_count, fill_count) = tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                if let Some(ExecutionEvent::Report(ExecutionReport::MassStatus(status))) =
+                    exec_rx.recv().await
+                {
+                    let fill_count: usize = status.fill_reports().values().map(Vec::len).sum();
+                    break (status.order_reports().len(), fill_count);
+                }
+            }
+        })
+        .await
+        .expect("post-reconnect mass status within 30 seconds");
+
+        nautilus_common::testing::wait_until_async(
+            || {
+                let halted = client.is_reconciling();
+                async move { !halted }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        assert!(stream_client.is_active());
+        assert!(!client.is_reconciling());
+        eprintln!(
+            "Betfair read-only reconnect smoke completed: orders={order_count}, fills={fill_count}",
+        );
+
+        client
+            .disconnect()
+            .await
+            .expect("execution client disconnect");
     }
 
     #[rstest]

@@ -4491,7 +4491,7 @@ async fn test_post_reconnect_relogin_waits_for_reconciliation_and_does_not_loop(
         wait_until_async(
             || {
                 let waiters = Arc::clone(&server_gate.waiters);
-                async move { waiters.load(Ordering::Relaxed) == 2 }
+                async move { waiters.load(Ordering::Relaxed) == 1 }
             },
             Duration::from_secs(2),
         )
@@ -4503,7 +4503,22 @@ async fn test_post_reconnect_relogin_waits_for_reconciliation_and_does_not_loop(
                 .is_err(),
             "full re-login must not replace the stream before reconciliation completes",
         );
-        server_gate.semaphore.add_permits(2);
+        server_gate.semaphore.add_permits(1);
+        wait_until_async(
+            || {
+                let waiters = Arc::clone(&server_gate.waiters);
+                async move { waiters.load(Ordering::Relaxed) == 2 }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(300), listener.accept())
+                .await
+                .is_err(),
+            "full re-login must not replace the stream before fill recovery completes",
+        );
+        server_gate.semaphore.add_permits(1);
 
         let (socket, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
             .await
@@ -4576,6 +4591,77 @@ async fn test_post_reconnect_relogin_waits_for_reconciliation_and_does_not_loop(
 
 #[rstest]
 #[tokio::test]
+async fn test_reconnect_transient_keep_alive_failure_continues_reconciliation() {
+    let (addr, state) = start_mock_http().await;
+    let fixture = load_fixture("rest/list_current_orders_empty.json");
+    let response: Value = serde_json::from_str(&fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        response["result"].clone(),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (trigger_tx, trigger_rx) = tokio::sync::oneshot::channel();
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        trigger_rx.await.unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    *state.keep_alive_status_override.lock().unwrap() = Some(503);
+    trigger_tx.send(()).unwrap();
+
+    let mut saw_mass_status = false;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        if let Ok(Some(ExecutionEvent::Report(ExecutionReport::MassStatus(_)))) =
+            tokio::time::timeout(Duration::from_millis(250), rx.recv()).await
+        {
+            saw_mass_status = true;
+            break;
+        }
+    }
+
+    assert!(
+        saw_mass_status,
+        "reconciliation must continue after a transient keep-alive failure",
+    );
+    wait_until_async(
+        || {
+            let halted = client.is_reconciling();
+            async move { !halted }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    assert_eq!(state.keep_alive_count.load(Ordering::Relaxed), 1);
+    assert_eq!(state.login_count.load(Ordering::Relaxed), 1);
+    assert_eq!(betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS), 2);
+    assert!(!client.is_reconciling());
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_reconnect_auth_failure_keeps_submissions_halted() {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
@@ -4636,7 +4722,7 @@ async fn test_reconnect_auth_failure_keeps_submissions_halted() {
 #[tokio::test]
 async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
     let (addr, state) = start_mock_http().await;
-    let fixture = load_fixture("rest/list_current_orders_empty.json");
+    let fixture = load_fixture("rest/list_current_orders_execution_complete.json");
     let response: Value = serde_json::from_str(&fixture).unwrap();
     state.betting_overrides.lock().unwrap().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
@@ -4683,7 +4769,7 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
     wait_until_async(
         || {
             let state = state.clone();
-            async move { betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS) == 2 }
+            async move { betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS) >= 1 }
         },
         Duration::from_secs(2),
     )
@@ -4695,7 +4781,22 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
 
     assert!(client.is_reconciling());
     assert_eq!(failed_denied, failed_expected);
+    assert_eq!(betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS), 1);
     assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
+
+    let failed_params = state
+        .betting_request_params
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .cloned()
+        .expect("failed order recovery request must be recorded")
+        .1;
+    assert!(
+        failed_params.get("dateRange").is_none(),
+        "fill recovery must not start before the order query succeeds",
+    );
 
     let response_gate = BettingResponseGate {
         method: METHOD_LIST_CURRENT_ORDERS.to_string(),
@@ -4708,7 +4809,7 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
     wait_until_async(
         || {
             let waiters = Arc::clone(&response_gate.waiters);
-            async move { waiters.load(Ordering::Relaxed) == 2 }
+            async move { waiters.load(Ordering::Relaxed) == 1 }
         },
         Duration::from_secs(2),
     )
@@ -4721,15 +4822,26 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
     assert_eq!(denied, expected);
     assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
 
-    response_gate.semaphore.add_permits(2);
+    response_gate.semaphore.add_permits(1);
+    wait_until_async(
+        || {
+            let waiters = Arc::clone(&response_gate.waiters);
+            async move { waiters.load(Ordering::Relaxed) == 2 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(client.is_reconciling());
+    response_gate.semaphore.add_permits(1);
 
-    let mut saw_mass_status = false;
+    let mut recovered_counts = None;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
     while tokio::time::Instant::now() < deadline {
-        if let Ok(Some(ExecutionEvent::Report(ExecutionReport::MassStatus(_)))) =
+        if let Ok(Some(ExecutionEvent::Report(ExecutionReport::MassStatus(status)))) =
             tokio::time::timeout(Duration::from_millis(250), rx.recv()).await
         {
-            saw_mass_status = true;
+            let fill_count = status.fill_reports().values().map(Vec::len).sum::<usize>();
+            recovered_counts = Some((status.order_reports().len(), fill_count));
             break;
         }
     }
@@ -4761,11 +4873,24 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
     )
     .await;
 
-    assert!(saw_mass_status);
+    assert_eq!(recovered_counts, Some((3, 2)));
     assert!(!client.is_reconciling());
     assert_eq!(response_gate.waiters.load(Ordering::Relaxed), 2);
-    assert_eq!(betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS), 4);
+    assert_eq!(betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS), 3);
     assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 1);
+
+    let list_params = state
+        .betting_request_params
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(list_params.len(), 3);
+    assert!(list_params[0].get("dateRange").is_none());
+    assert!(list_params[1].get("dateRange").is_none());
+    assert!(list_params[2].get("dateRange").is_some());
 
     client.disconnect().await.unwrap();
     assert!(!client.is_reconciling());
@@ -4815,7 +4940,7 @@ async fn test_submit_denied_during_reconciliation() {
     wait_until_async(
         || {
             let waiters = Arc::clone(&response_gate.waiters);
-            async move { waiters.load(Ordering::Relaxed) == 2 }
+            async move { waiters.load(Ordering::Relaxed) == 1 }
         },
         Duration::from_secs(2),
     )
@@ -4832,7 +4957,17 @@ async fn test_submit_denied_during_reconciliation() {
     assert_eq!(denied, vec![ClientOrderId::from("O-HALT-001")]);
     assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
 
-    response_gate.semaphore.add_permits(2);
+    response_gate.semaphore.add_permits(1);
+    wait_until_async(
+        || {
+            let waiters = Arc::clone(&response_gate.waiters);
+            async move { waiters.load(Ordering::Relaxed) == 2 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(client.is_reconciling());
+    response_gate.semaphore.add_permits(1);
 
     let mut saw_mass_status = false;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
@@ -4921,7 +5056,7 @@ async fn test_queued_reconnect_generation_stays_halted() {
         wait_until_async(
             || {
                 let waiters = Arc::clone(&server_gate.waiters);
-                async move { waiters.load(Ordering::Relaxed) == 2 }
+                async move { waiters.load(Ordering::Relaxed) == 1 }
             },
             Duration::from_secs(2),
         )
@@ -4934,7 +5069,26 @@ async fn test_queued_reconnect_generation_stays_halted() {
         .await
         .unwrap();
 
-        server_gate.semaphore.add_permits(2);
+        server_gate.semaphore.add_permits(1);
+        wait_until_async(
+            || {
+                let waiters = Arc::clone(&server_gate.waiters);
+                async move { waiters.load(Ordering::Relaxed) == 2 }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+        server_gate.semaphore.add_permits(1);
+        wait_until_async(
+            || {
+                let waiters = Arc::clone(&server_gate.waiters);
+                async move { waiters.load(Ordering::Relaxed) == 3 }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+        release_second_rx.await.unwrap();
+        server_gate.semaphore.add_permits(1);
         wait_until_async(
             || {
                 let waiters = Arc::clone(&server_gate.waiters);
@@ -4943,8 +5097,7 @@ async fn test_queued_reconnect_generation_stays_halted() {
             Duration::from_secs(2),
         )
         .await;
-        release_second_rx.await.unwrap();
-        server_gate.semaphore.add_permits(2);
+        server_gate.semaphore.add_permits(1);
 
         let _ = server_done_rx.await;
         drop(write_half);
@@ -4965,7 +5118,7 @@ async fn test_queued_reconnect_generation_stays_halted() {
                     wait_until_async(
                         || {
                             let waiters = Arc::clone(&response_gate.waiters);
-                            async move { waiters.load(Ordering::Relaxed) == 4 }
+                            async move { waiters.load(Ordering::Relaxed) == 3 }
                         },
                         Duration::from_secs(2),
                     )

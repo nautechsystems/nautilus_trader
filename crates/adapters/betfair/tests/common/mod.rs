@@ -115,6 +115,7 @@ pub(crate) struct MockState {
     pub accounts_overrides: Arc<Mutex<HashMap<String, Value>>>,
     pub login_response_override: Arc<Mutex<Option<String>>>,
     pub keep_alive_response_override: Arc<Mutex<Option<String>>>,
+    pub keep_alive_status_override: Arc<Mutex<Option<u16>>>,
 }
 
 async fn handle_login(State(state): State<MockState>) -> impl IntoResponse {
@@ -131,7 +132,7 @@ async fn handle_login(State(state): State<MockState>) -> impl IntoResponse {
     )
 }
 
-async fn handle_keep_alive(State(state): State<MockState>) -> impl IntoResponse {
+async fn handle_keep_alive(State(state): State<MockState>) -> Response {
     state.keep_alive_count.fetch_add(1, Ordering::Relaxed);
     let body = state
         .keep_alive_response_override
@@ -139,10 +140,18 @@ async fn handle_keep_alive(State(state): State<MockState>) -> impl IntoResponse 
         .unwrap()
         .clone()
         .unwrap_or_else(|| load_fixture("rest/login_success.json"));
+    let status = state
+        .keep_alive_status_override
+        .lock()
+        .unwrap()
+        .map(|status| StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
+        .unwrap_or(StatusCode::OK);
     (
+        status,
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         body,
     )
+        .into_response()
 }
 
 async fn handle_navigation() -> impl IntoResponse {
