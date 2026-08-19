@@ -32,7 +32,7 @@ use rust_decimal::Decimal;
 use super::{
     cancellations::execute_deferred_cancel,
     identity::{OrderIdentity, OrderIdentityRegistry},
-    order_fill_tracker::{BufferedFill, OrderFillTrackerMap},
+    order_fill_tracker::{BufferedFill, OrderFillTrackerMap, PendingOrderReportDrain},
     parse::parse_order_status_report,
     pending::{PendingCancelTracker, PendingSubmitTracker},
     reconciliation::cap_order_report_filled_qty,
@@ -412,8 +412,8 @@ fn buffered_order_report_matches(
 ) -> bool {
     match identity.validate_order_report(report, venue_order_id, None) {
         Ok(()) => true,
-        Err(error) => {
-            log::warn!("Discarding contradictory buffered order report {venue_order_id}: {error}");
+        Err(e) => {
+            log::warn!("Discarding contradictory buffered order report {venue_order_id}: {e}");
             false
         }
     }
@@ -433,51 +433,48 @@ pub(super) fn drain_pending_reports_for_known_order(
     price_precision: u8,
 ) {
     let identity = OrderIdentity::from_order(order);
-    let buffered_snapshot = fill_tracker.retain_pending_reports_for(&venue_order_id, |report| {
-        buffered_order_report_matches(&identity, venue_order_id, report)
-    });
-    if buffered_snapshot.is_empty() {
-        accept_order_with_pending_fills(
-            order,
-            venue_order_id,
-            emitter,
-            clock,
-            fill_tracker,
-            order_identities,
-            fill_tracker_quantity,
-            account_id,
-            size_precision,
-            price_precision,
-        );
-        return;
-    }
-
-    let should_register = buffered_snapshot
-        .iter()
-        .any(|report| report.order_status != OrderStatus::Rejected);
-
-    if !should_register {
-        if !fill_tracker.emit_pending_reports_if_no_pending_fill(&venue_order_id, |reports| {
-            for report in reports {
-                if buffered_order_report_matches(&identity, venue_order_id, report) {
-                    emit_drained_order_report(order, report, emitter);
-                }
-            }
-        }) {
+    let tracker_quantity = fill_tracker_quantity.unwrap_or_else(|| order.quantity());
+    let buffered_snapshot = match fill_tracker.classify_pending_order_reports(
+        venue_order_id,
+        tracker_quantity,
+        order.order_side(),
+        |report| buffered_order_report_matches(&identity, venue_order_id, report),
+    ) {
+        PendingOrderReportDrain::Empty => {
+            accept_order_with_pending_fills(
+                order,
+                venue_order_id,
+                emitter,
+                clock,
+                fill_tracker,
+                order_identities,
+                fill_tracker_quantity,
+                account_id,
+                size_precision,
+                price_precision,
+            );
+            return;
+        }
+        PendingOrderReportDrain::WaitingForFill => {
             log::warn!(
                 "Retaining rejected report for order {venue_order_id} until its buffered fill is bound"
             );
+            return;
         }
-        return;
-    }
+        PendingOrderReportDrain::Rejected(reports) => {
+            for report in reports {
+                emit_drained_order_report(order, &report, emitter);
+            }
+            return;
+        }
+        PendingOrderReportDrain::Registered(reports) => reports,
+    };
 
     let ts_event = buffered_snapshot
         .iter()
         .map(|report| report.ts_last)
         .min()
         .unwrap_or_else(|| clock.get_time_ns());
-    let tracker_quantity = fill_tracker_quantity.unwrap_or_else(|| order.quantity());
-    fill_tracker.register_without_draining(venue_order_id, tracker_quantity, order.order_side());
     let buffered_fills = match fill_tracker.emit_pending_fills_for_registered(
         venue_order_id,
         Some(order.client_order_id()),
@@ -491,8 +488,8 @@ pub(super) fn drain_pending_reports_for_known_order(
         |fill, new_qty| emit_drained_fill(order, fill, new_qty, emitter, clock),
     ) {
         Ok(fills) => fills,
-        Err(error) => {
-            log::warn!("Cannot drain buffered fills for order {venue_order_id}: {error}");
+        Err(e) => {
+            log::warn!("Cannot drain buffered fills for order {venue_order_id}: {e}");
             return;
         }
     };
@@ -538,6 +535,7 @@ pub(super) fn accept_order_with_pending_fills(
                 .map(|fill| fill.report.ts_event)
                 .min()
                 .unwrap_or_else(|| clock.get_time_ns());
+
             if order_identities.mark_accepted(venue_order_id) {
                 emitter.emit_order_accepted(order, venue_order_id, ts_event);
             }
@@ -546,8 +544,8 @@ pub(super) fn accept_order_with_pending_fills(
     ) {
         Ok(Some(fills)) => fills,
         Ok(None) => return,
-        Err(error) => {
-            log::warn!("Cannot drain buffered fills for order {venue_order_id}: {error}");
+        Err(e) => {
+            log::warn!("Cannot drain buffered fills for order {venue_order_id}: {e}");
             return;
         }
     };
@@ -624,9 +622,9 @@ pub(super) fn handle_order_response(
                         |fill, new_qty| emit_drained_fill(order, fill, new_qty, emitter, clock),
                     ) {
                         Ok(fills) => fills,
-                        Err(error) => {
+                        Err(e) => {
                             log::warn!(
-                                "Cannot drain buffered fills for order {venue_order_id}: {error}"
+                                "Cannot drain buffered fills for order {venue_order_id}: {e}"
                             );
                             return None;
                         }
@@ -811,6 +809,7 @@ fn emit_drained_fill(
             .as_ref()
             .and_then(|metadata| metadata.info.clone()),
     );
+
     if let Some(new_qty) = new_qty {
         emit_buy_overfill_update(order, fill.venue_order_id, new_qty, emitter, clock);
     }
@@ -835,6 +834,7 @@ fn emit_drained_activity(
         if let Some(correction) = emission.buffered.correction.as_ref() {
             has_unconfirmed_fill |= emission.emitted && !correction.is_confirmed;
         }
+
         if emission.emitted
             && let Some(correction) = emission
                 .buffered
@@ -846,8 +846,8 @@ fn emit_drained_activity(
                 &correction.raw_corrective_timestamp,
                 "buffered confirmed trade timestamp",
             )
-            .unwrap_or_else(|error| {
-                log::warn!("{error}; using local time for the corrective event only");
+            .unwrap_or_else(|e| {
+                log::warn!("{e}; using local time for the corrective event only");
                 clock.get_time_ns()
             });
             corrective_ts_event = Some(
@@ -1059,6 +1059,7 @@ pub(super) async fn check_fok_status(
             return;
         }
     };
+
     if let Err(e) = validate_order_response_scope(
         &venue_order,
         &report,
@@ -2324,6 +2325,7 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+
         if confirm_before_emit {
             assert!(!fill_tracker.promote_pending_trade_confirmed(
                 &[venue_order_id],
@@ -2357,6 +2359,7 @@ mod tests {
             receiver.try_recv().expect("expected fill"),
             ExecutionEvent::Order(OrderEventAny::Filled(_))
         ));
+
         if confirm_before_emit {
             let canceled = match receiver.try_recv().expect("expected IOC cancellation") {
                 ExecutionEvent::Order(OrderEventAny::Canceled(canceled)) => canceled,
@@ -2602,7 +2605,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_rejected_pending_report_waits_for_conflicting_buffered_fill() {
+    #[case(OrderStatus::Rejected, false)]
+    #[case(OrderStatus::Canceled, true)]
+    fn test_pending_report_waits_for_conflicting_buffered_fill(
+        #[case] order_status: OrderStatus,
+        #[case] tracker_registered: bool,
+    ) {
         let instrument = test_instrument();
         let venue_order_id = VenueOrderId::from("0xresponse-rejected-binding-mismatch");
         let mut order = test_limit_order("O-REJECTED-BINDING", instrument.id());
@@ -2643,7 +2651,7 @@ mod tests {
                 order.order_side(),
                 order.order_type(),
                 order.time_in_force(),
-                OrderStatus::Rejected,
+                order_status,
                 order.quantity(),
                 Quantity::zero(order.quantity().precision),
                 UnixNanos::from(1_000u64),
@@ -2670,7 +2678,10 @@ mod tests {
         assert!(receiver.try_recv().is_err());
         assert!(fill_tracker.has_pending_fill(&venue_order_id));
         assert!(fill_tracker.has_pending_report(&venue_order_id));
-        assert_eq!(fill_tracker.get_cumulative_filled(&venue_order_id), None);
+        assert_eq!(
+            fill_tracker.get_cumulative_filled(&venue_order_id),
+            tracker_registered.then(|| Quantity::zero(order.quantity().precision))
+        );
     }
 
     // A terminal order update can race ahead of the submit confirmation and be buffered. On

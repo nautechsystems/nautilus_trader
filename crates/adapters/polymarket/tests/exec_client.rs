@@ -4475,6 +4475,7 @@ async fn test_fok_check_rejects_wrong_returned_id_instrument_side_or_tif(
     client
         .submit_order(make_submit_cmd(&order, instrument_id))
         .unwrap();
+
     for expected in ["Submitted", "Updated"] {
         assert_order_event(recv_execution_event(&mut rx).await, expected);
     }
@@ -4942,6 +4943,7 @@ fn add_instrument_to_cache_with_tick_and_taker_fee(
         "condition_id".to_string(),
         Value::String(TEST_CONDITION_ID.to_string()),
     );
+
     if taker_fee.is_zero() {
         info.insert("fees_enabled".to_string(), Value::Bool(false));
     } else {

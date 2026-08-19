@@ -207,8 +207,8 @@ fn dispatch_order_update(
     let ts_event = match parse_user_channel_timestamp(&order.timestamp, "WebSocket order timestamp")
     {
         Ok(timestamp) => timestamp,
-        Err(error) => {
-            log::warn!("Ignoring invalid order update {}: {error}", order.id);
+        Err(e) => {
+            log::warn!("Ignoring invalid order update {}: {e}", order.id);
             return;
         }
     };
@@ -224,19 +224,19 @@ fn dispatch_order_update(
         ts_init,
     ) {
         Ok(report) => report,
-        Err(error) => {
-            log::warn!("Ignoring invalid order update {}: {error}", order.id);
+        Err(e) => {
+            log::warn!("Ignoring invalid order update {}: {e}", order.id);
             return;
         }
     };
     let venue_order_id = report.venue_order_id;
-    let local_client_order_id = ctx.pending_submits.client_order_id(&venue_order_id);
+    let mut local_client_order_id = ctx.pending_submits.client_order_id(&venue_order_id);
     let mut identity = ctx.order_identities.get(&venue_order_id);
     if let Some(identity) = identity.as_ref() {
-        if let Err(error) =
+        if let Err(e) =
             identity.validate_order_report(&report, venue_order_id, local_client_order_id)
         {
-            log::warn!("Ignoring contradictory order update {venue_order_id}: {error}");
+            log::warn!("Ignoring contradictory order update {venue_order_id}: {e}");
             return;
         }
     } else if local_client_order_id.is_some() {
@@ -246,15 +246,18 @@ fn dispatch_order_update(
         return;
     }
     let mut is_accepted = ctx.fill_tracker.contains(&venue_order_id);
-    report.client_order_id = local_client_order_id;
 
     // Unknown reports can wait in the tracker, but cannot mutate terminal or association state.
     // If registration raced the initial lookup, the retained identity must be visible and must
     // bind the report before dispatch continues.
     if identity.is_none() {
-        let Some(late_report) = ctx
-            .fill_tracker
-            .accept_or_buffer_report(venue_order_id, report)
+        let Some((late_report, registered)) =
+            ctx.fill_tracker
+                .accept_or_buffer_report(venue_order_id, report, || {
+                    ctx.pending_submits
+                        .client_order_id(&venue_order_id)
+                        .is_some()
+                })
         else {
             return;
         };
@@ -265,14 +268,15 @@ fn dispatch_order_update(
             );
             return;
         };
-        if let Err(error) =
+        local_client_order_id = ctx.pending_submits.client_order_id(&venue_order_id);
+        if let Err(e) =
             late_identity.validate_order_report(&report, venue_order_id, local_client_order_id)
         {
-            log::warn!("Ignoring contradictory late-bound order update {venue_order_id}: {error}");
+            log::warn!("Ignoring contradictory late-bound order update {venue_order_id}: {e}");
             return;
         }
         identity = Some(late_identity);
-        is_accepted = true;
+        is_accepted |= registered;
     }
     let Some(identity) = identity else {
         log::warn!(
@@ -280,6 +284,33 @@ fn dispatch_order_update(
         );
         return;
     };
+
+    // A submit or restore path which has published identity but not registration still owns the
+    // drain. Recheck both states under the tracker lock: either the ambiguous-submit marker makes
+    // this update eligible to self-register, or the report is retained before the owning path can
+    // classify and drain it. A successful submit still registers from the local order quantity.
+    if !is_accepted && local_client_order_id.is_none() {
+        let Some((late_report, registered)) =
+            ctx.fill_tracker
+                .accept_or_buffer_report(venue_order_id, report, || {
+                    ctx.pending_submits
+                        .client_order_id(&venue_order_id)
+                        .is_some()
+                })
+        else {
+            return;
+        };
+        report = late_report;
+        is_accepted |= registered;
+        local_client_order_id = ctx.pending_submits.client_order_id(&venue_order_id);
+        if !is_accepted && local_client_order_id.is_none() {
+            log::warn!(
+                "Ignoring order update {venue_order_id}: binding disappeared during atomic admission"
+            );
+            return;
+        }
+    }
+    report.client_order_id = local_client_order_id;
 
     // A known own order (submit in flight) self-registers on its first WS update. Buffered fills
     // remain pending until an OrderIdentity exists, because only OrderFilled has an exact void.
@@ -319,8 +350,8 @@ fn dispatch_order_update(
             |fill, new_qty| emit_buffered_order_filled(&identity, fill, new_qty, ctx),
         ) {
             Ok(fills) => fills,
-            Err(error) => {
-                log::warn!("Cannot drain buffered fills for order {venue_order_id}: {error}");
+            Err(e) => {
+                log::warn!("Cannot drain buffered fills for order {venue_order_id}: {e}");
                 ctx.fill_tracker.buffer_report(venue_order_id, report);
                 return;
             }
@@ -339,6 +370,7 @@ fn dispatch_order_update(
 
     // Emit fills first: a terminal status would otherwise close the order ahead of them
     let mut applied_confirmations = Vec::new();
+
     for emission in buffered_fills {
         if emission.emitted
             && let Some(confirmation) = applied_buffered_confirmation(&emission.buffered)
@@ -394,15 +426,7 @@ fn dispatch_order_update(
             .insert(venue_order_id, report.clone());
     }
 
-    if is_accepted || local_client_order_id.is_some() {
-        emit_tracked_order_status(&report, &identity, ts_event, ctx);
-    } else if let Some(report) = ctx
-        .fill_tracker
-        .accept_or_buffer_report(venue_order_id, report)
-    {
-        // Registered between the early accepted-check and here: emit the already-bound report.
-        emit_tracked_order_status(&report, &identity, ts_event, ctx);
-    }
+    emit_tracked_order_status(&report, &identity, ts_event, ctx);
 }
 
 fn emit_buffered_order_filled(
@@ -503,6 +527,7 @@ fn apply_buffered_confirmations(
             ctx,
             state,
         );
+
         if confirmation.liquidity_side == LiquiditySide::Taker {
             emit_taker_terminal_status(confirmation.venue_order_id, ctx, ts_event);
         }
@@ -560,8 +585,8 @@ fn dispatch_trade_update(
 
     let correction = match validate_trade_correction_scope(trade, ctx, state) {
         Ok(correction) => correction,
-        Err(error) => {
-            log::warn!("Ignoring invalid trade correction {}: {error}", trade.id);
+        Err(e) => {
+            log::warn!("Ignoring invalid trade correction {}: {e}", trade.id);
             return None;
         }
     };
@@ -574,8 +599,8 @@ fn dispatch_trade_update(
     let is_confirmed = trade.status == PolymarketTradeStatus::Confirmed;
     let result = match dispatch_trade_fills(trade, &correction, is_confirmed, ctx, state) {
         Ok(result) => result,
-        Err(error) => {
-            log::error!("Cannot build fills for trade {}: {error}", trade.id);
+        Err(e) => {
+            log::error!("Cannot build fills for trade {}: {e}", trade.id);
             return None;
         }
     };
@@ -622,6 +647,7 @@ fn void_failed_trade(
         .matched_fills
         .remove(&correction.correction_key)
         .unwrap_or_default();
+
     for fill in &direct_fills {
         ctx.fill_tracker
             .reverse_fill(&fill.venue_order_id, fill.last_qty);
@@ -635,6 +661,7 @@ fn void_failed_trade(
     let ts_event = (!fills.is_empty()).then(|| {
         corrective_event_timestamp(&trade.timestamp, "WebSocket failed trade timestamp", ctx)
     });
+
     for fill in fills {
         emit_order_fill_voided(
             &fill,
@@ -746,6 +773,7 @@ fn validate_trade_correction_scope(
         .unwrap_or_default()
         .into_iter()
         .chain(buffered_evidence.applied);
+
     for fill in stored_fills {
         anyhow::ensure!(
             participants.iter().any(|participant| {
@@ -757,6 +785,7 @@ fn validate_trade_correction_scope(
             fill.trade_id
         );
     }
+
     for fill in buffered_evidence.pending {
         anyhow::ensure!(
             participants.iter().any(|participant| {
@@ -791,6 +820,7 @@ fn validate_participant_identity(
         "correction instrument {instrument_id} does not match tracked instrument {}",
         identity.instrument_id
     );
+
     if side_is_provider_evidence {
         anyhow::ensure!(
             identity.order_side == order_side,
@@ -861,6 +891,7 @@ fn confirm_trade(
             state,
         );
     }
+
     if trade.trader_side == PolymarketLiquiditySide::Taker
         && let Some(participant) = correction.participants.first()
     {
@@ -873,8 +904,8 @@ fn corrective_event_timestamp(
     field: &str,
     ctx: &WsDispatchContext<'_>,
 ) -> UnixNanos {
-    parse_user_channel_timestamp(raw_timestamp, field).unwrap_or_else(|error| {
-        log::warn!("{error}; using local time for the corrective event only");
+    parse_user_channel_timestamp(raw_timestamp, field).unwrap_or_else(|e| {
+        log::warn!("{e}; using local time for the corrective event only");
         ctx.clock.get_time_ns()
     })
 }
@@ -969,6 +1000,7 @@ fn dispatch_maker_fill_reports(
     let admission = ctx
         .fill_tracker
         .accept_or_buffer_fills(candidates, |report| reversible_fill_target(report, ctx))?;
+
     if let Some(error) = admission.binding_error {
         log::warn!(
             "Retaining maker correction {} after binding changed: {error}",
@@ -978,6 +1010,7 @@ fn dispatch_maker_fill_reports(
     }
 
     let mut result = FillDispatchResult::default();
+
     for (report, identity) in admission.reports.into_iter().flatten() {
         let maker_venue_order_id = report.venue_order_id;
         result.reversible_fills.push(emit_order_filled(
@@ -1038,6 +1071,7 @@ fn dispatch_taker_fill_report(
         )],
         |report| reversible_fill_target(report, ctx),
     )?;
+
     if let Some(error) = admission.binding_error {
         log::warn!("Retaining taker correction {correction_key} after binding changed: {error}");
         return Ok(FillDispatchResult::default());
@@ -1737,6 +1771,7 @@ mod tests {
             let pending_submits = PendingSubmitTracker::default();
             let order_identities = OrderIdentityRegistry::default();
             let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+
             if register_order {
                 fill_tracker.register(
                     venue_order_id,
@@ -2595,6 +2630,7 @@ mod tests {
         let expected_instrument = test_instrument();
         let token_instruments = AtomicMap::new();
         token_instruments.insert(order.asset_id, expected_instrument.clone());
+
         match mismatch {
             0 => {
                 let alternate = alternate_test_instrument();
@@ -2733,6 +2769,7 @@ mod tests {
         harness.dispatch(UserWsMessage::Trade(corrected_trade));
 
         let mut fill_count = 0;
+
         while let Ok(event) = harness.receiver.try_recv() {
             if matches!(event, ExecutionEvent::Order(OrderEventAny::Filled(_))) {
                 fill_count += 1;
@@ -3522,6 +3559,7 @@ mod tests {
         harness.dispatch(UserWsMessage::Order(order));
 
         let mut normalized = None;
+
         while let Ok(event) = harness.receiver.try_recv() {
             if let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = event
                 && updated.reconciliation
@@ -3559,6 +3597,7 @@ mod tests {
 
         let mut fill_count = 0;
         let mut fill_report_count = 0;
+
         while let Ok(event) = harness.receiver.try_recv() {
             fill_count += usize::from(matches!(
                 event,
@@ -3656,6 +3695,7 @@ mod tests {
         let mut order_fill_count = 0;
         let mut fill_report_count = 0;
         let mut terminal_count = 0;
+
         while let Ok(event) = harness.receiver.try_recv() {
             order_fill_count += usize::from(matches!(
                 event,
@@ -3715,6 +3755,7 @@ mod tests {
 
         let mut order_fill_count = 0;
         let mut fill_report_count = 0;
+
         while let Ok(event) = harness.receiver.try_recv() {
             order_fill_count += usize::from(matches!(
                 event,
@@ -4332,7 +4373,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_tracker_registration_race_does_not_emit_or_cache_unbound_cancel() {
+    fn test_registered_tracker_without_identity_does_not_emit_or_cache_cancel() {
         let mut cancel_order: PolymarketUserOrder = load("ws_user_order_cancellation.json");
         let instrument = alternate_test_instrument();
         cancel_order.asset_id = Ustr::from(instrument.raw_symbol().as_str());
@@ -4372,14 +4413,6 @@ mod tests {
         assert!(!fill_tracker.has_pending_report(&venue_order_id));
         assert!(state.terminal_cancel_reports.get(&venue_order_id).is_none());
         assert!(state.pending_terminal_orders.get(&venue_order_id).is_none());
-
-        register_identity(
-            &order_identities,
-            venue_order_id,
-            test_instrument().id(),
-            "O-LATE-IDENTITY",
-        );
-        assert!(state.terminal_cancel_reports.get(&venue_order_id).is_none());
     }
 
     // A trade landing before the submit response buffers its fill, so the order update that

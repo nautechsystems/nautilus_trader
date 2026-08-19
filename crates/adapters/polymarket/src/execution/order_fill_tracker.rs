@@ -22,7 +22,7 @@ use indexmap::IndexMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::MUTEX_POISONED;
 use nautilus_model::{
-    enums::OrderSide,
+    enums::{OrderSide, OrderStatus},
     events::OrderFilled,
     identifiers::{ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
@@ -67,6 +67,14 @@ pub(crate) struct BufferedFillEmission {
 pub(crate) struct FillBatchAdmission<T> {
     pub reports: Vec<Option<(FillReport, T)>>,
     pub binding_error: Option<anyhow::Error>,
+}
+
+#[derive(Debug)]
+pub(crate) enum PendingOrderReportDrain {
+    Empty,
+    WaitingForFill,
+    Rejected(Vec<OrderStatusReport>),
+    Registered(Vec<OrderStatusReport>),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -199,8 +207,9 @@ impl OrderFillTrackerMap {
             .accept_or_buffer_fills(vec![(venue_order_id, report, correction)], |report| {
                 reversible_target(report).map(|can_emit| can_emit.then_some(()))
             })?;
-        if let Some(error) = outcome.binding_error {
-            return Err(error);
+
+        if let Some(e) = outcome.binding_error {
+            return Err(e);
         }
         Ok(outcome.reports.pop().flatten().map(|(report, ())| report))
     }
@@ -228,6 +237,7 @@ impl OrderFillTrackerMap {
                 *venue_order_id,
                 report.trade_id,
             );
+
             if !participants.insert(participant) {
                 anyhow::bail!(
                     "duplicate correction participant {} for order {} and trade {}",
@@ -257,7 +267,7 @@ impl OrderFillTrackerMap {
         for (_, report, _) in &fills {
             match reversible_target(report) {
                 Ok(target) => decisions.push(target),
-                Err(error) => {
+                Err(e) => {
                     let report_count = fills.len();
                     for (venue_order_id, report, correction) in fills {
                         push_buffered(
@@ -271,7 +281,7 @@ impl OrderFillTrackerMap {
                     }
                     return Ok(FillBatchAdmission {
                         reports: (0..report_count).map(|_| None).collect(),
-                        binding_error: Some(error),
+                        binding_error: Some(e),
                     });
                 }
             }
@@ -320,19 +330,24 @@ impl OrderFillTrackerMap {
             .insert(venue_order_id, new_order_state(submitted_qty, order_side));
     }
 
-    /// Returns a tracked order report to emit, or buffers it until the order is registered.
+    /// Returns a bound order report to process, or buffers it until binding becomes visible.
     ///
-    /// The accepted-check and the buffer insert run under one lock, so the submit path's register
-    /// (sequenced before its report drain) cannot leave the report buffered with no later drain.
-    /// Returns the report to emit when the order is registered, or `None` when it was buffered.
-    pub(crate) fn accept_or_buffer_report(
+    /// The registration check, late binding check, and buffer insert run under one lock. Once the
+    /// submit path has published the binding, a WS task which observed the earlier unbound state
+    /// returns the report for validation instead of appending it behind a completed drain.
+    pub(crate) fn accept_or_buffer_report<F>(
         &self,
         venue_order_id: VenueOrderId,
         report: OrderStatusReport,
-    ) -> Option<OrderStatusReport> {
+        binding_visible: F,
+    ) -> Option<(OrderStatusReport, bool)>
+    where
+        F: FnOnce() -> bool,
+    {
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
-        if guard.orders.get(&venue_order_id).is_some() {
-            Some(report)
+        let registered = guard.orders.get(&venue_order_id).is_some();
+        if registered || binding_visible() {
+            Some((report, registered))
         } else {
             push_buffered(&mut guard.pending_reports, venue_order_id, report);
             None
@@ -374,32 +389,72 @@ impl OrderFillTrackerMap {
         true
     }
 
-    /// Emits retained reports only when no earlier fill is awaiting binding.
+    /// Classifies and removes the exact retained report set for an ambiguous submit outcome.
     ///
-    /// The pending-fill check, report removal, and callback are one critical section. The
-    /// callback must not call back into this tracker.
-    pub(crate) fn emit_pending_reports_if_no_pending_fill<F>(
+    /// Filtering, pending-fill inspection, tracker registration, and removal are one critical
+    /// section. A racing WS task therefore either contributes to this decision or observes the
+    /// already-published identity and processes its report directly.
+    pub(crate) fn classify_pending_order_reports<F>(
         &self,
-        venue_order_id: &VenueOrderId,
-        emit: F,
-    ) -> bool
+        venue_order_id: VenueOrderId,
+        submitted_qty: Quantity,
+        order_side: OrderSide,
+        mut retain: F,
+    ) -> PendingOrderReportDrain
     where
-        F: FnOnce(&[OrderStatusReport]),
+        F: FnMut(&OrderStatusReport) -> bool,
     {
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
-        if guard
-            .pending_fills
-            .get(venue_order_id)
-            .is_some_and(|fills| !fills.is_empty())
-        {
-            return false;
+        let remove_empty_entry = match guard.pending_reports.get_mut(&venue_order_id) {
+            Some(reports) => {
+                reports.retain(&mut retain);
+                reports.is_empty()
+            }
+            None => false,
+        };
+
+        if remove_empty_entry {
+            guard.pending_reports.remove(&venue_order_id);
         }
-        let reports = guard
-            .pending_reports
-            .remove(venue_order_id)
-            .unwrap_or_default();
-        emit(&reports);
-        true
+
+        if guard.orders.contains_key(&venue_order_id) {
+            return PendingOrderReportDrain::Registered(
+                guard
+                    .pending_reports
+                    .get(&venue_order_id)
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+        }
+
+        let Some(reports) = guard.pending_reports.get(&venue_order_id) else {
+            return PendingOrderReportDrain::Empty;
+        };
+
+        if reports
+            .iter()
+            .all(|report| report.order_status == OrderStatus::Rejected)
+        {
+            if guard
+                .pending_fills
+                .get(&venue_order_id)
+                .is_some_and(|fills| !fills.is_empty())
+            {
+                return PendingOrderReportDrain::WaitingForFill;
+            }
+            return PendingOrderReportDrain::Rejected(
+                guard
+                    .pending_reports
+                    .remove(&venue_order_id)
+                    .unwrap_or_default(),
+            );
+        }
+
+        let reports = reports.clone();
+        guard
+            .orders
+            .insert(venue_order_id, new_order_state(submitted_qty, order_side));
+        PendingOrderReportDrain::Registered(reports)
     }
 
     /// Emits bound buffered fills for an already-registered order under one tracker lock.
@@ -496,6 +551,7 @@ impl OrderFillTrackerMap {
             }
             None => return Vec::new(),
         };
+
         if remove_entry {
             guard.pending_reports.remove(venue_order_id);
         }
@@ -536,6 +592,7 @@ impl OrderFillTrackerMap {
         raw_corrective_timestamp: &str,
     ) -> bool {
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+
         for venue_order_id in venue_order_ids {
             promote_pending_correction(
                 guard.pending_fills.get_mut(venue_order_id),
@@ -746,6 +803,7 @@ fn validate_pending_fill_binding(
     let Some(fills) = inner.pending_fills.get(&venue_order_id) else {
         return Ok(());
     };
+
     for fill in fills {
         anyhow::ensure!(
             fill.report.venue_order_id == venue_order_id,
@@ -859,10 +917,12 @@ fn promote_pending_correction(
     let Some(fills) = fills else {
         return;
     };
+
     for fill in fills {
         let Some(correction) = fill.correction.as_mut() else {
             continue;
         };
+
         if correction.correction_key == correction_key {
             correction.is_confirmed = true;
             correction.raw_trade_id = raw_trade_id.to_string();
@@ -1062,6 +1122,29 @@ mod tests {
             client_order_id: None,
             venue_position_id: None,
         }
+    }
+
+    fn test_order_report(
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        order_status: OrderStatus,
+    ) -> OrderStatusReport {
+        OrderStatusReport::new(
+            AccountId::from("POLY-001"),
+            instrument_id,
+            Some(ClientOrderId::from("O-REPORT-RACE")),
+            venue_order_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            order_status,
+            Quantity::new(100.0, 6),
+            Quantity::zero(6),
+            UnixNanos::from(1_000u64),
+            UnixNanos::from(1_000u64),
+            UnixNanos::from(1_000u64),
+            None,
+        )
     }
 
     fn test_order_filled(report: &FillReport, client_order_id: ClientOrderId) -> OrderFilled {
@@ -1318,6 +1401,7 @@ mod tests {
         let (entered_tx, entered_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let drain_tracker = Arc::clone(&tracker);
+
         let drain = thread::spawn(move || {
             let filled = test_order_filled(&report, ClientOrderId::from("O-CONFIRM-DURING-DRAIN"));
             drain_tracker
@@ -1382,6 +1466,7 @@ mod tests {
 
         let ws_tracker = Arc::clone(&tracker);
         let ws_identity = Arc::clone(&identity_available);
+
         let ws = thread::spawn(move || {
             ws_tracker.accept_or_buffer_fill(
                 venue_order_id,
@@ -1498,6 +1583,69 @@ mod tests {
     }
 
     #[rstest]
+    fn test_late_bound_report_cannot_be_buffered_behind_atomic_drain() {
+        use std::{
+            sync::{Arc, Barrier},
+            thread,
+        };
+
+        let tracker = Arc::new(OrderFillTrackerMap::new());
+        let venue_order_id = VenueOrderId::from("order-report-drain-race");
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+        tracker.buffer_report_for_test(
+            venue_order_id,
+            test_order_report(instrument_id, venue_order_id, OrderStatus::Rejected),
+        );
+
+        let classifier_entered = Arc::new(Barrier::new(2));
+        let release_classifier = Arc::new(Barrier::new(2));
+        let drain_tracker = Arc::clone(&tracker);
+        let drain_entered = Arc::clone(&classifier_entered);
+        let drain_release = Arc::clone(&release_classifier);
+
+        let drain = thread::spawn(move || {
+            drain_tracker.classify_pending_order_reports(
+                venue_order_id,
+                Quantity::new(100.0, 6),
+                OrderSide::Buy,
+                |_| {
+                    drain_entered.wait();
+                    drain_release.wait();
+                    true
+                },
+            )
+        });
+
+        classifier_entered.wait();
+        let ingress_started = Arc::new(Barrier::new(2));
+        let ingress_tracker = Arc::clone(&tracker);
+        let ingress_barrier = Arc::clone(&ingress_started);
+        let ingress = thread::spawn(move || {
+            ingress_barrier.wait();
+            ingress_tracker.accept_or_buffer_report(
+                venue_order_id,
+                test_order_report(instrument_id, venue_order_id, OrderStatus::Canceled),
+                || true,
+            )
+        });
+        ingress_started.wait();
+        release_classifier.wait();
+
+        let drained = drain.join().expect("drain thread panicked");
+        let late = ingress.join().expect("ingress thread panicked");
+        assert!(matches!(
+            drained,
+            PendingOrderReportDrain::Rejected(ref reports)
+                if reports.len() == 1 && reports[0].order_status == OrderStatus::Rejected
+        ));
+        assert!(matches!(
+            late,
+            Some((ref report, false)) if report.order_status == OrderStatus::Canceled
+        ));
+        assert!(!tracker.has_pending_report(&venue_order_id));
+    }
+
+    #[rstest]
     fn test_binding_error_replay_drains_exactly_one_retained_fill() {
         use std::cell::Cell;
 
@@ -1577,6 +1725,7 @@ mod tests {
         let first_order = VenueOrderId::from("maker-order-batch-first");
         let second_order = VenueOrderId::from("maker-order-batch-second");
         let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+
         for venue_order_id in [first_order, second_order] {
             tracker.register_without_draining(
                 venue_order_id,
