@@ -2533,24 +2533,6 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         self.emitter.set_sender(get_exec_event_sender());
         self.core.set_started();
 
-        let http_client = self.http_client.clone();
-        let provider = self.config.instrument_provider.clone();
-
-        get_runtime().spawn(async move {
-            match http_client.request_instruments_with_config(&provider).await {
-                Ok(instruments) => {
-                    if instruments.is_empty() {
-                        log::warn!("No instruments returned for Binance Futures");
-                    } else {
-                        log::debug!("Loaded {} Futures instruments", instruments.len());
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to request Binance Futures instruments: {e}");
-                }
-            }
-        });
-
         log::info!(
             "Started: client_id={}, account_id={}, account_type={:?}, environment={:?}",
             self.core.client_id,

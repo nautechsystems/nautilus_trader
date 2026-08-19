@@ -1738,12 +1738,14 @@ impl BinanceFuturesHttpClient {
                         ts_init,
                         ts_init,
                     ) {
-                        Ok(instrument) => instruments.push(instrument),
+                        Ok(instrument) => {
+                            cache.push((symbol.symbol, BinanceFuturesInstrument::UsdM(symbol)));
+                            instruments.push(instrument);
+                        }
                         Err(e) => {
                             log_futures_instrument_parse_error(config, &symbol.symbol, &e);
                         }
                     }
-                    cache.push((symbol.symbol, BinanceFuturesInstrument::UsdM(symbol)));
                 }
 
                 log::debug!(
@@ -1784,12 +1786,14 @@ impl BinanceFuturesHttpClient {
                         ts_init,
                         ts_init,
                     ) {
-                        Ok(instrument) => instruments.push(instrument),
+                        Ok(instrument) => {
+                            cache.push((symbol.symbol, BinanceFuturesInstrument::CoinM(symbol)));
+                            instruments.push(instrument);
+                        }
                         Err(e) => {
                             log_futures_instrument_parse_error(config, &symbol.symbol, &e);
                         }
                     }
-                    cache.push((symbol.symbol, BinanceFuturesInstrument::CoinM(symbol)));
                 }
 
                 log::debug!(

@@ -68,6 +68,7 @@ struct TestServerState {
     request_count: Arc<AtomicUsize>,
     rate_limit_threshold: usize,
     last_query: Arc<Mutex<Option<String>>>,
+    rejected_instrument_product: Option<BinanceProductType>,
 }
 
 impl Default for TestServerState {
@@ -76,6 +77,7 @@ impl Default for TestServerState {
             request_count: Arc::new(AtomicUsize::new(0)),
             rate_limit_threshold: usize::MAX,
             last_query: Arc::new(Mutex::new(None)),
+            rejected_instrument_product: None,
         }
     }
 }
@@ -83,6 +85,11 @@ impl Default for TestServerState {
 impl TestServerState {
     fn with_rate_limit(mut self, limit: usize) -> Self {
         self.rate_limit_threshold = limit;
+        self
+    }
+
+    fn with_rejected_instrument(mut self, product_type: BinanceProductType) -> Self {
+        self.rejected_instrument_product = Some(product_type);
         self
     }
 
@@ -139,12 +146,20 @@ async fn handle_time() -> Response {
     json_response(&json!({"serverTime": 1700000000000_i64}))
 }
 
-async fn handle_exchange_info() -> Response {
-    json_response(&load_fixture("exchange_info_usdm.json"))
+async fn handle_exchange_info(State(state): State<TestServerState>) -> Response {
+    let mut exchange_info = load_fixture("exchange_info_usdm.json");
+    if state.rejected_instrument_product == Some(BinanceProductType::UsdM) {
+        exchange_info["symbols"][0]["status"] = json!("PENDING_TRADING");
+    }
+    json_response(&exchange_info)
 }
 
-async fn handle_coinm_exchange_info() -> Response {
-    json_response(&load_fixture("exchange_info_delivery_coinm.json"))
+async fn handle_coinm_exchange_info(State(state): State<TestServerState>) -> Response {
+    let mut exchange_info = load_fixture("exchange_info_delivery_coinm.json");
+    if state.rejected_instrument_product == Some(BinanceProductType::CoinM) {
+        exchange_info["symbols"][0]["contractStatus"] = json!("PENDING_TRADING");
+    }
+    json_response(&exchange_info)
 }
 
 async fn handle_depth() -> Response {
@@ -604,6 +619,29 @@ async fn test_request_delivery_instrument_populates_cache_and_status(
         statuses.get(&raw_symbol),
         Some(&MarketStatusAction::Trading),
     );
+}
+
+#[rstest]
+#[case::usdm(BinanceProductType::UsdM, "BTCUSDT")]
+#[case::coinm(BinanceProductType::CoinM, "BTCUSD_260925")]
+#[tokio::test]
+async fn test_request_instruments_does_not_cache_rejected_instrument(
+    #[case] product_type: BinanceProductType,
+    #[case] raw_symbol: &str,
+) {
+    let state = TestServerState::default().with_rejected_instrument(product_type);
+    let addr = start_test_server(state).await.unwrap();
+    let client = create_domain_client(&addr, product_type);
+    let raw_symbol = Ustr::from(raw_symbol);
+
+    let instruments = client.request_instruments().await.unwrap();
+
+    assert!(
+        instruments
+            .iter()
+            .all(|instrument| instrument.raw_symbol().inner() != raw_symbol)
+    );
+    assert!(!client.instruments_cache().contains_key(&raw_symbol));
 }
 
 #[rstest]
