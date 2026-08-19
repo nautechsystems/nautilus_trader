@@ -198,7 +198,6 @@ pub fn parse_order_status_report(
 ///
 /// Returns an error if any identity, economic value, timestamp, binding, fee policy, or computed
 /// commission is invalid or cannot be represented exactly.
-#[expect(clippy::too_many_arguments)]
 pub fn parse_fill_report(
     trade: &PolymarketTradeReport,
     instrument: &InstrumentAny,

@@ -545,7 +545,6 @@ pub(crate) fn confirmed_trade_in_static_scope(
     }
 }
 
-#[expect(clippy::too_many_arguments)]
 fn trades_in_lookback_scope(
     trades: Vec<PolymarketTradeReport>,
     cutoff: UnixNanos,
