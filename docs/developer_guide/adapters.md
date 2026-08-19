@@ -1627,7 +1627,9 @@ clarifies operational capacity.
 
 Add venue‑specific suites for confirmed hot paths such as signing, hashing, binary codecs, or
 authentication. Lighter has focused cryptographic suites, and Derive has a signing suite. Do not
-require a category that the adapter does not use.
+require a category that the adapter does not use. Recorded Lighter signing numbers and the official
+Go comparison live in the
+[Lighter adapter benchmarks](../../crates/adapters/lighter/benches/BENCHMARKS.md).
 
 Follow the repository [benchmarking guide](../../BENCHMARKING.md) for tool choice, baselines, noise
 control, and result reporting. Use the

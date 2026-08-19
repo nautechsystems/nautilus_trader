@@ -23,7 +23,9 @@
 //! the gain landed in the layer it was supposed to.
 //!
 //! Same canonical surface every adapter should ship; pair this with
-//! `data.rs`, `exec.rs`, and `signing_sign_verify.rs`.
+//! `data.rs`, `exec.rs`, and `signing_sign_verify.rs`. The signing rows here
+//! exist only to sit next to decode and JSON render; quote
+//! `signing_sign_verify.rs` when publishing a signing number.
 
 mod common;
 

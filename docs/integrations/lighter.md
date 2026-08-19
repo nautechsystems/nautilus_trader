@@ -8,6 +8,10 @@ The NautilusTrader Lighter adapter is implemented by the `nautilus-lighter` crat
 Rust data and execution clients, typed REST and WebSocket models, and an in-tree L2 transaction
 signer for the venue's Schnorr / ECgFp5 signing flow.
 
+Measured L2 signing cost, including a comparison with the official Go SDK, is recorded in
+[`crates/adapters/lighter/benches/BENCHMARKS.md`](../../crates/adapters/lighter/benches/BENCHMARKS.md).
+Absolute numbers vary by machine, so only same-machine deltas are meaningful.
+
 ## Overview
 
 The main components are:
