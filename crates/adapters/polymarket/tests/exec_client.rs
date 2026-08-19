@@ -107,6 +107,10 @@ const DEFAULT_ACCEPTED_ORDER_ID: &str =
     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
 const CANCEL_ALREADY_DONE_ORDER_ID: &str =
     "0xb816482a1234567890abcdef1234567890abcdef1234567890abcdef12345678";
+const TEST_CONDITION_ID: &str =
+    "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917";
+const TEST_TOKEN_ID: &str =
+    "71321045679252212594626385532706912750332728571942532289631379312455583992563";
 
 #[derive(Clone, Copy, Debug)]
 enum ShutdownCancelMode {
@@ -228,6 +232,7 @@ struct TestServerState {
     single_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     single_order_get_count: Arc<AtomicUsize>,
     trades_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
+    positions_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
 impl Default for TestServerState {
@@ -289,6 +294,7 @@ impl Default for TestServerState {
             single_order_response: Arc::new(tokio::sync::Mutex::new(None)),
             single_order_get_count: Arc::new(AtomicUsize::new(0)),
             trades_response_override: Arc::new(tokio::sync::Mutex::new(None)),
+            positions_response_override: Arc::new(tokio::sync::Mutex::new(None)),
             book_response: Arc::new(tokio::sync::Mutex::new(Some(json!({
                 "bids": [
                     {"price": "0.48", "size": "100.00"},
@@ -848,8 +854,15 @@ async fn handle_health() -> impl IntoResponse {
     StatusCode::OK
 }
 
-async fn handle_get_positions() -> impl IntoResponse {
-    Json(serde_json::json!([]))
+async fn handle_get_positions(State(state): State<TestServerState>) -> impl IntoResponse {
+    Json(
+        state
+            .positions_response_override
+            .lock()
+            .await
+            .clone()
+            .unwrap_or_else(|| serde_json::json!([])),
+    )
 }
 
 fn create_test_router(state: TestServerState) -> Router {
@@ -1736,6 +1749,148 @@ async fn test_generate_mass_status_lookback_marks_unparsable_trade_time_incomple
 
 #[rstest]
 #[tokio::test]
+async fn test_mass_status_owned_cross_asset_bad_time_is_not_complete() {
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [maker_lookback_trade("test_api_key", TEST_TOKEN_ID)],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut config = create_test_exec_config(addr);
+    config.instrument_config = Some(PolymarketInstrumentProviderConfig {
+        load_ids: Some(vec![instrument_id]),
+        ..Default::default()
+    });
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    client.on_instrument(cache.borrow().instrument(&instrument_id).unwrap().clone());
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("mass status")
+        .expect("mass status available");
+
+    assert!(!mass_status.reports_complete());
+    assert!(mass_status.fill_reports().is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mass_status_genuinely_unrelated_bad_time_remains_complete() {
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [maker_lookback_trade("foreign-api-key", "999")],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut config = create_test_exec_config(addr);
+    config.instrument_config = Some(PolymarketInstrumentProviderConfig {
+        load_ids: Some(vec![instrument_id]),
+        ..Default::default()
+    });
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    client.on_instrument(cache.borrow().instrument(&instrument_id).unwrap().clone());
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("mass status")
+        .expect("mass status available");
+
+    assert!(mass_status.reports_complete());
+    assert!(mass_status.fill_reports().is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_owned_cross_asset_bad_time_errors() {
+    let state = TestServerState::default();
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [maker_lookback_trade("test_api_key", TEST_TOKEN_ID)],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut config = create_test_exec_config(addr);
+    config.instrument_config = Some(PolymarketInstrumentProviderConfig {
+        load_ids: Some(vec![instrument_id]),
+        ..Default::default()
+    });
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    client.on_instrument(cache.borrow().instrument(&instrument_id).unwrap().clone());
+
+    let error = client
+        .generate_fill_reports(GenerateFillReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            venue_order_id: None,
+            start: Some(UnixNanos::from(1)),
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("owned maker evidence must parse match_time even when taker asset is outside");
+
+    assert!(format!("{error:#}").contains("match_time"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_ignores_genuinely_unrelated_bad_time() {
+    let state = TestServerState::default();
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [maker_lookback_trade("foreign-api-key", "999")],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut config = create_test_exec_config(addr);
+    config.instrument_config = Some(PolymarketInstrumentProviderConfig {
+        load_ids: Some(vec![instrument_id]),
+        ..Default::default()
+    });
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    client.on_instrument(cache.borrow().instrument(&instrument_id).unwrap().clone());
+
+    let reports = client
+        .generate_fill_reports(GenerateFillReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            venue_order_id: None,
+            start: Some(UnixNanos::from(1)),
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect("unrelated malformed time must remain nonfatal");
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_mass_status_lookback_marks_in_scope_historical_incomplete() {
     let state = TestServerState::default();
     *state.orders_response_override.lock().await = Some(json!({
@@ -1934,6 +2089,72 @@ async fn test_generate_position_status_reports_always_empty() {
 
     // Polymarket has no position endpoint
     assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_position_status_reports_rejects_wrong_condition_before_dust() {
+    let state = TestServerState::default();
+    *state.positions_response_override.lock().await = Some(json!([{
+        "asset": TEST_TOKEN_ID,
+        "conditionId": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "size": 0,
+        "avgPrice": 0.5
+    }]));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 6);
+    client.on_instrument(cache.borrow().instrument(&instrument_id).unwrap().clone());
+
+    let error = client
+        .generate_position_status_reports(&GeneratePositionStatusReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: None,
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("wrong condition must fail before zero-position exclusion");
+
+    assert!(format!("{error:#}").contains("does not match instrument condition"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mass_status_position_binding_precedes_dust() {
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    *state.positions_response_override.lock().await = Some(json!([{
+        "asset": TEST_TOKEN_ID,
+        "conditionId": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "size": 0,
+        "avgPrice": 0.5
+    }]));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 6);
+    client.on_instrument(cache.borrow().instrument(&instrument_id).unwrap().clone());
+
+    let error = client
+        .generate_mass_status(None)
+        .await
+        .expect_err("mass position binding must precede zero exclusion");
+
+    assert!(format!("{error:#}").contains("does not match instrument condition"));
 }
 
 #[rstest]
@@ -2344,6 +2565,24 @@ fn recovery_trades_response(venue_order_id: &str, size: &str, price: &str) -> Va
         }],
         "next_cursor": "LTE=",
     })
+}
+
+fn maker_lookback_trade(owner: &str, maker_asset: &str) -> Value {
+    let mut trade = load_json("http_trades_page.json")["data"][0].clone();
+    trade["trader_side"] = json!("MAKER");
+    trade["asset_id"] = json!("999");
+    trade["match_time"] = json!("not-a-timestamp");
+    trade["maker_orders"] = json!([{
+        "asset_id": maker_asset,
+        "maker_address": "0x0000000000000000000000000000000000000001",
+        "matched_amount": "10.0000",
+        "order_id": "0xmaker-order",
+        "outcome": "Yes",
+        "owner": owner,
+        "price": "0.5000",
+        "side": "SELL"
+    }]);
+    trade
 }
 
 #[rstest]
@@ -4195,7 +4434,7 @@ fn add_instrument_to_cache_with_tick_and_taker_fee(
     size_precision: u8,
     taker_fee: Decimal,
 ) {
-    let symbol = "71321045679252212594626385532706912750332728571942532289631379312455583992563";
+    let symbol = TEST_TOKEN_ID;
     let price_increment = Price::from(tick_size);
     let size_increment = if size_precision == 0 {
         Quantity::from("1")
@@ -4209,9 +4448,7 @@ fn add_instrument_to_cache_with_tick_and_taker_fee(
     let mut info = Params::new();
     info.insert(
         "condition_id".to_string(),
-        Value::String(
-            "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917".to_string(),
-        ),
+        Value::String(TEST_CONDITION_ID.to_string()),
     );
     if taker_fee.is_zero() {
         info.insert("fees_enabled".to_string(), Value::Bool(false));

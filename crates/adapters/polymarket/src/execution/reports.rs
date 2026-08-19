@@ -38,16 +38,17 @@ use super::{
         sum_filled_quantity, weighted_average_price,
     },
     reconciliation::{
-        FillContext, apply_fill_filters, build_fill_reports_from_trades, build_position_reports,
-        cap_order_report_filled_qty, confirmed_filled_quantities,
-        normalize_terminal_order_report_quantity,
+        FillContext, apply_fill_filters, build_fill_reports_from_trades,
+        build_position_reports_scoped, cap_order_report_filled_qty, confirmed_filled_quantities,
+        confirmed_trade_in_static_scope, normalize_terminal_order_report_quantity,
     },
-    report_validation::non_negative_quantity,
+    report_validation::{non_negative_quantity, parse_match_time},
 };
 use crate::{
     common::enums::SignatureType,
     http::{
         clob::PolymarketClobHttpClient,
+        models::PolymarketTradeReport,
         query::{GetBalanceAllowanceParams, GetTradesParams},
     },
 };
@@ -556,6 +557,16 @@ impl PolymarketExecutionClient {
             .context("failed to fetch trades")?;
 
         let ctx = self.fill_context();
+        let trades = trades_in_window(
+            trades,
+            cmd.start,
+            cmd.end,
+            &ctx,
+            &self.shared_token_instruments,
+            cmd.instrument_id,
+            cmd.venue_order_id,
+            self.config.reconciliation_load_ids(),
+        )?;
         let (mut reports, _) = build_fill_reports_from_trades(
             &trades,
             &ctx,
@@ -585,15 +596,14 @@ impl PolymarketExecutionClient {
             .context("failed to fetch positions from Data API")?;
 
         let ts_now = self.clock.get_time_ns();
-        let mut reports = super::reconciliation::retain_mapped_position_reports(
-            build_position_reports(&positions, self.core.account_id, ts_now),
+        let reports = build_position_reports_scoped(
+            &positions,
             &self.shared_token_instruments,
+            self.core.account_id,
+            cmd.instrument_id,
             self.config.reconciliation_load_ids(),
+            ts_now,
         )?;
-
-        if let Some(ref filter_id) = cmd.instrument_id {
-            reports.retain(|r| &r.instrument_id == filter_id);
-        }
 
         log::debug!("Generated {} position status reports", reports.len());
         Ok(reports)
@@ -617,6 +627,45 @@ impl PolymarketExecutionClient {
         )
         .await
     }
+}
+
+#[expect(clippy::too_many_arguments)]
+fn trades_in_window(
+    trades: Vec<PolymarketTradeReport>,
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+    ctx: &FillContext<'_>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    instrument_filter: Option<InstrumentId>,
+    venue_order_filter: Option<VenueOrderId>,
+    load_ids: Option<&[InstrumentId]>,
+) -> anyhow::Result<Vec<PolymarketTradeReport>> {
+    if start.is_none() && end.is_none() {
+        return Ok(trades);
+    }
+
+    let mut in_window = Vec::with_capacity(trades.len());
+    for trade in trades {
+        if !confirmed_trade_in_static_scope(
+            &trade,
+            ctx,
+            instruments,
+            instrument_filter,
+            venue_order_filter,
+            load_ids,
+        )? {
+            continue;
+        }
+
+        let ts_event = parse_match_time(&trade.match_time, "fill match_time")
+            .with_context(|| format!("invalid match_time for confirmed trade {}", trade.id))?;
+        if start.is_none_or(|value| ts_event >= value) && end.is_none_or(|value| ts_event <= value)
+        {
+            in_window.push(trade);
+        }
+    }
+
+    Ok(in_window)
 }
 
 async fn fetch_confirmed_fill_reports(

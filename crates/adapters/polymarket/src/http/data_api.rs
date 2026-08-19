@@ -436,18 +436,25 @@ fn parse_trade_ticks(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::{UnixNanos, collections::AtomicMap};
     use nautilus_model::{
         enums::AggressorSide,
         identifiers::{AccountId, InstrumentId},
+        instruments::InstrumentAny,
+        reports::PositionStatusReport,
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{
         common::consts::USDC_DECIMALS,
-        execution::reconciliation::build_position_reports,
-        http::models::{DataApiPosition, DataApiTrade},
+        execution::reconciliation::build_position_reports_scoped,
+        http::{
+            models::{DataApiPosition, DataApiTrade, GammaMarket},
+            parse::{create_instrument_from_def, parse_gamma_market},
+        },
     };
 
     fn load_positions() -> Vec<DataApiPosition> {
@@ -456,11 +463,50 @@ mod tests {
         serde_json::from_str(&content).expect("Failed to parse test data")
     }
 
+    fn load_bindable_positions() -> Vec<DataApiPosition> {
+        let mut positions = load_positions();
+        positions[1].condition_id = format!("0x{:064x}", 1);
+        positions[3].condition_id = format!("0x{:064x}", 2);
+        positions
+    }
+
     fn load_trades() -> Vec<DataApiTrade> {
         // Constructed fixture retained for conversion, filtering, and ordering tests
         let path = "test_data/data_api_trades_response.json";
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
         serde_json::from_str(&content).expect("Failed to parse test data")
+    }
+
+    fn position_instruments(positions: &[DataApiPosition]) -> AtomicMap<Ustr, InstrumentAny> {
+        let instruments = AtomicMap::new();
+
+        for position in positions {
+            let mut market: GammaMarket =
+                serde_json::from_str(include_str!("../../test_data/gamma_market.json")).unwrap();
+            market.condition_id = position.condition_id.clone();
+            market.clob_token_ids =
+                serde_json::to_string(&[position.asset.as_str(), "synthetic-other-token"]).unwrap();
+            market.outcomes = serde_json::to_string(&["Yes", "No"]).unwrap();
+            market.fees_enabled = Some(false);
+            market.fee_schedule = None;
+            let definition = parse_gamma_market(&market).unwrap().remove(0);
+            let instrument = create_instrument_from_def(&definition, UnixNanos::default()).unwrap();
+            instruments.insert(Ustr::from(position.asset.as_str()), instrument);
+        }
+        instruments
+    }
+
+    fn build_test_positions(
+        positions: &[DataApiPosition],
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        build_position_reports_scoped(
+            positions,
+            &position_instruments(positions),
+            AccountId::from("POLYMARKET-001"),
+            None,
+            None,
+            UnixNanos::from(1_000_000_000u64),
+        )
     }
 
     #[rstest]
@@ -478,11 +524,8 @@ mod tests {
 
     #[rstest]
     fn test_build_position_reports_filters_dust_and_zero() {
-        let positions = load_positions();
-        let account_id = AccountId::from("POLYMARKET-001");
-        let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
-
-        let reports = build_position_reports(&positions, account_id, ts_now);
+        let positions = load_bindable_positions();
+        let reports = build_test_positions(&positions).unwrap();
 
         // 4 positions: 150.5, 0.0, 42.0, 0.005 (dust)
         // Only 150.5 and 42.0 pass the DUST_POSITION_THRESHOLD (0.01)
@@ -493,11 +536,8 @@ mod tests {
 
     #[rstest]
     fn test_build_position_reports_carries_avg_price() {
-        let positions = load_positions();
-        let account_id = AccountId::from("POLYMARKET-001");
-        let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
-
-        let reports = build_position_reports(&positions, account_id, ts_now);
+        let positions = load_bindable_positions();
+        let reports = build_test_positions(&positions).unwrap();
 
         assert_eq!(reports.len(), 2);
         assert_eq!(reports[0].avg_px_open, Some(dec!(0.55)));
@@ -506,11 +546,8 @@ mod tests {
 
     #[rstest]
     fn test_build_position_reports_uses_usdc_precision() {
-        let positions = load_positions();
-        let account_id = AccountId::from("POLYMARKET-001");
-        let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
-
-        let reports = build_position_reports(&positions, account_id, ts_now);
+        let positions = load_bindable_positions();
+        let reports = build_test_positions(&positions).unwrap();
 
         assert_eq!(reports.len(), 2);
         assert_eq!(reports[0].quantity.precision, USDC_DECIMALS as u8);
@@ -521,14 +558,12 @@ mod tests {
     fn test_build_position_reports_handles_missing_avg_price() {
         let positions = vec![DataApiPosition {
             asset: "123".to_string(),
-            condition_id: "0xabc".to_string(),
+            condition_id: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .to_string(),
             size: dec!(10),
             avg_price: None,
         }];
-        let account_id = AccountId::from("POLYMARKET-001");
-        let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
-
-        let reports = build_position_reports(&positions, account_id, ts_now);
+        let reports = build_test_positions(&positions).unwrap();
 
         assert_eq!(reports.len(), 1);
         assert_eq!(reports[0].avg_px_open, None);

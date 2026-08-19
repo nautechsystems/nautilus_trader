@@ -33,11 +33,11 @@ use ustr::Ustr;
 use super::{
     order_fill_tracker::OrderFillTrackerMap,
     parse::{build_maker_fill_report, parse_fill_report, parse_order_status_report},
-    report_validation::parse_match_time,
+    report_validation::{ensure_instrument_binding, non_negative_quantity, parse_match_time},
 };
 use crate::{
     common::{
-        consts::{DUST_POSITION_THRESHOLD, DUST_SNAP_THRESHOLD_DEC, USDC_DECIMALS},
+        consts::{DUST_POSITION_THRESHOLD, DUST_SNAP_THRESHOLD_DEC},
         enums::{PolymarketLiquiditySide, PolymarketTradeStatus},
     },
     http::{
@@ -255,82 +255,84 @@ pub(crate) fn apply_fill_filters(
     reports
 }
 
-/// Builds position status reports from Data API positions, filtering dust.
-pub(crate) fn build_position_reports(
+/// Builds position reports after binding every relevant row to its loaded instrument.
+///
+/// Binding and exact quantity construction deliberately precede zero/dust exclusion so malformed
+/// evidence cannot disappear as an empty position.
+pub(crate) fn build_position_reports_scoped(
     positions: &[DataApiPosition],
-    account_id: AccountId,
-    ts: UnixNanos,
-) -> Vec<PositionStatusReport> {
-    positions
-        .iter()
-        .filter(|p| {
-            if p.size > Decimal::ZERO && p.size < DUST_POSITION_THRESHOLD {
-                log::debug!(
-                    "Filtering dust position: {}-{}, size={}",
-                    p.condition_id,
-                    p.asset,
-                    p.size
-                );
-            }
-            p.size >= DUST_POSITION_THRESHOLD
-        })
-        .filter_map(|p| {
-            let instrument_id = instrument_id_from_market_token(&p.condition_id, &p.asset);
-            let quantity = match Quantity::from_decimal_dp(p.size, USDC_DECIMALS as u8) {
-                Ok(quantity) => quantity,
-                Err(e) => {
-                    log::warn!(
-                        "Skipping invalid Data API position {}-{} size {}: {e}",
-                        p.condition_id,
-                        p.asset,
-                        p.size,
-                    );
-                    return None;
-                }
-            };
-            Some(PositionStatusReport::new(
-                account_id,
-                instrument_id,
-                PositionSideSpecified::Long,
-                quantity,
-                ts,
-                ts,
-                None,
-                None,
-                p.avg_price,
-            ))
-        })
-        .collect()
-}
-
-pub(crate) fn retain_mapped_position_reports(
-    reports: Vec<PositionStatusReport>,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
+    account_id: AccountId,
+    instrument_filter: Option<InstrumentId>,
     load_ids: Option<&[InstrumentId]>,
+    ts: UnixNanos,
 ) -> anyhow::Result<Vec<PositionStatusReport>> {
-    let mut kept = Vec::with_capacity(reports.len());
+    let mut reports = Vec::with_capacity(positions.len());
 
-    for report in reports {
-        if position_instrument_loaded(report.instrument_id, instruments) {
-            kept.push(report);
+    for position in positions {
+        let token_id = Ustr::from(position.asset.as_str());
+        let Some(instrument) = instruments.get_cloned(&token_id) else {
+            let instrument_id =
+                instrument_id_from_market_token(&position.condition_id, &position.asset);
+            let in_scope = instrument_filter.map_or_else(
+                || instrument_in_load_ids_scope(instrument_id, load_ids),
+                |filter_id| filter_id == instrument_id,
+            );
+
+            if in_scope {
+                anyhow::bail!(unmapped_in_scope_message(
+                    "position",
+                    instrument_id,
+                    Some(&format!("token {}", position.asset)),
+                    load_ids,
+                ));
+            }
+            log::debug!("Dropping out-of-scope unmapped position instrument {instrument_id}");
+            continue;
+        };
+        let instrument_id = instrument.id();
+
+        if instrument_filter.is_some_and(|filter_id| filter_id != instrument_id) {
             continue;
         }
 
-        if instrument_in_load_ids_scope(report.instrument_id, load_ids) {
-            anyhow::bail!(unmapped_in_scope_message(
-                "position",
-                report.instrument_id,
-                None,
-                load_ids,
-            ));
+        ensure_instrument_binding(
+            &instrument,
+            &position.condition_id,
+            &position.asset,
+            None,
+            "Data API position",
+        )?;
+        let quantity =
+            non_negative_quantity(position.size, instrument.size_precision(), "position size")?;
+
+        if position.size > Decimal::ZERO && position.size < DUST_POSITION_THRESHOLD {
+            log::debug!(
+                "Filtering dust position: {}-{}, size={}",
+                position.condition_id,
+                position.asset,
+                position.size,
+            );
         }
-        log::debug!(
-            "Dropping out-of-scope unmapped position instrument {}",
-            report.instrument_id
-        );
+
+        if position.size < DUST_POSITION_THRESHOLD {
+            continue;
+        }
+
+        reports.push(PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSideSpecified::Long,
+            quantity,
+            ts,
+            ts,
+            None,
+            None,
+            position.avg_price,
+        ));
     }
 
-    Ok(kept)
+    Ok(reports)
 }
 
 /// Full reconciliation mass status generation.
@@ -381,30 +383,8 @@ pub(crate) async fn generate_mass_status(
     let mut untimestamped_trades = 0usize;
 
     if let Some(cutoff) = lookback_start {
-        trades.retain(
-            |trade| match parse_match_time(&trade.match_time, "trade match_time") {
-                Ok(ts_event) => ts_event >= cutoff,
-                Err(_) => {
-                    if trade.status != PolymarketTradeStatus::Confirmed {
-                        return false;
-                    }
-                    let instrument_id = instrument_id_from_market_token(
-                        trade.market.as_str(),
-                        trade.asset_id.as_str(),
-                    );
-
-                    if instrument_in_load_ids_scope(instrument_id, load_ids) {
-                        untimestamped_trades += 1;
-                    } else {
-                        log::debug!(
-                            "Dropping out-of-scope historical trade {} with unparsable match_time",
-                            trade.id
-                        );
-                    }
-                    false
-                }
-            },
-        );
+        (trades, untimestamped_trades) =
+            trades_in_lookback_scope(trades, cutoff, ctx, instruments, None, None, load_ids)?;
     }
 
     let (mut fill_reports, fill_discards) =
@@ -425,10 +405,13 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch positions for mass status")?;
 
-    let position_reports = retain_mapped_position_reports(
-        build_position_reports(&positions, ctx.account_id, ts_init),
+    let position_reports = build_position_reports_scoped(
+        &positions,
         instruments,
+        ctx.account_id,
+        None,
         load_ids,
+        ts_init,
     )?;
 
     log::debug!(
@@ -500,6 +483,112 @@ fn instrument_in_load_ids_scope(
     }
 }
 
+fn historical_instrument_in_scope(
+    instrument_id: InstrumentId,
+    instrument_filter: Option<InstrumentId>,
+    load_ids: Option<&[InstrumentId]>,
+) -> bool {
+    instrument_filter.map_or_else(
+        || instrument_in_load_ids_scope(instrument_id, load_ids),
+        |filter_id| filter_id == instrument_id,
+    )
+}
+
+fn venue_order_in_scope(venue_order_id: &str, venue_order_filter: Option<VenueOrderId>) -> bool {
+    venue_order_filter.is_none_or(|filter_id| venue_order_id == filter_id.as_str())
+}
+
+/// Determines whether a confirmed trade can affect the requested/loaded static scope without
+/// parsing its timestamp or economic values.
+pub(crate) fn confirmed_trade_in_static_scope(
+    trade: &PolymarketTradeReport,
+    ctx: &FillContext<'_>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    instrument_filter: Option<InstrumentId>,
+    venue_order_filter: Option<VenueOrderId>,
+    load_ids: Option<&[InstrumentId]>,
+) -> anyhow::Result<bool> {
+    if trade.status != PolymarketTradeStatus::Confirmed {
+        return Ok(false);
+    }
+
+    let instrument_in_scope = |raw_token_id: &str| -> anyhow::Result<bool> {
+        if let Some(instrument) = instruments.get_cloned(&Ustr::from(raw_token_id)) {
+            return Ok(instrument_filter.is_none_or(|filter_id| instrument.id() == filter_id));
+        }
+
+        let instrument_id = instrument_id_from_market_token(trade.market.as_str(), raw_token_id);
+        Ok(historical_instrument_in_scope(
+            instrument_id,
+            instrument_filter,
+            load_ids,
+        ))
+    };
+
+    if trade.trader_side == PolymarketLiquiditySide::Maker {
+        let has_owned_order = trade
+            .maker_orders
+            .iter()
+            .filter(|order| venue_order_in_scope(&order.order_id, venue_order_filter))
+            .any(|order| order.is_owned_by(ctx.user_address, ctx.api_key));
+        for order in &trade.maker_orders {
+            if !venue_order_in_scope(&order.order_id, venue_order_filter)
+                || (has_owned_order && !order.is_owned_by(ctx.user_address, ctx.api_key))
+            {
+                continue;
+            }
+
+            if instrument_in_scope(order.asset_id.as_str())? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    } else if venue_order_in_scope(&trade.taker_order_id, venue_order_filter) {
+        instrument_in_scope(trade.asset_id.as_str())
+    } else {
+        Ok(false)
+    }
+}
+
+#[expect(clippy::too_many_arguments)]
+fn trades_in_lookback_scope(
+    trades: Vec<PolymarketTradeReport>,
+    cutoff: UnixNanos,
+    ctx: &FillContext<'_>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    instrument_filter: Option<InstrumentId>,
+    venue_order_filter: Option<VenueOrderId>,
+    load_ids: Option<&[InstrumentId]>,
+) -> anyhow::Result<(Vec<PolymarketTradeReport>, usize)> {
+    let mut retained = Vec::with_capacity(trades.len());
+    let mut untimestamped = 0usize;
+
+    for trade in trades {
+        if !confirmed_trade_in_static_scope(
+            &trade,
+            ctx,
+            instruments,
+            instrument_filter,
+            venue_order_filter,
+            load_ids,
+        )? {
+            log::debug!(
+                "Dropping confirmed trade {} outside lookback scope",
+                trade.id
+            );
+            continue;
+        }
+
+        match parse_match_time(&trade.match_time, "trade match_time") {
+            Ok(ts_event) if ts_event >= cutoff => retained.push(trade),
+            Ok(_) => {}
+            Err(_) => untimestamped += 1,
+        }
+    }
+
+    Ok((retained, untimestamped))
+}
+
 fn unmapped_in_scope_message(
     kind: &str,
     instrument_id: InstrumentId,
@@ -519,16 +608,6 @@ fn unmapped_in_scope_message(
         }
         None => format!("unmapped in-scope {kind} instrument {instrument_id}; {hint}"),
     }
-}
-
-fn position_instrument_loaded(
-    instrument_id: InstrumentId,
-    instruments: &AtomicMap<Ustr, InstrumentAny>,
-) -> bool {
-    let symbol = instrument_id.symbol.as_str();
-    symbol
-        .rsplit_once('-')
-        .is_some_and(|(_, token_id)| instruments.contains_key(&Ustr::from(token_id)))
 }
 
 fn classify_unmapped_historical(
@@ -616,6 +695,7 @@ mod tests {
         types::{Currency, Money, Price},
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::http::{
@@ -634,6 +714,38 @@ mod tests {
         market.fee_schedule = None;
         let definition = parse_gamma_market(&market).unwrap().remove(0);
         create_instrument_from_def(&definition, UnixNanos::default()).unwrap()
+    }
+
+    fn instrument_for_position(position: &DataApiPosition) -> InstrumentAny {
+        let mut market: GammaMarket =
+            serde_json::from_str(include_str!("../../test_data/gamma_market.json")).unwrap();
+        market.condition_id = position.condition_id.clone();
+        market.clob_token_ids =
+            serde_json::to_string(&[position.asset.as_str(), "synthetic-other-token"]).unwrap();
+        market.outcomes = serde_json::to_string(&["Yes", "No"]).unwrap();
+        market.fees_enabled = Some(false);
+        market.fee_schedule = None;
+        let definition = parse_gamma_market(&market).unwrap().remove(0);
+        create_instrument_from_def(&definition, UnixNanos::default()).unwrap()
+    }
+
+    fn test_position() -> DataApiPosition {
+        DataApiPosition {
+            asset: "123".to_string(),
+            condition_id: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .to_string(),
+            size: Decimal::from_str_exact("1.000001").unwrap(),
+            avg_price: Some(Decimal::from_str_exact("0.123456789012345678").unwrap()),
+        }
+    }
+
+    fn position_map(position: &DataApiPosition) -> AtomicMap<Ustr, InstrumentAny> {
+        let instruments = AtomicMap::new();
+        instruments.insert(
+            Ustr::from(position.asset.as_str()),
+            instrument_for_position(position),
+        );
+        instruments
     }
 
     #[rstest]
@@ -840,24 +952,189 @@ mod tests {
 
     #[rstest]
     fn in_scope_unmapped_position_errors() {
-        let reports = vec![PositionStatusReport::new(
+        let position = test_position();
+        let error = build_position_reports_scoped(
+            &[position],
+            &AtomicMap::new(),
             AccountId::from("POLY-001"),
-            InstrumentId::from("0xmarket-token.POLYMARKET"),
-            PositionSideSpecified::Long,
-            Quantity::from("10.000000"),
+            None,
+            None,
             UnixNanos::from(1),
-            UnixNanos::from(1),
-            None,
-            None,
-            None,
-        )];
-
-        let error = retain_mapped_position_reports(reports, &AtomicMap::new(), None)
-            .expect_err("in-scope position miss must fail");
+        )
+        .expect_err("in-scope position miss must fail");
 
         let message = error.to_string();
 
         assert!(message.contains("unmapped in-scope position"));
         assert!(message.contains("set instrument_config.load_ids"));
+    }
+
+    #[rstest]
+    fn test_position_binding_rejects_wrong_condition_before_zero_or_dust() {
+        let mut position = test_position();
+        let instruments = position_map(&position);
+        position.condition_id =
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string();
+        position.size = Decimal::ZERO;
+
+        let error = build_position_reports_scoped(
+            &[position],
+            &instruments,
+            AccountId::from("POLY-001"),
+            None,
+            None,
+            UnixNanos::from(1),
+        )
+        .expect_err("wrong condition must fail before zero exclusion");
+
+        assert!(
+            error
+                .to_string()
+                .contains("does not match instrument condition")
+        );
+    }
+
+    #[rstest]
+    fn test_position_binding_accepts_equivalent_condition_case() {
+        let mut position = test_position();
+        let instruments = position_map(&position);
+        position.condition_id = position.condition_id.to_ascii_uppercase();
+
+        let reports = build_position_reports_scoped(
+            &[position],
+            &instruments,
+            AccountId::from("POLY-001"),
+            None,
+            None,
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        assert_eq!(reports.len(), 1);
+    }
+
+    #[rstest]
+    fn test_position_report_uses_loaded_instrument_id() {
+        let mut position = test_position();
+        let instruments = position_map(&position);
+        let expected = instruments
+            .get_cloned(&Ustr::from(position.asset.as_str()))
+            .unwrap()
+            .id();
+        position.condition_id = position.condition_id.to_ascii_uppercase();
+
+        let reports = build_position_reports_scoped(
+            &[position],
+            &instruments,
+            AccountId::from("POLY-001"),
+            None,
+            None,
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        assert_eq!(reports[0].instrument_id, expected);
+    }
+
+    #[rstest]
+    fn test_position_numeric_conversion_round_trips_exactly() {
+        let position = test_position();
+        let instruments = position_map(&position);
+
+        let reports = build_position_reports_scoped(
+            std::slice::from_ref(&position),
+            &instruments,
+            AccountId::from("POLY-001"),
+            None,
+            None,
+            UnixNanos::from(1),
+        )
+        .unwrap();
+        assert_eq!(reports[0].quantity.as_decimal(), position.size);
+
+        let mut over_precision = position;
+        over_precision.size = Decimal::from_str_exact("1.0000001").unwrap();
+        assert!(
+            build_position_reports_scoped(
+                &[over_precision],
+                &instruments,
+                AccountId::from("POLY-001"),
+                None,
+                None,
+                UnixNanos::from(1),
+            )
+            .is_err()
+        );
+    }
+
+    fn maker_trade_for_scope(owner: &str, maker_asset: &str) -> PolymarketTradeReport {
+        let mut trade: PolymarketTradeReport =
+            serde_json::from_str(include_str!("../../test_data/http_trade_report.json")).unwrap();
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+        trade.asset_id = Ustr::from("999");
+        trade.match_time = "not-a-timestamp".to_string();
+        trade.maker_orders.truncate(1);
+        trade.maker_orders[0].owner = owner.to_string();
+        trade.maker_orders[0].asset_id = Ustr::from(maker_asset);
+        trade
+    }
+
+    #[rstest]
+    fn test_role_aware_lookback_marks_owned_cross_asset_maker_time_failure() {
+        let trade = maker_trade_for_scope("owned-api-key", "123");
+        let position = DataApiPosition {
+            asset: "123".to_string(),
+            condition_id: trade.market.to_string(),
+            size: dec!(1),
+            avg_price: None,
+        };
+        let instruments = position_map(&position);
+        let instrument_id = instruments.get_cloned(&Ustr::from("123")).unwrap().id();
+        let ctx = FillContext {
+            account_id: AccountId::from("POLY-001"),
+            user_address: "0xnot-the-maker",
+            api_key: "owned-api-key",
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        let (retained, untimestamped) = trades_in_lookback_scope(
+            vec![trade],
+            UnixNanos::from(1),
+            &ctx,
+            &instruments,
+            None,
+            None,
+            Some(std::slice::from_ref(&instrument_id)),
+        )
+        .unwrap();
+
+        assert!(retained.is_empty());
+        assert_eq!(untimestamped, 1);
+    }
+
+    #[rstest]
+    fn test_role_aware_lookback_ignores_genuinely_unrelated_time_failure() {
+        let trade = maker_trade_for_scope("foreign-api-key", "999");
+        let ctx = FillContext {
+            account_id: AccountId::from("POLY-001"),
+            user_address: "0xnot-the-maker",
+            api_key: "owned-api-key",
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+        let scoped = InstrumentId::from("OTHER.POLYMARKET");
+
+        let (retained, untimestamped) = trades_in_lookback_scope(
+            vec![trade],
+            UnixNanos::from(1),
+            &ctx,
+            &AtomicMap::new(),
+            None,
+            None,
+            Some(std::slice::from_ref(&scoped)),
+        )
+        .unwrap();
+
+        assert!(retained.is_empty());
+        assert_eq!(untimestamped, 0);
     }
 }
