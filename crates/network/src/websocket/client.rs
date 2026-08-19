@@ -107,7 +107,9 @@ use crate::transport::sockudo::{
 };
 use crate::{
     RECONNECTED, SocketState, SocketStateSink,
-    backoff::{ExponentialBackoff, RECONNECT_STABILITY_THRESHOLD, wait_reconnect_delay},
+    backoff::{
+        ExponentialBackoff, RECONNECT_STABILITY_THRESHOLD, ReconnectThrottle, wait_reconnect_delay,
+    },
     dst,
     error::{SendError, is_connection_drop_io_error},
     logging::{log_task_aborted, log_task_started, log_task_stopped},
@@ -167,6 +169,7 @@ pub struct WebSocketClientInner {
     connect_timeout: Duration,
     heartbeat_timeout: Option<Duration>,
     backoff: ExponentialBackoff,
+    reconnect_throttle: ReconnectThrottle,
     reconnect_max_attempts: Option<u32>,
     reconnection_attempt_count: u32,
     auth_tracker: Arc<OnceLock<AuthTracker>>,
@@ -284,6 +287,7 @@ impl WebSocketClientInner {
             read_fence,
             write_task,
             backoff,
+            reconnect_throttle: ReconnectThrottle::default(),
             reconnect_max_attempts,
             reconnection_attempt_count: 0,
             auth_tracker,
@@ -361,7 +365,7 @@ impl WebSocketClientInner {
 
         let reconnect_headers = ReconnectHeaders::new(config.headers.clone());
 
-        // Bound the dial: a server that accepts TCP but never upgrades must not hang the caller
+        // Bound the connection attempt: a server that accepts TCP but never upgrades must not hang the caller
         let (writer, reader) = dst::time::timeout(
             connect_timeout,
             Box::pin(Self::connect_with_server(
@@ -456,6 +460,7 @@ impl WebSocketClientInner {
             connect_timeout,
             heartbeat_timeout,
             backoff,
+            reconnect_throttle: ReconnectThrottle::default(),
             reconnect_max_attempts,
             reconnection_attempt_count: 0,
             auth_tracker,
@@ -929,7 +934,7 @@ impl SockudoTarget {
         // url::Url stores IPv6 hosts in their bracketed form (e.g. `[::1]`).
         // Brackets are correct for the HTTP `Host:` header but invalid for
         // DNS/TCP and TLS SNI, so we keep two representations: a bracketed
-        // `host_header` for the upgrade, and a bare `host` for socket dialing.
+        // `host_header` for the upgrade, and a bare `host` for the socket connection.
         let is_bracketed = raw_host.starts_with('[') && raw_host.ends_with(']');
         let host = if is_bracketed {
             raw_host[1..raw_host.len() - 1].to_string()
@@ -2368,7 +2373,7 @@ impl WebSocketClient {
         install_cryptographic_provider();
 
         // Create a single connection and split it, respecting configured headers.
-        // The dial bound is a fixed default: stream mode documents reconnect_* fields as ignored
+        // The connection attempt bound is a fixed default: stream mode documents reconnect_* fields as ignored
         let connect_timeout = Duration::from_secs(10);
         let (writer, reader) = dst::time::timeout(
             connect_timeout,
@@ -3267,11 +3272,16 @@ impl WebSocketClient {
                         break;
                     }
 
-                    if reconnect_uptime.is_some() && !previous_reconnect_stable {
-                        let duration = inner.backoff.next_duration();
-                        if !duration.is_zero() {
-                            log::warn!("Backing off for {}s...", duration.as_secs_f64());
-                        }
+                    let backoff_delay = if reconnect_uptime.is_some() && !previous_reconnect_stable
+                    {
+                        inner.backoff.next_duration()
+                    } else {
+                        Duration::ZERO
+                    };
+
+                    let duration = inner.reconnect_throttle.gated_delay(backoff_delay);
+                    if !duration.is_zero() {
+                        log::warn!("Backing off for {}s...", duration.as_secs_f64());
 
                         if !wait_reconnect_delay(
                             duration,
@@ -3286,6 +3296,7 @@ impl WebSocketClient {
                     }
 
                     inner.reconnection_attempt_count += 1;
+                    inner.reconnect_throttle.record_attempt();
                     log::debug!(
                         "Reconnection attempt {} of {}",
                         inner.reconnection_attempt_count,
@@ -4580,7 +4591,7 @@ mod rust_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_reconnect_outcome_is_aborted_before_dial() {
+    async fn test_reconnect_outcome_is_aborted_before_connect() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let server = tokio::spawn(async move {
@@ -6045,7 +6056,7 @@ mod rust_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_connect_url_rejects_invalid_reconnect_backoff_before_dial() {
+    async fn test_connect_url_rejects_invalid_reconnect_backoff_before_connect() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let accepted = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -6090,7 +6101,7 @@ mod rust_tests {
         }
         assert!(
             !accepted.load(Ordering::SeqCst),
-            "invalid reconnect backoff must be rejected before dialing"
+            "invalid reconnect backoff must be rejected before connecting"
         );
         server.abort();
     }

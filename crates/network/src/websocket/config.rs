@@ -126,12 +126,13 @@ pub struct WebSocketConfig {
     pub heartbeat_payload: Option<String>,
     /// The timeout (milliseconds) for establishing a usable connection. Defaults to 10 seconds.
     ///
-    /// Bounds three things: the initial dial, each reconnect dial, and how long a send waits for
-    /// the client to become active again. A short value therefore makes sends give up early during
-    /// a reconnect as well as failing the dial faster; keep it above the reconnect backoff.
+    /// Bounds three things: the initial connection attempt, each reconnect attempt, and how long a
+    /// send waits for the client to become active again. A short value therefore makes sends give
+    /// up early during a reconnect as well as failing a connection attempt faster; keep it above
+    /// the reconnect backoff.
     ///
     /// Only applies to handler mode and must be non‑zero when set. Stream mode ignores this field
-    /// and bounds its dial at 10 seconds.
+    /// and bounds its connection attempt at 10 seconds.
     #[serde(default)]
     pub connect_timeout_ms: Option<u64>,
     /// The initial reconnection delay (milliseconds) for reconnects.

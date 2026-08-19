@@ -58,7 +58,9 @@ use tokio_tungstenite::tungstenite::{Error, client::IntoClientRequest, stream::M
 use super::{SocketConfig, TcpMessageHandler, TcpReader, TcpWriter, WriterCommand};
 use crate::{
     SocketStateSink,
-    backoff::{ExponentialBackoff, RECONNECT_STABILITY_THRESHOLD, wait_reconnect_delay},
+    backoff::{
+        ExponentialBackoff, RECONNECT_STABILITY_THRESHOLD, ReconnectThrottle, wait_reconnect_delay,
+    },
     dst,
     error::{SendError, is_connection_drop_io_error},
     logging::{log_task_aborted, log_task_started, log_task_stopped},
@@ -94,6 +96,7 @@ struct SocketClientInner {
     state_notify: Arc<tokio::sync::Notify>,
     connect_timeout: Duration,
     backoff: ExponentialBackoff,
+    reconnect_throttle: ReconnectThrottle,
     reconnect_max_attempts: Option<u32>,
     reconnect_attempt_count: u32,
     state_sink: Option<SocketStateSink>,
@@ -253,6 +256,7 @@ impl SocketClientInner {
             state_notify,
             connect_timeout,
             backoff: reconnect_backoff,
+            reconnect_throttle: ReconnectThrottle::default(),
             reconnect_max_attempts,
             reconnect_attempt_count: 0,
             state_sink,
@@ -1378,11 +1382,16 @@ impl SocketClient {
                         continue;
                     }
 
-                    if reconnect_uptime.is_some() && !previous_reconnect_stable {
-                        let duration = inner.backoff.next_duration();
-                        if !duration.is_zero() {
-                            log::warn!("Backing off for {}s...", duration.as_secs_f64());
-                        }
+                    let backoff_delay = if reconnect_uptime.is_some() && !previous_reconnect_stable
+                    {
+                        inner.backoff.next_duration()
+                    } else {
+                        Duration::ZERO
+                    };
+
+                    let duration = inner.reconnect_throttle.gated_delay(backoff_delay);
+                    if !duration.is_zero() {
+                        log::warn!("Backing off for {}s...", duration.as_secs_f64());
 
                         if !wait_reconnect_delay(
                             duration,
@@ -1397,6 +1406,7 @@ impl SocketClient {
                     }
 
                     inner.reconnect_attempt_count += 1;
+                    inner.reconnect_throttle.record_attempt();
 
                     // Race reconnect against disconnect notification
                     let reconnect_result = tokio::select! {
@@ -2039,7 +2049,7 @@ mod rust_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_reconnect_outcome_is_aborted_before_dial() {
+    async fn test_reconnect_outcome_is_aborted_before_connect() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let server = tokio::spawn(async move {
@@ -2843,7 +2853,7 @@ mod rust_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_connect_url_rejects_invalid_reconnect_backoff_before_dial() {
+    async fn test_connect_url_rejects_invalid_reconnect_backoff_before_connect() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -2876,7 +2886,7 @@ mod rust_tests {
         assert_eq!(
             listener.accept().unwrap_err().kind(),
             std::io::ErrorKind::WouldBlock,
-            "invalid reconnect backoff must be rejected before dialing"
+            "invalid reconnect backoff must be rejected before connecting"
         );
     }
 

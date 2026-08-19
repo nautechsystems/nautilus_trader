@@ -48,6 +48,7 @@ const CLOSE_DURING_RECONNECT_SEED: u64 = 0x51C0_0004;
 const CLOSE_DURING_BACKOFF_SEED: u64 = 0x51C0_0005;
 const UNSTABLE_RECONNECT_SEED: u64 = 0x51C0_0006;
 const STABLE_RECONNECT_SEED: u64 = 0x51C0_0007;
+const RECONNECT_STORM_SEED: u64 = 0x51C0_0008;
 const UNSTABLE_RECONNECT_DELAY_MS: u64 = 750;
 
 async fn wait_for<F>(mut condition: F) -> bool
@@ -107,6 +108,21 @@ async fn drop_each_connection_server(
     loop {
         let (stream, _) = listener.accept().await?;
         accepted.fetch_add(1, Ordering::SeqCst);
+        drop(stream);
+    }
+}
+
+async fn drop_each_connection_timed_server(
+    accept_times: Arc<Mutex<Vec<tokio::time::Instant>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        accept_times
+            .lock()
+            .expect("mutex poisoned")
+            .push(tokio::time::Instant::now());
         drop(stream);
     }
 }
@@ -406,6 +422,61 @@ fn test_turmoil_socket_stable_reconnect_resets_attempts(mut socket_config: Socke
     });
 
     sim.run().unwrap();
+}
+
+#[rstest]
+fn test_turmoil_socket_reconnect_storm_attempts_are_floored(mut socket_config: SocketConfig) {
+    // A venue cycling connections faster than the stability threshold must not get an
+    // immediate reconnect: once three attempts land inside the rolling window, each
+    // further attempt waits at least one second regardless of the configured backoff.
+    socket_config.reconnect_delay_initial_ms = Some(25);
+    socket_config.reconnect_delay_max_ms = Some(25);
+    socket_config.reconnect_backoff_factor = Some(1.0);
+    socket_config.reconnect_jitter_ms = Some(0);
+    socket_config.reconnect_max_attempts = None;
+
+    let accept_times = Arc::new(Mutex::new(Vec::new()));
+    let server_accept_times = Arc::clone(&accept_times);
+    let mut builder = seeded_builder_with_duration(RECONNECT_STORM_SEED, Duration::from_secs(20));
+    builder.min_message_latency(Duration::ZERO);
+    builder.max_message_latency(Duration::ZERO);
+    let mut sim = builder.build();
+
+    sim.host("server", move || {
+        drop_each_connection_timed_server(Arc::clone(&server_accept_times))
+    });
+
+    sim.client("client", async move {
+        let client = SocketClient::connect(socket_config, None)
+            .await
+            .expect("Initial socket connection should succeed");
+
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        client.close().await;
+        Ok(())
+    });
+
+    sim.run().unwrap();
+
+    let times = accept_times.lock().expect("mutex poisoned");
+    assert!(
+        times.len() >= 5,
+        "Expected the initial connection and several reconnects, was {}",
+        times.len()
+    );
+    assert!(
+        times.len() <= 25,
+        "Floored attempts should total well under the unfloored ~600, was {}",
+        times.len()
+    );
+
+    for pair in times.windows(2).skip(3) {
+        let gap = pair[1].duration_since(pair[0]);
+        assert!(
+            gap >= Duration::from_millis(900),
+            "Reconnect attempts should space at least ~1s once the window trips, was {gap:?}"
+        );
+    }
 }
 
 #[rstest]

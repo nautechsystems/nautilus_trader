@@ -22,7 +22,7 @@
 
 use std::{
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -84,6 +84,7 @@ const MISSING_PONG_SEED: u64 = 0x57EB_3013;
 const HEARTBEAT_TEXT_NO_RESPONSE_SEED: u64 = 0x57EB_3014;
 const HEARTBEAT_NON_PONG_TRAFFIC_SEED: u64 = 0x57EB_3015;
 const HEARTBEAT_PROTOCOL_NO_TIMEOUT_SEED: u64 = 0x57EB_3016;
+const RECONNECT_STORM_SEED: u64 = 0x57EB_3017;
 const TEXT_HEARTBEAT: &str = "heartbeat";
 const NON_PONG_FRAME: &str = "server-activity";
 const NON_PONG_FRAME_COUNT: usize = 6;
@@ -271,6 +272,22 @@ async fn ws_drop_each_connection_server(
         let (stream, _) = listener.accept().await?;
         let mut websocket = accept_async(stream).await?;
         accepted.fetch_add(1, Ordering::SeqCst);
+        let _ = websocket.close(None).await;
+    }
+}
+
+async fn ws_drop_each_connection_timed_server(
+    accept_times: Arc<Mutex<Vec<tokio::time::Instant>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let mut websocket = accept_async(stream).await?;
+        accept_times
+            .lock()
+            .expect("mutex poisoned")
+            .push(tokio::time::Instant::now());
         let _ = websocket.close(None).await;
     }
 }
@@ -624,6 +641,65 @@ fn test_turmoil_websocket_stable_reconnect_resets_attempts(mut websocket_config:
     });
 
     sim.run().unwrap();
+}
+
+#[rstest]
+fn test_turmoil_websocket_reconnect_storm_attempts_are_floored(
+    mut websocket_config: WebSocketConfig,
+) {
+    // A venue cycling connections faster than the stability threshold must not get an
+    // immediate reconnect: once three attempts land inside the rolling window, each
+    // further attempt waits at least one second regardless of the configured backoff.
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(25);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+    websocket_config.reconnect_max_attempts = None;
+
+    let accept_times = Arc::new(Mutex::new(Vec::new()));
+    let server_accept_times = Arc::clone(&accept_times);
+    let mut builder = seeded_builder_with_duration(RECONNECT_STORM_SEED, Duration::from_secs(20));
+    builder.min_message_latency(Duration::ZERO);
+    builder.max_message_latency(Duration::ZERO);
+    let mut sim = builder.build();
+
+    sim.host("server", move || {
+        ws_drop_each_connection_timed_server(Arc::clone(&server_accept_times))
+    });
+
+    sim.client("client", async move {
+        let (handler, _rx) = channel_message_handler();
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Initial WebSocket connection should succeed");
+
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run().unwrap();
+
+    let times = accept_times.lock().expect("mutex poisoned");
+    assert!(
+        times.len() >= 5,
+        "Expected the initial connection and several reconnects, was {}",
+        times.len()
+    );
+    assert!(
+        times.len() <= 25,
+        "Floored attempts should total well under the unfloored ~600, was {}",
+        times.len()
+    );
+
+    for pair in times.windows(2).skip(3) {
+        let gap = pair[1].duration_since(pair[0]);
+        assert!(
+            gap >= Duration::from_millis(900),
+            "Reconnect attempts should space at least ~1s once the window trips, was {gap:?}"
+        );
+    }
 }
 
 #[rstest]

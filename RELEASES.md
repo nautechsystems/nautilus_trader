@@ -13,6 +13,7 @@ Released on TBD (UTC).
 - Added TCP keepalive and Linux `TCP_USER_TIMEOUT` to all outbound connections, detecting half-open sockets in ~1 min
 - Added HTTP `CONNECT` proxy support to the Sockudo WebSocket backend
 - Added `WebSocketConfig.heartbeat_timeout_secs` so every connect entry point can set a liveness window
+- Added a one‑second floor on flapping reconnect attempts, keeping clients under venue connection‑rate limits
 - Added `WalletAccount` for native and token balances with local reservations
 - Added `PositionOpened` realized PnL
 - Added `AccountState` venue metadata

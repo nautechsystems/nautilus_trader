@@ -194,6 +194,19 @@ and discarding the remaining buffer if authentication fails. `SubscriptionState`
 confirmed, pending subscribe, and pending unsubscribe intent for adapter‑driven resubscription; it
 never sends protocol messages itself.
 
+### Reconnect throttling
+
+Once three reconnect attempts occur inside a rolling two‑minute window, each further attempt waits
+at least one second, regardless of the configured backoff. The window is purely time‑based: a
+replacement connection that survives the stability threshold still resets the backoff and attempt
+count, but has no effect on the floor. Throttling lifts by itself once fewer than three attempts
+remain inside the window.
+
+Venues rate‑limit new connections per IP (Binance permits 300 connections per five minutes, OKX
+three per second), so an unthrottled reconnect loop can otherwise escalate a transient drop into an
+IP‑level throttle or ban affecting every client behind that address. The first attempts in any
+window are never delayed, so a single drop still recovers immediately.
+
 ### State reporting and explicit reconnect
 
 Constructors that accept a `SocketStateSink` publish ordered `Connected` and `Disconnected`
@@ -312,8 +325,9 @@ certificate and private key, supply a client identity for mutual TLS.
 Initial connection establishment makes up to five attempts by default, with a 10‑second bound per
 attempt and exponential backoff. Once connected, transport loss uses the configurable reconnect
 timeout, exponential backoff, bounded jitter, and unlimited attempts by default. As with the
-WebSocket client, 10 seconds of stable uptime resets the reconnect cycle. An optional state sink
-reports semantic connection loss and recovery.
+WebSocket client, 10 seconds of stable uptime resets the reconnect cycle, and the same reconnect
+throttling bounds its attempt rate once reconnects flap. An optional state sink reports semantic
+connection loss and recovery.
 
 ### State reporting and explicit reconnect
 
