@@ -48,8 +48,6 @@ UV_SYNC_FLAGS ?= --inexact
 UV_PROJECT_ENVIRONMENT ?= $(CURDIR)/.venv
 export UV_PROJECT_ENVIRONMENT
 
-PIP_AUDIT_IGNORE_FLAGS :=
-
 # TARGET_DIR controls where Cargo places build artifacts
 TARGET_DIR ?= $(CURDIR)/target
 
@@ -566,12 +564,13 @@ install-tools: check-binstall-installed update-uv  #-- Install required developm
 
 #== Security
 
-# Run an audit step: capture stdout+stderr, only display on failure.
-# Args: $(1) display name, $(2) command to run.
+# Run an audit step: capture stdout+stderr, display on failure, or when $(3) is report.
+# Args: $(1) display name, $(2) command to run, $(3) optional output mode.
 define audit_step
 	printf "$(CYAN)Running $(1)...$(RESET) "; \
 	if _out=$$($(2) 2>&1); then \
 		printf "$(GREEN)ok$(RESET)\n"; \
+		if [ "$(3)" = "report" ] && [ -n "$$_out" ]; then printf "%s\n" "$$_out"; fi; \
 	else \
 		rc=$$?; printf "$(RED)failed$(RESET)\n%s\n" "$$_out"; exit $$rc; \
 	fi
@@ -586,8 +585,8 @@ security-audit: check-audit-installed check-deny-installed check-vet-installed c
 	@$(call audit_step,cargo deny lighter fuzz,cargo deny --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml --config .cargo/deny-fuzz.toml --locked --all-features check advisories licenses sources bans)
 	@$(call audit_step,cargo vet,cargo vet --locked)
 	@$(call audit_step,cargo vet lighter fuzz,cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml --store-path .supply-chain)
-	@$(call audit_step,pip-audit,uv export --project python --frozen | sed '/^-e /d' | uv run --no-project --with pip-audit -- pip-audit --disable-pip --require-hashes -r /dev/stdin $(PIP_AUDIT_IGNORE_FLAGS))
-	@$(call audit_step,osv-scanner,osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=crates/adapters/lighter/fuzz/pornin/Cargo.lock --lockfile=python/uv.lock)
+	@$(call audit_step,pip-audit,uv export --project python --all-groups --all-extras --frozen | sed '/^-e /d' | uv run --no-project --with pip-audit -- pip-audit --disable-pip --require-hashes -r /dev/stdin)
+	@$(call audit_step,osv-scanner,osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=crates/adapters/lighter/fuzz/pornin/Cargo.lock --lockfile=python/uv.lock,report)
 
 .PHONY: cargo-deny
 cargo-deny: check-deny-installed  #-- Run cargo-deny checks (advisories, sources, bans, licenses)

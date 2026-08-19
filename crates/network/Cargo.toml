@@ -54,7 +54,6 @@ log = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }
-rustls-pemfile = { workspace = true }
 serde = { workspace = true }
 serde_urlencoded = { workspace = true }
 socket2 = { workspace = true }

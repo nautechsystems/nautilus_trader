@@ -134,7 +134,7 @@ jobs:
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/nautilus_trader,push-by-digest=true, name-canonical=true,push=true
 
       - name: Export digest
-        run: |
+        run: | # zizmor: ignore[template-injection] Digest comes from the pinned build action
           mkdir -p "$RUNNER_TEMP/digests/nautilus_trader"
           digest="${{ steps.build.outputs.digest }}"
           touch "$RUNNER_TEMP/digests/nautilus_trader/${digest#sha256:}"
@@ -229,7 +229,7 @@ jobs:
           echo "digest_hex=${DIGEST#sha256:}" >> "$GITHUB_OUTPUT"
 
       - name: Inspect image
-        run: |
+        run: | # zizmor: ignore[template-injection] Digest comes from the preceding trusted step
           docker buildx imagetools inspect \
             "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
 
@@ -240,7 +240,7 @@ jobs:
           cosign-release: v3.0.6
 
       - name: Sign image with cosign
-        run: >-
+        run: >- # zizmor: ignore[template-injection] Digest comes from the preceding trusted step
           bash ./scripts/ci/cosign-sign-retry.bash
           "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
 
@@ -362,7 +362,7 @@ jobs:
 
       - name: Determine image tag
         id: image-tag
-        run: |
+        run: | # zizmor: ignore[template-injection] Branch comes from GITHUB_REF on trusted pushes
           if [ "${{ steps.branch-name.outputs.current_branch }}" = "master" ]; then
             echo "tag=latest" >> "$GITHUB_OUTPUT"
           else
@@ -398,7 +398,7 @@ jobs:
             BASE_IMAGE_DIGEST=${{ needs.merge-nautilus-trader.outputs.digest_hex }}
 
       - name: Export digest
-        run: |
+        run: | # zizmor: ignore[template-injection] Digest comes from the pinned build action
           mkdir -p "$RUNNER_TEMP/digests/jupyterlab"
           digest="${{ steps.build.outputs.digest }}"
           touch "$RUNNER_TEMP/digests/jupyterlab/${digest#sha256:}"
@@ -488,7 +488,7 @@ jobs:
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Inspect image
-        run: |
+        run: | # zizmor: ignore[template-injection] Digest comes from the preceding trusted step
           docker buildx imagetools inspect \
             "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
 
@@ -499,7 +499,7 @@ jobs:
           cosign-release: v3.0.6
 
       - name: Sign image with cosign
-        run: >-
+        run: >- # zizmor: ignore[template-injection] Digest comes from the preceding trusted step
           bash ./scripts/ci/cosign-sign-retry.bash
           "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
 

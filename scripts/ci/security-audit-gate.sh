@@ -29,7 +29,7 @@ set -euo pipefail
 #   - Manifests                 Cargo.toml, crates/(...)?Cargo.toml,
 #                               python/pyproject.toml
 #   - Audit policy              deny.toml, .cargo/deny-fuzz.toml, osv-scanner.toml,
-#                               .cargo/audit.toml, .supply-chain/*, .zizmor.yml
+#                               .cargo/audit.toml, .supply-chain/*
 #   - Toolchain config          .cargo/config.toml, rust-toolchain.toml,
 #                               tools.toml
 #   - Audit helpers             scripts/{cargo-tool-version,rust-toolchain,
@@ -91,7 +91,7 @@ pattern+='|crates/(.*/)?Cargo\.toml'
 pattern+='|crates/.*/fuzz/Cargo\.lock'
 pattern+='|\.pre-commit-config\.yaml'
 pattern+='|python/(uv\.lock|pyproject\.toml)'
-pattern+='|deny\.toml|\.cargo/deny-fuzz\.toml|osv-scanner\.toml|\.supply-chain/.*|\.zizmor\.yml'
+pattern+='|deny\.toml|\.cargo/deny-fuzz\.toml|osv-scanner\.toml|\.supply-chain/.*'
 pattern+='|tools\.toml|\.cargo/(config|audit)\.toml|rust-toolchain\.toml'
 pattern+='|scripts/(cargo-tool-version|rust-toolchain|uv-version)\.sh'
 pattern+='|scripts/purge-orphan-dev-wheels\.sh'

@@ -6,7 +6,7 @@ runs:
   steps:
     - name: Validate wheel artifacts
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] All paths are fixed under RUNNER_TEMP
         manifest="${RUNNER_TEMP}/publish-wheels-manifest.tsv"
         delete_manifest="${RUNNER_TEMP}/publish-wheels-delete.txt"
         index_file="${RUNNER_TEMP}/publish-wheels-index.html"

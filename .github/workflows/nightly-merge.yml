@@ -102,7 +102,7 @@ jobs:
 
       - name: Merge last successful develop commit into nightly
         id: merge
-        run: |
+        run: | # zizmor: ignore[template-injection] SHA comes from the checked GitHub API response
           set -eo pipefail
           develop_sha="${{ needs.check-develop-status.outputs.develop_sha }}"
           echo "Merging develop commit $develop_sha into nightly"
@@ -127,7 +127,7 @@ jobs:
           fi
 
       - name: Check merge result
-        run: |-
+        run: |- # zizmor: ignore[template-injection] SHA comes from the checked GitHub API response
           develop_sha="${{ needs.check-develop-status.outputs.develop_sha }}"
           nightly_sha=$(git rev-parse HEAD)
           if [[ "$nightly_sha" == "$develop_sha" ]]; then

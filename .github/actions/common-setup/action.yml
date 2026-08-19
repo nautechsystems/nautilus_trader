@@ -156,7 +156,7 @@ runs:
     - name: Get Rust toolchain version
       id: rust-toolchain
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] Version comes from repository toolchain metadata
         TOOLCHAIN="$(bash scripts/rust-toolchain.sh)"
         echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
 
@@ -182,7 +182,7 @@ runs:
     - name: Get cargo-nextest version
       if: inputs.build-type != 'pre-commit'
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] Version comes from repository tool metadata
         version="$(bash scripts/cargo-tool-version.sh cargo-nextest)"
         if [ -z "$version" ]; then
           echo "::error::Failed to extract cargo-nextest version"
@@ -217,14 +217,14 @@ runs:
 
     - name: Ensure ~/.local/bin on PATH
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] The user binary path is runner-defined
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
     - name: Get cache scope
       shell: bash
       env:
         CACHE_SCOPE: ${{ runner.os }}-${{ runner.arch }}-py${{ inputs.python-version }}
-      run: |
+      run: | # zizmor: ignore[github-env] All callers use fixed matrix Python versions
         echo "CACHE_SCOPE=$CACHE_SCOPE" >> "$GITHUB_ENV"
 
     - name: Get pre-commit config hash
@@ -251,7 +251,7 @@ runs:
     # > UV
     - name: Get uv version from pyproject.toml
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] Version comes from repository project metadata
         echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> $GITHUB_ENV
 
     - name: Install uv
@@ -269,7 +269,7 @@ runs:
 
     - name: Set uv cache-dir
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] uv reports its own local cache path
         echo "UV_CACHE_DIR=$(uv cache dir)" >> $GITHUB_ENV
 
     # Self-hosted and macOS runners skip setup-uv's cache post-step under auto.

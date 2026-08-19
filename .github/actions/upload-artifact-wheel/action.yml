@@ -17,7 +17,7 @@ runs:
         (github.ref_name == 'develop' || github.ref_name == 'nightly' ||
         github.ref_name == 'master' || github.ref_name == 'test-ci')
       id: vars
-      run: |
+      run: | # zizmor: ignore[github-env] Wheels are built only on trusted push branches
         if [ ! -d "./dist" ]; then
           echo "Error: dist directory not found"
           exit 1

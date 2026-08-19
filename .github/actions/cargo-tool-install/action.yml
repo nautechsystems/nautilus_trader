@@ -19,7 +19,7 @@ runs:
       shell: bash
       env:
         TOOL_NAME: ${{ inputs.tool-name }}
-      run: |
+      run: | # zizmor: ignore[github-env] All callers use fixed repository tool metadata
         VERSION=$(bash scripts/cargo-tool-version.sh "$TOOL_NAME")
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"
         echo "TOOL_VERSION=$VERSION" >> "$GITHUB_ENV"
@@ -27,7 +27,7 @@ runs:
 
     - name: Get Rust toolchain version
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] Version comes from repository toolchain metadata
         TOOLCHAIN="$(bash scripts/rust-toolchain.sh)"
         echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
 
@@ -49,7 +49,8 @@ runs:
       shell: bash
       env:
         TOOL_CACHE: ${{ runner.tool_cache }}
-      run: echo "$TOOL_CACHE/$TOOL_NAME/bin" >> "$GITHUB_PATH"
+      run: | # zizmor: ignore[github-env] Tool name comes from fixed repository callers
+        echo "$TOOL_CACHE/$TOOL_NAME/bin" >> "$GITHUB_PATH"
 
     - name: Install tool
       shell: bash

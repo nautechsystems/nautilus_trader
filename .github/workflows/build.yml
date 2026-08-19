@@ -1182,6 +1182,7 @@ jobs:
 
       - name: Create draft GitHub release
         id: create-release
+        # zizmor: ignore[superfluous-actions] Retains idempotent draft updates and retries
         # https://github.com/softprops/action-gh-release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         env:

@@ -16,12 +16,15 @@
 //! Wraps raw socket streams with TLS encryption and builds `rustls` client configurations from
 //! certificate directories.
 
-use std::{convert::TryFrom, fs::File, io::BufReader, path::Path, sync::Arc};
+use std::{convert::TryFrom, fs::File, path::Path, sync::Arc};
 
 use nautilus_cryptography::{providers::install_cryptographic_provider, tls::create_tls_config};
 use rustls::{
     ClientConfig,
-    pki_types::{CertificateDer, PrivateKeyDer, ServerName},
+    pki_types::{
+        CertificateDer, PrivateKeyDer, PrivatePkcs1KeyDer, PrivatePkcs8KeyDer, PrivateSec1KeyDer,
+        ServerName, pem::PemObject,
+    },
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::TlsConnector;
@@ -185,21 +188,17 @@ pub(crate) fn create_tls_config_from_certs_dir(
 
 fn load_private_key(path: &Path) -> anyhow::Result<PrivateKeyDer<'static>> {
     let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-
-    if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut reader).find_map(Result::ok) {
+    if let Some(key) = PrivatePkcs8KeyDer::pem_reader_iter(file).find_map(Result::ok) {
         return Ok(key.into());
     }
 
     let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    if let Some(key) = rustls_pemfile::rsa_private_keys(&mut reader).find_map(Result::ok) {
+    if let Some(key) = PrivatePkcs1KeyDer::pem_reader_iter(file).find_map(Result::ok) {
         return Ok(key.into());
     }
 
     let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    if let Some(key) = rustls_pemfile::ec_private_keys(&mut reader).find_map(Result::ok) {
+    if let Some(key) = PrivateSec1KeyDer::pem_reader_iter(file).find_map(Result::ok) {
         return Ok(key.into());
     }
 
@@ -208,8 +207,7 @@ fn load_private_key(path: &Path) -> anyhow::Result<PrivateKeyDer<'static>> {
 
 fn load_certs(path: &Path) -> anyhow::Result<Vec<CertificateDer<'static>>> {
     let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    let certs = rustls_pemfile::certs(&mut reader)
+    let certs = CertificateDer::pem_reader_iter(file)
         .filter_map(std::result::Result::ok)
         .collect();
     Ok(certs)
@@ -222,7 +220,7 @@ mod tests {
     use rstest::rstest;
     use rustls::{
         ClientConnection, Connection, ServerConnection,
-        pki_types::{PrivatePkcs8KeyDer, ServerName},
+        pki_types::{PrivatePkcs1KeyDer, PrivatePkcs8KeyDer, PrivateSec1KeyDer, ServerName},
         server::WebPkiClientVerifier,
     };
 
@@ -405,6 +403,116 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
             "Should succeed ignoring invalid cert file: {:?}",
             result.err()
         );
+    }
+
+    #[rstest]
+    fn test_load_private_key_reads_supported_formats() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("key.pem");
+        let expected_der = vec![1, 2, 3, 4];
+        let cases = [
+            (
+                "PRIVATE KEY",
+                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(expected_der.clone())),
+            ),
+            (
+                "RSA PRIVATE KEY",
+                PrivateKeyDer::Pkcs1(PrivatePkcs1KeyDer::from(expected_der.clone())),
+            ),
+            (
+                "EC PRIVATE KEY",
+                PrivateKeyDer::Sec1(PrivateSec1KeyDer::from(expected_der)),
+            ),
+        ];
+
+        for (label, expected) in cases {
+            std::fs::write(&path, pem_block(label, "AQIDBA==")).unwrap();
+
+            let key = load_private_key(&path).unwrap();
+
+            assert_eq!(key, expected);
+        }
+    }
+
+    #[rstest]
+    fn test_load_private_key_preserves_format_priority() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("keys.pem");
+        let pem = [
+            pem_block("RSA PRIVATE KEY", "AQ=="),
+            pem_block("EC PRIVATE KEY", "Ag=="),
+            pem_block("PRIVATE KEY", "Aw=="),
+        ]
+        .concat();
+        std::fs::write(&path, pem).unwrap();
+
+        let key = load_private_key(&path).unwrap();
+
+        assert_eq!(key, PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(vec![3])));
+    }
+
+    #[rstest]
+    fn test_load_private_key_skips_malformed_blocks() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("key.pem");
+        let pem = [
+            pem_block("PRIVATE KEY", "invalid!"),
+            pem_block("PRIVATE KEY", "BQYH"),
+        ]
+        .concat();
+        std::fs::write(&path, pem).unwrap();
+
+        let key = load_private_key(&path).unwrap();
+
+        assert_eq!(
+            key,
+            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(vec![5, 6, 7]))
+        );
+    }
+
+    #[rstest]
+    fn test_load_private_key_rejects_file_without_key() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("cert.pem");
+        std::fs::write(&path, pem_block("CERTIFICATE", "AQ==")).unwrap();
+
+        let error = load_private_key(&path).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("No valid private key found in {}", path.display())
+        );
+    }
+
+    #[rstest]
+    fn test_load_certs_reads_all_valid_certificate_blocks() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("mixed.pem");
+        let pem = [
+            pem_block("PRIVATE KEY", "AQ=="),
+            pem_block("CERTIFICATE", "invalid!"),
+            pem_block("CERTIFICATE", "AgM="),
+            pem_block("CERTIFICATE", "BAU="),
+        ]
+        .concat();
+        std::fs::write(&path, pem).unwrap();
+
+        let certs = load_certs(&path).unwrap();
+
+        assert_eq!(
+            certs,
+            vec![
+                CertificateDer::from(vec![2, 3]),
+                CertificateDer::from(vec![4, 5]),
+            ]
+        );
+    }
+
+    fn pem_block(label: &str, payload: &str) -> String {
+        format!(
+            "-----{} {label}-----\n{payload}\n-----{} {label}-----\n",
+            "BEGIN", "END"
+        )
     }
 
     fn assert_mutual_tls_handshake(

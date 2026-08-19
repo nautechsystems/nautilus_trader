@@ -45,7 +45,7 @@ jobs:
       - name: Get Rust toolchain version
         if: matrix.language == 'rust'
         id: rust-toolchain
-        run: |
+        run: | # zizmor: ignore[github-env] Version comes from repository toolchain metadata
           TOOLCHAIN="$(bash scripts/rust-toolchain.sh)"
           echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
 

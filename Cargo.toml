@@ -255,7 +255,6 @@ rustls = { version = "0.23.43", default-features = false, features = [
   "std",
   "tls12",
 ] }
-rustls-pemfile = "2.2.0"
 serde = { version = "1.0.229", default-features = false, features = [
   "derive",
   "std",

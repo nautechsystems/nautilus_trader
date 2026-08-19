@@ -102,8 +102,8 @@ repos:
       - id: zizmor
         name: zizmor (security)
         description: Scans GitHub Actions workflows for security misconfigurations
-        args: ["--no-online-audits", "--min-severity", "medium", "--config", ".zizmor.yml", ".github/"]
-        files: ^(\.github/.*\.ya?ml|\.pre-commit-config\.yaml|\.zizmor\.yml)$
+        args: ["--no-online-audits", "--strict-collection", "--min-severity", "informational", ".github/"]
+        files: ^(\.github/.*\.ya?ml|\.pre-commit-config\.yaml)$
         pass_filenames: false
 
   ##############################################################################

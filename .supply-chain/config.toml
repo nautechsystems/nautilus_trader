@@ -2209,10 +2209,6 @@ criteria = "safe-to-deploy"
 version = "0.8.3"
 criteria = "safe-to-deploy"
 
-[[exemptions.rustls-pemfile]]
-version = "2.2.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.rustls-pki-types]]
 version = "1.15.0"
 criteria = "safe-to-deploy"

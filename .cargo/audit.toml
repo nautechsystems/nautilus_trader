@@ -18,8 +18,6 @@ ignore = [
   "RUSTSEC-2024-0436",
   # derivative unmaintained, transitive via alloy-primitives -> ruint -> ark-ff
   "RUSTSEC-2024-0388",
-  # rustls-pemfile unmaintained, transitive via nautilus-network
-  "RUSTSEC-2025-0134",
   # unic-* unmaintained, transitive via pyo3-stub-gen -> rustpython-parser (dev tool only)
   "RUSTSEC-2025-0075",
   "RUSTSEC-2025-0080",
@@ -31,9 +29,7 @@ ignore = [
   "RUSTSEC-2025-0141",
   # capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix
   "RUSTSEC-2025-0143",
-  # proc-macro-error2 unmaintained, transitive via alloy and tabled_derive
-  "RUSTSEC-2026-0173",
-  # quick-xml DoS, transitive via object_store 0.13.2; no object_store release with quick-xml >= 0.41.0
+  # quick-xml DoS, transitive via the DataFusion-aligned object_store 0.13 release
   "RUSTSEC-2026-0194",
   "RUSTSEC-2026-0195",
   # rkyv validation bug in an inactive rust_decimal optional dependency retained in Cargo.lock
