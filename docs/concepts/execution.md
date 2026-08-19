@@ -37,8 +37,9 @@ Commands follow different routes:
   `exec_algorithm_id` is set, and to the `RiskEngine` otherwise.
 - `submit_order_list(...)` follows the same branching behavior based on emulation and
   `exec_algorithm_id`.
-- `modify_order(...)` routes to the `OrderEmulator` for emulated orders and to the `RiskEngine`
-  otherwise.
+- `modify_order(...)` routes to the `OrderEmulator` for emulated orders, to an `ExecutionAlgorithm`
+  when the order has an `exec_algorithm_id` and is still active within the local system, and to the
+  `RiskEngine` otherwise.
 - Cancel and query commands can route directly to the `OrderEmulator`, `ExecutionAlgorithm`, or
   `ExecutionEngine`, depending on the command and order state.
 
