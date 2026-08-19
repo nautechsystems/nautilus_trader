@@ -15,7 +15,7 @@
   "side": "BUY",
   "size": "25.0",
   "status": "CONFIRMED",
-  "taker_order_id": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
+  "taker_order_id": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
   "timestamp": "1703875200000",
   "trade_owner": "00000000-0000-0000-0000-000000000001",
   "transaction_hash": "",

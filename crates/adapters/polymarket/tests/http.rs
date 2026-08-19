@@ -231,6 +231,7 @@ fn gamma_market_with_slug(slug: &str, condition_id: &str, token_ids: [&str; 2]) 
         "orderMinSize": 5.0,
         "makerBaseFee": 0,
         "takerBaseFee": 30,
+        "feesEnabled": false,
         "slug": slug,
         "negRisk": false
     })
@@ -889,7 +890,7 @@ async fn test_cancel_order_sends_order_id_in_body() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let client = create_clob_client(&addr);
-    let order_id = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let order_id = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
 
     client.cancel_order(order_id).await.unwrap();
 

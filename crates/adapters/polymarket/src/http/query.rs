@@ -1026,7 +1026,7 @@ mod tests {
         assert!(resp.success);
         assert_eq!(
             resp.order_id.as_deref(),
-            Some("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12")
+            Some("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
         );
         assert_eq!(resp.status, Some(OrderResponseStatus::Matched));
         assert_eq!(resp.making_amount, Some(dec!(100_000_000)));
@@ -1057,7 +1057,7 @@ mod tests {
         assert!(resp.success);
         assert_eq!(
             resp.order_id.as_deref(),
-            Some("0xfedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fe")
+            Some("0xfedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210")
         );
         assert_eq!(resp.status, Some(OrderResponseStatus::Matched));
         assert_eq!(resp.making_amount, Some(dec!(25_000_000)));

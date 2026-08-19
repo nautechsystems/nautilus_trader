@@ -540,7 +540,7 @@ mod tests {
 
         assert_eq!(
             order.id,
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12"
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         );
         assert_eq!(order.status, PolymarketOrderStatus::Live);
         assert_eq!(order.side, PolymarketOrderSide::Buy);
@@ -582,7 +582,7 @@ mod tests {
         assert_eq!(trade.id, "trade-0xabcdef1234");
         assert_eq!(
             trade.taker_order_id,
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12"
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         );
         assert_eq!(trade.side, PolymarketOrderSide::Buy);
         assert_eq!(trade.size, dec!(25.0000));

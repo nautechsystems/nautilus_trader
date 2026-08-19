@@ -1,6 +1,6 @@
 {
   "associate_trades": ["0xabc001"],
-  "id": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
+  "id": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
   "status": "LIVE",
   "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
   "original_size": "100.0000",

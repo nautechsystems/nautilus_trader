@@ -140,6 +140,16 @@ impl OrderFillTrackerMap {
             .map(|s| s.cumulative_filled)
     }
 
+    /// Returns the registered submitted quantity for an order, if tracked.
+    pub(crate) fn submitted_qty(&self, venue_order_id: &VenueOrderId) -> Option<Quantity> {
+        self.inner
+            .lock()
+            .expect(MUTEX_POISONED)
+            .orders
+            .get(venue_order_id)
+            .map(|s| s.submitted_qty)
+    }
+
     /// Returns `true` if cumulative fills have reached the submitted quantity.
     pub(crate) fn is_fully_filled(&self, venue_order_id: &VenueOrderId) -> bool {
         self.inner
@@ -543,16 +553,6 @@ impl OrderFillTrackerMap {
             .expect(MUTEX_POISONED)
             .orders
             .insert(venue_order_id, new_order_state(submitted_qty, order_side));
-    }
-
-    /// Returns the registered submitted quantity for an order, if tracked.
-    pub(crate) fn submitted_qty(&self, venue_order_id: &VenueOrderId) -> Option<Quantity> {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .orders
-            .get(venue_order_id)
-            .map(|s| s.submitted_qty)
     }
 
     /// Records a fill against a registered order, for tests that drive fill accumulation directly.

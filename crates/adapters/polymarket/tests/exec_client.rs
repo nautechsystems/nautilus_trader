@@ -104,7 +104,7 @@ const TEST_CHUNK_DOWNGRADE_PRIVATE_KEY: &str =
 const TEST_SIGNER_ADDRESS: &str = "0x1be31a94361a391bbafb2a4ccd704f57dc04d4bb";
 const TEST_API_SECRET_B64: &str = "dGVzdF9zZWNyZXRfa2V5XzMyYnl0ZXNfcGFkMTIzNDU=";
 const DEFAULT_ACCEPTED_ORDER_ID: &str =
-    "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
 const CANCEL_ALREADY_DONE_ORDER_ID: &str =
     "0xb816482a1234567890abcdef1234567890abcdef1234567890abcdef12345678";
 const TEST_CONDITION_ID: &str =
@@ -1555,7 +1555,7 @@ async fn test_generate_order_status_reports_errors_on_in_scope_unmapped_order() 
 #[rstest]
 #[tokio::test]
 async fn test_generate_order_status_reports_recovers_confirmed_rest_fill() {
-    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
     let state = TestServerState::default();
     let mut order = load_json("http_open_orders_page.json")["data"][0].clone();
     order["id"] = Value::String(venue_order_id_str.to_string());
@@ -2055,7 +2055,7 @@ async fn test_generate_fill_reports_empty_without_instruments() {
 #[tokio::test]
 async fn test_commission_failure_errors_direct_mass_and_targeted_rest_requests() {
     let venue_order_id =
-        VenueOrderId::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12");
+        VenueOrderId::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
     let state = TestServerState::default();
     *state.single_order_response.lock().await = Some(Value::Null);
     *state.orders_response_override.lock().await = Some(json!({
@@ -2394,7 +2394,7 @@ async fn test_generate_order_status_report_rejects_wrong_returned_id_instrument_
 #[rstest]
 #[tokio::test]
 async fn test_generate_order_status_report_defers_while_trade_is_unconfirmed() {
-    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
     let state = TestServerState::default();
     *state.single_order_response.lock().await = Some(Value::Null);
     let mut trades = recovery_trades_response(venue_order_id_str, "10.0000", "0.5000");
@@ -2609,7 +2609,7 @@ async fn test_pending_trade_valid_then_conflicting_target_errors_in_both_orders(
 #[rstest]
 #[tokio::test]
 async fn test_generate_active_order_report_recovers_confirmed_rest_fill() {
-    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
     let state = TestServerState::default();
     let mut order = load_json("http_open_order.json");
     order["id"] = Value::String(venue_order_id_str.to_string());
@@ -2721,7 +2721,7 @@ async fn test_generate_order_status_report_recovers_filled_from_trades() {
     client.on_instrument(instrument);
 
     let venue_order_id =
-        VenueOrderId::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12");
+        VenueOrderId::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
     let client_order_id = ClientOrderId::from("O-RECOVERY-FILLED");
     let mut order = OrderAny::Limit(LimitOrder::new(
         TraderId::from("TESTER-001"),
@@ -2784,7 +2784,7 @@ async fn test_generate_order_status_report_recovers_filled_from_trades() {
 #[rstest]
 #[tokio::test]
 async fn test_generate_order_status_report_rejects_recovered_overfill() {
-    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
     let state = TestServerState::default();
     *state.single_order_response.lock().await = Some(Value::Null);
     *state.trades_response_override.lock().await = Some(recovery_trades_response(
@@ -3010,7 +3010,7 @@ fn maker_lookback_trade(owner: &str, maker_asset: &str) -> Value {
 async fn test_generate_order_status_report_recovers_filled_with_dust_snap() {
     // CLOB cent-tick truncation leaves the confirmed trade within DUST_SNAP_THRESHOLD below the
     // cached quantity. Recovery must preserve the economic fill and normalize only order quantity.
-    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
     let state = TestServerState::default();
     *state.single_order_response.lock().await = Some(Value::Null);
     *state.trades_response_override.lock().await = Some(recovery_trades_response(
@@ -3088,7 +3088,7 @@ async fn test_generate_order_status_report_recovers_filled_with_dust_snap() {
 async fn test_generate_order_status_report_recovers_canceled_with_partial_fill() {
     // Recovered fills fall short of cached quantity by more than dust:
     // surface Canceled with the partial filled_qty preserved.
-    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
     let state = TestServerState::default();
     *state.single_order_response.lock().await = Some(Value::Null);
     *state.trades_response_override.lock().await = Some(recovery_trades_response(
@@ -3169,7 +3169,7 @@ async fn test_generate_order_status_report_resolves_via_venue_order_id_index() {
     // Command supplies only `venue_order_id`; recovery must look up the
     // cached order through the cache's venue->client index instead of
     // synthesizing an external order or returning None.
-    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
     let state = TestServerState::default();
     *state.single_order_response.lock().await = Some(Value::Null);
     *state.trades_response_override.lock().await = Some(recovery_trades_response(
@@ -9303,7 +9303,7 @@ async fn test_query_order_does_not_block_within_runtime() {
         instrument_id,
         ClientOrderId::from("O-QUERY-001"),
         Some(VenueOrderId::from(
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         )),
         UUID4::new(),
         UnixNanos::default(),
@@ -9506,7 +9506,7 @@ async fn test_query_order_excludes_unconfirmed_matched_quantity() {
     let state = TestServerState::default();
     *state.single_order_response.lock().await = Some(json!({
         "associate_trades": ["pending-trade"],
-        "id": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
+        "id": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         "status": "MATCHED",
         "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
         "original_size": "10.0000",
@@ -9534,7 +9534,7 @@ async fn test_query_order_excludes_unconfirmed_matched_quantity() {
         instrument_id,
         ClientOrderId::from("O-QUERY-PENDING"),
         Some(VenueOrderId::from(
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         )),
         UUID4::new(),
         UnixNanos::default(),

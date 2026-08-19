@@ -920,7 +920,7 @@ mod tests {
         );
         assert_eq!(
             trade.taker_order_id,
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12"
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         );
     }
 

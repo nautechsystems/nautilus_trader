@@ -211,7 +211,7 @@ fn bench_submit_limit_neg_risk(c: &mut Criterion) {
 }
 
 fn bench_cancel(c: &mut Criterion) {
-    let order_id = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let order_id = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
     let credential = bench_credential();
 
     let mut group = c.benchmark_group("exec_pipeline");

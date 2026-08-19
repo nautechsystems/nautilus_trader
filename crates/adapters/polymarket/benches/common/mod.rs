@@ -213,7 +213,7 @@ pub(crate) mod fixtures {
     /// HTTP REST `GET /orders` row used by `parse_order_status_report`.
     pub(crate) const HTTP_OPEN_ORDER: &str = r#"{
         "associate_trades": ["0xabc001"],
-        "id": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
+        "id": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         "status": "LIVE",
         "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
         "original_size": "100.0000",
@@ -232,7 +232,7 @@ pub(crate) mod fixtures {
     /// HTTP REST `GET /trades` row used by `parse_fill_report`.
     pub(crate) const HTTP_TRADE_REPORT: &str = r#"{
         "id": "trade-0xabcdef1234",
-        "taker_order_id": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
+        "taker_order_id": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
         "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
         "side": "BUY",
@@ -253,7 +253,7 @@ pub(crate) mod fixtures {
                 "fee_rate_bps": "0",
                 "maker_address": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
                 "matched_amount": "25.0000",
-                "order_id": "0xmaker01maker01maker01maker01maker01maker01maker01maker01maker01maker01",
+                "order_id": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "outcome": "Yes",
                 "owner": "00000000-0000-0000-0000-000000000002",
                 "price": "0.5000",

@@ -516,7 +516,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_timestamp_ms() {
+    fn test_ws_market_data_timestamp_parser_is_unchanged() {
         let ns = parse_timestamp_ms("1703875200000").unwrap();
         assert_eq!(ns, UnixNanos::from(1_703_875_200_000_000_000u64));
     }
