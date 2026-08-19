@@ -961,7 +961,8 @@ mod tests {
         algo.handle_modify_order(command).unwrap();
 
         let primary_quantity = algo.cache().order(&primary_id).unwrap().quantity();
-        let scheduled_quantity = algo.scheduled_sizes[&primary_id]
+        let scheduled_quantity = algo.scheduled_orders[&primary_id]
+            .remaining_sizes
             .iter()
             .fold(Decimal::ZERO, |total, quantity| {
                 total + quantity.as_decimal()
