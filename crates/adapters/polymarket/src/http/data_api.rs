@@ -114,10 +114,11 @@ fn validate_trade_page_scope(
     rows: Vec<DataApiTrade>,
     expected_condition_id: &str,
 ) -> anyhow::Result<Vec<DataApiTrade>> {
-    match rows
-        .iter()
-        .find(|trade| trade.condition_id != expected_condition_id)
-    {
+    match rows.iter().find(|trade| {
+        !trade
+            .condition_id
+            .eq_ignore_ascii_case(expected_condition_id)
+    }) {
         Some(trade) => anyhow::bail!(
             "Polymarket Data API returned trade for condition {} while requesting {expected_condition_id}",
             trade.condition_id
@@ -318,7 +319,7 @@ impl PolymarketDataApiHttpClient {
             .await?;
 
         match completed.completion {
-            Completion::WireComplete => Ok(completed.output),
+            Completion::WireExhausted => Ok(completed.output),
             Completion::Stopped(never) => match never {},
         }
     }
@@ -466,7 +467,7 @@ impl PolymarketDataApiHttpClient {
             .await?;
 
         match completed.completion {
-            Completion::WireComplete | Completion::Stopped(TradeTickStop::CallerCapped) => {
+            Completion::WireExhausted | Completion::Stopped(TradeTickStop::CallerCapped) => {
                 Ok(completed.output)
             }
             Completion::Stopped(TradeTickStop::VenueOffsetCeiling(OffsetCeilingSource::Local)) => {

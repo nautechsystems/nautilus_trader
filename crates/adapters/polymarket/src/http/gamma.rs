@@ -537,7 +537,7 @@ impl PolymarketGammaHttpClient {
             .await?;
 
         match completed.completion {
-            Completion::WireComplete | Completion::Stopped(GammaStop::CallerCapped) => {
+            Completion::WireExhausted | Completion::Stopped(GammaStop::CallerCapped) => {
                 Ok(completed.output)
             }
         }
@@ -896,7 +896,7 @@ impl PolymarketGammaHttpClient {
             .await?;
 
         match completed.completion {
-            Completion::WireComplete | Completion::Stopped(GammaStop::CallerCapped) => {
+            Completion::WireExhausted | Completion::Stopped(GammaStop::CallerCapped) => {
                 Ok(completed.output)
             }
         }

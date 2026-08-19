@@ -481,7 +481,7 @@ impl PolymarketClobHttpClient {
             .await?;
 
         match completed.completion {
-            Completion::WireComplete => Ok(completed.output),
+            Completion::WireExhausted => Ok(completed.output),
             Completion::Stopped(never) => match never {},
         }
     }
@@ -530,7 +530,7 @@ impl PolymarketClobHttpClient {
             .await?;
 
         match completed.completion {
-            Completion::WireComplete => Ok(completed.output),
+            Completion::WireExhausted => Ok(completed.output),
             Completion::Stopped(never) => match never {},
         }
     }

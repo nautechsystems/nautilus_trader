@@ -4774,7 +4774,7 @@ async fn test_request_trade_ticks_paginates_multiple_pages() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_rejects_repeated_economics_with_restamped_title() {
+async fn test_request_trade_ticks_rejects_repeated_economics_with_restamped_metadata() {
     let state = TestServerState::default();
     let token = "token_restamped";
     let first = (0..500)
@@ -4793,6 +4793,7 @@ async fn test_request_trade_ticks_rejects_repeated_economics_with_restamped_titl
         .cloned()
         .map(|mut trade| {
             trade["title"] = json!("Restamped presentation metadata");
+            trade["proxyWallet"] = json!("0x1111111111111111111111111111111111111111");
             trade
         })
         .collect::<Vec<_>>();
@@ -4860,6 +4861,93 @@ async fn test_request_trade_ticks_rejects_trade_outside_requested_condition() {
         error.to_string(),
         "Polymarket Data API returned trade for condition 0xother_condition while requesting 0xcondition_test"
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trade_ticks_accepts_equivalent_condition_id_hex_case() {
+    let state = TestServerState::default();
+    let token = "token_condition_case";
+    let condition_id = format!("0x{}", "ab".repeat(32));
+    let mut trade = make_data_api_trade(token, 0.50, 1_710_000_000, "condition-case");
+    trade["conditionId"] = json!(condition_id.to_ascii_uppercase());
+    state
+        .data_api_trade_pages
+        .lock()
+        .await
+        .push_back(json!([trade]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_data_api_client(&addr);
+    let instrument_id = InstrumentId::from(format!("{condition_id}-{token}.POLYMARKET"));
+
+    let ticks = client
+        .request_trade_ticks(instrument_id, &condition_id, token, 2, 2, None, None, None)
+        .await
+        .unwrap();
+
+    assert_eq!(ticks.len(), 1);
+}
+
+#[rstest]
+#[case::transaction_hash("transactionHash", 1_000)]
+#[case::asset("asset", 999)]
+#[case::side("side", 1_000)]
+#[case::price("price", 1_000)]
+#[case::size("size", 1_000)]
+#[case::timestamp("timestamp", 1_000)]
+#[tokio::test]
+async fn test_request_trade_ticks_accepts_page_with_changed_economic_field(
+    #[case] field: &str,
+    #[case] expected_ticks: usize,
+) {
+    let state = TestServerState::default();
+    let token = "token_changed_economics";
+    let first = (0..500)
+        .map(|index| {
+            make_data_api_trade(
+                token,
+                0.50,
+                1_710_000_000 + index as i64,
+                &format!("economics{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut second = first.clone();
+    match field {
+        "transactionHash" => second[0][field] = json!(format!("0x{:064x}", 1)),
+        "asset" => second[0][field] = json!("other_token"),
+        "side" => second[0][field] = json!("SELL"),
+        "price" => second[0][field] = json!(0.75),
+        "size" => second[0][field] = json!(11.0),
+        "timestamp" => second[0][field] = json!(1_720_000_000),
+        _ => unreachable!(),
+    }
+    state
+        .data_api_trade_pages
+        .lock()
+        .await
+        .extend([Value::Array(first), Value::Array(second)]);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let ticks = client
+        .request_trade_ticks(
+            InstrumentId::from("0xcondition_test-token_changed_economics.POLYMARKET"),
+            "0xcondition_test",
+            token,
+            2,
+            2,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(ticks.len(), expected_ticks);
+    assert_eq!(state.data_api_trade_query_log.lock().await.len(), 3);
 }
 
 #[rstest]

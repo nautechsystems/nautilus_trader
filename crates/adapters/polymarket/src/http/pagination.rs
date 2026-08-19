@@ -25,7 +25,7 @@ pub(crate) enum FetchOutcome<T, W, S> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum Completion<S> {
-    WireComplete,
+    WireExhausted,
     Stopped(S),
 }
 
@@ -436,7 +436,7 @@ impl<P, R> Paginator<P, R> {
 
             match observation {
                 PageObservation::Terminal => {
-                    let completion = Completion::WireComplete;
+                    let completion = Completion::WireExhausted;
                     let output = self.reducer.finish(&completion)?;
                     return Ok(Completed { output, completion });
                 }
