@@ -321,7 +321,9 @@ expiry, then the child uses `ImmediateOrCancel`.
 Without an explicit GTD expiry, limit‑style `GTC`, `DAY`, and `GTD` orders default to the current
 time plus 28 days; conditional `GTC`, `DAY`, and limit‑style `IOC` use the same default. Lighter
 rejects `-1` and accepts expiries from 5 minutes to 30 days after submission. The adapter enforces
-that window with a one‑second signing and transport margin.
+that window with a one‑second signing and transport margin, so an expiry of exactly 5 minutes is
+denied locally before signing; tester configurations expressed in whole minutes should use at least
+6 minutes.
 
 ### Execution instructions
 
@@ -518,6 +520,16 @@ Higher [account tiers](#account-tiers) still require explicit client quotas:
 
 These options change local pacing only. Public data requests remain unauthenticated, so setting a
 higher local quota does not make those requests eligible for an account‑level venue limit.
+
+### L1-address transaction limit
+
+The venue also enforces a 40 req/min limit per L1 address on transaction traffic, below the
+default `sendtx_quota_per_min` of 60. A mainnet quoting session amending on every quote drift hit
+`code=23000` (`Too Many Requests`) after roughly 40 modify transactions in a minute; see
+[Volume quota and no-fill quoting](#volume-quota-and-no-fill-quoting) for the related quota that
+modify transactions also spend. Set `sendtx_quota_per_min` to 40 or lower for transaction‑heavy
+quoting workloads. The limiter is shared across all `sendTx` traffic, so a lower quota also paces
+creates and cancels.
 
 The REST limiter counts one token per call rather than venue endpoint weights. Set
 `rest_quota_per_min` for the effective endpoint mix: a 24,000 weighted req/min premium limit yields
