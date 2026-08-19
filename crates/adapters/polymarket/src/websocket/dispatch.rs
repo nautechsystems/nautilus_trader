@@ -36,7 +36,7 @@ use nautilus_model::{
         OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled,
         OrderRejected, OrderUpdated,
     },
-    identifiers::{AccountId, InstrumentId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
     types::{Money, Quantity},
@@ -232,6 +232,19 @@ fn dispatch_order_update(
     };
     let venue_order_id = report.venue_order_id;
     let local_client_order_id = ctx.pending_submits.client_order_id(&venue_order_id);
+    let identity = ctx.order_identities.get(&venue_order_id);
+    if let Some(identity) = identity.as_ref() {
+        if let Err(error) = validate_order_report_identity(&report, identity, local_client_order_id)
+        {
+            log::warn!("Ignoring contradictory order update {venue_order_id}: {error}");
+            return;
+        }
+    } else if local_client_order_id.is_some() {
+        log::warn!(
+            "Ignoring order update {venue_order_id}: pending submit has no retained order identity"
+        );
+        return;
+    }
     let mut is_accepted = ctx.fill_tracker.contains(&venue_order_id);
     report.client_order_id = local_client_order_id;
 
@@ -249,7 +262,6 @@ fn dispatch_order_update(
         );
     }
 
-    let identity = ctx.order_identities.get(&venue_order_id);
     if report.order_status == OrderStatus::Rejected
         && (is_accepted || local_client_order_id.is_some())
     {
@@ -365,10 +377,51 @@ fn dispatch_order_update(
     {
         // Registered between the early accepted-check and here: emit rather than buffer
         match ctx.order_identities.get(&venue_order_id) {
-            Some(identity) => emit_tracked_order_status(&report, &identity, ts_event, ctx),
+            Some(identity) => {
+                if let Err(error) = validate_order_report_identity(&report, &identity, None) {
+                    log::warn!(
+                        "Ignoring contradictory late-bound order update {venue_order_id}: {error}"
+                    );
+                    return;
+                }
+                emit_tracked_order_status(&report, &identity, ts_event, ctx);
+            }
             None => ctx.emitter.send_order_status_report(report),
         }
     }
+}
+
+fn validate_order_report_identity(
+    report: &OrderStatusReport,
+    identity: &OrderIdentity,
+    expected_client_order_id: Option<ClientOrderId>,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        identity.instrument_id == report.instrument_id,
+        "order report instrument {} does not match tracked instrument {}",
+        report.instrument_id,
+        identity.instrument_id
+    );
+    anyhow::ensure!(
+        identity.order_side == report.order_side,
+        "order report side {} does not match tracked side {}",
+        report.order_side,
+        identity.order_side
+    );
+    anyhow::ensure!(
+        identity.time_in_force == report.time_in_force,
+        "order report time in force {} does not match tracked time in force {}",
+        report.time_in_force,
+        identity.time_in_force
+    );
+    if let Some(client_order_id) = expected_client_order_id {
+        anyhow::ensure!(
+            identity.client_order_id == client_order_id,
+            "pending submit client order ID {client_order_id} does not match tracked client order ID {}",
+            identity.client_order_id
+        );
+    }
+    Ok(())
 }
 
 fn emit_buffered_order_filled(
@@ -2205,11 +2258,16 @@ mod tests {
         let venue_order_id = VenueOrderId::from(order.id.as_str());
         let client_order_id = ClientOrderId::from("O-FOK-IN-FLIGHT");
         pending_submits.insert(venue_order_id, client_order_id);
-        register_identity(
-            &order_identities,
+        order_identities.register_order_identity(
             venue_order_id,
-            instrument.id(),
-            client_order_id.as_str(),
+            OrderIdentity {
+                client_order_id,
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: instrument.id(),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                time_in_force: TimeInForce::Fok,
+            },
         );
 
         let ctx = WsDispatchContext {
@@ -2558,6 +2616,72 @@ mod tests {
             other => panic!("Expected accepted event, was {other:?}"),
         }
 
+        assert!(!fill_tracker.has_pending_report(&venue_order_id));
+    }
+
+    #[rstest]
+    #[case::instrument(0)]
+    #[case::side(1)]
+    #[case::time_in_force(2)]
+    fn test_ws_known_order_rejects_mismatched_instrument_side_or_tif(#[case] mismatch: u8) {
+        let mut order: PolymarketUserOrder = load("ws_user_order_placement.json");
+        bind_order_to_test_instrument(&mut order);
+        let expected_instrument = test_instrument();
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(order.asset_id, expected_instrument.clone());
+        match mismatch {
+            0 => {
+                let alternate = alternate_test_instrument();
+                order.asset_id = Ustr::from(alternate.raw_symbol().as_str());
+                order.market = Ustr::from(ALTERNATE_TEST_CONDITION_ID);
+                order.outcome = Some(PolymarketOutcome::yes());
+                token_instruments.insert(order.asset_id, alternate);
+            }
+            1 => order.side = PolymarketOrderSide::Sell,
+            2 => order.order_type = Some(PolymarketOrderType::FOK),
+            _ => unreachable!(),
+        }
+
+        let venue_order_id = VenueOrderId::from(order.id.as_str());
+        let fill_tracker = OrderFillTrackerMap::new();
+        fill_tracker.register(
+            venue_order_id,
+            Quantity::from("100"),
+            OrderSide::Buy,
+            expected_instrument.id(),
+            expected_instrument.size_precision(),
+            expected_instrument.price_precision(),
+        );
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        register_identity(
+            &order_identities,
+            venue_order_id,
+            expected_instrument.id(),
+            "O-EXPECTED-WS-SCOPE",
+        );
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            order_identities: &order_identities,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+
+        dispatch_user_message(
+            &UserWsMessage::Order(order),
+            &ctx,
+            &mut WsDispatchState::default(),
+        );
+
+        assert!(receiver.try_recv().is_err());
         assert!(!fill_tracker.has_pending_report(&venue_order_id));
     }
 
@@ -5091,11 +5215,16 @@ mod tests {
 
         let pending_submits = PendingSubmitTracker::default();
         let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        order_identities.register_order_identity(
             venue_order_id,
-            instrument.id(),
-            "O-TERMINAL",
+            OrderIdentity {
+                client_order_id: ClientOrderId::from("O-TERMINAL"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: instrument.id(),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                time_in_force: TimeInForce::Fok,
+            },
         );
         order_identities.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
