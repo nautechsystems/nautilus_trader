@@ -369,17 +369,12 @@ impl PolymarketExecutionClient {
                             clock.get_time_ns(),
                             load_ids.as_deref(),
                         )
-                        .await
+                        .await?
                         {
-                            Ok(fills) => confirmed_filled_quantities(&fills)?
+                            Some(fills) => confirmed_filled_quantities(&fills)?
                                 .get(&venue_order_id)
                                 .copied(),
-                            Err(e) => {
-                                log::warn!(
-                                    "Failed to fetch confirmed fills for order {venue_order_id}: {e}"
-                                );
-                                None
-                            }
+                            None => None,
                         }
                     } else {
                         None
@@ -481,17 +476,12 @@ impl PolymarketExecutionClient {
                     self.clock.get_time_ns(),
                     self.config.reconciliation_load_ids(),
                 )
-                .await
+                .await?
                 {
-                    Ok(fills) => confirmed_filled_quantities(&fills)?
+                    Some(fills) => confirmed_filled_quantities(&fills)?
                         .get(&venue_order_id)
                         .copied(),
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to fetch confirmed fills for order {venue_order_id}: {e}"
-                        );
-                        None
-                    }
+                    None => None,
                 }
             } else {
                 None
@@ -555,13 +545,10 @@ impl PolymarketExecutionClient {
                 self.clock.get_time_ns(),
                 self.config.reconciliation_load_ids(),
             )
-            .await
+            .await?
             {
-                Ok(fills) => confirmed_filled_quantities(&fills)?,
-                Err(e) => {
-                    log::warn!("Failed to fetch confirmed fills for open-order check: {e}");
-                    Default::default()
-                }
+                Some(fills) => confirmed_filled_quantities(&fills)?,
+                None => Default::default(),
             }
         } else {
             Default::default()
@@ -737,11 +724,14 @@ async fn fetch_confirmed_fill_reports(
     instrument_id: Option<InstrumentId>,
     ts_init: UnixNanos,
     load_ids: Option<&[InstrumentId]>,
-) -> anyhow::Result<Vec<FillReport>> {
-    let trades = http_client
-        .get_trades(params)
-        .await
-        .context("failed to fetch confirmed trades")?;
+) -> anyhow::Result<Option<Vec<FillReport>>> {
+    let trades = match http_client.get_trades(params).await {
+        Ok(trades) => trades,
+        Err(error) => {
+            log::warn!("Failed to fetch confirmed trades: {error}");
+            return Ok(None);
+        }
+    };
     let (reports, _) = build_fill_reports_from_trades(
         &trades,
         ctx,
@@ -750,7 +740,7 @@ async fn fetch_confirmed_fill_reports(
         ts_init,
         load_ids,
     )?;
-    Ok(reports)
+    Ok(Some(reports))
 }
 
 pub(super) fn validate_order_response_scope(

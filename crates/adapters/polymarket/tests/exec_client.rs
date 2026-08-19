@@ -1617,6 +1617,62 @@ async fn test_generate_order_status_reports_recovers_confirmed_rest_fill() {
 
 #[rstest]
 #[tokio::test]
+async fn test_generate_order_status_reports_rejects_invalid_confirmed_trade() {
+    let venue_order_id_str = DEFAULT_ACCEPTED_ORDER_ID;
+    let state = TestServerState::default();
+    let mut order = load_json("http_open_orders_page.json")["data"][0].clone();
+    order["id"] = json!(venue_order_id_str);
+    order["status"] = json!("LIVE");
+    order["original_size"] = json!("10.0000");
+    order["size_matched"] = json!("5.0000");
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [order],
+        "next_cursor": "LTE=",
+    }));
+    *state.trades_response_override.lock().await =
+        Some(recovery_trades_response(venue_order_id_str, "5.0000", "0"));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    client.on_instrument(cache.borrow().instrument(&instrument_id).unwrap().clone());
+    let client_order_id = ClientOrderId::from("O-OPEN-CHECK-INVALID-FILL");
+    let mut cached_order = make_limit_order(
+        client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(cached_order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut cached_order, venue_order_id_str);
+    let cmd = GenerateOrderStatusReports {
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        open_only: false,
+        instrument_id: Some(instrument_id),
+        start: None,
+        end: None,
+        params: None,
+        log_receipt_level: LogLevel::Info,
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    client
+        .generate_order_status_reports(&cmd)
+        .await
+        .expect_err("invalid confirmed fill evidence must fail the complete report set");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_mass_status_lookback_sets_report_window() {
     let state = TestServerState::default();
     let order = load_json("http_open_orders_page.json")["data"][0].clone();
@@ -2664,6 +2720,41 @@ async fn test_generate_active_order_report_recovers_confirmed_rest_fill() {
 
     assert_eq!(report.order_status, OrderStatus::Filled);
     assert_eq!(report.filled_qty, Quantity::from("10.0000"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_rejects_invalid_confirmed_trade() {
+    let venue_order_id_str = DEFAULT_ACCEPTED_ORDER_ID;
+    let state = TestServerState::default();
+    let mut order = load_json("http_open_order.json");
+    order["status"] = json!("LIVE");
+    order["original_size"] = json!("10.0000");
+    order["size_matched"] = json!("5.0000");
+    *state.single_order_response.lock().await = Some(order);
+    *state.trades_response_override.lock().await =
+        Some(recovery_trades_response(venue_order_id_str, "5.0000", "0"));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    client.on_instrument(cache.borrow().instrument(&instrument_id).unwrap().clone());
+    let venue_order_id = VenueOrderId::from(venue_order_id_str);
+
+    client
+        .generate_order_status_report(&GenerateOrderStatusReport {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            client_order_id: None,
+            venue_order_id: Some(venue_order_id),
+            params: None,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("invalid confirmed fill evidence must fail the order report");
 }
 
 #[rstest]
@@ -9358,6 +9449,50 @@ async fn test_query_order_rejects_wrong_returned_id_or_binding() {
         client.query_order(query.clone()).unwrap();
         assert_no_execution_event(&mut rx).await;
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_query_order_rejects_invalid_confirmed_trade() {
+    let venue_order_id_str = DEFAULT_ACCEPTED_ORDER_ID;
+    let state = TestServerState::default();
+    let mut order = load_json("http_open_order.json");
+    order["status"] = json!("LIVE");
+    order["original_size"] = json!("10.0000");
+    order["size_matched"] = json!("5.0000");
+    *state.single_order_response.lock().await = Some(order);
+    *state.trades_response_override.lock().await =
+        Some(recovery_trades_response(venue_order_id_str, "5.0000", "0"));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    client.on_instrument(cache.borrow().instrument(&instrument_id).unwrap().clone());
+    let query = QueryOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*POLYMARKET_CLIENT_ID),
+        StrategyId::from("S-001"),
+        instrument_id,
+        ClientOrderId::from("O-QUERY-INVALID-FILL"),
+        Some(VenueOrderId::from(venue_order_id_str)),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.query_order(query).unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.last_path.lock().await.as_str() == "/data/trades" }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_no_execution_event(&mut rx).await;
 }
 
 #[rstest]
