@@ -541,8 +541,8 @@ impl BlockchainExecutionClient {
     /// Returns an error if the amount is zero, the WETH target is not a deployed ERC-20 contract,
     /// the client is not connected, another transaction is in flight, no durable store is
     /// configured, the WETH balance does not increase by `amount_wei`, or any RPC, policy, signing,
-    /// persistence, or broadcast step fails. A persistence failure after signing leaves the
-    /// in-flight slot occupied because database commit acknowledgement is ambiguous.
+    /// persistence, or broadcast step fails. A persistence failure after signing, or a failed
+    /// postcondition after finality, leaves the in-flight slot occupied.
     pub async fn wrap(&mut self, amount_wei: U256) -> anyhow::Result<B256> {
         if amount_wei.is_zero() {
             anyhow::bail!("Wrap amount must be positive");
@@ -578,6 +578,7 @@ impl BlockchainExecutionClient {
             .database
             .mark_execution_event_emitted(intent_id, "terminal")
             .await?;
+        executor.release_slot();
 
         Ok(tx_hash)
     }
@@ -594,8 +595,8 @@ impl BlockchainExecutionClient {
     /// approval simulation returns false or malformed data, the client is not connected, another
     /// transaction is in flight, no durable store is configured, the resulting allowance is below
     /// the requested amount, or any RPC, policy, signing, persistence, or broadcast step fails. A
-    /// persistence failure after signing leaves the in-flight slot occupied because database
-    /// commit acknowledgement is ambiguous.
+    /// persistence failure after signing, or a failed postcondition after finality, leaves the
+    /// in-flight slot occupied.
     pub async fn approve(
         &mut self,
         token: Address,
@@ -650,6 +651,7 @@ impl BlockchainExecutionClient {
             .database
             .mark_execution_event_emitted(intent_id, "terminal")
             .await?;
+        executor.release_slot();
 
         Ok(tx_hash)
     }
@@ -1051,19 +1053,19 @@ impl BlockchainExecutionClient {
                 }
             }
             InclusionOutcome::Reverted(tx_hash) => {
-                if let Some(plan) = plan {
-                    if plan.order.status() != OrderStatus::Rejected {
-                        self.emitter.emit_order_rejected(
-                            &plan.order,
-                            &format!("Transaction {tx_hash} reverted on-chain"),
-                            get_atomic_clock_realtime().get_time_ns(),
-                            false,
-                        );
-                    }
-                    database
-                        .mark_execution_event_emitted(intent.id, "terminal")
-                        .await?;
+                if let Some(plan) = plan
+                    && plan.order.status() != OrderStatus::Rejected
+                {
+                    self.emitter.emit_order_rejected(
+                        &plan.order,
+                        &format!("Transaction {tx_hash} reverted on-chain"),
+                        get_atomic_clock_realtime().get_time_ns(),
+                        false,
+                    );
                 }
+                database
+                    .mark_execution_event_emitted(intent.id, "terminal")
+                    .await?;
                 executor.release_slot();
             }
             InclusionOutcome::Pending(message) => log::warn!("{message}"),
@@ -1366,7 +1368,13 @@ impl TransactionExecutor {
         client_order_id: Option<ClientOrderId>,
     ) -> anyhow::Result<IncludedTransaction> {
         self.claim_slot(purpose)?;
-        let created_block = self.http_rpc_client.latest_block().await?.number;
+        let created_block = match self.http_rpc_client.latest_block().await {
+            Ok(block) => block.number,
+            Err(e) => {
+                release_preparing_slot(&self.in_flight);
+                return Err(e);
+            }
+        };
         let intent = ExecutionIntentInsert {
             chain_id: self.chain_id,
             wallet_address: self.wallet_address.to_string(),
@@ -1409,11 +1417,11 @@ impl TransactionExecutor {
         }
 
         match self.await_finality(&prepared).await? {
-            InclusionOutcome::Finalized(included) => {
-                self.release_slot();
-                Ok(included)
-            }
+            InclusionOutcome::Finalized(included) => Ok(included),
             InclusionOutcome::Reverted(tx_hash) => {
+                self.database
+                    .mark_execution_event_emitted(prepared.intent_id, "terminal")
+                    .await?;
                 self.release_slot();
                 anyhow::bail!("Transaction {tx_hash} reverted on-chain")
             }
@@ -3398,6 +3406,31 @@ mod tests {
             panic!("expected an awaiting-finality transaction, was {slot:?}");
         };
         in_flight
+    }
+
+    async fn execution_intent_markers(
+        admin_pool: &sqlx::PgPool,
+        schema: &str,
+    ) -> Vec<(String, String, bool, bool)> {
+        sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT purpose, status, terminal_emitted, active \
+             FROM {schema}.execution_intent ORDER BY id"
+        )))
+        .fetch_all(admin_pool)
+        .await
+        .unwrap()
+    }
+
+    async fn later_reconnect(
+        previous: BlockchainExecutionClient,
+        http_rpc_url: String,
+    ) -> anyhow::Error {
+        let database = previous.cache.database.as_ref().unwrap().clone();
+        drop(previous);
+        let mut next = test_client(http_rpc_url);
+        next.cache.database = Some(database);
+        next.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        next.reconcile_unresolved_execution().await.unwrap_err()
     }
 
     fn start_with_events(
@@ -6141,20 +6174,38 @@ mod tests {
             error.to_string().contains("did not increase"),
             "was: {error}"
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
-        let status: String = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-            "SELECT status FROM {schema}.execution_intent"
-        )))
-        .fetch_one(&admin_pool)
-        .await
-        .unwrap();
-        assert_eq!(status, "finalized");
+        let in_flight = awaiting_in_flight(&client);
+        assert_eq!(in_flight.purpose, TransactionPurpose::Wrap);
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("wrap".into(), "finalized".into(), false, true)]
+        );
         let broadcasts = state
             .recorded_requests()
             .into_iter()
             .filter(|request| request["method"] == "eth_sendRawTransaction")
             .count();
         assert_eq!(broadcasts, 1);
+
+        let expected_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000u64)).await;
+        let restart_state = execution_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_parameter_response(
+                "eth_getBlockByNumber",
+                "0x1cf0d41",
+                &finalized_wrap_block(expected_hash),
+            )
+            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE]);
+        let addr = start_mock_rpc_server(restart_state).await;
+        let error = later_reconnect(client, format!("http://{addr}")).await;
+        assert!(
+            error.to_string().contains("did not increase"),
+            "was: {error}"
+        );
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("wrap".into(), "finalized".into(), false, true)]
+        );
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -6182,7 +6233,8 @@ mod tests {
             "was: {message}"
         );
         assert!(message.contains("at block 30346561"), "was: {message}");
-        assert!(client.in_flight.lock().unwrap().is_none());
+        let in_flight = awaiting_in_flight(&client);
+        assert_eq!(in_flight.purpose, TransactionPurpose::Wrap);
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -6236,6 +6288,10 @@ mod tests {
         assert_eq!(record.purpose, "approve");
         assert_eq!(record.status, "finalized");
         assert!(client.in_flight.lock().unwrap().is_none());
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("approve".into(), "finalized".into(), true, false)]
+        );
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -6259,7 +6315,32 @@ mod tests {
             error.to_string().contains("below the requested amount"),
             "was: {error}"
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
+        let in_flight = awaiting_in_flight(&client);
+        assert_eq!(in_flight.purpose, TransactionPurpose::Approve);
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("approve".into(), "finalized".into(), false, true)]
+        );
+
+        let expected_hash = expected_approve_tx_hash(U256::from(1_000u64)).await;
+        let restart_state = execution_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_parameter_response(
+                "eth_getBlockByNumber",
+                "0x1cf0d41",
+                &finalized_approve_block(expected_hash, U256::from(1_000u64)),
+            )
+            .with_call_response(ALLOWANCE_SELECTOR, CALL_ZERO);
+        let addr = start_mock_rpc_server(restart_state).await;
+        let error = later_reconnect(client, format!("http://{addr}")).await;
+        assert!(
+            error.to_string().contains("below the requested amount"),
+            "was: {error}"
+        );
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("approve".into(), "finalized".into(), false, true)]
+        );
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -6285,7 +6366,8 @@ mod tests {
             "was: {message}"
         );
         assert!(message.contains("at block 30346561"), "was: {message}");
-        assert!(client.in_flight.lock().unwrap().is_none());
+        let in_flight = awaiting_in_flight(&client);
+        assert_eq!(in_flight.purpose, TransactionPurpose::Approve);
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -7412,14 +7494,17 @@ mod tests {
         drop(first_client);
 
         // Call identity matches, but the wrapped balance does not increase
-        let restart_state = execution_rpc_state()
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_parameter_response(
-                "eth_getBlockByNumber",
-                "0x1cf0d41",
-                &finalized_wrap_block(expected_hash),
-            )
-            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE]);
+        let failing_wrap_state = || {
+            execution_rpc_state()
+                .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+                .with_parameter_response(
+                    "eth_getBlockByNumber",
+                    "0x1cf0d41",
+                    &finalized_wrap_block(expected_hash),
+                )
+                .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE])
+        };
+        let restart_state = failing_wrap_state();
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
@@ -7442,6 +7527,67 @@ mod tests {
                 .recorded_requests()
                 .iter()
                 .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("wrap".into(), "finalized".into(), false, true)]
+        );
+
+        let addr = start_mock_rpc_server(failing_wrap_state()).await;
+        let error = later_reconnect(restarted, format!("http://{addr}")).await;
+        assert!(
+            error.to_string().contains("did not increase by"),
+            "was: {error}"
+        );
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("wrap".into(), "finalized".into(), false, true)]
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn restart_wrap_revert_marks_terminal_and_releases() {
+        let initial_state = broadcast_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
+            .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE);
+        let Some((admin_pool, schema, mut first_client, _)) =
+            execution_client_with_database("execution_restart_wrap_revert_test", initial_state)
+                .await
+        else {
+            return;
+        };
+        let error = first_client
+            .wrap(U256::from(1_000_000_000_000_000_u64))
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("Timed out awaiting finality"),
+            "was: {error}"
+        );
+        let database = first_client.cache.database.as_ref().unwrap().clone();
+        drop(first_client);
+
+        let restart_state =
+            execution_rpc_state().with_response("eth_getTransactionReceipt", RECEIPT_REVERTED);
+        let addr = start_mock_rpc_server(restart_state.clone()).await;
+        let mut restarted = test_client(format!("http://{addr}"));
+        restarted.cache.database = Some(database);
+        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+
+        restarted.reconcile_unresolved_execution().await.unwrap();
+
+        assert!(restarted.in_flight.lock().unwrap().is_none());
+        assert!(
+            restart_state
+                .recorded_requests()
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("wrap".into(), "reverted".into(), true, false)]
         );
 
         drop_execution_schema(&admin_pool, &schema).await;
@@ -7515,6 +7661,10 @@ mod tests {
         );
         assert!(restarted.in_flight.lock().unwrap().is_none());
         assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("wrap".into(), "finalized".into(), true, false)]
+        );
+        assert_eq!(
             requests
                 .iter()
                 .filter(|request| request["method"] == "eth_getTransactionReceipt")
@@ -7584,6 +7734,10 @@ mod tests {
         assert_eq!(record.status, "finalized");
         assert_eq!(record.purpose, "approve");
         assert!(restarted.in_flight.lock().unwrap().is_none());
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("approve".into(), "finalized".into(), true, false)]
+        );
         assert_eq!(
             requests
                 .iter()
@@ -7656,6 +7810,20 @@ mod tests {
                 .recorded_requests()
                 .iter()
                 .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("approve".into(), "finalized".into(), false, true)]
+        );
+
+        let error = later_reconnect(restarted, format!("http://{addr}")).await;
+        assert!(
+            error.to_string().contains("below the requested amount"),
+            "was: {error}"
+        );
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("approve".into(), "finalized".into(), false, true)]
         );
 
         drop_execution_schema(&admin_pool, &schema).await;
@@ -8219,8 +8387,11 @@ mod tests {
         assert_eq!(record.nonce, 7);
         assert_eq!(record.purpose, "wrap");
         assert_eq!(record.status, "finalized");
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("wrap".into(), "finalized".into(), true, false)]
+        );
 
-        // The in-flight slot cleared after finality, so a second transaction proceeds.
         let approve_hash = client
             .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
             .await
@@ -8235,6 +8406,13 @@ mod tests {
         assert_eq!(record.nonce, 8);
         assert_eq!(record.purpose, "approve");
         assert_eq!(record.status, "finalized");
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![
+                ("wrap".into(), "finalized".into(), true, false),
+                ("approve".into(), "finalized".into(), true, false),
+            ]
+        );
 
         let requests = state.recorded_requests();
         let broadcasts: Vec<_> = requests
@@ -8311,6 +8489,10 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(record.status, "reverted");
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("wrap".into(), "reverted".into(), true, false)]
+        );
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
