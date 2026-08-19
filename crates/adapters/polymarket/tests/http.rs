@@ -648,6 +648,7 @@ async fn handle_data_api_trades(
         .lock()
         .await
         .push(params.clone());
+
     if let Some(body) = state.data_api_trade_raw_responses.lock().await.pop_front() {
         return ([("content-type", "application/json")], body).into_response();
     }
