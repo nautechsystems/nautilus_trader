@@ -6614,6 +6614,8 @@ impl OKXHttpClient {
                 OKXAlgoOrderStatus::Canceled,
                 OKXAlgoOrderStatus::OrderFailed,
             ],
+            // An unrecognized state cannot be queried by name and matches nothing
+            Some(OKXAlgoOrderStatus::Unknown) => &[],
             Some(OKXAlgoOrderStatus::Live | OKXAlgoOrderStatus::Pause) => &[],
             Some(
                 OKXAlgoOrderStatus::Effective

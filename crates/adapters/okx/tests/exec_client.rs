@@ -55,8 +55,8 @@ use nautilus_live::{
 };
 use nautilus_model::{
     enums::{
-        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce,
-        TriggerType,
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
+        PositionSideSpecified, TimeInForce, TriggerType,
     },
     events::{
         OrderEventAny, OrderInitialized,
@@ -65,8 +65,8 @@ use nautilus_model::{
         },
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
-        VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
+        TradeId, TraderId, VenueOrderId,
     },
     instruments::{
         CryptoFuturesSpread, InstrumentAny,
@@ -104,7 +104,10 @@ use nautilus_okx::{
         },
         enums::{OKXWsChannel, OKXWsOperation},
         error::OKXWsError,
-        messages::{ExecutionReport, OKXOrderMsg, OKXWebSocketArg, OKXWsFrame, OKXWsMessage},
+        messages::{
+            ExecutionReport, OKXLiquidationWarningMsg, OKXOrderMsg, OKXWebSocketArg, OKXWsFrame,
+            OKXWsMessage,
+        },
         parse::OrderStateSnapshot,
     },
 };
@@ -1646,6 +1649,211 @@ fn test_dispatch_untracked_algo_child_fill_with_empty_client_order_id_as_report(
     }
     assert!(state.order_identities.is_empty());
     assert!(state.contains_filled(&client_order_id));
+}
+
+struct VenueFillCase {
+    fixture: &'static str,
+    raw_symbol: &'static str,
+    instrument_id: InstrumentId,
+    venue_order_id: &'static str,
+    trade_id: &'static str,
+    side: OrderSide,
+    qty: &'static str,
+    px: &'static str,
+    fee: &'static str,
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "case constructor mirrors the venue fill fields"
+)]
+fn venue_fill_case(
+    fixture: &'static str,
+    raw_symbol: &'static str,
+    venue_order_id: &'static str,
+    trade_id: &'static str,
+    side: OrderSide,
+    qty: &'static str,
+    px: &'static str,
+    fee: &'static str,
+) -> VenueFillCase {
+    VenueFillCase {
+        fixture,
+        raw_symbol,
+        instrument_id: InstrumentId::from(format!("{raw_symbol}.OKX").as_str()),
+        venue_order_id,
+        trade_id,
+        side,
+        qty,
+        px,
+        fee,
+    }
+}
+
+#[rstest]
+#[case::liquidation(venue_fill_case(
+    "ws_orders_liquidation.json",
+    "BTC-USDT-SWAP",
+    "2497956918703120999",
+    "1518905999",
+    OrderSide::Sell,
+    "0.500",
+    "40000.00",
+    "20 USDT"
+))]
+#[case::adl(venue_fill_case(
+    "ws_orders_adl.json",
+    "ETH-USDT-SWAP",
+    "2497956918703121000",
+    "1518906000",
+    OrderSide::Buy,
+    "0.300",
+    "41000.00",
+    "12.3 USDT"
+))]
+fn test_dispatch_venue_initiated_order_fill_as_report(#[case] case: VenueFillCase) {
+    let (_, order_msgs) = load_order_messages(case.fixture);
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let instruments = AtomicMap::new();
+    instruments.insert(
+        Ustr::from(case.raw_symbol),
+        order_instrument(OKXInstrumentType::Swap, case.instrument_id, case.raw_symbol),
+    );
+    let mut fee_cache = AHashMap::new();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(order_msgs),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        ExecutionEvent::Report(CommonExecutionReport::Fill(report)) => {
+            // Venue-initiated flow (liquidation or ADL): no client order ID,
+            // surfaced as a fill report
+            assert_eq!(report.account_id, AccountId::from("OKX-001"));
+            assert_eq!(report.instrument_id, case.instrument_id);
+            assert_eq!(report.client_order_id, None);
+            assert_eq!(
+                report.venue_order_id,
+                VenueOrderId::new(case.venue_order_id)
+            );
+            assert_eq!(report.trade_id, TradeId::new(case.trade_id));
+            assert_eq!(report.order_side, case.side);
+            assert_eq!(report.last_qty, Quantity::from(case.qty));
+            assert_eq!(report.last_px, Price::from(case.px));
+            assert_eq!(report.commission, Money::from(case.fee));
+            assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+        }
+        other => panic!("Expected venue-initiated fill report, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn test_dispatch_positions_channel_emits_position_report() {
+    let content = std::fs::read_to_string(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join("ws_positions.json"),
+    )
+    .unwrap();
+    let frame: OKXWsFrame = serde_json::from_str(&content).unwrap();
+    let OKXWsFrame::Data { arg, data } = frame else {
+        panic!("Expected data frame");
+    };
+    assert_eq!(arg.channel, OKXWsChannel::Positions);
+
+    let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let instruments = AtomicMap::new();
+    instruments.insert(
+        Ustr::from("BTC-USDT-SWAP"),
+        order_instrument(OKXInstrumentType::Swap, instrument_id, "BTC-USDT-SWAP"),
+    );
+    let mut fee_cache = AHashMap::new();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+
+    dispatch_ws_message(
+        OKXWsMessage::Positions(data),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        ExecutionEvent::Report(CommonExecutionReport::Position(report)) => {
+            assert_eq!(report.account_id, AccountId::from("OKX-001"));
+            assert_eq!(report.instrument_id, instrument_id);
+            assert_eq!(report.position_side, PositionSideSpecified::Long);
+            assert_eq!(report.quantity, Quantity::from("0.500"));
+            assert_eq!(
+                report.venue_position_id,
+                Some(PositionId::new("12345-LONG"))
+            );
+        }
+        other => panic!("Expected position report, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn test_dispatch_liquidation_warning_logs_only() {
+    let content = std::fs::read_to_string(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join("ws_liquidation_warning.json"),
+    )
+    .unwrap();
+    let frame: OKXWsFrame = serde_json::from_str(&content).unwrap();
+    let OKXWsFrame::Data { arg, data } = frame else {
+        panic!("Expected data frame");
+    };
+    assert_eq!(arg.channel, OKXWsChannel::LiquidationWarning);
+
+    let warnings: Vec<OKXLiquidationWarningMsg> = serde_json::from_value(data).unwrap();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].inst_id, Ustr::from("BTC-USDT-SWAP"));
+
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let instruments = AtomicMap::new();
+    let mut fee_cache = AHashMap::new();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+
+    dispatch_ws_message(
+        OKXWsMessage::LiquidationWarnings(warnings),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    // Risk warnings surface as logs only; no execution events
+    assert!(drain_events(&mut rx).is_empty());
 }
 
 #[rstest]

@@ -175,8 +175,8 @@ pub enum OKXWsChannel {
     SprdBooks5,
     #[serde(rename = "sprd-public-trades")]
     SprdPublicTrades,
-    #[serde(rename = "fills")]
-    Fills,
+    #[serde(rename = "liquidation-warning")]
+    LiquidationWarning,
     #[serde(rename = "orders-algo")]
     OrdersAlgo,
     #[serde(rename = "algo-advance")]

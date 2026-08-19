@@ -453,7 +453,6 @@ config_node = TradingNodeConfig(
             contract_types=contract_types,
             margin_mode=OKXMarginMode.CROSS,
             use_spot_margin=use_spot_margin,
-            use_fills_channel=False,  # Set to True if VIP5+ to get separate fill reports
             http_timeout_secs=10,
         ),
     },

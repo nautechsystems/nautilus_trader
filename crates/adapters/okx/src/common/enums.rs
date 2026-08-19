@@ -144,6 +144,9 @@ pub enum OKXOrderType {
     MmpAndPostOnly, // Market Maker Protection and Post-only order(only applicable to Option in Portfolio Margin mode)
     OpFok,          // Fill-or-Kill for options (only applicable to Option)
     Trigger,        // Conditional/algo order (stop orders, etc.)
+    /// Forward-compatible fallback for order types OKX adds later.
+    #[serde(other)]
+    Other,
 }
 
 /// Represents the possible states of an order throughout its lifecycle.
@@ -182,6 +185,9 @@ pub enum OKXOrderStatus {
     PartiallyFilled,
     Filled,
     MmpCanceled,
+    /// Forward-compatible fallback for order states OKX adds later.
+    #[serde(other)]
+    Unknown,
 }
 
 impl TryFrom<OrderStatus> for OKXOrderStatus {
@@ -845,8 +851,8 @@ mod tests {
     use rstest::rstest;
 
     use super::{
-        OKXGreeksType, OKXOptionType, OKXOrderStatus, OKXOrderType, OKXRpiPermission,
-        OKXTriggerType,
+        OKXAlgoOrderStatus, OKXAlgoOrderType, OKXGreeksType, OKXOptionType, OKXOrderStatus,
+        OKXOrderType, OKXRpiPermission, OKXTriggerType,
     };
 
     #[rstest]
@@ -914,7 +920,7 @@ mod tests {
 
     #[rstest]
     fn test_op_fok_converts_to_limit_order_type() {
-        let order_type: OrderType = OKXOrderType::OpFok.into();
+        let order_type: OrderType = OKXOrderType::OpFok.try_into().unwrap();
         assert_eq!(order_type, OrderType::Limit);
     }
 
@@ -928,7 +934,10 @@ mod tests {
             serde_json::from_str::<OKXOrderType>("\"elp\"").unwrap(),
             OKXOrderType::Rpi
         );
-        assert_eq!(OrderType::from(OKXOrderType::Rpi), OrderType::Limit);
+        assert_eq!(
+            OrderType::try_from(OKXOrderType::Rpi).unwrap(),
+            OrderType::Limit
+        );
     }
 
     #[rstest]
@@ -974,6 +983,70 @@ mod tests {
     ) {
         let actual: Result<OKXOrderStatus, OrderStatus> = input.try_into();
         assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case::live(OKXOrderStatus::Live, Ok(OrderStatus::Accepted))]
+    #[case::partially_filled(OKXOrderStatus::PartiallyFilled, Ok(OrderStatus::PartiallyFilled))]
+    #[case::filled(OKXOrderStatus::Filled, Ok(OrderStatus::Filled))]
+    #[case::canceled(OKXOrderStatus::Canceled, Ok(OrderStatus::Canceled))]
+    #[case::mmp_canceled(OKXOrderStatus::MmpCanceled, Ok(OrderStatus::Canceled))]
+    #[case::unknown(OKXOrderStatus::Unknown, Err(OKXOrderStatus::Unknown))]
+    fn test_try_from_okx_order_status(
+        #[case] input: OKXOrderStatus,
+        #[case] expected: Result<OrderStatus, OKXOrderStatus>,
+    ) {
+        let actual: Result<OrderStatus, OKXOrderStatus> = input.try_into();
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case::live(OKXAlgoOrderStatus::Live, Ok(OrderStatus::Accepted))]
+    #[case::pause(OKXAlgoOrderStatus::Pause, Ok(OrderStatus::Accepted))]
+    #[case::effective(OKXAlgoOrderStatus::Effective, Ok(OrderStatus::Triggered))]
+    #[case::order_placed(OKXAlgoOrderStatus::OrderPlaced, Ok(OrderStatus::Triggered))]
+    #[case::partially_effective(OKXAlgoOrderStatus::PartiallyEffective, Ok(OrderStatus::Triggered))]
+    #[case::filled(OKXAlgoOrderStatus::Filled, Ok(OrderStatus::Filled))]
+    #[case::canceled(OKXAlgoOrderStatus::Canceled, Ok(OrderStatus::Canceled))]
+    #[case::order_failed(OKXAlgoOrderStatus::OrderFailed, Ok(OrderStatus::Rejected))]
+    #[case::partially_failed(OKXAlgoOrderStatus::PartiallyFailed, Ok(OrderStatus::Rejected))]
+    #[case::unknown(OKXAlgoOrderStatus::Unknown, Err(OKXAlgoOrderStatus::Unknown))]
+    fn test_try_from_okx_algo_order_status(
+        #[case] input: OKXAlgoOrderStatus,
+        #[case] expected: Result<OrderStatus, OKXAlgoOrderStatus>,
+    ) {
+        let actual: Result<OrderStatus, OKXAlgoOrderStatus> = input.try_into();
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    fn test_okx_order_status_deserializes_unknown_state_as_unknown() {
+        let parsed: OKXOrderStatus = serde_json::from_str("\"future_state\"").unwrap();
+        assert_eq!(parsed, OKXOrderStatus::Unknown);
+
+        let parsed: OKXOrderStatus = serde_json::from_str("\"mmp_canceled\"").unwrap();
+        assert_eq!(parsed, OKXOrderStatus::MmpCanceled);
+    }
+
+    #[rstest]
+    fn test_okx_algo_order_status_deserializes_unknown_state_as_unknown() {
+        let parsed: OKXAlgoOrderStatus = serde_json::from_str("\"future_state\"").unwrap();
+        assert_eq!(parsed, OKXAlgoOrderStatus::Unknown);
+    }
+
+    #[rstest]
+    fn test_okx_order_type_deserializes_unknown_type_as_other() {
+        let parsed: OKXOrderType = serde_json::from_str("\"future_ord_type\"").unwrap();
+        assert_eq!(parsed, OKXOrderType::Other);
+    }
+
+    #[rstest]
+    fn test_okx_algo_order_type_deserializes_chase_and_unknown() {
+        let parsed: OKXAlgoOrderType = serde_json::from_str("\"chase\"").unwrap();
+        assert_eq!(parsed, OKXAlgoOrderType::Chase);
+
+        let parsed: OKXAlgoOrderType = serde_json::from_str("\"future_algo_type\"").unwrap();
+        assert_eq!(parsed, OKXAlgoOrderType::Other);
     }
 }
 
@@ -1177,35 +1250,57 @@ impl From<OKXPositionSide> for PositionSide {
     }
 }
 
-impl From<OKXOrderStatus> for OrderStatus {
-    fn from(status: OKXOrderStatus) -> Self {
-        match status {
-            OKXOrderStatus::Live => Self::Accepted,
-            OKXOrderStatus::PartiallyFilled => Self::PartiallyFilled,
-            OKXOrderStatus::Filled => Self::Filled,
-            OKXOrderStatus::Canceled | OKXOrderStatus::MmpCanceled => Self::Canceled,
+impl TryFrom<OKXOrderStatus> for OrderStatus {
+    type Error = OKXOrderStatus;
+
+    /// Converts an OKX order status into the matching Nautilus [`OrderStatus`].
+    ///
+    /// Returns the source variant in the error case for [`OKXOrderStatus::Unknown`],
+    /// which carries any order state OKX adds after this mapping was written.
+    fn try_from(value: OKXOrderStatus) -> Result<Self, Self::Error> {
+        match value {
+            OKXOrderStatus::Live => Ok(Self::Accepted),
+            OKXOrderStatus::PartiallyFilled => Ok(Self::PartiallyFilled),
+            OKXOrderStatus::Filled => Ok(Self::Filled),
+            OKXOrderStatus::Canceled | OKXOrderStatus::MmpCanceled => Ok(Self::Canceled),
+            OKXOrderStatus::Unknown => Err(value),
         }
     }
 }
 
-impl From<OKXAlgoOrderStatus> for OrderStatus {
-    fn from(status: OKXAlgoOrderStatus) -> Self {
-        match status {
-            OKXAlgoOrderStatus::Live | OKXAlgoOrderStatus::Pause => Self::Accepted,
+impl TryFrom<OKXAlgoOrderStatus> for OrderStatus {
+    type Error = OKXAlgoOrderStatus;
+
+    /// Converts an OKX algo order status into the matching Nautilus [`OrderStatus`].
+    ///
+    /// Returns the source variant in the error case for [`OKXAlgoOrderStatus::Unknown`],
+    /// which carries any algo order state OKX adds after this mapping was written.
+    fn try_from(value: OKXAlgoOrderStatus) -> Result<Self, Self::Error> {
+        match value {
+            OKXAlgoOrderStatus::Live | OKXAlgoOrderStatus::Pause => Ok(Self::Accepted),
             OKXAlgoOrderStatus::Effective
             | OKXAlgoOrderStatus::OrderPlaced
-            | OKXAlgoOrderStatus::PartiallyEffective => Self::Triggered,
-            OKXAlgoOrderStatus::Filled => Self::Filled,
-            OKXAlgoOrderStatus::Canceled => Self::Canceled,
-            OKXAlgoOrderStatus::OrderFailed | OKXAlgoOrderStatus::PartiallyFailed => Self::Rejected,
+            | OKXAlgoOrderStatus::PartiallyEffective => Ok(Self::Triggered),
+            OKXAlgoOrderStatus::Filled => Ok(Self::Filled),
+            OKXAlgoOrderStatus::Canceled => Ok(Self::Canceled),
+            OKXAlgoOrderStatus::OrderFailed | OKXAlgoOrderStatus::PartiallyFailed => {
+                Ok(Self::Rejected)
+            }
+            OKXAlgoOrderStatus::Unknown => Err(value),
         }
     }
 }
 
-impl From<OKXOrderType> for OrderType {
-    fn from(ord_type: OKXOrderType) -> Self {
-        match ord_type {
-            OKXOrderType::Market => Self::Market,
+impl TryFrom<OKXOrderType> for OrderType {
+    type Error = OKXOrderType;
+
+    /// Converts an OKX order type into the matching Nautilus [`OrderType`].
+    ///
+    /// Returns the source variant in the error case for [`OKXOrderType::Other`],
+    /// which carries any order type OKX adds after this mapping was written.
+    fn try_from(value: OKXOrderType) -> Result<Self, Self::Error> {
+        match value {
+            OKXOrderType::Market => Ok(Self::Market),
             OKXOrderType::Limit
             | OKXOrderType::Rpi
             | OKXOrderType::PostOnly
@@ -1214,8 +1309,9 @@ impl From<OKXOrderType> for OrderType {
             | OKXOrderType::MmpAndPostOnly
             | OKXOrderType::Fok
             | OKXOrderType::OpFok
-            | OKXOrderType::Ioc => Self::Limit,
-            OKXOrderType::Trigger => Self::StopMarket,
+            | OKXOrderType::Ioc => Ok(Self::Limit),
+            OKXOrderType::Trigger => Ok(Self::StopMarket),
+            OKXOrderType::Other => Err(value),
         }
     }
 }
@@ -1271,6 +1367,10 @@ pub enum OKXAlgoOrderType {
     MoveOrderStop,
     Iceberg,
     Twap,
+    Chase,
+    /// Forward-compatible fallback for algo order types OKX adds later.
+    #[serde(other)]
+    Other,
 }
 
 /// Helper to determine if an order type requires algo order handling.
@@ -1339,6 +1439,9 @@ pub enum OKXAlgoOrderStatus {
     Filled,
     OrderFailed,
     PartiallyFailed,
+    /// Forward-compatible fallback for algo order states OKX adds later.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Represents the category of an order on OKX.

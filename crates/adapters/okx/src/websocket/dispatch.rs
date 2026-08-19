@@ -551,6 +551,19 @@ pub fn dispatch_ws_message(
         OKXWsMessage::ChannelData { channel, .. } => {
             log::debug!("Ignoring data channel message on execution client: {channel:?}");
         }
+        OKXWsMessage::LiquidationWarnings(warnings) => {
+            for warning in warnings {
+                log::warn!(
+                    "Liquidation warning: inst_id={}, pos_side={:?}, pos={}, mgn_ratio={}, mark_px={}, mgn_mode={:?}",
+                    warning.inst_id,
+                    warning.pos_side,
+                    warning.pos,
+                    warning.mgn_ratio,
+                    warning.mark_px,
+                    warning.mgn_mode,
+                );
+            }
+        }
         OKXWsMessage::BookData { .. }
         | OKXWsMessage::RpiBookData { .. }
         | OKXWsMessage::Instruments(_) => {

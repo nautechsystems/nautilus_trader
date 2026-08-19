@@ -704,6 +704,19 @@ impl OKXWebSocketClient {
                         OKXWsMessage::Error(msg) => {
                             call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
+                        OKXWsMessage::LiquidationWarnings(warnings) => {
+                            for warning in warnings {
+                                log::warn!(
+                                    "Liquidation warning: inst_id={}, pos_side={:?}, pos={}, mgn_ratio={}, mark_px={}, mgn_mode={:?}",
+                                    warning.inst_id,
+                                    warning.pos_side,
+                                    warning.pos,
+                                    warning.mgn_ratio,
+                                    warning.mark_px,
+                                    warning.mgn_mode,
+                                );
+                            }
+                        }
                         OKXWsMessage::Reconnected => {
                             quote_cache.clear();
                             book_sync_by_channel.clear();
@@ -1662,48 +1675,6 @@ impl OKXWebSocketClient {
         })
     }
 
-    /// Subscribes to fill updates for the given instrument type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the subscription request fails.
-    #[pyo3(name = "subscribe_fills")]
-    fn py_subscribe_fills<'py>(
-        &self,
-        py: Python<'py>,
-        instrument_type: OKXInstrumentType,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.subscribe_fills(instrument_type).await {
-                log::error!("Failed to subscribe to fills '{instrument_type}': {e}");
-            }
-            Ok(())
-        })
-    }
-
-    /// Unsubscribes from fill updates for the given instrument type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the subscription request fails.
-    #[pyo3(name = "unsubscribe_fills")]
-    fn py_unsubscribe_fills<'py>(
-        &self,
-        py: Python<'py>,
-        instrument_type: OKXInstrumentType,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.unsubscribe_fills(instrument_type).await {
-                log::error!("Failed to unsubscribe from fills '{instrument_type}': {e}");
-            }
-            Ok(())
-        })
-    }
-
     /// Subscribes to account balance updates.
     ///
     /// # Errors
@@ -1716,6 +1687,57 @@ impl OKXWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.subscribe_account().await {
                 log::error!("Failed to subscribe to account: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    /// Subscribes to liquidation risk warnings for the given instrument type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#trading-account-websocket-liquidation-warning-channel>
+    #[pyo3(name = "subscribe_liquidation_warning")]
+    fn py_subscribe_liquidation_warning<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_type: OKXInstrumentType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_liquidation_warning(instrument_type).await {
+                log::error!("Failed to subscribe to liquidation-warning '{instrument_type}': {e}");
+            }
+            Ok(())
+        })
+    }
+
+    /// Unsubscribes from liquidation risk warnings for the given instrument type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription request fails.
+    #[pyo3(name = "unsubscribe_liquidation_warning")]
+    fn py_unsubscribe_liquidation_warning<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_type: OKXInstrumentType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client
+                .unsubscribe_liquidation_warning(instrument_type)
+                .await
+            {
+                log::error!(
+                    "Failed to unsubscribe from liquidation-warning '{instrument_type}': {e}"
+                );
             }
             Ok(())
         })

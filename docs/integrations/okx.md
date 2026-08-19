@@ -592,13 +592,18 @@ strategy.submit_order(stop_order)
 
 The OKX adapter detects exchange-initiated risk management events:
 
+- **Liquidation warnings**: When `instrument_types` includes `MARGIN`, `SWAP`, `FUTURES`, or
+  `OPTION`, the execution client subscribes to the `liquidation-warning` channel with
+  `instType=ANY` and logs a warning when OKX reports a position nearing liquidation. This is an
+  early warning only: the position may already be liquidated by the time the message arrives, and
+  the adapter surfaces it as a log message rather than a strategy‑facing event.
 - **Liquidation orders**: When the exchange liquidates a position, the adapter detects
   the liquidation category and logs warnings with order details. These orders continue
   through the normal order and fill pipeline.
 - **Auto-deleveraging (ADL)**: When OKX closes your position to offset a counterparty's
   liquidation, the adapter detects and logs the ADL event with position details.
 
-Detection is driven by the `category` field on the order record. The
+Liquidation-order and ADL detection is driven by the `category` field on the order record. The
 recognized values are:
 
 | `category`              | Meaning                       |
@@ -609,14 +614,15 @@ recognized values are:
 | `delivery`              | Contract delivery at expiry.  |
 | `normal` / other values | Regular order flow.           |
 
-Detection runs on both paths:
+Category detection runs on both paths:
 
 - WebSocket `orders` channel (live order and fill updates).
 - HTTP `GET /api/v5/trade/orders-history` (used during reconciliation and cold-start mass status).
 
 :::info
 **Liquidation and ADL events are logged at WARNING level** with details including order
-ID, instrument, and state. Monitor these logs as part of your risk management process.
+ID, instrument, and state. Liquidation warnings instead log position side, size, margin ratio,
+mark price, and margin mode. Monitor these logs as part of your risk management process.
 
 The adapter forwards these exchange‑generated orders as `OrderStatusReport` and `FillReport`
 messages and sends position updates as `PositionStatusReport` messages. Because the orders are
@@ -626,6 +632,7 @@ untracked at dispatch time, this path does not emit strategy‑owned order event
 Upstream references:
 
 - [Order channel and `category` field](https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-order-channel)
+- [Liquidation warning channel](https://www.okx.com/docs-v5/en/#trading-account-websocket-liquidation-warning-channel)
 - [Auto-Deleveraging mechanism](https://www.okx.com/help/okx-contract-auto-deleveraging-adl)
 - [Liquidation mechanism](https://www.okx.com/help/introduction-to-liquidation)
 

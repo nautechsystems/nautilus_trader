@@ -178,6 +178,8 @@ pub fn parse_order_event(
             instrument.size_precision(),
         );
 
+    warn_unrecognized_order_state(msg);
+
     // Check for order updates, but skip when other events take precedence:
     // - Fill events: fill data must be processed, update detection secondary
     // - Terminal states: handled by specific branches below
@@ -219,7 +221,9 @@ pub fn parse_order_event(
     }
 
     match msg.state {
-        OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled if has_new_fill => {
+        OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled | OKXOrderStatus::Unknown
+            if has_new_fill =>
+        {
             match parse_fill_report(
                 msg,
                 instrument,
@@ -1361,8 +1365,12 @@ pub fn parse_order_msg(
             instrument.size_precision(),
         );
 
+    warn_unrecognized_order_state(msg);
+
     match msg.state {
-        OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled if has_new_fill => {
+        OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled | OKXOrderStatus::Unknown
+            if has_new_fill =>
+        {
             match parse_fill_report(
                 msg,
                 instrument,
@@ -1378,6 +1386,19 @@ pub fn parse_order_msg(
         }
         _ => parse_order_status_report(msg, instrument, account_id, ts_init)
             .map(ExecutionReport::Order),
+    }
+}
+
+/// Logs a warning when an order message carries a state this build does not
+/// recognize. Fill data on the message is still processed; only the status
+/// classification is skipped.
+fn warn_unrecognized_order_state(msg: &OKXOrderMsg) {
+    if msg.state == OKXOrderStatus::Unknown {
+        log::warn!(
+            "Unrecognized order state: order_id={}, inst_id={}, processing any fill data and skipping status classification",
+            msg.ord_id,
+            msg.inst_id,
+        );
     }
 }
 
@@ -1451,12 +1472,31 @@ pub fn parse_algo_order_msg(
     instruments: &AHashMap<Ustr, InstrumentAny>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<ExecutionReport>> {
-    // Skip unsupported advance algo types (iceberg, twap)
+    // Skip unsupported algo types (iceberg, twap, chase); their triggered child
+    // orders still arrive on the regular orders channel
     if matches!(
         msg.ord_type,
-        OKXAlgoOrderType::Iceberg | OKXAlgoOrderType::Twap
+        OKXAlgoOrderType::Iceberg | OKXAlgoOrderType::Twap | OKXAlgoOrderType::Chase
     ) {
         log::debug!("Skipping unsupported algo order type: {:?}", msg.ord_type);
+        return Ok(None);
+    }
+
+    if msg.ord_type == OKXAlgoOrderType::Other {
+        log::warn!(
+            "Skipping algo order with unrecognized order type: algo_id={}, inst_id={}",
+            msg.algo_id,
+            msg.inst_id,
+        );
+        return Ok(None);
+    }
+
+    if msg.state == OKXAlgoOrderStatus::Unknown {
+        log::warn!(
+            "Skipping algo order with unrecognized state: algo_id={}, inst_id={}",
+            msg.algo_id,
+            msg.inst_id,
+        );
         return Ok(None);
     }
 
@@ -1494,7 +1534,10 @@ pub fn parse_algo_order_status_report(
 
     let algo_fields = parse_algo_order_fields(msg)?;
 
-    let status: OrderStatus = msg.state.into();
+    let status: OrderStatus = msg
+        .state
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("Unsupported OKX algo order status: {e}"))?;
 
     let quantity = parse_algo_order_quantity(msg, instrument)?;
 
@@ -1701,11 +1744,16 @@ pub fn parse_order_status_report(
                 &msg.px,
                 msg.px_vol.as_deref().unwrap_or(""),
                 msg.px_usd.as_deref().unwrap_or(""),
-            )
+            )?
         }
-        _ => msg.ord_type.into(),
+        other => other
+            .try_into()
+            .map_err(|e| anyhow::anyhow!("Unsupported OKX order type: {e}"))?,
     };
-    let order_status: OrderStatus = msg.state.into();
+    let order_status: OrderStatus = msg
+        .state
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("Unsupported OKX order status: {e}"))?;
 
     let time_in_force = match okx_order_type {
         OKXOrderType::Fok | OKXOrderType::OpFok => TimeInForce::Fok,
@@ -2460,14 +2508,18 @@ mod tests {
         OKXPositionSide,
         common::{
             enums::{
-                OKXAlgoOrderStatus, OKXExecType, OKXInstrumentType, OKXOrderType, OKXPriceType,
-                OKXQuickMarginType, OKXSelfTradePreventionMode, OKXSide, OKXTradeMode,
+                OKXAlgoOrderStatus, OKXExecType, OKXInstrumentType, OKXMarginMode, OKXOrderType,
+                OKXPriceType, OKXQuickMarginType, OKXSelfTradePreventionMode, OKXSide,
+                OKXTradeMode,
             },
             parse::parse_account_state,
             testing::load_test_json,
         },
         http::models::OKXAccount,
-        websocket::messages::{OKXAlgoOrderMsg, OKXAttachedAlgoOrd, OKXWebSocketArg, OKXWsFrame},
+        websocket::messages::{
+            OKXAlgoOrderMsg, OKXAttachedAlgoOrd, OKXLiquidationWarningMsg, OKXWebSocketArg,
+            OKXWsFrame,
+        },
     };
 
     fn create_stub_instrument() -> CryptoPerpetual {
@@ -5020,6 +5072,192 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_mmp_canceled_order_message() {
+        use nautilus_model::instruments::stubs::crypto_option_btc_deribit;
+
+        let json_data = load_test_json("ws_orders_mmp_canceled.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+
+        let msg = &data[0];
+        assert_eq!(msg.state, OKXOrderStatus::MmpCanceled);
+        assert_eq!(msg.ord_type, OKXOrderType::MmpAndPostOnly);
+
+        let account_id = AccountId::new("OKX-001");
+        let mut instruments = AHashMap::new();
+        let instrument_id = InstrumentId::from("BTC-USD-250328-92000-C.OKX");
+        let mut option =
+            crypto_option_btc_deribit(3, 1, Price::from("0.001"), Quantity::from("0.1"));
+        option.id = instrument_id;
+        option.raw_symbol = Symbol::from("BTC-USD-250328-92000-C");
+        instruments.insert(
+            Ustr::from("BTC-USD-250328-92000-C"),
+            InstrumentAny::CryptoOption(option),
+        );
+
+        let fee_cache = AHashMap::new();
+        let filled_qty_cache = AHashMap::new();
+        let report = parse_order_msg(
+            msg,
+            account_id,
+            &instruments,
+            &fee_cache,
+            &filled_qty_cache,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        match report {
+            ExecutionReport::Order(report) => {
+                // MMP cancels map to Canceled with the venue reason preserved
+                assert_eq!(report.order_status, OrderStatus::Canceled);
+                assert_eq!(report.instrument_id, instrument_id);
+                assert!(
+                    report
+                        .cancel_reason
+                        .as_ref()
+                        .is_some_and(|reason| reason.as_str().contains("market maker protection")),
+                );
+            }
+            other => panic!("Expected Order report for MMP-canceled order, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_order_msg_unknown_state_preserves_fill() {
+        let json_data = load_test_json("ws_orders_unknown_state_fill.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+
+        // Unknown states fall back to `Unknown` instead of failing deserialization
+        let msg = &data[0];
+        assert_eq!(msg.state, OKXOrderStatus::Unknown);
+
+        let account_id = AccountId::new("OKX-001");
+        let mut instruments = AHashMap::new();
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(create_stub_instrument()),
+        );
+
+        let fee_cache = AHashMap::new();
+        let filled_qty_cache = AHashMap::new();
+        let report = parse_order_msg(
+            msg,
+            account_id,
+            &instruments,
+            &fee_cache,
+            &filled_qty_cache,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        // Fill data is processed even when the state itself is unrecognized
+        match report {
+            ExecutionReport::Fill(fill_report) => {
+                assert_eq!(fill_report.order_side, OrderSide::Buy);
+                assert_eq!(fill_report.last_qty, Quantity::from("0.25000000"));
+                assert_eq!(fill_report.last_px, Price::from("40000.00"));
+                assert_eq!(fill_report.liquidity_side, LiquiditySide::Taker);
+            }
+            other => panic!("Expected Fill report for unknown-state order, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_order_msg_unknown_state_without_fill_errors() {
+        let json_data = load_test_json("ws_orders_unknown_state_fill.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+
+        let mut msg = data[0].clone();
+        msg.fill_sz = "0".to_string();
+        msg.trade_id = String::new();
+        msg.acc_fill_sz = Some("0".to_string());
+
+        let account_id = AccountId::new("OKX-001");
+        let mut instruments = AHashMap::new();
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(create_stub_instrument()),
+        );
+
+        let fee_cache = AHashMap::new();
+        let filled_qty_cache = AHashMap::new();
+        let result = parse_order_msg(
+            &msg,
+            account_id,
+            &instruments,
+            &fee_cache,
+            &filled_qty_cache,
+            UnixNanos::default(),
+        );
+
+        // Without fill data there is nothing safe to emit for an unrecognized state
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_parse_order_msg_unknown_order_type_preserves_fill() {
+        let json_data = load_test_json("ws_orders_unknown_ord_type_fill.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+
+        // Unknown order types fall back to `Other` instead of failing deserialization
+        let msg = &data[0];
+        assert_eq!(msg.ord_type, OKXOrderType::Other);
+
+        let account_id = AccountId::new("OKX-001");
+        let mut instruments = AHashMap::new();
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(create_stub_instrument()),
+        );
+
+        let fee_cache = AHashMap::new();
+        let filled_qty_cache = AHashMap::new();
+        let report = parse_order_msg(
+            msg,
+            account_id,
+            &instruments,
+            &fee_cache,
+            &filled_qty_cache,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        match report {
+            ExecutionReport::Fill(fill_report) => {
+                assert_eq!(fill_report.order_side, OrderSide::Sell);
+                assert_eq!(fill_report.last_qty, Quantity::from("0.25000000"));
+                assert_eq!(fill_report.last_px, Price::from("40000.00"));
+            }
+            other => panic!("Expected Fill report for unknown-ord-type order, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_deserialize_liquidation_warning_message() {
+        let json_data = load_test_json("ws_liquidation_warning.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXLiquidationWarningMsg> =
+            serde_json::from_value(payload["data"].clone()).unwrap();
+
+        assert_eq!(data.len(), 1);
+        let warning = &data[0];
+        assert_eq!(warning.inst_id, Ustr::from("BTC-USDT-SWAP"));
+        assert_eq!(warning.inst_type, OKXInstrumentType::Swap);
+        assert_eq!(warning.mgn_mode, OKXMarginMode::Cross);
+        assert_eq!(warning.pos_side, OKXPositionSide::Long);
+        assert_eq!(warning.pos, "0.5");
+        assert_eq!(warning.mgn_ratio, "0.62");
+        assert_eq!(warning.mark_px, "41250.5");
+        assert_eq!(warning.c_time, 1622559930237);
+        assert_eq!(warning.u_time, 1788000000001);
+        assert_eq!(warning.p_time.as_deref(), Some("1788000000002"));
+    }
+
+    #[rstest]
     fn test_websocket_instrument_update_preserves_cached_fees() {
         use nautilus_model::{identifiers::InstrumentId, instruments::InstrumentAny};
 
@@ -6730,6 +6968,115 @@ mod tests {
         let result = parse_algo_order_msg(&msg, account_id, &instruments, UnixNanos::default());
 
         assert!(result.unwrap().is_none());
+    }
+
+    #[rstest]
+    fn test_parse_algo_order_chase_type_skipped() {
+        let instrument = create_stub_instrument();
+        let account_id = AccountId::new("OKX-001");
+        let mut instruments = AHashMap::new();
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+
+        let msg = stub_algo_order_msg(OKXAlgoOrderType::Chase);
+
+        let result = parse_algo_order_msg(&msg, account_id, &instruments, UnixNanos::default());
+
+        assert!(result.unwrap().is_none());
+    }
+
+    #[rstest]
+    fn test_parse_algo_order_unknown_type_skipped() {
+        let instrument = create_stub_instrument();
+        let account_id = AccountId::new("OKX-001");
+        let mut instruments = AHashMap::new();
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+
+        let msg = stub_algo_order_msg(OKXAlgoOrderType::Other);
+
+        let result = parse_algo_order_msg(&msg, account_id, &instruments, UnixNanos::default());
+
+        assert!(result.unwrap().is_none());
+    }
+
+    #[rstest]
+    fn test_parse_algo_order_unknown_state_skipped() {
+        let instrument = create_stub_instrument();
+        let account_id = AccountId::new("OKX-001");
+        let mut instruments = AHashMap::new();
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+
+        let mut msg = stub_algo_order_msg(OKXAlgoOrderType::Trigger);
+        msg.state = OKXAlgoOrderStatus::Unknown;
+
+        let result = parse_algo_order_msg(&msg, account_id, &instruments, UnixNanos::default());
+
+        assert!(result.unwrap().is_none());
+    }
+
+    #[rstest]
+    fn test_deserialize_algo_order_states_message() {
+        let json_data = load_test_json("ws_orders_algo_states.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXAlgoOrderMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
+
+        assert_eq!(data.len(), 6);
+        assert_eq!(data[0].state, OKXAlgoOrderStatus::Effective);
+        assert_eq!(data[1].state, OKXAlgoOrderStatus::PartiallyEffective);
+        assert_eq!(data[2].state, OKXAlgoOrderStatus::Pause);
+        assert_eq!(data[3].state, OKXAlgoOrderStatus::OrderFailed);
+        assert_eq!(data[4].state, OKXAlgoOrderStatus::PartiallyFailed);
+        assert_eq!(data[5].ord_type, OKXAlgoOrderType::Chase);
+    }
+
+    #[rstest]
+    fn test_parse_algo_order_states_map_to_nautilus_status() {
+        let json_data = load_test_json("ws_orders_algo_states.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXAlgoOrderMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
+
+        let account_id = AccountId::new("OKX-001");
+        let mut instruments = AHashMap::new();
+        instruments.insert(
+            Ustr::from("BTC-USDT-SWAP"),
+            InstrumentAny::CryptoPerpetual(create_stub_instrument()),
+        );
+
+        let expected = [
+            (0_usize, OrderStatus::Triggered), // effective
+            (1, OrderStatus::Triggered),       // partially_effective
+            (2, OrderStatus::Accepted),        // pause
+            (3, OrderStatus::Rejected),        // order_failed
+            (4, OrderStatus::Rejected),        // partially_failed
+        ];
+
+        for (idx, expected_status) in expected {
+            let report =
+                parse_algo_order_msg(&data[idx], account_id, &instruments, UnixNanos::default())
+                    .unwrap()
+                    .unwrap_or_else(|| panic!("Expected report for fixture index {idx}"));
+
+            match report {
+                ExecutionReport::Order(report) => {
+                    assert_eq!(report.order_status, expected_status);
+                }
+                other => panic!("Expected Order report for fixture index {idx}, was {other:?}"),
+            }
+        }
+
+        // Chase orders are unsupported and skipped; their triggered child orders
+        // still arrive on the regular orders channel
+        let chase =
+            parse_algo_order_msg(&data[5], account_id, &instruments, UnixNanos::default()).unwrap();
+        assert!(chase.is_none());
     }
 
     #[rstest]

@@ -1,0 +1,25 @@
+{
+  "arg": {
+    "channel": "liquidation-warning",
+    "instType": "ANY"
+  },
+  "data": [
+    {
+      "instType": "SWAP",
+      "instFamily": "",
+      "instId": "BTC-USDT-SWAP",
+      "mgnMode": "cross",
+      "posId": "12345",
+      "posSide": "long",
+      "pos": "0.5",
+      "posCcy": "",
+      "lever": "10.0",
+      "markPx": "41250.5",
+      "mgnRatio": "0.62",
+      "ccy": "USDT",
+      "cTime": "1622559930237",
+      "uTime": "1788000000001",
+      "pTime": "1788000000002"
+    }
+  ]
+}

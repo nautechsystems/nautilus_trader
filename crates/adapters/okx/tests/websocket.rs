@@ -1862,6 +1862,45 @@ async fn test_unsubscribe_orders_sends_request() {
 }
 
 #[tokio::test]
+async fn test_subscribe_liquidation_warning_sends_request() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let instruments = load_instruments();
+
+    let mut client = connect_client(&ws_url).await;
+    client.cache_instruments(&instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_liquidation_warning(OKXInstrumentType::Any)
+        .await
+        .expect("subscribe liquidation warning failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state.subscriptions.lock().await.iter().any(|value| {
+                    value_matches_channel(value, "liquidation-warning")
+                        && value
+                            .get("instType")
+                            .and_then(|v| v.as_str())
+                            .is_some_and(|t| t == "ANY")
+                })
+            }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn test_subscribe_to_orderbook() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;

@@ -189,7 +189,6 @@ config_node = TradingNodeConfig(
             use_spot_margin=use_spot_margin,
             # use_spot_cash_position_reports=True,  # Spot CASH position reports
             # use_mm_mass_cancel=True,
-            use_fills_channel=False,  # Set to True if VIP5+ to get separate fill reports
             http_timeout_secs=10,
         ),
     },

@@ -2155,42 +2155,6 @@ impl OKXWebSocketClient {
         self.unsubscribe(vec![arg]).await
     }
 
-    /// Subscribes to fill updates for the given instrument type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the subscription request fails.
-    pub async fn subscribe_fills(
-        &self,
-        instrument_type: OKXInstrumentType,
-    ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::Fills,
-            inst_type: Some(instrument_type),
-            inst_family: None,
-            inst_id: None,
-        };
-        self.subscribe(vec![arg]).await
-    }
-
-    /// Unsubscribes from fill updates for the given instrument type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the subscription request fails.
-    pub async fn unsubscribe_fills(
-        &self,
-        instrument_type: OKXInstrumentType,
-    ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::Fills,
-            inst_type: Some(instrument_type),
-            inst_family: None,
-            inst_id: None,
-        };
-        self.unsubscribe(vec![arg]).await
-    }
-
     /// Subscribes to account balance updates.
     ///
     /// # Errors
@@ -2255,6 +2219,46 @@ impl OKXWebSocketClient {
         let arg = OKXSubscriptionArg {
             channel: OKXWsChannel::Positions,
             inst_type: Some(inst_type),
+            inst_family: None,
+            inst_id: None,
+        };
+        self.unsubscribe(vec![arg]).await
+    }
+
+    /// Subscribes to liquidation risk warnings for the given instrument type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#trading-account-websocket-liquidation-warning-channel>
+    pub async fn subscribe_liquidation_warning(
+        &self,
+        instrument_type: OKXInstrumentType,
+    ) -> Result<(), OKXWsError> {
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::LiquidationWarning,
+            inst_type: Some(instrument_type),
+            inst_family: None,
+            inst_id: None,
+        };
+        self.subscribe(vec![arg]).await
+    }
+
+    /// Unsubscribes from liquidation risk warnings for the given instrument type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription request fails.
+    pub async fn unsubscribe_liquidation_warning(
+        &self,
+        instrument_type: OKXInstrumentType,
+    ) -> Result<(), OKXWsError> {
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::LiquidationWarning,
+            inst_type: Some(instrument_type),
             inst_family: None,
             inst_id: None,
         };

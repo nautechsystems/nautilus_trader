@@ -727,6 +727,7 @@ impl OKXDataClient {
             | OKXWsMessage::OrderResponse { .. }
             | OKXWsMessage::Account(_)
             | OKXWsMessage::Positions(_)
+            | OKXWsMessage::LiquidationWarnings(_)
             | OKXWsMessage::SendFailed { .. } => {
                 log::debug!("Ignoring execution message on data client");
             }

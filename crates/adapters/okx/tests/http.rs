@@ -4141,6 +4141,50 @@ async fn test_http_request_algo_order_status_reports_queries_all_states_without_
 
 #[rstest]
 #[tokio::test]
+async fn test_http_request_algo_order_status_reports_unknown_state_queries_nothing() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let reports = client
+        .request_algo_order_status_reports(
+            AccountId::new("OKX-001"),
+            Some(OKXInstrumentType::Swap),
+            None,
+            None,
+            None,
+            Some(OKXAlgoOrderStatus::Unknown),
+            None,
+        )
+        .await
+        .unwrap();
+
+    // An unrecognized state cannot be queried by name: no venue requests, no reports
+    assert!(reports.is_empty());
+    assert!(state.algo_pending_queries.lock().await.is_empty());
+    assert!(state.algo_history_queries.lock().await.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_http_request_algo_order_status_reports_prefers_triggered_child_over_pending_parent() {
     let state = Arc::new(TestServerState::default());
     let mut pending = load_test_data("http_get_orders_algo_pending.json");

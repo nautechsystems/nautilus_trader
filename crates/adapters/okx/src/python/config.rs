@@ -188,7 +188,6 @@ impl OKXExecClientConfig {
             environment: environment.unwrap_or(defaults.environment),
             region: region.unwrap_or(defaults.region),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
-            use_fills_channel: defaults.use_fills_channel,
             use_mm_mass_cancel: defaults.use_mm_mass_cancel,
             max_retries: max_retries.unwrap_or(defaults.max_retries),
             retry_delay_initial_ms: retry_delay_initial_ms

@@ -344,6 +344,10 @@ impl OKXWsFeedHandler {
             OKXWsChannel::OrdersAlgo | OKXWsChannel::AlgoAdvance => {
                 parse_array_items(data, "algo orders", false).map(OKXWsMessage::AlgoOrders)
             }
+            OKXWsChannel::LiquidationWarning => {
+                parse_array_items(data, "liquidation warnings", false)
+                    .map(OKXWsMessage::LiquidationWarnings)
+            }
             OKXWsChannel::Instruments => {
                 prefer_rpi_response_fields(&mut data);
                 parse_array_items(data, "instruments", true).map(OKXWsMessage::Instruments)
@@ -841,6 +845,27 @@ mod tests {
                 assert_eq!(instruments[0].rpi, Some(OKXRpiPermission::Permitted));
             }
             other => panic!("Expected Instruments, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_route_liquidation_warnings() {
+        let handler = create_handler();
+        let frame: Value = serde_json::from_str(&load_test_json("ws_liquidation_warning.json"))
+            .expect("valid fixture");
+
+        let arg: OKXWebSocketArg = serde_json::from_value(frame["arg"].clone()).expect("valid arg");
+        let msg = handler
+            .route_data_message(arg, frame["data"].clone())
+            .expect("liquidation warning message");
+
+        match msg {
+            OKXWsMessage::LiquidationWarnings(warnings) => {
+                assert_eq!(warnings.len(), 1);
+                assert_eq!(warnings[0].inst_id.as_str(), "BTC-USDT-SWAP");
+                assert_eq!(warnings[0].mgn_ratio, "0.62");
+            }
+            other => panic!("Expected LiquidationWarnings, was {other:?}"),
         }
     }
 }

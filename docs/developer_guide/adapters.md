@@ -476,6 +476,29 @@ Model the wire format, not an imagined stable subset:
 Avoid permissive fallbacks that silently turn a new venue value into an existing semantic value.
 Stable error handling is part of the parser contract.
 
+#### Venue enum fallbacks
+
+Venues extend wire enums without notice: new order states, order types, and category codes appear
+in production before clients update. Give each extensible venue enum a forward‑compatible fallback
+variant (`Unknown` for venue states, `Other` for open value sets such as types and categories) with
+`#[serde(other)]`, so one new value cannot fail deserialization of the message carrying it. Closed
+sets the adapter defines stay strict.
+
+The fallback changes where strictness lives, not whether it exists:
+
+- Never panic on an unknown wire variant; the fallback keeps the connection and the sibling records
+  in the same payload alive.
+- Never map an unknown variant onto an existing domain value. Make the domain mapping fallible
+  (`TryFrom`) so the fallback variant is rejected explicitly at the mapping boundary.
+- Preserve safety‑critical payload data even when a sibling classification is unmapped. A fill
+  must still be parsed and emitted when its order state or order type is unknown, because fill
+  fields carry their own prices, quantities, and fees.
+- Skip only the unmappable classification and log a warning with the venue identifiers (order ID,
+  instrument) needed to investigate. When the message carries no data worth preserving, fail the
+  record explicitly instead of inventing a status. Reconciliation heals the gap once the order
+  reaches a mapped state; an unmapped value fails the same way on the reconciliation path, so
+  treat the warning as the signal to add the mapping.
+
 #### Separate authority from projections
 
 Use separate response models when one endpoint returns both evidence that establishes permission or

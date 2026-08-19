@@ -34,9 +34,9 @@ use crate::{
     common::{
         enums::{
             OKXAlgoOrderStatus, OKXAlgoOrderType, OKXBookAction, OKXCandleConfirm, OKXExecType,
-            OKXInstrumentType, OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionSide,
-            OKXPriceType, OKXQuickMarginType, OKXSelfTradePreventionMode, OKXSettlementState,
-            OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
+            OKXInstrumentType, OKXMarginMode, OKXOrderCategory, OKXOrderStatus, OKXOrderType,
+            OKXPositionSide, OKXPriceType, OKXQuickMarginType, OKXSelfTradePreventionMode,
+            OKXSettlementState, OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
         },
         models::{OKXInstrument, OKXRpiBookLevel},
         parse::{
@@ -143,6 +143,8 @@ pub enum OKXWsMessage {
     Account(serde_json::Value),
     /// Positions channel update (raw JSON).
     Positions(serde_json::Value),
+    /// Liquidation risk warnings for account positions.
+    LiquidationWarnings(Vec<OKXLiquidationWarningMsg>),
     /// Instrument definition updates.
     Instruments(Vec<OKXInstrument>),
     /// A WebSocket send failed without a structured venue response.
@@ -867,6 +869,52 @@ pub struct OKXStatusMsg {
 }
 
 pub use crate::common::models::OKXAttachedAlgoOrd;
+
+/// Liquidation risk warning pushed by the `liquidation-warning` channel.
+///
+/// OKX sends this when an isolated position, or all positions under cross
+/// margin, approach liquidation. It is a risk warning only: the position may
+/// already be liquidated by the time the message arrives.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXLiquidationWarningMsg {
+    /// Instrument type.
+    pub inst_type: OKXInstrumentType,
+    /// Instrument family.
+    #[serde(default)]
+    pub inst_family: Option<Ustr>,
+    /// Instrument ID.
+    pub inst_id: Ustr,
+    /// Margin mode.
+    pub mgn_mode: OKXMarginMode,
+    /// Position ID.
+    #[serde(default)]
+    pub pos_id: Option<Ustr>,
+    /// Position side.
+    pub pos_side: OKXPositionSide,
+    /// Position quantity.
+    pub pos: String,
+    /// Position currency (margin positions only).
+    #[serde(default)]
+    pub pos_ccy: Option<Ustr>,
+    /// Leverage.
+    pub lever: String,
+    /// Mark price.
+    pub mark_px: String,
+    /// Maintenance margin ratio.
+    pub mgn_ratio: String,
+    /// Margin currency.
+    pub ccy: Ustr,
+    /// Creation time, Unix timestamp in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub c_time: u64,
+    /// Last update time, Unix timestamp in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub u_time: u64,
+    /// Push time, Unix timestamp in milliseconds.
+    #[serde(default)]
+    pub p_time: Option<String>,
+}
 
 /// Linked algo order metadata from order push updates.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

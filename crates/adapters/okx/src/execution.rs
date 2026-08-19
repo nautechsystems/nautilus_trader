@@ -1412,16 +1412,25 @@ impl ExecutionClient for OKXExecutionClient {
         for inst_type in &order_routing_types {
             log::debug!("Subscribing to orders channel for {inst_type:?}");
             self.ws_private.subscribe_orders(*inst_type).await?;
-
-            if self.config.use_fills_channel {
-                log::debug!("Subscribing to fills channel for {inst_type:?}");
-                if let Err(e) = self.ws_private.subscribe_fills(*inst_type).await {
-                    log::warn!("Failed to subscribe to fills channel ({inst_type:?}): {e}");
-                }
-            }
         }
 
         self.ws_private.subscribe_account().await?;
+
+        // Liquidation warnings cover margin and derivative positions; SPOT has none
+        if order_routing_types.iter().any(|t| {
+            matches!(
+                t,
+                OKXInstrumentType::Margin
+                    | OKXInstrumentType::Swap
+                    | OKXInstrumentType::Futures
+                    | OKXInstrumentType::Option
+            )
+        }) {
+            log::debug!("Subscribing to liquidation warning channel");
+            self.ws_private
+                .subscribe_liquidation_warning(OKXInstrumentType::Any)
+                .await?;
+        }
 
         if self.config.load_spreads {
             log::debug!("Subscribing to Nitro spread orders channel");
@@ -1776,13 +1785,12 @@ impl ExecutionClient for OKXExecutionClient {
         });
 
         log::info!(
-            "Started: client_id={}, account_id={}, account_type={:?}, trade_mode={:?}, instrument_types={:?}, use_fills_channel={}, environment={}, proxy_url={:?}",
+            "Started: client_id={}, account_id={}, account_type={:?}, trade_mode={:?}, instrument_types={:?}, environment={}, proxy_url={:?}",
             self.core.client_id,
             self.core.account_id,
             self.core.account_type,
             self.trade_mode,
             self.config.instrument_types,
-            self.config.use_fills_channel,
             self.config.environment,
             self.config.proxy_url,
         );

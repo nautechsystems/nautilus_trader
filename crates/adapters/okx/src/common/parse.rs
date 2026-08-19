@@ -116,7 +116,11 @@ pub fn is_market_price(px: &str) -> bool {
 ///
 /// For FOK, IOC, and OptimalLimitIoc orders, the presence of a price
 /// determines whether it's a market or limit order execution.
-pub fn determine_order_type(okx_ord_type: OKXOrderType, px: &str) -> OrderType {
+///
+/// # Errors
+///
+/// Returns an error if the OKX order type has no Nautilus equivalent.
+pub fn determine_order_type(okx_ord_type: OKXOrderType, px: &str) -> anyhow::Result<OrderType> {
     determine_order_type_with_alt(okx_ord_type, px, "", "")
 }
 
@@ -125,23 +129,29 @@ pub fn determine_order_type(okx_ord_type: OKXOrderType, px: &str) -> OrderType {
 /// When options are priced via `px_vol` or `px_usd`, the primary `px` field
 /// is empty. Treating that as a market order is wrong: the order was a limit
 /// priced in an alternative unit.
+///
+/// # Errors
+///
+/// Returns an error if the OKX order type has no Nautilus equivalent.
 pub fn determine_order_type_with_alt(
     okx_ord_type: OKXOrderType,
     px: &str,
     px_vol: &str,
     px_usd: &str,
-) -> OrderType {
+) -> anyhow::Result<OrderType> {
     match okx_ord_type {
-        OKXOrderType::OpFok => OrderType::Limit,
+        OKXOrderType::OpFok => Ok(OrderType::Limit),
         OKXOrderType::Fok | OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => {
             let has_alt_price = !px_vol.is_empty() || !px_usd.is_empty();
             if has_alt_price || !is_market_price(px) {
-                OrderType::Limit
+                Ok(OrderType::Limit)
             } else {
-                OrderType::Market
+                Ok(OrderType::Market)
             }
         }
-        _ => okx_ord_type.into(),
+        other => other
+            .try_into()
+            .map_err(|e| anyhow::anyhow!("Unsupported OKX order type: {e}")),
     }
 }
 
@@ -698,7 +708,7 @@ pub fn parse_order_status_report(
 
     let okx_ord_type: OKXOrderType = order.ord_type;
     let order_type =
-        determine_order_type_with_alt(okx_ord_type, &order.px, &order.px_vol, &order.px_usd);
+        determine_order_type_with_alt(okx_ord_type, &order.px, &order.px_vol, &order.px_usd)?;
 
     // Parse quantities based on target currency
     // OKX always returns acc_fill_sz in base currency, but sz depends on tgt_ccy
@@ -822,8 +832,10 @@ pub fn parse_order_status_report(
     };
 
     let order_side: OrderSide = order.side.into();
-    let okx_status: OKXOrderStatus = order.state;
-    let order_status: OrderStatus = okx_status.into();
+    let order_status: OrderStatus = order
+        .state
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("Unsupported OKX order status: {e}"))?;
     let time_in_force = match okx_ord_type {
         OKXOrderType::Fok | OKXOrderType::OpFok => TimeInForce::Fok,
         OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
@@ -1218,11 +1230,14 @@ pub fn parse_spread_order_status_report(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
-    let order_type = determine_order_type(order.ord_type, &order.px);
+    let order_type = determine_order_type(order.ord_type, &order.px)?;
     let quantity = parse_quantity(&order.sz, size_precision)?;
     let filled_qty = parse_quantity(&order.acc_fill_sz, size_precision)?;
     let order_side: OrderSide = order.side.into();
-    let order_status: OrderStatus = order.state.into();
+    let order_status: OrderStatus = order
+        .state
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("Unsupported OKX order status: {e}"))?;
     let time_in_force = match order.ord_type {
         OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
         OKXOrderType::Fok | OKXOrderType::OpFok => TimeInForce::Fok,
@@ -6245,7 +6260,12 @@ mod tests {
         #[case] price: &str,
         #[case] expected: OrderType,
     ) {
-        assert_eq!(determine_order_type(okx_ord_type, price), expected);
+        assert_eq!(determine_order_type(okx_ord_type, price).unwrap(), expected);
+    }
+
+    #[rstest]
+    fn test_determine_order_type_rejects_unknown_order_type() {
+        assert!(determine_order_type(OKXOrderType::Other, "100.5").is_err());
     }
 
     #[rstest]
