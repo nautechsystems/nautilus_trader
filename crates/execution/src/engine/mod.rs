@@ -2684,6 +2684,10 @@ impl ExecutionEngine {
                 let mut fill = fill.clone();
                 fill.position_id = Some(position_id);
 
+                if !self.validate_fill_for_position(position_id, &fill) {
+                    return;
+                }
+
                 let validation = if apply_position {
                     self.validate_fill_for_order(&order_before_fill, &fill)
                 } else {
@@ -2846,6 +2850,11 @@ impl ExecutionEngine {
         let oms_type = self.determine_oms_type(&fill);
         let position_id = self.determine_leg_fill_position_id(&fill, oms_type);
         fill.position_id = Some(position_id);
+
+        if !self.validate_fill_for_position(position_id, &fill) {
+            return;
+        }
+
         let duplicate_position_fill = self.position_contains_trade_id(position_id, fill.trade_id);
 
         let event = OrderEventAny::Filled(fill.clone());
@@ -3100,6 +3109,35 @@ impl ExecutionEngine {
         }
 
         position_id
+    }
+
+    /// Returns whether `fill` may be applied to the position assigned to `position_id`.
+    ///
+    /// Only `instrument_id` is compared. A position's instrument never changes, and a fill
+    /// for another instrument would be priced with this position's precision, multiplier,
+    /// currencies, and PnL rules.
+    ///
+    /// `account_id` and `strategy_id` are deliberately NOT compared, because each has a
+    /// legitimate mismatch path. Netting position IDs are `{instrument_id}-{strategy_id}`,
+    /// so two accounts trading one instrument under one strategy share a position ID.
+    /// External order claims can be handed to a successor strategy while the predecessor's
+    /// positions stay cached, so a later venue fill can carry the new strategy against them.
+    fn validate_fill_for_position(&self, position_id: PositionId, fill: &OrderFilled) -> bool {
+        let Some(position) = self.cache.borrow().position_owned(&position_id) else {
+            return true;
+        };
+
+        if position.instrument_id != fill.instrument_id {
+            log::error!(
+                "Cannot apply fill {} to position {position_id}: instrument_id mismatch, expected={}, received={}",
+                fill.trade_id,
+                position.instrument_id,
+                fill.instrument_id
+            );
+            return false;
+        }
+
+        true
     }
 
     fn determine_hedging_position_id(
