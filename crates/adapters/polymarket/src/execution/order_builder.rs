@@ -29,7 +29,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND, time::get_atomic_clock_realtime};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     events::OrderDeniedReason,
@@ -249,16 +249,12 @@ impl PolymarketOrderBuilder {
         order: &OrderAny,
         ts_now: UnixNanos,
     ) -> Result<(), OrderDeniedReason> {
-        if order.time_in_force() != TimeInForce::Gtd {
+        let Some(expire_secs) =
+            validated_limit_expiration_seconds(order.expire_time(), order.time_in_force())?
+        else {
             return Ok(());
-        }
-
-        let expire_time = order
-            .expire_time()
-            .filter(|expire_time| !expire_time.is_zero())
-            .ok_or(OrderDeniedReason::MissingExpireTime)?;
+        };
         let now_secs = ts_now.as_seconds();
-        let expire_secs = expire_time.as_seconds();
         let minimum_expire_secs = now_secs.saturating_add(GTD_EXPIRATION_BUFFER_SECS);
 
         if expire_secs < minimum_expire_secs {
@@ -383,6 +379,30 @@ fn validation_failed(detail: impl Into<String>) -> OrderDeniedReason {
     OrderDeniedReason::ValidationFailed {
         detail: detail.into(),
     }
+}
+
+pub(crate) fn validated_limit_expiration_seconds(
+    expire_time: Option<UnixNanos>,
+    time_in_force: TimeInForce,
+) -> Result<Option<u64>, OrderDeniedReason> {
+    if time_in_force != TimeInForce::Gtd {
+        if expire_time.is_some_and(|expiration| !expiration.is_zero()) {
+            return Err(validation_failed(
+                "Polymarket non-GTD orders must not carry an expiration",
+            ));
+        }
+        return Ok(None);
+    }
+
+    let expire_time = expire_time
+        .filter(|expiration| !expiration.is_zero())
+        .ok_or(OrderDeniedReason::MissingExpireTime)?;
+    if expire_time.as_u64() % NANOSECONDS_IN_SECOND != 0 {
+        return Err(validation_failed(
+            "Polymarket GTD expiry must be expressed in whole Unix seconds",
+        ));
+    }
+    Ok(Some(expire_time.as_seconds()))
 }
 
 fn validate_price(
@@ -759,7 +779,7 @@ mod tests {
 
     #[rstest]
     #[case::below(
-        1_700_000_179_999_999_999,
+        1_700_000_179_000_000_000,
         Some("Polymarket GTD expiry must be at least 180 seconds in the future")
     )]
     #[case::equal(1_700_000_180_000_000_000, None)]
@@ -803,6 +823,38 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(error, OrderDeniedReason::MissingExpireTime);
+    }
+
+    #[rstest]
+    fn test_validate_limit_expiration_rejects_expiry_for_non_gtd() {
+        let order = with_expire_time(
+            make_limit(false, false, false, TimeInForce::Gtc),
+            Some(UnixNanos::from(1_700_000_180_000_000_000u64)),
+        );
+
+        let error = PolymarketOrderBuilder::validate_limit_expiration(
+            &order,
+            UnixNanos::from(1_700_000_000_000_000_000u64),
+        )
+        .expect_err("non-GTD submissions must not carry an expiration");
+
+        assert!(error.to_string().contains("non-GTD"));
+    }
+
+    #[rstest]
+    fn test_validate_limit_expiration_rejects_fractional_unix_second() {
+        let order = with_expire_time(
+            make_limit(false, false, false, TimeInForce::Gtd),
+            Some(UnixNanos::from(1_700_000_180_500_000_000u64)),
+        );
+
+        let error = PolymarketOrderBuilder::validate_limit_expiration(
+            &order,
+            UnixNanos::from(1_700_000_000_000_000_000u64),
+        )
+        .expect_err("outbound expiration must be exact Unix seconds");
+
+        assert!(error.to_string().contains("whole Unix seconds"));
     }
 
     #[rstest]

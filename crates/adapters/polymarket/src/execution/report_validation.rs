@@ -21,6 +21,7 @@ use nautilus_core::{
     datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
 };
 use nautilus_model::{
+    enums::TimeInForce,
     identifiers::{InstrumentId, TradeId, VenueOrderId},
     instruments::InstrumentAny,
     types::{Price, Quantity},
@@ -80,11 +81,20 @@ pub(crate) fn non_negative_quantity(
 ///
 /// Historical reports can retain a price from an earlier tick regime, so current instrument tick
 /// precision is not an authority boundary for provider evidence.
-pub(crate) fn exact_binary_price(value: Decimal, field: &str) -> anyhow::Result<Price> {
+pub(crate) fn validate_binary_price_decimal(
+    value: Decimal,
+    field: &str,
+) -> anyhow::Result<Decimal> {
     anyhow::ensure!(
         value > Decimal::ZERO && value < Decimal::ONE,
         "{field} must satisfy 0 < price < 1, was {value}"
     );
+
+    Ok(value)
+}
+
+pub(crate) fn exact_binary_price(value: Decimal, field: &str) -> anyhow::Result<Price> {
+    let value = validate_binary_price_decimal(value, field)?;
 
     let normalized = value.normalize();
     let price = Price::from_decimal(normalized)
@@ -162,6 +172,22 @@ pub(crate) fn parse_expiration(value: &str, field: &str) -> anyhow::Result<Optio
         .parse::<u64>()
         .with_context(|| format!("{field} {value:?} is not Unix seconds"))?;
     positive_unix_seconds(seconds, field).map(Some)
+}
+
+pub(crate) fn parse_inbound_order_expiration(
+    value: Option<&str>,
+    time_in_force: TimeInForce,
+    field: &str,
+) -> anyhow::Result<Option<UnixNanos>> {
+    let expiration = value
+        .map(|raw| parse_expiration(raw, field))
+        .transpose()?
+        .flatten();
+    anyhow::ensure!(
+        time_in_force != TimeInForce::Gtd || expiration.is_some(),
+        "{field} must be positive for a GTD order"
+    );
+    Ok(expiration)
 }
 
 pub(crate) fn validate_fee_schedule(

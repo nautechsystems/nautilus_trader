@@ -544,6 +544,12 @@ pub struct PolymarketExecClientConfig {
     pub retry_delay_initial_ms: u64,
     #[builder(default = 10000)]
     pub retry_delay_max_ms: u64,
+    /// Maximum retained execution records per correction and operational-order category.
+    ///
+    /// New corrections and order submissions fail closed before emitting authority when their
+    /// category reaches this limit. Existing records are never capacity-evicted.
+    #[builder(default = 100000)]
+    pub max_retained_execution_records: usize,
     /// Enables authenticated order-safety heartbeats.
     #[builder(default)]
     pub heartbeat_enabled: bool,
@@ -572,6 +578,7 @@ nautilus_core::impl_pyo3_config_getters!(PolymarketExecClientConfig {
     max_retries: u32,
     retry_delay_initial_ms: u64,
     retry_delay_max_ms: u64,
+    max_retained_execution_records: usize,
     heartbeat_enabled: bool,
     transport_backend: TransportBackend,
     instrument_config: Option<PolymarketInstrumentProviderConfig>,
@@ -596,6 +603,10 @@ impl Debug for PolymarketExecClientConfig {
             .field("max_retries", &self.max_retries)
             .field("retry_delay_initial_ms", &self.retry_delay_initial_ms)
             .field("retry_delay_max_ms", &self.retry_delay_max_ms)
+            .field(
+                "max_retained_execution_records",
+                &self.max_retained_execution_records,
+            )
             .field("heartbeat_enabled", &self.heartbeat_enabled)
             .field("instrument_config", &self.instrument_config)
             .finish()
@@ -851,10 +862,22 @@ log_warnings = false
         assert_eq!(config.signature_type, expected.signature_type);
         assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
         assert_eq!(config.max_retries, expected.max_retries);
+        assert_eq!(
+            config.max_retained_execution_records,
+            expected.max_retained_execution_records
+        );
         assert!(!config.heartbeat_enabled);
         assert_eq!(config.transport_backend, expected.transport_backend);
         assert!(config.instrument_config.is_none());
         assert!(config.reconciliation_load_ids().is_none());
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_sets_retained_execution_capacity() {
+        let config: PolymarketExecClientConfig =
+            toml::from_str("max_retained_execution_records = 7").unwrap();
+
+        assert_eq!(config.max_retained_execution_records, 7);
     }
 
     #[rstest]

@@ -15,7 +15,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use nautilus_common::messages::execution::{
     GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -30,18 +30,20 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Currency, Quantity},
+    types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::{
     PolymarketExecutionClient,
-    order_fill_tracker::{FillFingerprint, OrderFillTrackerMap},
-    parse::{
-        parse_balance_allowance, parse_order_status_report, recovered_terminal_order_status,
-        weighted_average_price,
+    identity::OrderIdentity,
+    lifecycle::restored_fill_growth_policy,
+    order_fill_tracker::{
+        FillFingerprint, FillReplayFingerprint, OrderFillTrackerMap, snap_fill_qty_for_policy,
     },
+    parse::{parse_balance_allowance, parse_order_status_report, recovered_terminal_order_status},
+    pending::PendingSubmitTracker,
     reconciliation::{
         FillContext, apply_fill_filters, build_fill_reports_from_trades,
         build_position_reports_scoped, cap_order_report_filled_qty, confirmed_filled_quantities,
@@ -59,25 +61,101 @@ use crate::{
 };
 
 impl PolymarketExecutionClient {
+    fn known_order_identity(
+        &self,
+        venue_order_id: VenueOrderId,
+        client_order_id: Option<ClientOrderId>,
+    ) -> Option<OrderIdentity> {
+        self.order_identities.get(&venue_order_id).or_else(|| {
+            let cache = self.core.cache();
+            client_order_id
+                .or_else(|| cache.client_order_id(&venue_order_id).copied())
+                .and_then(|id| cache.order(&id))
+                .map(|order| OrderIdentity::from_order(&order))
+        })
+    }
+
+    fn validate_known_order_report(
+        &self,
+        report: &mut OrderStatusReport,
+        expected_client_order_id: Option<ClientOrderId>,
+    ) -> anyhow::Result<Option<OrderIdentity>> {
+        let identity = self.known_order_identity(
+            report.venue_order_id,
+            expected_client_order_id.or(report.client_order_id),
+        );
+        if let Some(identity) = identity {
+            identity.validate_order_report(
+                report,
+                report.venue_order_id,
+                expected_client_order_id,
+            )?;
+            report
+                .client_order_id
+                .get_or_insert(identity.client_order_id);
+        }
+        Ok(identity)
+    }
+
+    fn validate_known_order_reports(
+        &self,
+        reports: &mut [OrderStatusReport],
+    ) -> anyhow::Result<()> {
+        for report in reports {
+            self.validate_known_order_report(report, report.client_order_id)?;
+        }
+        Ok(())
+    }
+
     fn validated_confirmed_fills(
         &self,
         reports: &[FillReport],
     ) -> anyhow::Result<ValidatedConfirmedFills> {
-        let cache = self.core.cache();
         let mut cached_orders = HashMap::new();
         for report in reports {
             let venue_order_id = report.venue_order_id;
-            let Some(order) = cache
-                .client_order_id(&venue_order_id)
-                .and_then(|client_order_id| cache.order(client_order_id))
-            else {
+            let Some(identity) = self.known_order_identity(venue_order_id, None) else {
                 continue;
             };
-            cached_orders
-                .entry(venue_order_id)
-                .or_insert_with(|| order.cloned());
+            anyhow::ensure!(
+                report.instrument_id == identity.instrument_id,
+                "confirmed fill instrument {} does not match tracked instrument {} for order {venue_order_id}",
+                report.instrument_id,
+                identity.instrument_id,
+            );
+            anyhow::ensure!(
+                report.order_side == identity.order_side,
+                "confirmed fill side {} does not match tracked side {} for order {venue_order_id}",
+                report.order_side,
+                identity.order_side,
+            );
+            if let Some(client_order_id) = report.client_order_id {
+                anyhow::ensure!(
+                    client_order_id == identity.client_order_id,
+                    "confirmed fill client order ID {client_order_id} does not match tracked client order ID {}",
+                    identity.client_order_id,
+                );
+            }
+            if let Some(order) = self.core.cache().order(&identity.client_order_id) {
+                cached_orders
+                    .entry(venue_order_id)
+                    .or_insert_with(|| order.cloned());
+            }
         }
-        validate_confirmed_fill_evidence(&self.fill_tracker, &cached_orders, reports)
+        let mut validated = validate_confirmed_fill_evidence(
+            &self.fill_tracker,
+            &self.pending_submits,
+            &cached_orders,
+            reports,
+        )?;
+        for report in &mut validated.normalized_reports {
+            if let Some(identity) = self.known_order_identity(report.venue_order_id, None) {
+                report
+                    .client_order_id
+                    .get_or_insert(identity.client_order_id);
+            }
+        }
+        Ok(validated)
     }
 
     pub(super) fn fill_context(&self) -> FillContext<'_> {
@@ -133,6 +211,7 @@ impl PolymarketExecutionClient {
             .map_or(TimeInForce::Gtc, Order::time_in_force);
         let cached_price = cached.as_ref().and_then(Order::price);
         let cached_side = cached.as_ref().map(Order::order_side);
+        let cached_ts_accepted = cached.as_ref().and_then(|order| order.ts_accepted());
 
         let has_pending_trade =
             trades
@@ -173,7 +252,7 @@ impl PolymarketExecutionClient {
                 order_status,
                 cached.quantity(),
                 cached.filled_qty(),
-                ts_init,
+                cached_ts_accepted.unwrap_or(ts_init),
                 ts_init,
                 ts_init,
                 None,
@@ -186,17 +265,29 @@ impl PolymarketExecutionClient {
             return Ok(Some(report));
         }
 
-        let (mut order_fills, _) = build_fill_reports_from_trades(
-            &trades,
+        let mut scoped_confirmed_trades = Vec::new();
+        for trade in &trades {
+            if confirmed_trade_in_static_scope(
+                trade,
+                &ctx,
+                &self.shared_token_instruments,
+                Some(instrument_id),
+                Some(venue_order_id),
+                self.config.reconciliation_load_ids(),
+            )? {
+                scoped_confirmed_trades.push(trade.clone());
+            }
+        }
+        let (mut order_fills, discards) = build_fill_reports_from_trades(
+            &scoped_confirmed_trades,
             &ctx,
             &self.shared_token_instruments,
             Some(instrument_id),
             ts_init,
             self.config.reconciliation_load_ids(),
         )?;
+        discards.ensure_complete("terminal order recovery")?;
         order_fills.retain(|f| f.venue_order_id == venue_order_id);
-        self.fill_tracker.snap_fill_reports(&mut order_fills);
-
         if order_fills.is_empty() {
             let Some(cached) = cached.as_ref() else {
                 log::debug!(
@@ -218,7 +309,7 @@ impl PolymarketExecutionClient {
                 OrderStatus::Canceled,
                 cached.quantity(),
                 cached.filled_qty(),
-                ts_init,
+                cached_ts_accepted.unwrap_or(ts_init),
                 ts_init,
                 ts_init,
                 None,
@@ -236,12 +327,16 @@ impl PolymarketExecutionClient {
         };
 
         let confirmed_fills = self.validated_confirmed_fills(&order_fills)?;
+        let order_fills = &confirmed_fills.normalized_reports;
         let total_filled_dec = confirmed_fills
             .quantities
             .get(&venue_order_id)
             .context("recovered fills missing confirmed aggregate")?
             .as_decimal();
-        let avg_px = weighted_average_price(&confirmed_fills.unique_reports, total_filled_dec)?;
+        let avg_px = confirmed_fills
+            .weighted_average_prices
+            .get(&venue_order_id)
+            .copied();
         let raw_filled_qty =
             non_negative_quantity(total_filled_dec, size_prec, "recovered filled quantity")?;
         let order_side = cached_side.unwrap_or(order_fills[0].order_side);
@@ -250,6 +345,13 @@ impl PolymarketExecutionClient {
             .map(|f| f.ts_event)
             .max()
             .unwrap_or(ts_init);
+        let ts_accepted = cached_ts_accepted.unwrap_or_else(|| {
+            order_fills
+                .iter()
+                .map(|fill| fill.ts_event)
+                .min()
+                .unwrap_or(ts_init)
+        });
 
         let order_status = recovered_terminal_order_status(cached_tif, quantity, raw_filled_qty);
         let filled_qty = raw_filled_qty;
@@ -275,7 +377,7 @@ impl PolymarketExecutionClient {
             order_status,
             quantity,
             filled_qty,
-            ts_event,
+            ts_accepted,
             ts_event,
             ts_init,
             None,
@@ -289,12 +391,12 @@ impl PolymarketExecutionClient {
             .fill_tracker
             .get_cumulative_filled(&venue_order_id)
             .unwrap_or_else(|| Quantity::zero(size_prec));
-        cap_order_report_filled_qty(
-            &mut report,
-            cached_filled,
-            tracked_filled,
-            Some(total_filled_dec),
-        )?;
+        let local_filled = cached_filled.max(tracked_filled);
+        anyhow::ensure!(
+            raw_filled_qty == local_filled,
+            "terminal recovery for order {venue_order_id} requires canonical fills to be applied first: local={local_filled}, confirmed={raw_filled_qty}",
+        );
+        cap_order_report_filled_qty(&mut report, cached_filled, tracked_filled, None)?;
 
         Ok(Some(report))
     }
@@ -322,7 +424,8 @@ impl PolymarketExecutionClient {
             );
             return;
         };
-        let venue_order_id = venue_order_id.to_string();
+        let requested_venue_order_id = venue_order_id;
+        let venue_order_id = requested_venue_order_id.to_string();
 
         let instrument_id = cmd.instrument_id;
         let client_order_id = cmd.client_order_id;
@@ -340,16 +443,13 @@ impl PolymarketExecutionClient {
         let expected_order = cache.order(&client_order_id).map(|order| order.cloned());
         let cached_orders = expected_order
             .as_ref()
-            .and_then(|order| {
-                order
-                    .venue_order_id()
-                    .map(|venue_order_id| (venue_order_id, order.clone()))
-            })
+            .map(|order| (requested_venue_order_id, order.clone()))
             .into_iter()
             .collect::<HashMap<_, _>>();
 
         let http_client = self.http_client.clone();
         let fill_tracker = self.fill_tracker.clone();
+        let pending_submits = self.pending_submits.clone();
         let token_instruments = self.shared_token_instruments.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -397,7 +497,7 @@ impl PolymarketExecutionClient {
                         .get_cumulative_filled(&venue_order_id)
                         .unwrap_or_else(|| Quantity::zero(size_prec));
                     let local_filled = cached_filled.max(tracked_filled);
-                    let confirmed_filled = if report.filled_qty > local_filled {
+                    let confirmed_fills = if report.filled_qty > local_filled {
                         let ctx = FillContext {
                             account_id,
                             user_address: &user_address,
@@ -409,33 +509,47 @@ impl PolymarketExecutionClient {
                             &http_client,
                             &ctx,
                             &token_instruments,
-                            GetTradesParams::default(),
-                            Some(instrument_id),
-                            clock.get_time_ns(),
-                            load_ids.as_deref(),
+                            ConfirmedFillLookup {
+                                params: GetTradesParams::default(),
+                                instrument_id: Some(instrument_id),
+                                venue_order_id: Some(venue_order_id),
+                                ts_init: clock.get_time_ns(),
+                                load_ids: load_ids.as_deref(),
+                            },
                         )
                         .await?
                         {
-                            Some(fills) => validate_confirmed_fill_evidence(
-                                &fill_tracker,
-                                &cached_orders,
-                                &fills,
-                            )?
-                            .quantities
-                            .get(&venue_order_id)
-                            .map(|quantity| quantity.as_decimal()),
-                            None => None,
+                            Some(fills) => {
+                                validate_confirmed_fill_evidence(
+                                    &fill_tracker,
+                                    &pending_submits,
+                                    &cached_orders,
+                                    &fills,
+                                )?
+                            }
+                            None => anyhow::bail!(
+                                "order {venue_order_id} reports filled quantity {} above applied quantity {local_filled}, but canonical fills are unavailable",
+                                report.filled_qty,
+                            ),
                         }
                     } else {
-                        None
+                        ValidatedConfirmedFills::default()
                     };
+                    let confirmed_filled = confirmed_fills
+                        .quantities
+                        .get(&venue_order_id)
+                        .map(|quantity| quantity.as_decimal());
                     cap_order_report_filled_qty(
                         &mut report,
                         cached_filled,
                         tracked_filled,
                         confirmed_filled,
                     )?;
-                    emitter.send_order_status_report(report);
+                    if confirmed_fills.normalized_reports.is_empty() {
+                        emitter.send_order_status_report(report);
+                    } else {
+                        emitter.send_order_with_fills(report, confirmed_fills.normalized_reports);
+                    }
                 }
                 Ok(None) => {
                     log::warn!("Order {venue_order_id} not found (empty response)");
@@ -484,9 +598,13 @@ impl PolymarketExecutionClient {
                 cmd.client_order_id,
                 self.clock.get_time_ns(),
             )?;
+            let known_identity =
+                self.validate_known_order_report(&mut report, cmd.client_order_id)?;
             let expected_order = {
                 let cache = self.core.cache();
-                cmd.client_order_id
+                known_identity
+                    .map(|identity| identity.client_order_id)
+                    .or(cmd.client_order_id)
                     .and_then(|id| cache.order(&id).map(|order| order.cloned()))
                     .or_else(|| {
                         cache
@@ -516,34 +634,35 @@ impl PolymarketExecutionClient {
                 .get_cumulative_filled(&venue_order_id)
                 .unwrap_or_else(|| Quantity::zero(size_prec));
             let local_filled = cached_filled.max(tracked_filled);
-            let confirmed_filled = if report.filled_qty > local_filled {
+            if report.filled_qty > local_filled {
                 match fetch_confirmed_fill_reports(
                     &self.http_client,
                     &self.fill_context(),
                     &self.shared_token_instruments,
-                    GetTradesParams::default(),
-                    Some(instrument_id),
-                    self.clock.get_time_ns(),
-                    self.config.reconciliation_load_ids(),
+                    ConfirmedFillLookup {
+                        params: GetTradesParams::default(),
+                        instrument_id: Some(instrument_id),
+                        venue_order_id: Some(venue_order_id),
+                        ts_init: self.clock.get_time_ns(),
+                        load_ids: self.config.reconciliation_load_ids(),
+                    },
                 )
                 .await?
                 {
-                    Some(fills) => self
-                        .validated_confirmed_fills(&fills)?
-                        .quantities
-                        .get(&venue_order_id)
-                        .map(|quantity| quantity.as_decimal()),
-                    None => None,
+                    Some(fills) => {
+                        self.validated_confirmed_fills(&fills)?;
+                    }
+                    None => anyhow::bail!(
+                        "order {venue_order_id} reports filled quantity {} above applied quantity {local_filled}, but canonical fills are unavailable",
+                        report.filled_qty,
+                    ),
                 }
-            } else {
-                None
-            };
-            cap_order_report_filled_qty(
-                &mut report,
-                cached_filled,
-                tracked_filled,
-                confirmed_filled,
-            )?;
+                anyhow::bail!(
+                    "order {venue_order_id} reports filled quantity {} above applied quantity {local_filled}; canonical fills must be reconciled first",
+                    report.filled_qty,
+                );
+            }
+            cap_order_report_filled_qty(&mut report, cached_filled, tracked_filled, None)?;
             return Ok(Some(report));
         }
 
@@ -579,6 +698,7 @@ impl PolymarketExecutionClient {
             self.clock.get_time_ns(),
             self.config.reconciliation_load_ids(),
         )?;
+        self.validate_known_order_reports(&mut reports)?;
 
         let needs_confirmed_fills = reports.iter().any(|report| {
             let cached_filled = report
@@ -587,24 +707,29 @@ impl PolymarketExecutionClient {
                 .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
             report.filled_qty > cached_filled
         });
-        let confirmed_fills = if needs_confirmed_fills {
+        if needs_confirmed_fills {
             match fetch_confirmed_fill_reports(
                 &self.http_client,
                 &self.fill_context(),
                 &self.shared_token_instruments,
-                GetTradesParams::default(),
-                cmd.instrument_id,
-                self.clock.get_time_ns(),
-                self.config.reconciliation_load_ids(),
+                ConfirmedFillLookup {
+                    params: GetTradesParams::default(),
+                    instrument_id: cmd.instrument_id,
+                    venue_order_id: None,
+                    ts_init: self.clock.get_time_ns(),
+                    load_ids: self.config.reconciliation_load_ids(),
+                },
             )
             .await?
             {
-                Some(fills) => self.validated_confirmed_fills(&fills)?.quantities,
-                None => Default::default(),
+                Some(fills) => {
+                    self.validated_confirmed_fills(&fills)?;
+                }
+                None => anyhow::bail!(
+                    "order reports contain filled quantity above applied authority, but canonical fills are unavailable",
+                ),
             }
-        } else {
-            Default::default()
-        };
+        }
 
         for report in &mut reports {
             let cached_filled = report
@@ -621,14 +746,14 @@ impl PolymarketExecutionClient {
                 .fill_tracker
                 .get_cumulative_filled(&report.venue_order_id)
                 .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
-            cap_order_report_filled_qty(
-                report,
-                cached_filled,
-                tracked_filled,
-                confirmed_fills
-                    .get(&report.venue_order_id)
-                    .map(|quantity| quantity.as_decimal()),
-            )?;
+            let local_filled = cached_filled.max(tracked_filled);
+            anyhow::ensure!(
+                report.filled_qty <= local_filled,
+                "order {} reports filled quantity {} above applied quantity {local_filled}; canonical fills must be reconciled first",
+                report.venue_order_id,
+                report.filled_qty,
+            );
+            cap_order_report_filled_qty(report, cached_filled, tracked_filled, None)?;
         }
 
         let reports = if cmd.open_only {
@@ -667,7 +792,7 @@ impl PolymarketExecutionClient {
             cmd.venue_order_id,
             self.config.reconciliation_load_ids(),
         )?;
-        let (mut reports, _) = build_fill_reports_from_trades(
+        let (reports, discards) = build_fill_reports_from_trades(
             &trades,
             &ctx,
             &self.shared_token_instruments,
@@ -675,11 +800,15 @@ impl PolymarketExecutionClient {
             self.clock.get_time_ns(),
             self.config.reconciliation_load_ids(),
         )?;
+        discards.ensure_complete("fill report generation")?;
 
-        self.fill_tracker.snap_fill_reports(&mut reports);
-        self.validated_confirmed_fills(&reports)?;
-
-        let reports = apply_fill_filters(reports, cmd.venue_order_id, cmd.start, cmd.end);
+        let validated = self.validated_confirmed_fills(&reports)?;
+        let reports = apply_fill_filters(
+            validated.normalized_reports,
+            cmd.venue_order_id,
+            cmd.start,
+            cmd.end,
+        );
 
         log::debug!("Generated {} fill reports", reports.len());
         Ok(reports)
@@ -715,7 +844,7 @@ impl PolymarketExecutionClient {
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let ctx = self.fill_context();
-        let mass_status = super::reconciliation::generate_mass_status(
+        let generated = super::reconciliation::generate_mass_status(
             &self.http_client,
             &self.data_api_client,
             &self.shared_token_instruments,
@@ -728,39 +857,120 @@ impl PolymarketExecutionClient {
         )
         .await?;
 
-        if let Some(status) = mass_status.as_ref() {
-            let fill_reports = status
-                .fill_reports()
-                .into_values()
-                .flatten()
-                .collect::<Vec<_>>();
-            self.validated_confirmed_fills(&fill_reports)?;
+        let Some(generated) = generated else {
+            return Ok(None);
+        };
+        let (validated_fills, mut order_reports) = {
+            let status = &generated.status;
+            let mut order_reports = status.order_reports().into_values().collect::<Vec<_>>();
+            self.validate_known_order_reports(&mut order_reports)?;
+            (
+                self.validated_confirmed_fills(&generated.provider_fill_reports)?,
+                order_reports,
+            )
+        };
+        for report in &mut order_reports {
+            let cached_filled = {
+                let cache = self.core.cache();
+                report
+                    .client_order_id
+                    .and_then(|id| cache.order(&id).map(|order| order.filled_qty()))
+                    .or_else(|| {
+                        cache
+                            .client_order_id(&report.venue_order_id)
+                            .and_then(|id| cache.order(id).map(|order| order.filled_qty()))
+                    })
+                    .unwrap_or_else(|| Quantity::zero(report.quantity.precision))
+            };
+            let tracked_filled = self
+                .fill_tracker
+                .get_cumulative_filled(&report.venue_order_id)
+                .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
+            cap_order_report_filled_qty(
+                report,
+                cached_filled,
+                tracked_filled,
+                validated_fills
+                    .quantities
+                    .get(&report.venue_order_id)
+                    .map(|quantity| quantity.as_decimal()),
+            )?;
         }
-        Ok(mass_status)
+        let mut status = generated.status;
+        status.add_order_reports(order_reports);
+        status.add_fill_reports(validated_fills.normalized_reports);
+        Ok(Some(status))
     }
 }
 
+#[derive(Default)]
 struct ValidatedConfirmedFills {
     quantities: AHashMap<VenueOrderId, Quantity>,
-    unique_reports: Vec<FillReport>,
+    weighted_average_prices: AHashMap<VenueOrderId, Decimal>,
+    normalized_reports: Vec<FillReport>,
+}
+
+fn insert_fill_economics(
+    fills: &mut HashMap<(VenueOrderId, TradeId), (Quantity, Price)>,
+    venue_order_id: VenueOrderId,
+    trade_id: TradeId,
+    last_qty: Quantity,
+    last_px: Price,
+) -> anyhow::Result<()> {
+    if let Some((expected_qty, expected_px)) = fills.get(&(venue_order_id, trade_id)) {
+        anyhow::ensure!(
+            *expected_qty == last_qty && *expected_px == last_px,
+            "different admitted fill economics for order {venue_order_id} trade {trade_id}: expected {expected_qty}@{expected_px}, received {last_qty}@{last_px}",
+        );
+    } else {
+        fills.insert((venue_order_id, trade_id), (last_qty, last_px));
+    }
+    Ok(())
 }
 
 fn validate_confirmed_fill_evidence(
     fill_tracker: &OrderFillTrackerMap,
+    pending_submits: &PendingSubmitTracker,
     cached_orders: &HashMap<VenueOrderId, OrderAny>,
-    reports: &[FillReport],
+    provider_reports: &[FillReport],
 ) -> anyhow::Result<ValidatedConfirmedFills> {
-    let confirmed_filled = confirmed_filled_quantities(reports)?;
+    let mut reports = provider_reports.to_vec();
+    fill_tracker.snap_fill_reports(&mut reports);
+    for report in &mut reports {
+        let Some(order) = cached_orders.get(&report.venue_order_id) else {
+            continue;
+        };
+        anyhow::ensure!(
+            report.instrument_id == order.instrument_id(),
+            "confirmed fill instrument {} does not match cached instrument {} for order {}",
+            report.instrument_id,
+            order.instrument_id(),
+            report.venue_order_id,
+        );
+        anyhow::ensure!(
+            report.order_side == order.order_side(),
+            "confirmed fill side {} does not match cached side {} for order {}",
+            report.order_side,
+            order.order_side(),
+            report.venue_order_id,
+        );
+        if !fill_tracker.contains(&report.venue_order_id) {
+            report.last_qty = snap_fill_qty_for_policy(
+                order.quantity(),
+                restored_fill_growth_policy(order),
+                report.last_qty,
+            );
+        }
+    }
+    let mut confirmed_filled = confirmed_filled_quantities(&reports)?;
     let mut returned_fills = HashMap::<(VenueOrderId, TradeId), FillFingerprint>::new();
-    let mut unique_reports = Vec::new();
-    for report in reports {
-        let key = (report.venue_order_id, report.trade_id);
-        let fingerprint = FillFingerprint::from_report(report);
+    for provider_report in provider_reports {
+        let key = (provider_report.venue_order_id, provider_report.trade_id);
+        let fingerprint = FillFingerprint::from_report(provider_report);
         if let Some(existing) = returned_fills.get(&key) {
-            existing.ensure_equal(&fingerprint, report.venue_order_id)?;
+            existing.ensure_equal(&fingerprint, provider_report.venue_order_id)?;
         } else {
             returned_fills.insert(key, fingerprint);
-            unique_reports.push(report.clone());
         }
     }
     let mut cached_fills = Vec::<OrderFilled>::new();
@@ -782,35 +992,106 @@ fn validate_confirmed_fill_evidence(
     // The tracker owns current-session quantity semantics, including a signed quote budget.
     // It returns the exact orders validated under its lock, leaving only cache-only orders for
     // the fixed ceiling below.
-    let tracker_validated = fill_tracker.validate_confirmed_fills(&cached_fills, reports)?;
+    let pending_orders = provider_reports
+        .iter()
+        .filter_map(|report| {
+            pending_submits
+                .fill_validation_proof(&report.venue_order_id)
+                .map(|proof| (report.venue_order_id, proof))
+        })
+        .collect::<AHashMap<_, _>>();
+    let tracker_totals = fill_tracker.validate_confirmed_fills_with_pending(
+        &cached_fills,
+        provider_reports,
+        &reports,
+        &pending_orders,
+    )?;
     let mut prospective_totals = HashMap::new();
-    let mut seen_fills = HashMap::<(VenueOrderId, TradeId), FillFingerprint>::new();
+    let mut seen_fills = HashMap::<(VenueOrderId, TradeId), FillReplayFingerprint>::new();
+    let mut fill_economics = HashMap::new();
     for fill in &cached_fills {
         let key = (fill.venue_order_id, fill.trade_id);
-        let fingerprint = FillFingerprint::from_event(fill);
+        let fingerprint = FillReplayFingerprint::from_event(fill)?;
         if let Some(existing) = seen_fills.get(&key) {
             existing.ensure_equal(&fingerprint, fill.venue_order_id)?;
         } else {
             seen_fills.insert(key, fingerprint);
         }
+        insert_fill_economics(
+            &mut fill_economics,
+            fill.venue_order_id,
+            fill.trade_id,
+            fill.last_qty,
+            fill.last_px,
+        )?;
     }
 
-    for report in reports {
+    let relevant_orders = cached_orders
+        .keys()
+        .copied()
+        .chain(reports.iter().map(|report| report.venue_order_id))
+        .collect::<AHashSet<_>>();
+    for (venue_order_id, trade_id, last_qty, last_px) in
+        fill_tracker.applied_fill_economics(&relevant_orders)
+    {
+        insert_fill_economics(
+            &mut fill_economics,
+            venue_order_id,
+            trade_id,
+            last_qty,
+            last_px,
+        )?;
+    }
+
+    for (venue_order_id, order) in cached_orders {
+        if !tracker_totals.contains_key(venue_order_id) {
+            prospective_totals.insert(*venue_order_id, order.filled_qty());
+        }
+    }
+    for (provider_report, report) in provider_reports.iter().zip(&reports) {
         let venue_order_id = report.venue_order_id;
-        if tracker_validated.contains(&venue_order_id) {
+        if tracker_totals.contains_key(&venue_order_id) {
+            insert_fill_economics(
+                &mut fill_economics,
+                venue_order_id,
+                report.trade_id,
+                report.last_qty,
+                report.last_px,
+            )?;
             continue;
         }
 
         let Some(order) = cached_orders.get(&venue_order_id) else {
+            insert_fill_economics(
+                &mut fill_economics,
+                venue_order_id,
+                report.trade_id,
+                report.last_qty,
+                report.last_px,
+            )?;
             continue;
         };
-        let key = (venue_order_id, report.trade_id);
-        let fingerprint = FillFingerprint::from_report(report);
+        let key = (venue_order_id, provider_report.trade_id);
+        let fingerprint = FillReplayFingerprint::from_reports(provider_report, report);
         if let Some(existing) = seen_fills.get(&key) {
             existing.ensure_equal(&fingerprint, venue_order_id)?;
+            insert_fill_economics(
+                &mut fill_economics,
+                venue_order_id,
+                report.trade_id,
+                report.last_qty,
+                report.last_px,
+            )?;
             continue;
         }
         seen_fills.insert(key, fingerprint);
+        insert_fill_economics(
+            &mut fill_economics,
+            venue_order_id,
+            report.trade_id,
+            report.last_qty,
+            report.last_px,
+        )?;
 
         let total = prospective_totals
             .entry(venue_order_id)
@@ -828,9 +1109,47 @@ fn validate_confirmed_fill_evidence(
             order.quantity()
         );
     }
+    confirmed_filled.extend(prospective_totals);
+    confirmed_filled.extend(tracker_totals);
+    let mut weighted_economics = HashMap::<VenueOrderId, (Decimal, Decimal)>::new();
+    for ((venue_order_id, _), (last_qty, last_px)) in fill_economics {
+        let qty = last_qty.as_decimal();
+        let notional = qty
+            .checked_mul(last_px.as_decimal())
+            .context("fill notional multiplication overflow")?;
+        let (total_qty, total_notional) = weighted_economics
+            .entry(venue_order_id)
+            .or_insert((Decimal::ZERO, Decimal::ZERO));
+        *total_qty = total_qty
+            .checked_add(qty)
+            .context("fill quantity sum overflow")?;
+        *total_notional = total_notional
+            .checked_add(notional)
+            .context("fill notional sum overflow")?;
+    }
+    let mut weighted_average_prices = AHashMap::new();
+    for (venue_order_id, total) in &confirmed_filled {
+        if total.is_zero() {
+            continue;
+        }
+        let (economic_qty, economic_notional) = weighted_economics
+            .get(venue_order_id)
+            .with_context(|| format!("missing fill economics for order {venue_order_id}"))?;
+        anyhow::ensure!(
+            *economic_qty == total.as_decimal(),
+            "fill economics quantity {economic_qty} does not match confirmed aggregate {total} for order {venue_order_id}",
+        );
+        weighted_average_prices.insert(
+            *venue_order_id,
+            economic_notional
+                .checked_div(*economic_qty)
+                .context("weighted average price division failed")?,
+        );
+    }
     Ok(ValidatedConfirmedFills {
         quantities: confirmed_filled,
-        unique_reports,
+        weighted_average_prices,
+        normalized_reports: reports,
     })
 }
 
@@ -875,30 +1194,60 @@ fn trades_in_window(
     Ok(in_window)
 }
 
+struct ConfirmedFillLookup<'a> {
+    params: GetTradesParams,
+    instrument_id: Option<InstrumentId>,
+    venue_order_id: Option<VenueOrderId>,
+    ts_init: UnixNanos,
+    load_ids: Option<&'a [InstrumentId]>,
+}
+
 async fn fetch_confirmed_fill_reports(
     http_client: &PolymarketClobHttpClient,
     ctx: &FillContext<'_>,
     token_instruments: &AtomicMap<Ustr, InstrumentAny>,
-    params: GetTradesParams,
-    instrument_id: Option<InstrumentId>,
-    ts_init: UnixNanos,
-    load_ids: Option<&[InstrumentId]>,
+    lookup: ConfirmedFillLookup<'_>,
 ) -> anyhow::Result<Option<Vec<FillReport>>> {
+    let ConfirmedFillLookup {
+        params,
+        instrument_id,
+        venue_order_id,
+        ts_init,
+        load_ids,
+    } = lookup;
     let trades = match http_client.get_trades(params).await {
         Ok(trades) => trades,
-        Err(e) => {
+        Err(e) if e.is_retryable() => {
             log::warn!("Failed to fetch confirmed trades: {e}");
             return Ok(None);
         }
+        Err(e) => return Err(e).context("invalid confirmed-trade response"),
     };
-    let (reports, _) = build_fill_reports_from_trades(
-        &trades,
+    let mut scoped_trades = Vec::new();
+    for trade in trades {
+        if confirmed_trade_in_static_scope(
+            &trade,
+            ctx,
+            token_instruments,
+            instrument_id,
+            venue_order_id,
+            load_ids,
+        )? {
+            scoped_trades.push(trade);
+        }
+    }
+    let (mut reports, discards) = build_fill_reports_from_trades(
+        &scoped_trades,
         ctx,
         token_instruments,
         instrument_id,
         ts_init,
         load_ids,
     )?;
+    discards.ensure_complete("confirmed fill lookup")?;
+    if let Some(venue_order_id) = venue_order_id {
+        reports.retain(|report| report.venue_order_id == venue_order_id);
+    }
     Ok(Some(reports))
 }
 
@@ -951,7 +1300,7 @@ pub(super) fn validate_order_response_scope(
     Ok(())
 }
 
-fn pending_trade_matches_known_order(
+pub(crate) fn pending_trade_matches_known_order(
     trade: &PolymarketTradeReport,
     venue_order_id: VenueOrderId,
     instrument: &InstrumentAny,

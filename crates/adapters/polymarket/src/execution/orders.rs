@@ -17,7 +17,7 @@ use anyhow::Context;
 use nautilus_common::messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList};
 use nautilus_live::execution::failure::CommandFailure;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderType},
+    enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
     events::OrderDeniedReason,
     identifiers::VenueOrderId,
     instruments::{Instrument, InstrumentAny},
@@ -44,7 +44,8 @@ use super::{
         reject_submit_order,
     },
     submitter::{
-        InvalidMarketPriceError, MarketBuyFeeContext, MarketOrderSubmitRequest, UnknownSubmitError,
+        InvalidMarketPriceError, MarketBuyFeeContext, MarketOrderSubmitRequest,
+        SubmitResponseOutcome, UnknownSubmitError, submit_response_outcome,
     },
     types::{BatchLimitOrderContext, LimitOrderSubmitRequest, classify_http_command_failure},
 };
@@ -127,8 +128,55 @@ impl PolymarketExecutionClient {
             };
 
             let expected_venue_order_id = submission.expected_venue_order_id;
+            if let Err(e) = fill_tracker.reserve_orders(&[expected_venue_order_id]) {
+                reject_submit_order(
+                    &order,
+                    &e.to_string(),
+                    &emitter,
+                    clock,
+                    &pending_cancels,
+                );
+                return Ok(());
+            }
             match submitter.post_limit_order_submission(submission).await {
                 Ok(response) => {
+                    let response_rejected = submit_response_outcome(
+                        &response,
+                        tif == TimeInForce::Fok,
+                    ) == SubmitResponseOutcome::Rejected;
+                    if response_rejected
+                        && !fill_tracker.abandon_order_reservation(&expected_venue_order_id)
+                    {
+                        if let Some((order_id_str, venue_order_id)) =
+                            handle_unknown_submit_result(
+                                &order,
+                                expected_venue_order_id,
+                                "venue rejection contradicted buffered order activity",
+                                None,
+                                &emitter,
+                                clock,
+                                &fill_tracker,
+                                &order_identities,
+                                &pending_submits,
+                                &pending_cancels,
+                                account_id,
+                                size_precision,
+                                price_precision,
+                            )
+                        {
+                            execute_deferred_cancel(
+                                &submitter,
+                                &order,
+                                &order_id_str,
+                                venue_order_id,
+                                &emitter,
+                                &pending_cancels,
+                                clock,
+                            )
+                            .await;
+                        }
+                        return Ok(());
+                    }
                     let fok_order_id = fok_check_order_id(&response, tif);
                     if let Some((order_id_str, venue_order_id)) = handle_order_response(
                         Ok(response),
@@ -199,7 +247,38 @@ impl PolymarketExecutionClient {
                         }
                     }
                     CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
-                        reject_submit_order(&order, &reason, &emitter, clock, &pending_cancels);
+                        if fill_tracker.abandon_order_reservation(&expected_venue_order_id) {
+                            reject_submit_order(&order, &reason, &emitter, clock, &pending_cancels);
+                        } else if let Some((order_id_str, venue_order_id)) =
+                            handle_unknown_submit_result(
+                                &order,
+                                expected_venue_order_id,
+                                &format!(
+                                    "definite submit failure contradicted buffered order activity: {reason}"
+                                ),
+                                None,
+                                &emitter,
+                                clock,
+                                &fill_tracker,
+                                &order_identities,
+                                &pending_submits,
+                                &pending_cancels,
+                                account_id,
+                                size_precision,
+                                price_precision,
+                            )
+                        {
+                            execute_deferred_cancel(
+                                &submitter,
+                                &order,
+                                &order_id_str,
+                                venue_order_id,
+                                &emitter,
+                                &pending_cancels,
+                                clock,
+                            )
+                            .await;
+                        }
                     }
                 },
             }
@@ -285,15 +364,27 @@ impl PolymarketExecutionClient {
             };
 
             match submitter
-                .submit_market_order(MarketOrderSubmitRequest {
-                    token_id,
-                    side,
-                    amount,
-                    time_in_force,
-                    neg_risk,
-                    tick_size,
-                    fee_context,
-                })
+                .submit_market_order(
+                    MarketOrderSubmitRequest {
+                        token_id,
+                        side,
+                        amount,
+                        time_in_force,
+                        neg_risk,
+                        tick_size,
+                        fee_context,
+                    },
+                    {
+                        let fill_tracker = fill_tracker.clone();
+                        move |venue_order_id| fill_tracker.reserve_orders(&[venue_order_id])
+                    },
+                    {
+                        let fill_tracker = fill_tracker.clone();
+                        move |venue_order_id| {
+                            fill_tracker.abandon_order_reservation(&venue_order_id)
+                        }
+                    },
+                )
                 .await
             {
                 Ok(result) => {
@@ -675,6 +766,17 @@ impl PolymarketExecutionClient {
                     let submission = submissions_chunk.pop().expect("len 1");
                     let expected_venue_order_id = submission.expected_venue_order_id;
                     let batch_order = orders_chunk.pop().expect("len 1");
+                    if let Err(e) = fill_tracker.reserve_orders(&[expected_venue_order_id]) {
+                        reject_submit_order(
+                            &batch_order.order,
+                            &e.to_string(),
+                            &emitter,
+                            clock,
+                            &pending_cancels,
+                        );
+                        offset = end;
+                        continue;
+                    }
                     handle_single_order_response(
                         submitter.post_limit_order_submission(submission).await,
                         batch_order,
@@ -694,6 +796,20 @@ impl PolymarketExecutionClient {
                         .iter()
                         .map(|submission| submission.expected_venue_order_id)
                         .collect();
+
+                    if let Err(e) = fill_tracker.reserve_orders(&expected_venue_order_ids) {
+                        for batch_order in orders_chunk {
+                            reject_submit_order(
+                                &batch_order.order,
+                                &e.to_string(),
+                                &emitter,
+                                clock,
+                                &pending_cancels,
+                            );
+                        }
+                        offset = end;
+                        continue;
+                    }
 
                     match submitter
                         .post_limit_order_submissions(submissions_chunk)
@@ -753,14 +869,49 @@ impl PolymarketExecutionClient {
                             }
                             CommandFailure::NotSent(reason)
                             | CommandFailure::VenueRejected(reason) => {
-                                for batch_order in orders_chunk {
-                                    reject_submit_order(
-                                        &batch_order.order,
-                                        &reason,
-                                        &emitter,
-                                        clock,
-                                        &pending_cancels,
-                                    );
+                                for (batch_order, expected_venue_order_id) in
+                                    orders_chunk.into_iter().zip(expected_venue_order_ids)
+                                {
+                                    if fill_tracker
+                                        .abandon_order_reservation(&expected_venue_order_id)
+                                    {
+                                        reject_submit_order(
+                                            &batch_order.order,
+                                            &reason,
+                                            &emitter,
+                                            clock,
+                                            &pending_cancels,
+                                        );
+                                    } else if let Some((order_id_str, venue_order_id)) =
+                                        handle_unknown_submit_result(
+                                            &batch_order.order,
+                                            expected_venue_order_id,
+                                            &format!(
+                                                "definite submit failure contradicted buffered order activity: {reason}"
+                                            ),
+                                            None,
+                                            &emitter,
+                                            clock,
+                                            &fill_tracker,
+                                            &order_identities,
+                                            &pending_submits,
+                                            &pending_cancels,
+                                            account_id,
+                                            batch_order.size_precision,
+                                            batch_order.price_precision,
+                                        )
+                                    {
+                                        execute_deferred_cancel(
+                                            &submitter,
+                                            &batch_order.order,
+                                            &order_id_str,
+                                            venue_order_id,
+                                            &emitter,
+                                            &pending_cancels,
+                                            clock,
+                                        )
+                                        .await;
+                                    }
                                 }
                             }
                         },

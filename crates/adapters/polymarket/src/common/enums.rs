@@ -231,6 +231,9 @@ impl<'de> Deserialize<'de> for PolymarketOrderStatus {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum PolymarketTradeStatus {
+    /// Matched locally but not yet submitted to the blockchain broadcaster.
+    #[serde(alias = "TRADE_STATUS_MATCHED_NOT_BROADCASTED")]
+    MatchedNotBroadcasted,
     /// Sent to the executor service for on-chain submission.
     #[serde(alias = "TRADE_STATUS_MATCHED")]
     Matched,
@@ -258,7 +261,10 @@ impl PolymarketTradeStatus {
     /// Returns `true` while settlement can still succeed or fail.
     #[must_use]
     pub const fn is_pending_settlement(&self) -> bool {
-        matches!(self, Self::Matched | Self::Mined | Self::Retrying)
+        matches!(
+            self,
+            Self::MatchedNotBroadcasted | Self::Matched | Self::Mined | Self::Retrying
+        )
     }
 }
 
@@ -484,6 +490,16 @@ mod tests {
             serde_json::from_str::<PolymarketTradeStatus>("\"TRADE_STATUS_CONFIRMED\"").unwrap(),
             PolymarketTradeStatus::Confirmed
         );
+    }
+
+    #[rstest]
+    #[case("\"MATCHED_NOT_BROADCASTED\"")]
+    #[case("\"TRADE_STATUS_MATCHED_NOT_BROADCASTED\"")]
+    fn test_trade_status_deserializes_matched_not_broadcasted(#[case] raw: &str) {
+        let status = serde_json::from_str::<PolymarketTradeStatus>(raw).unwrap();
+        assert_eq!(status, PolymarketTradeStatus::MatchedNotBroadcasted);
+        assert!(status.is_pending_settlement());
+        assert!(!status.is_finalized());
     }
 
     #[rstest]

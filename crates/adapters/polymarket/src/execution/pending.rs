@@ -41,6 +41,17 @@ pub(crate) struct PendingSubmitTracker {
 }
 
 impl PendingSubmitTracker {
+    pub(crate) fn clear(&self) {
+        self.venue_to_submit.lock().expect(MUTEX_POISONED).clear();
+    }
+
+    pub(crate) fn remove(&self, venue_order_id: &VenueOrderId) {
+        self.venue_to_submit
+            .lock()
+            .expect(MUTEX_POISONED)
+            .remove(venue_order_id);
+    }
+
     pub(crate) fn insert_with_growth_policy(
         &self,
         venue_order_id: VenueOrderId,
@@ -81,6 +92,17 @@ impl PendingSubmitTracker {
             .get(venue_order_id)
             .map(|submit| submit.submitted_qty)
     }
+
+    pub(crate) fn fill_validation_proof(
+        &self,
+        venue_order_id: &VenueOrderId,
+    ) -> Option<(Quantity, FillGrowthPolicy)> {
+        self.venue_to_submit
+            .lock()
+            .expect(MUTEX_POISONED)
+            .get(venue_order_id)
+            .map(|submit| (submit.submitted_qty, submit.growth_policy))
+    }
 }
 
 /// Tracks client order IDs whose cancel was deferred because the venue order ID was not yet
@@ -91,6 +113,10 @@ pub(crate) struct PendingCancelTracker {
 }
 
 impl PendingCancelTracker {
+    pub(crate) fn clear(&self) {
+        self.client_order_ids.lock().expect(MUTEX_POISONED).clear();
+    }
+
     pub(crate) fn insert(&self, client_order_id: ClientOrderId) {
         self.client_order_ids
             .lock()

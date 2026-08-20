@@ -37,8 +37,8 @@ use crate::{
     },
     execution::report_validation::{
         ensure_instrument_binding, exact_binary_price, instrument_fee_policy,
-        non_negative_quantity, parse_expiration, parse_match_time, positive_quantity, trade_id,
-        venue_order_id,
+        non_negative_quantity, parse_inbound_order_expiration, parse_match_time, positive_quantity,
+        trade_id, venue_order_id,
     },
     http::models::{ClobBookLevel, PolymarketOpenOrder, PolymarketTradeReport},
 };
@@ -176,15 +176,17 @@ pub fn parse_order_status_report(
         quantity,
         filled_qty,
         ts_accepted,
-        ts_accepted, // ts_last
+        ts_init,
         ts_init,
         None, // report_id
     );
     report.price = Some(price);
     // CLOB V2 emits `expiration` as Unix seconds; "0" means no expiration.
-    if let Some(value) = order.expiration.as_deref() {
-        report.expire_time = parse_expiration(value, "order expiration")?;
-    }
+    report.expire_time = parse_inbound_order_expiration(
+        order.expiration.as_deref(),
+        time_in_force,
+        "order expiration",
+    )?;
     Ok(report)
 }
 
@@ -301,12 +303,13 @@ pub fn build_maker_fill_report(
         "maker native trade ID must be non-empty ASCII without NUL bytes"
     );
     let fill_trade_id = make_composite_trade_id(trade_id, &mo.order_id);
-    let order_side = determine_order_side(
+    let order_side = validated_maker_order_side(
+        mo,
         trader_side,
         trade_side,
         taker_asset_id,
         mo.asset_id.as_str(),
-    );
+    )?;
     let last_qty = positive_quantity(mo.matched_amount, size_precision, "maker matched_amount")?;
     let last_px = exact_binary_price(mo.price, "maker price")?;
     let commission = Money::zero(instrument.quote_currency());
@@ -328,6 +331,24 @@ pub fn build_maker_fill_report(
         client_order_id: None,
         venue_position_id: None,
     })
+}
+
+pub(crate) fn validated_maker_order_side(
+    maker_order: &PolymarketMakerOrder,
+    trader_side: PolymarketLiquiditySide,
+    trade_side: PolymarketOrderSide,
+    taker_asset_id: &str,
+    maker_asset_id: &str,
+) -> anyhow::Result<OrderSide> {
+    let inferred = determine_order_side(trader_side, trade_side, taker_asset_id, maker_asset_id);
+    if let Some(provider_side) = maker_order.side {
+        let provider_side = OrderSide::from(provider_side);
+        anyhow::ensure!(
+            provider_side == inferred,
+            "maker side {provider_side} contradicts side {inferred} implied by the trade assets"
+        );
+    }
+    Ok(inferred)
 }
 
 /// Adjusts a market-BUY pUSD amount to fit within the user's pUSD balance once
@@ -474,6 +495,7 @@ fn fee_curve_rate(fee_rate: Decimal, price: Decimal, fee_exponent: f64) -> anyho
 
 /// Quantity-weighted average price across fills, or `None` when total filled
 /// is zero (avoids divide-by-zero on empty/all-zero fill lists).
+#[cfg(test)]
 pub(crate) fn weighted_average_price(
     fills: &[FillReport],
     total_filled: Decimal,
@@ -742,7 +764,7 @@ mod tests {
             instrument,
             AccountId::from("POLYMARKET-001"),
             None,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_800_000_000_000_000_000u64),
         )
     }
 
@@ -771,7 +793,7 @@ mod tests {
             &instrument,
             AccountId::from("POLYMARKET-001"),
             None,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_800_000_000_000_000_000u64),
         )
         .unwrap();
 
@@ -802,7 +824,10 @@ mod tests {
             report.ts_accepted,
             UnixNanos::from(1_735_689_599_000_000_000u64)
         );
-        assert_eq!(report.ts_last, report.ts_accepted);
+        assert_eq!(
+            report.ts_last,
+            UnixNanos::from(1_800_000_000_000_000_000u64)
+        );
         assert_eq!(
             report.expire_time,
             Some(UnixNanos::from(1_735_689_600_000_000_000u64))
@@ -834,6 +859,29 @@ mod tests {
         let mut invalid = base;
         invalid.created_at = 0;
         assert!(parse_test_order(&invalid, &instrument).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_preserves_created_at_despite_clock_skew() {
+        let order: PolymarketOpenOrder =
+            serde_json::from_str(include_str!("../../test_data/http_open_order.json")).unwrap();
+        let instrument = instrument_for_order(&order);
+        let ts_init = UnixNanos::from((order.created_at as u64 - 1) * 1_000_000_000);
+
+        let report = parse_order_status_report(
+            &order,
+            &instrument,
+            AccountId::from("POLYMARKET-001"),
+            None,
+            ts_init,
+        );
+        let report = report.expect("venue and local clocks may have modest positive skew");
+
+        assert_eq!(
+            report.ts_accepted,
+            UnixNanos::from(order.created_at as u64 * 1_000_000_000)
+        );
+        assert_eq!(report.ts_last, ts_init);
     }
 
     #[rstest]
@@ -1554,7 +1602,7 @@ mod tests {
             &instrument,
             account_id,
             None,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_800_000_000_000_000_000u64),
         )
         .unwrap();
 
@@ -1571,9 +1619,12 @@ mod tests {
         );
         assert_eq!(
             report.ts_last,
-            UnixNanos::from(1_703_875_200_000_000_000u64)
+            UnixNanos::from(1_800_000_000_000_000_000u64)
         );
-        assert_eq!(report.ts_init, UnixNanos::from(1_000_000_000u64));
+        assert_eq!(
+            report.ts_init,
+            UnixNanos::from(1_800_000_000_000_000_000u64)
+        );
         // Fixture has expiration=null which must surface as no expire_time.
         assert_eq!(report.expire_time, None);
     }
@@ -1619,7 +1670,7 @@ mod tests {
             &instrument,
             AccountId::from("POLYMARKET-001"),
             None,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_800_000_000_000_000_000u64),
         )
         .unwrap();
 
@@ -1671,7 +1722,7 @@ mod tests {
             &instrument,
             AccountId::from("POLYMARKET-001"),
             None,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_800_000_000_000_000_000u64),
         )
         .unwrap();
 
@@ -1712,7 +1763,7 @@ mod tests {
             &instrument,
             AccountId::from("POLYMARKET-001"),
             None,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_800_000_000_000_000_000u64),
         )
         .unwrap();
 
@@ -1723,8 +1774,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case::null(None, None)]
-    #[case::zero_string(Some("0"), None)]
     #[case::positive_seconds(
         Some("1735689600"),
         Some(UnixNanos::from(1_735_689_600_000_000_000u64))
@@ -1757,11 +1806,56 @@ mod tests {
             &instrument,
             AccountId::from("POLYMARKET-001"),
             None,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_800_000_000_000_000_000u64),
         )
         .unwrap();
 
         assert_eq!(report.expire_time, expected);
+    }
+
+    #[rstest]
+    #[case::missing(None)]
+    #[case::zero(Some("0"))]
+    fn test_parse_order_status_report_gtd_requires_positive_expiration(#[case] raw: Option<&str>) {
+        let mut order: PolymarketOpenOrder =
+            serde_json::from_str(include_str!("../../test_data/http_open_order.json")).unwrap();
+        order.order_type = PolymarketOrderType::GTD;
+        order.expiration = raw.map(str::to_string);
+        let instrument = instrument_for_order(&order);
+
+        let error = parse_order_status_report(
+            &order,
+            &instrument,
+            AccountId::from("POLYMARKET-001"),
+            None,
+            UnixNanos::from(1_800_000_000_000_000_000u64),
+        )
+        .expect_err("GTD report authority requires a positive expiration");
+
+        assert!(error.to_string().contains("GTD"));
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_accepts_positive_gtc_expiration() {
+        let mut order: PolymarketOpenOrder =
+            serde_json::from_str(include_str!("../../test_data/http_open_order.json")).unwrap();
+        order.order_type = PolymarketOrderType::GTC;
+        order.expiration = Some("1735689600".to_string());
+        let instrument = instrument_for_order(&order);
+
+        let report = parse_order_status_report(
+            &order,
+            &instrument,
+            AccountId::from("POLYMARKET-001"),
+            None,
+            UnixNanos::from(1_800_000_000_000_000_000u64),
+        )
+        .unwrap();
+
+        assert_eq!(
+            report.expire_time,
+            Some(UnixNanos::from(1_735_689_600_000_000_000u64))
+        );
     }
 
     #[rstest]
@@ -1779,7 +1873,7 @@ mod tests {
                 &instrument,
                 AccountId::from("POLYMARKET-001"),
                 None,
-                UnixNanos::from(1_000_000_000u64),
+                UnixNanos::from(1_800_000_000_000_000_000u64),
             )
             .is_err()
         );
@@ -1862,7 +1956,7 @@ mod tests {
             build_maker_fill_report(
                 maker,
                 native_trade_id,
-                trade.trader_side,
+                PolymarketLiquiditySide::Maker,
                 trade.side,
                 trade.asset_id.as_str(),
                 market,
@@ -1891,6 +1985,12 @@ mod tests {
         let mut invalid = maker;
         invalid.outcome = PolymarketOutcome::no();
         assert!(build(&invalid, trade.market.as_str(), &trade.id).is_err());
+
+        let mut contradictory_side = trade.maker_orders[0].clone();
+        contradictory_side.side = Some(PolymarketOrderSide::Buy);
+        let error = build(&contradictory_side, trade.market.as_str(), &trade.id)
+            .expect_err("provider maker side must agree with the side implied by asset roles");
+        assert!(error.to_string().contains("contradicts side"));
     }
 
     #[rstest]

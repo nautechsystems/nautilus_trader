@@ -130,6 +130,11 @@ impl PolymarketExecutionClient {
         core: ExecutionClientCore,
         config: PolymarketExecClientConfig,
     ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            config.max_retained_execution_records > 0,
+            "max_retained_execution_records must be positive"
+        );
+        let max_retained_execution_records = config.max_retained_execution_records;
         let proxy_url = config.validated_proxy_url()?;
         let secrets = Secrets::resolve(
             config.private_key.as_deref(),
@@ -234,8 +239,12 @@ impl PolymarketExecutionClient {
             pending_submits: PendingSubmitTracker::default(),
             pending_cancels: PendingCancelTracker::default(),
             order_identities: Arc::new(OrderIdentityRegistry::default()),
-            fill_tracker: Arc::new(OrderFillTrackerMap::new()),
-            ws_dispatch_state: Arc::new(Mutex::new(WsDispatchState::default())),
+            fill_tracker: Arc::new(OrderFillTrackerMap::with_capacity(
+                max_retained_execution_records,
+            )),
+            ws_dispatch_state: Arc::new(Mutex::new(WsDispatchState::new(
+                max_retained_execution_records,
+            ))),
         })
     }
 }

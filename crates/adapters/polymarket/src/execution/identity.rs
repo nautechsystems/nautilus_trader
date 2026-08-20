@@ -138,6 +138,10 @@ struct RegistryInner {
 }
 
 impl OrderIdentityRegistry {
+    pub(crate) fn clear(&self) {
+        *self.inner.lock().expect(MUTEX_POISONED) = RegistryInner::default();
+    }
+
     /// Records the identity for a tracked order under its venue order ID.
     pub(crate) fn register_order_identity(
         &self,
@@ -161,6 +165,16 @@ impl OrderIdentityRegistry {
             .copied()
     }
 
+    pub(crate) fn remove(&self, venue_order_id: &VenueOrderId) -> Option<OrderIdentity> {
+        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let identity = guard.identities.remove(venue_order_id)?;
+        if guard.client_to_venue.get(&identity.client_order_id) == Some(venue_order_id) {
+            guard.client_to_venue.remove(&identity.client_order_id);
+        }
+        guard.accepted.remove(venue_order_id);
+        Some(identity)
+    }
+
     /// Returns the latest venue order ID captured for a tracked client order.
     pub(crate) fn venue_order_id(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
         self.inner
@@ -169,6 +183,21 @@ impl OrderIdentityRegistry {
             .client_to_venue
             .get(client_order_id)
             .copied()
+    }
+
+    pub(crate) fn venue_order_ids_for_instrument(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Vec<VenueOrderId> {
+        self.inner
+            .lock()
+            .expect(MUTEX_POISONED)
+            .identities
+            .iter()
+            .filter_map(|(venue_order_id, identity)| {
+                (identity.instrument_id == *instrument_id).then_some(*venue_order_id)
+            })
+            .collect()
     }
 
     /// Marks acceptance as emitted, returning `true` only when this call newly marks it.

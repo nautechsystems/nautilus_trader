@@ -37,7 +37,7 @@ use rust_decimal::Decimal;
 use thiserror::Error;
 
 use super::{
-    order_builder::PolymarketOrderBuilder,
+    order_builder::{PolymarketOrderBuilder, validated_limit_expiration_seconds},
     parse::{adjust_market_buy_amount, calculate_market_price},
     types::{LimitOrderSubmitRequest, SignedLimitOrderSubmission},
 };
@@ -147,10 +147,16 @@ impl OrderSubmitter {
     /// `request.fee_context`, when supplied with `OrderSide::Buy`, is used to shrink
     /// `amount` for taker fees before signing so balance-sized BUYs are not
     /// rejected by the venue. SELL ignores the context.
-    pub(crate) async fn submit_market_order(
+    pub(crate) async fn submit_market_order<R, A>(
         &self,
         request: MarketOrderSubmitRequest,
-    ) -> anyhow::Result<MarketOrderSubmitResult> {
+        reserve_order: R,
+        abandon_order: A,
+    ) -> anyhow::Result<MarketOrderSubmitResult>
+    where
+        R: FnOnce(VenueOrderId) -> anyhow::Result<()>,
+        A: Fn(VenueOrderId) -> bool,
+    {
         let MarketOrderSubmitRequest {
             token_id,
             side,
@@ -219,6 +225,7 @@ impl OrderSubmitter {
         let expected_venue_order_id = self
             .order_builder
             .expected_order_id(&poly_order, neg_risk)?;
+        reserve_order(expected_venue_order_id)?;
 
         let http_client = self.http_client.clone();
         let saw_unknown_outcome = Arc::new(AtomicBool::new(false));
@@ -273,6 +280,18 @@ impl OrderSubmitter {
                     .into());
                 }
 
+                if outcome == SubmitResponseOutcome::Rejected
+                    && !abandon_order(expected_venue_order_id)
+                {
+                    return Err(UnknownSubmitError {
+                        reason: "venue rejection contradicted buffered order activity".to_string(),
+                        expected_venue_order_id,
+                        expected_base_qty: Some(signed_base_qty),
+                        signed_quote_budget,
+                    }
+                    .into());
+                }
+
                 response
             }
             Err(e)
@@ -286,7 +305,20 @@ impl OrderSubmitter {
                 }
                 .into());
             }
-            Err(e) => return Err(e.into()),
+            Err(e) => {
+                if !abandon_order(expected_venue_order_id) {
+                    return Err(UnknownSubmitError {
+                        reason: format!(
+                            "definite submit failure contradicted buffered order activity: {e}"
+                        ),
+                        expected_venue_order_id,
+                        expected_base_qty: Some(signed_base_qty),
+                        signed_quote_budget,
+                    }
+                    .into());
+                }
+                return Err(e.into());
+            }
         };
 
         Ok(MarketOrderSubmitResult {
@@ -413,7 +445,7 @@ impl OrderSubmitter {
             .map_err(|e| anyhow::anyhow!("Unsupported time in force: {e}"))?;
         let side = PolymarketOrderSide::try_from(request.side)
             .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
-        let expiration = limit_order_expiration(request.expire_time);
+        let expiration = limit_order_expiration(request.expire_time, request.time_in_force)?;
 
         let order = self
             .order_builder
@@ -638,11 +670,14 @@ fn signed_quote_budget(maker_amount: Decimal, side: PolymarketOrderSide) -> Opti
 
 // Converts a nanos expire time to the unix-seconds string expected by the
 // Polymarket API. Returns `"0"` when there is no expiration.
-fn limit_order_expiration(expire_time: Option<UnixNanos>) -> String {
-    match expire_time {
-        Some(ns) if !ns.is_zero() => ns.as_seconds().to_string(),
-        _ => "0".to_string(),
-    }
+fn limit_order_expiration(
+    expire_time: Option<UnixNanos>,
+    time_in_force: TimeInForce,
+) -> anyhow::Result<String> {
+    Ok(
+        validated_limit_expiration_seconds(expire_time, time_in_force)?
+            .map_or_else(|| "0".to_string(), |seconds| seconds.to_string()),
+    )
 }
 
 #[cfg(test)]
@@ -653,13 +688,32 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case::none(None, "0")]
-    #[case::zero(Some(UnixNanos::from(0u64)), "0")]
-    #[case::one_second(Some(UnixNanos::from(1_000_000_000u64)), "1")]
-    #[case::sub_second_truncates(Some(UnixNanos::from(1_500_000_000u64)), "1")]
-    #[case::typical(Some(UnixNanos::from(1_735_689_600_000_000_000u64)), "1735689600")]
-    fn test_limit_order_expiration(#[case] expire_time: Option<UnixNanos>, #[case] expected: &str) {
-        assert_eq!(limit_order_expiration(expire_time), expected);
+    #[case::gtc_none(None, TimeInForce::Gtc, "0")]
+    #[case::gtd_one_second(Some(UnixNanos::from(1_000_000_000u64)), TimeInForce::Gtd, "1")]
+    #[case::gtd_typical(
+        Some(UnixNanos::from(1_735_689_600_000_000_000u64)),
+        TimeInForce::Gtd,
+        "1735689600"
+    )]
+    fn test_limit_order_expiration(
+        #[case] expire_time: Option<UnixNanos>,
+        #[case] time_in_force: TimeInForce,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            limit_order_expiration(expire_time, time_in_force).unwrap(),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case::fractional(Some(UnixNanos::from(1_500_000_000u64)), TimeInForce::Gtd)]
+    #[case::non_gtd_expiry(Some(UnixNanos::from(1_000_000_000u64)), TimeInForce::Gtc)]
+    fn test_limit_order_expiration_rejects_invalid_cross_field_semantics(
+        #[case] expire_time: Option<UnixNanos>,
+        #[case] time_in_force: TimeInForce,
+    ) {
+        assert!(limit_order_expiration(expire_time, time_in_force).is_err());
     }
 
     #[rstest]

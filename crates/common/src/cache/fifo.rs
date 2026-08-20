@@ -255,11 +255,6 @@ where
         self.index.get_mut(key)
     }
 
-    /// Returns an iterator over the cached values in unspecified order.
-    pub fn values(&self) -> impl Iterator<Item = &V> {
-        self.index.values()
-    }
-
     /// Inserts a key-value pair into the cache.
     ///
     /// If the key already exists, the value is updated (no eviction occurs).
