@@ -2057,7 +2057,7 @@ where
                 return AuthTokenRefreshOutcome::Rotated;
             }
             Err(e) => {
-                log::error!("Lighter auth-token rotation attempt {attempt} failed: {e:#}");
+                log::warn!("Lighter auth-token rotation attempt {attempt} failed: {e:#}");
             }
         }
 
@@ -2110,7 +2110,7 @@ where
 
     for channel in channels {
         if let Err(e) = subscribe(channel.clone(), token.clone()).await {
-            log::error!("Lighter auth-token rotation: re-subscribe failed for {channel:?}: {e}",);
+            log::debug!("Lighter auth-token rotation: re-subscribe failed for {channel:?}: {e}",);
             first_error.get_or_insert_with(|| format!("{channel:?}: {e}"));
         }
     }

@@ -101,17 +101,11 @@ checkout, or build the package from source before running these examples. See
 From the repository root with Python installed:
 
 ```bash
-.venv/bin/python examples/live/lighter/data_tester.py --lighter-environment testnet
+.venv/bin/python examples/live/lighter/data_tester.py
 ```
 
-That command builds the node and exits. Pass `--run` to connect:
-
-```bash
-.venv/bin/python examples/live/lighter/data_tester.py \
-    --lighter-environment testnet \
-    --instrument BTC-PERP.LIGHTER \
-    --run
-```
+The script connects to the Lighter testnet immediately and starts streaming. Settings such as the
+environment and instrument are module-level constants at the top of the file.
 
 The Python script mirrors the Rust setup:
 
@@ -130,13 +124,12 @@ builder = LiveNode.builder(
 Use the execution tester only after the data tester works:
 
 ```bash
-.venv/bin/python examples/live/lighter/exec_tester.py \
-    --lighter-environment testnet \
-    --instrument DOGE-PERP.LIGHTER
+.venv/bin/python examples/live/lighter/exec_tester.py
 ```
 
-Like the data tester, that command builds the node and exits. Pass `--run` to connect in dry-run
-mode, then add `--live-orders` to submit real orders.
+The execution tester also connects immediately, and it places real orders by default
+(`dry_run=False`, with a warning at the top of the module). The default environment is testnet;
+set the `LIGHTER_ENVIRONMENT` constant to `LighterEnvironment.MAINNET` to trade mainnet funds.
 
 ## Move to a strategy
 
@@ -151,7 +144,7 @@ replace the tester with a strategy:
 
 :::warning
 Rust execution examples can submit live orders when you set `DRY_RUN` to `false`. Python execution
-examples can submit live orders when you pass `--run --live-orders`. Start on testnet or use the
+examples submit live orders as soon as you run them. Start on testnet or use the
 smallest accepted size, and confirm the instrument, environment, account index, API key index, and
 private key before you run.
 :::

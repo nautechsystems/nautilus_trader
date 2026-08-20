@@ -14,16 +14,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Lighter Python data tester example.
+Stream Lighter market data with the built-in DataTester actor.
 
-The default path builds a live node and attaches the built-in Rust DataTester without
-connecting to Lighter. Pass --run to start subscriptions.
+Running this script connects to the configured Lighter environment immediately and
+subscribes to the full data matrix for one instrument: book deltas, quotes, trades,
+bars, mark price, index price, and funding rates, plus historical requests. No orders
+are placed. Settings are the module-level constants below; the default environment is
+the Lighter testnet.
 
 """
 
 from __future__ import annotations
-
-import argparse
 
 from nautilus_trader.adapters.lighter import LIGHTER
 from nautilus_trader.adapters.lighter import LighterDataClientConfig
@@ -38,67 +39,45 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import DataTesterConfig
 
 
+LIGHTER_ENVIRONMENT = LighterEnvironment.TESTNET
+TRADER_ID = TraderId.from_str("TESTER-001")
+INSTRUMENT_ID = InstrumentId.from_str(f"BTC-PERP.{LIGHTER}")
+BAR_TYPE = BarType.from_str(f"{INSTRUMENT_ID}-1-MINUTE-LAST-EXTERNAL")
+
+
 def main() -> None:
-    args = parse_args()
-    lighter_environment = lighter_environment_from_name(args.lighter_environment)
-    instrument_id = InstrumentId.from_str(args.instrument)
-    request_funding_rates = args.subscribe_funding_rates and "-SPOT." not in args.instrument.upper()
-
-    builder = LiveNode.builder(
-        "LIGHTER-DATA-TESTER-001",
-        TraderId.from_str(args.trader_id),
-        Environment.LIVE,
-    ).add_data_client(
-        None,
-        LighterDataClientFactory(),
-        LighterDataClientConfig(environment=lighter_environment),
+    node = (
+        LiveNode.builder("LIGHTER-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
+        .add_data_client(
+            None,
+            LighterDataClientFactory(),
+            LighterDataClientConfig(environment=LIGHTER_ENVIRONMENT),
+        )
+        .build()
     )
-
-    node = builder.build()
     node.add_builtin_actor(
         "DataTester",
         DataTesterConfig(
             client_id=ClientId.from_str(LIGHTER),
-            instrument_ids=[instrument_id],
-            bar_types=[BarType.from_str(f"{args.instrument}-1-MINUTE-LAST-EXTERNAL")],
+            instrument_ids=[INSTRUMENT_ID],
+            bar_types=[BAR_TYPE],
             subscribe_book_deltas=True,
             subscribe_quotes=True,
             subscribe_trades=True,
-            subscribe_funding_rates=request_funding_rates,
+            subscribe_mark_prices=True,
+            subscribe_index_prices=True,
+            subscribe_funding_rates=True,
+            subscribe_bars=True,
             request_instruments=True,
             request_trades=True,
             request_bars=True,
-            request_funding_rates=request_funding_rates,
+            request_book_snapshot=True,
+            request_funding_rates=True,
             manage_book=True,
             log_data=True,
         ),
     )
-
-    if args.run:
-        node.run()
-    else:
-        print("Built Lighter data tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Lighter Python data tester.")
-    parser.add_argument("--lighter-environment", choices=["testnet", "mainnet"], default="testnet")
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--instrument", default=f"BTC-PERP.{LIGHTER}")
-    parser.add_argument(
-        "--subscribe-funding-rates",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    parser.add_argument("--run", action="store_true")
-    return parser.parse_args()
-
-
-def lighter_environment_from_name(name: str) -> LighterEnvironment:
-    if name == "mainnet":
-        return LighterEnvironment.MAINNET
-
-    return LighterEnvironment.TESTNET
+    node.run()
 
 
 if __name__ == "__main__":

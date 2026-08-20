@@ -33,27 +33,16 @@ consumed through the Rust trait surface.
 
 Python examples live in
 [`examples/live/lighter/`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/lighter/)
-and default to a dry build. Pass `--run` to connect; the execution tester also requires
-`--live-orders` to disable `dry_run`.
+and run out of the box: settings live in module-level constants at the top of each file, and
+running a script connects and starts immediately. The default environment is testnet; edit the
+`LIGHTER_ENVIRONMENT` constant to use mainnet. The execution tester places real orders by default
+(`dry_run=False`), stated in a warning at the top of the module.
 
 From the repository root:
 
 ```bash
-.venv/bin/python examples/live/lighter/data_tester.py --lighter-environment testnet
-.venv/bin/python examples/live/lighter/exec_tester.py --lighter-environment testnet
-```
-
-From the repository root, connect to mainnet with explicit instruments:
-
-```bash
-.venv/bin/python examples/live/lighter/data_tester.py \
-    --lighter-environment mainnet \
-    --instrument BTC-PERP.LIGHTER \
-    --run
-.venv/bin/python examples/live/lighter/exec_tester.py \
-    --lighter-environment mainnet \
-    --instrument DOGE-PERP.LIGHTER \
-    --run
+.venv/bin/python examples/live/lighter/data_tester.py
+.venv/bin/python examples/live/lighter/exec_tester.py
 ```
 
 Rust examples live under `crates/adapters/lighter/examples/`. Both testers connect when run. The
@@ -402,7 +391,7 @@ Each bounded mass status captures one cutoff for its inactive orders and fills. 
 the report set complete only when the required order, fill, and position sources succeed and every
 historical fill maps to its order. If a historical source fails, active orders remain available for
 reconciliation while historical fills follow the engine's
-[order‑only projection](../concepts/execution.md#orderonly-fill-projection) rules.
+[order‑only projection](../concepts/execution.md#order-only-fill-projection) rules.
 
 The `trades` endpoint retains only the most recent 3,000 trades per `account_index`, so a bounded
 lookback can request more fill history than the venue serves. Pagination walks back from the newest

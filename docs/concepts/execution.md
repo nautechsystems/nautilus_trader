@@ -589,7 +589,7 @@ field, and
 
 The execution engine consumes four reconciliation report variants from live adapters. Each variant
 has a different normal role when its matching order is absent from the cache. Explicitly bounded
-history can instead use [order‑only fill projection](#orderonly-fill-projection).
+history can instead use [order‑only fill projection](#order-only-fill-projection).
 
 | Variant                | Purpose                  | Missing‑order action                                 |
 | ---------------------- | ------------------------ | ---------------------------------------------------- |
@@ -609,7 +609,7 @@ Adapters choose the variant that matches the venue event:
 - Use `OrderWithFills` when one venue event contains both an order status and its fills. Binance
   Futures uses this for exchange-generated ADL, liquidation, and settlement orders.
 
-### Order‑only fill projection
+### Order-only fill projection
 
 During startup reconciliation, a bounded historical report can prove an order's status and filled
 quantity without proving that its fill belongs in the current position lifecycle. The engine then

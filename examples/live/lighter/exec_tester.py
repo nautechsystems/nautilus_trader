@@ -14,17 +14,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Lighter Python execution tester example.
+Test Lighter execution with the built-in ExecTester strategy.
 
-The default path builds a live node and attaches the native Rust ExecTester without
-connecting to Lighter or submitting orders. Pass --run to connect. Pass --live-orders
-only when the account is funded and you intend to test live order flow.
+WARNING: Running this script connects to the configured Lighter environment and
+places REAL orders immediately. On start it opens a position with an IOC market
+order, then maintains post-only limit quotes on both sides of the book. On stop it
+cancels all orders and closes all positions. With the default testnet environment no
+real funds are at risk; with `LighterEnvironment.MAINNET` the orders use real funds.
+Run only against an account you intend to test. The strategy has no alpha advantage
+whatsoever and is not intended for production trading.
+
+Settings are the module-level constants below. Credentials resolve from the
+`LIGHTER_TESTNET_*` or `LIGHTER_*` environment variables matching the configured
+environment.
 
 """
 
 from __future__ import annotations
 
-import argparse
 from decimal import Decimal
 
 from nautilus_trader.adapters.lighter import LIGHTER
@@ -47,85 +54,69 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import ExecTesterConfig
 
 
-def main() -> None:
-    args = parse_args()
-    lighter_environment = lighter_environment_from_name(args.lighter_environment)
-    trader_id = TraderId.from_str(args.trader_id)
-    account_id = AccountId.from_str(args.account_id)
-    instrument_id = InstrumentId.from_str(args.instrument)
-    order_qty = Quantity.from_str(args.quantity)
+LIGHTER_ENVIRONMENT = LighterEnvironment.TESTNET
+TRADER_ID = TraderId.from_str("TESTER-001")
+ACCOUNT_ID = AccountId.from_str("LIGHTER-001")
+STRATEGY_ID = StrategyId.from_str("EXEC_TESTER-001")
+INSTRUMENT_ID = InstrumentId.from_str(f"DOGE-PERP.{LIGHTER}")
 
-    builder = (
-        LiveNode.builder("LIGHTER-EXEC-TESTER-001", trader_id, Environment.LIVE)
-        .with_reconciliation(args.run)
+ORDER_QTY = "200"  # DOGE contracts, above the 100 contract minimum
+OPEN_POSITION_ON_START_QTY = Decimal(ORDER_QTY)
+TOB_OFFSET_TICKS = 500
+
+
+def main() -> None:
+    node = (
+        LiveNode.builder("LIGHTER-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
+        .with_reconciliation(True)
         .with_exec_engine_config(
             LiveExecEngineConfig(
                 reconciliation_lookback_mins=60,
-                reconciliation_instrument_ids=[str(instrument_id)],
+                reconciliation_instrument_ids=[str(INSTRUMENT_ID)],
             ),
         )
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,
             LighterDataClientFactory(),
-            LighterDataClientConfig(environment=lighter_environment),
+            LighterDataClientConfig(environment=LIGHTER_ENVIRONMENT),
         )
         .add_exec_client(
             None,
             LighterExecutionClientFactory(),
             LighterExecClientConfig(
-                trader_id=trader_id,
-                account_id=account_id,
-                environment=lighter_environment,
+                trader_id=TRADER_ID,
+                account_id=ACCOUNT_ID,
+                environment=LIGHTER_ENVIRONMENT,
             ),
         )
+        .build()
     )
-
-    node = builder.build()
     node.add_builtin_strategy(
         "ExecTester",
         ExecTesterConfig(
-            strategy_id=StrategyId.from_str("EXEC_TESTER-001"),
-            instrument_id=instrument_id,
+            strategy_id=STRATEGY_ID,
+            instrument_id=INSTRUMENT_ID,
             client_id=ClientId.from_str(LIGHTER),
-            external_order_claims=[instrument_id],
-            order_qty=order_qty,
+            external_order_claims=[INSTRUMENT_ID],
+            order_qty=Quantity.from_str(ORDER_QTY),
             subscribe_quotes=True,
             subscribe_trades=False,
-            open_position_on_start_qty=Decimal(args.quantity) if args.live_orders else None,
-            open_position_on_first_quote=args.live_orders,
+            open_position_on_start_qty=OPEN_POSITION_ON_START_QTY,
+            open_position_on_first_quote=True,
             open_position_time_in_force=TimeInForce.IOC,
-            enable_limit_buys=args.live_orders,
-            enable_limit_sells=False,
+            enable_limit_buys=True,
+            enable_limit_sells=True,
+            tob_offset_ticks=TOB_OFFSET_TICKS,
             use_post_only=True,
-            dry_run=not args.live_orders,
+            cancel_orders_on_stop=True,
+            close_positions_on_stop=True,
+            reduce_only_on_stop=True,
+            dry_run=False,
             log_data=False,
         ),
     )
-
-    if args.run:
-        node.run()
-    else:
-        print("Built Lighter exec tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Lighter Python exec tester.")
-    parser.add_argument("--lighter-environment", choices=["testnet", "mainnet"], default="testnet")
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--account-id", default="LIGHTER-001")
-    parser.add_argument("--instrument", default=f"DOGE-PERP.{LIGHTER}")
-    parser.add_argument("--quantity", default="200")
-    parser.add_argument("--run", action="store_true")
-    parser.add_argument("--live-orders", action="store_true")
-    return parser.parse_args()
-
-
-def lighter_environment_from_name(name: str) -> LighterEnvironment:
-    if name == "mainnet":
-        return LighterEnvironment.MAINNET
-
-    return LighterEnvironment.TESTNET
+    node.run()
 
 
 if __name__ == "__main__":

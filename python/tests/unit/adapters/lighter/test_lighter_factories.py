@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
-
 import pytest
 from unit.adapters.example_modules import load_example_module
 
@@ -87,18 +85,8 @@ def test_live_node_builder_accepts_lighter_exec_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
-@pytest.mark.parametrize(
-    ("extra_args", "expected_buys", "expected_dry_run"),
-    [
-        ([], False, True),
-        (["--live-orders"], True, False),
-    ],
-)
-def test_lighter_exec_tester_limit_sells_stay_disabled(
+def test_lighter_exec_tester_runs_live_orders_by_default(  # noqa: C901
     monkeypatch: pytest.MonkeyPatch,
-    extra_args: list[str],
-    expected_buys: bool,
-    expected_dry_run: bool,
 ) -> None:
     captured: dict[str, object] = {}
 
@@ -110,6 +98,9 @@ def test_lighter_exec_tester_limit_sells_stay_disabled(
         def add_builtin_strategy(self, type_name: str, config: object) -> None:
             captured["strategy_type_name"] = type_name
             captured["strategy_config"] = config
+
+        def run(self) -> None:
+            captured["node_ran"] = True
 
     class CapturingBuilder:
         def with_reconciliation(self, reconciliation: bool) -> "CapturingBuilder":
@@ -141,15 +132,17 @@ def test_lighter_exec_tester_limit_sells_stay_disabled(
             captured["builder_args"] = (name, trader_id, environment)
             return CapturingBuilder()
 
-    monkeypatch.setattr(sys, "argv", ["exec_tester.py", *extra_args])
     monkeypatch.setattr(lighter_exec_tester, "ExecTesterConfig", CapturingExecTesterConfig)
     monkeypatch.setattr(lighter_exec_tester, "LiveNode", CapturingLiveNode)
 
     lighter_exec_tester.main()
 
     assert captured["strategy_type_name"] == "ExecTester"
+    assert captured["reconciliation"] is True
+    assert captured["node_ran"] is True
     kwargs = captured["exec_tester_kwargs"]
     assert isinstance(kwargs, dict)
-    assert kwargs["enable_limit_buys"] is expected_buys
-    assert kwargs["enable_limit_sells"] is False
-    assert kwargs["dry_run"] is expected_dry_run
+    assert kwargs["enable_limit_buys"] is True
+    assert kwargs["enable_limit_sells"] is True
+    assert kwargs["use_post_only"] is True
+    assert kwargs["dry_run"] is False

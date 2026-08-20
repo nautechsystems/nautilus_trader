@@ -14,27 +14,27 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Lighter NVDA RWA composite market making Python example.
-
-Builds a live node with Databento ``NVDA.EQUS`` quotes as the signal instrument and Lighter
-``NVDA-PERP.LIGHTER`` data and execution as the target instrument, running the native Rust
-``CompositeMarketMaker`` strategy. This is the Python counterpart of the Rust tutorial binary
+Run a Lighter NVDA RWA composite market maker with the built-in CompositeMarketMaker
+strategy: Databento ``NVDA.EQUS`` quotes drive the signal and ``NVDA-PERP.LIGHTER``
+is the quoted target. This is the Python counterpart of the Rust tutorial binary
 ``examples/tutorials/src/bin/lighter_nvda_composite_mm.rs``.
 
-The default path builds the node and exits without connecting. Pass --run to connect. Running
-live submits post-only orders, so --run requires --live-orders as an explicit confirmation.
+WARNING: Running this script connects to the configured Lighter environment and
+places REAL post-only orders immediately. With the default testnet environment no
+real funds are at risk; with `LighterEnvironment.MAINNET` the orders use real funds.
+Run only against an account you intend to test. The strategy is a demonstration and
+is not intended for production trading.
 
-Required credential environment variables:
+Settings are the module-level constants below. Required environment variables:
 - DATABENTO_API_KEY.
-- LIGHTER_TESTNET_ACCOUNT_INDEX, LIGHTER_TESTNET_API_KEY_INDEX, and LIGHTER_TESTNET_API_SECRET
-  for the testnet environment (the default).
+- LIGHTER_TESTNET_ACCOUNT_INDEX, LIGHTER_TESTNET_API_KEY_INDEX, and
+  LIGHTER_TESTNET_API_SECRET for the testnet environment (the default).
 - LIGHTER_ACCOUNT_INDEX, LIGHTER_API_KEY_INDEX, and LIGHTER_API_SECRET for mainnet.
 
 """
 
 from __future__ import annotations
 
-import argparse
 import os
 from pathlib import Path
 
@@ -56,107 +56,77 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.trading import CompositeMarketMakerConfig
 
 
+LIGHTER_ENVIRONMENT = LighterEnvironment.TESTNET
+TRADER_ID = TraderId.from_str("TESTER-001")
+ACCOUNT_ID = AccountId.from_str("LIGHTER-001")
+STRATEGY_ID = StrategyId.from_str("NVDA_COMPOSITE_MM-001")
+INSTRUMENT_ID = InstrumentId.from_str(f"NVDA-PERP.{LIGHTER}")
+SIGNAL_INSTRUMENT_ID = InstrumentId.from_str("NVDA.EQUS")
+
+MAX_POSITION = "0.20"
+TRADE_SIZE = "0.05"
+HALF_SPREAD_BPS = 25
+INVENTORY_SKEW_FACTOR = 2.0
+SIGNAL_SKEW_FACTOR = 55.0
+REQUOTE_THRESHOLD_BPS = 5
+ON_CANCEL_RESUBMIT = False
+
+DATABENTO_API_KEY = os.environ.get("DATABENTO_API_KEY", "")
+PUBLISHERS_FILEPATH = (
+    Path(__file__).resolve().parents[3] / "crates/adapters/databento/publishers.json"
+)
+
+
 def main() -> None:
-    args = parse_args()
+    if not DATABENTO_API_KEY:
+        raise SystemExit("DATABENTO_API_KEY must be set")
 
-    if args.run and not args.live_orders:
-        raise SystemExit("Running live submits orders; pass --live-orders to confirm.")
-
-    databento_api_key = args.databento_api_key
-    if not databento_api_key:
-        raise SystemExit("DATABENTO_API_KEY must be set (or pass --databento-api-key).")
-
-    lighter_environment = lighter_environment_from_name(args.lighter_environment)
-    trader_id = TraderId.from_str(args.trader_id)
-    account_id = AccountId.from_str(args.account_id)
-    instrument_id = InstrumentId.from_str(args.instrument)
-    signal_instrument_id = InstrumentId.from_str(args.signal_instrument)
-
-    builder = (
-        LiveNode.builder("LIGHTER-NVDA-COMPOSITE-MM-001", trader_id, Environment.LIVE)
-        .with_reconciliation(args.run)
+    node = (
+        LiveNode.builder("LIGHTER-NVDA-COMPOSITE-MM-001", TRADER_ID, Environment.LIVE)
+        .with_reconciliation(True)
         .with_delay_post_stop_secs(5)
         .add_data_client(
             None,
             DatabentoDataClientFactory(),
             DatabentoLiveClientConfig(
-                api_key=databento_api_key,
-                publishers_filepath=args.publishers_filepath,
+                api_key=DATABENTO_API_KEY,
+                publishers_filepath=PUBLISHERS_FILEPATH,
                 use_exchange_as_venue=True,
             ),
         )
         .add_data_client(
             None,
             LighterDataClientFactory(),
-            LighterDataClientConfig(environment=lighter_environment),
+            LighterDataClientConfig(environment=LIGHTER_ENVIRONMENT),
         )
         .add_exec_client(
             None,
             LighterExecutionClientFactory(),
             LighterExecClientConfig(
-                trader_id=trader_id,
-                account_id=account_id,
-                environment=lighter_environment,
+                trader_id=TRADER_ID,
+                account_id=ACCOUNT_ID,
+                environment=LIGHTER_ENVIRONMENT,
             ),
         )
+        .build()
     )
-
-    node = builder.build()
     node.add_builtin_strategy(
         "CompositeMarketMaker",
         CompositeMarketMakerConfig(
-            instrument_id=instrument_id,
-            signal_instrument_id=signal_instrument_id,
-            max_position=Quantity.from_str(args.max_position),
-            strategy_id=StrategyId.from_str("NVDA_COMPOSITE_MM-001"),
+            instrument_id=INSTRUMENT_ID,
+            signal_instrument_id=SIGNAL_INSTRUMENT_ID,
+            max_position=Quantity.from_str(MAX_POSITION),
+            strategy_id=STRATEGY_ID,
             order_id_tag="001",
-            trade_size=Quantity.from_str(args.trade_size),
-            half_spread_bps=args.half_spread_bps,
-            inventory_skew_factor=args.inventory_skew_factor,
-            signal_skew_factor=args.signal_skew_factor,
-            requote_threshold_bps=args.requote_threshold_bps,
-            on_cancel_resubmit=args.on_cancel_resubmit,
+            trade_size=Quantity.from_str(TRADE_SIZE),
+            half_spread_bps=HALF_SPREAD_BPS,
+            inventory_skew_factor=INVENTORY_SKEW_FACTOR,
+            signal_skew_factor=SIGNAL_SKEW_FACTOR,
+            requote_threshold_bps=REQUOTE_THRESHOLD_BPS,
+            on_cancel_resubmit=ON_CANCEL_RESUBMIT,
         ),
     )
-
-    if args.run:
-        node.run()
-    else:
-        print("Built Lighter NVDA composite market maker node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Build or run the Lighter NVDA composite market maker in Python.",
-    )
-    parser.add_argument("--lighter-environment", choices=["testnet", "mainnet"], default="testnet")
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--account-id", default="LIGHTER-001")
-    parser.add_argument("--instrument", default=f"NVDA-PERP.{LIGHTER}")
-    parser.add_argument("--signal-instrument", default="NVDA.EQUS")
-    parser.add_argument("--max-position", default="0.20")
-    parser.add_argument("--trade-size", default="0.05")
-    parser.add_argument("--half-spread-bps", type=int, default=25)
-    parser.add_argument("--inventory-skew-factor", type=float, default=2.0)
-    parser.add_argument("--signal-skew-factor", type=float, default=55.0)
-    parser.add_argument("--requote-threshold-bps", type=int, default=5)
-    parser.add_argument("--on-cancel-resubmit", action="store_true")
-    parser.add_argument("--databento-api-key", default=os.environ.get("DATABENTO_API_KEY", ""))
-    parser.add_argument("--publishers-filepath", type=Path, default=publishers_filepath())
-    parser.add_argument("--run", action="store_true")
-    parser.add_argument("--live-orders", action="store_true")
-    return parser.parse_args()
-
-
-def publishers_filepath() -> Path:
-    return Path(__file__).resolve().parents[3] / "crates/adapters/databento/publishers.json"
-
-
-def lighter_environment_from_name(name: str) -> LighterEnvironment:
-    if name == "mainnet":
-        return LighterEnvironment.MAINNET
-
-    return LighterEnvironment.TESTNET
+    node.run()
 
 
 if __name__ == "__main__":

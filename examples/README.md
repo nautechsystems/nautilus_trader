@@ -28,8 +28,10 @@ Ensure that the `nautilus_trader` package is either compiled from source or inst
 running the examples. See the [installation guide](https://nautilustrader.io/docs/latest/getting_started/installation)
 for more information.
 
-From the repository root, build a Rust‑native adapter tester without connecting:
+From the repository root, run a Rust‑native adapter tester against the venue testnet:
 
 ```bash
-.venv/bin/python examples/live/lighter/data_tester.py --lighter-environment testnet
+.venv/bin/python examples/live/lighter/data_tester.py
 ```
+
+The script connects immediately and streams market data; stop it with Ctrl+C.

@@ -1415,7 +1415,7 @@ impl ExecutionManager {
                 && current_qty.is_sign_negative() != signed_fill_qty.is_sign_negative()
                 && group.quantity <= current_qty.abs();
             if group.reduce_only && !reduces {
-                log::error!(
+                log::warn!(
                     "Cannot apply bounded reduce-only order {} for {} without a coherent predecessor; projecting order state only",
                     group.venue_order_id,
                     group.instrument_id,
