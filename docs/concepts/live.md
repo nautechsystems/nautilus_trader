@@ -327,7 +327,7 @@ Socket state is operational evidence, not an execution‑command outcome. A disc
 not reject, cancel, or resolve an in‑flight command; stream updates, queries, or reconciliation
 provide that evidence under the [command outcome policy](execution.md#command-outcomes).
 
-### Dead‑peer detection
+### Dead-peer detection
 
 A connection can stop delivering without closing: a NAT or load balancer drops it with no `FIN` and
 no `RST`, so writes keep succeeding into the send buffer and nothing surfaces the loss. Any transport

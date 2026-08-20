@@ -67,7 +67,7 @@ work that proves conformance.
 | [Execution client boundaries](#execution-client)                                              | Execution clients |
 | [Reconciliation reports](#reconciliation-reports)                                             | Execution clients |
 | [Commission failure handling](#commission-failure-handling)                                   | Execution clients |
-| [Bounded mass‑status reports](#bounded-massstatus-reports)                                    | Execution clients |
+| [Bounded mass‑status reports](#bounded-mass-status-reports)                                   | Execution clients |
 | [Instrument resolution during reconciliation](#instrument-resolution-during-reconciliation)   | Execution clients |
 | [Tracked and external execution updates](#tracked-and-external-execution-updates)             | Execution clients |
 | [Event ordering and deduplication](#event-ordering-and-deduplication)                         | Execution clients |
@@ -674,7 +674,7 @@ implementation composes the three bulk methods concurrently from one `ts_init`, 
 command's `start` from `lookback_mins`, and requests full order history with `open_only=false`.
 Implementing the bulk methods is therefore enough for startup. Override the composition when the
 client declares a history bound, as described in
-[bounded mass‑status reports](#bounded-massstatus-reports), or when it does not use the realtime
+[bounded mass‑status reports](#bounded-mass-status-reports), or when it does not use the realtime
 clock. Returning `Ok(None)` logs a warning and leaves that client unreconciled, while an error
 fails startup.
 
@@ -769,7 +769,7 @@ affected orders or mark them permanently unreconcilable. A duplicate or reconnec
 the trade. Scheduled REST reconciliation remains the authoritative recovery path; the WebSocket
 handler does not start an immediate REST request.
 
-#### Bounded mass‑status reports
+#### Bounded mass-status reports
 
 When an execution client applies a lower time bound to historical reconciliation reports, record
 the contract with `ExecutionMassStatus::set_report_window(Some(lookback_start),

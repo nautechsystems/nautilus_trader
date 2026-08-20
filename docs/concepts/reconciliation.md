@@ -111,7 +111,7 @@ flowchart TD
 These reports represent external reality. The procedure processes them in the order shown so each
 position check builds on reconciled order and fill state.
 
-### Mass‑status history contract
+### Mass-status history contract
 
 An `ExecutionMassStatus` can declare the provenance of its historical reports:
 
@@ -169,7 +169,7 @@ adjustment path. The engine can analyze zero‑crossings, remove closed lifecycl
 synthetic fill when the reported fills do not explain the current venue position.
 
 Adapters that apply a history cutoff should declare it through the
-[mass‑status history contract](#massstatus-history-contract) instead of relying on this inference.
+[mass‑status history contract](#mass-status-history-contract) instead of relying on this inference.
 
 ### Bounded history safety
 

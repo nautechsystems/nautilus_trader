@@ -104,7 +104,7 @@ signed_qty = 0  # Position FLAT (closed)
 Position adjustments record quantity or PnL changes that occur outside normal order fills. The
 system represents these changes as `PositionAdjusted` events.
 
-### Base‑currency commissions
+### Base-currency commissions
 
 When trading spot currency pairs (for example, BTC/USDT) or FX spot, commissions paid in the base
 currency directly affect the net quantity received or delivered:

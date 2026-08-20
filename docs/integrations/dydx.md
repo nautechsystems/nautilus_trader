@@ -274,7 +274,7 @@ The tiers are governance-adjustable. Query the live values from a node's
 `/dydxprotocol/clob/equity_tier` endpoint, or see
 [equity tier limits](https://docs.dydx.xyz/concepts/trading/limits/equity-tier-limits).
 
-### MIT and LIT round‑tripping
+### MIT and LIT round-tripping
 
 dYdX's protocol uses a single `TAKE_PROFIT` order type with a price (`subticks`) and trigger
 price; whether it behaves as market‑on‑trigger or limit‑on‑trigger is implicit in the price. The

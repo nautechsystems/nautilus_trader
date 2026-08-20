@@ -45,7 +45,7 @@ initialization, or exclusive ownership. Any exported function that accepts a cal
 - Validate `len`, `cap`, and null‑pointer invariants before reconstructing or borrowing data.
 - Use a concrete element type that matches the original `Vec<T>` allocation.
 
-## Type‑specific drop functions
+## Type-specific drop functions
 
 There is no generic `cvec_drop`. Reconstructing every allocation as `Vec<u8>` gives the allocator
 the wrong element layout for other types. Each owned vector crossing the boundary requires a drop

@@ -232,7 +232,7 @@ Responsibilities:
 This is the construction fallback when no registered extractor accepts the
 object. Python JSON and Arrow decoders also produce this wrapper directly.
 
-### Native same‑binary Rust payload
+### Native same-binary Rust payload
 
 For Rust types compiled into the process, the inner payload is the concrete
 Rust type and can be downcast directly from `Arc<dyn CustomDataTrait>`.
