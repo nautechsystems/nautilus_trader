@@ -133,7 +133,8 @@ impl TestContext {
         let account = AccountAny::Margin(MarginAccount::new(account_state, true));
         cache.borrow_mut().add_account(account).unwrap();
 
-        let manager = ExecutionManager::new(clock.clone(), cache.clone(), config);
+        let manager =
+            ExecutionManager::new(clock.clone(), cache.clone(), config).expect("valid config");
         let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
         engine
             .register_client(Box::new(MockExecutionClient::new(Vec::new())))
@@ -1592,7 +1593,8 @@ async fn test_external_order_filled_uses_real_fills() {
         ctx.clock.clone(),
         ctx.cache.clone(),
         ExecutionManagerConfig::default(),
-    );
+    )
+    .expect("valid config");
     let replay = ctx
         .manager
         .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())

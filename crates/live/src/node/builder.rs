@@ -705,7 +705,7 @@ impl LiveNodeBuilder {
             kernel.clock.clone(),
             kernel.cache.clone(),
             exec_manager_config,
-        );
+        )?;
 
         for client in &exec_clients {
             exec_manager.set_position_reconciliation_tolerance(
