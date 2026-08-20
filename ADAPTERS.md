@@ -96,7 +96,6 @@ The following adapters are maintained in the core repository:
 | Lighter             | Data/Execution |
 | OKX                 | Data/Execution |
 | Polymarket          | Data/Execution |
-| Sandbox             | Execution      |
 | Tardis              | Data           |
 
 ## Community listings

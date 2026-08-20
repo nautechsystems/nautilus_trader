@@ -1,6 +1,6 @@
 # NautilusTrader 2.0.0rc3
 
-Released on TBD (UTC).
+Released on 20th August 2026 (UTC).
 
 > [!NOTE]
 > Some renames in this release, such as `AggressorSide` `Buyer`/`Seller` becoming `Buy`/`Sell`, restore
@@ -31,7 +31,7 @@ Released on TBD (UTC).
 - Added Rust and Python `SocketStateChanged` events for Binance Futures, Lighter, and Polymarket live clients
 - Added Coinbase heartbeat counter gap warnings, resetting after reconnect
 - Added Deribit book summaries as requestable custom data (#4576), thanks @graceyangfan
-- Added Derive fixed-window matching rate limits
+- Added Derive fixed-window rate limits for global and per-instrument matching requests
 - Added Hyperliquid socket-state reporting and `reconnect_socket` on data and execution WebSockets
 - Added Hyperliquid user TWAP history and slice fills as opt‑in custom data (#4674), thanks @graceyangfan
 - Added Interactive Brokers support for canonical 21‑character OPRA option IDs (#4774), thanks @xxxxxx-oss
@@ -83,6 +83,7 @@ Released on TBD (UTC).
 - Changed a configured heartbeat to imply dead-peer detection, defaulting `heartbeat_timeout_secs` to three intervals
 - Changed the Sockudo backend to tunnel through a configured `proxy_url` instead of silently falling back to Tungstenite
 - Changed WebSocket and socket clients to validate config on connect, so an invalid config now fails at startup
+- Changed custom cache database adapters to require `index_order_clients` for live orders (#4797), thanks @xxxxxx-oss
 - Changed Betfair `stream_heartbeat_ms` to `stream_heartbeat_secs`, now seconds rather than milliseconds (default `5`)
 - Changed Betfair `stream_idle_timeout_ms` to `stream_heartbeat_timeout_secs`, now seconds (default `60`)
 - Changed Binance spot and futures WebSocket API trading clients to send a keepalive, which they previously omitted
@@ -142,7 +143,7 @@ Released on TBD (UTC).
 - Fixed catalog and session queries treating DataFusion decode failures as exhausted; Python now raises `RuntimeError`
 - Fixed default execution mass status generation to compose granular reports (#4669), thanks @folknor
 - Fixed Parquet custom data queries for `Vec<u8>` fields (#4670), thanks @TheoBabilon
-- Fixed delayed WebSocket pongs being sent on replacement connections (#4683), thanks @folknor
+- Fixed WebSocket pongs replaying on replacements via connection epoch binding (#4683), thanks @folknor
 - Fixed backtest windows dropping boundary data and empty runs advancing time (#4685), thanks @folknor
 - Fixed `BetPosition` average price and PnL after stake increases (#4684), thanks @folknor
 - Fixed option expiry settlement dispatching partial legs and failing to retry missing prices (#4618), thanks @folknor
@@ -172,6 +173,7 @@ Released on TBD (UTC).
 - Fixed cache position updates recreating a partial entry for an unknown or purged ID (#4785), thanks @folknor
 - Fixed purge retention minutes overflowing nanoseconds and panicking in timer callbacks (#4784), thanks @folknor
 - Fixed stopped TWAP execution schedules never resuming their remaining slices (#4786), thanks @folknor
+- Fixed purge timer setup panicking on oversized intervals (#4804), thanks @folknor
 - Fixed Betfair stream reauthentication and subscription replay after session replacement
 - Fixed Betfair rounding a sub-second stream heartbeat interval up instead of down
 - Fixed Binance Spot HTTP submissions to use private‑stream order events across reconnects
@@ -224,6 +226,7 @@ Released on TBD (UTC).
 - Fixed Polymarket unsent and rejected cancels remaining in flight
 - Fixed Polymarket user channel dropping batched messages on unknown event types (#4794), thanks @yashwardhan-gautam
 - Fixed Polymarket partial GTC fills not reaching a terminal order status (#4795), thanks @yashwardhan-gautam
+- Fixed Polymarket pagination accepting stalled or repeated cursors (#4800), thanks @seungpyoson
 - Fixed Tardis CSV funding rates dropping `next_funding_ns` without a predicted rate
 - Fixed Tardis Machine funding rates omitting `next_funding_ns`
 - Fixed Tardis Machine heartbeats continuing after the stream ended
@@ -256,12 +259,17 @@ Released on TBD (UTC).
 - Upgraded Python lockfile dependencies: `numpy` v2.5.2, `platformdirs` v4.11.2, `librt` v0.15.0, and `soupsieve` v2.9.2
 - Upgraded Rust development tools: `cargo-hawk` v0.1.12, `cargo-nextest` v0.9.143, and Miri `nightly-2026-08-14`
 - Upgraded `cargo-llvm-cov` to v0.9.0
+- Upgraded `flamegraph` to v0.6.14
 - Upgraded `prek` to v0.4.14 and `osv-scanner` to v2.5.1
 - Upgraded `async-trait` crate to v0.1.92
+- Upgraded `aws-lc-rs` crate to v1.18.0
 - Upgraded `base64` crate to v0.23.1 with only its safe `std` feature enabled
+- Upgraded `blake3` crate to v1.8.6
 - Upgraded `bollard` crate to v0.21.1
 - Upgraded `capnp` and `capnpc` crates to v0.27.0 and regenerated schema bindings
 - Upgraded `clap` crate to v4.6.6
+- Upgraded `databento` crate to v0.58.0
+- Upgraded `futures` and `futures-util` crates to v0.3.34
 - Upgraded `http` crate to v1.5.0
 - Upgraded `ibapi` crate to v3.3.0
 - Upgraded `pem` crate to v4.0.0 to align with the current Base64 API
