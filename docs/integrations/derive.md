@@ -73,7 +73,12 @@ trade field shapes the parser and execution paths are pinned to.
 Spot trading has had less live exercise than perpetuals and options. Testnet accepts and cancels a
 passive `ETH-USDC` limit order at the `0.1 ETH` minimum amount, and mainnet place/cancel has been
 exercised manually. Public spot trade channels (`trades.erc20.ETH`, `trades.ETH-USDC`) subscribe
-successfully but can be low-volume, so expect sparse trade frames.
+successfully but can be low-volume, so expect sparse trade frames. When the spot book is empty the
+venue still broadcasts ticker and order book frames with a zeroed top of book; the adapter drops
+those partial quotes (logged at DEBUG), so the quote feed stays silent until a book forms. Trade
+frames are match‑driven and independent of book state, so a trade that empties the book still
+emits an event.
+Spot orders under Standard Margin are margined by initial margin fraction, not full notional.
 :::
 
 ## Environments
@@ -294,7 +299,11 @@ Derive holds margin at the subaccount level, so the `AccountState` mapping is:
   `collaterals[].initial_margin` is USD credit contributed by that collateral, not locked funds.
 - Margins: one account-wide `MarginBalance` where `initial = positions_initial_margin +
   open_orders_margin` and `maintenance = positions_maintenance_margin`. These venue fields are
-  USD requirements, stamped with the subaccount currency.
+  USD requirements, stamped with the subaccount currency. Immediately after a closing trade the
+  venue can transiently report negative `positions_*_margin` values equal to the not‑yet‑settled
+  cash movement (realized PnL and fees); the fields return to zero once settlement lands in the
+  collateral balance. Gate trading on `net_initial_margin` / `net_maintenance_margin` in
+  `AccountState.info`, not on these requirement fields.
 - Info: the subaccount's signed net health is not a margin requirement, so it travels in the
   `AccountState.info` map as `net_initial_margin` and `net_maintenance_margin` alongside
   `positions_initial_margin`, `positions_maintenance_margin`, `open_orders_margin`, and
@@ -397,7 +406,9 @@ WebSocket request outcome. It emits a terminal rejection event (`OrderRejected`,
   no open order matched the client order ID label.
 
 For other `cancelled_orders` values, the adapter emits no terminal event and waits for the
-venue order notification or later reconciliation to settle the state.
+venue order notification or later reconciliation to settle the state. The venue may return
+`cancelled_orders == -1` for a cancel that matched its label‑wildcard path; this is treated as
+success and settled the same way.
 
 For post-only orders that reach the venue, Derive rejects a crossing order with JSON-RPC
 `11008` and message `Post only order cannot cross the market`. The adapter marks that
