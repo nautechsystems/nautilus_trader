@@ -102,7 +102,7 @@ pub(crate) fn build_fill_reports_from_trades(
                 continue;
             }
 
-            let ts_event = parse_match_time(&trade.match_time, "maker fill match_time")?;
+            let mut ts_event = None;
 
             for mo in &trade.maker_orders {
                 if !mo.is_owned_by(ctx.user_address, ctx.api_key) {
@@ -129,6 +129,22 @@ pub(crate) fn build_fill_reports_from_trades(
                 {
                     continue;
                 }
+
+                ensure_instrument_binding(
+                    &instrument,
+                    trade.market.as_str(),
+                    mo.asset_id.as_str(),
+                    Some(mo.outcome.as_str()),
+                    "Polymarket maker fill",
+                )?;
+                let ts_event = match ts_event {
+                    Some(ts_event) => ts_event,
+                    None => {
+                        let parsed = parse_match_time(&trade.match_time, "maker fill match_time")?;
+                        ts_event = Some(parsed);
+                        parsed
+                    }
+                };
 
                 let report = build_maker_fill_report(
                     mo,
@@ -399,6 +415,7 @@ pub(crate) async fn generate_mass_status(
     }
 
     fill_tracker.snap_fill_reports(&mut fill_reports);
+    validate_known_order_fill_aggregates(&fill_reports, fill_tracker)?;
 
     let positions = data_api_client
         .get_positions(ctx.user_address)
@@ -657,6 +674,16 @@ pub(crate) fn confirmed_filled_quantities(
     Ok(confirmed_by_order)
 }
 
+pub(crate) fn validate_known_order_fill_aggregates(
+    fill_reports: &[FillReport],
+    fill_tracker: &OrderFillTrackerMap,
+) -> anyhow::Result<()> {
+    for (venue_order_id, total) in confirmed_filled_quantities(fill_reports)? {
+        fill_tracker.validate_confirmed_total(&venue_order_id, total)?;
+    }
+    Ok(())
+}
+
 fn checked_confirmed_filled_total(
     current: Decimal,
     added: Decimal,
@@ -876,6 +903,48 @@ mod tests {
         .expect_err("overflow must be surfaced");
 
         assert!(error.to_string().contains("overflow"));
+    }
+
+    #[rstest]
+    fn test_known_order_fill_aggregate_rejects_confirmed_overfill() {
+        let account_id = AccountId::from("POLY-001");
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+        let venue_order_id = VenueOrderId::from("V-KNOWN-OVERFILL");
+        let tracker = OrderFillTrackerMap::new();
+        tracker.register(
+            venue_order_id,
+            Quantity::from("10.0000"),
+            OrderSide::Sell,
+            instrument_id,
+            4,
+            4,
+        );
+        let fills = ["T-KNOWN-1", "T-KNOWN-2"]
+            .into_iter()
+            .map(|trade_id| {
+                FillReport::new(
+                    account_id,
+                    instrument_id,
+                    venue_order_id,
+                    TradeId::from(trade_id),
+                    OrderSide::Sell,
+                    Quantity::from("6.0000"),
+                    Price::from("0.5000"),
+                    Money::zero(Currency::pUSD()),
+                    LiquiditySide::Taker,
+                    None,
+                    None,
+                    UnixNanos::from(1),
+                    UnixNanos::from(1),
+                    None,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let error = validate_known_order_fill_aggregates(&fills, &tracker)
+            .expect_err("known order aggregate overfill must fail closed");
+
+        assert!(error.to_string().contains("exceeds submitted quantity"));
     }
 
     #[rstest]
@@ -1229,5 +1298,36 @@ mod tests {
 
         assert!(retained.is_empty());
         assert_eq!(untimestamped, 0);
+    }
+
+    #[rstest]
+    fn test_maker_builder_ignores_malformed_time_for_owned_leg_outside_instrument_filter() {
+        let trade = maker_trade_for_scope("owned-api-key", "123");
+        let position = DataApiPosition {
+            asset: "123".to_string(),
+            condition_id: trade.market.to_string(),
+            size: dec!(1),
+            avg_price: None,
+        };
+        let instruments = position_map(&position);
+        let ctx = FillContext {
+            account_id: AccountId::from("POLY-001"),
+            user_address: "0xnot-the-maker",
+            api_key: "owned-api-key",
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        let (reports, discards) = build_fill_reports_from_trades(
+            &[trade],
+            &ctx,
+            &instruments,
+            Some(InstrumentId::from("OTHER.POLYMARKET")),
+            UnixNanos::from(1),
+            None,
+        )
+        .expect("an owned maker leg outside the requested instrument is unrelated");
+
+        assert!(reports.is_empty());
+        assert_eq!(discards, FillBuildDiscards::default());
     }
 }

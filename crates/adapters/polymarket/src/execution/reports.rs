@@ -33,6 +33,8 @@ use ustr::Ustr;
 
 use super::{
     PolymarketExecutionClient,
+    identity::OrderIdentity,
+    order_fill_tracker::FillGrowthPolicy,
     parse::{
         parse_balance_allowance, parse_order_status_report, recovered_terminal_order_status,
         sum_filled_quantity, weighted_average_price,
@@ -40,7 +42,7 @@ use super::{
     reconciliation::{
         FillContext, apply_fill_filters, build_fill_reports_from_trades,
         build_position_reports_scoped, cap_order_report_filled_qty, confirmed_filled_quantities,
-        confirmed_trade_in_static_scope,
+        confirmed_trade_in_static_scope, validate_known_order_fill_aggregates,
     },
     report_validation::{ensure_instrument_binding, non_negative_quantity, parse_match_time},
 };
@@ -54,6 +56,26 @@ use crate::{
 };
 
 impl PolymarketExecutionClient {
+    fn validate_cached_order_fill_aggregates(&self, reports: &[FillReport]) -> anyhow::Result<()> {
+        let totals = confirmed_filled_quantities(reports)?;
+        let cache = self.core.cache();
+        for (venue_order_id, total) in totals {
+            let Some(order) = cache
+                .client_order_id(&venue_order_id)
+                .and_then(|client_order_id| cache.order(client_order_id))
+            else {
+                continue;
+            };
+            let policy = FillGrowthPolicy::from_identity(&OrderIdentity::from_order(&order));
+            anyhow::ensure!(
+                policy.allows_total(order.quantity().as_decimal(), total),
+                "confirmed fill aggregate {total} exceeds cached quantity {} for order {venue_order_id}",
+                order.quantity()
+            );
+        }
+        Ok(())
+    }
+
     pub(super) fn fill_context(&self) -> FillContext<'_> {
         let user_address = self
             .secrets
@@ -89,6 +111,11 @@ impl PolymarketExecutionClient {
             client_order_id.or_else(|| self.core.cache().client_order_id(&venue_order_id).copied());
         let cached = resolved_client_order_id.and_then(|cid| self.core.cache().order_owned(&cid));
         if let Some(cached) = cached.as_ref() {
+            anyhow::ensure!(
+                cached.venue_order_id() == Some(venue_order_id),
+                "tracked venue order {:?} does not match requested recovery order {venue_order_id}",
+                cached.venue_order_id(),
+            );
             anyhow::ensure!(
                 cached.instrument_id() == instrument_id,
                 "tracked order instrument {} does not match requested recovery instrument {instrument_id}",
@@ -623,6 +650,8 @@ impl PolymarketExecutionClient {
         )?;
 
         self.fill_tracker.snap_fill_reports(&mut reports);
+        validate_known_order_fill_aggregates(&reports, &self.fill_tracker)?;
+        self.validate_cached_order_fill_aggregates(&reports)?;
 
         let reports = apply_fill_filters(reports, cmd.venue_order_id, cmd.start, cmd.end);
 
@@ -660,7 +689,7 @@ impl PolymarketExecutionClient {
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let ctx = self.fill_context();
-        super::reconciliation::generate_mass_status(
+        let mass_status = super::reconciliation::generate_mass_status(
             &self.http_client,
             &self.data_api_client,
             &self.shared_token_instruments,
@@ -671,7 +700,17 @@ impl PolymarketExecutionClient {
             lookback_mins,
             self.config.reconciliation_load_ids(),
         )
-        .await
+        .await?;
+
+        if let Some(status) = mass_status.as_ref() {
+            let fill_reports = status
+                .fill_reports()
+                .into_values()
+                .flatten()
+                .collect::<Vec<_>>();
+            self.validate_cached_order_fill_aggregates(&fill_reports)?;
+        }
+        Ok(mass_status)
     }
 }
 

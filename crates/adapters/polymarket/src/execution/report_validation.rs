@@ -21,7 +21,7 @@ use nautilus_core::{
     datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
 };
 use nautilus_model::{
-    identifiers::{TradeId, VenueOrderId},
+    identifiers::{InstrumentId, TradeId, VenueOrderId},
     instruments::InstrumentAny,
     types::{Price, Quantity},
 };
@@ -270,6 +270,35 @@ pub(crate) fn ensure_instrument_binding(
         );
     }
 
+    Ok(())
+}
+
+/// Binds a correction to a tracked instrument after its full instrument metadata was unloaded.
+///
+/// The Polymarket instrument symbol stores `{condition_id}-{token_id}`. The outcome label is not
+/// retained in [`InstrumentId`], but the token uniquely identifies that outcome; this fallback is
+/// therefore restricted to already-tracked orders and destroy/finality corrections.
+pub(crate) fn ensure_tracked_instrument_binding(
+    instrument_id: InstrumentId,
+    provider_condition: &str,
+    provider_token: &str,
+    context: &str,
+) -> anyhow::Result<()> {
+    let symbol = instrument_id.symbol.as_str();
+    let (condition, token) = symbol
+        .rsplit_once('-')
+        .with_context(|| format!("{context} tracked instrument symbol {symbol:?} has no token"))?;
+
+    ensure_condition_id(condition, "tracked instrument condition_id")?;
+    ensure_condition_id(provider_condition, "provider condition_id")?;
+    anyhow::ensure!(
+        condition.eq_ignore_ascii_case(provider_condition),
+        "{context} condition {provider_condition:?} does not match tracked condition {condition:?}"
+    );
+    anyhow::ensure!(
+        token == provider_token,
+        "{context} token {provider_token:?} does not match tracked token {token:?}"
+    );
     Ok(())
 }
 

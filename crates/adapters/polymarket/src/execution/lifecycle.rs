@@ -420,14 +420,15 @@ impl PolymarketExecutionClient {
                 continue;
             };
 
+            let identity = OrderIdentity::from_order(order);
             self.order_identities
-                .register_order_identity(venue_order_id, OrderIdentity::from_order(order));
+                .register_order_identity(venue_order_id, identity);
             self.order_identities.mark_accepted(venue_order_id);
             self.fill_tracker.restore_order(
                 venue_order_id,
                 order.quantity(),
                 order.filled_qty(),
-                order.order_side(),
+                crate::execution::order_fill_tracker::FillGrowthPolicy::from_identity(&identity),
             );
 
             for event in order.events() {

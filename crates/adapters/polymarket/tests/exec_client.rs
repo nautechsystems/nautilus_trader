@@ -2198,6 +2198,68 @@ async fn test_commission_failure_errors_direct_mass_and_targeted_rest_requests()
 
 #[rstest]
 #[tokio::test]
+async fn test_known_order_confirmed_overfill_errors_direct_and_mass_fill_reports() {
+    let venue_order_id =
+        VenueOrderId::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+    let mut trades = recovery_trades_response(venue_order_id.as_str(), "6.0000", "0.5000");
+    let mut second = trades["data"][0].clone();
+    second["id"] = json!("trade-recovery-second");
+    trades["data"].as_array_mut().unwrap().push(second);
+
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    *state.trades_response_override.lock().await = Some(trades);
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    client.on_instrument(cache.borrow().instrument(&instrument_id).unwrap().clone());
+    let mut order = make_limit_order(
+        "O-KNOWN-AGGREGATE-OVERFILL",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, venue_order_id.as_str());
+
+    let direct_error = client
+        .generate_fill_reports(GenerateFillReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            venue_order_id: Some(venue_order_id),
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("direct fill reports must reject a known-order aggregate overfill");
+    let mass_error = client
+        .generate_mass_status(None)
+        .await
+        .expect_err("mass status must reject a known-order aggregate overfill");
+
+    for error in [direct_error, mass_error] {
+        assert!(format!("{error:#}").contains("exceeds cached quantity"));
+    }
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_position_status_reports_always_empty() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
@@ -3018,6 +3080,74 @@ async fn test_generate_order_status_report_recovers_canceled_when_no_trades() {
         report.cancel_reason.as_deref(),
         Some("ORDER_NOT_FOUND_AT_VENUE"),
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_rejects_cached_client_with_different_venue_id() {
+    let state = TestServerState::default();
+    *state.single_order_response.lock().await = Some(Value::Null);
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let cached_venue_order_id =
+        VenueOrderId::from("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    let requested_venue_order_id =
+        VenueOrderId::from("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    let client_order_id = ClientOrderId::from("O-RECOVERY-WRONG-VENUE");
+    let mut order = OrderAny::Limit(LimitOrder::new(
+        TraderId::from("TESTER-001"),
+        StrategyId::from("S-001"),
+        instrument_id,
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::new(10.0, 4),
+        Price::from("0.5000"),
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, cached_venue_order_id.as_str());
+
+    let error = client
+        .generate_order_status_report(&GenerateOrderStatusReport {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            client_order_id: Some(client_order_id),
+            venue_order_id: Some(requested_venue_order_id),
+            params: None,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("venue absence must not attach a cached client order to another venue ID");
+
+    assert!(error.to_string().contains("tracked venue order"));
 }
 
 #[rstest]

@@ -22,7 +22,7 @@ use indexmap::IndexMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::MUTEX_POISONED;
 use nautilus_model::{
-    enums::{OrderSide, OrderStatus},
+    enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     events::OrderFilled,
     identifiers::{ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
@@ -39,7 +39,33 @@ use crate::common::consts::DUST_SNAP_THRESHOLD_DEC;
 struct OrderFillState {
     submitted_qty: Quantity,
     cumulative_filled: Quantity,
-    order_side: OrderSide,
+    growth_policy: FillGrowthPolicy,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum FillGrowthPolicy {
+    #[default]
+    Fixed,
+    /// A locally tracked market BUY with IOC/FOK semantics. The submit path admits this shape only
+    /// for quote-quantity orders, whose realized share quantity may exceed the pre-fill estimate.
+    QuoteImmediateBuy,
+}
+
+impl FillGrowthPolicy {
+    pub(crate) fn from_identity(identity: &OrderIdentity) -> Self {
+        if identity.order_side == OrderSide::Buy
+            && identity.order_type == OrderType::Market
+            && matches!(identity.time_in_force, TimeInForce::Ioc | TimeInForce::Fok)
+        {
+            Self::QuoteImmediateBuy
+        } else {
+            Self::Fixed
+        }
+    }
+
+    pub(crate) fn allows_total(self, submitted: Decimal, total: Decimal) -> bool {
+        total <= submitted || self == Self::QuoteImmediateBuy
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -65,7 +91,7 @@ pub(crate) struct BufferedFillEmission {
 
 #[derive(Debug)]
 pub(crate) struct FillBatchAdmission<T> {
-    pub reports: Vec<Option<(FillReport, T)>>,
+    pub reports: Vec<Option<(FillReport, T, Option<Quantity>)>>,
     pub binding_error: Option<anyhow::Error>,
 }
 
@@ -95,7 +121,13 @@ struct TrackerInner {
     pending_fills: FifoCacheMap<VenueOrderId, Vec<BufferedFill>, 1_000>,
     pending_reports: FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>,
     voided_trades: FifoCache<String, 10_000>,
-    applied_buffered_fills: FifoCacheMap<String, Vec<OrderFilled>, 10_000>,
+    applied_buffered_fills: FifoCacheMap<String, AppliedBufferedCorrection, 10_000>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct AppliedBufferedCorrection {
+    fills: Vec<OrderFilled>,
+    is_confirmed: bool,
 }
 
 /// Tracks per-order fill accumulation, detects dust residuals, and buffers WS messages that arrive
@@ -121,9 +153,9 @@ impl OrderFillTrackerMap {
         venue_order_id: VenueOrderId,
         submitted_qty: Quantity,
         filled_qty: Quantity,
-        order_side: OrderSide,
+        growth_policy: FillGrowthPolicy,
     ) {
-        let mut state = new_order_state(submitted_qty, order_side);
+        let mut state = new_order_state(submitted_qty, growth_policy);
         state.cumulative_filled = filled_qty;
         self.inner
             .lock()
@@ -176,6 +208,26 @@ impl OrderFillTrackerMap {
             .map(|s| s.submitted_qty)
     }
 
+    /// Validates a complete provider fill aggregate against known local order authority.
+    pub(crate) fn validate_confirmed_total(
+        &self,
+        venue_order_id: &VenueOrderId,
+        total: Decimal,
+    ) -> anyhow::Result<()> {
+        let guard = self.inner.lock().expect(MUTEX_POISONED);
+        let Some(state) = guard.orders.get(venue_order_id) else {
+            return Ok(());
+        };
+        anyhow::ensure!(
+            state
+                .growth_policy
+                .allows_total(state.submitted_qty.as_decimal(), total),
+            "confirmed fill aggregate {total} exceeds submitted quantity {} for order {venue_order_id}",
+            state.submitted_qty
+        );
+        Ok(())
+    }
+
     /// Returns `true` if cumulative fills have reached the submitted quantity.
     pub(crate) fn is_fully_filled(&self, venue_order_id: &VenueOrderId) -> bool {
         self.inner
@@ -211,7 +263,11 @@ impl OrderFillTrackerMap {
         if let Some(e) = outcome.binding_error {
             return Err(e);
         }
-        Ok(outcome.reports.pop().flatten().map(|(report, ())| report))
+        Ok(outcome
+            .reports
+            .pop()
+            .flatten()
+            .map(|(report, (), _)| report))
     }
 
     /// Admits one native correction batch only after every participant binding is checked.
@@ -287,14 +343,34 @@ impl OrderFillTrackerMap {
             }
         }
 
+        let mut prospective_orders = AHashMap::new();
+        let mut quantity_updates = Vec::with_capacity(fills.len());
+        for ((venue_order_id, report, _), target) in fills.iter().zip(&decisions) {
+            let quantity_update = if target.is_some() {
+                guard.orders.get(venue_order_id).copied().map(|current| {
+                    let state = prospective_orders.entry(*venue_order_id).or_insert(current);
+                    admit_fill_in(state, report.last_qty, venue_order_id)
+                })
+            } else {
+                None
+            }
+            .transpose()?
+            .flatten();
+            quantity_updates.push(quantity_update);
+        }
+
+        for (venue_order_id, state) in prospective_orders {
+            guard.orders.insert(venue_order_id, state);
+        }
+
         let reports = fills
             .into_iter()
             .zip(decisions)
+            .zip(quantity_updates)
             .map(
-                |((venue_order_id, report, correction), target)| match target {
+                |(((venue_order_id, report, correction), target), quantity_update)| match target {
                     Some(target) if guard.orders.get(&venue_order_id).is_some() => {
-                        record_fill_in(&mut guard.orders, &venue_order_id, report.last_qty);
-                        Some((report, target))
+                        Some((report, target, quantity_update))
                     }
                     _ => {
                         push_buffered(
@@ -321,13 +397,12 @@ impl OrderFillTrackerMap {
         &self,
         venue_order_id: VenueOrderId,
         submitted_qty: Quantity,
-        order_side: OrderSide,
+        growth_policy: FillGrowthPolicy,
     ) {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .orders
-            .insert(venue_order_id, new_order_state(submitted_qty, order_side));
+        self.inner.lock().expect(MUTEX_POISONED).orders.insert(
+            venue_order_id,
+            new_order_state(submitted_qty, growth_policy),
+        );
     }
 
     /// Returns a bound order report to process, or buffers it until binding becomes visible.
@@ -398,7 +473,7 @@ impl OrderFillTrackerMap {
         &self,
         venue_order_id: VenueOrderId,
         submitted_qty: Quantity,
-        order_side: OrderSide,
+        growth_policy: FillGrowthPolicy,
         mut retain: F,
     ) -> PendingOrderReportDrain
     where
@@ -451,9 +526,10 @@ impl OrderFillTrackerMap {
         }
 
         let reports = reports.clone();
-        guard
-            .orders
-            .insert(venue_order_id, new_order_state(submitted_qty, order_side));
+        guard.orders.insert(
+            venue_order_id,
+            new_order_state(submitted_qty, growth_policy),
+        );
         PendingOrderReportDrain::Registered(reports)
     }
 
@@ -508,7 +584,7 @@ impl OrderFillTrackerMap {
         )?;
         guard.orders.insert(
             venue_order_id,
-            new_order_state(submitted_qty, identity.order_side),
+            new_order_state(submitted_qty, FillGrowthPolicy::from_identity(&identity)),
         );
         Ok(Some(emit_pending_fills(
             &mut guard,
@@ -575,7 +651,7 @@ impl OrderFillTrackerMap {
         let applied = guard
             .applied_buffered_fills
             .get(&correction_key.to_string())
-            .cloned()
+            .map(|correction| correction.fills.clone())
             .unwrap_or_default();
         CorrectionFillEvidence { pending, applied }
     }
@@ -601,26 +677,42 @@ impl OrderFillTrackerMap {
                 raw_corrective_timestamp,
             );
         }
-        guard
+
+        if let Some(applied) = guard
             .applied_buffered_fills
-            .get(&correction_key.to_string())
-            .is_some_and(|fills| !fills.is_empty())
+            .get_mut(&correction_key.to_string())
+        {
+            applied.is_confirmed = true;
+            return !applied.fills.is_empty();
+        }
+        false
     }
 
     /// Marks a trade failed and returns buffered fills that were already emitted.
-    pub(crate) fn void_buffered_trade(&self, correction_key: &str) -> Vec<OrderFilled> {
+    pub(crate) fn void_buffered_trade(
+        &self,
+        correction_key: &str,
+    ) -> anyhow::Result<Vec<OrderFilled>> {
         let key = correction_key.to_string();
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        anyhow::ensure!(
+            !guard
+                .applied_buffered_fills
+                .get(&key)
+                .is_some_and(|correction| correction.is_confirmed),
+            "cannot void finalized correction {correction_key}"
+        );
         guard.voided_trades.add(key.clone());
         let fills = guard
             .applied_buffered_fills
             .remove(&key)
+            .map(|correction| correction.fills)
             .unwrap_or_default();
 
         for fill in &fills {
             reverse_fill_in(&mut guard.orders, &fill.venue_order_id, fill.last_qty);
         }
-        fills
+        Ok(fills)
     }
 
     pub(crate) fn reverse_fill(&self, venue_order_id: &VenueOrderId, quantity: Quantity) {
@@ -665,29 +757,6 @@ impl OrderFillTrackerMap {
     ) -> Quantity {
         let guard = self.inner.lock().expect(MUTEX_POISONED);
         snap_fill_qty_in(&guard.orders, venue_order_id, fill_qty)
-    }
-
-    /// Raise the registered quantity to the cumulative BUY fills when they exceed it, returning
-    /// the new quantity to emit via `OrderUpdated` (or `None` when no raise is needed).
-    ///
-    /// A Polymarket BUY is bounded by the USDC it spends (`makerAmount`), so a marketable fill
-    /// below the limit price returns more shares than the nominal quantity. The engine rejects a
-    /// fill past the order quantity, so the quantity is raised to the actual fill before the
-    /// `OrderFilled` applies. SELL orders are share-denominated and never overfill, so they always
-    /// return `None`. Dust overfills are handled earlier by `snap_fill_qty`, so only a gross
-    /// overfill reaches here.
-    ///
-    /// Raising `submitted_qty` to exactly the cumulative fill makes the following `OrderFilled`
-    /// reach `Filled`. That is correct because an overfill only ever occurs on a marketable taker
-    /// BUY, whose fill the venue reports as a single aggregated trade event (one `FillReport` per
-    /// taker order): the bumping fill is therefore terminal, with no later fill to strand. Passive
-    /// maker BUYs can fill across several events but execute at their own price, so they never
-    /// overfill and never reach this raise. A venue that split one marketable BUY across multiple
-    /// trade events would close the order on the first crossing fill; this is not Polymarket's
-    /// observed behaviour and would need a final-fill signal to handle.
-    pub(crate) fn buy_overfill_bump(&self, venue_order_id: &VenueOrderId) -> Option<Quantity> {
-        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
-        buy_overfill_bump_in(&mut guard.orders, venue_order_id)
     }
 
     /// Returns the venue-filled quantity when a terminal order has sub-cent-share leaves.
@@ -750,11 +819,11 @@ impl OrderFillTrackerMap {
     }
 }
 
-fn new_order_state(submitted_qty: Quantity, order_side: OrderSide) -> OrderFillState {
+fn new_order_state(submitted_qty: Quantity, growth_policy: FillGrowthPolicy) -> OrderFillState {
     OrderFillState {
         submitted_qty,
         cumulative_filled: Quantity::zero(submitted_qty.precision),
-        order_side,
+        growth_policy,
     }
 }
 
@@ -777,21 +846,31 @@ fn pending_correction_participant(
         })
 }
 
-fn buy_overfill_bump_in(
-    orders: &mut AHashMap<VenueOrderId, OrderFillState>,
+fn admit_fill_in(
+    state: &mut OrderFillState,
+    qty: Quantity,
     venue_order_id: &VenueOrderId,
-) -> Option<Quantity> {
-    let state = orders.get_mut(venue_order_id)?;
-    if state.order_side != OrderSide::Buy {
-        return None;
-    }
+) -> anyhow::Result<Option<Quantity>> {
+    let cumulative = state.cumulative_filled.checked_add(qty).ok_or_else(|| {
+        anyhow::anyhow!(
+            "fill quantity overflow for order {venue_order_id}: {} + {qty}",
+            state.cumulative_filled
+        )
+    })?;
+    state.cumulative_filled = cumulative;
 
-    if state.cumulative_filled > state.submitted_qty {
-        state.submitted_qty = state.cumulative_filled;
-        Some(state.cumulative_filled)
-    } else {
-        None
+    if cumulative <= state.submitted_qty {
+        return Ok(None);
     }
+    anyhow::ensure!(
+        state
+            .growth_policy
+            .allows_total(state.submitted_qty.as_decimal(), cumulative.as_decimal()),
+        "aggregate fill {cumulative} exceeds submitted quantity {} for order {venue_order_id}",
+        state.submitted_qty
+    );
+    state.submitted_qty = cumulative;
+    Ok(Some(cumulative))
 }
 
 fn validate_pending_fill_binding(
@@ -824,17 +903,17 @@ fn validate_pending_fill_binding(
     Ok(())
 }
 
-/// Drains the buffered fills for `venue_order_id`, validates their eventual order binding, and
-/// stamps the client order ID. The caller must hold the lock and have registered the order first.
-fn take_and_prepare_fills(
-    inner: &mut TrackerInner,
+/// Snapshots the buffered fills for `venue_order_id`, validates their eventual order binding, and
+/// stamps the client order ID. Removal happens only after the complete quantity plan succeeds.
+fn prepare_pending_fills(
+    inner: &TrackerInner,
     venue_order_id: VenueOrderId,
     client_order_id: Option<ClientOrderId>,
     instrument_id: InstrumentId,
     order_side: OrderSide,
 ) -> anyhow::Result<Vec<BufferedFill>> {
     validate_pending_fill_binding(inner, venue_order_id, instrument_id, order_side)?;
-    let Some(buffered) = inner.pending_fills.remove(&venue_order_id) else {
+    let Some(buffered) = inner.pending_fills.get(&venue_order_id).cloned() else {
         return Ok(Vec::new());
     };
     Ok(buffered
@@ -861,16 +940,38 @@ where
     B: FnOnce(&[BufferedFill]),
     F: FnMut(&BufferedFill, Option<Quantity>) -> OrderFilled,
 {
-    let fills = take_and_prepare_fills(
+    let fills = prepare_pending_fills(
         inner,
         venue_order_id,
         client_order_id,
         instrument_id,
         order_side,
     )?;
+    let mut prospective = inner.orders.get(&venue_order_id).copied().ok_or_else(|| {
+        anyhow::anyhow!("cannot drain fills for unregistered order {venue_order_id}")
+    })?;
+    let mut quantity_updates = Vec::with_capacity(fills.len());
+    for buffered in &fills {
+        let is_voided = buffered
+            .correction
+            .as_ref()
+            .is_some_and(|correction| inner.voided_trades.contains(&correction.correction_key));
+        quantity_updates.push(if is_voided {
+            None
+        } else {
+            admit_fill_in(
+                &mut prospective,
+                buffered.report.last_qty,
+                &buffered.report.venue_order_id,
+            )?
+        });
+    }
+
+    inner.pending_fills.remove(&venue_order_id);
+    inner.orders.insert(venue_order_id, prospective);
     before_emit(&fills);
     let mut emissions = Vec::with_capacity(fills.len());
-    for buffered in fills {
+    for (buffered, new_qty) in fills.into_iter().zip(quantity_updates) {
         if let Some(correction) = buffered.correction.as_ref()
             && inner.voided_trades.contains(&correction.correction_key)
         {
@@ -881,23 +982,22 @@ where
             continue;
         }
 
-        record_fill_in(
-            &mut inner.orders,
-            &buffered.report.venue_order_id,
-            buffered.report.last_qty,
-        );
-        let new_qty = buy_overfill_bump_in(&mut inner.orders, &buffered.report.venue_order_id);
         let filled = emit(&buffered, new_qty);
         if let Some(correction) = buffered.correction.as_ref() {
-            if let Some(fills) = inner
+            if let Some(applied) = inner
                 .applied_buffered_fills
                 .get_mut(&correction.correction_key)
             {
-                fills.push(filled);
+                applied.fills.push(filled);
+                applied.is_confirmed |= correction.is_confirmed;
             } else {
-                inner
-                    .applied_buffered_fills
-                    .insert(correction.correction_key.clone(), vec![filled]);
+                inner.applied_buffered_fills.insert(
+                    correction.correction_key.clone(),
+                    AppliedBufferedCorrection {
+                        fills: vec![filled],
+                        is_confirmed: correction.is_confirmed,
+                    },
+                );
             }
         }
         emissions.push(BufferedFillEmission {
@@ -950,16 +1050,15 @@ impl OrderFillTrackerMap {
         &self,
         venue_order_id: VenueOrderId,
         submitted_qty: Quantity,
-        order_side: OrderSide,
+        _order_side: OrderSide,
         _instrument_id: InstrumentId,
         _size_precision: u8,
         _price_precision: u8,
     ) {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .orders
-            .insert(venue_order_id, new_order_state(submitted_qty, order_side));
+        self.inner.lock().expect(MUTEX_POISONED).orders.insert(
+            venue_order_id,
+            new_order_state(submitted_qty, FillGrowthPolicy::Fixed),
+        );
     }
 
     /// Records a fill against a registered order, for tests that drive fill accumulation directly.
@@ -1036,6 +1135,7 @@ impl OrderFillTrackerMap {
     }
 }
 
+#[cfg(test)]
 fn record_fill_in(
     orders: &mut AHashMap<VenueOrderId, OrderFillState>,
     venue_order_id: &VenueOrderId,
@@ -1087,13 +1187,62 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::{LiquiditySide, OrderStatus, OrderType, TimeInForce},
-        identifiers::{AccountId, TradeId},
+        identifiers::{AccountId, StrategyId, TradeId},
         types::{Currency, Money, Price},
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[rstest]
+    #[case(
+        OrderSide::Buy,
+        OrderType::Market,
+        TimeInForce::Ioc,
+        FillGrowthPolicy::QuoteImmediateBuy
+    )]
+    #[case(
+        OrderSide::Buy,
+        OrderType::Market,
+        TimeInForce::Fok,
+        FillGrowthPolicy::QuoteImmediateBuy
+    )]
+    #[case(
+        OrderSide::Buy,
+        OrderType::Limit,
+        TimeInForce::Fok,
+        FillGrowthPolicy::Fixed
+    )]
+    #[case(
+        OrderSide::Buy,
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        FillGrowthPolicy::Fixed
+    )]
+    #[case(
+        OrderSide::Sell,
+        OrderType::Market,
+        TimeInForce::Ioc,
+        FillGrowthPolicy::Fixed
+    )]
+    fn test_fill_growth_policy_requires_immediate_market_buy(
+        #[case] order_side: OrderSide,
+        #[case] order_type: OrderType,
+        #[case] time_in_force: TimeInForce,
+        #[case] expected: FillGrowthPolicy,
+    ) {
+        let identity = OrderIdentity {
+            client_order_id: ClientOrderId::from("O-GROWTH-POLICY"),
+            strategy_id: StrategyId::from("S-001"),
+            instrument_id: InstrumentId::from("TEST.POLYMARKET"),
+            order_side,
+            order_type,
+            time_in_force,
+        };
+
+        assert_eq!(FillGrowthPolicy::from_identity(&identity), expected);
+    }
 
     fn pusd() -> Currency {
         Currency::pUSD()
@@ -1253,8 +1402,12 @@ mod tests {
             },
             |_| Ok(false),
         );
-        let prior_fills = tracker.void_buffered_trade(correction_key);
-        tracker.register_without_draining(venue_order_id, Quantity::new(10.0, 6), OrderSide::Buy);
+        let prior_fills = tracker.void_buffered_trade(correction_key).unwrap();
+        tracker.register_without_draining(
+            venue_order_id,
+            Quantity::new(10.0, 6),
+            FillGrowthPolicy::Fixed,
+        );
         let fill = test_order_filled(&report, ClientOrderId::from("O-FAILED-BEFORE-DRAIN"));
         let was_emitted = Cell::new(false);
         let emissions = tracker
@@ -1324,8 +1477,17 @@ mod tests {
                     .is_none()
             );
         }
-        assert!(tracker.void_buffered_trade("trade-voided-order").is_empty());
-        tracker.register_without_draining(venue_order_id, Quantity::new(100.0, 6), OrderSide::Buy);
+        assert!(
+            tracker
+                .void_buffered_trade("trade-voided-order")
+                .unwrap()
+                .is_empty()
+        );
+        tracker.register_without_draining(
+            venue_order_id,
+            Quantity::new(100.0, 6),
+            FillGrowthPolicy::Fixed,
+        );
 
         let emitted_count = Cell::new(0);
         let quantity_bumps = RefCell::new(Vec::new());
@@ -1396,7 +1558,11 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        tracker.register_without_draining(venue_order_id, Quantity::new(100.0, 6), OrderSide::Buy);
+        tracker.register_without_draining(
+            venue_order_id,
+            Quantity::new(100.0, 6),
+            FillGrowthPolicy::Fixed,
+        );
 
         let (entered_tx, entered_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
@@ -1493,7 +1659,7 @@ mod tests {
             response_tracker.register_without_draining(
                 venue_order_id,
                 Quantity::new(100.0, 6),
-                OrderSide::Buy,
+                FillGrowthPolicy::Fixed,
             );
             response_tracker
                 .emit_pending_fills_for_registered(
@@ -1534,7 +1700,11 @@ mod tests {
             "trade-binding-callback-error",
             Quantity::new(10.0, 6),
         );
-        tracker.register_without_draining(venue_order_id, Quantity::new(100.0, 6), OrderSide::Buy);
+        tracker.register_without_draining(
+            venue_order_id,
+            Quantity::new(100.0, 6),
+            FillGrowthPolicy::Fixed,
+        );
 
         let result = tracker.accept_or_buffer_fill(
             venue_order_id,
@@ -1607,7 +1777,7 @@ mod tests {
             drain_tracker.classify_pending_order_reports(
                 venue_order_id,
                 Quantity::new(100.0, 6),
-                OrderSide::Buy,
+                FillGrowthPolicy::Fixed,
                 |_| {
                     drain_entered.wait();
                     drain_release.wait();
@@ -1678,7 +1848,11 @@ mod tests {
         assert!(first.reports.iter().all(Option::is_none));
         assert_eq!(tracker.pending_fills_for(&venue_order_id).len(), 1);
 
-        tracker.register_without_draining(venue_order_id, Quantity::new(100.0, 6), OrderSide::Buy);
+        tracker.register_without_draining(
+            venue_order_id,
+            Quantity::new(100.0, 6),
+            FillGrowthPolicy::Fixed,
+        );
         let replay = tracker
             .accept_or_buffer_fills(vec![(venue_order_id, report, correction)], |_| Ok(Some(())))
             .unwrap();
@@ -1730,7 +1904,7 @@ mod tests {
             tracker.register_without_draining(
                 venue_order_id,
                 Quantity::new(100.0, 6),
-                OrderSide::Buy,
+                FillGrowthPolicy::Fixed,
             );
         }
         let first_report = test_fill_report(
@@ -1791,6 +1965,71 @@ mod tests {
     }
 
     #[rstest]
+    fn test_buffered_fill_batch_overfill_retains_every_fill_and_mutates_nothing() {
+        use std::cell::Cell;
+
+        let tracker = OrderFillTrackerMap::new();
+        let venue_order_id = VenueOrderId::from("order-buffered-aggregate-overfill");
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+        let correction = |raw_trade_id: &str| FillCorrectionMetadata {
+            correction_key: "buffered-aggregate-overfill".to_string(),
+            raw_trade_id: raw_trade_id.to_string(),
+            raw_corrective_timestamp: "1700000000000".to_string(),
+            info: None,
+            is_confirmed: false,
+        };
+        let fills = ["trade-buffered-first", "trade-buffered-second"]
+            .into_iter()
+            .map(|raw_trade_id| {
+                (
+                    venue_order_id,
+                    test_fill_report(
+                        instrument_id,
+                        venue_order_id,
+                        raw_trade_id,
+                        Quantity::new(6.0, 6),
+                    ),
+                    correction(raw_trade_id),
+                )
+            })
+            .collect();
+
+        let admission = tracker
+            .accept_or_buffer_fills(fills, |_| Ok(None::<()>))
+            .unwrap();
+        assert!(admission.reports.iter().all(Option::is_none));
+        tracker.register_without_draining(
+            venue_order_id,
+            Quantity::new(10.0, 6),
+            FillGrowthPolicy::Fixed,
+        );
+
+        let emitted = Cell::new(0);
+        let result = tracker.emit_pending_fills_for_registered(
+            venue_order_id,
+            Some(ClientOrderId::from("O-BUFFERED-AGGREGATE-OVERFILL")),
+            instrument_id,
+            OrderSide::Buy,
+            |_| {},
+            |buffered, _| {
+                emitted.set(emitted.get() + 1);
+                test_order_filled(
+                    &buffered.report,
+                    ClientOrderId::from("O-BUFFERED-AGGREGATE-OVERFILL"),
+                )
+            },
+        );
+
+        assert!(result.is_err());
+        assert_eq!(emitted.get(), 0);
+        assert_eq!(tracker.pending_fills_for(&venue_order_id).len(), 2);
+        assert_eq!(
+            tracker.get_cumulative_filled(&venue_order_id),
+            Some(Quantity::zero(6))
+        );
+    }
+
+    #[rstest]
     fn test_partial_batch_replay_does_not_buffer_already_emitted_sibling() {
         use std::cell::Cell;
 
@@ -1798,7 +2037,11 @@ mod tests {
         let first_order = VenueOrderId::from("maker-order-replay-applied");
         let second_order = VenueOrderId::from("maker-order-replay-pending");
         let instrument_id = InstrumentId::from("TEST.POLYMARKET");
-        tracker.register_without_draining(first_order, Quantity::new(100.0, 6), OrderSide::Buy);
+        tracker.register_without_draining(
+            first_order,
+            Quantity::new(100.0, 6),
+            FillGrowthPolicy::Fixed,
+        );
         let first_report = test_fill_report(
             instrument_id,
             first_order,
@@ -2257,113 +2500,5 @@ mod tests {
         tracker.record_fill(&vid, Quantity::new(60.0, 6));
         tracker.record_fill(&vid, Quantity::new(40.0, 6));
         assert!(tracker.is_fully_filled(&vid));
-    }
-
-    fn register_buy(tracker: &OrderFillTrackerMap, vid: VenueOrderId, submitted: f64) {
-        tracker.register(
-            vid,
-            Quantity::new(submitted, 6),
-            OrderSide::Buy,
-            InstrumentId::from("TEST.POLYMARKET"),
-            6,
-            2,
-        );
-    }
-
-    #[rstest]
-    fn test_buy_overfill_bump_unregistered_is_none() {
-        let tracker = OrderFillTrackerMap::new();
-        assert!(
-            tracker
-                .buy_overfill_bump(&VenueOrderId::from("unknown"))
-                .is_none()
-        );
-    }
-
-    #[rstest]
-    fn test_buy_overfill_bump_within_qty_is_none() {
-        let tracker = OrderFillTrackerMap::new();
-        let vid = VenueOrderId::from("order-1");
-        register_buy(&tracker, vid, 10.0);
-
-        // Exact fill: cumulative equals submitted, no raise.
-        tracker.record_fill(&vid, Quantity::new(10.0, 6));
-        assert!(tracker.buy_overfill_bump(&vid).is_none());
-    }
-
-    #[rstest]
-    fn test_buy_overfill_bump_sell_is_none() {
-        let tracker = OrderFillTrackerMap::new();
-        let vid = VenueOrderId::from("order-1");
-        tracker.register(
-            vid,
-            Quantity::new(10.0, 6),
-            OrderSide::Sell,
-            InstrumentId::from("TEST.POLYMARKET"),
-            6,
-            2,
-        );
-
-        // A SELL is share-denominated; even an over-report does not raise the quantity.
-        tracker.record_fill(&vid, Quantity::new(12.0, 6));
-        assert!(tracker.buy_overfill_bump(&vid).is_none());
-    }
-
-    #[rstest]
-    fn test_buy_overfill_bump_raises_to_cumulative_and_is_idempotent() {
-        let tracker = OrderFillTrackerMap::new();
-        let vid = VenueOrderId::from("order-1");
-        register_buy(&tracker, vid, 10.0);
-
-        // Marketable BUY fills below its limit: 12 shares against a nominal 10.
-        tracker.record_fill(&vid, Quantity::new(12.0, 6));
-
-        let bumped = tracker.buy_overfill_bump(&vid).expect("expected a raise");
-        assert_eq!(bumped, Quantity::new(12.0, 6));
-        // Submitted is raised, so a second emit for the same fill does not re-raise.
-        assert!(tracker.buy_overfill_bump(&vid).is_none());
-        // Leaves are non-negative after the raise, so no spurious dust residual.
-        assert!(tracker.is_fully_filled(&vid));
-    }
-
-    #[rstest]
-    fn test_buy_overfill_bump_tracks_each_crossing_fill() {
-        let tracker = OrderFillTrackerMap::new();
-        let vid = VenueOrderId::from("order-1");
-        register_buy(&tracker, vid, 10.0);
-
-        // First partial stays within the nominal qty: no raise.
-        tracker.record_fill(&vid, Quantity::new(6.0, 6));
-        assert!(tracker.buy_overfill_bump(&vid).is_none());
-
-        // Second partial crosses the nominal qty: raise to cumulative 14.
-        tracker.record_fill(&vid, Quantity::new(8.0, 6));
-        assert_eq!(
-            tracker.buy_overfill_bump(&vid),
-            Some(Quantity::new(14.0, 6))
-        );
-
-        // Third partial crosses again: raise to cumulative 20.
-        tracker.record_fill(&vid, Quantity::new(6.0, 6));
-        assert_eq!(
-            tracker.buy_overfill_bump(&vid),
-            Some(Quantity::new(20.0, 6))
-        );
-    }
-
-    // A dust overfill is snapped DOWN by snap_fill_qty before recording, so it never reaches
-    // buy_overfill_bump as a raise: the two mechanisms do not double-handle the same fill.
-    #[rstest]
-    fn test_buy_overfill_bump_ignores_dust_snapped_fill() {
-        let tracker = OrderFillTrackerMap::new();
-        let vid = VenueOrderId::from("order-1");
-        register_buy(&tracker, vid, 100.0);
-
-        let raw = Quantity::new(100.005, 6);
-        let snapped = tracker.snap_fill_qty(&vid, raw);
-        assert_eq!(snapped, Quantity::new(100.0, 6));
-
-        tracker.record_fill(&vid, snapped);
-        assert!(tracker.buy_overfill_bump(&vid).is_none());
     }
 }

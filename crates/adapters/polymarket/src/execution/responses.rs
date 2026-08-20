@@ -32,7 +32,9 @@ use rust_decimal::Decimal;
 use super::{
     cancellations::execute_deferred_cancel,
     identity::{OrderIdentity, OrderIdentityRegistry},
-    order_fill_tracker::{BufferedFill, OrderFillTrackerMap, PendingOrderReportDrain},
+    order_fill_tracker::{
+        BufferedFill, FillGrowthPolicy, OrderFillTrackerMap, PendingOrderReportDrain,
+    },
     parse::parse_order_status_report,
     pending::{PendingCancelTracker, PendingSubmitTracker},
     reconciliation::cap_order_report_filled_qty,
@@ -437,7 +439,7 @@ pub(super) fn drain_pending_reports_for_known_order(
     let buffered_snapshot = match fill_tracker.classify_pending_order_reports(
         venue_order_id,
         tracker_quantity,
-        order.order_side(),
+        FillGrowthPolicy::from_identity(&identity),
         |report| buffered_order_report_matches(&identity, venue_order_id, report),
     ) {
         PendingOrderReportDrain::Empty => {
@@ -599,7 +601,7 @@ pub(super) fn handle_order_response(
                     fill_tracker.register_without_draining(
                         venue_order_id,
                         order.quantity(),
-                        order.order_side(),
+                        FillGrowthPolicy::from_identity(&identity),
                     );
                     let fills = match fill_tracker.emit_pending_fills_for_registered(
                         venue_order_id,
@@ -2283,6 +2285,7 @@ mod tests {
         assert_eq!(order.filled_qty(), venue_fill_qty);
         assert_eq!(order.trade_ids().len(), 1);
         assert!(!fill_tracker.contains(&venue_order_id));
+        assert!(fill_tracker.void_buffered_trade(correction_key).is_err());
         assert!(receiver.try_recv().is_err());
     }
 
@@ -2334,7 +2337,11 @@ mod tests {
                 "1700000000123",
             ));
         }
-        fill_tracker.register_without_draining(venue_order_id, submitted_qty, order.order_side());
+        fill_tracker.register_without_draining(
+            venue_order_id,
+            submitted_qty,
+            FillGrowthPolicy::from_identity(&OrderIdentity::from_order(&order)),
+        );
         let fills = fill_tracker
             .emit_pending_fills_for_registered(
                 venue_order_id,
@@ -2480,8 +2487,17 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        assert!(fill_tracker.void_buffered_trade(correction_key).is_empty());
-        fill_tracker.register_without_draining(venue_order_id, submitted_qty, order.order_side());
+        assert!(
+            fill_tracker
+                .void_buffered_trade(correction_key)
+                .unwrap()
+                .is_empty()
+        );
+        fill_tracker.register_without_draining(
+            venue_order_id,
+            submitted_qty,
+            FillGrowthPolicy::from_identity(&OrderIdentity::from_order(&order)),
+        );
         let fills = fill_tracker
             .emit_pending_fills_for_registered(
                 venue_order_id,
@@ -3250,33 +3266,8 @@ mod tests {
         let account_id = AccountId::from("POLY-001");
         let venue_order_id = VenueOrderId::from("0xoverfill-buy");
 
-        let mut order = OrderAny::Limit(LimitOrder::new(
-            TraderId::from("TESTER-001"),
-            StrategyId::from("S-001"),
-            instrument_id,
-            ClientOrderId::from("O-OVERFILL"),
-            OrderSide::Buy,
-            Quantity::new(10.0, size_precision),
-            Price::new(0.50, price_precision),
-            TimeInForce::Fok,
-            None,
-            false,
-            false,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UUID4::new(),
-            UnixNanos::default(),
-        ));
+        let mut order =
+            test_quote_market_order_with_tif("O-OVERFILL", instrument_id, TimeInForce::Fok);
         order
             .apply(TestOrderEventStubs::submitted(&order, account_id))
             .unwrap();

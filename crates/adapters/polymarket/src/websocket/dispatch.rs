@@ -59,7 +59,9 @@ use crate::{
         get_pusd_currency,
         identity::{OrderIdentity, OrderIdentityRegistry},
         is_post_only_crossing,
-        order_fill_tracker::{BufferedFill, FillCorrectionMetadata, OrderFillTrackerMap},
+        order_fill_tracker::{
+            BufferedFill, FillCorrectionMetadata, FillGrowthPolicy, OrderFillTrackerMap,
+        },
         parse::{
             build_maker_fill_report, compute_commission, determine_order_side,
             parse_liquidity_side, snap_filled_qty_to_quantity,
@@ -67,9 +69,10 @@ use crate::{
         pending::PendingSubmitTracker,
         reconciliation::cap_order_report_filled_qty,
         report_validation::{
-            decimal_from_str_exact, ensure_instrument_binding, exact_binary_price,
-            instrument_fee_policy, non_negative_quantity, parse_expiration, parse_match_time,
-            parse_user_channel_timestamp, positive_quantity, trade_id, venue_order_id,
+            decimal_from_str_exact, ensure_instrument_binding, ensure_tracked_instrument_binding,
+            exact_binary_price, instrument_fee_policy, non_negative_quantity, parse_expiration,
+            parse_match_time, parse_user_channel_timestamp, positive_quantity, trade_id,
+            venue_order_id,
         },
     },
     http::error::sanitize_error_text,
@@ -85,7 +88,7 @@ pub(crate) struct WsDispatchState {
     pub processed_fills: FifoCache<String, 10_000>,
     matched_fills: FifoCacheMap<String, Vec<OrderFilled>, 10_000>,
     voided_trades: FifoCache<String, 10_000>,
-    confirmed_trades: FifoCache<String, 10_000>,
+    confirmed_corrections: FifoCacheMap<String, ConfirmedCorrection, 10_000>,
     pending_terminal_orders: FifoCacheMap<VenueOrderId, PendingTerminalOrder, 10_000>,
     /// Cancel reports saved for orders known to be terminal at the venue.
     /// Re-emitted after a fill to restore terminal state when fills race
@@ -103,6 +106,46 @@ impl WsDispatchState {
         self.processed_fills.add(key.clone());
         self.matched_fills.remove(&key);
         self.voided_trades.add(key);
+    }
+
+    fn record_confirmed_correction(
+        &mut self,
+        correction_key: String,
+        raw_trade_id: String,
+        participants: impl IntoIterator<Item = VenueOrderId>,
+    ) {
+        if let Some(confirmed) = self.confirmed_corrections.get_mut(&correction_key) {
+            for participant in participants {
+                if !confirmed.participants.contains(&participant) {
+                    confirmed.participants.push(participant);
+                }
+            }
+            return;
+        }
+
+        self.confirmed_corrections.insert(
+            correction_key,
+            ConfirmedCorrection {
+                raw_trade_id,
+                participants: participants.into_iter().collect(),
+            },
+        );
+    }
+
+    fn is_trade_confirmed_for_order(
+        &self,
+        raw_trade_id: &str,
+        venue_order_id: VenueOrderId,
+    ) -> bool {
+        self.confirmed_corrections.values().any(|confirmed| {
+            confirmed.raw_trade_id == raw_trade_id
+                && confirmed.participants.contains(&venue_order_id)
+        })
+    }
+
+    fn is_correction_confirmed(&self, correction_key: &str) -> bool {
+        self.confirmed_corrections
+            .contains_key(&correction_key.to_string())
     }
 }
 
@@ -123,7 +166,13 @@ struct PendingTerminalOrder {
     ts_event: UnixNanos,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
+struct ConfirmedCorrection {
+    raw_trade_id: String,
+    participants: Vec<VenueOrderId>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ValidatedTradeParticipant {
     venue_order_id: VenueOrderId,
     instrument_id: InstrumentId,
@@ -145,6 +194,7 @@ struct FillDispatchResult {
 
 #[derive(Debug)]
 struct AppliedBufferedConfirmation {
+    correction_key: String,
     raw_trade_id: String,
     raw_corrective_timestamp: String,
     venue_order_id: VenueOrderId,
@@ -322,7 +372,7 @@ fn dispatch_order_update(
         ctx.fill_tracker.register_without_draining(
             venue_order_id,
             report.quantity,
-            report.order_side,
+            FillGrowthPolicy::from_identity(&identity),
         );
     }
 
@@ -456,6 +506,7 @@ fn applied_buffered_confirmation(buffered: &BufferedFill) -> Option<AppliedBuffe
         correction
             .is_confirmed
             .then(|| AppliedBufferedConfirmation {
+                correction_key: correction.correction_key.clone(),
                 raw_trade_id: correction.raw_trade_id.clone(),
                 raw_corrective_timestamp: correction.raw_corrective_timestamp.clone(),
                 venue_order_id: buffered.report.venue_order_id,
@@ -477,7 +528,7 @@ fn emit_quantity_normalization_if_ready(
             pending
                 .trade_ids
                 .iter()
-                .all(|trade_id| state.confirmed_trades.contains(trade_id))
+                .all(|trade_id| state.is_trade_confirmed_for_order(trade_id, venue_order_id))
         });
 
     if !is_ready {
@@ -513,9 +564,11 @@ fn apply_buffered_confirmations(
     state: &mut WsDispatchState,
 ) {
     for confirmation in confirmations {
-        state
-            .confirmed_trades
-            .add(confirmation.raw_trade_id.clone());
+        state.record_confirmed_correction(
+            confirmation.correction_key,
+            confirmation.raw_trade_id,
+            [confirmation.venue_order_id],
+        );
         let ts_event = corrective_event_timestamp(
             &confirmation.raw_corrective_timestamp,
             "WebSocket confirmed trade timestamp",
@@ -643,6 +696,25 @@ fn void_failed_trade(
         return;
     }
 
+    if state.is_correction_confirmed(&correction.correction_key) {
+        log::warn!(
+            "Ignoring FAILED for finalized correction {}",
+            correction.correction_key
+        );
+        return;
+    }
+
+    let buffered_fills = match ctx
+        .fill_tracker
+        .void_buffered_trade(&correction.correction_key)
+    {
+        Ok(fills) => fills,
+        Err(e) => {
+            log::warn!("Ignoring contradictory FAILED correction: {e}");
+            return;
+        }
+    };
+
     let direct_fills = state
         .matched_fills
         .remove(&correction.correction_key)
@@ -654,10 +726,7 @@ fn void_failed_trade(
     }
 
     let mut fills = direct_fills;
-    fills.extend(
-        ctx.fill_tracker
-            .void_buffered_trade(&correction.correction_key),
-    );
+    fills.extend(buffered_fills);
     let ts_event = (!fills.is_empty()).then(|| {
         corrective_event_timestamp(&trade.timestamp, "WebSocket failed trade timestamp", ctx)
     });
@@ -674,7 +743,6 @@ fn void_failed_trade(
 
     state.processed_fills.add(correction.correction_key.clone());
     state.voided_trades.add(correction.correction_key.clone());
-    state.confirmed_trades.remove(&correction.raw_trade_id);
 }
 
 fn validate_trade_correction_scope(
@@ -706,19 +774,33 @@ fn validate_trade_correction_scope(
         {
             let participant_order_id =
                 venue_order_id(&order.order_id, "WebSocket maker correction order ID")?;
-            let instrument = instruments.get(&order.asset_id).with_context(|| {
-                format!(
-                    "unknown maker correction asset_id in trade {}: {}",
-                    trade.id, order.asset_id
-                )
-            })?;
-            ensure_instrument_binding(
-                instrument,
-                trade.market.as_str(),
-                order.asset_id.as_str(),
-                Some(order.outcome.as_str()),
-                "WebSocket maker correction",
-            )?;
+            let instrument_id = if let Some(instrument) = instruments.get(&order.asset_id) {
+                ensure_instrument_binding(
+                    instrument,
+                    trade.market.as_str(),
+                    order.asset_id.as_str(),
+                    Some(order.outcome.as_str()),
+                    "WebSocket maker correction",
+                )?;
+                instrument.id()
+            } else {
+                let identity = ctx
+                    .order_identities
+                    .get(&participant_order_id)
+                    .with_context(|| {
+                        format!(
+                            "unknown maker correction asset_id in trade {}: {}",
+                            trade.id, order.asset_id
+                        )
+                    })?;
+                ensure_tracked_instrument_binding(
+                    identity.instrument_id,
+                    trade.market.as_str(),
+                    order.asset_id.as_str(),
+                    "WebSocket maker correction",
+                )?;
+                identity.instrument_id
+            };
             let inferred_order_side = determine_order_side(
                 trade.trader_side,
                 trade.side,
@@ -727,28 +809,40 @@ fn validate_trade_correction_scope(
             );
             let order_side = validate_participant_identity(
                 participant_order_id,
-                instrument.id(),
+                instrument_id,
                 order.side.map_or(inferred_order_side, OrderSide::from),
                 order.side.is_some(),
                 ctx,
             )?;
             participants.push(ValidatedTradeParticipant {
                 venue_order_id: participant_order_id,
-                instrument_id: instrument.id(),
+                instrument_id,
                 order_side,
             });
         }
     } else {
-        let instrument = instruments
-            .get(&trade.asset_id)
-            .with_context(|| format!("unknown asset_id in trade: {}", trade.asset_id))?;
-        ensure_instrument_binding(
-            instrument,
-            trade.market.as_str(),
-            trade.asset_id.as_str(),
-            Some(trade.outcome.as_str()),
-            "WebSocket taker correction",
-        )?;
+        let instrument_id = if let Some(instrument) = instruments.get(&trade.asset_id) {
+            ensure_instrument_binding(
+                instrument,
+                trade.market.as_str(),
+                trade.asset_id.as_str(),
+                Some(trade.outcome.as_str()),
+                "WebSocket taker correction",
+            )?;
+            instrument.id()
+        } else {
+            let identity = ctx
+                .order_identities
+                .get(&taker_order_id)
+                .with_context(|| format!("unknown asset_id in trade: {}", trade.asset_id))?;
+            ensure_tracked_instrument_binding(
+                identity.instrument_id,
+                trade.market.as_str(),
+                trade.asset_id.as_str(),
+                "WebSocket taker correction",
+            )?;
+            identity.instrument_id
+        };
         let order_side = determine_order_side(
             trade.trader_side,
             trade.side,
@@ -756,46 +850,59 @@ fn validate_trade_correction_scope(
             trade.asset_id.as_str(),
         );
         let order_side =
-            validate_participant_identity(taker_order_id, instrument.id(), order_side, true, ctx)?;
+            validate_participant_identity(taker_order_id, instrument_id, order_side, true, ctx)?;
         participants.push(ValidatedTradeParticipant {
             venue_order_id: taker_order_id,
-            instrument_id: instrument.id(),
+            instrument_id,
             order_side,
         });
     }
 
     let correction_key = format!("{}-{}", trade.id, trade.taker_order_id);
     let buffered_evidence = ctx.fill_tracker.correction_fill_evidence(&correction_key);
-    let stored_fills = state
+    let direct_fills = state
         .matched_fills
         .get(&correction_key)
         .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .chain(buffered_evidence.applied);
+        .unwrap_or_default();
+    let mut evidence_participants = Vec::new();
 
-    for fill in stored_fills {
+    for fill in direct_fills.iter().chain(&buffered_evidence.applied) {
+        let evidence = ValidatedTradeParticipant {
+            venue_order_id: fill.venue_order_id,
+            instrument_id: fill.instrument_id,
+            order_side: fill.order_side,
+        };
         anyhow::ensure!(
-            participants.iter().any(|participant| {
-                participant.venue_order_id == fill.venue_order_id
-                    && participant.instrument_id == fill.instrument_id
-                    && participant.order_side == fill.order_side
-            }),
+            participants.contains(&evidence),
             "stored fill {} is not bound to the correction participants",
             fill.trade_id
         );
+        evidence_participants.push(evidence);
     }
 
-    for fill in buffered_evidence.pending {
+    for fill in &buffered_evidence.pending {
+        let evidence = ValidatedTradeParticipant {
+            venue_order_id: fill.venue_order_id,
+            instrument_id: fill.instrument_id,
+            order_side: fill.order_side,
+        };
         anyhow::ensure!(
-            participants.iter().any(|participant| {
-                participant.venue_order_id == fill.venue_order_id
-                    && participant.instrument_id == fill.instrument_id
-                    && participant.order_side == fill.order_side
-            }),
+            participants.contains(&evidence),
             "buffered fill {} is not bound to the correction participants",
             fill.trade_id
         );
+        evidence_participants.push(evidence);
+    }
+
+    if !evidence_participants.is_empty() {
+        for participant in &participants {
+            anyhow::ensure!(
+                evidence_participants.contains(participant),
+                "correction participant {} has no stored fill evidence",
+                participant.venue_order_id
+            );
+        }
     }
 
     Ok(ValidatedTradeCorrection {
@@ -882,7 +989,15 @@ fn confirm_trade(
     ctx: &WsDispatchContext<'_>,
     state: &mut WsDispatchState,
 ) {
-    state.confirmed_trades.add(correction.raw_trade_id.clone());
+    state.record_confirmed_correction(
+        correction.correction_key.clone(),
+        correction.raw_trade_id.clone(),
+        correction
+            .participants
+            .iter()
+            .map(|participant| participant.venue_order_id),
+    );
+
     for participant in &correction.participants {
         emit_quantity_normalization_if_ready(
             participant.venue_order_id,
@@ -1011,12 +1126,13 @@ fn dispatch_maker_fill_reports(
 
     let mut result = FillDispatchResult::default();
 
-    for (report, identity) in admission.reports.into_iter().flatten() {
+    for (report, identity, new_qty) in admission.reports.into_iter().flatten() {
         let maker_venue_order_id = report.venue_order_id;
         result.reversible_fills.push(emit_order_filled(
             &identity,
             &report,
             fill_info.clone(),
+            new_qty,
             ctx,
         ));
         result.authority_applied = true;
@@ -1077,8 +1193,8 @@ fn dispatch_taker_fill_report(
         return Ok(FillDispatchResult::default());
     }
 
-    if let Some((report, identity)) = admission.reports.into_iter().next().flatten() {
-        let fill = emit_order_filled(&identity, &report, trade_fill_info(trade), ctx);
+    if let Some((report, identity, new_qty)) = admission.reports.into_iter().next().flatten() {
+        let fill = emit_order_filled(&identity, &report, trade_fill_info(trade), new_qty, ctx);
         reemit_terminal_cancel(&identity, venue_order_id, state, ctx);
         return Ok(FillDispatchResult {
             reversible_fills: vec![fill],
@@ -1391,11 +1507,12 @@ fn emit_order_filled(
     identity: &OrderIdentity,
     fill: &FillReport,
     info: Option<IndexMap<Ustr, Ustr>>,
+    new_qty: Option<Quantity>,
     ctx: &WsDispatchContext<'_>,
 ) -> OrderFilled {
     ensure_accepted(identity, fill.venue_order_id, fill.ts_event, ctx);
 
-    if let Some(new_qty) = ctx.fill_tracker.buy_overfill_bump(&fill.venue_order_id) {
+    if let Some(new_qty) = new_qty {
         emit_buy_overfill_update(identity, fill.venue_order_id, new_qty, fill.ts_event, ctx);
     }
 
@@ -2824,14 +2941,20 @@ mod tests {
                 },
             )
             .unwrap();
-        let (report, admitted_identity) = admission
+        let (report, admitted_identity, new_qty) = admission
             .reports
             .into_iter()
             .next()
             .flatten()
             .expect("expected admitted fill and identity snapshot");
 
-        let filled = emit_order_filled(&admitted_identity, &report, trade_fill_info(&trade), &ctx);
+        let filled = emit_order_filled(
+            &admitted_identity,
+            &report,
+            trade_fill_info(&trade),
+            new_qty,
+            &ctx,
+        );
 
         assert_eq!(filled.client_order_id, original_identity.client_order_id);
         assert_eq!(
@@ -2934,7 +3057,7 @@ mod tests {
 
         assert!(failed.is_none());
         assert!(!state.processed_fills.contains(&dedup_key));
-        assert!(!state.confirmed_trades.contains(&trade.id));
+        assert!(!state.is_trade_confirmed_for_order(&trade.id, venue_order_id));
         assert_eq!(
             fill_tracker.get_cumulative_filled(&venue_order_id),
             Some(Quantity::zero(valid_instrument.size_precision()))
@@ -2949,11 +3072,7 @@ mod tests {
         assert!(replay.is_some());
         assert!(duplicate.is_some());
         assert!(state.processed_fills.contains(&dedup_key));
-        assert!(
-            state
-                .confirmed_trades
-                .contains(&"trade-0xabcdef1234".to_string())
-        );
+        assert!(state.is_trade_confirmed_for_order("trade-0xabcdef1234", venue_order_id));
         assert!(matches!(
             emitted,
             ExecutionEvent::Order(OrderEventAny::Filled(_))
@@ -3118,6 +3237,110 @@ mod tests {
     }
 
     #[rstest]
+    fn test_failed_trade_voids_applied_fill_after_instrument_lookup_is_removed() {
+        let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+        trade.status = PolymarketTradeStatus::Matched;
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+        let mut harness = TradeDispatchHarness::new(&trade, true);
+
+        harness.dispatch(UserWsMessage::Trade(trade.clone()));
+        let filled = match harness.receiver.try_recv().unwrap() {
+            ExecutionEvent::Order(OrderEventAny::Filled(filled)) => filled,
+            other => panic!("expected fill, was {other:?}"),
+        };
+        harness.token_instruments.remove(&trade.asset_id);
+
+        trade.status = PolymarketTradeStatus::Failed;
+        harness.dispatch(UserWsMessage::Trade(trade));
+
+        let voided = match harness.receiver.try_recv().unwrap() {
+            ExecutionEvent::Order(OrderEventAny::FillVoided(voided)) => voided,
+            other => panic!("expected fill void after lookup removal, was {other:?}"),
+        };
+        assert_eq!(voided.trade_id, filled.trade_id);
+        assert_eq!(
+            harness.fill_tracker.get_cumulative_filled(&venue_order_id),
+            Some(Quantity::zero(harness.instrument.size_precision()))
+        );
+    }
+
+    #[rstest]
+    fn test_unloaded_instrument_fallback_rejects_mismatched_failed_condition() {
+        let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+        trade.status = PolymarketTradeStatus::Matched;
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+        let mut harness = TradeDispatchHarness::new(&trade, true);
+
+        harness.dispatch(UserWsMessage::Trade(trade.clone()));
+        let filled = match harness.receiver.try_recv().unwrap() {
+            ExecutionEvent::Order(OrderEventAny::Filled(filled)) => filled,
+            other => panic!("expected fill, was {other:?}"),
+        };
+        harness.token_instruments.remove(&trade.asset_id);
+
+        trade.status = PolymarketTradeStatus::Failed;
+        trade.market = Ustr::from(ALTERNATE_TEST_CONDITION_ID);
+        harness.dispatch(UserWsMessage::Trade(trade));
+
+        assert!(harness.receiver.try_recv().is_err());
+        assert_eq!(
+            harness.fill_tracker.get_cumulative_filled(&venue_order_id),
+            Some(filled.last_qty)
+        );
+    }
+
+    #[rstest]
+    fn test_failed_trade_cannot_reverse_confirmed_fill() {
+        let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+        trade.status = PolymarketTradeStatus::Matched;
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+        let mut harness = TradeDispatchHarness::new(&trade, true);
+
+        harness.dispatch(UserWsMessage::Trade(trade.clone()));
+        let filled = match harness.receiver.try_recv().unwrap() {
+            ExecutionEvent::Order(OrderEventAny::Filled(filled)) => filled,
+            other => panic!("expected fill, was {other:?}"),
+        };
+
+        trade.status = PolymarketTradeStatus::Confirmed;
+        harness.dispatch(UserWsMessage::Trade(trade.clone()));
+        assert!(harness.receiver.try_recv().is_err());
+
+        trade.status = PolymarketTradeStatus::Failed;
+        harness.dispatch(UserWsMessage::Trade(trade));
+
+        assert!(harness.receiver.try_recv().is_err());
+        assert_eq!(
+            harness.fill_tracker.get_cumulative_filled(&venue_order_id),
+            Some(filled.last_qty)
+        );
+    }
+
+    #[rstest]
+    fn test_failed_trade_cannot_reverse_first_seen_confirmed_fill() {
+        let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+        trade.status = PolymarketTradeStatus::Confirmed;
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+        let mut harness = TradeDispatchHarness::new(&trade, true);
+
+        harness.dispatch(UserWsMessage::Trade(trade.clone()));
+        let filled = match harness.receiver.try_recv().unwrap() {
+            ExecutionEvent::Order(OrderEventAny::Filled(filled)) => filled,
+            other => panic!("expected fill, was {other:?}"),
+        };
+        assert!(harness.receiver.try_recv().is_err());
+
+        trade.status = PolymarketTradeStatus::Failed;
+        harness.dispatch(UserWsMessage::Trade(trade));
+
+        assert!(harness.receiver.try_recv().is_err());
+        assert_eq!(
+            harness.fill_tracker.get_cumulative_filled(&venue_order_id),
+            Some(filled.last_qty)
+        );
+    }
+
+    #[rstest]
     fn test_matching_confirmed_with_bad_message_time_finalizes_using_local_time() {
         let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
         trade.status = PolymarketTradeStatus::Matched;
@@ -3146,7 +3369,11 @@ mod tests {
         trade.timestamp = "not-a-timestamp".to_string();
         harness.dispatch(UserWsMessage::Trade(trade));
 
-        assert!(harness.state.confirmed_trades.contains(&raw_trade_id));
+        assert!(
+            harness
+                .state
+                .is_trade_confirmed_for_order(&raw_trade_id, venue_order_id)
+        );
         let canceled = match harness.receiver.try_recv().unwrap() {
             ExecutionEvent::Order(OrderEventAny::Canceled(canceled)) => canceled,
             other => panic!("expected IOC cancellation, was {other:?}"),
@@ -3292,7 +3519,11 @@ mod tests {
                 .map(Vec::len),
             Some(1)
         );
-        assert!(!harness.state.confirmed_trades.contains(&raw_trade_id));
+        assert!(
+            !harness
+                .state
+                .is_trade_confirmed_for_order(&raw_trade_id, venue_order_id)
+        );
         assert!(!harness.state.is_voided_trade(&correction_key));
         assert!(harness.receiver.try_recv().is_err());
     }
@@ -3333,7 +3564,11 @@ mod tests {
         let pending = harness.fill_tracker.pending_fills_for(&venue_order_id);
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].instrument_id, original_instrument_id);
-        assert!(!harness.state.confirmed_trades.contains(&raw_trade_id));
+        assert!(
+            !harness
+                .state
+                .is_trade_confirmed_for_order(&raw_trade_id, venue_order_id)
+        );
         assert!(!harness.state.is_voided_trade(&correction_key));
         assert!(harness.receiver.try_recv().is_err());
     }
@@ -3366,6 +3601,47 @@ mod tests {
         let pending = harness.fill_tracker.pending_fills_for(&original_order_id);
         assert!(correction.is_none());
         assert_eq!(pending.len(), 1);
+        assert!(!harness.state.is_voided_trade(&correction_key));
+        assert!(harness.receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case(PolymarketTradeStatus::Confirmed)]
+    #[case(PolymarketTradeStatus::Failed)]
+    fn test_added_maker_participant_cannot_change_buffered_correction(
+        #[case] correction_status: PolymarketTradeStatus,
+    ) {
+        let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+        trade.status = PolymarketTradeStatus::Matched;
+        trade.maker_orders.truncate(1);
+        trade.maker_orders[0].maker_address = "0xtest".to_string();
+        let original_order_id = VenueOrderId::from(trade.maker_orders[0].order_id.as_str());
+        let correction_key = format!("{}-{}", trade.id, trade.taker_order_id);
+        let mut harness = TradeDispatchHarness::new(&trade, false);
+
+        harness.dispatch(UserWsMessage::Trade(trade.clone()));
+        assert!(harness.fill_tracker.has_pending_fill(&original_order_id));
+
+        let mut added_order = trade.maker_orders[0].clone();
+        added_order.order_id =
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string();
+        trade.maker_orders.push(added_order);
+        trade.status = correction_status;
+        trade.timestamp = "not-a-timestamp".to_string();
+        let correction = harness.dispatch(UserWsMessage::Trade(trade));
+
+        let pending = harness
+            .fill_tracker
+            .pending_buffered_fills_for(&original_order_id);
+        assert!(correction.is_none());
+        assert_eq!(pending.len(), 1);
+        assert!(
+            pending[0]
+                .correction
+                .as_ref()
+                .is_some_and(|metadata| !metadata.is_confirmed)
+        );
         assert!(!harness.state.is_voided_trade(&correction_key));
         assert!(harness.receiver.try_recv().is_err());
     }
@@ -3420,7 +3696,11 @@ mod tests {
         harness.dispatch(UserWsMessage::Trade(trade));
 
         assert!(harness.fill_tracker.has_pending_fill(&venue_order_id));
-        assert!(!harness.state.confirmed_trades.contains(&raw_trade_id));
+        assert!(
+            !harness
+                .state
+                .is_trade_confirmed_for_order(&raw_trade_id, venue_order_id)
+        );
         assert!(harness.receiver.try_recv().is_err());
     }
 
@@ -3445,7 +3725,11 @@ mod tests {
 
         harness.dispatch(UserWsMessage::Trade(trade.clone()));
         harness.dispatch(UserWsMessage::Trade(trade));
-        assert!(!harness.state.confirmed_trades.contains(&raw_trade_id));
+        assert!(
+            !harness
+                .state
+                .is_trade_confirmed_for_order(&raw_trade_id, venue_order_id)
+        );
         assert!(harness.receiver.try_recv().is_err());
 
         let mut order: PolymarketUserOrder = load("ws_user_order_matched.json");
@@ -3474,7 +3758,11 @@ mod tests {
             .expect("expected terminal quantity normalization");
         assert_eq!(fill_indexes.len(), 1);
         assert!(fill_indexes[0] < terminal_index);
-        assert!(harness.state.confirmed_trades.contains(&raw_trade_id));
+        assert!(
+            harness
+                .state
+                .is_trade_confirmed_for_order(&raw_trade_id, venue_order_id)
+        );
     }
 
     #[rstest]
@@ -3569,7 +3857,11 @@ mod tests {
         }
         let normalized = normalized.expect("expected terminal quantity normalization");
         assert_eq!(normalized.ts_event, UnixNanos::from(expected_ts_event));
-        assert!(harness.state.confirmed_trades.contains(&raw_trade_id));
+        assert!(
+            harness
+                .state
+                .is_trade_confirmed_for_order(&raw_trade_id, venue_order_id)
+        );
     }
 
     #[rstest]
@@ -3611,7 +3903,11 @@ mod tests {
         assert_eq!(fill_count, 0);
         assert_eq!(fill_report_count, 0);
         assert!(harness.fill_tracker.has_pending_fill(&venue_order_id));
-        assert!(!harness.state.confirmed_trades.contains(&raw_trade_id));
+        assert!(
+            !harness
+                .state
+                .is_trade_confirmed_for_order(&raw_trade_id, venue_order_id)
+        );
 
         register_identity(
             &harness.order_identities,
@@ -3649,7 +3945,11 @@ mod tests {
                 .any(|event| matches!(event, ExecutionEvent::Report(ExecutionReport::Fill(_))))
         );
         assert!(!harness.fill_tracker.has_pending_fill(&venue_order_id));
-        assert!(harness.state.confirmed_trades.contains(&raw_trade_id));
+        assert!(
+            harness
+                .state
+                .is_trade_confirmed_for_order(&raw_trade_id, venue_order_id)
+        );
     }
 
     #[rstest]
@@ -3769,7 +4069,11 @@ mod tests {
         assert_eq!(order_fill_count, 0);
         assert_eq!(fill_report_count, 0);
         assert!(!harness.fill_tracker.has_pending_fill(&venue_order_id));
-        assert!(!harness.state.confirmed_trades.contains(&raw_trade_id));
+        assert!(
+            !harness
+                .state
+                .is_trade_confirmed_for_order(&raw_trade_id, venue_order_id)
+        );
         assert_eq!(
             harness.fill_tracker.get_cumulative_filled(&venue_order_id),
             Some(Quantity::zero(harness.instrument.size_precision()))
@@ -3990,7 +4294,11 @@ mod tests {
         conflicting.original_size = "101".to_string();
         conflicting.size_matched = "101".to_string();
         conflicting.associate_trades = Some(vec!["already-confirmed".to_string()]);
-        state.confirmed_trades.add("already-confirmed".to_string());
+        state.record_confirmed_correction(
+            "already-confirmed-correction".to_string(),
+            "already-confirmed".to_string(),
+            [venue_order_id],
+        );
 
         dispatch_user_message(&UserWsMessage::Order(conflicting), &ctx, &mut state);
 
@@ -4100,7 +4408,11 @@ mod tests {
             user_api_key: "test-key",
         };
         let mut state = WsDispatchState::default();
-        state.confirmed_trades.add("trade-0xfill1".to_string());
+        state.record_confirmed_correction(
+            "trade-0xfill1-correction".to_string(),
+            "trade-0xfill1".to_string(),
+            [venue_order_id],
+        );
 
         dispatch_user_message(&UserWsMessage::Order(order), &ctx, &mut state);
 
@@ -4118,6 +4430,58 @@ mod tests {
             other => panic!("expected updated event, was {other:?}"),
         }
         assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_confirmed_raw_trade_id_cannot_normalize_unrelated_order() {
+        let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+        trade.status = PolymarketTradeStatus::Matched;
+        let raw_trade_id = trade.id.clone();
+        let mut harness = TradeDispatchHarness::new(&trade, true);
+
+        harness.dispatch(UserWsMessage::Trade(trade.clone()));
+        assert!(matches!(
+            harness.receiver.try_recv().unwrap(),
+            ExecutionEvent::Order(OrderEventAny::Filled(_))
+        ));
+        trade.status = PolymarketTradeStatus::Confirmed;
+        harness.dispatch(UserWsMessage::Trade(trade));
+        while harness.receiver.try_recv().is_ok() {}
+
+        let unrelated_order_id = VenueOrderId::from(
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        );
+        harness.fill_tracker.register(
+            unrelated_order_id,
+            Quantity::from("100"),
+            OrderSide::Buy,
+            harness.instrument.id(),
+            harness.instrument.size_precision(),
+            harness.instrument.price_precision(),
+        );
+        harness
+            .fill_tracker
+            .record_fill(&unrelated_order_id, Quantity::from("99.995"));
+        register_identity(
+            &harness.order_identities,
+            unrelated_order_id,
+            harness.instrument.id(),
+            "O-UNRELATED-ASSOCIATION",
+        );
+        harness.order_identities.mark_accepted(unrelated_order_id);
+
+        let mut order: PolymarketUserOrder = load("ws_user_order_matched.json");
+        order.id = unrelated_order_id.to_string();
+        order.associate_trades = Some(vec![raw_trade_id]);
+        harness.dispatch(UserWsMessage::Order(order));
+
+        assert!(harness.receiver.try_recv().is_err());
+        assert!(
+            harness
+                .state
+                .pending_terminal_orders
+                .contains_key(&unrelated_order_id)
+        );
     }
 
     #[rstest]
@@ -4387,7 +4751,7 @@ mod tests {
         fill_tracker.register_without_draining(
             venue_order_id,
             Quantity::from("100"),
-            OrderSide::Buy,
+            FillGrowthPolicy::Fixed,
         );
         let pending_submits = PendingSubmitTracker::default();
         let order_identities = OrderIdentityRegistry::default();
@@ -5142,22 +5506,24 @@ mod tests {
         let fill_tracker = OrderFillTrackerMap::new();
         let venue_order_id = VenueOrderId::from("0xtaker-gross-overfill");
         let submitted = Quantity::new(30.0, size_precision);
-        fill_tracker.register(
+        fill_tracker.register_without_draining(
             venue_order_id,
             submitted,
-            OrderSide::Buy,
-            instrument.id(),
-            size_precision,
-            instrument.price_precision(),
+            FillGrowthPolicy::QuoteImmediateBuy,
         );
 
         let pending_submits = PendingSubmitTracker::default();
         let order_identities = OrderIdentityRegistry::default();
-        register_identity(
-            &order_identities,
+        order_identities.register_order_identity(
             venue_order_id,
-            instrument.id(),
-            "O-GROSS-OVERFILL",
+            OrderIdentity {
+                client_order_id: ClientOrderId::from("O-GROSS-OVERFILL"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: instrument.id(),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                time_in_force: TimeInForce::Ioc,
+            },
         );
         order_identities.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
@@ -5222,6 +5588,54 @@ mod tests {
             }
             other => panic!("expected filled event, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    #[case(TimeInForce::Gtc)]
+    #[case(TimeInForce::Fok)]
+    fn test_base_quantity_buy_fill_batch_cannot_grow_past_submitted_quantity(
+        #[case] time_in_force: TimeInForce,
+    ) {
+        let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+        trade.status = PolymarketTradeStatus::Matched;
+        trade.size = "6".to_string();
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+        let mut harness = TradeDispatchHarness::new(&trade, true);
+        harness.fill_tracker.register(
+            venue_order_id,
+            Quantity::from("10"),
+            OrderSide::Buy,
+            harness.instrument.id(),
+            harness.instrument.size_precision(),
+            harness.instrument.price_precision(),
+        );
+        harness.order_identities.register_order_identity(
+            venue_order_id,
+            OrderIdentity {
+                client_order_id: ClientOrderId::from("O-FIXED-BUY"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: harness.instrument.id(),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+                time_in_force,
+            },
+        );
+
+        harness.dispatch(UserWsMessage::Trade(trade.clone()));
+        assert!(matches!(
+            harness.receiver.try_recv().unwrap(),
+            ExecutionEvent::Order(OrderEventAny::Filled(_))
+        ));
+        assert!(harness.receiver.try_recv().is_err());
+
+        trade.id = "trade-second-overfill".to_string();
+        harness.dispatch(UserWsMessage::Trade(trade));
+
+        assert!(harness.receiver.try_recv().is_err());
+        assert_eq!(
+            harness.fill_tracker.get_cumulative_filled(&venue_order_id),
+            Some(Quantity::from("6"))
+        );
     }
 
     // Unmatched -> Rejected (placement never became live); CanceledMarketResolved -> Expired
