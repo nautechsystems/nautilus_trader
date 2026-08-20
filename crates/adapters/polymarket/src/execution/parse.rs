@@ -472,15 +472,6 @@ fn fee_curve_rate(fee_rate: Decimal, price: Decimal, fee_exponent: f64) -> anyho
         .context("fee curve multiplication overflow")
 }
 
-/// Sums `last_qty` across fills as a decimal.
-pub(crate) fn sum_filled_quantity(fills: &[FillReport]) -> anyhow::Result<Decimal> {
-    fills.iter().try_fold(Decimal::ZERO, |total, fill| {
-        total
-            .checked_add(fill.last_qty.as_decimal())
-            .context("filled quantity sum overflow")
-    })
-}
-
 /// Quantity-weighted average price across fills, or `None` when total filled
 /// is zero (avoids divide-by-zero on empty/all-zero fill lists).
 pub(crate) fn weighted_average_price(
@@ -931,21 +922,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_sum_filled_quantity_empty() {
-        assert_eq!(sum_filled_quantity(&[]).unwrap(), Decimal::ZERO);
-    }
-
-    #[rstest]
-    fn test_sum_filled_quantity_multiple() {
-        let fills = vec![
-            make_test_fill(2.5, 0.50),
-            make_test_fill(1.0, 0.60),
-            make_test_fill(3.0, 0.55),
-        ];
-        assert_eq!(sum_filled_quantity(&fills).unwrap(), dec!(6.5));
-    }
-
-    #[rstest]
     fn test_weighted_average_price_zero_total_returns_none() {
         assert!(
             weighted_average_price(&[], Decimal::ZERO)
@@ -957,9 +933,8 @@ mod tests {
     #[rstest]
     fn test_weighted_average_price_single_fill() {
         let fills = vec![make_test_fill(10.0, 0.5)];
-        let total = sum_filled_quantity(&fills).unwrap();
         assert_eq!(
-            weighted_average_price(&fills, total).unwrap(),
+            weighted_average_price(&fills, dec!(10)).unwrap(),
             Some(dec!(0.5))
         );
     }
@@ -968,9 +943,8 @@ mod tests {
     fn test_weighted_average_price_weighted_by_quantity() {
         // 2 @ 0.40 + 8 @ 0.60 -> (0.8 + 4.8) / 10 = 0.56
         let fills = vec![make_test_fill(2.0, 0.40), make_test_fill(8.0, 0.60)];
-        let total = sum_filled_quantity(&fills).unwrap();
         assert_eq!(
-            weighted_average_price(&fills, total).unwrap(),
+            weighted_average_price(&fills, dec!(10)).unwrap(),
             Some(dec!(0.56))
         );
     }

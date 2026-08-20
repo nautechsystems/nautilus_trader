@@ -80,7 +80,7 @@ pub(crate) struct MarketOrderSubmitRequest {
 pub(crate) struct MarketOrderSubmitResult {
     pub response: OrderResponse,
     pub expected_base_qty: Decimal,
-    pub expected_venue_order_id: VenueOrderId,
+    pub signed_quote_budget: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Error)]
@@ -89,6 +89,7 @@ pub(crate) struct UnknownSubmitError {
     pub reason: String,
     pub expected_venue_order_id: VenueOrderId,
     pub expected_base_qty: Option<Decimal>,
+    pub signed_quote_budget: Option<Decimal>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,6 +142,7 @@ impl OrderSubmitter {
     /// BUY, the original `amount` for SELL). For BUY this is derived from the
     /// signed `taker_amount` so quote-to-base conversion matches what the venue
     /// can fill (single crossing price), not the multi-level book walk total.
+    /// BUY results also retain the exact signed `maker_amount` as the quote-growth ceiling.
     ///
     /// `request.fee_context`, when supplied with `OrderSide::Buy`, is used to shrink
     /// `amount` for taker fees before signing so balance-sized BUYs are not
@@ -213,6 +215,7 @@ impl OrderSubmitter {
         // SELL. Market SELL signing truncates shares to two decimal places.
         let signed_base_qty =
             signed_base_quantity(poly_order.maker_amount, poly_order.taker_amount, poly_side);
+        let signed_quote_budget = signed_quote_budget(poly_order.maker_amount, poly_side);
         let expected_venue_order_id = self
             .order_builder
             .expected_order_id(&poly_order, neg_risk)?;
@@ -250,7 +253,7 @@ impl OrderSubmitter {
                 let earlier_attempt_unknown = saw_unknown_outcome.load(Ordering::Acquire);
 
                 if outcome == SubmitResponseOutcome::Unknown
-                    || (earlier_attempt_unknown
+                    || ((earlier_attempt_unknown || outcome == SubmitResponseOutcome::Accepted)
                         && !submit_response_confirms_expected(
                             &response,
                             expected_venue_order_id,
@@ -265,6 +268,7 @@ impl OrderSubmitter {
                         ),
                         expected_venue_order_id,
                         expected_base_qty: Some(signed_base_qty),
+                        signed_quote_budget,
                     }
                     .into());
                 }
@@ -278,6 +282,7 @@ impl OrderSubmitter {
                     reason: e.to_string(),
                     expected_venue_order_id,
                     expected_base_qty: Some(signed_base_qty),
+                    signed_quote_budget,
                 }
                 .into());
             }
@@ -287,7 +292,7 @@ impl OrderSubmitter {
         Ok(MarketOrderSubmitResult {
             response,
             expected_base_qty: signed_base_qty,
-            expected_venue_order_id,
+            signed_quote_budget,
         })
     }
 
@@ -480,7 +485,7 @@ impl OrderSubmitter {
                 let outcome = submit_response_outcome(&response, is_fok);
 
                 if outcome == SubmitResponseOutcome::Unknown
-                    || (earlier_attempt_unknown
+                    || ((earlier_attempt_unknown || outcome == SubmitResponseOutcome::Accepted)
                         && !submit_response_confirms_expected(
                             &response,
                             submission.expected_venue_order_id,
@@ -555,7 +560,7 @@ pub(super) fn submit_response_venue_order_id(response: &OrderResponse) -> Option
         .and_then(|order_id| VenueOrderId::new_checked(order_id).ok())
 }
 
-fn submit_response_confirms_expected(
+pub(super) fn submit_response_confirms_expected(
     response: &OrderResponse,
     expected_venue_order_id: VenueOrderId,
     is_fok: bool,
@@ -569,14 +574,18 @@ pub(super) fn submit_response_unknown_reason(
     earlier_attempt_unknown: bool,
     expected_venue_order_id: VenueOrderId,
 ) -> String {
-    if earlier_attempt_unknown {
-        if submit_response_venue_order_id(response)
-            .is_some_and(|venue_order_id| venue_order_id != expected_venue_order_id)
-        {
+    if submit_response_venue_order_id(response)
+        .is_some_and(|venue_order_id| venue_order_id != expected_venue_order_id)
+    {
+        if earlier_attempt_unknown {
             return "earlier attempt was ambiguous; final response returned an unexpected order ID"
                 .to_string();
         }
 
+        return "submit response returned an unexpected order ID".to_string();
+    }
+
+    if earlier_attempt_unknown {
         let final_response = response.error_msg.as_deref().map_or_else(
             || "no venue rejection reason".to_string(),
             sanitize_error_text,
@@ -620,6 +629,13 @@ fn signed_base_quantity(
     }
 }
 
+fn signed_quote_budget(maker_amount: Decimal, side: PolymarketOrderSide) -> Option<Decimal> {
+    match side {
+        PolymarketOrderSide::Buy => Some(maker_amount / Decimal::from(1_000_000u32)),
+        PolymarketOrderSide::Sell => None,
+    }
+}
+
 // Converts a nanos expire time to the unix-seconds string expected by the
 // Polymarket API. Returns `"0"` when there is no expiration.
 fn limit_order_expiration(expire_time: Option<UnixNanos>) -> String {
@@ -659,6 +675,17 @@ mod tests {
             signed_base_quantity(maker_amount, taker_amount, side),
             expected
         );
+    }
+
+    #[rstest]
+    #[case::buy(dec!(4_800_000), PolymarketOrderSide::Buy, Some(dec!(4.8)))]
+    #[case::sell(dec!(5_200_000), PolymarketOrderSide::Sell, None)]
+    fn test_signed_quote_budget_uses_signed_maker_amount(
+        #[case] maker_amount: Decimal,
+        #[case] side: PolymarketOrderSide,
+        #[case] expected: Option<Decimal>,
+    ) {
+        assert_eq!(signed_quote_budget(maker_amount, side), expected);
     }
 
     #[rstest]

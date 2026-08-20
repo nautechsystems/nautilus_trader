@@ -22,7 +22,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     enums::{LiquiditySide, OrderStatus, PositionSideSpecified},
-    identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId},
+    identifiers::{AccountId, ClientId, InstrumentId, TradeId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::Quantity,
@@ -31,7 +31,7 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::{
-    order_fill_tracker::OrderFillTrackerMap,
+    order_fill_tracker::{FillFingerprint, OrderFillTrackerMap},
     parse::{build_maker_fill_report, parse_fill_report, parse_order_status_report},
     report_validation::{ensure_instrument_binding, non_negative_quantity, parse_match_time},
 };
@@ -650,7 +650,9 @@ fn cap_order_reports_to_confirmed_fills(
             report,
             local_filled,
             local_filled,
-            confirmed_by_order.get(&report.venue_order_id).copied(),
+            confirmed_by_order
+                .get(&report.venue_order_id)
+                .map(|quantity| quantity.as_decimal()),
         )?;
     }
     Ok(())
@@ -658,17 +660,28 @@ fn cap_order_reports_to_confirmed_fills(
 
 pub(crate) fn confirmed_filled_quantities(
     fill_reports: &[FillReport],
-) -> anyhow::Result<AHashMap<VenueOrderId, Decimal>> {
+) -> anyhow::Result<AHashMap<VenueOrderId, Quantity>> {
     let mut confirmed_by_order = AHashMap::new();
+    let mut seen = AHashMap::<(VenueOrderId, TradeId), FillFingerprint>::new();
     for fill in fill_reports {
+        let key = (fill.venue_order_id, fill.trade_id);
+        let fingerprint = FillFingerprint::from_report(fill);
+        if let Some(existing) = seen.get(&key) {
+            existing.ensure_equal(&fingerprint, fill.venue_order_id)?;
+            continue;
+        }
+        seen.insert(key, fingerprint);
         let total = confirmed_by_order
             .entry(fill.venue_order_id)
-            .or_insert(Decimal::ZERO);
-        *total = checked_confirmed_filled_total(
-            *total,
-            fill.last_qty.as_decimal(),
-            fill.venue_order_id,
-        )?;
+            .or_insert_with(|| Quantity::zero(fill.last_qty.precision));
+        *total = total.checked_add(fill.last_qty).ok_or_else(|| {
+            anyhow::anyhow!(
+                "confirmed filled quantity overflow for order {}: {} + {}",
+                fill.venue_order_id,
+                *total,
+                fill.last_qty,
+            )
+        })?;
     }
 
     Ok(confirmed_by_order)
@@ -678,20 +691,9 @@ pub(crate) fn validate_known_order_fill_aggregates(
     fill_reports: &[FillReport],
     fill_tracker: &OrderFillTrackerMap,
 ) -> anyhow::Result<()> {
-    for (venue_order_id, total) in confirmed_filled_quantities(fill_reports)? {
-        fill_tracker.validate_confirmed_total(&venue_order_id, total)?;
-    }
+    confirmed_filled_quantities(fill_reports)?;
+    fill_tracker.validate_confirmed_fills(&[], fill_reports)?;
     Ok(())
-}
-
-fn checked_confirmed_filled_total(
-    current: Decimal,
-    added: Decimal,
-    venue_order_id: VenueOrderId,
-) -> anyhow::Result<Decimal> {
-    current
-        .checked_add(added)
-        .with_context(|| format!("confirmed filled quantity overflow for order {venue_order_id}"))
 }
 
 pub(crate) fn cap_order_report_filled_qty(
@@ -764,15 +766,18 @@ mod tests {
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
         identifiers::TradeId,
-        types::{Currency, Money, Price},
+        types::{Currency, Money, Price, quantity::QUANTITY_RAW_MAX},
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::http::{
-        models::GammaMarket,
-        parse::{create_instrument_from_def, parse_gamma_market},
+    use crate::{
+        execution::order_fill_tracker::{FillCorrectionMetadata, FillGrowthPolicy},
+        http::{
+            models::GammaMarket,
+            parse::{create_instrument_from_def, parse_gamma_market},
+        },
     };
 
     fn instrument_for_open_order(order: &PolymarketOpenOrder) -> InstrumentAny {
@@ -894,15 +899,96 @@ mod tests {
     }
 
     #[rstest]
-    fn test_confirmed_filled_quantities_returns_overflow_error() {
-        let error = checked_confirmed_filled_total(
-            Decimal::MAX,
-            Decimal::ONE,
-            VenueOrderId::from("V-OVERFLOW"),
-        )
-        .expect_err("overflow must be surfaced");
+    fn test_confirmed_filled_quantities_rejects_unrepresentable_total() {
+        let account_id = AccountId::from("POLY-001");
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+        let venue_order_id = VenueOrderId::from("V-OVERFLOW");
+        let fills = [
+            ("T-MAX", Quantity::from_raw(QUANTITY_RAW_MAX, 0)),
+            ("T-ONE", Quantity::from_raw(1, 0)),
+        ]
+        .into_iter()
+        .map(|(trade_id, last_qty)| {
+            FillReport::new(
+                account_id,
+                instrument_id,
+                venue_order_id,
+                TradeId::from(trade_id),
+                OrderSide::Buy,
+                last_qty,
+                Price::from("0.5000"),
+                Money::zero(Currency::pUSD()),
+                LiquiditySide::Taker,
+                None,
+                None,
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+                None,
+            )
+        })
+        .collect::<Vec<_>>();
+
+        let error = confirmed_filled_quantities(&fills)
+            .expect_err("unrepresentable aggregate must be surfaced");
 
         assert!(error.to_string().contains("overflow"));
+    }
+
+    #[rstest]
+    fn test_confirmed_filled_quantities_deduplicates_trade_id() {
+        let account_id = AccountId::from("POLY-001");
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+        let venue_order_id = VenueOrderId::from("V-DUPLICATE");
+        let report = FillReport::new(
+            account_id,
+            instrument_id,
+            venue_order_id,
+            TradeId::from("T-DUPLICATE"),
+            OrderSide::Buy,
+            Quantity::from("6.0000"),
+            Price::from("0.5000"),
+            Money::zero(Currency::pUSD()),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            None,
+        );
+
+        let totals = confirmed_filled_quantities(&[report.clone(), report]).unwrap();
+
+        assert_eq!(totals[&venue_order_id], Quantity::from("6.0000"));
+    }
+
+    #[rstest]
+    fn test_confirmed_filled_quantities_rejects_changed_trade_replay() {
+        let account_id = AccountId::from("POLY-001");
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+        let venue_order_id = VenueOrderId::from("V-CHANGED-DUPLICATE");
+        let original = FillReport::new(
+            account_id,
+            instrument_id,
+            venue_order_id,
+            TradeId::from("T-CHANGED-DUPLICATE"),
+            OrderSide::Buy,
+            Quantity::from("6.0000"),
+            Price::from("0.5000"),
+            Money::zero(Currency::pUSD()),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            None,
+        );
+        let mut changed = original.clone();
+        changed.last_qty = Quantity::from("7.0000");
+
+        let error = confirmed_filled_quantities(&[original, changed])
+            .expect_err("changed economics under one trade ID must fail closed");
+
+        assert!(error.to_string().contains("different fill economics"));
     }
 
     #[rstest]
@@ -943,6 +1029,63 @@ mod tests {
 
         let error = validate_known_order_fill_aggregates(&fills, &tracker)
             .expect_err("known order aggregate overfill must fail closed");
+
+        assert!(error.to_string().contains("exceeds submitted quantity"));
+    }
+
+    #[rstest]
+    fn test_known_order_fill_aggregate_includes_applied_tracker_authority() {
+        let account_id = AccountId::from("POLY-001");
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+        let venue_order_id = VenueOrderId::from("V-TRACKED-OVERFILL");
+        let tracker = OrderFillTrackerMap::new();
+        tracker.register_without_draining(
+            venue_order_id,
+            Quantity::from("10.0000"),
+            FillGrowthPolicy::Fixed,
+        );
+        let fill = |trade_id: &str, last_qty: &str| {
+            FillReport::new(
+                account_id,
+                instrument_id,
+                venue_order_id,
+                TradeId::from(trade_id),
+                OrderSide::Sell,
+                Quantity::from(last_qty),
+                Price::from("0.5000"),
+                Money::zero(Currency::pUSD()),
+                LiquiditySide::Taker,
+                None,
+                None,
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+                None,
+            )
+        };
+        let applied = fill("T-TRACKED-APPLIED", "8.0000");
+        let admission = tracker
+            .accept_or_buffer_fills(
+                vec![(
+                    venue_order_id,
+                    applied,
+                    FillCorrectionMetadata {
+                        correction_key: "tracked-applied".to_string(),
+                        raw_trade_id: "T-TRACKED-APPLIED".to_string(),
+                        raw_corrective_timestamp: "1700000000000".to_string(),
+                        info: None,
+                        is_confirmed: true,
+                    },
+                )],
+                |_| Ok(Some(())),
+            )
+            .unwrap();
+        assert!(admission.reports[0].is_some());
+
+        let error =
+            validate_known_order_fill_aggregates(&[fill("T-TRACKED-NEW", "6.0000")], &tracker)
+                .expect_err(
+                    "tracked and returned fill authority must be validated as one aggregate",
+                );
 
         assert!(error.to_string().contains("exceeds submitted quantity"));
     }

@@ -32,13 +32,16 @@ use super::{
     PolymarketExecutionClient,
     cancellations::execute_deferred_cancel,
     order_builder::PolymarketOrderBuilder,
+    order_fill_tracker::FillGrowthPolicy,
     parse::compute_commission,
     report_validation::instrument_fee_policy,
     reports::fetch_collateral_balance_pusd,
     responses::{
         check_fok_status, emit_market_order_submitted, fok_check_order_id,
-        handle_batch_order_responses, handle_order_response, handle_single_order_response,
-        handle_unknown_submit_result, reject_submit_order,
+        handle_batch_order_responses, handle_order_response,
+        handle_order_response_with_growth_policy, handle_single_order_response,
+        handle_unknown_submit_result, handle_unknown_submit_result_with_growth_policy,
+        reject_submit_order,
     },
     submitter::{
         InvalidMarketPriceError, MarketBuyFeeContext, MarketOrderSubmitRequest, UnknownSubmitError,
@@ -295,6 +298,14 @@ impl PolymarketExecutionClient {
             {
                 Ok(result) => {
                     let mut order = order;
+                    let growth_policy = if is_quote_qty && side == OrderSide::Buy {
+                        result.signed_quote_budget.map_or(
+                            FillGrowthPolicy::QuoteImmediateBuyUnproven,
+                            FillGrowthPolicy::quote_immediate_buy,
+                        )
+                    } else {
+                        FillGrowthPolicy::Fixed
+                    };
                     emit_market_order_submitted(
                         &mut order,
                         is_quote_qty,
@@ -307,33 +318,23 @@ impl PolymarketExecutionClient {
                         clock,
                     );
 
-                    if result.response.success
-                        && let Some(order_id) = result.response.order_id.as_ref()
-                        && !order_id.is_empty()
-                    {
-                        let venue_order_id = VenueOrderId::from(order_id.as_str());
-                        if venue_order_id != result.expected_venue_order_id {
-                            log::warn!(
-                                "Market submit returned order ID {venue_order_id}, expected {}",
-                                result.expected_venue_order_id
-                            );
-                        }
-                    }
-
                     let fok_order_id = fok_check_order_id(&result.response, time_in_force);
 
-                    if let Some((order_id_str, venue_order_id)) = handle_order_response(
-                        Ok(result.response),
-                        &order,
-                        &emitter,
-                        clock,
-                        &fill_tracker,
-                        &order_identities,
-                        &pending_cancels,
-                        account_id,
-                        size_precision,
-                        price_precision,
-                    ) {
+                    if let Some((order_id_str, venue_order_id)) =
+                        handle_order_response_with_growth_policy(
+                            Ok(result.response),
+                            &order,
+                            growth_policy,
+                            &emitter,
+                            clock,
+                            &fill_tracker,
+                            &order_identities,
+                            &pending_cancels,
+                            account_id,
+                            size_precision,
+                            price_precision,
+                        )
+                    {
                         execute_deferred_cancel(
                             &submitter,
                             &order,
@@ -364,6 +365,14 @@ impl PolymarketExecutionClient {
                 Err(e) => {
                     if let Some(unknown) = e.downcast_ref::<UnknownSubmitError>() {
                         let mut order = order;
+                        let growth_policy = if is_quote_qty && side == OrderSide::Buy {
+                            unknown.signed_quote_budget.map_or(
+                                FillGrowthPolicy::QuoteImmediateBuyUnproven,
+                                FillGrowthPolicy::quote_immediate_buy,
+                            )
+                        } else {
+                            FillGrowthPolicy::Fixed
+                        };
                         emit_market_order_submitted(
                             &mut order,
                             is_quote_qty,
@@ -384,21 +393,24 @@ impl PolymarketExecutionClient {
                             None
                         };
 
-                        if let Some((order_id_str, venue_order_id)) = handle_unknown_submit_result(
-                            &order,
-                            unknown.expected_venue_order_id,
-                            &unknown.reason,
-                            fill_tracker_quantity,
-                            &emitter,
-                            clock,
-                            &fill_tracker,
-                            &order_identities,
-                            &pending_submits,
-                            &pending_cancels,
-                            account_id,
-                            size_precision,
-                            price_precision,
-                        ) {
+                        if let Some((order_id_str, venue_order_id)) =
+                            handle_unknown_submit_result_with_growth_policy(
+                                &order,
+                                unknown.expected_venue_order_id,
+                                &unknown.reason,
+                                fill_tracker_quantity,
+                                growth_policy,
+                                &emitter,
+                                clock,
+                                &fill_tracker,
+                                &order_identities,
+                                &pending_submits,
+                                &pending_cancels,
+                                account_id,
+                                size_precision,
+                                price_precision,
+                            )
+                        {
                             execute_deferred_cancel(
                                 &submitter,
                                 &order,

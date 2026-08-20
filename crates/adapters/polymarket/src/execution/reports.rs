@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::{HashMap, HashSet};
+
+use ahash::AHashMap;
 use anyhow::Context;
 use nautilus_common::messages::execution::{
     GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -22,7 +25,8 @@ use nautilus_core::{UnixNanos, collections::AtomicMap, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
-    identifiers::{ClientOrderId, InstrumentId, VenueOrderId},
+    events::{OrderEventAny, OrderFilled},
+    identifiers::{ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -33,16 +37,15 @@ use ustr::Ustr;
 
 use super::{
     PolymarketExecutionClient,
-    identity::OrderIdentity,
-    order_fill_tracker::FillGrowthPolicy,
+    order_fill_tracker::{FillFingerprint, OrderFillTrackerMap},
     parse::{
         parse_balance_allowance, parse_order_status_report, recovered_terminal_order_status,
-        sum_filled_quantity, weighted_average_price,
+        weighted_average_price,
     },
     reconciliation::{
         FillContext, apply_fill_filters, build_fill_reports_from_trades,
         build_position_reports_scoped, cap_order_report_filled_qty, confirmed_filled_quantities,
-        confirmed_trade_in_static_scope, validate_known_order_fill_aggregates,
+        confirmed_trade_in_static_scope,
     },
     report_validation::{ensure_instrument_binding, non_negative_quantity, parse_match_time},
 };
@@ -56,24 +59,25 @@ use crate::{
 };
 
 impl PolymarketExecutionClient {
-    fn validate_cached_order_fill_aggregates(&self, reports: &[FillReport]) -> anyhow::Result<()> {
-        let totals = confirmed_filled_quantities(reports)?;
+    fn validated_confirmed_fills(
+        &self,
+        reports: &[FillReport],
+    ) -> anyhow::Result<ValidatedConfirmedFills> {
         let cache = self.core.cache();
-        for (venue_order_id, total) in totals {
+        let mut cached_orders = HashMap::new();
+        for report in reports {
+            let venue_order_id = report.venue_order_id;
             let Some(order) = cache
                 .client_order_id(&venue_order_id)
                 .and_then(|client_order_id| cache.order(client_order_id))
             else {
                 continue;
             };
-            let policy = FillGrowthPolicy::from_identity(&OrderIdentity::from_order(&order));
-            anyhow::ensure!(
-                policy.allows_total(order.quantity().as_decimal(), total),
-                "confirmed fill aggregate {total} exceeds cached quantity {} for order {venue_order_id}",
-                order.quantity()
-            );
+            cached_orders
+                .entry(venue_order_id)
+                .or_insert_with(|| order.cloned());
         }
-        Ok(())
+        validate_confirmed_fill_evidence(&self.fill_tracker, &cached_orders, reports)
     }
 
     pub(super) fn fill_context(&self) -> FillContext<'_> {
@@ -231,8 +235,13 @@ impl PolymarketExecutionClient {
             return Ok(None);
         };
 
-        let total_filled_dec = sum_filled_quantity(&order_fills)?;
-        let avg_px = weighted_average_price(&order_fills, total_filled_dec)?;
+        let confirmed_fills = self.validated_confirmed_fills(&order_fills)?;
+        let total_filled_dec = confirmed_fills
+            .quantities
+            .get(&venue_order_id)
+            .context("recovered fills missing confirmed aggregate")?
+            .as_decimal();
+        let avg_px = weighted_average_price(&confirmed_fills.unique_reports, total_filled_dec)?;
         let raw_filled_qty =
             non_negative_quantity(total_filled_dec, size_prec, "recovered filled quantity")?;
         let order_side = cached_side.unwrap_or(order_fills[0].order_side);
@@ -329,6 +338,15 @@ impl PolymarketExecutionClient {
         };
         let size_prec = instrument.size_precision();
         let expected_order = cache.order(&client_order_id).map(|order| order.cloned());
+        let cached_orders = expected_order
+            .as_ref()
+            .and_then(|order| {
+                order
+                    .venue_order_id()
+                    .map(|venue_order_id| (venue_order_id, order.clone()))
+            })
+            .into_iter()
+            .collect::<HashMap<_, _>>();
 
         let http_client = self.http_client.clone();
         let fill_tracker = self.fill_tracker.clone();
@@ -398,9 +416,14 @@ impl PolymarketExecutionClient {
                         )
                         .await?
                         {
-                            Some(fills) => confirmed_filled_quantities(&fills)?
-                                .get(&venue_order_id)
-                                .copied(),
+                            Some(fills) => validate_confirmed_fill_evidence(
+                                &fill_tracker,
+                                &cached_orders,
+                                &fills,
+                            )?
+                            .quantities
+                            .get(&venue_order_id)
+                            .map(|quantity| quantity.as_decimal()),
                             None => None,
                         }
                     } else {
@@ -505,9 +528,11 @@ impl PolymarketExecutionClient {
                 )
                 .await?
                 {
-                    Some(fills) => confirmed_filled_quantities(&fills)?
+                    Some(fills) => self
+                        .validated_confirmed_fills(&fills)?
+                        .quantities
                         .get(&venue_order_id)
-                        .copied(),
+                        .map(|quantity| quantity.as_decimal()),
                     None => None,
                 }
             } else {
@@ -574,7 +599,7 @@ impl PolymarketExecutionClient {
             )
             .await?
             {
-                Some(fills) => confirmed_filled_quantities(&fills)?,
+                Some(fills) => self.validated_confirmed_fills(&fills)?.quantities,
                 None => Default::default(),
             }
         } else {
@@ -600,7 +625,9 @@ impl PolymarketExecutionClient {
                 report,
                 cached_filled,
                 tracked_filled,
-                confirmed_fills.get(&report.venue_order_id).copied(),
+                confirmed_fills
+                    .get(&report.venue_order_id)
+                    .map(|quantity| quantity.as_decimal()),
             )?;
         }
 
@@ -650,8 +677,7 @@ impl PolymarketExecutionClient {
         )?;
 
         self.fill_tracker.snap_fill_reports(&mut reports);
-        validate_known_order_fill_aggregates(&reports, &self.fill_tracker)?;
-        self.validate_cached_order_fill_aggregates(&reports)?;
+        self.validated_confirmed_fills(&reports)?;
 
         let reports = apply_fill_filters(reports, cmd.venue_order_id, cmd.start, cmd.end);
 
@@ -708,10 +734,104 @@ impl PolymarketExecutionClient {
                 .into_values()
                 .flatten()
                 .collect::<Vec<_>>();
-            self.validate_cached_order_fill_aggregates(&fill_reports)?;
+            self.validated_confirmed_fills(&fill_reports)?;
         }
         Ok(mass_status)
     }
+}
+
+struct ValidatedConfirmedFills {
+    quantities: AHashMap<VenueOrderId, Quantity>,
+    unique_reports: Vec<FillReport>,
+}
+
+fn validate_confirmed_fill_evidence(
+    fill_tracker: &OrderFillTrackerMap,
+    cached_orders: &HashMap<VenueOrderId, OrderAny>,
+    reports: &[FillReport],
+) -> anyhow::Result<ValidatedConfirmedFills> {
+    let confirmed_filled = confirmed_filled_quantities(reports)?;
+    let mut returned_fills = HashMap::<(VenueOrderId, TradeId), FillFingerprint>::new();
+    let mut unique_reports = Vec::new();
+    for report in reports {
+        let key = (report.venue_order_id, report.trade_id);
+        let fingerprint = FillFingerprint::from_report(report);
+        if let Some(existing) = returned_fills.get(&key) {
+            existing.ensure_equal(&fingerprint, report.venue_order_id)?;
+        } else {
+            returned_fills.insert(key, fingerprint);
+            unique_reports.push(report.clone());
+        }
+    }
+    let mut cached_fills = Vec::<OrderFilled>::new();
+    for order in cached_orders.values() {
+        let active_trade_ids = order
+            .trade_ids()
+            .into_iter()
+            .copied()
+            .collect::<HashSet<_>>();
+        for event in order.events() {
+            if let OrderEventAny::Filled(fill) = event
+                && active_trade_ids.contains(&fill.trade_id)
+            {
+                cached_fills.push(fill.clone());
+            }
+        }
+    }
+
+    // The tracker owns current-session quantity semantics, including a signed quote budget.
+    // It returns the exact orders validated under its lock, leaving only cache-only orders for
+    // the fixed ceiling below.
+    let tracker_validated = fill_tracker.validate_confirmed_fills(&cached_fills, reports)?;
+    let mut prospective_totals = HashMap::new();
+    let mut seen_fills = HashMap::<(VenueOrderId, TradeId), FillFingerprint>::new();
+    for fill in &cached_fills {
+        let key = (fill.venue_order_id, fill.trade_id);
+        let fingerprint = FillFingerprint::from_event(fill);
+        if let Some(existing) = seen_fills.get(&key) {
+            existing.ensure_equal(&fingerprint, fill.venue_order_id)?;
+        } else {
+            seen_fills.insert(key, fingerprint);
+        }
+    }
+
+    for report in reports {
+        let venue_order_id = report.venue_order_id;
+        if tracker_validated.contains(&venue_order_id) {
+            continue;
+        }
+
+        let Some(order) = cached_orders.get(&venue_order_id) else {
+            continue;
+        };
+        let key = (venue_order_id, report.trade_id);
+        let fingerprint = FillFingerprint::from_report(report);
+        if let Some(existing) = seen_fills.get(&key) {
+            existing.ensure_equal(&fingerprint, venue_order_id)?;
+            continue;
+        }
+        seen_fills.insert(key, fingerprint);
+
+        let total = prospective_totals
+            .entry(venue_order_id)
+            .or_insert(order.filled_qty());
+        *total = total.checked_add(report.last_qty).ok_or_else(|| {
+            anyhow::anyhow!(
+                "confirmed filled quantity overflow for order {venue_order_id}: {} + {}",
+                *total,
+                report.last_qty,
+            )
+        })?;
+        anyhow::ensure!(
+            *total <= order.quantity(),
+            "confirmed fill aggregate {total} exceeds cached quantity {} for order {venue_order_id}",
+            order.quantity()
+        );
+    }
+    Ok(ValidatedConfirmedFills {
+        quantities: confirmed_filled,
+        unique_reports,
+    })
 }
 
 #[expect(clippy::too_many_arguments)]

@@ -41,8 +41,8 @@ use super::{
     report_validation::parse_user_channel_timestamp,
     reports::{get_pusd_currency, validate_order_response_scope},
     submitter::{
-        OrderSubmitter, SubmitResponseOutcome, is_fok_unfilled, submit_response_outcome,
-        submit_response_unknown_reason, submit_response_venue_order_id,
+        OrderSubmitter, SubmitResponseOutcome, is_fok_unfilled, submit_response_confirms_expected,
+        submit_response_outcome, submit_response_unknown_reason, submit_response_venue_order_id,
     },
     types::{BatchLimitOrderContext, classify_http_command_failure},
 };
@@ -82,11 +82,12 @@ pub(super) async fn handle_batch_order_responses(
         .zip(responses)
         .zip(&expected_venue_order_ids)
     {
-        let (deferred_cancel, fok_order_id) = if submit_response_outcome(
-            &response,
-            batch_order.order.time_in_force() == TimeInForce::Fok,
-        ) == SubmitResponseOutcome::Unknown
-        {
+        let is_fok = batch_order.order.time_in_force() == TimeInForce::Fok;
+        let outcome = submit_response_outcome(&response, is_fok);
+        let response_is_unproven = outcome == SubmitResponseOutcome::Unknown
+            || (outcome == SubmitResponseOutcome::Accepted
+                && !submit_response_confirms_expected(&response, *expected_venue_order_id, is_fok));
+        let (deferred_cancel, fok_order_id) = if response_is_unproven {
             (
                 handle_unknown_submit_result(
                     &batch_order.order,
@@ -376,6 +377,41 @@ pub(super) fn handle_unknown_submit_result(
     size_precision: u8,
     price_precision: u8,
 ) -> Option<(String, VenueOrderId)> {
+    handle_unknown_submit_result_with_growth_policy(
+        order,
+        expected_venue_order_id,
+        reason,
+        fill_tracker_quantity,
+        FillGrowthPolicy::Fixed,
+        emitter,
+        clock,
+        fill_tracker,
+        order_identities,
+        pending_submits,
+        pending_cancels,
+        account_id,
+        size_precision,
+        price_precision,
+    )
+}
+
+#[expect(clippy::too_many_arguments)]
+pub(super) fn handle_unknown_submit_result_with_growth_policy(
+    order: &OrderAny,
+    expected_venue_order_id: VenueOrderId,
+    reason: &str,
+    fill_tracker_quantity: Option<Quantity>,
+    growth_policy: FillGrowthPolicy,
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+    fill_tracker: &Arc<OrderFillTrackerMap>,
+    order_identities: &OrderIdentityRegistry,
+    pending_submits: &PendingSubmitTracker,
+    pending_cancels: &PendingCancelTracker,
+    account_id: AccountId,
+    size_precision: u8,
+    price_precision: u8,
+) -> Option<(String, VenueOrderId)> {
     log::warn!(
         "Submit outcome unknown for {}: {reason}. Tracking expected venue order ID {}",
         order.client_order_id(),
@@ -384,9 +420,15 @@ pub(super) fn handle_unknown_submit_result(
 
     order_identities
         .register_order_identity(expected_venue_order_id, OrderIdentity::from_order(order));
-    pending_submits.insert(expected_venue_order_id, order.client_order_id());
+    let tracker_quantity = fill_tracker_quantity.unwrap_or_else(|| order.quantity());
+    pending_submits.insert_with_growth_policy(
+        expected_venue_order_id,
+        order.client_order_id(),
+        tracker_quantity,
+        growth_policy,
+    );
 
-    drain_pending_reports_for_known_order(
+    drain_pending_reports_for_known_order_with_growth_policy(
         order,
         expected_venue_order_id,
         emitter,
@@ -394,6 +436,7 @@ pub(super) fn handle_unknown_submit_result(
         fill_tracker,
         order_identities,
         fill_tracker_quantity,
+        growth_policy,
         account_id,
         size_precision,
         price_precision,
@@ -422,7 +465,7 @@ fn buffered_order_report_matches(
 }
 
 #[expect(clippy::too_many_arguments)]
-pub(super) fn drain_pending_reports_for_known_order(
+fn drain_pending_reports_for_known_order_with_growth_policy(
     order: &OrderAny,
     venue_order_id: VenueOrderId,
     emitter: &ExecutionEventEmitter,
@@ -430,6 +473,7 @@ pub(super) fn drain_pending_reports_for_known_order(
     fill_tracker: &Arc<OrderFillTrackerMap>,
     order_identities: &OrderIdentityRegistry,
     fill_tracker_quantity: Option<Quantity>,
+    growth_policy: FillGrowthPolicy,
     account_id: AccountId,
     size_precision: u8,
     price_precision: u8,
@@ -439,7 +483,7 @@ pub(super) fn drain_pending_reports_for_known_order(
     let buffered_snapshot = match fill_tracker.classify_pending_order_reports(
         venue_order_id,
         tracker_quantity,
-        FillGrowthPolicy::from_identity(&identity),
+        growth_policy,
         |report| buffered_order_report_matches(&identity, venue_order_id, report),
     ) {
         PendingOrderReportDrain::Empty => {
@@ -451,6 +495,7 @@ pub(super) fn drain_pending_reports_for_known_order(
                 fill_tracker,
                 order_identities,
                 fill_tracker_quantity,
+                growth_policy,
                 account_id,
                 size_precision,
                 price_precision,
@@ -521,6 +566,7 @@ pub(super) fn accept_order_with_pending_fills(
     fill_tracker: &Arc<OrderFillTrackerMap>,
     order_identities: &OrderIdentityRegistry,
     fill_tracker_quantity: Option<Quantity>,
+    growth_policy: FillGrowthPolicy,
     _account_id: AccountId,
     _size_precision: u8,
     _price_precision: u8,
@@ -531,6 +577,7 @@ pub(super) fn accept_order_with_pending_fills(
         venue_order_id,
         OrderIdentity::from_order(order),
         tracker_quantity,
+        growth_policy,
         |fills| {
             let ts_event = fills
                 .iter()
@@ -572,6 +619,35 @@ pub(super) fn handle_order_response(
     fill_tracker: &Arc<OrderFillTrackerMap>,
     order_identities: &OrderIdentityRegistry,
     pending_cancels: &PendingCancelTracker,
+    account_id: AccountId,
+    size_precision: u8,
+    price_precision: u8,
+) -> Option<(String, VenueOrderId)> {
+    handle_order_response_with_growth_policy(
+        result,
+        order,
+        FillGrowthPolicy::Fixed,
+        emitter,
+        clock,
+        fill_tracker,
+        order_identities,
+        pending_cancels,
+        account_id,
+        size_precision,
+        price_precision,
+    )
+}
+
+#[expect(clippy::too_many_arguments)]
+pub(super) fn handle_order_response_with_growth_policy(
+    result: crate::http::error::Result<OrderResponse>,
+    order: &OrderAny,
+    growth_policy: FillGrowthPolicy,
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+    fill_tracker: &Arc<OrderFillTrackerMap>,
+    order_identities: &OrderIdentityRegistry,
+    pending_cancels: &PendingCancelTracker,
     _account_id: AccountId,
     _size_precision: u8,
     _price_precision: u8,
@@ -601,7 +677,7 @@ pub(super) fn handle_order_response(
                     fill_tracker.register_without_draining(
                         venue_order_id,
                         order.quantity(),
-                        FillGrowthPolicy::from_identity(&identity),
+                        growth_policy,
                     );
                     let fills = match fill_tracker.emit_pending_fills_for_registered(
                         venue_order_id,
@@ -1132,6 +1208,7 @@ mod tests {
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use super::*;
@@ -2120,11 +2197,12 @@ mod tests {
         assert!(!order.is_quote_quantity());
 
         assert!(
-            handle_unknown_submit_result(
+            handle_unknown_submit_result_with_growth_policy(
                 &order,
                 venue_order_id,
                 "transport timeout",
                 Some(Quantity::new(18.180, 3)),
+                FillGrowthPolicy::quote_immediate_buy(dec!(10.0)),
                 &emitter,
                 nautilus_core::time::get_atomic_clock_realtime(),
                 &fill_tracker,
@@ -2148,13 +2226,19 @@ mod tests {
             other => panic!("expected accepted event, was {other:?}"),
         }
 
-        // The drained own-order fill emits an OrderFilled event, not a report.
+        // Quote growth preserves the provider quantity and raises the local order before the fill.
+        match receiver.try_recv().expect("expected growth update") {
+            ExecutionEvent::Order(OrderEventAny::Updated(event)) => {
+                assert_eq!(event.quantity, Quantity::new(18.181, 3));
+            }
+            other => panic!("expected growth update, was {other:?}"),
+        }
         let fill = receiver.try_recv().expect("expected filled event");
         match fill {
             ExecutionEvent::Order(OrderEventAny::Filled(event)) => {
                 assert_eq!(event.client_order_id, order.client_order_id());
                 assert_eq!(event.venue_order_id, venue_order_id);
-                assert_eq!(event.last_qty, Quantity::new(18.180, 3));
+                assert_eq!(event.last_qty, Quantity::new(18.181, 3));
             }
             other => panic!("expected filled event, was {other:?}"),
         }
@@ -2162,9 +2246,84 @@ mod tests {
         assert!(fill_tracker.contains(&venue_order_id));
         assert_eq!(
             fill_tracker.get_cumulative_filled(&venue_order_id),
-            Some(Quantity::new(18.18, 3))
+            Some(Quantity::new(18.181, 3))
         );
         assert!(!fill_tracker.has_pending_fill(&venue_order_id));
+    }
+
+    #[rstest]
+    fn test_successful_quote_submit_drains_growth_within_signed_budget() {
+        let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+        let mut order = test_quote_market_order("O-QUOTE-SUCCESS", instrument_id);
+        let venue_order_id = VenueOrderId::from("0xquote-success");
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let order_identities = OrderIdentityRegistry::default();
+        let pending_cancels = PendingCancelTracker::default();
+
+        emit_market_order_submitted(
+            &mut order,
+            true,
+            OrderSide::Buy,
+            Quantity::new(10.0, 0),
+            dec!(18.180),
+            true,
+            3,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+        );
+        receiver.try_recv().expect("expected submitted event");
+        receiver
+            .try_recv()
+            .expect("expected normalized quantity update");
+
+        fill_tracker.buffer_fill_for_test(
+            venue_order_id,
+            test_fill_report(
+                instrument_id,
+                venue_order_id,
+                Quantity::new(19.0, 3),
+                UnixNanos::from(1_700_000_000_000_000_000u64),
+            ),
+        );
+
+        assert!(
+            handle_order_response_with_growth_policy(
+                Ok(successful_order_response(
+                    venue_order_id,
+                    Some(OrderResponseStatus::Live),
+                )),
+                &order,
+                FillGrowthPolicy::quote_immediate_buy(dec!(10.0)),
+                &emitter,
+                nautilus_core::time::get_atomic_clock_realtime(),
+                &fill_tracker,
+                &order_identities,
+                &pending_cancels,
+                AccountId::from("POLY-001"),
+                3,
+                4,
+            )
+            .is_none()
+        );
+
+        assert!(matches!(
+            receiver.try_recv().expect("expected accepted event"),
+            ExecutionEvent::Order(OrderEventAny::Accepted(_))
+        ));
+        match receiver.try_recv().expect("expected growth update") {
+            ExecutionEvent::Order(OrderEventAny::Updated(event)) => {
+                assert_eq!(event.quantity, Quantity::new(19.0, 3));
+            }
+            other => panic!("expected growth update, was {other:?}"),
+        }
+        match receiver.try_recv().expect("expected filled event") {
+            ExecutionEvent::Order(OrderEventAny::Filled(event)) => {
+                assert_eq!(event.last_qty, Quantity::new(19.0, 3));
+            }
+            other => panic!("expected filled event, was {other:?}"),
+        }
+        assert!(receiver.try_recv().is_err());
     }
 
     #[rstest]
@@ -2340,7 +2499,7 @@ mod tests {
         fill_tracker.register_without_draining(
             venue_order_id,
             submitted_qty,
-            FillGrowthPolicy::from_identity(&OrderIdentity::from_order(&order)),
+            FillGrowthPolicy::Fixed,
         );
         let fills = fill_tracker
             .emit_pending_fills_for_registered(
@@ -2496,7 +2655,7 @@ mod tests {
         fill_tracker.register_without_draining(
             venue_order_id,
             submitted_qty,
-            FillGrowthPolicy::from_identity(&OrderIdentity::from_order(&order)),
+            FillGrowthPolicy::Fixed,
         );
         let fills = fill_tracker
             .emit_pending_fills_for_registered(
@@ -2678,7 +2837,7 @@ mod tests {
         );
         let (emitter, mut receiver) = test_emitter();
 
-        drain_pending_reports_for_known_order(
+        drain_pending_reports_for_known_order_with_growth_policy(
             &order,
             venue_order_id,
             &emitter,
@@ -2686,6 +2845,7 @@ mod tests {
             &fill_tracker,
             &OrderIdentityRegistry::default(),
             None,
+            FillGrowthPolicy::Fixed,
             account_id,
             instrument.size_precision(),
             instrument.price_precision(),
@@ -3309,9 +3469,10 @@ mod tests {
             trade_ids: None,
             error_msg: None,
         };
-        handle_order_response(
+        handle_order_response_with_growth_policy(
             Ok(response),
             &order,
+            FillGrowthPolicy::quote_immediate_buy(dec!(10.0)),
             &emitter,
             nautilus_core::time::get_atomic_clock_realtime(),
             &fill_tracker,

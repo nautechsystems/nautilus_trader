@@ -30,6 +30,7 @@ use nautilus_common::{
 };
 use nautilus_core::{MUTEX_POISONED, collections::AtomicMap, time::AtomicTime};
 use nautilus_model::{
+    enums::{OrderSide, OrderType, TimeInForce},
     events::{OrderEventAny, OrderFilled, PositionEvent},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -420,16 +421,46 @@ impl PolymarketExecutionClient {
                 continue;
             };
 
+            let active_trade_ids = order
+                .trade_ids()
+                .into_iter()
+                .copied()
+                .collect::<AHashSet<_>>();
+            let active_fills = order
+                .events()
+                .into_iter()
+                .filter_map(|event| match event {
+                    OrderEventAny::Filled(fill) if active_trade_ids.contains(&fill.trade_id) => {
+                        Some(fill.clone())
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let restored_trade_ids = active_fills
+                .iter()
+                .map(|fill| fill.trade_id)
+                .collect::<AHashSet<_>>();
+            if restored_trade_ids != active_trade_ids {
+                log::error!(
+                    "Cannot restore fill evidence for order {venue_order_id}: active trade IDs and cached fill events differ"
+                );
+                continue;
+            }
+
             let identity = OrderIdentity::from_order(order);
-            self.order_identities
-                .register_order_identity(venue_order_id, identity);
-            self.order_identities.mark_accepted(venue_order_id);
-            self.fill_tracker.restore_order(
+            if let Err(e) = self.fill_tracker.restore_order(
                 venue_order_id,
                 order.quantity(),
                 order.filled_qty(),
-                crate::execution::order_fill_tracker::FillGrowthPolicy::from_identity(&identity),
-            );
+                restored_fill_growth_policy(order),
+                active_fills,
+            ) {
+                log::error!("Cannot restore fill tracker for order {venue_order_id}: {e}");
+                continue;
+            }
+            self.order_identities
+                .register_order_identity(venue_order_id, identity);
+            self.order_identities.mark_accepted(venue_order_id);
 
             for event in order.events() {
                 match event {
@@ -594,6 +625,23 @@ impl PolymarketExecutionClient {
 
     pub(super) fn on_instrument_update(&self, instrument: &InstrumentAny) {
         self.upsert_execution_lookup(instrument);
+    }
+}
+
+fn restored_fill_growth_policy(
+    order: &nautilus_model::orders::OrderAny,
+) -> crate::execution::order_fill_tracker::FillGrowthPolicy {
+    let initialized_as_quote = order.events().first().is_some_and(|event| {
+        matches!(event, OrderEventAny::Initialized(initialized) if initialized.quote_quantity)
+    });
+    if initialized_as_quote
+        && order.order_side() == OrderSide::Buy
+        && order.order_type() == OrderType::Market
+        && matches!(order.time_in_force(), TimeInForce::Ioc | TimeInForce::Fok)
+    {
+        crate::execution::order_fill_tracker::FillGrowthPolicy::QuoteImmediateBuyUnproven
+    } else {
+        crate::execution::order_fill_tracker::FillGrowthPolicy::Fixed
     }
 }
 
@@ -1207,7 +1255,6 @@ mod tests {
             Some(order.filled_qty())
         );
         assert_eq!(order.status(), OrderStatus::Voided);
-        assert!(state.processed_fills.contains(&key.to_string()));
         assert_eq!(state.matched_fill_count(key), 0);
         assert!(state.is_voided_trade(key));
     }
@@ -1486,8 +1533,7 @@ mod tests {
             .ws_dispatch_state
             .lock()
             .expect(MUTEX_POISONED)
-            .processed_fills
-            .add("trade-1".to_string());
+            .restore_voided_trade("trade-1".to_string());
 
         client.reset_client();
 
@@ -1504,8 +1550,7 @@ mod tests {
                 .ws_dispatch_state
                 .lock()
                 .expect(MUTEX_POISONED)
-                .processed_fills
-                .contains(&"trade-1".to_string())
+                .is_voided_trade("trade-1")
         );
     }
 
@@ -1518,8 +1563,7 @@ mod tests {
             .ws_dispatch_state
             .lock()
             .expect(MUTEX_POISONED)
-            .processed_fills
-            .add(dedup_key.clone());
+            .restore_voided_trade(dedup_key.clone());
 
         client.stop_client();
 
@@ -1528,8 +1572,7 @@ mod tests {
                 .ws_dispatch_state
                 .lock()
                 .expect(MUTEX_POISONED)
-                .processed_fills
-                .contains(&dedup_key)
+                .is_voided_trade(&dedup_key)
         );
     }
 }
