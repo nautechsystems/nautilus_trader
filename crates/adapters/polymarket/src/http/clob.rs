@@ -15,7 +15,10 @@
 
 //! Provides the HTTP client for the Polymarket CLOB REST API.
 
-use std::{collections::HashMap, result::Result as StdResult, str::from_utf8, sync::Arc};
+use std::{
+    collections::HashMap, convert::Infallible, result::Result as StdResult, str::from_utf8,
+    sync::Arc,
+};
 
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT,
@@ -45,6 +48,7 @@ use crate::{
             ClobBookResponse, ClobMarketResponse, FeeRateResponse, PolymarketOpenOrder,
             PolymarketOrder, PolymarketTradeReport, TickSizeResponse,
         },
+        pagination::{CollectAll, Completion, CursorProtocol, FetchOutcome, Paginator},
         query::{
             BalanceAllowance, BatchCancelResponse, CancelMarketOrdersParams, CancelResponse,
             ClobVersionResponse, GetBalanceAllowanceParams, GetOrdersParams, GetTradesParams,
@@ -450,26 +454,36 @@ impl PolymarketClobHttpClient {
     }
 
     /// Fetches all open orders matching the given parameters (auto-paginated).
-    pub async fn get_orders(
-        &self,
-        mut params: GetOrdersParams,
-    ) -> Result<Vec<PolymarketOpenOrder>> {
-        let mut all = Vec::new();
+    pub async fn get_orders(&self, params: GetOrdersParams) -> Result<Vec<PolymarketOpenOrder>> {
+        let initial_cursor = params
+            .next_cursor
+            .clone()
+            .unwrap_or_else(|| CURSOR_START.to_string());
+        let protocol = CursorProtocol::<Infallible>::clob(PATH_ORDERS, initial_cursor, CURSOR_END);
+        let paginator = Paginator::new(PATH_ORDERS, protocol, CollectAll::new());
+        let completed = paginator
+            .run(
+                |position| {
+                    let mut request = params.clone();
+                    request.next_cursor =
+                        position.as_ref().map(|cursor| cursor.as_ref().to_string());
+                    async move {
+                        let page: PaginatedResponse<PolymarketOpenOrder> =
+                            self.send_get(PATH_ORDERS, Some(&request), true).await?;
+                        Ok(FetchOutcome::Page {
+                            rows: page.data,
+                            wire: page.next_cursor,
+                        })
+                    }
+                },
+                |e| Error::decode(e.to_string()),
+            )
+            .await?;
 
-        loop {
-            let cursor = params
-                .next_cursor
-                .get_or_insert_with(|| CURSOR_START.to_string())
-                .clone();
-            let page: PaginatedResponse<PolymarketOpenOrder> =
-                self.send_get(PATH_ORDERS, Some(&params), true).await?;
-            all.extend(page.data);
-            let Some(next_cursor) = cursor_next(PATH_ORDERS, &cursor, page.next_cursor)? else {
-                break;
-            };
-            params.next_cursor = Some(next_cursor);
+        match completed.completion {
+            Completion::WireExhausted => Ok(completed.output),
+            Completion::Stopped(never) => match never {},
         }
-        Ok(all)
     }
 
     /// Fetches a single order by ID, returning `None` for empty/null responses.
@@ -489,26 +503,36 @@ impl PolymarketClobHttpClient {
     }
 
     /// Fetches all trades matching the given parameters (auto-paginated).
-    pub async fn get_trades(
-        &self,
-        mut params: GetTradesParams,
-    ) -> Result<Vec<PolymarketTradeReport>> {
-        let mut all = Vec::new();
+    pub async fn get_trades(&self, params: GetTradesParams) -> Result<Vec<PolymarketTradeReport>> {
+        let initial_cursor = params
+            .next_cursor
+            .clone()
+            .unwrap_or_else(|| CURSOR_START.to_string());
+        let protocol = CursorProtocol::<Infallible>::clob(PATH_TRADES, initial_cursor, CURSOR_END);
+        let paginator = Paginator::new(PATH_TRADES, protocol, CollectAll::new());
+        let completed = paginator
+            .run(
+                |position| {
+                    let mut request = params.clone();
+                    request.next_cursor =
+                        position.as_ref().map(|cursor| cursor.as_ref().to_string());
+                    async move {
+                        let page: PaginatedResponse<PolymarketTradeReport> =
+                            self.send_get(PATH_TRADES, Some(&request), true).await?;
+                        Ok(FetchOutcome::Page {
+                            rows: page.data,
+                            wire: page.next_cursor,
+                        })
+                    }
+                },
+                |e| Error::decode(e.to_string()),
+            )
+            .await?;
 
-        loop {
-            let cursor = params
-                .next_cursor
-                .get_or_insert_with(|| CURSOR_START.to_string())
-                .clone();
-            let page: PaginatedResponse<PolymarketTradeReport> =
-                self.send_get(PATH_TRADES, Some(&params), true).await?;
-            all.extend(page.data);
-            let Some(next_cursor) = cursor_next(PATH_TRADES, &cursor, page.next_cursor)? else {
-                break;
-            };
-            params.next_cursor = Some(next_cursor);
+        match completed.completion {
+            Completion::WireExhausted => Ok(completed.output),
+            Completion::Stopped(never) => match never {},
         }
-        Ok(all)
     }
 
     /// Fetches strict V2 balance and allowance evidence for the given parameters.
@@ -767,24 +791,6 @@ impl PolymarketClobPublicClient {
         );
 
         Ok(book)
-    }
-}
-
-fn cursor_next(
-    endpoint: &'static str,
-    cursor: &str,
-    next_cursor: Option<String>,
-) -> Result<Option<String>> {
-    let next_cursor = next_cursor
-        .ok_or_else(|| Error::decode(format!("{endpoint} response omitted next_cursor")))?;
-    if next_cursor.is_empty() || next_cursor == CURSOR_END {
-        Ok(None)
-    } else if next_cursor == cursor {
-        Err(Error::decode(format!(
-            "{endpoint} pagination cursor did not advance from {cursor:?}"
-        )))
-    } else {
-        Ok(Some(next_cursor))
     }
 }
 
