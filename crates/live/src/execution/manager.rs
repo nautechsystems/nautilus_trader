@@ -527,10 +527,7 @@ impl ExecutionManager {
             return ReconciliationResult::default();
         }
 
-        if let Err(e) = self.validate_mass_status_order_sources(&mass_status) {
-            log::error!("Cannot reconcile ExecutionMassStatus: {e}");
-            return ReconciliationResult::default();
-        }
+        self.validate_mass_status_order_sources(&mass_status);
 
         // Publish raw reports before any state mutation (including fill adjustment
         // below, which can synthesise replacement order/fill reports). The
@@ -1605,12 +1602,14 @@ impl ExecutionManager {
         result
     }
 
-    pub(crate) fn validate_mass_status_order_sources(
-        &self,
-        mass_status: &ExecutionMassStatus,
-    ) -> anyhow::Result<()> {
+    /// Validates cached order origins against the mass status client, logging a warning for each
+    /// kind of violation. Never fails: orders persisted before origin tracking or materialized at
+    /// runtime lack origins legitimately, so reconciliation proceeds regardless.
+    pub(crate) fn validate_mass_status_order_sources(&self, mass_status: &ExecutionMassStatus) {
         let cache = self.cache.borrow();
         let mut checked_client_order_ids = IndexSet::new();
+        let mut missing_origins: Vec<ClientOrderId> = Vec::new();
+        let mut mismatched_origins: Vec<(ClientOrderId, ClientId)> = Vec::new();
 
         let mut validate_report_source =
             |direct_client_order_id: Option<ClientOrderId>, venue_order_id: VenueOrderId| {
@@ -1626,33 +1625,62 @@ impl ExecutionManager {
                     .flatten()
                     .filter(|client_order_id| checked_client_order_ids.insert(*client_order_id))
                 {
-                    let cached_client_id = cache.client_id(&client_order_id).ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Cached order {client_order_id} has no execution client origin"
-                        )
-                    })?;
-                    anyhow::ensure!(
-                        *cached_client_id == mass_status.client_id,
-                        "Cached order {client_order_id} belongs to execution client \
-                         {cached_client_id}, not mass status client {}",
-                        mass_status.client_id,
-                    );
+                    match cache.client_id(&client_order_id) {
+                        Some(cached_client_id) if *cached_client_id == mass_status.client_id => {}
+                        Some(cached_client_id) => {
+                            mismatched_origins.push((client_order_id, *cached_client_id));
+                        }
+                        None => missing_origins.push(client_order_id),
+                    }
                 }
-
-                Ok::<_, anyhow::Error>(())
             };
 
         for report in mass_status.order_reports().values() {
-            validate_report_source(report.client_order_id, report.venue_order_id)?;
+            validate_report_source(report.client_order_id, report.venue_order_id);
         }
 
         for fills in mass_status.fill_reports().values() {
             for fill in fills {
-                validate_report_source(fill.client_order_id, fill.venue_order_id)?;
+                validate_report_source(fill.client_order_id, fill.venue_order_id);
             }
         }
 
-        Ok(())
+        if !missing_origins.is_empty() {
+            let samples = missing_origins
+                .iter()
+                .take(5)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            log::warn!(
+                "Found {} cached order(s) without an execution client origin ({}): \
+                 continuing reconciliation against mass status client {} for compatibility \
+                 with existing cache data",
+                missing_origins.len(),
+                samples,
+                mass_status.client_id,
+            );
+        }
+
+        if !mismatched_origins.is_empty() {
+            let samples = mismatched_origins
+                .iter()
+                .take(5)
+                .map(|(client_order_id, cached)| format!("{client_order_id} -> {cached}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            log::warn!(
+                "Found {} cached order(s) with an execution client origin conflicting with \
+                 mass status client {} ({}): continuing reconciliation for compatibility; \
+                 this conflict will become a startup error in a future release, verify cached \
+                 order ownership and execution client configuration",
+                mismatched_origins.len(),
+                mass_status.client_id,
+                samples,
+            );
+        }
     }
 
     fn filtered_open_orders_for_reconciliation(&self) -> Vec<OrderAny> {

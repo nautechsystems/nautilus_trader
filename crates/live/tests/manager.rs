@@ -734,17 +734,16 @@ async fn test_reconcile_mass_status_creates_external_order_accepted() {
 }
 
 #[rstest]
-#[case(None, true, false)]
-#[case(None, false, false)]
-#[case(Some("BINANCE"), true, true)]
-#[case(Some("BINANCE"), false, true)]
-#[case(Some("OTHER"), true, false)]
-#[case(Some("OTHER"), false, false)]
+#[case(None, true)]
+#[case(None, false)]
+#[case(Some("BINANCE"), true)]
+#[case(Some("BINANCE"), false)]
+#[case(Some("OTHER"), true)]
+#[case(Some("OTHER"), false)]
 #[tokio::test]
-async fn test_reconcile_mass_status_requires_matching_cached_client_origin(
+async fn test_reconcile_mass_status_warns_on_untrusted_cached_client_origin(
     #[case] cached_client_id: Option<&str>,
     #[case] report_has_client_order_id: bool,
-    #[case] should_reconcile: bool,
 ) {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
@@ -802,16 +801,13 @@ async fn test_reconcile_mass_status_requires_matching_cached_client_origin(
 
     msgbus::unsubscribe_any(raw_pattern, &raw_handler);
 
-    assert_eq!(result.events.len(), usize::from(should_reconcile));
+    assert_eq!(result.events.len(), 1);
     assert!(result.external_orders.is_empty());
     assert_eq!(
-        ctx.get_order(&client_order_id).unwrap().status() == OrderStatus::Canceled,
-        should_reconcile,
+        ctx.get_order(&client_order_id).unwrap().status(),
+        OrderStatus::Canceled
     );
-    assert_eq!(
-        raw_saver.get_messages().len(),
-        usize::from(should_reconcile)
-    );
+    assert_eq!(raw_saver.get_messages().len(), 1);
     assert_eq!(
         ctx.cache.borrow().client_id(&client_order_id).copied(),
         cached_client_id.map(ClientId::from),
@@ -819,7 +815,7 @@ async fn test_reconcile_mass_status_requires_matching_cached_client_origin(
 }
 
 #[tokio::test]
-async fn test_reconcile_mass_status_rejects_venue_only_fill_from_other_client() {
+async fn test_reconcile_mass_status_warns_on_venue_only_fill_from_other_client() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     let client_order_id = ClientOrderId::from("O-CACHED-FILL-SOURCE");
@@ -881,12 +877,13 @@ async fn test_reconcile_mass_status_rejects_venue_only_fill_from_other_client() 
 
     msgbus::unsubscribe_any(raw_pattern, &raw_handler);
 
-    assert!(result.events.is_empty());
+    assert_eq!(result.events.len(), 1);
+    assert!(matches!(result.events[0], OrderEventAny::Filled(_)));
     assert!(result.external_orders.is_empty());
-    assert!(raw_saver.get_messages().is_empty());
+    assert_eq!(raw_saver.get_messages().len(), 1);
     let cached_order = ctx.get_order(&client_order_id).unwrap();
-    assert_eq!(cached_order.status(), OrderStatus::Accepted);
-    assert!(cached_order.filled_qty().is_zero());
+    assert_eq!(cached_order.status(), OrderStatus::Filled);
+    assert_eq!(cached_order.filled_qty(), Quantity::from("1.0"));
 }
 
 #[rstest]

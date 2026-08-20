@@ -2494,12 +2494,11 @@ mod serial_tests {
     }
 
     #[rstest]
-    #[case(None, "has no execution client origin")]
-    #[case(Some("OTHER"), "belongs to execution client OTHER")]
+    #[case::missing_origin(None)]
+    #[case::conflicting_origin(Some("OTHER"))]
     #[tokio::test]
-    async fn test_startup_mass_status_rejects_untrusted_cached_order_origin(
+    async fn test_startup_mass_status_warns_on_untrusted_cached_order_origin(
         #[case] cached_client_id: Option<&str>,
-        #[case] expected_error: &str,
     ) {
         let source_client_id = ClientId::from("SOURCE-CLIENT");
         let source_account_id = AccountId::from("BLOCKING-REPORT-001");
@@ -2535,16 +2534,10 @@ mod serial_tests {
             cached_client_id.map(ClientId::from),
         );
 
-        let error = node
-            .start()
+        node.start()
             .await
-            .expect_err("untrusted cached order origin should abort startup");
+            .expect("untrusted cached order origin should warn, not abort startup");
 
-        assert!(
-            error.to_string().contains(expected_error),
-            "unexpected error: {error:#}"
-        );
-        assert_eq!(node.state(), NodeState::Stopped);
         assert!(
             state
                 .registered_external_orders
@@ -2552,18 +2545,20 @@ mod serial_tests {
                 .expect("registered external orders lock poisoned")
                 .is_empty()
         );
-        let cache = node.kernel().cache();
-        let cache = cache.borrow();
-        assert_eq!(
-            cache.order(&client_order_id).unwrap().status(),
-            OrderStatus::Accepted
-        );
-        assert_eq!(
-            cache.client_id(&client_order_id).copied(),
-            cached_client_id.map(ClientId::from)
-        );
-        drop(cache);
+        {
+            let cache = node.kernel().cache();
+            let cache = cache.borrow();
+            assert_eq!(
+                cache.order(&client_order_id).unwrap().status(),
+                OrderStatus::Canceled
+            );
+            assert_eq!(
+                cache.client_id(&client_order_id).copied(),
+                cached_client_id.map(ClientId::from)
+            );
+        }
 
+        node.stop().await.unwrap();
         node.dispose();
     }
 

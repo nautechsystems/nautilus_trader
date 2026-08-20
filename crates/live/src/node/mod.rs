@@ -791,9 +791,6 @@ impl LiveNode {
 
             match mass_status_result {
                 Ok(Some(mass_status)) => {
-                    self.exec_manager
-                        .validate_mass_status_order_sources(&mass_status)?;
-
                     log_info!(
                         "Reconciling ExecutionMassStatus for {}",
                         client_id,

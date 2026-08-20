@@ -27,6 +27,42 @@ and gives reconciliation the retained order and position state needed to interpr
 windows.
 :::
 
+### Execution-client origins
+
+An **execution‑client origin** is a write‑once binding between an order and the client responsible
+for its execution.
+
+**An origin is recorded:**
+
+- From an explicit client on submission, or from the final client selected after routing and venue
+  validation and before transport.
+- When non‑synthetic external orders are materialized during startup reconciliation, from the
+  reporting mass‑status client.
+- When external orders are materialized from runtime venue reports and the report's account
+  matches exactly one registered client that handles the instrument venue.
+
+**An origin may be absent for:**
+
+- Cache data written before resolved origins were persisted.
+- External orders whose runtime report does not identify exactly one registered client by account
+  and instrument venue.
+- Synthetic reconciliation orders.
+
+The built‑in cache backends enqueue a resolved origin for persistence before transport. Their
+writes remain asynchronous, so enqueue order does not guarantee that the origin is durable before
+the order reaches the client.
+
+At startup, each client's mass status is checked against the cached origins: an order the client
+reports is expected to be bound to that same client. A missing origin logs an aggregated warning
+and remains compatible with existing cache data. A conflicting origin logs an aggregated
+deprecation warning and reconciles for compatibility. A future release rejects the conflict as a
+startup error. See the origin rows in
+[Startup reconciliation](#startup-reconciliation).
+
+This is separate from `external_order_claims` (see
+[Reconciliation configuration](#reconciliation-configuration)), which attributes venue‑sourced
+orders to a *strategy*. The execution‑client origin records which *client* an order belongs to.
+
 ## Reconciliation configuration
 
 Unless `reconciliation` is set to false, the execution engine reconciles state for each
@@ -235,6 +271,8 @@ The tables below cover startup reconciliation (mass status) and runtime checks
 | **Incomplete bounded history**         | A required order, fill, or position source failed or could not be mapped.       | Recovers order state but projects historical fills without position or portfolio effects.                |
 | **Ambiguous bounded lifecycle**        | The bounded reports do not prove one coherent NETTING position transition.      | Preserves order state and leaves current position alignment to position reconciliation.                  |
 | **External orders**                    | Orders exist on venue but not in local cache.                                   | Creates unclaimed orders with strategy ID `EXTERNAL` and tag `VENUE`.                                    |
+| **Missing client origin**              | A cached order in the mass status has no recorded execution‑client origin.      | Logs one aggregated warning with a count and sample IDs; reconciles against the reporting client.        |
+| **Conflicting client origin**          | A cached order's origin differs from the client that supplied the report.       | Logs one aggregated deprecation warning; reconciliation proceeds during the compatibility period.        |
 | **Partially filled then canceled**     | Order partially filled then canceled by venue.                                  | Updates state to `CANCELED`, preserves fill history.                                                     |
 | **Different fill data**                | Venue reports different fill price/commission than cached.                      | Preserves cached data, logs discrepancies.                                                               |
 | **Filtered orders**                    | Orders marked for filtering via config.                                         | Skips based on `filtered_client_order_ids` or instrument filters.                                        |
