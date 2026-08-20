@@ -2475,6 +2475,13 @@ mod tests {
             &[PAYLOAD_TYPE_ORDER_INITIALIZED],
         ),
         cache_mutation(
+            // Cache databases persist the resolved client index, but current EventStore
+            // command payloads do not carry the client selected by runtime routing.
+            "claim_order_clients",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
             "add_order_list",
             CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
             &[PAYLOAD_TYPE_SUBMIT_ORDER_LIST],

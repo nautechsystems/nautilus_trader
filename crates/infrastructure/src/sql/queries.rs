@@ -1336,6 +1336,83 @@ impl DatabaseQueries {
         Ok(map)
     }
 
+    /// Claims execution-client origins for existing order events in one transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an order has no persisted events, an order is already claimed by a
+    /// different client, or any SQL operation fails. Any error rolls back the complete batch.
+    pub async fn index_order_clients(
+        pool: &PgPool,
+        claims: &[(ClientOrderId, ClientId)],
+    ) -> anyhow::Result<()> {
+        if claims.is_empty() {
+            return Ok(());
+        }
+
+        let mut transaction = pool.begin().await?;
+
+        for (client_order_id, client_id) in claims {
+            let conflicting_client_id = sqlx::query_scalar::<_, String>(
+                r#"
+                SELECT client_id
+                FROM "order_event"
+                WHERE client_order_id = $1
+                  AND client_id IS NOT NULL
+                  AND client_id <> $2
+                LIMIT 1
+            "#,
+            )
+            .bind(client_order_id.to_string())
+            .bind(client_id.to_string())
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to validate order client origin: {e}"))?;
+
+            if let Some(conflicting_client_id) = conflicting_client_id {
+                anyhow::bail!(
+                    "Order {client_order_id} is already claimed by execution client \
+                     {conflicting_client_id} and cannot be claimed by {client_id}"
+                );
+            }
+
+            sqlx::query(
+                r#"
+                INSERT INTO "client" (id)
+                VALUES ($1)
+                ON CONFLICT (id) DO NOTHING
+            "#,
+            )
+            .bind(client_id.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to persist execution client {client_id}: {e}"))?;
+
+            let result = sqlx::query(
+                r#"
+                UPDATE "order_event"
+                SET client_id = $2
+                WHERE client_order_id = $1
+                  AND (client_id IS NULL OR client_id = $2)
+            "#,
+            )
+            .bind(client_order_id.to_string())
+            .bind(client_id.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to index order client origin: {e}"))?;
+
+            if result.rows_affected() == 0 {
+                anyhow::bail!("No persisted order events found for {client_order_id}");
+            }
+        }
+
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit order client origins: {e}"))
+    }
+
     /// Inserts or updates an order ID to position ID index entry via the provided `pool`.
     ///
     /// # Errors

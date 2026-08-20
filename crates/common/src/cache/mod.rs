@@ -4669,6 +4669,73 @@ impl Cache {
         Ok(())
     }
 
+    /// Claims the execution-client origin for one or more cached orders.
+    ///
+    /// Claims are write-once: an unclaimed order is assigned to `client_id`, a matching existing
+    /// claim is idempotent, and a conflicting claim is rejected. The complete batch is validated
+    /// and its persistence command is successfully enqueued before any in-memory index is
+    /// changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an order is not cached, an order is already claimed by another client,
+    /// the same order has conflicting claims in the batch, or persistence cannot be enqueued.
+    pub fn claim_order_clients(
+        &mut self,
+        claims: &[(ClientOrderId, ClientId)],
+    ) -> anyhow::Result<()> {
+        let mut requested = AHashMap::with_capacity(claims.len());
+        let mut ordered_claims = Vec::with_capacity(claims.len());
+
+        for (client_order_id, client_id) in claims {
+            if let Some(existing_client_id) = requested.get(client_order_id) {
+                if existing_client_id != client_id {
+                    anyhow::bail!(
+                        "Conflicting execution client claims for {client_order_id}: \
+                         {existing_client_id} and {client_id}"
+                    );
+                }
+                continue;
+            }
+
+            requested.insert(*client_order_id, *client_id);
+            ordered_claims.push((*client_order_id, *client_id));
+        }
+
+        let mut pending_claims = Vec::with_capacity(ordered_claims.len());
+        for (client_order_id, client_id) in ordered_claims {
+            if !self.orders.contains_key(&client_order_id) {
+                return Err(OrderLookupError::not_found(client_order_id).into());
+            }
+
+            match self.index.order_client.get(&client_order_id) {
+                Some(existing_client_id) if *existing_client_id == client_id => {}
+                Some(existing_client_id) => {
+                    anyhow::bail!(
+                        "Order {client_order_id} is already claimed by execution client \
+                         {existing_client_id} and cannot be claimed by {client_id}"
+                    );
+                }
+                None => pending_claims.push((client_order_id, client_id)),
+            }
+        }
+
+        if pending_claims.is_empty() {
+            return Ok(());
+        }
+
+        if let Some(database) = &self.database {
+            database.index_order_clients(&pending_claims)?;
+        }
+
+        for (client_order_id, client_id) in pending_claims {
+            self.index.order_client.insert(client_order_id, client_id);
+            log::debug!("Claimed {client_order_id} for execution client {client_id}");
+        }
+
+        Ok(())
+    }
+
     /// Adds the `order_list` to the cache.
     ///
     /// # Errors

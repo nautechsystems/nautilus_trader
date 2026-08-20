@@ -492,6 +492,19 @@ pub trait CacheDatabaseAdapter {
         position_id: PositionId,
     ) -> anyhow::Result<()>;
 
+    /// Indexes order-client mappings as one batch operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if batch order-client indexing is unsupported or cannot be enqueued.
+    fn index_order_clients(&self, claims: &[(ClientOrderId, ClientId)]) -> anyhow::Result<()> {
+        if claims.is_empty() {
+            return Ok(());
+        }
+
+        anyhow::bail!("Batch order-client indexing is not supported by this cache database")
+    }
+
     /// Updates actor state in the cache.
     ///
     /// # Errors

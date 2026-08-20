@@ -15,6 +15,10 @@
 
 //! Tests module for `ExecutionEngine`.
 
+#[allow(dead_code)]
+#[path = "matching_engine/cache_database.rs"]
+mod cache_database;
+
 use std::{
     cell::RefCell,
     collections::HashSet,
@@ -26,6 +30,7 @@ use std::{
 };
 
 use ahash::AHashSet;
+use cache_database::FailNthAddOrderDatabase;
 use nautilus_common::{
     cache::{Cache, CacheSnapshotRef},
     clients::ExecutionClient,
@@ -3816,6 +3821,14 @@ fn test_submit_order_routes_to_default_client_when_no_client_id(
     assert_eq!(
         submitted_order_ids.borrow().as_slice(),
         &[order.client_order_id()],
+    );
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .client_id(&order.client_order_id())
+            .copied(),
+        Some(ClientId::from("IB")),
     );
 }
 
@@ -14054,6 +14067,332 @@ fn test_submit_order_routes_by_instrument_venue(mut execution_engine: ExecutionE
         submitted_order_ids.borrow().as_slice(),
         &[order.client_order_id()],
     );
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .client_id(&order.client_order_id())
+            .copied(),
+        Some(ClientId::from("SIM_CLIENT")),
+    );
+}
+
+#[rstest]
+fn test_submit_order_claims_venue_routed_client_origin(mut execution_engine: ExecutionEngine) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = futures_contract_xcme();
+    let client_id = ClientId::from("ROUTING");
+    let client = StubExecutionClient::new(
+        client_id,
+        AccountId::from("ROUTING-ACCOUNT"),
+        Venue::from("BROKER"),
+        OmsType::Netting,
+        None,
+    )
+    .with_handles_all_order_venues();
+    let submitted_order_ids = client.submitted_order_ids();
+    execution_engine.register_client(Box::new(client)).unwrap();
+    execution_engine
+        .register_venue_routing(client_id, instrument.id.venue)
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-ROUTED-ORIGIN-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let submit_order = SubmitOrder {
+        trader_id,
+        strategy_id,
+        instrument_id: instrument.id,
+        client_order_id: order.client_order_id(),
+        order_init: order.init_event().clone(),
+        position_id: None,
+        params: None,
+        client_id: None,
+        exec_algorithm_id: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let cache = execution_engine.cache().borrow();
+    assert_eq!(
+        cache.client_id(&order.client_order_id()).copied(),
+        Some(client_id),
+    );
+    assert_eq!(
+        submitted_order_ids.borrow().as_slice(),
+        &[order.client_order_id()],
+    );
+}
+
+#[rstest]
+fn test_submit_order_rejects_conflicting_cached_client_origin(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let existing_client_id = ClientId::from("CLIENT_A");
+    let routed_client_id = ClientId::from("CLIENT_B");
+    let client = StubExecutionClient::new(
+        routed_client_id,
+        AccountId::from("CLIENT-B-ACCOUNT"),
+        instrument.id.venue,
+        OmsType::Netting,
+        None,
+    );
+    let submitted_order_ids = client.submitted_order_ids();
+    execution_engine.register_client(Box::new(client)).unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-CONFLICTING-ORIGIN-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(10))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(existing_client_id), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder {
+        trader_id,
+        strategy_id,
+        instrument_id: instrument.id,
+        client_order_id: order.client_order_id(),
+        order_init: order.init_event().clone(),
+        position_id: None,
+        params: None,
+        client_id: Some(routed_client_id),
+        exec_algorithm_id: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let cache = execution_engine.cache().borrow();
+    assert_eq!(
+        cache.client_id(&order.client_order_id()).copied(),
+        Some(existing_client_id),
+    );
+    assert_eq!(
+        cache.order(&order.client_order_id()).unwrap().status(),
+        OrderStatus::Denied
+    );
+    assert!(submitted_order_ids.borrow().is_empty());
+}
+
+#[rstest]
+fn test_submit_order_does_not_transport_when_origin_persistence_cannot_be_enqueued(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let client_id = ClientId::from("CLIENT-B");
+    let client = StubExecutionClient::new(
+        client_id,
+        AccountId::from("CLIENT-B-ACCOUNT"),
+        instrument.id.venue,
+        OmsType::Netting,
+        None,
+    );
+    let submitted_order_ids = client.submitted_order_ids();
+    execution_engine.register_client(Box::new(client)).unwrap();
+    let (database, _control) = FailNthAddOrderDatabase::create();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .set_database(Box::new(database));
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-PERSISTENCE-FAIL-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(10))
+        .build();
+
+    let submit_order = SubmitOrder {
+        trader_id,
+        strategy_id,
+        instrument_id: instrument.id,
+        client_order_id: order.client_order_id(),
+        order_init: order.init_event().clone(),
+        position_id: None,
+        params: None,
+        client_id: Some(client_id),
+        exec_algorithm_id: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let cache = execution_engine.cache().borrow();
+    assert_eq!(cache.client_id(&order.client_order_id()), None);
+    assert_eq!(
+        cache.order(&order.client_order_id()).unwrap().status(),
+        OrderStatus::Denied
+    );
+    assert!(submitted_order_ids.borrow().is_empty());
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_submit_order_list_claims_are_atomic(
+    mut execution_engine: ExecutionEngine,
+    #[case] has_conflicting_origin: bool,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let existing_client_id = ClientId::from("CLIENT_A");
+    let routed_client_id = ClientId::from("CLIENT_B");
+    let client = StubExecutionClient::new(
+        routed_client_id,
+        AccountId::from("CLIENT-B-ACCOUNT"),
+        instrument.id.venue,
+        OmsType::Netting,
+        None,
+    );
+    let submitted_order_ids = client.submitted_order_ids();
+    execution_engine.register_client(Box::new(client)).unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let entry = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-LIST-ORIGIN-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let stop_loss = OrderTestBuilder::new(OrderType::StopMarket)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-LIST-ORIGIN-002"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .trigger_price(Price::from("0.50000"))
+        .build();
+    let orders = [entry.clone(), stop_loss.clone()];
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(entry.clone(), None, None, false)
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            stop_loss.clone(),
+            None,
+            has_conflicting_origin.then_some(existing_client_id),
+            false,
+        )
+        .unwrap();
+
+    let order_list = OrderList::new(
+        OrderListId::from("L-ORIGIN-CLAIM"),
+        instrument.id,
+        strategy_id,
+        orders.iter().map(|order| order.client_order_id()).collect(),
+        UnixNanos::default(),
+    );
+    let submit_order_list = SubmitOrderList {
+        trader_id,
+        client_id: None,
+        strategy_id,
+        instrument_id: instrument.id,
+        order_list,
+        order_inits: orders
+            .iter()
+            .map(|order| order.init_event().clone())
+            .collect(),
+        exec_algorithm_id: None,
+        position_id: None,
+        params: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
+
+    let cache = execution_engine.cache().borrow();
+    if has_conflicting_origin {
+        assert_eq!(cache.client_id(&entry.client_order_id()), None);
+        assert_eq!(
+            cache.client_id(&stop_loss.client_order_id()).copied(),
+            Some(existing_client_id),
+        );
+        assert!(submitted_order_ids.borrow().is_empty());
+    } else {
+        for order in &orders {
+            assert_eq!(
+                cache.client_id(&order.client_order_id()).copied(),
+                Some(routed_client_id),
+            );
+        }
+        assert_eq!(
+            submitted_order_ids.borrow().as_slice(),
+            &[entry.client_order_id(), stop_loss.client_order_id()],
+        );
+    }
 }
 
 #[rstest]
@@ -14123,8 +14462,11 @@ fn test_submit_order_adds_missing_order_to_cache_from_init(mut execution_engine:
 }
 
 #[rstest]
-fn test_submit_order_list_adds_missing_orders_to_cache_from_inits(
+#[case::in_memory(false)]
+#[case::batch_enqueue_rejected(true)]
+fn test_submit_order_list_adds_missing_orders_then_claims_origin_atomically(
     mut execution_engine: ExecutionEngine,
+    #[case] reject_batch_enqueue: bool,
 ) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
@@ -14139,6 +14481,14 @@ fn test_submit_order_list_adds_missing_orders_to_cache_from_inits(
     );
     let submitted_order_ids = client.submitted_order_ids();
     execution_engine.register_client(Box::new(client)).unwrap();
+
+    if reject_batch_enqueue {
+        let (database, _control) = FailNthAddOrderDatabase::create();
+        execution_engine
+            .cache()
+            .borrow_mut()
+            .set_database(Box::new(database));
+    }
 
     execution_engine
         .cache()
@@ -14198,17 +14548,29 @@ fn test_submit_order_list_adds_missing_orders_to_cache_from_inits(
             .order(&order.client_order_id())
             .expect("Order should be cached from the order list initialization events");
 
-        assert_eq!(cached_order.status(), OrderStatus::Initialized);
+        assert_eq!(
+            cached_order.status(),
+            if reject_batch_enqueue {
+                OrderStatus::Denied
+            } else {
+                OrderStatus::Initialized
+            }
+        );
         assert_eq!(cached_order.instrument_id(), order.instrument_id());
         assert_eq!(
             cache.client_id(&order.client_order_id()).copied(),
-            Some(client_id)
+            (!reject_batch_enqueue).then_some(client_id)
         );
     }
-    assert_eq!(
-        submitted_order_ids.borrow().as_slice(),
-        &[entry.client_order_id(), stop_loss.client_order_id()],
-    );
+
+    if reject_batch_enqueue {
+        assert!(submitted_order_ids.borrow().is_empty());
+    } else {
+        assert_eq!(
+            submitted_order_ids.borrow().as_slice(),
+            &[entry.client_order_id(), stop_loss.client_order_id()],
+        );
+    }
 }
 
 #[rstest]

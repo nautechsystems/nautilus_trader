@@ -866,6 +866,74 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_index_order_clients_batch_survives_restart() {
+        let _guard = redis_test_mutex().lock().await;
+        let mut adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let client_a = ClientId::new("CLIENT-A");
+        let client_b = ClientId::new("CLIENT-B");
+        let order_1 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-REDIS-ORIGIN-001"))
+            .build();
+        let order_2 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-REDIS-ORIGIN-002"))
+            .build();
+        let claims = [
+            (order_1.client_order_id(), client_a),
+            (order_2.client_order_id(), client_b),
+        ];
+
+        adapter.add_instrument(&instrument).unwrap();
+        adapter.add_order(&order_1, None).unwrap();
+        adapter.add_order(&order_2, None).unwrap();
+        adapter.index_order_clients(&claims).unwrap();
+
+        wait_until_async(
+            || async {
+                let index = adapter.load_index_order_client().unwrap();
+                adapter
+                    .load_order(&order_1.client_order_id())
+                    .await
+                    .unwrap()
+                    .is_some()
+                    && adapter
+                        .load_order(&order_2.client_order_id())
+                        .await
+                        .unwrap()
+                        .is_some()
+                    && index.get(&order_1.client_order_id()) == Some(&client_a)
+                    && index.get(&order_2.client_order_id()) == Some(&client_b)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let restarted_adapter = connect_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        let mut cache = Cache::new(None, Some(Box::new(restarted_adapter)));
+        cache.cache_orders().await.unwrap();
+        cache.build_index();
+
+        assert!(cache.order(&order_1.client_order_id()).is_some());
+        assert!(cache.order(&order_2.client_order_id()).is_some());
+        assert_eq!(cache.client_id(&order_1.client_order_id()), Some(&client_a));
+        assert_eq!(cache.client_id(&order_2.client_order_id()), Some(&client_b));
+
+        cache.dispose();
+        adapter.flush().unwrap();
+        adapter.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_restart_recovery_restores_order_indexes() {
         let _guard = redis_test_mutex().lock().await;
         let adapter = get_redis_cache_adapter()
