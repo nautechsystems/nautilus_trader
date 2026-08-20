@@ -103,32 +103,21 @@ def test_live_node_builder_accepts_betfair_exec_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
-def test_betfair_data_tester_builds_offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured = capture_data_tester_main(monkeypatch, betfair_data_tester, [])
+def test_betfair_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = capture_data_tester_main(monkeypatch, betfair_data_tester)
     kwargs = captured["data_tester_kwargs"]
 
     assert isinstance(kwargs, dict)
     assert kwargs["subscribe_book_deltas"] is True
-    assert "run_called" not in captured
+    assert captured["run_called"] is True
 
 
-@pytest.mark.parametrize(
-    ("extra_args", "expected_dry_run"),
-    [
-        ([], True),
-        (["--live-orders"], False),
-    ],
-)
-def test_betfair_exec_tester_gates_live_orders(
-    monkeypatch: pytest.MonkeyPatch,
-    extra_args: list[str],
-    expected_dry_run: bool,
-) -> None:
-    captured = capture_exec_tester_main(monkeypatch, betfair_exec_tester, extra_args)
+def test_betfair_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = capture_exec_tester_main(monkeypatch, betfair_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
 
     assert isinstance(kwargs, dict)
-    assert kwargs["dry_run"] is expected_dry_run
+    assert kwargs["dry_run"] is False
     assert kwargs["enable_limit_buys"] is False
     assert kwargs["enable_limit_sells"] is False
-    assert "run_called" not in captured
+    assert captured["run_called"] is True

@@ -118,13 +118,11 @@ class _CaptureDataTesterConfig:
 def capture_exec_tester_main(
     monkeypatch: Any,
     module: ModuleType,
-    extra_args: list[str],
 ) -> dict[str, object]:
     captured: dict[str, object] = {}
     _CaptureExecTesterConfig.captured = captured
     _CaptureLiveNode.captured = captured
 
-    monkeypatch.setattr(sys, "argv", ["exec_tester.py", *extra_args])
     monkeypatch.setattr(module, "ExecTesterConfig", _CaptureExecTesterConfig)
     monkeypatch.setattr(module, "LiveNode", _CaptureLiveNode)
 
@@ -136,13 +134,11 @@ def capture_exec_tester_main(
 def capture_data_tester_main(
     monkeypatch: Any,
     module: ModuleType,
-    extra_args: list[str],
 ) -> dict[str, object]:
     captured: dict[str, object] = {}
     _CaptureDataTesterConfig.captured = captured
     _CaptureLiveNode.captured = captured
 
-    monkeypatch.setattr(sys, "argv", ["data_tester.py", *extra_args])
     monkeypatch.setattr(module, "DataTesterConfig", _CaptureDataTesterConfig)
     monkeypatch.setattr(module, "LiveNode", _CaptureLiveNode)
 

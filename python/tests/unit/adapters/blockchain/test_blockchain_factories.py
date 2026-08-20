@@ -55,11 +55,11 @@ def test_live_node_builder_accepts_blockchain_data_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
-def test_blockchain_data_tester_builds_offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured = capture_data_tester_main(monkeypatch, blockchain_data_tester, [])
+def test_blockchain_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = capture_data_tester_main(monkeypatch, blockchain_data_tester)
     kwargs = captured["data_tester_kwargs"]
 
     assert isinstance(kwargs, dict)
     assert kwargs["request_instruments"] is True
     assert "exec_client_args" not in captured
-    assert "run_called" not in captured
+    assert captured["run_called"] is True

@@ -14,16 +14,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Databento Python data tester example.
+Stream Databento market data with the built-in DataTester actor.
 
-The default path builds a live node and attaches the built-in Rust DataTester without
-connecting to Databento. Pass --run to start subscriptions.
+Running this example connects to Databento (credentials from the DATABENTO_API_KEY
+environment variable) and starts subscriptions for the configured instrument
+immediately, logging all received data. No orders are placed.
 
 """
 
 from __future__ import annotations
 
-import argparse
+import os
 from pathlib import Path
 
 from nautilus_trader.adapters.databento import DatabentoDataClientFactory
@@ -37,63 +38,39 @@ from nautilus_trader.testkit import DataTesterConfig
 
 
 DATABENTO = "DATABENTO"
-SMOKE_API_KEY = "00000000000000000000000000000000"
+TRADER_ID = TraderId.from_str("TESTER-001")
+INSTRUMENT_ID = InstrumentId.from_str("AAPL.EQUS")
+PUBLISHERS_FILEPATH = (
+    Path(__file__).resolve().parents[3] / "crates/adapters/databento/publishers.json"
+)
+USE_EXCHANGE_AS_VENUE = False
 
 
 def main() -> None:
-    args = parse_args()
-    instrument_id = InstrumentId.from_str(args.instrument)
-
-    builder = LiveNode.builder(
-        "DATABENTO-DATA-TESTER-001",
-        TraderId.from_str(args.trader_id),
-        Environment.LIVE,
-    ).add_data_client(
-        None,
-        DatabentoDataClientFactory(),
-        DatabentoLiveClientConfig(
-            api_key=args.api_key,
-            publishers_filepath=args.publishers_filepath,
-            use_exchange_as_venue=args.use_exchange_as_venue,
-        ),
+    node = (
+        LiveNode.builder("DATABENTO-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
+        .add_data_client(
+            None,
+            DatabentoDataClientFactory(),
+            DatabentoLiveClientConfig(
+                api_key=os.getenv("DATABENTO_API_KEY", ""),
+                publishers_filepath=PUBLISHERS_FILEPATH,
+                use_exchange_as_venue=USE_EXCHANGE_AS_VENUE,
+            ),
+        )
+        .build()
     )
-
-    node = builder.build()
     node.add_builtin_actor(
         "DataTester",
         DataTesterConfig(
             client_id=ClientId.from_str(DATABENTO),
-            instrument_ids=[instrument_id],
+            instrument_ids=[INSTRUMENT_ID],
             subscribe_trades=True,
             log_data=True,
         ),
     )
 
-    if args.run:
-        node.run()
-    else:
-        print("Built Databento data tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Build or run the Databento Python data tester.",
-    )
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--instrument", default="AAPL.EQUS")
-    parser.add_argument("--api-key", default=SMOKE_API_KEY)
-    parser.add_argument("--publishers-filepath", type=Path, default=publishers_filepath())
-    parser.add_argument(
-        "--use-exchange-as-venue",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-    )
-    parser.add_argument("--run", action="store_true")
-    return parser.parse_args()
-
-
-def publishers_filepath() -> Path:
-    return Path(__file__).resolve().parents[3] / "crates/adapters/databento/publishers.json"
+    node.run()
 
 
 if __name__ == "__main__":

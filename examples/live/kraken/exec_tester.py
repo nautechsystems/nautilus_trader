@@ -14,17 +14,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Kraken Python execution tester example.
+Test Kraken execution with the built-in ExecTester strategy.
 
-The default path builds a live node and attaches the native Rust ExecTester without
-connecting to Kraken or submitting orders. Pass --run to connect. Pass --live-orders
-only when the account is funded and you intend to test live order flow.
+WARNING: This example connects to Kraken and places REAL orders with REAL funds.
+On start it opens a position with an IOC order, then maintains post-only limit
+quotes on both sides of the book. On stop it cancels all orders and closes all
+positions. Run only against a funded account you intend to test. The strategy has
+no alpha advantage whatsoever and is not intended for production trading.
 
 """
 
 from __future__ import annotations
 
-import argparse
+import os
 from decimal import Decimal
 
 from nautilus_trader.adapters.kraken import KrakenDataClientConfig
@@ -46,83 +48,64 @@ from nautilus_trader.testkit import ExecTesterConfig
 
 
 KRAKEN = "KRAKEN"
-SMOKE_API_KEY = "test_key"
-SMOKE_API_SECRET = "test_secret"
+TRADER_ID = TraderId.from_str("TESTER-001")
+ACCOUNT_ID = AccountId.from_str("KRAKEN-001")
+STRATEGY_ID = StrategyId.from_str("EXEC_TESTER-001")
+INSTRUMENT_ID = InstrumentId.from_str(f"PF_XBTUSD.{KRAKEN}")
+PRODUCT_TYPE = KrakenProductType.FUTURES
+ORDER_QTY = "0.001"
+TOB_OFFSET_TICKS = 500
 
 
 def main() -> None:
-    args = parse_args()
-    trader_id = TraderId.from_str(args.trader_id)
-    account_id = AccountId.from_str(args.account_id)
-    instrument_id = InstrumentId.from_str(args.instrument)
-    order_qty = Quantity.from_str(args.quantity)
-    product_type = KrakenProductType.FUTURES
-
-    builder = (
-        LiveNode.builder("KRAKEN-EXEC-TESTER-001", trader_id, Environment.LIVE)
-        .with_reconciliation(args.run)
+    node = (
+        LiveNode.builder("KRAKEN-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
+        .with_reconciliation(True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,
             KrakenDataClientFactory(),
-            KrakenDataClientConfig(product_type=product_type),
+            KrakenDataClientConfig(product_type=PRODUCT_TYPE),
         )
         .add_exec_client(
             None,
             KrakenExecutionClientFactory(),
             KrakenExecClientConfig(
-                trader_id,
-                account_id,
-                SMOKE_API_KEY,
-                SMOKE_API_SECRET,
-                product_type=product_type,
+                TRADER_ID,
+                ACCOUNT_ID,
+                os.getenv("KRAKEN_API_KEY", ""),
+                os.getenv("KRAKEN_API_SECRET", ""),
+                product_type=PRODUCT_TYPE,
             ),
         )
+        .build()
     )
-
-    node = builder.build()
     node.add_builtin_strategy(
         "ExecTester",
         ExecTesterConfig(
-            strategy_id=StrategyId.from_str("EXEC_TESTER-001"),
-            instrument_id=instrument_id,
+            strategy_id=STRATEGY_ID,
+            instrument_id=INSTRUMENT_ID,
             client_id=ClientId.from_str(KRAKEN),
-            external_order_claims=[instrument_id],
-            order_qty=order_qty,
+            external_order_claims=[INSTRUMENT_ID],
+            order_qty=Quantity.from_str(ORDER_QTY),
             subscribe_quotes=True,
             subscribe_trades=True,
-            open_position_on_start_qty=Decimal(args.quantity) if args.live_orders else None,
-            open_position_on_first_quote=args.live_orders,
+            open_position_on_start_qty=Decimal(ORDER_QTY),
+            open_position_on_first_quote=True,
             open_position_time_in_force=TimeInForce.IOC,
-            enable_limit_buys=args.live_orders,
-            enable_limit_sells=args.live_orders and args.limit_sells,
-            tob_offset_ticks=args.tob_offset_ticks,
+            enable_limit_buys=True,
+            enable_limit_sells=True,
+            tob_offset_ticks=TOB_OFFSET_TICKS,
             use_post_only=True,
-            cancel_orders_on_stop=args.live_orders,
-            close_positions_on_stop=args.live_orders,
+            cancel_orders_on_stop=True,
+            close_positions_on_stop=True,
             reduce_only_on_stop=False,
-            dry_run=not args.live_orders,
+            dry_run=False,  # Set True to log intended order flow without submitting orders
             log_data=False,
         ),
     )
 
-    if args.run:
-        node.run()
-    else:
-        print("Built Kraken exec tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Kraken Python exec tester.")
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--account-id", default="KRAKEN-001")
-    parser.add_argument("--instrument", default=f"PF_XBTUSD.{KRAKEN}")
-    parser.add_argument("--quantity", default="0.001")
-    parser.add_argument("--tob-offset-ticks", type=int, default=500)
-    parser.add_argument("--run", action="store_true")
-    parser.add_argument("--live-orders", action="store_true")
-    parser.add_argument("--limit-sells", action="store_true")
-    return parser.parse_args()
+    node.run()
 
 
 if __name__ == "__main__":

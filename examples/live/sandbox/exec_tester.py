@@ -14,17 +14,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Sandbox Python execution tester example.
+Test execution with the built-in ExecTester strategy on a simulated sandbox venue.
 
-The default path builds a sandbox node and attaches the native Rust ExecTester without
-submitting orders. Pass --run to start the node. Pass --live-orders only when you intend
-to exercise the simulated matching engine.
+Running this example starts a sandbox node: the ExecTester opens a position with an
+IOC order, maintains post-only limit quotes on both sides of the book, then cancels
+all orders and closes all positions on stop. The sandbox matching engine simulates
+fills locally, so no real funds are involved.
 
 """
 
 from __future__ import annotations
 
-import argparse
 from decimal import Decimal
 
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
@@ -46,81 +46,63 @@ from nautilus_trader.testkit import ExecTesterConfig
 
 
 SANDBOX = "SANDBOX"
+TRADER_ID = TraderId.from_str("TESTER-001")
+ACCOUNT_ID = AccountId.from_str("SANDBOX-001")
+VENUE = Venue.from_str(SANDBOX)
+STRATEGY_ID = StrategyId.from_str("EXEC_TESTER-001")
+INSTRUMENT_ID = InstrumentId.from_str(f"BTCUSDT.{SANDBOX}")
+ORDER_QTY = "0.01"
+CURRENCY = "USD"
+STARTING_BALANCE = "100000"
+TOB_OFFSET_TICKS = 500
 
 
 def main() -> None:
-    args = parse_args()
-    trader_id = TraderId.from_str(args.trader_id)
-    account_id = AccountId.from_str(args.account_id)
-    venue = Venue.from_str(args.venue)
-    instrument_id = InstrumentId.from_str(args.instrument)
-    order_qty = Quantity.from_str(args.quantity)
-
-    builder = (
-        LiveNode.builder("SANDBOX-EXEC-TESTER-001", trader_id, Environment.SANDBOX)
+    node = (
+        LiveNode.builder("SANDBOX-EXEC-TESTER-001", TRADER_ID, Environment.SANDBOX)
         .with_reconciliation(False)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_simulated_exec_client(
             None,
             SandboxExecutionClientFactory(),
             SandboxExecutionClientConfig(
-                venue=venue,
+                venue=VENUE,
                 starting_balances=[
-                    Money(float(args.starting_balance), Currency.from_str(args.currency)),
+                    Money(float(STARTING_BALANCE), Currency.from_str(CURRENCY)),
                 ],
-                trader_id=trader_id,
-                account_id=account_id,
+                trader_id=TRADER_ID,
+                account_id=ACCOUNT_ID,
             ),
         )
+        .build()
     )
-
-    node = builder.build()
     node.add_builtin_strategy(
         "ExecTester",
         ExecTesterConfig(
-            strategy_id=StrategyId.from_str("EXEC_TESTER-001"),
-            instrument_id=instrument_id,
-            client_id=ClientId.from_str(args.venue),
-            external_order_claims=[instrument_id],
-            order_qty=order_qty,
+            strategy_id=STRATEGY_ID,
+            instrument_id=INSTRUMENT_ID,
+            client_id=ClientId.from_str(SANDBOX),
+            external_order_claims=[INSTRUMENT_ID],
+            order_qty=Quantity.from_str(ORDER_QTY),
             subscribe_book=True,
             subscribe_quotes=True,
             subscribe_trades=True,
-            open_position_on_start_qty=Decimal(args.quantity) if args.live_orders else None,
-            open_position_on_first_quote=args.live_orders,
+            open_position_on_start_qty=Decimal(ORDER_QTY),
+            open_position_on_first_quote=True,
             open_position_time_in_force=TimeInForce.IOC,
-            enable_limit_buys=args.live_orders,
-            enable_limit_sells=args.live_orders and args.limit_sells,
-            tob_offset_ticks=args.tob_offset_ticks,
+            enable_limit_buys=True,
+            enable_limit_sells=True,
+            tob_offset_ticks=TOB_OFFSET_TICKS,
             use_post_only=True,
-            cancel_orders_on_stop=args.live_orders,
-            close_positions_on_stop=args.live_orders,
+            cancel_orders_on_stop=True,
+            close_positions_on_stop=True,
             reduce_only_on_stop=False,
-            dry_run=not args.live_orders,
+            dry_run=False,  # Set True to log intended order flow without submitting orders
             log_data=False,
         ),
     )
 
-    if args.run:
-        node.run()
-    else:
-        print("Built Sandbox exec tester node. Pass --run to start the node.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Sandbox Python exec tester.")
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--account-id", default="SANDBOX-001")
-    parser.add_argument("--venue", default=SANDBOX)
-    parser.add_argument("--instrument", default=f"BTCUSDT.{SANDBOX}")
-    parser.add_argument("--quantity", default="0.01")
-    parser.add_argument("--currency", default="USD")
-    parser.add_argument("--starting-balance", default="100000")
-    parser.add_argument("--tob-offset-ticks", type=int, default=500)
-    parser.add_argument("--run", action="store_true")
-    parser.add_argument("--live-orders", action="store_true")
-    parser.add_argument("--limit-sells", action="store_true")
-    return parser.parse_args()
+    node.run()
 
 
 if __name__ == "__main__":

@@ -16,9 +16,9 @@
 """
 Subscribe to option Greeks for individual BTC call options on OKX.
 
-The default path builds the live node without connecting. Set ``RUN_NODE`` to load options,
-select contracts from the instrument cache, and start subscriptions.
-Subscriptions exercise the default, Black-Scholes, and combined convention shapes.
+Connects to the OKX live environment, loads BTC-USD options, selects call contracts from
+the instrument cache, and logs every Greeks update. Subscriptions exercise the default,
+Black-Scholes, and combined convention shapes. No orders are placed.
 
 """
 
@@ -41,7 +41,7 @@ from nautilus_trader.model import OptionGreeks
 from nautilus_trader.model import TraderId
 
 
-RUN_NODE = False
+OKX_ENVIRONMENT = OKXEnvironment.LIVE
 TRADER_ID = TraderId.from_str("GREEKS-001")
 UNDERLYING = "BTC"
 INSTRUMENT_FAMILIES = ["BTC-USD"]
@@ -151,7 +151,7 @@ def main() -> None:
             OKXDataClientConfig(
                 instrument_types=[OKXInstrumentType.OPTION],
                 instrument_families=INSTRUMENT_FAMILIES,
-                environment=OKXEnvironment.DEMO,
+                environment=OKX_ENVIRONMENT,
             ),
         )
         .build()
@@ -168,10 +168,7 @@ def main() -> None:
         ),
     )
 
-    if RUN_NODE:
-        node.run()
-    else:
-        print("Built OKX option Greeks node. Set RUN_NODE = True to connect.")
+    node.run()
 
 
 if __name__ == "__main__":

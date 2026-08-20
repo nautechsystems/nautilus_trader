@@ -13,17 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Interactive Brokers Python execution tester example.
+Test Interactive Brokers execution with the built-in ExecTester strategy.
 
-The default path builds a live node and attaches the native Rust ExecTester without
-connecting to TWS or IB Gateway. Pass --run to connect. Pass --live-orders only when the
-account is funded and you intend to test live order flow.
+WARNING: This example connects to TWS or IB Gateway and places live orders on the
+configured account (paper port 7497 by default). On start it opens a position with
+an IOC order, then maintains post-only limit quotes on both sides of the book. On
+stop it cancels all orders and closes all positions. Run only against an account
+you intend to test. The strategy has no alpha advantage whatsoever and is not
+intended for production trading.
 
 """
 
 from __future__ import annotations
 
-import argparse
 from decimal import Decimal
 
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientConfig
@@ -47,96 +49,78 @@ from nautilus_trader.testkit import ExecTesterConfig
 
 
 IB = "IB"
+TRADER_ID = TraderId.from_str("TESTER-001")
+ACCOUNT_ID = AccountId.from_str("IB-001")
+STRATEGY_ID = StrategyId.from_str("EXEC_TESTER-001")
+IB_ACCOUNT_ID = "U1234567"
+HOST = "127.0.0.1"
+PORT = 7497
+CLIENT_ID = 101
+INSTRUMENT_ID = InstrumentId.from_str("AAPL=STK.SMART")
+ORDER_QTY = "1"
+TOB_OFFSET_TICKS = 500
 
 
 def main() -> None:
-    args = parse_args()
-    trader_id = TraderId.from_str(args.trader_id)
-    account_id = AccountId.from_str(args.account_id)
-    instrument_id = InstrumentId.from_str(args.instrument)
-    order_qty = Quantity.from_str(args.quantity)
     provider_config = InteractiveBrokersInstrumentProviderConfig(
         symbology_method=SymbologyMethod.RAW,
-        load_ids={instrument_id},
+        load_ids={INSTRUMENT_ID},
     )
 
-    builder = (
-        LiveNode.builder("IB-EXEC-TESTER-001", trader_id, Environment.LIVE)
-        .with_reconciliation(args.run)
+    node = (
+        LiveNode.builder("IB-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
+        .with_reconciliation(True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,
             InteractiveBrokersDataClientFactory(),
             InteractiveBrokersDataClientConfig(
-                host=args.host,
-                port=args.port,
-                client_id=args.client_id,
+                host=HOST,
+                port=PORT,
+                client_id=CLIENT_ID,
                 market_data_type=MarketDataType.DELAYED,
                 instrument_provider=provider_config,
             ),
         )
         .add_exec_client(
             None,
-            InteractiveBrokersExecutionClientFactory(trader_id, account_id),
+            InteractiveBrokersExecutionClientFactory(TRADER_ID, ACCOUNT_ID),
             InteractiveBrokersExecClientConfig(
-                host=args.host,
-                port=args.port,
-                client_id=args.client_id,
-                account_id=args.ib_account_id,
+                host=HOST,
+                port=PORT,
+                client_id=CLIENT_ID,
+                account_id=IB_ACCOUNT_ID,
                 instrument_provider=provider_config,
             ),
         )
+        .build()
     )
-
-    node = builder.build()
     node.add_builtin_strategy(
         "ExecTester",
         ExecTesterConfig(
-            strategy_id=StrategyId.from_str("EXEC_TESTER-001"),
-            instrument_id=instrument_id,
+            strategy_id=STRATEGY_ID,
+            instrument_id=INSTRUMENT_ID,
             client_id=ClientId.from_str(IB),
-            external_order_claims=[instrument_id],
-            order_qty=order_qty,
+            external_order_claims=[INSTRUMENT_ID],
+            order_qty=Quantity.from_str(ORDER_QTY),
             subscribe_quotes=True,
             subscribe_trades=True,
-            open_position_on_start_qty=Decimal(args.quantity) if args.live_orders else None,
-            open_position_on_first_quote=args.live_orders,
+            open_position_on_start_qty=Decimal(ORDER_QTY),
+            open_position_on_first_quote=True,
             open_position_time_in_force=TimeInForce.IOC,
-            enable_limit_buys=args.live_orders,
-            enable_limit_sells=args.live_orders and args.limit_sells,
-            tob_offset_ticks=args.tob_offset_ticks,
+            enable_limit_buys=True,
+            enable_limit_sells=True,
+            tob_offset_ticks=TOB_OFFSET_TICKS,
             use_post_only=True,
-            cancel_orders_on_stop=args.live_orders,
-            close_positions_on_stop=args.live_orders,
+            cancel_orders_on_stop=True,
+            close_positions_on_stop=True,
             reduce_only_on_stop=False,
-            dry_run=not args.live_orders,
+            dry_run=False,  # Set True to log intended order flow without submitting orders
             log_data=False,
         ),
     )
 
-    if args.run:
-        node.run()
-    else:
-        print("Built Interactive Brokers exec tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Build or run the Interactive Brokers Python exec tester.",
-    )
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--account-id", default="IB-001")
-    parser.add_argument("--ib-account-id", default="U1234567")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=7497)
-    parser.add_argument("--client-id", type=int, default=101)
-    parser.add_argument("--instrument", default="AAPL=STK.SMART")
-    parser.add_argument("--quantity", default="1")
-    parser.add_argument("--tob-offset-ticks", type=int, default=500)
-    parser.add_argument("--run", action="store_true")
-    parser.add_argument("--live-orders", action="store_true")
-    parser.add_argument("--limit-sells", action="store_true")
-    return parser.parse_args()
+    node.run()
 
 
 if __name__ == "__main__":

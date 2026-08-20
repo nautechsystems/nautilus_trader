@@ -1600,10 +1600,11 @@ Provide the applicable tester entry points:
 - Python: `examples/live/<adapter>/data_tester.py` and `exec_tester.py`, using `LiveNode` and
   the Rust config and factory classes.
 
-Python tester scripts build without connecting by default and require `--run` to connect.
-Execution testers require the separate `--live-orders` opt‑in before order submission. Preserve
-that safety boundary. Rust tester controls vary; inspect them before running, and make any new or
-revised execution tester default to `ExecTester` dry‑run behavior.
+Python tester scripts run out of the box: settings live in module‑level constants at the top of
+the file, and running the script connects and starts immediately without CLI flags. Execution
+testers place real orders by default, so state this plainly in a warning at the top of the module
+and set `dry_run=False` explicitly in the `ExecTesterConfig` to advertise the dry‑run option. Rust
+tester controls vary; inspect them before running.
 
 ### Python boundary testing
 

@@ -14,16 +14,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-OKX Python data tester example.
+Stream OKX market data with the built-in DataTester actor.
 
-The default path builds a live node and attaches the built-in Rust DataTester without
-connecting to OKX. Pass --run to start subscriptions.
+Connects to the OKX live environment and subscribes to the full data matrix for
+one instrument: book deltas, quotes, trades, bars, mark price, index price, and
+funding rates, plus historical requests. No orders are placed.
 
 """
 
 from __future__ import annotations
-
-import argparse
 
 from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig
@@ -39,75 +38,50 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import DataTesterConfig
 
 
+OKX_ENVIRONMENT = OKXEnvironment.LIVE
+TRADER_ID = TraderId.from_str("TESTER-001")
+INSTRUMENT_TYPES = [OKXInstrumentType.SWAP]
+INSTRUMENT_ID = InstrumentId.from_str(f"ETH-USDT-SWAP.{OKX}")
+BAR_TYPE = BarType.from_str(f"{INSTRUMENT_ID}-1-MINUTE-LAST-EXTERNAL")
+
+
 def main() -> None:
-    args = parse_args()
-    okx_environment = OKXEnvironment(args.okx_environment)
-    instrument_type = OKXInstrumentType(args.instrument_type.capitalize())
-    instrument_id = InstrumentId.from_str(args.instrument)
-
-    builder = LiveNode.builder(
-        "OKX-DATA-TESTER-001",
-        TraderId.from_str(args.trader_id),
-        Environment.LIVE,
-    ).add_data_client(
-        None,
-        OKXDataClientFactory(),
-        OKXDataClientConfig(
-            instrument_types=[instrument_type],
-            environment=okx_environment,
-            load_spreads=args.load_spreads,
-        ),
+    node = (
+        LiveNode.builder("OKX-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
+        .add_data_client(
+            None,
+            OKXDataClientFactory(),
+            OKXDataClientConfig(
+                instrument_types=INSTRUMENT_TYPES,
+                environment=OKX_ENVIRONMENT,
+            ),
+        )
+        .build()
     )
-
-    node = builder.build()
     node.add_builtin_actor(
         "DataTester",
         DataTesterConfig(
             client_id=ClientId.from_str(OKX),
-            instrument_ids=[instrument_id],
-            bar_types=[BarType.from_str(f"{args.instrument}-1-MINUTE-LAST-EXTERNAL")],
+            instrument_ids=[INSTRUMENT_ID],
+            bar_types=[BAR_TYPE],
             subscribe_book_deltas=True,
             subscribe_quotes=True,
             subscribe_trades=True,
-            subscribe_mark_prices=args.subscribe_mark_prices,
-            subscribe_index_prices=args.subscribe_index_prices,
-            subscribe_funding_rates=args.subscribe_funding_rates,
+            subscribe_mark_prices=True,
+            subscribe_index_prices=True,
+            subscribe_funding_rates=True,
+            subscribe_bars=True,
             request_instruments=True,
             request_trades=True,
             request_bars=True,
             request_book_snapshot=True,
-            request_funding_rates=args.subscribe_funding_rates,
+            request_funding_rates=True,
             manage_book=True,
             log_data=True,
         ),
     )
 
-    if args.run:
-        node.run()
-    else:
-        print("Built OKX data tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the OKX Python data tester.")
-    parser.add_argument("--okx-environment", choices=["live", "demo"], default="demo")
-    parser.add_argument(
-        "--instrument-type",
-        choices=["spot", "margin", "swap", "futures", "option"],
-        default="spot",
-    )
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--instrument", default=f"BTC-USDT.{OKX}")
-    parser.add_argument("--load-spreads", action="store_true")
-    parser.add_argument("--subscribe-mark-prices", action="store_true")
-    parser.add_argument("--subscribe-index-prices", action="store_true")
-    parser.add_argument(
-        "--subscribe-funding-rates",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-    )
-    parser.add_argument("--run", action="store_true")
-    return parser.parse_args()
+    node.run()
 
 
 if __name__ == "__main__":

@@ -67,14 +67,14 @@ def test_databento_live_config_stores_venue_dataset_map() -> None:
     assert "EQUS.PLUS" in repr(config)
 
 
-def test_databento_data_tester_builds_offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured = capture_data_tester_main(monkeypatch, databento_data_tester, [])
+def test_databento_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = capture_data_tester_main(monkeypatch, databento_data_tester)
     kwargs = captured["data_tester_kwargs"]
 
     assert isinstance(kwargs, dict)
     assert kwargs["subscribe_trades"] is True
     assert "exec_client_args" not in captured
-    assert "run_called" not in captured
+    assert captured["run_called"] is True
 
 
 def publishers_filepath() -> Path:

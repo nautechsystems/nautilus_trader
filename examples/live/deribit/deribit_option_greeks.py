@@ -16,8 +16,8 @@
 """
 Subscribe to option Greeks for individual BTC call options on Deribit.
 
-The default path builds the live node without connecting. Set ``RUN_NODE`` to load options,
-select contracts from the instrument cache, and start subscriptions.
+Running this example connects to Deribit mainnet, loads options, selects call contracts
+from the instrument cache, and logs every Greeks update. No orders are placed.
 
 """
 
@@ -40,7 +40,6 @@ from nautilus_trader.model import OptionGreeks
 from nautilus_trader.model import TraderId
 
 
-RUN_NODE = False
 TRADER_ID = TraderId.from_str("GREEKS-001")
 UNDERLYING = "BTC"
 MAX_SUBSCRIPTIONS = 10
@@ -142,10 +141,7 @@ def main() -> None:
         ),
     )
 
-    if RUN_NODE:
-        node.run()
-    else:
-        print("Built Deribit option Greeks node. Set RUN_NODE = True to connect.")
+    node.run()
 
 
 if __name__ == "__main__":

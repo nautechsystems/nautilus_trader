@@ -13,16 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Interactive Brokers Python data tester example.
+Stream Interactive Brokers market data with the built-in DataTester actor.
 
-The default path builds a live node and attaches the built-in Rust DataTester without
-connecting to TWS or IB Gateway. Pass --run to start subscriptions.
+Running this example connects to TWS or IB Gateway and starts subscriptions for the
+configured instrument immediately, logging all received data. No orders are placed.
 
 """
 
 from __future__ import annotations
-
-import argparse
 
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientFactory
@@ -39,39 +37,41 @@ from nautilus_trader.testkit import DataTesterConfig
 
 
 IB = "IB"
+TRADER_ID = TraderId.from_str("TESTER-001")
+HOST = "127.0.0.1"
+PORT = 7497
+CLIENT_ID = 101
+INSTRUMENT_ID = InstrumentId.from_str("AAPL=STK.SMART")
+BAR_TYPE = BarType.from_str(f"{INSTRUMENT_ID}-1-MINUTE-LAST-EXTERNAL")
 
 
 def main() -> None:
-    args = parse_args()
-    instrument_id = InstrumentId.from_str(args.instrument)
     provider_config = InteractiveBrokersInstrumentProviderConfig(
         symbology_method=SymbologyMethod.RAW,
-        load_ids={instrument_id},
+        load_ids={INSTRUMENT_ID},
     )
 
-    builder = LiveNode.builder(
-        "IB-DATA-TESTER-001",
-        TraderId.from_str(args.trader_id),
-        Environment.LIVE,
-    ).add_data_client(
-        None,
-        InteractiveBrokersDataClientFactory(),
-        InteractiveBrokersDataClientConfig(
-            host=args.host,
-            port=args.port,
-            client_id=args.client_id,
-            market_data_type=MarketDataType.DELAYED,
-            instrument_provider=provider_config,
-        ),
+    node = (
+        LiveNode.builder("IB-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
+        .add_data_client(
+            None,
+            InteractiveBrokersDataClientFactory(),
+            InteractiveBrokersDataClientConfig(
+                host=HOST,
+                port=PORT,
+                client_id=CLIENT_ID,
+                market_data_type=MarketDataType.DELAYED,
+                instrument_provider=provider_config,
+            ),
+        )
+        .build()
     )
-
-    node = builder.build()
     node.add_builtin_actor(
         "DataTester",
         DataTesterConfig(
             client_id=ClientId.from_str(IB),
-            instrument_ids=[instrument_id],
-            bar_types=[BarType.from_str(f"{args.instrument}-1-MINUTE-LAST-EXTERNAL")],
+            instrument_ids=[INSTRUMENT_ID],
+            bar_types=[BAR_TYPE],
             subscribe_book_deltas=True,
             subscribe_quotes=True,
             subscribe_trades=True,
@@ -85,23 +85,7 @@ def main() -> None:
         ),
     )
 
-    if args.run:
-        node.run()
-    else:
-        print("Built Interactive Brokers data tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Build or run the Interactive Brokers Python data tester.",
-    )
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=7497)
-    parser.add_argument("--client-id", type=int, default=101)
-    parser.add_argument("--instrument", default="AAPL=STK.SMART")
-    parser.add_argument("--run", action="store_true")
-    return parser.parse_args()
+    node.run()
 
 
 if __name__ == "__main__":

@@ -112,10 +112,11 @@ def main() -> None:
             cancel_orders_on_stop=True,
             close_positions_on_stop=True,
             reduce_only_on_stop=True,
-            dry_run=False,
+            dry_run=False,  # Set True to log intended order flow without submitting orders
             log_data=False,
         ),
     )
+
     node.run()
 
 

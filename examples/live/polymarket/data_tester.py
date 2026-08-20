@@ -14,16 +14,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Polymarket Python data tester example.
+Stream Polymarket market data with the built-in DataTester actor.
 
-The default path builds a live node and attaches the built-in Rust DataTester without
-connecting to Polymarket. Pass --run to start subscriptions.
+Running this example connects to Polymarket and starts subscriptions for the configured
+instrument immediately, logging all received data. No orders are placed.
 
 """
 
 from __future__ import annotations
-
-import argparse
 
 from nautilus_trader.adapters.polymarket import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketDataClientFactory
@@ -37,38 +35,35 @@ from nautilus_trader.testkit import DataTesterConfig
 
 
 POLYMARKET = "POLYMARKET"
-DEFAULT_INSTRUMENT = (
+TRADER_ID = TraderId.from_str("TESTER-001")
+EVENT_SLUG = "fed-decision-in-september-762"
+INSTRUMENT_ID = InstrumentId.from_str(
     "0xac02cbb049e46d6a3627c0fdf52fa554982a9025d45968207b362acb6ca4b830-"
-    f"28239418772633645184924651434956000849078365566842629564562475378531350731731.{POLYMARKET}"
+    f"28239418772633645184924651434956000849078365566842629564562475378531350731731.{POLYMARKET}",
 )
 
 
 def main() -> None:
-    args = parse_args()
-    instrument_id = InstrumentId.from_str(args.instrument)
-
-    builder = LiveNode.builder(
-        "POLYMARKET-DATA-TESTER-001",
-        TraderId.from_str(args.trader_id),
-        Environment.LIVE,
-    ).add_data_client(
-        None,
-        PolymarketDataClientFactory(),
-        PolymarketDataClientConfig(
-            instrument_config=PolymarketInstrumentProviderConfig(
-                event_slugs=[args.event_slug],
-                use_gamma_markets=True,
+    node = (
+        LiveNode.builder("POLYMARKET-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
+        .add_data_client(
+            None,
+            PolymarketDataClientFactory(),
+            PolymarketDataClientConfig(
+                instrument_config=PolymarketInstrumentProviderConfig(
+                    event_slugs=[EVENT_SLUG],
+                    use_gamma_markets=True,
+                ),
+                update_instruments_interval_mins=1,
             ),
-            update_instruments_interval_mins=1,
-        ),
+        )
+        .build()
     )
-
-    node = builder.build()
     node.add_builtin_actor(
         "DataTester",
         DataTesterConfig(
             client_id=ClientId.from_str(POLYMARKET),
-            instrument_ids=[instrument_id],
+            instrument_ids=[INSTRUMENT_ID],
             subscribe_trades=True,
             subscribe_quotes=True,
             subscribe_instrument=True,
@@ -77,21 +72,7 @@ def main() -> None:
         ),
     )
 
-    if args.run:
-        node.run()
-    else:
-        print("Built Polymarket data tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Build or run the Polymarket Python data tester.",
-    )
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--event-slug", default="fed-decision-in-september-762")
-    parser.add_argument("--instrument", default=DEFAULT_INSTRUMENT)
-    parser.add_argument("--run", action="store_true")
-    return parser.parse_args()
+    node.run()
 
 
 if __name__ == "__main__":

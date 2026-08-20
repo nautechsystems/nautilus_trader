@@ -14,16 +14,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Betfair Python data tester example.
+Stream Betfair market data with the built-in DataTester actor.
 
-The default path builds a live node and attaches the built-in Rust DataTester without
-connecting to Betfair. Pass --run to connect.
+Running the script connects to Betfair and starts subscriptions for the configured
+market immediately, logging all received data. No orders are placed.
 
 """
 
 from __future__ import annotations
-
-import argparse
 
 from nautilus_trader.adapters.betfair import BetfairDataClientFactory
 from nautilus_trader.adapters.betfair import BetfairDataConfig
@@ -36,23 +34,25 @@ from nautilus_trader.testkit import DataTesterConfig
 
 
 BETFAIR = "BETFAIR"
+TRADER_ID = TraderId.from_str("TESTER-001")
+ACCOUNT_CURRENCY = "GBP"
+MARKET_ID = "1.234567890"
+INSTRUMENT_ID = InstrumentId.from_str(f"1.234567890-123456.{BETFAIR}")
+STREAM_CONFLATE_MS = 0
 
 
 def main() -> None:
-    args = parse_args()
-    instrument_id = InstrumentId.from_str(args.instrument)
-
     builder = LiveNode.builder(
         "BETFAIR-DATA-TESTER-001",
-        TraderId.from_str(args.trader_id),
+        TRADER_ID,
         Environment.LIVE,
     ).add_data_client(
         None,
         BetfairDataClientFactory(),
         BetfairDataConfig(
-            account_currency=args.account_currency,
-            market_ids=[args.market_id],
-            stream_conflate_ms=args.stream_conflate_ms,
+            account_currency=ACCOUNT_CURRENCY,
+            market_ids=[MARKET_ID],
+            stream_conflate_ms=STREAM_CONFLATE_MS,
         ),
     )
 
@@ -61,7 +61,7 @@ def main() -> None:
         "DataTester",
         DataTesterConfig(
             client_id=ClientId.from_str(BETFAIR),
-            instrument_ids=[instrument_id],
+            instrument_ids=[INSTRUMENT_ID],
             subscribe_book_deltas=True,
             subscribe_trades=True,
             subscribe_instrument_status=True,
@@ -71,21 +71,7 @@ def main() -> None:
         ),
     )
 
-    if args.run:
-        node.run()
-    else:
-        print("Built Betfair data tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Betfair Python data tester.")
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--account-currency", default="GBP")
-    parser.add_argument("--market-id", default="1.234567890")
-    parser.add_argument("--instrument", default=f"1.234567890-123456.{BETFAIR}")
-    parser.add_argument("--stream-conflate-ms", type=int, default=0)
-    parser.add_argument("--run", action="store_true")
-    return parser.parse_args()
+    node.run()
 
 
 if __name__ == "__main__":

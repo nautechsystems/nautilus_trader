@@ -14,16 +14,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Coinbase Python data tester example.
+Stream Coinbase market data with the built-in DataTester actor.
 
-The default path builds a live node and attaches the built-in Rust DataTester without
-connecting to Coinbase. Pass --run to start subscriptions.
+Running this example connects to Coinbase and starts subscriptions for the configured
+instrument immediately, logging all received data. No orders are placed.
 
 """
 
 from __future__ import annotations
-
-import argparse
 
 from nautilus_trader.adapters.coinbase import COINBASE
 from nautilus_trader.adapters.coinbase import CoinbaseDataClientConfig
@@ -38,67 +36,41 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import DataTesterConfig
 
 
+TRADER_ID = TraderId.from_str("TESTER-001")
+COINBASE_ENVIRONMENT = CoinbaseEnvironment.LIVE
+INSTRUMENT_ID = InstrumentId.from_str(f"BTC-USD.{COINBASE}")
+BAR_TYPE = BarType.from_str(f"{INSTRUMENT_ID}-1-MINUTE-LAST-EXTERNAL")
+
+
 def main() -> None:
-    args = parse_args()
-    coinbase_environment = coinbase_environment_from_name(args.coinbase_environment)
-    instrument_id = InstrumentId.from_str(args.instrument)
-
-    builder = LiveNode.builder(
-        "COINBASE-DATA-TESTER-001",
-        TraderId.from_str(args.trader_id),
-        Environment.LIVE,
-    ).add_data_client(
-        None,
-        CoinbaseDataClientFactory(),
-        CoinbaseDataClientConfig(environment=coinbase_environment),
+    node = (
+        LiveNode.builder("COINBASE-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
+        .add_data_client(
+            None,
+            CoinbaseDataClientFactory(),
+            CoinbaseDataClientConfig(environment=COINBASE_ENVIRONMENT),
+        )
+        .build()
     )
-
-    node = builder.build()
     node.add_builtin_actor(
         "DataTester",
         DataTesterConfig(
             client_id=ClientId.from_str(COINBASE),
-            instrument_ids=[instrument_id],
-            bar_types=[BarType.from_str(f"{args.instrument}-1-MINUTE-LAST-EXTERNAL")],
+            instrument_ids=[INSTRUMENT_ID],
+            bar_types=[BAR_TYPE],
             subscribe_book_deltas=True,
             subscribe_quotes=True,
             subscribe_trades=True,
-            subscribe_funding_rates=args.subscribe_funding_rates,
             request_instruments=True,
             request_trades=True,
             request_bars=True,
             request_book_snapshot=True,
-            request_funding_rates=args.subscribe_funding_rates,
             manage_book=True,
             log_data=True,
         ),
     )
 
-    if args.run:
-        node.run()
-    else:
-        print("Built Coinbase data tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Coinbase Python data tester.")
-    parser.add_argument("--coinbase-environment", choices=["live", "sandbox"], default="live")
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--instrument", default=f"BTC-USD.{COINBASE}")
-    parser.add_argument(
-        "--subscribe-funding-rates",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-    )
-    parser.add_argument("--run", action="store_true")
-    return parser.parse_args()
-
-
-def coinbase_environment_from_name(name: str) -> CoinbaseEnvironment:
-    if name == "sandbox":
-        return CoinbaseEnvironment.SANDBOX
-
-    return CoinbaseEnvironment.LIVE
+    node.run()
 
 
 if __name__ == "__main__":

@@ -116,32 +116,21 @@ def test_live_node_builder_accepts_binance_exec_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
-def test_binance_data_tester_builds_offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured = capture_data_tester_main(monkeypatch, binance_data_tester, [])
+def test_binance_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = capture_data_tester_main(monkeypatch, binance_data_tester)
     kwargs = captured["data_tester_kwargs"]
 
     assert isinstance(kwargs, dict)
     assert kwargs["subscribe_book_at_interval"] is True
-    assert "run_called" not in captured
+    assert captured["run_called"] is True
 
 
-@pytest.mark.parametrize(
-    ("extra_args", "expected_dry_run", "expected_limit_sells"),
-    [
-        ([], True, False),
-        (["--live-orders", "--limit-sells"], False, True),
-    ],
-)
-def test_binance_exec_tester_gates_live_orders(
-    monkeypatch: pytest.MonkeyPatch,
-    extra_args: list[str],
-    expected_dry_run: bool,
-    expected_limit_sells: bool,
-) -> None:
-    captured = capture_exec_tester_main(monkeypatch, binance_exec_tester, extra_args)
+def test_binance_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = capture_exec_tester_main(monkeypatch, binance_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
 
     assert isinstance(kwargs, dict)
-    assert kwargs["dry_run"] is expected_dry_run
-    assert kwargs["enable_limit_sells"] is expected_limit_sells
-    assert "run_called" not in captured
+    assert kwargs["dry_run"] is False
+    assert kwargs["enable_limit_buys"] is True
+    assert kwargs["enable_limit_sells"] is False  # Spot sells require holding the base currency
+    assert captured["run_called"] is True

@@ -14,16 +14,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Tardis Python data tester example.
+Stream Tardis market data with the built-in DataTester actor.
 
-The default path builds a sandbox node and attaches the built-in Rust DataTester without
-connecting to Tardis Machine. Pass --run to start subscriptions.
+Running this example connects to Tardis Machine and starts subscriptions for the
+configured instrument immediately, logging all received data. No orders are placed.
 
 """
 
 from __future__ import annotations
-
-import argparse
 
 from nautilus_trader.adapters.tardis import TardisDataClientConfig
 from nautilus_trader.adapters.tardis import TardisDataClientFactory
@@ -36,28 +34,26 @@ from nautilus_trader.testkit import DataTesterConfig
 
 
 TARDIS = "TARDIS"
+TRADER_ID = TraderId.from_str("TESTER-001")
+INSTRUMENT_ID = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
+TARDIS_WS_URL = None
 
 
 def main() -> None:
-    args = parse_args()
-    instrument_id = InstrumentId.from_str(args.instrument)
-
-    builder = LiveNode.builder(
-        "TARDIS-DATA-TESTER-001",
-        TraderId.from_str(args.trader_id),
-        Environment.SANDBOX,
-    ).add_data_client(
-        None,
-        TardisDataClientFactory(),
-        TardisDataClientConfig(tardis_ws_url=args.tardis_ws_url),
+    node = (
+        LiveNode.builder("TARDIS-DATA-TESTER-001", TRADER_ID, Environment.SANDBOX)
+        .add_data_client(
+            None,
+            TardisDataClientFactory(),
+            TardisDataClientConfig(tardis_ws_url=TARDIS_WS_URL),
+        )
+        .build()
     )
-
-    node = builder.build()
     node.add_builtin_actor(
         "DataTester",
         DataTesterConfig(
             client_id=ClientId.from_str(TARDIS),
-            instrument_ids=[instrument_id],
+            instrument_ids=[INSTRUMENT_ID],
             subscribe_quotes=True,
             subscribe_trades=True,
             subscribe_mark_prices=True,
@@ -68,19 +64,7 @@ def main() -> None:
         ),
     )
 
-    if args.run:
-        node.run()
-    else:
-        print("Built Tardis data tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Tardis Python data tester.")
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--instrument", default="BTCUSDT-PERP.BINANCE")
-    parser.add_argument("--tardis-ws-url", default=None)
-    parser.add_argument("--run", action="store_true")
-    return parser.parse_args()
+    node.run()
 
 
 if __name__ == "__main__":

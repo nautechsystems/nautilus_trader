@@ -14,16 +14,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Binance Python data tester example.
+Stream Binance market data with the built-in DataTester actor.
 
-The default path builds a live node and attaches the built-in Rust DataTester without
-connecting to Binance. Pass --run to start subscriptions.
+Running the script connects to the Binance Spot live environment and starts
+subscriptions immediately, logging all received data. No orders are placed.
 
 """
 
 from __future__ import annotations
-
-import argparse
 
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceDataClientFactory
@@ -38,15 +36,15 @@ from nautilus_trader.testkit import DataTesterConfig
 
 
 BINANCE = "BINANCE"
+TRADER_ID = TraderId.from_str("TESTER-001")
+INSTRUMENT_ID = InstrumentId.from_str(f"BTCUSDT.{BINANCE}")
+BOOK_INTERVAL_MS = 10
 
 
 def main() -> None:
-    args = parse_args()
-    instrument_id = InstrumentId.from_str(args.instrument)
-
     builder = LiveNode.builder(
         "BINANCE-DATA-TESTER-001",
-        TraderId.from_str(args.trader_id),
+        TRADER_ID,
         Environment.LIVE,
     ).add_data_client(
         None,
@@ -62,27 +60,15 @@ def main() -> None:
         "DataTester",
         DataTesterConfig(
             client_id=ClientId.from_str(BINANCE),
-            instrument_ids=[instrument_id],
+            instrument_ids=[INSTRUMENT_ID],
             subscribe_book_at_interval=True,
-            book_interval_ms=args.book_interval_ms,
+            book_interval_ms=BOOK_INTERVAL_MS,
             manage_book=True,
             log_data=True,
         ),
     )
 
-    if args.run:
-        node.run()
-    else:
-        print("Built Binance data tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Binance Python data tester.")
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--instrument", default=f"BTCUSDT.{BINANCE}")
-    parser.add_argument("--book-interval-ms", type=int, default=10)
-    parser.add_argument("--run", action="store_true")
-    return parser.parse_args()
+    node.run()
 
 
 if __name__ == "__main__":

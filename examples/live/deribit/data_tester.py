@@ -14,16 +14,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Deribit Python data tester example.
+Stream Deribit market data with the built-in DataTester actor.
 
-The default path builds a live node and attaches the built-in Rust DataTester without
-connecting to Deribit. Pass --run to start subscriptions.
+Running this example connects to the Deribit testnet and starts subscriptions for the
+configured instrument immediately, logging all received data. No orders are placed.
 
 """
 
 from __future__ import annotations
-
-import argparse
 
 from nautilus_trader.adapters.deribit import DeribitDataClientConfig
 from nautilus_trader.adapters.deribit import DeribitDataClientFactory
@@ -38,31 +36,28 @@ from nautilus_trader.testkit import DataTesterConfig
 
 
 DERIBIT = "DERIBIT"
+TRADER_ID = TraderId.from_str("TESTER-001")
+INSTRUMENT_ID = InstrumentId.from_str(f"BTC-PERPETUAL.{DERIBIT}")
 
 
 def main() -> None:
-    args = parse_args()
-    instrument_id = InstrumentId.from_str(args.instrument)
-
-    builder = LiveNode.builder(
-        "DERIBIT-DATA-TESTER-001",
-        TraderId.from_str(args.trader_id),
-        Environment.LIVE,
-    ).add_data_client(
-        None,
-        DeribitDataClientFactory(),
-        DeribitDataClientConfig(
-            product_types=[DeribitProductType.FUTURE],
-            environment=DeribitEnvironment.TESTNET,
-        ),
+    node = (
+        LiveNode.builder("DERIBIT-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
+        .add_data_client(
+            None,
+            DeribitDataClientFactory(),
+            DeribitDataClientConfig(
+                product_types=[DeribitProductType.FUTURE],
+                environment=DeribitEnvironment.TESTNET,
+            ),
+        )
+        .build()
     )
-
-    node = builder.build()
     node.add_builtin_actor(
         "DataTester",
         DataTesterConfig(
             client_id=ClientId.from_str(DERIBIT),
-            instrument_ids=[instrument_id],
+            instrument_ids=[INSTRUMENT_ID],
             subscribe_quotes=True,
             subscribe_trades=True,
             subscribe_index_prices=True,
@@ -74,18 +69,7 @@ def main() -> None:
         ),
     )
 
-    if args.run:
-        node.run()
-    else:
-        print("Built Deribit data tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the Deribit Python data tester.")
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--instrument", default=f"BTC-PERPETUAL.{DERIBIT}")
-    parser.add_argument("--run", action="store_true")
-    return parser.parse_args()
+    node.run()
 
 
 if __name__ == "__main__":

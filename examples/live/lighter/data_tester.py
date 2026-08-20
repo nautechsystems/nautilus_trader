@@ -77,6 +77,7 @@ def main() -> None:
             log_data=True,
         ),
     )
+
     node.run()
 
 

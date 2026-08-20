@@ -14,16 +14,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Architect AX Python data tester example.
+Stream Architect AX market data with the built-in DataTester actor.
 
-The default path builds a live node and attaches the built-in Rust DataTester without
-connecting to AX Exchange. Pass --run to start Sandbox subscriptions.
+Running the script connects to the AX Exchange sandbox and starts subscriptions and
+historical requests immediately, logging all received data. No orders are placed.
 
 """
 
 from __future__ import annotations
-
-import argparse
 
 from nautilus_trader.adapters.architect_ax import AX
 from nautilus_trader.adapters.architect_ax import AxDataClientConfig
@@ -38,14 +36,16 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import DataTesterConfig
 
 
-def main() -> None:
-    args = parse_args()
-    instrument_id = InstrumentId.from_str(args.instrument)
+TRADER_ID = TraderId.from_str("TESTER-001")
+INSTRUMENT_ID = InstrumentId.from_str(f"XAG-PERP.{AX}")
+BAR_TYPE = BarType.from_str(f"{INSTRUMENT_ID}-1-MINUTE-LAST-EXTERNAL")
 
+
+def main() -> None:
     builder = (
         LiveNode.builder(
             "AX-DATA-TESTER-001",
-            TraderId.from_str(args.trader_id),
+            TRADER_ID,
             Environment.LIVE,
         )
         .with_delay_post_stop_secs(5)
@@ -61,8 +61,8 @@ def main() -> None:
         "DataTester",
         DataTesterConfig(
             client_id=ClientId.from_str(AX),
-            instrument_ids=[instrument_id],
-            bar_types=[BarType.from_str(f"{args.instrument}-1-MINUTE-LAST-EXTERNAL")],
+            instrument_ids=[INSTRUMENT_ID],
+            bar_types=[BAR_TYPE],
             subscribe_book_deltas=True,
             subscribe_quotes=True,
             subscribe_trades=True,
@@ -81,20 +81,7 @@ def main() -> None:
         ),
     )
 
-    if args.run:
-        node.run()
-    else:
-        print("Built Architect AX data tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Build or run the Architect AX Python data tester.",
-    )
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--instrument", default=f"XAG-PERP.{AX}")
-    parser.add_argument("--run", action="store_true")
-    return parser.parse_args()
+    node.run()
 
 
 if __name__ == "__main__":

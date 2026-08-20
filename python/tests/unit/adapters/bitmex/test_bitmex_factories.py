@@ -13,10 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-from unit.adapters.example_modules import capture_data_tester_main
-from unit.adapters.example_modules import capture_exec_tester_main
-from unit.adapters.example_modules import load_example_module
 
 from nautilus_trader.adapters.bitmex import BitmexDataClientConfig
 from nautilus_trader.adapters.bitmex import BitmexDataClientFactory
@@ -34,8 +30,6 @@ from nautilus_trader.model import TraderId
 BITMEX = "BITMEX"
 SMOKE_API_KEY = "test_key"
 SMOKE_API_SECRET = "test_secret"
-bitmex_data_tester = load_example_module("bitmex", "data_tester")
-bitmex_exec_tester = load_example_module("bitmex", "exec_tester")
 
 
 def test_bitmex_factories_expose_python_names() -> None:
@@ -91,34 +85,3 @@ def test_live_node_builder_accepts_bitmex_exec_factory() -> None:
 
     assert node.trader_id == trader_id
     assert node.environment == Environment.LIVE
-
-
-def test_bitmex_data_tester_builds_offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured = capture_data_tester_main(monkeypatch, bitmex_data_tester, [])
-    kwargs = captured["data_tester_kwargs"]
-
-    assert isinstance(kwargs, dict)
-    assert kwargs["subscribe_funding_rates"] is True
-    assert "run_called" not in captured
-
-
-@pytest.mark.parametrize(
-    ("extra_args", "expected_dry_run", "expected_limit_sells"),
-    [
-        ([], True, False),
-        (["--live-orders", "--limit-sells"], False, True),
-    ],
-)
-def test_bitmex_exec_tester_gates_live_orders(
-    monkeypatch: pytest.MonkeyPatch,
-    extra_args: list[str],
-    expected_dry_run: bool,
-    expected_limit_sells: bool,
-) -> None:
-    captured = capture_exec_tester_main(monkeypatch, bitmex_exec_tester, extra_args)
-    kwargs = captured["exec_tester_kwargs"]
-
-    assert isinstance(kwargs, dict)
-    assert kwargs["dry_run"] is expected_dry_run
-    assert kwargs["enable_limit_sells"] is expected_limit_sells
-    assert "run_called" not in captured

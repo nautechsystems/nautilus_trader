@@ -14,16 +14,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-DYdX Python data tester example.
+Stream dYdX market data with the built-in DataTester actor.
 
-The default path builds a live node and attaches the built-in Rust DataTester without
-connecting to dYdX. Pass --run to start subscriptions.
+Running this example connects to dYdX mainnet and starts book subscriptions for the
+configured instrument immediately, logging all received data. No orders are placed.
 
 """
 
 from __future__ import annotations
-
-import argparse
 
 from nautilus_trader.adapters.dydx import DydxDataClientConfig
 from nautilus_trader.adapters.dydx import DydxDataClientFactory
@@ -37,48 +35,34 @@ from nautilus_trader.testkit import DataTesterConfig
 
 
 DYDX = "DYDX"
+TRADER_ID = TraderId.from_str("TESTER-001")
+INSTRUMENT_ID = InstrumentId.from_str(f"BTC-USD-PERP.{DYDX}")
+BOOK_INTERVAL_MS = 10
 
 
 def main() -> None:
-    args = parse_args()
-    instrument_id = InstrumentId.from_str(args.instrument)
-
-    builder = LiveNode.builder(
-        "DYDX-DATA-TESTER-001",
-        TraderId.from_str(args.trader_id),
-        Environment.LIVE,
-    ).add_data_client(
-        None,
-        DydxDataClientFactory(),
-        DydxDataClientConfig(network=DydxNetwork.MAINNET),
+    node = (
+        LiveNode.builder("DYDX-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
+        .add_data_client(
+            None,
+            DydxDataClientFactory(),
+            DydxDataClientConfig(network=DydxNetwork.MAINNET),
+        )
+        .build()
     )
-
-    node = builder.build()
     node.add_builtin_actor(
         "DataTester",
         DataTesterConfig(
             client_id=ClientId.from_str(DYDX),
-            instrument_ids=[instrument_id],
+            instrument_ids=[INSTRUMENT_ID],
             subscribe_book_at_interval=True,
-            book_interval_ms=args.book_interval_ms,
+            book_interval_ms=BOOK_INTERVAL_MS,
             manage_book=True,
             log_data=True,
         ),
     )
 
-    if args.run:
-        node.run()
-    else:
-        print("Built dYdX data tester node. Pass --run to connect.")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or run the dYdX Python data tester.")
-    parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--instrument", default=f"BTC-USD-PERP.{DYDX}")
-    parser.add_argument("--book-interval-ms", type=int, default=10)
-    parser.add_argument("--run", action="store_true")
-    return parser.parse_args()
+    node.run()
 
 
 if __name__ == "__main__":
