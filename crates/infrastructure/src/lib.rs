@@ -61,6 +61,10 @@
     clippy::similar_names,
     reason = "domain terms such as trader_id/trade_id and price_precision/size_precision are intentionally parallel"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
 
 #[cfg(feature = "python")]
 pub mod python;

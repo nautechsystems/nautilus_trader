@@ -700,7 +700,8 @@ pub fn try_datetime_to_unix_nanos(value: Timestamp) -> anyhow::Result<UnixNanos>
 }
 
 #[cfg(test)]
-#[expect(
+// `allow` not `expect`: nightly clippy does not fire `float_cmp` inside `assert_eq!`
+#[allow(
     clippy::float_cmp,
     reason = "Exact float comparisons acceptable in tests"
 )]

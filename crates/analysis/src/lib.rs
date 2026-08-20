@@ -62,6 +62,10 @@
     clippy::cast_sign_loss,
     reason = "analysis math casts between usize/i32/i64/f64 with values bounded by sample counts"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
 #![cfg_attr(
     test,
     allow(

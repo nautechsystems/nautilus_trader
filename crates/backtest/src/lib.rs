@@ -62,6 +62,10 @@
     clippy::too_many_lines,
     reason = "backtest engine, node, and Python registration flows exceed the default threshold by design"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
 
 pub mod accumulator;
 pub mod config;

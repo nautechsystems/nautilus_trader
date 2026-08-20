@@ -85,6 +85,10 @@
     clippy::cast_lossless,
     reason = "wire-format and fixed-point conversions in serialization code require explicit numeric casts"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
 #![cfg_attr(
     test,
     allow(

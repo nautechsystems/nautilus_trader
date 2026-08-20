@@ -4254,7 +4254,8 @@ fn test_submit_order_when_trading_halted_then_denies_order(
     );
 }
 
-#[expect(
+// `allow` not `expect`: nightly clippy does not fire `float_cmp` inside `assert_eq!`
+#[allow(
     clippy::float_cmp,
     reason = "throttler usage is an integer counter represented as f64"
 )]
@@ -5134,7 +5135,8 @@ fn test_modify_order_when_no_order_found_logs_error(
     assert_eq!(saved_process_messages.len(), 0);
 }
 
-#[expect(
+// `allow` not `expect`: nightly clippy does not fire `float_cmp` inside `assert_eq!`
+#[allow(
     clippy::float_cmp,
     reason = "throttler usage is an integer counter represented as f64"
 )]
@@ -5292,7 +5294,8 @@ fn test_modify_order_with_default_settings_then_sends_to_client(
     );
 }
 
-#[expect(
+// `allow` not `expect`: nightly clippy does not fire `float_cmp` inside `assert_eq!`
+#[allow(
     clippy::float_cmp,
     reason = "throttler usage is an integer counter represented as f64"
 )]
@@ -6614,7 +6617,8 @@ fn test_submit_order_with_quote_quantity_still_enforces_min_notional(
     );
 }
 
-#[expect(
+// `allow` not `expect`: nightly clippy does not fire `float_cmp` inside `assert_eq!`
+#[allow(
     clippy::float_cmp,
     reason = "throttler usage is an integer counter represented as f64"
 )]

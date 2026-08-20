@@ -15,6 +15,10 @@
 
 //! A `UUID4` Universally Unique Identifier (UUID) version 4 (RFC 4122).
 
+// pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
+// macro expansion; an item-level `allow` cannot reach the expansion
+#![allow(clippy::clone_on_copy)]
+
 use std::{
     ffi::CStr,
     fmt::{Debug, Display},

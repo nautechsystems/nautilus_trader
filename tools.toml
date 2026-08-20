@@ -1,7 +1,7 @@
 # Version pins for external binaries without a native manifest.
 #
 # Rust toolchain: rust-toolchain.toml
-# Miri toolchain: tools.toml [miri]
+# Nightly toolchain (Miri, clippy-fix-nightly): tools.toml [miri]
 # Cargo CLIs:     Cargo.toml [workspace.metadata.tools]
 # External CLIs:  tools.toml
 # uv range:       pyproject.toml [tool.uv]

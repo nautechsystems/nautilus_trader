@@ -737,3 +737,4 @@ similar_names = "allow" # Domain terms like trade/trader and side/size are inten
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(madsim)'] }
 unreachable_pub = "deny"
+unknown_lints = "allow" # Tolerate nightly-only clippy lint names in crate attributes on the pinned stable toolchain

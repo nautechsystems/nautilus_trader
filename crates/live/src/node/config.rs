@@ -2033,7 +2033,8 @@ mean_dispatch_ns_clear = 700
     }
 
     #[rstest]
-    #[expect(
+    // `allow` not `expect`: nightly clippy does not fire `float_cmp` inside `assert_eq!`
+    #[allow(
         clippy::float_cmp,
         reason = "asserts the exact configured default with no arithmetic involved"
     )]

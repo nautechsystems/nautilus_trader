@@ -118,6 +118,10 @@
     clippy::single_match_else,
     reason = "two-arm matches are consistent with surrounding command and event dispatch"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
 #![cfg_attr(
     test,
     allow(

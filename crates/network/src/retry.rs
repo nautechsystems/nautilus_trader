@@ -633,7 +633,8 @@ mod tests {
         assert_eq!(config.max_retries, 3);
         assert_eq!(config.initial_delay_ms, 1_000);
         assert_eq!(config.max_delay_ms, 10_000);
-        #[expect(clippy::float_cmp, reason = "test asserts the default backoff factor")]
+        // `allow` not `expect`: nightly clippy does not fire `float_cmp` inside `assert_eq!`
+        #[allow(clippy::float_cmp, reason = "test asserts the default backoff factor")]
         {
             assert_eq!(config.backoff_factor, 2.0);
         }

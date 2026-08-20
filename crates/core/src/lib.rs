@@ -62,6 +62,10 @@
     clippy::manual_let_else,
     reason = "match can be clearer than let-else for some patterns"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
 
 pub mod collections;
 pub mod consts;
