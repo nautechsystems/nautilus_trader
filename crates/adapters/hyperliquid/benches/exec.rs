@@ -19,7 +19,7 @@
 //! wire bytes ready to POST. Covers normalize + serialize + sign.
 //!
 //! `dispatch`: venue report (FillReport, OrderStatusReport) → events emitted
-//! via [`ExecutionEventEmitter`]. Covers dedup + identity lookup + event
+//! via [`ExecutionEventEmitter`]. Covers dedup + context lookup + event
 //! construction.
 
 mod common;
@@ -37,10 +37,9 @@ use nautilus_hyperliquid::{
         HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
     },
     signing::{HyperliquidActionType, HyperliquidEip712Signer, SignRequest, TimeNonce},
-    websocket::dispatch::{
-        OrderIdentity, WsDispatchState, dispatch_order_event, dispatch_order_fill,
-    },
+    websocket::dispatch::{WsDispatchState, dispatch_order_event, dispatch_order_fill},
 };
+use nautilus_live::execution::context::{OrderContext, OrderIdentity};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     identifiers::{ClientOrderId, StrategyId, TradeId, VenueOrderId},
@@ -317,14 +316,23 @@ fn drain<T>(rx: &mut tokio::sync::mpsc::UnboundedReceiver<T>) {
     while rx.try_recv().is_ok() {}
 }
 
-fn order_identity() -> OrderIdentity {
-    OrderIdentity {
-        strategy_id: strategy_id(),
-        instrument_id: btc_perp().id(),
-        order_side: OrderSide::Buy,
-        order_type: OrderType::Limit,
+fn order_context(client_order_id: ClientOrderId) -> OrderContext {
+    OrderContext {
+        identity: OrderIdentity {
+            client_order_id,
+            strategy_id: strategy_id(),
+            instrument_id: btc_perp().id(),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+        },
         quantity: Quantity::from("0.001"),
         price: Some(Price::from("92572.0")),
+        trigger_price: None,
+        trigger_type: None,
+        time_in_force: TimeInForce::Gtc,
+        is_post_only: false,
+        is_reduce_only: false,
+        is_quote_quantity: false,
     }
 }
 
@@ -373,7 +381,7 @@ fn build_status_report(
 
 fn primed_state(cid: ClientOrderId, voi: VenueOrderId) -> WsDispatchState {
     let state = WsDispatchState::new();
-    state.register_identity(cid, order_identity());
+    state.register_context(order_context(cid));
     state.record_venue_order_id(cid, voi);
     state.insert_accepted(cid);
     state
@@ -417,7 +425,7 @@ fn bench_dispatch_status_accepted(c: &mut Criterion) {
             || {
                 drain(&mut rx);
                 let state = WsDispatchState::new();
-                state.register_identity(cid, order_identity());
+                state.register_context(order_context(cid));
                 state
             },
             |state| {
@@ -480,7 +488,7 @@ fn bench_dispatch_status_modified(c: &mut Criterion) {
             || {
                 drain(&mut rx);
                 let state = WsDispatchState::new();
-                state.register_identity(cid, order_identity());
+                state.register_context(order_context(cid));
                 state.record_venue_order_id(cid, old_voi);
                 state.insert_accepted(cid);
                 state.mark_pending_modify(cid, old_voi, Quantity::from("0.001"));

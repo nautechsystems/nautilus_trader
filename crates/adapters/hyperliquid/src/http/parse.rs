@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::Context;
+use jiff::Timestamp;
 use nautilus_core::{Params, UUID4, UnixNanos, datetime::unix_nanos_to_iso8601};
 use nautilus_model::{
     data::TradeTick,
@@ -38,6 +39,7 @@ use super::models::{
 use crate::{
     common::{
         consts::HYPERLIQUID_VENUE,
+        converters::hyperliquid_time_in_force_to_nautilus,
         enums::{
             HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
             HyperliquidSide, HyperliquidTimeInForce,
@@ -95,7 +97,7 @@ pub struct HyperliquidOutcomeMetadata {
 
 /// Normalized instrument definition produced by this parser.
 ///
-/// This deliberately avoids any tight coupling to Nautilus' Cython types.
+/// This deliberately avoids any tight coupling to Nautilus domain types.
 /// The InstrumentProvider can later convert this into Nautilus `Instrument`s.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HyperliquidInstrumentDef {
@@ -585,11 +587,12 @@ fn parse_outcome_expiry_ns(s: &str) -> Option<UnixNanos> {
     let hour: u32 = time_part[0..2].parse().ok()?;
     let minute: u32 = time_part[2..4].parse().ok()?;
 
-    let datetime = chrono::NaiveDate::from_ymd_opt(year, month, day)?
-        .and_hms_opt(hour, minute, 0)?
-        .and_utc();
-    let nanos = datetime.timestamp_nanos_opt()?;
-    u64::try_from(nanos).ok().map(UnixNanos::from)
+    let datetime = format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:00Z")
+        .parse::<Timestamp>()
+        .ok()?;
+    u64::try_from(datetime.as_nanosecond())
+        .ok()
+        .map(UnixNanos::from)
 }
 
 /// Settlement state for a single HIP-4 outcome side token.
@@ -975,10 +978,9 @@ pub fn parse_order_status_report_from_basic(
         OrderType::Limit
     };
 
-    let time_in_force = match order.tif {
-        Some(HyperliquidTimeInForce::Ioc) => TimeInForce::Ioc,
-        _ => TimeInForce::Gtc,
-    };
+    let time_in_force = order
+        .tif
+        .map_or(TimeInForce::Gtc, hyperliquid_time_in_force_to_nautilus);
     let order_status = OrderStatus::from(*status);
 
     let price_precision = instrument.price_precision();
@@ -1464,7 +1466,7 @@ mod tests {
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.price.as_decimal(), dec!(50000));
         assert_eq!(tick.size.as_decimal(), dec!(0.5));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(tick.trade_id.to_string(), "987654321");
         assert_eq!(
             tick.ts_event,
@@ -2227,7 +2229,9 @@ mod tests {
             oid: 99_001,
             crossed: true,
             fee: dec!(0.0),
+            tid: 77_001,
             fee_token: Ustr::from("+420"),
+            builder_fee: Some(dec!(0.0001)),
         };
 
         let account_id = AccountId::from("HYPERLIQUID-001");

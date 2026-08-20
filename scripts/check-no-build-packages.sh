@@ -9,7 +9,7 @@
 #
 #     scripts/check-no-build-packages.sh
 #
-# Exits 0 when both lock/manifest pairs are in sync, 1 otherwise.
+# Exits 0 when the lock and manifest are in sync, 1 otherwise.
 
 set -euo pipefail
 
@@ -69,7 +69,6 @@ declared_packages() {
 }
 
 pairs=(
-  "uv.lock:pyproject.toml"
   "python/uv.lock:python/pyproject.toml"
 )
 

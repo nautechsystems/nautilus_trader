@@ -248,7 +248,7 @@ impl DataActor for GridMarketMaker {
                 let inflight = cache.orders_inflight(None, inst, strategy, None, None);
                 open.iter()
                     .chain(inflight.iter())
-                    .map(|o| o.client_order_id())
+                    .map(Order::client_order_id)
                     .collect()
             };
             self.pending_self_cancels.extend(ids);

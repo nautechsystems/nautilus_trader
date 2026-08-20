@@ -22,8 +22,6 @@ __all__ = [
 BITMEX: str
 BITMEX_CLIENT_ID: model.ClientId
 BITMEX_VENUE: model.Venue
-BITMEX_HTTP_URL: str
-BITMEX_WS_URL: str
 
 @typing.final
 class BitmexDataClientConfig:
@@ -482,6 +480,3 @@ class BitmexEnvironment(enum.Enum):
     def variants(cls) -> list[str]: ...
     @classmethod
     def from_str(cls, data: typing.Any) -> BitmexEnvironment: ...
-
-def get_bitmex_http_base_url(environment: BitmexEnvironment) -> str: ...
-def get_bitmex_ws_url(environment: BitmexEnvironment) -> str: ...

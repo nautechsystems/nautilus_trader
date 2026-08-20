@@ -33,8 +33,8 @@ use pyo3::{
 
 use crate::config::{
     InstrumentProviderConfig, LiveDataClientConfig, LiveDataEngineConfig, LiveExecClientConfig,
-    LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig, PluginConfig, RoutingConfig,
-    duration_from_secs_f64, parse_rate_limit, validate_max_notional_per_order,
+    LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig, PluginConfig, QueueMonitorConfig,
+    RoutingConfig, duration_from_secs_f64, parse_rate_limit, validate_max_notional_per_order,
 };
 
 // Coerces a PyO3 input into `BarIntervalType`, accepting both the enum (modern Rust
@@ -942,11 +942,59 @@ impl PluginConfig {
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
+impl QueueMonitorConfig {
+    /// Configuration for runner queue pressure monitoring.
+    #[new]
+    const fn py_new(
+        queue_depth_trigger: usize,
+        queue_depth_clear: usize,
+        mean_dispatch_ns_trigger: u64,
+        mean_dispatch_ns_clear: u64,
+    ) -> Self {
+        Self {
+            queue_depth_trigger,
+            queue_depth_clear,
+            mean_dispatch_ns_trigger,
+            mean_dispatch_ns_clear,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    fn __str__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    #[getter]
+    const fn queue_depth_trigger(&self) -> usize {
+        self.queue_depth_trigger
+    }
+
+    #[getter]
+    const fn queue_depth_clear(&self) -> usize {
+        self.queue_depth_clear
+    }
+
+    #[getter]
+    const fn mean_dispatch_ns_trigger(&self) -> u64 {
+        self.mean_dispatch_ns_trigger
+    }
+
+    #[getter]
+    const fn mean_dispatch_ns_clear(&self) -> u64 {
+        self.mean_dispatch_ns_clear
+    }
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl LiveNodeConfig {
     /// Configuration for live Nautilus system nodes.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, controller=None, plugins=None))]
+    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, queue_monitor=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, controller=None, plugins=None))]
     fn py_new(
         environment: Option<Environment>,
         trader_id: Option<TraderId>,
@@ -964,6 +1012,7 @@ impl LiveNodeConfig {
         cache: Option<CacheConfig>,
         msgbus: Option<MessageBusConfig>,
         portfolio: Option<PortfolioConfig>,
+        queue_monitor: Option<QueueMonitorConfig>,
         loop_debug: Option<bool>,
         data_engine: Option<LiveDataEngineConfig>,
         risk_engine: Option<LiveRiskEngineConfig>,
@@ -1014,6 +1063,7 @@ impl LiveNodeConfig {
             portfolio,
             emulator: None,
             streaming: None,
+            queue_monitor,
             event_store: None,
             loop_debug: loop_debug.unwrap_or(false),
             data_engine: data_engine.unwrap_or_default(),
@@ -1117,6 +1167,12 @@ impl LiveNodeConfig {
     #[pyo3(name = "portfolio")]
     fn py_portfolio(&self) -> Option<PortfolioConfig> {
         self.portfolio
+    }
+
+    #[getter]
+    #[pyo3(name = "queue_monitor")]
+    fn py_queue_monitor(&self) -> Option<QueueMonitorConfig> {
+        self.queue_monitor.clone()
     }
 
     #[getter]

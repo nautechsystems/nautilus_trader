@@ -17,8 +17,12 @@ is_excluded() {
     */resources/*.csv | */resources/*.json | */resources/*.jsonl | */resources/*.txt | */resources/*.xml)
       return 0
       ;;
-    */test_data/*.csv | */test_data/*.json | */test_data/*.jsonl | */test_data/*.txt | */test_data/*.xml)
-      return 0
+    test_data/* | */test_data/*)
+      case "$file" in
+        *.csv | *.json | *.jsonl | *.txt | *.xml)
+          return 0
+          ;;
+      esac
       ;;
   esac
 

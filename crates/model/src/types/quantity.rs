@@ -43,6 +43,7 @@ use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
+    iter::Sum,
     ops::{Add, Deref, Div, Mul, Sub},
     str::FromStr,
 };
@@ -126,11 +127,7 @@ pub const QUANTITY_MIN: f64 = 0.0;
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.model",
-        frozen,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.model", frozen, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -711,6 +708,18 @@ impl Add for Quantity {
     }
 }
 
+impl Sum for Quantity {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::from(0), |acc, x| acc + x)
+    }
+}
+
+impl<'a> Sum<&'a Self> for Quantity {
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        iter.fold(Self::from(0), |acc, x| acc + *x)
+    }
+}
+
 impl Sub for Quantity {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
@@ -1000,6 +1009,45 @@ mod tests {
         let result = q1 + q2;
         assert_eq!(result.precision, 2);
         assert_eq!(result.as_f64(), 2.0);
+    }
+
+    #[rstest]
+    fn test_sum_owned_quantities() {
+        let quantities = [Quantity::new(1.25, 2), Quantity::new(2.75, 2)];
+        let result: Quantity = quantities.into_iter().sum();
+
+        assert_eq!(result.as_decimal(), dec!(4.00));
+        assert_eq!(result.precision, 2);
+    }
+
+    #[rstest]
+    fn test_sum_borrowed_quantities() {
+        let quantities = [Quantity::new(0.125, 3), Quantity::new(0.375, 3)];
+        let result: Quantity = quantities.iter().sum();
+
+        assert_eq!(result.as_decimal(), dec!(0.500));
+        assert_eq!(result.precision, 3);
+    }
+
+    #[rstest]
+    fn test_sum_mixed_precision_quantities() {
+        let quantities = [
+            Quantity::new(1.2, 1),
+            Quantity::new(3.45, 2),
+            Quantity::new(0.006, 3),
+        ];
+        let result: Quantity = quantities.into_iter().sum();
+
+        assert_eq!(result.as_decimal(), dec!(4.656));
+        assert_eq!(result.precision, 3);
+    }
+
+    #[rstest]
+    fn test_sum_empty_quantity_iterator() {
+        let result: Quantity = std::iter::empty::<Quantity>().sum();
+
+        assert_eq!(result.as_decimal(), dec!(0));
+        assert_eq!(result.precision, 0);
     }
 
     #[rstest]

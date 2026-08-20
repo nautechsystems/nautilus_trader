@@ -594,4 +594,4 @@ if [[ -s "${work_dir}/upload.log" ]]; then
   fail "publish-existing should not upload when checksum validation fails."
 fi
 
-echo "release GitHub asset tests passed."
+echo "release GitHub asset tests passed"

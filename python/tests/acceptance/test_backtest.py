@@ -15,9 +15,10 @@
 """
 Acceptance tests for the v2 BacktestEngine.
 
-This suite mirrors the v1 acceptance suite under `tests/acceptance_tests/test_backtest.py`
-so we can validate v2 feature parity. Tests that depend on v2 features that have not yet
-been ported are marked with `pytest.skip` and a `v2 missing: ...` reason.
+This suite mirrors the v1 acceptance suite under
+`tests/acceptance_tests/test_backtest.py` so we can validate v2 feature parity. Tests
+that depend on v2 features that have not yet been ported are marked with `pytest.skip`
+and a `v2 missing: ...` reason.
 
 Most magic-number assertions from the v1 suite (msgbus counts, exact balances) are not
 replicated since v2's runtime has different internal counters; instead we assert on the
@@ -728,7 +729,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
 
 class TestBacktestAcceptanceTestsOrderBookImbalance:
     def setup_method(self):
-        self.engine = _engine()
+        self.engine = _engine(risk_bypass=True)
         self.venue = Venue("BETFAIR")
         self.gbp = Currency.from_str("GBP")
         self.instrument = _betfair_betting_instrument(selection_id=19248890)
@@ -1639,7 +1640,7 @@ def test_synthetic_run_with_synthetic_trades():
                 instrument_id=ethusdt.id,
                 price=Price(price, precision=2),
                 size=Quantity(1.0, precision=5),
-                aggressor_side=AggressorSide.BUYER if i % 2 == 0 else AggressorSide.SELLER,
+                aggressor_side=AggressorSide.BUY if i % 2 == 0 else AggressorSide.SELL,
                 trade_id=TradeId(str(i)),
                 ts_event=ts,
                 ts_init=ts,
@@ -1713,9 +1714,8 @@ def test_engine_cache_shares_kernel_state():
     The ``BacktestEngine.cache`` getter must return a wrapper backed by the kernel's own
     cache (not a fresh detached one).
 
-    A regression that constructs
-    a new ``Cache`` per call would silently break parity assertions in the
-    rerun acceptance test.
+    A regression that constructs a new ``Cache`` per call would silently break parity
+    assertions in the rerun acceptance test.
 
     """
     engine = _engine()

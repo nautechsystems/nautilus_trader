@@ -45,6 +45,7 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 ahash = { workspace = true }
+anyhow = { workspace = true }
 bon = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }

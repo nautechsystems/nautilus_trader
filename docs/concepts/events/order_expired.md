@@ -1,16 +1,21 @@
 # OrderExpired
 
-`OrderExpired` represents an order having expired at the trading venue. The
-`ExecutionEngine` applies it to the order, updates the `Cache`, and publishes it on the
-`MessageBus`. It fires when the order reaches its expiry (for example a GTD order) at the
-venue.
+`OrderExpired` records that an order has expired. The execution pipeline applies it to the order,
+updates the `Cache`, and publishes it on the `MessageBus`. It can come from a trading venue,
+simulated matching engine, or reconciliation, for example when a GTD order reaches its expiry.
 
-Transition: `ACCEPTED` -> `EXPIRED`. Handler: `on_order_expired`.
+Typical transition: `ACCEPTED` -> `EXPIRED`. Handler: `on_order_expired`.
 
 ## Fields
 
-`OrderExpired` carries only the [common order event fields](index.md#common-order-event-fields). On this event, `venue_order_id` and `account_id` are
-usually populated but may be `None`, and `reconciliation` carries a real value.
+Beyond the [common Python order event fields](index.md#common-python-order-event-fields),
+`OrderExpired` carries:
+
+| Field            | Python type              | Required/default | Description                                      |
+| ---------------- | ------------------------ | ---------------- | ------------------------------------------------ |
+| `venue_order_id` | `VenueOrderId` or `None` | `None`           | The venue‑assigned order identifier, if known.   |
+| `account_id`     | `AccountId` or `None`    | `None`           | The account associated with the order, if known. |
+| `reconciliation` | `bool`                   | Required         | If generated during reconciliation.              |
 
 ## Example
 

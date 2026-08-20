@@ -754,7 +754,7 @@ async fn handle_klines(
         .get("endTime")
         .and_then(|value| value.parse::<i64>().ok())
         .map_or_else(
-            || chrono::Utc::now().timestamp_micros() - 1_000_000,
+            || jiff::Timestamp::now().as_microsecond() - 1_000_000,
             |value| value * 1_000,
         );
     let span_us = match query.get("interval").map(String::as_str) {
@@ -1247,8 +1247,8 @@ async fn test_request_bounded_aggregate_trades_routes_spot_bounds() {
 
     while rx.try_recv().is_ok() {}
     let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
-    let start = chrono::DateTime::from_timestamp_millis(1_700_000_000_123).unwrap();
-    let end = chrono::DateTime::from_timestamp_millis(1_700_000_000_999).unwrap();
+    let start = jiff::Timestamp::from_millisecond(1_700_000_000_123).unwrap();
+    let end = jiff::Timestamp::from_millisecond(1_700_000_000_999).unwrap();
 
     client
         .request_trades(RequestTrades::new(
@@ -1305,8 +1305,8 @@ async fn test_request_historical_one_second_binance_bars_preserves_fields() {
     while rx.try_recv().is_ok() {}
     let bar_type = BarType::from("BTCUSDT.BINANCE-1-SECOND-LAST-EXTERNAL");
     let data_type = binance_bar_data_type(bar_type);
-    let start = chrono::DateTime::from_timestamp_millis(1_700_000_000_000).unwrap();
-    let end = chrono::DateTime::from_timestamp_millis(1_700_000_000_999).unwrap();
+    let start = jiff::Timestamp::from_millisecond(1_700_000_000_000).unwrap();
+    let end = jiff::Timestamp::from_millisecond(1_700_000_000_999).unwrap();
 
     client
         .request_data(RequestCustomData::new(
@@ -1501,7 +1501,7 @@ async fn test_subscribe_l1_mbp_uses_sbe_best_bid_ask() {
     let Data::Deltas(deltas) = data else {
         panic!("expected SBE L1 deltas");
     };
-    assert_eq!(deltas.into_inner(), expected_l1_deltas(quote, 12345));
+    assert_eq!(*deltas, expected_l1_deltas(quote, 12345));
 }
 
 #[rstest]
@@ -1559,7 +1559,7 @@ async fn test_subscribe_l1_mbp_uses_json_top_of_book_and_rejects_invalid_depth()
     let Data::Deltas(deltas) = data else {
         panic!("expected JSON L1 deltas");
     };
-    assert_eq!(deltas.into_inner(), expected_l1_deltas(quote, 12345));
+    assert_eq!(*deltas, expected_l1_deltas(quote, 12345));
 
     let invalid = client.subscribe_book_deltas(SubscribeBookDeltas::new(
         InstrumentId::from("ETHUSDT.BINANCE"),

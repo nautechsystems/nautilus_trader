@@ -13,92 +13,94 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Run a top-of-book imbalance strategy on the Architect AX sandbox.
+
+Running this example connects to the AX sandbox and places live sandbox orders on
+imbalance triggers. The strategy has no claimed alpha and is not intended for production
+trading.
+
+"""
 
 from decimal import Decimal
 
+from strategies import OrderBookImbalance
+from strategies import OrderBookImbalanceConfig
+
 from nautilus_trader.adapters.architect_ax import AX
 from nautilus_trader.adapters.architect_ax import AxDataClientConfig
+from nautilus_trader.adapters.architect_ax import AxDataClientFactory
 from nautilus_trader.adapters.architect_ax import AxEnvironment
 from nautilus_trader.adapters.architect_ax import AxExecClientConfig
-from nautilus_trader.adapters.architect_ax import AxLiveDataClientFactory
-from nautilus_trader.adapters.architect_ax import AxLiveExecClientFactory
-from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.adapters.architect_ax import AxExecutionClientFactory
+from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveExecEngineConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
-from nautilus_trader.live.config import LiveRiskEngineConfig
-from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.config import LiveRiskEngineConfig
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import AccountId
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import StrategyId
+from nautilus_trader.model import TraderId
 
 
-# *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
-# *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
+DRY_RUN = False  # Set True to log intended trades without submitting orders
+TRADER_ID = TraderId.from_str("TESTER-001")
+ACCOUNT_ID = AccountId.from_str("AX-001")
+STRATEGY_ID = StrategyId.from_str("AX-BOOK-IMBALANCE-001")
+INSTRUMENT_ID = InstrumentId.from_str(f"XAU-PERP.{AX}")
+MAX_TRADE_SIZE = Decimal(1)
+TRIGGER_MIN_SIZE = Decimal(1)
+TRIGGER_IMBALANCE_RATIO = Decimal("0.10")
+MIN_SECONDS_BETWEEN_TRIGGERS = 5.0
 
-instrument_id = InstrumentId.from_str(f"XAU-PERP.{AX}")
 
-config_node = TradingNodeConfig(
-    trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(
-        log_level="INFO",
-        use_pyo3=True,
-    ),
-    exec_engine=LiveExecEngineConfig(
-        reconciliation=True,
-        reconciliation_instrument_ids=[instrument_id],
-    ),
-    risk_engine=LiveRiskEngineConfig(bypass=True),
-    data_clients={
-        AX: AxDataClientConfig(
-            environment=AxEnvironment.SANDBOX,
-            instrument_provider=InstrumentProviderConfig(
-                load_all=False,
-                load_ids=frozenset([instrument_id]),
+def main() -> None:
+    node = (
+        LiveNode.builder("AX-BOOK-IMBALANCE-001", TRADER_ID, Environment.LIVE)
+        .with_exec_engine_config(
+            LiveExecEngineConfig(
+                reconciliation_instrument_ids=[str(INSTRUMENT_ID)],
+            ),
+        )
+        .with_reconciliation(True)
+        .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
+        .with_timeout_connection(20)
+        .with_timeout_reconciliation(10)
+        .with_timeout_portfolio(10)
+        .with_timeout_disconnection_secs(10)
+        .with_delay_post_stop_secs(5)
+        .add_data_client(
+            None,
+            AxDataClientFactory(),
+            AxDataClientConfig(environment=AxEnvironment.SANDBOX),
+        )
+        .add_exec_client(
+            None,
+            AxExecutionClientFactory(),
+            AxExecClientConfig(
+                trader_id=TRADER_ID,
+                account_id=ACCOUNT_ID,
+                environment=AxEnvironment.SANDBOX,
+            ),
+        )
+        .build()
+    )
+    node.add_strategy(
+        OrderBookImbalance(
+            OrderBookImbalanceConfig(
+                instrument_id=INSTRUMENT_ID,
+                max_trade_size=MAX_TRADE_SIZE,
+                trigger_min_size=TRIGGER_MIN_SIZE,
+                trigger_imbalance_ratio=TRIGGER_IMBALANCE_RATIO,
+                min_seconds_between_triggers=MIN_SECONDS_BETWEEN_TRIGGERS,
+                dry_run=DRY_RUN,
+                strategy_id=STRATEGY_ID,
             ),
         ),
-    },
-    exec_clients={
-        AX: AxExecClientConfig(
-            environment=AxEnvironment.SANDBOX,
-            instrument_provider=InstrumentProviderConfig(
-                load_all=False,
-                load_ids=frozenset([instrument_id]),
-            ),
-        ),
-    },
-    timeout_connection=20.0,
-    timeout_reconciliation=10.0,
-    timeout_portfolio=10.0,
-    timeout_disconnection=10.0,
-    timeout_post_stop=5.0,
-)
+    )
 
-node = TradingNode(config=config_node)
+    node.run()
 
-strategy = OrderBookImbalance(
-    config=OrderBookImbalanceConfig(
-        instrument_id=instrument_id,
-        max_trade_size=Decimal(1),
-        trigger_min_size=1.0,
-        trigger_imbalance_ratio=0.10,
-        min_seconds_between_triggers=5.0,
-        book_type=BookType.L1_MBP,
-        use_quote_ticks=True,
-        manage_stop=True,
-    ),
-)
-
-node.trader.add_strategy(strategy)
-
-node.add_data_client_factory(AX, AxLiveDataClientFactory)
-node.add_exec_client_factory(AX, AxLiveExecClientFactory)
-node.build()
 
 if __name__ == "__main__":
-    try:
-        node.run()
-    finally:
-        node.dispose()
+    main()

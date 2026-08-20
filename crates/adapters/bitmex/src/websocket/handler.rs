@@ -104,7 +104,7 @@ impl BitmexWsFeedHandler {
                         }
                     },
                     should_retry_bitmex_error,
-                    create_bitmex_timeout_error,
+                    |e| create_bitmex_timeout_error(e.to_string()),
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("{e}"))

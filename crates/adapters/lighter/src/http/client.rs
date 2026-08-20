@@ -17,7 +17,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::{
     AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime,
 };
@@ -56,7 +56,7 @@ use crate::{
             LighterFundings, LighterMakerOnlyApiKeys, LighterNextNonce, LighterOrderBookDetails,
             LighterOrderBookOrders, LighterOrderBooks, LighterOrders, LighterResultCode,
             LighterSendTxBatchRequest, LighterSendTxBatchResponse, LighterSendTxRequest,
-            LighterSendTxResponse, LighterTrade, LighterTrades,
+            LighterSendTxResponse, LighterTrade, LighterTrades, LighterTx,
         },
         parse::{
             parse_candle_bar, parse_funding_rate_update,
@@ -68,7 +68,7 @@ use crate::{
             LighterAccountLookup, LighterAccountQuery, LighterCandlesQuery, LighterFundingsQuery,
             LighterMakerOnlyApiKeysQuery, LighterNextNonceQuery, LighterOrderBookDetailsQuery,
             LighterOrderBookOrdersQuery, LighterOrderBooksQuery, LighterRecentTradesQuery,
-            LighterTradesQuery,
+            LighterTradesQuery, LighterTxLookup, LighterTxQuery,
         },
     },
 };
@@ -88,6 +88,7 @@ const ENDPOINT_RECENT_TRADES: &str = "/api/v1/recentTrades";
 const ENDPOINT_SEND_TX: &str = "/api/v1/sendTx";
 const ENDPOINT_SEND_TX_BATCH: &str = "/api/v1/sendTxBatch";
 const ENDPOINT_TRADES: &str = "/api/v1/trades";
+const ENDPOINT_TX: &str = "/api/v1/tx";
 const HEADER_AUTHORIZATION: &str = "authorization";
 const MULTIPART_BOUNDARY: &str = "nautilus-lighter-form-boundary";
 
@@ -141,6 +142,7 @@ impl_lighter_response_check!(
     LighterSendTxBatchResponse,
     LighterSendTxResponse,
     LighterTrades,
+    LighterTx,
 );
 
 /// Raw HTTP client for Lighter REST API operations.
@@ -386,6 +388,15 @@ impl LighterRawHttpClient {
             .await
     }
 
+    /// Calls `GET /api/v1/tx`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
+    pub async fn get_tx(&self, query: &LighterTxQuery) -> LighterHttpResult<LighterTx> {
+        self.send_get_request(ENDPOINT_TX, Some(query)).await
+    }
+
     /// Calls `GET /api/v1/getMakerOnlyApiKeys`.
     ///
     /// # Errors
@@ -483,7 +494,7 @@ impl LighterRawHttpClient {
                     }
                 },
                 should_retry_lighter_http_error,
-                create_lighter_http_timeout_error,
+                |e| create_lighter_http_timeout_error(e.to_string()),
             )
             .await
     }
@@ -877,6 +888,20 @@ impl LighterHttpClient {
         self.inner.get_next_nonce(&query).await
     }
 
+    /// Calls `GET /api/v1/tx` for `tx_hash`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
+    pub async fn get_tx(&self, tx_hash: impl Into<String>) -> LighterHttpResult<LighterTx> {
+        self.inner
+            .get_tx(&LighterTxQuery {
+                by: LighterTxLookup::Hash,
+                value: tx_hash.into(),
+            })
+            .await
+    }
+
     /// Calls `GET /api/v1/getMakerOnlyApiKeys` for `account_index`.
     ///
     /// `auth_token` is the canonical Lighter auth string minted from the
@@ -970,14 +995,14 @@ impl LighterHttpClient {
         &self,
         instrument: &InstrumentAny,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> LighterHttpResult<Vec<Bar>> {
         let market_id = self.market_index(instrument)?;
         let resolution = LighterCandleResolution::try_from(&bar_type)?;
         let interval_ms = resolution.interval_millis();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         if let (Some(start), Some(end)) = (start, end)
             && start >= end
@@ -998,8 +1023,8 @@ impl LighterHttpClient {
         let requested_limit = limit.filter(|n| *n > 0).map(|n| n as usize);
         let target_limit = requested_limit.unwrap_or(DEFAULT_BARS_LIMIT);
         let start_was_unspecified = start.is_none();
-        let end_ms = end.timestamp_millis().max(0);
-        let now_ms = now.timestamp_millis();
+        let end_ms = end.as_millisecond().max(0);
+        let now_ms = now.as_millisecond();
 
         if end_ms == 0 {
             return Ok(Vec::new());
@@ -1012,7 +1037,7 @@ impl LighterHttpClient {
                 let lookback_ms = interval_ms.saturating_mul(lookback_bars);
                 end_ms.saturating_sub(lookback_ms)
             },
-            |dt| dt.timestamp_millis().max(0),
+            |dt| dt.as_millisecond().max(0),
         );
 
         if start_ms >= end_ms {
@@ -1110,8 +1135,8 @@ impl LighterHttpClient {
     pub async fn request_funding_rates(
         &self,
         instrument: &InstrumentAny,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<usize>,
     ) -> LighterHttpResult<Vec<FundingRateUpdate>> {
         if !matches!(instrument, InstrumentAny::CryptoPerpetual(_)) {
@@ -1124,7 +1149,7 @@ impl LighterHttpClient {
         let market_id = self.market_index(instrument)?;
         let resolution = LighterFundingResolution::OneHour;
         let interval_ms = resolution.interval_millis();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         if let (Some(start), Some(end)) = (start, end)
             && start >= end
@@ -1145,7 +1170,7 @@ impl LighterHttpClient {
         let requested_limit = limit.filter(|n| *n > 0);
         let target_limit = requested_limit.unwrap_or(DEFAULT_FUNDING_RATES_LIMIT);
         let start_was_unspecified = start.is_none();
-        let end_ms = end.timestamp_millis().max(0);
+        let end_ms = end.as_millisecond().max(0);
 
         if end_ms == 0 {
             return Ok(Vec::new());
@@ -1158,7 +1183,7 @@ impl LighterHttpClient {
                 let lookback_ms = interval_ms.saturating_mul(lookback_rows);
                 end_ms.saturating_sub(lookback_ms)
             },
-            |dt| dt.timestamp_millis().max(0),
+            |dt| dt.as_millisecond().max(0),
         );
 
         if start_ms >= end_ms {

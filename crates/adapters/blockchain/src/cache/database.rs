@@ -16,6 +16,7 @@
 use std::pin::Pin;
 
 use alloy::primitives::{Address, U256};
+use anyhow::Context;
 use futures_util::{Stream, StreamExt};
 use nautilus_model::{
     defi::{
@@ -43,16 +44,18 @@ use crate::{
         consistency::CachedBlocksConsistencyStatus,
         copy::PostgresCopyHandler,
         rows::{
-            BlockTimestampRow, PoolRow, TokenRow, parse_cached_block_timestamp,
-            transform_row_to_dex_pool_data,
+            BlockTimestampRow, ExecutionIntentInsert, ExecutionIntentRow,
+            ExecutionTransactionHashRow, ExecutionTransactionRow, PoolRow, TokenRow,
+            parse_cached_block_timestamp, transform_row_to_dex_pool_data,
         },
         types::{U128Pg, U256Pg},
     },
     events::initialize::InitializeEvent,
+    execution::transaction::{EXECUTION_SCHEMA_VERSION, TransactionStatus},
 };
 
 /// Database interface for persisting and retrieving blockchain entities and domain objects.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockchainCacheDatabase {
     /// PostgreSQL connection pool used for database operations.
     pool: PgPool,
@@ -2962,6 +2965,1065 @@ impl BlockchainCacheDatabase {
         });
 
         Box::pin(stream)
+    }
+
+    /// Persists an execution transaction record to the `execution_transaction` table.
+    ///
+    /// Records are written before broadcast so a signed transaction is never forgotten;
+    /// the unique `(chain_id, transaction_hash)` constraint makes an exact re-insertion
+    /// idempotent. Signer nonce ownership and order IDs are unique before broadcast. Order
+    /// submission records carry the client order ID; operator transactions (wrap, approve)
+    /// store `NULL`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters mirror the persisted execution transaction fields"
+    )]
+    pub async fn add_execution_transaction(
+        &self,
+        chain_id: u32,
+        wallet_address: &str,
+        nonce: u64,
+        transaction_hash: &str,
+        purpose: &str,
+        status: &str,
+        client_order_id: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let result = sqlx::query(
+            "
+            INSERT INTO execution_transaction (
+                chain_id,
+                wallet_address,
+                nonce,
+                transaction_hash,
+                purpose,
+                status,
+                client_order_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (chain_id, transaction_hash)
+            DO UPDATE SET transaction_hash = EXCLUDED.transaction_hash
+            WHERE execution_transaction.wallet_address = EXCLUDED.wallet_address
+              AND execution_transaction.nonce = EXCLUDED.nonce
+              AND execution_transaction.purpose = EXCLUDED.purpose
+              AND execution_transaction.status = EXCLUDED.status
+              AND execution_transaction.client_order_id IS NOT DISTINCT FROM EXCLUDED.client_order_id
+        ",
+        )
+        .bind(chain_id as i32)
+        .bind(wallet_address)
+        .bind(nonce as i64)
+        .bind(transaction_hash)
+        .bind(purpose)
+        .bind(status)
+        .bind(client_order_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to insert into execution_transaction table: {e}"))?;
+
+        anyhow::ensure!(
+            result.rows_affected() == 1,
+            "Execution transaction {transaction_hash} conflicts with its persisted record"
+        );
+        Ok(())
+    }
+
+    /// Installs execution schema version 2 without changing existing transaction rows.
+    ///
+    /// The migration locks the legacy transaction table, refuses unresolved version 1 rows,
+    /// installs the versioned intent and hash-history tables, and fences older writers before
+    /// releasing the lock. This prevents a mixed-version process from bypassing the new signer
+    /// ownership constraints.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn ensure_execution_transaction_schema(&self) -> anyhow::Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to start execution schema migration: {e}"))?;
+
+        sqlx::query("LOCK TABLE execution_transaction IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to lock legacy execution transactions: {e}"))?;
+
+        for statement in [
+            "
+            ALTER TABLE execution_transaction
+            ADD COLUMN IF NOT EXISTS client_order_id TEXT
+            ",
+            "
+            ALTER TABLE execution_transaction
+            ADD COLUMN IF NOT EXISTS wallet_address TEXT
+            ",
+            "
+            ALTER TABLE execution_transaction
+            ALTER COLUMN wallet_address DROP NOT NULL
+            ",
+            "
+            CREATE TABLE IF NOT EXISTS execution_schema_version (
+                component TEXT PRIMARY KEY,
+                version SMALLINT NOT NULL CHECK (version > 0)
+            )
+            ",
+            "
+            CREATE TABLE IF NOT EXISTS execution_intent (
+                id BIGSERIAL PRIMARY KEY,
+                schema_version SMALLINT NOT NULL,
+                chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE RESTRICT,
+                wallet_address TEXT NOT NULL,
+                nonce BIGINT,
+                purpose TEXT NOT NULL,
+                status TEXT NOT NULL,
+                client_order_id TEXT,
+                trader_id TEXT,
+                strategy_id TEXT,
+                account_id TEXT,
+                instrument_id TEXT,
+                pool_address TEXT,
+                transaction_to TEXT NOT NULL,
+                transaction_input TEXT NOT NULL,
+                transaction_value TEXT NOT NULL,
+                amount_in TEXT,
+                created_block BIGINT NOT NULL,
+                acknowledgement_emitted BOOLEAN NOT NULL DEFAULT FALSE,
+                fill_emitted BOOLEAN NOT NULL DEFAULT FALSE,
+                terminal_emitted BOOLEAN NOT NULL DEFAULT FALSE,
+                active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CHECK (schema_version = 2),
+                CHECK (nonce IS NULL OR nonce >= 0),
+                CHECK (created_block >= 0),
+                CHECK (status IN (
+                    'prepared', 'signed', 'broadcast', 'included', 'finalized',
+                    'reverted', 'replaced', 'dropped', 'reorged', 'recoverable'
+                )),
+                CONSTRAINT execution_intent_active_check CHECK (
+                    NOT active
+                    OR status NOT IN ('finalized', 'reverted', 'recoverable')
+                    OR (
+                        status IN ('finalized', 'reverted')
+                        AND NOT (fill_emitted OR terminal_emitted)
+                    )
+                ),
+                CHECK (NOT (fill_emitted AND terminal_emitted)),
+                CHECK (
+                    purpose <> 'swap'
+                    OR (
+                        client_order_id IS NOT NULL
+                        AND trader_id IS NOT NULL
+                        AND strategy_id IS NOT NULL
+                        AND account_id IS NOT NULL
+                        AND instrument_id IS NOT NULL
+                        AND pool_address IS NOT NULL
+                        AND amount_in IS NOT NULL
+                    )
+                ),
+                UNIQUE (id, chain_id)
+            )
+            ",
+            "
+            CREATE UNIQUE INDEX IF NOT EXISTS execution_intent_active_signer_key
+            ON execution_intent (chain_id, wallet_address)
+            WHERE active
+            ",
+            "
+            CREATE UNIQUE INDEX IF NOT EXISTS execution_intent_active_nonce_key
+            ON execution_intent (chain_id, wallet_address, nonce)
+            WHERE active AND nonce IS NOT NULL
+            ",
+            "
+            CREATE UNIQUE INDEX IF NOT EXISTS execution_intent_client_order_key
+            ON execution_intent (chain_id, wallet_address, client_order_id)
+            WHERE client_order_id IS NOT NULL
+            ",
+            "
+            ALTER TABLE execution_intent
+            DROP CONSTRAINT IF EXISTS execution_intent_active_check
+            ",
+            "
+            ALTER TABLE execution_intent
+            ADD CONSTRAINT execution_intent_active_check CHECK (
+                NOT active
+                OR status NOT IN ('finalized', 'reverted', 'recoverable')
+                OR (
+                    status IN ('finalized', 'reverted')
+                    AND NOT (fill_emitted OR terminal_emitted)
+                )
+            )
+            ",
+            "
+            CREATE TABLE IF NOT EXISTS execution_transaction_hash (
+                id BIGSERIAL PRIMARY KEY,
+                intent_id BIGINT NOT NULL,
+                chain_id INTEGER NOT NULL,
+                transaction_hash TEXT NOT NULL,
+                raw_transaction BYTEA,
+                status TEXT NOT NULL,
+                block_number BIGINT,
+                block_hash TEXT,
+                receipt_success BOOLEAN,
+                gas_used BIGINT,
+                effective_gas_price TEXT,
+                current BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                FOREIGN KEY (intent_id, chain_id)
+                    REFERENCES execution_intent(id, chain_id) ON DELETE RESTRICT,
+                CHECK (block_number IS NULL OR block_number >= 0),
+                CHECK (gas_used IS NULL OR gas_used >= 0),
+                CHECK (status IN (
+                    'signed', 'broadcast', 'included', 'finalized', 'reverted',
+                    'replaced', 'dropped', 'reorged'
+                )),
+                UNIQUE (chain_id, transaction_hash),
+                UNIQUE (intent_id, transaction_hash)
+            )
+            ",
+            "
+            CREATE UNIQUE INDEX IF NOT EXISTS execution_transaction_hash_current_key
+            ON execution_transaction_hash (intent_id)
+            WHERE current
+            ",
+            "
+            CREATE TABLE IF NOT EXISTS execution_transaction_transition (
+                id BIGSERIAL PRIMARY KEY,
+                intent_id BIGINT NOT NULL REFERENCES execution_intent(id) ON DELETE RESTRICT,
+                transaction_hash_id BIGINT REFERENCES execution_transaction_hash(id) ON DELETE RESTRICT,
+                transition_key TEXT NOT NULL,
+                from_status TEXT,
+                to_status TEXT NOT NULL,
+                block_number BIGINT,
+                block_hash TEXT,
+                observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CHECK (block_number IS NULL OR block_number >= 0),
+                CHECK (to_status IN (
+                    'prepared', 'signed', 'broadcast', 'included', 'finalized',
+                    'reverted', 'replaced', 'dropped', 'reorged', 'recoverable'
+                )),
+                UNIQUE (intent_id, transition_key)
+            )
+            ",
+        ] {
+            sqlx::query(statement)
+                .execute(&mut *transaction)
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to migrate execution_transaction table: {e}")
+                })?;
+        }
+
+        let installed_version = sqlx::query_scalar::<_, i16>(
+            "SELECT version FROM execution_schema_version WHERE component = 'evm_execution'",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to read execution schema version: {e}"))?;
+        if let Some(installed_version) = installed_version
+            && installed_version > EXECUTION_SCHEMA_VERSION
+        {
+            anyhow::bail!(
+                "Execution schema version {} is newer than supported version {EXECUTION_SCHEMA_VERSION}",
+                installed_version
+            );
+        }
+
+        let unresolved_legacy = sqlx::query_scalar::<_, i64>(
+            "
+            SELECT COUNT(*)
+            FROM execution_transaction
+            WHERE status IN ('pending', 'included', 'reverted')
+            ",
+        )
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to inspect legacy execution transactions: {e}"))?;
+        anyhow::ensure!(
+            unresolved_legacy == 0,
+            "Cannot safely migrate {unresolved_legacy} unresolved execution schema version 1 transaction(s); resolve them with the prior version before enabling version {EXECUTION_SCHEMA_VERSION}"
+        );
+
+        for statement in [
+            "
+            CREATE OR REPLACE FUNCTION execution_transaction_v2_fence()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                RAISE EXCEPTION 'Legacy execution writer refused after schema version 2 activation';
+            END;
+            $$ LANGUAGE plpgsql
+            ",
+            "DROP TRIGGER IF EXISTS execution_transaction_v2_fence ON execution_transaction",
+            "
+            CREATE TRIGGER execution_transaction_v2_fence
+            BEFORE INSERT OR UPDATE OR DELETE ON execution_transaction
+            FOR EACH STATEMENT EXECUTE FUNCTION execution_transaction_v2_fence()
+            ",
+            "
+            CREATE OR REPLACE FUNCTION execution_transition_append_only()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                RAISE EXCEPTION 'Execution transitions are append-only';
+            END;
+            $$ LANGUAGE plpgsql
+            ",
+            "DROP TRIGGER IF EXISTS execution_transition_append_only ON execution_transaction_transition",
+            "
+            CREATE TRIGGER execution_transition_append_only
+            BEFORE UPDATE OR DELETE ON execution_transaction_transition
+            FOR EACH STATEMENT EXECUTE FUNCTION execution_transition_append_only()
+            ",
+            "
+            INSERT INTO execution_schema_version (component, version)
+            VALUES ('evm_execution', 2)
+            ON CONFLICT (component) DO UPDATE SET version = EXCLUDED.version
+            WHERE execution_schema_version.version <= EXCLUDED.version
+            ",
+        ] {
+            sqlx::query(statement)
+                .execute(&mut *transaction)
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to activate execution schema version 2: {e}")
+                })?;
+        }
+
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit execution schema migration: {e}"))?;
+
+        Ok(())
+    }
+
+    /// Reserves durable ownership of a signer slot and optional client order before signing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the signer or client order is already owned, or persistence fails.
+    pub async fn reserve_execution_intent(
+        &self,
+        intent: &ExecutionIntentInsert,
+    ) -> anyhow::Result<ExecutionIntentRow> {
+        let chain_id = i32::try_from(intent.chain_id)
+            .with_context(|| format!("Chain ID {} exceeds PostgreSQL INTEGER", intent.chain_id))?;
+        let created_block = i64::try_from(intent.created_block).with_context(|| {
+            format!(
+                "Execution creation block {} exceeds PostgreSQL BIGINT",
+                intent.created_block
+            )
+        })?;
+        let mut transaction =
+            self.pool.begin().await.map_err(|e| {
+                anyhow::anyhow!("Failed to start execution intent reservation: {e}")
+            })?;
+        let row = sqlx::query_as::<_, ExecutionIntentRow>(
+            "
+            INSERT INTO execution_intent (
+                schema_version, chain_id, wallet_address, purpose, status,
+                client_order_id, trader_id, strategy_id, account_id, instrument_id,
+                pool_address, transaction_to, transaction_input, transaction_value,
+                amount_in, created_block
+            )
+            VALUES ($1, $2, $3, $4, 'prepared', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            RETURNING
+                id, schema_version, chain_id, wallet_address, nonce, purpose, status,
+                client_order_id, trader_id, strategy_id, account_id, instrument_id,
+                pool_address, transaction_to, transaction_input, transaction_value,
+                amount_in, created_block, acknowledgement_emitted, fill_emitted,
+                terminal_emitted, active
+            ",
+        )
+        .bind(EXECUTION_SCHEMA_VERSION)
+        .bind(chain_id)
+        .bind(&intent.wallet_address)
+        .bind(&intent.purpose)
+        .bind(&intent.client_order_id)
+        .bind(&intent.trader_id)
+        .bind(&intent.strategy_id)
+        .bind(&intent.account_id)
+        .bind(&intent.instrument_id)
+        .bind(&intent.pool_address)
+        .bind(&intent.transaction_to)
+        .bind(&intent.transaction_input)
+        .bind(&intent.transaction_value)
+        .bind(&intent.amount_in)
+        .bind(created_block)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to reserve execution intent for signer {} on chain {}: {e}",
+                intent.wallet_address,
+                intent.chain_id
+            )
+        })?;
+
+        sqlx::query(
+            "
+            INSERT INTO execution_transaction_transition (
+                intent_id, transition_key, to_status, block_number
+            ) VALUES ($1, 'prepared', 'prepared', $2)
+            ",
+        )
+        .bind(row.id)
+        .bind(created_block)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to record prepared execution intent: {e}"))?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit execution intent reservation: {e}"))?;
+        Ok(row)
+    }
+
+    /// Assigns the signer nonce to a prepared execution intent.
+    ///
+    /// Repeating the same assignment is idempotent. A different nonce or non-prepared state
+    /// fails closed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the intent cannot own the nonce or persistence fails.
+    pub async fn assign_execution_intent_nonce(
+        &self,
+        intent_id: i64,
+        nonce: u64,
+    ) -> anyhow::Result<()> {
+        let nonce_db = i64::try_from(nonce)
+            .with_context(|| format!("Execution nonce {nonce} exceeds PostgreSQL BIGINT"))?;
+        let result = sqlx::query(
+            "
+            UPDATE execution_intent
+            SET nonce = $2, updated_at = NOW()
+            WHERE id = $1
+              AND status = 'prepared'
+              AND (nonce IS NULL OR nonce = $2)
+            ",
+        )
+        .bind(intent_id)
+        .bind(nonce_db)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to assign nonce {nonce} to execution intent: {e}"))?;
+        anyhow::ensure!(
+            result.rows_affected() == 1,
+            "Execution intent {intent_id} is not prepared for nonce {nonce}"
+        );
+        Ok(())
+    }
+
+    /// Releases an intent when no broadcast attempt can have occurred.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the intent advanced to broadcast or persistence fails.
+    pub async fn mark_execution_intent_recoverable(&self, intent_id: i64) -> anyhow::Result<()> {
+        let mut transaction = self.pool.begin().await.map_err(|e| {
+            anyhow::anyhow!("Failed to start recoverable execution transition: {e}")
+        })?;
+        let current_status = sqlx::query_scalar::<_, String>(
+            "SELECT status FROM execution_intent WHERE id = $1 FOR UPDATE",
+        )
+        .bind(intent_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to lock recoverable execution intent: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("Execution intent {intent_id} was not found"))?;
+        anyhow::ensure!(
+            matches!(current_status.as_str(), "prepared" | "signed"),
+            "Execution intent {intent_id} is {current_status}, not recoverable before broadcast"
+        );
+        let result = sqlx::query(
+            "
+            UPDATE execution_intent
+            SET status = 'recoverable', active = FALSE, updated_at = NOW()
+            WHERE id = $1 AND status IN ('prepared', 'signed')
+            ",
+        )
+        .bind(intent_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to mark execution intent recoverable: {e}"))?;
+        anyhow::ensure!(
+            result.rows_affected() == 1,
+            "Execution intent {intent_id} is not recoverable from preparation"
+        );
+        sqlx::query(
+            "
+            INSERT INTO execution_transaction_transition (
+                intent_id, transition_key, from_status, to_status
+            ) VALUES ($1, 'recoverable', $2, 'recoverable')
+            ON CONFLICT (intent_id, transition_key) DO NOTHING
+            ",
+        )
+        .bind(intent_id)
+        .bind(current_status)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to record recoverable transition: {e}"))?;
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit recoverable transition: {e}"))?;
+        Ok(())
+    }
+
+    /// Persists a signed transaction and advances its intent before broadcast.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the intent is not prepared, lacks a nonce, conflicts with a stored
+    /// hash, or persistence fails.
+    pub async fn add_execution_transaction_hash(
+        &self,
+        intent_id: i64,
+        chain_id: u32,
+        transaction_hash: &str,
+        raw_transaction: &[u8],
+    ) -> anyhow::Result<ExecutionTransactionHashRow> {
+        let chain_id_db = i32::try_from(chain_id)
+            .with_context(|| format!("Chain ID {chain_id} exceeds PostgreSQL INTEGER"))?;
+        let mut transaction =
+            self.pool.begin().await.map_err(|e| {
+                anyhow::anyhow!("Failed to start signed transaction persistence: {e}")
+            })?;
+        let current_status = sqlx::query_scalar::<_, String>(
+            "SELECT status FROM execution_intent WHERE id = $1 FOR UPDATE",
+        )
+        .bind(intent_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to lock execution intent {intent_id}: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("Execution intent {intent_id} was not found"))?;
+        anyhow::ensure!(
+            current_status == TransactionStatus::Prepared.as_str()
+                || current_status == TransactionStatus::Signed.as_str(),
+            "Execution intent {intent_id} is {current_status}, not prepared for signing"
+        );
+
+        let row = sqlx::query_as::<_, ExecutionTransactionHashRow>(
+            "
+            INSERT INTO execution_transaction_hash (
+                intent_id, chain_id, transaction_hash, raw_transaction, status
+            )
+            SELECT id, chain_id, $3, $4, 'signed'
+            FROM execution_intent
+            WHERE id = $1 AND chain_id = $2 AND nonce IS NOT NULL
+            ON CONFLICT (chain_id, transaction_hash) DO UPDATE
+            SET transaction_hash = EXCLUDED.transaction_hash
+            WHERE execution_transaction_hash.intent_id = EXCLUDED.intent_id
+              AND execution_transaction_hash.raw_transaction = EXCLUDED.raw_transaction
+            RETURNING
+                id, intent_id, chain_id, transaction_hash, raw_transaction, status,
+                block_number, block_hash, receipt_success, gas_used,
+                effective_gas_price, current
+            ",
+        )
+        .bind(intent_id)
+        .bind(chain_id_db)
+        .bind(transaction_hash)
+        .bind(raw_transaction)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|e| {
+            anyhow::anyhow!("Failed to persist signed transaction {transaction_hash}: {e}")
+        })?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Signed transaction {transaction_hash} conflicts with its persisted identity"
+            )
+        })?;
+
+        sqlx::query(
+            "UPDATE execution_intent SET status = 'signed', updated_at = NOW() WHERE id = $1",
+        )
+        .bind(intent_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to mark execution intent signed: {e}"))?;
+        sqlx::query(
+            "
+            INSERT INTO execution_transaction_transition (
+                intent_id, transaction_hash_id, transition_key, from_status, to_status
+            ) VALUES ($1, $2, $3, $4, 'signed')
+            ON CONFLICT (intent_id, transition_key) DO NOTHING
+            ",
+        )
+        .bind(intent_id)
+        .bind(row.id)
+        .bind(format!("signed:{transaction_hash}"))
+        .bind(current_status)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to record signed transaction transition: {e}"))?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit signed transaction: {e}"))?;
+        Ok(row)
+    }
+
+    /// Records an idempotent transaction observation and advances its intent state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transition is invalid, the hash is unknown, or persistence fails.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters are the canonical receipt observation persisted atomically"
+    )]
+    pub async fn record_execution_status(
+        &self,
+        intent_id: i64,
+        transaction_hash: &str,
+        status: TransactionStatus,
+        block_number: Option<u64>,
+        block_hash: Option<&str>,
+        receipt_success: Option<bool>,
+        gas_used: Option<u64>,
+        effective_gas_price: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let block_number_db = block_number
+            .map(i64::try_from)
+            .transpose()
+            .with_context(|| {
+                format!(
+                    "Execution block number {} exceeds PostgreSQL BIGINT",
+                    block_number.unwrap_or_default()
+                )
+            })?;
+        let gas_used_db = gas_used.map(i64::try_from).transpose().with_context(|| {
+            format!(
+                "Execution gas used {} exceeds PostgreSQL BIGINT",
+                gas_used.unwrap_or_default()
+            )
+        })?;
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to start execution status transition: {e}"))?;
+        let (current_status, fill_emitted, terminal_emitted) =
+            sqlx::query_as::<_, (String, bool, bool)>(
+            "SELECT status, fill_emitted, terminal_emitted FROM execution_intent WHERE id = $1 FOR UPDATE",
+        )
+        .bind(intent_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to lock execution intent {intent_id}: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("Execution intent {intent_id} was not found"))?;
+        anyhow::ensure!(
+            execution_transition_allowed(&current_status, status),
+            "Invalid execution transition for intent {intent_id}: {current_status} -> {}",
+            status.as_str()
+        );
+
+        let active = match status {
+            TransactionStatus::Finalized | TransactionStatus::Reverted => {
+                !fill_emitted && !terminal_emitted
+            }
+            TransactionStatus::Recoverable => false,
+            _ => true,
+        };
+        let hash_result = sqlx::query(
+            "
+            UPDATE execution_transaction_hash
+            SET status = $3,
+                block_number = COALESCE($4, block_number),
+                block_hash = COALESCE($5, block_hash),
+                receipt_success = COALESCE($6, receipt_success),
+                gas_used = COALESCE($7, gas_used),
+                effective_gas_price = COALESCE($8, effective_gas_price),
+                updated_at = NOW()
+            WHERE intent_id = $1 AND transaction_hash = $2
+            ",
+        )
+        .bind(intent_id)
+        .bind(transaction_hash)
+        .bind(status.as_str())
+        .bind(block_number_db)
+        .bind(block_hash)
+        .bind(receipt_success)
+        .bind(gas_used_db)
+        .bind(effective_gas_price)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to update execution hash {transaction_hash}: {e}"))?;
+        anyhow::ensure!(
+            hash_result.rows_affected() == 1,
+            "Execution transaction hash {transaction_hash} was not found for intent {intent_id}"
+        );
+
+        sqlx::query(
+            "
+            UPDATE execution_intent
+            SET status = $2, active = $3, updated_at = NOW()
+            WHERE id = $1
+            ",
+        )
+        .bind(intent_id)
+        .bind(status.as_str())
+        .bind(active)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to update execution intent {intent_id}: {e}"))?;
+
+        let transition_key = format!(
+            "{}:{transaction_hash}:{}:{}",
+            status.as_str(),
+            block_number.map_or_else(|| "none".to_string(), |value| value.to_string()),
+            block_hash.unwrap_or("none")
+        );
+        sqlx::query(
+            "
+            INSERT INTO execution_transaction_transition (
+                intent_id, transaction_hash_id, transition_key, from_status, to_status,
+                block_number, block_hash
+            )
+            SELECT $1, id, $3, $4, $5, $6, $7
+            FROM execution_transaction_hash
+            WHERE intent_id = $1 AND transaction_hash = $2
+            ON CONFLICT (intent_id, transition_key) DO NOTHING
+            ",
+        )
+        .bind(intent_id)
+        .bind(transaction_hash)
+        .bind(transition_key)
+        .bind(current_status)
+        .bind(status.as_str())
+        .bind(block_number_db)
+        .bind(block_hash)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to record execution transition: {e}"))?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit execution transition: {e}"))?;
+        Ok(())
+    }
+
+    /// Loads the active intent owned by a signer, if one exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub async fn get_active_execution_intent(
+        &self,
+        chain_id: u32,
+        wallet_address: &str,
+    ) -> anyhow::Result<Option<ExecutionIntentRow>> {
+        let chain_id_db = i32::try_from(chain_id)
+            .with_context(|| format!("Chain ID {chain_id} exceeds PostgreSQL INTEGER"))?;
+        sqlx::query_as::<_, ExecutionIntentRow>(
+            "
+            SELECT
+                id, schema_version, chain_id, wallet_address, nonce, purpose, status,
+                client_order_id, trader_id, strategy_id, account_id, instrument_id,
+                pool_address, transaction_to, transaction_input, transaction_value,
+                amount_in, created_block, acknowledgement_emitted, fill_emitted,
+                terminal_emitted, active
+            FROM execution_intent
+            WHERE chain_id = $1 AND wallet_address = $2 AND active
+            ",
+        )
+        .bind(chain_id_db)
+        .bind(wallet_address)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load active execution intent: {e}"))
+    }
+
+    /// Loads all transaction hashes for an intent in insertion order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub async fn get_execution_transaction_hashes(
+        &self,
+        intent_id: i64,
+    ) -> anyhow::Result<Vec<ExecutionTransactionHashRow>> {
+        sqlx::query_as::<_, ExecutionTransactionHashRow>(
+            "
+            SELECT
+                id, intent_id, chain_id, transaction_hash, raw_transaction, status,
+                block_number, block_hash, receipt_success, gas_used,
+                effective_gas_price, current
+            FROM execution_transaction_hash
+            WHERE intent_id = $1
+            ORDER BY id
+            ",
+        )
+        .bind(intent_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load execution transaction hashes: {e}"))
+    }
+
+    /// Attaches a canonical replacement which consumed the intent's signer nonce.
+    ///
+    /// The replacement bytes are unknown because standard JSON-RPC block responses expose
+    /// decoded transaction fields, not the original signed envelope.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the intent is not active, the hash conflicts, or persistence fails.
+    pub async fn add_execution_replacement_hash(
+        &self,
+        intent_id: i64,
+        chain_id: u32,
+        transaction_hash: &str,
+    ) -> anyhow::Result<ExecutionTransactionHashRow> {
+        let chain_id_db = i32::try_from(chain_id)
+            .with_context(|| format!("Chain ID {chain_id} exceeds PostgreSQL INTEGER"))?;
+        let mut transaction = self.pool.begin().await.map_err(|e| {
+            anyhow::anyhow!("Failed to start replacement transaction persistence: {e}")
+        })?;
+        let current_status = sqlx::query_scalar::<_, String>(
+            "SELECT status FROM execution_intent WHERE id = $1 AND active FOR UPDATE",
+        )
+        .bind(intent_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to lock active execution intent {intent_id}: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("Active execution intent {intent_id} was not found"))?;
+        anyhow::ensure!(
+            execution_transition_allowed(&current_status, TransactionStatus::Replaced),
+            "Invalid execution transition for intent {intent_id}: {current_status} -> replaced"
+        );
+
+        sqlx::query(
+            "
+            UPDATE execution_transaction_hash
+            SET current = FALSE, status = 'replaced', updated_at = NOW()
+            WHERE intent_id = $1 AND current
+            ",
+        )
+        .bind(intent_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to retire replaced execution hash: {e}"))?;
+
+        let row = sqlx::query_as::<_, ExecutionTransactionHashRow>(
+            "
+            INSERT INTO execution_transaction_hash (
+                intent_id, chain_id, transaction_hash, status, current
+            ) VALUES ($1, $2, $3, 'replaced', TRUE)
+            ON CONFLICT (chain_id, transaction_hash) DO UPDATE
+            SET current = TRUE, updated_at = NOW()
+            WHERE execution_transaction_hash.intent_id = EXCLUDED.intent_id
+            RETURNING
+                id, intent_id, chain_id, transaction_hash, raw_transaction, status,
+                block_number, block_hash, receipt_success, gas_used,
+                effective_gas_price, current
+            ",
+        )
+        .bind(intent_id)
+        .bind(chain_id_db)
+        .bind(transaction_hash)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to persist replacement hash {transaction_hash}: {e}"))?
+        .ok_or_else(|| {
+            anyhow::anyhow!("Replacement hash {transaction_hash} conflicts with another intent")
+        })?;
+
+        sqlx::query(
+            "UPDATE execution_intent SET status = 'replaced', updated_at = NOW() WHERE id = $1",
+        )
+        .bind(intent_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to mark execution intent replaced: {e}"))?;
+        sqlx::query(
+            "
+            INSERT INTO execution_transaction_transition (
+                intent_id, transaction_hash_id, transition_key, from_status, to_status
+            ) VALUES ($1, $2, $3, $4, 'replaced')
+            ON CONFLICT (intent_id, transition_key) DO NOTHING
+            ",
+        )
+        .bind(intent_id)
+        .bind(row.id)
+        .bind(format!("replaced:{transaction_hash}"))
+        .bind(current_status)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to record replacement transition: {e}"))?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit replacement transaction: {e}"))?;
+        Ok(row)
+    }
+
+    /// Marks one order event as emitted after dispatch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event kind is unknown, the intent is absent, the opposing
+    /// terminal marker is already set, or persistence fails.
+    pub async fn mark_execution_event_emitted(
+        &self,
+        intent_id: i64,
+        event: &str,
+    ) -> anyhow::Result<()> {
+        let statement = match event {
+            "acknowledgement" => {
+                "UPDATE execution_intent SET acknowledgement_emitted = TRUE, updated_at = NOW() WHERE id = $1"
+            }
+            "fill" => {
+                "UPDATE execution_intent SET fill_emitted = TRUE, active = CASE WHEN status = 'finalized' THEN FALSE ELSE active END, updated_at = NOW() WHERE id = $1 AND NOT terminal_emitted"
+            }
+            "terminal" => {
+                "UPDATE execution_intent SET terminal_emitted = TRUE, active = CASE WHEN status IN ('finalized', 'reverted') THEN FALSE ELSE active END, updated_at = NOW() WHERE id = $1 AND NOT fill_emitted"
+            }
+            _ => anyhow::bail!("Unknown execution event marker {event}"),
+        };
+        let result = sqlx::query(statement)
+            .bind(intent_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to mark execution {event} emitted: {e}"))?;
+        anyhow::ensure!(
+            result.rows_affected() == 1,
+            "Execution intent {intent_id} cannot mark {event} emitted"
+        );
+        Ok(())
+    }
+
+    /// Updates the status of a persisted execution transaction record.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn update_execution_transaction_status(
+        &self,
+        chain_id: u32,
+        transaction_hash: &str,
+        status: &str,
+    ) -> anyhow::Result<()> {
+        let result = sqlx::query(
+            "
+            UPDATE execution_transaction
+            SET status = $3
+            WHERE chain_id = $1 AND transaction_hash = $2
+        ",
+        )
+        .bind(chain_id as i32)
+        .bind(transaction_hash)
+        .bind(status)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to update execution_transaction table: {e}"))?;
+
+        anyhow::ensure!(
+            result.rows_affected() == 1,
+            "Execution transaction {transaction_hash} was not found for status update"
+        );
+        Ok(())
+    }
+
+    /// Loads an execution transaction record by chain ID and transaction hash.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn get_execution_transaction(
+        &self,
+        chain_id: u32,
+        transaction_hash: &str,
+    ) -> anyhow::Result<Option<ExecutionTransactionRow>> {
+        let chain_id_db = i32::try_from(chain_id)
+            .with_context(|| format!("Chain ID {chain_id} exceeds PostgreSQL INTEGER"))?;
+        sqlx::query_as::<_, ExecutionTransactionRow>(
+            "
+            SELECT wallet_address, nonce, transaction_hash, purpose, status, client_order_id
+            FROM (
+                SELECT
+                    intent.wallet_address,
+                    intent.nonce,
+                    hash.transaction_hash,
+                    intent.purpose,
+                    intent.status,
+                    intent.client_order_id,
+                    0 AS source_priority
+                FROM execution_transaction_hash AS hash
+                JOIN execution_intent AS intent ON intent.id = hash.intent_id
+                WHERE hash.chain_id = $1 AND hash.transaction_hash = $2
+                UNION ALL
+                SELECT
+                    wallet_address,
+                    nonce,
+                    transaction_hash,
+                    purpose,
+                    status,
+                    client_order_id,
+                    1 AS source_priority
+                FROM execution_transaction
+                WHERE chain_id = $1 AND transaction_hash = $2
+            ) AS record
+            ORDER BY source_priority
+            LIMIT 1
+        ",
+        )
+        .bind(chain_id_db)
+        .bind(transaction_hash)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load from execution_transaction table: {e}"))
+    }
+}
+
+fn execution_transition_allowed(current: &str, next: TransactionStatus) -> bool {
+    if current == next.as_str() {
+        return true;
+    }
+
+    match current {
+        "prepared" => matches!(
+            next,
+            TransactionStatus::Signed | TransactionStatus::Recoverable
+        ),
+        "signed" | "broadcast" => matches!(
+            next,
+            TransactionStatus::Broadcast
+                | TransactionStatus::Included
+                | TransactionStatus::Replaced
+                | TransactionStatus::Dropped
+                | TransactionStatus::Reorged
+        ),
+        "included" => matches!(
+            next,
+            TransactionStatus::Finalized
+                | TransactionStatus::Reverted
+                | TransactionStatus::Reorged
+                | TransactionStatus::Replaced
+                | TransactionStatus::Dropped
+        ),
+        "replaced" | "dropped" | "reorged" => matches!(
+            next,
+            TransactionStatus::Included
+                | TransactionStatus::Finalized
+                | TransactionStatus::Reverted
+                | TransactionStatus::Replaced
+                | TransactionStatus::Dropped
+                | TransactionStatus::Reorged
+        ),
+        "finalized" | "reverted" | "recoverable" => false,
+        _ => false,
     }
 }
 

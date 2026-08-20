@@ -105,15 +105,17 @@ where
 ///
 /// # Errors
 ///
-/// Returns an error if a supported payload cannot be decoded. Unsupported type/encoding pairs are
-/// skipped with a warning.
+/// Returns an error if the topic is invalid or a supported payload cannot be decoded. Unsupported
+/// type/encoding pairs are skipped with a warning.
 pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
+    let topic =
+        MStr::<Topic>::topic_from_ustr(message.topic).context("invalid external message topic")?;
+
     if !is_registered_streaming_type(message) {
         return Ok(());
     }
 
     let _guard = SuppressExternalGuard::new();
-    let topic: MStr<Topic> = message.topic.into();
 
     match message.payload_type {
         BusPayloadType::Custom(_) => {

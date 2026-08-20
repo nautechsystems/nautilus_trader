@@ -13,15 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! End-to-end signing benches.
+//! Published signing baseline.
 //!
 //! Measures the user-visible critical path: `PrivateKey::sign`,
 //! `PublicKey::verify`, `compute_tx_hash` for the two trading-hot tx kinds,
 //! `sign_tx` (hash + sign), public-key derivation, and `build_auth_token_at`.
+//!
+//! Quote these IDs in `BENCHMARKS.md`. `micros.rs` repeats a few of the same
+//! calls next to decode and JSON render so a pipeline regression can be
+//! localised; do not treat those duplicates as a second baseline.
 
 use std::hint::black_box;
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_lighter::signing::{
     auth_token::build_auth_token_at,
     tx::{compute_tx_hash, sign_tx},
@@ -37,71 +41,92 @@ fn bench_sign(c: &mut Criterion) {
     let sk = fixed_sk();
     let msg = fixed_hashed_msg();
     let k = fixed_k();
-    c.bench_function("PrivateKey::sign", |b| {
-        b.iter(|| sk.sign(black_box(msg), black_box(k)));
+    let mut group = c.benchmark_group("signing");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("PrivateKey::sign", |b| {
+        b.iter(|| black_box(sk.sign(black_box(msg), black_box(k))));
     });
+    group.finish();
 }
 
 fn bench_verify(c: &mut Criterion) {
     let pk = fixed_pk();
     let msg = fixed_hashed_msg();
     let sig = fixed_signature();
-    c.bench_function("PublicKey::verify", |b| {
-        b.iter(|| pk.verify(black_box(msg), black_box(&sig)));
+    let mut group = c.benchmark_group("signing");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("PublicKey::verify", |b| {
+        b.iter(|| black_box(pk.verify(black_box(msg), black_box(&sig))));
     });
+    group.finish();
 }
 
 fn bench_public_key(c: &mut Criterion) {
     let sk = fixed_sk();
-    c.bench_function("PrivateKey::public_key", |b| {
-        b.iter(|| black_box(&sk).public_key());
+    let mut group = c.benchmark_group("signing");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("PrivateKey::public_key", |b| {
+        b.iter(|| black_box(black_box(&sk).public_key()));
     });
+    group.finish();
 }
 
 fn bench_compute_tx_hash_create_order(c: &mut Criterion) {
     let tx = create_order_tx();
-    c.bench_function("compute_tx_hash (CreateOrder)", |b| {
-        b.iter(|| compute_tx_hash(black_box(&tx), black_box(CHAIN_ID)));
+    let mut group = c.benchmark_group("signing");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("compute_tx_hash (CreateOrder)", |b| {
+        b.iter(|| black_box(compute_tx_hash(black_box(&tx), black_box(CHAIN_ID))));
     });
+    group.finish();
 }
 
 fn bench_compute_tx_hash_cancel_order(c: &mut Criterion) {
     let tx = cancel_order_tx();
-    c.bench_function("compute_tx_hash (CancelOrder)", |b| {
-        b.iter(|| compute_tx_hash(black_box(&tx), black_box(CHAIN_ID)));
+    let mut group = c.benchmark_group("signing");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("compute_tx_hash (CancelOrder)", |b| {
+        b.iter(|| black_box(compute_tx_hash(black_box(&tx), black_box(CHAIN_ID))));
     });
+    group.finish();
 }
 
 fn bench_sign_tx_create_order(c: &mut Criterion) {
     let tx = create_order_tx();
     let sk = fixed_sk();
     let k = fixed_k();
-    c.bench_function("sign_tx (CreateOrder)", |b| {
+    let mut group = c.benchmark_group("signing");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("sign_tx (CreateOrder)", |b| {
         b.iter(|| {
-            sign_tx(
+            black_box(sign_tx(
                 black_box(&tx),
                 black_box(CHAIN_ID),
                 black_box(&sk),
                 black_box(k),
-            )
+            ))
         });
     });
+    group.finish();
 }
 
 fn bench_sign_tx_cancel_order(c: &mut Criterion) {
     let tx = cancel_order_tx();
     let sk = fixed_sk();
     let k = fixed_k();
-    c.bench_function("sign_tx (CancelOrder)", |b| {
+    let mut group = c.benchmark_group("signing");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("sign_tx (CancelOrder)", |b| {
         b.iter(|| {
-            sign_tx(
+            black_box(sign_tx(
                 black_box(&tx),
                 black_box(CHAIN_ID),
                 black_box(&sk),
                 black_box(k),
-            )
+            ))
         });
     });
+    group.finish();
 }
 
 fn bench_build_auth_token(c: &mut Criterion) {
@@ -109,19 +134,24 @@ fn bench_build_auth_token(c: &mut Criterion) {
     let k = fixed_k();
     let now = 1_700_000_000;
     let deadline = now + 600;
-    c.bench_function("build_auth_token_at", |b| {
+    let mut group = c.benchmark_group("signing");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("build_auth_token_at", |b| {
         b.iter(|| {
-            build_auth_token_at(
-                black_box(now),
-                black_box(deadline),
-                black_box(12345),
-                black_box(5),
-                black_box(&sk),
-                black_box(k),
+            black_box(
+                build_auth_token_at(
+                    black_box(now),
+                    black_box(deadline),
+                    black_box(12345),
+                    black_box(5),
+                    black_box(&sk),
+                    black_box(k),
+                )
+                .expect("auth token must build"),
             )
-            .expect("auth token must build")
         });
     });
+    group.finish();
 }
 
 criterion_group!(

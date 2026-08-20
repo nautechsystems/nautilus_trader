@@ -16,7 +16,7 @@
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use alloy::primitives::Address;
-use nautilus_core::consts::NAUTILUS_USER_AGENT;
+use nautilus_core::{consts::NAUTILUS_USER_AGENT, string::secret::REDACTED};
 #[cfg(feature = "hypersync")]
 use nautilus_model::defi::DexType;
 use nautilus_model::defi::{
@@ -67,7 +67,7 @@ pub struct CoreBlockchainRpcClient {
     wss_consumer_rx: Option<tokio::sync::mpsc::UnboundedReceiver<Message>>,
     /// Tracks desired subscriptions that need to be re-established on reconnection.
     subscriptions: Arc<tokio::sync::RwLock<HashMap<RpcEventType, RpcSubscription>>>,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
+    /// WebSocket transport backend (defaults to `Sockudo`).
     transport_backend: TransportBackend,
     /// Optional proxy URL for the WebSocket connection.
     proxy_url: Option<String>,
@@ -77,7 +77,7 @@ impl Debug for CoreBlockchainRpcClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(CoreBlockchainRpcClient))
             .field("chain", &self.chain)
-            .field("wss_rpc_url", &self.wss_rpc_url)
+            .field("wss_rpc_url", &REDACTED)
             .field("request_id", &self.request_id)
             .field(
                 "pending_subscription_request",
@@ -182,21 +182,21 @@ impl CoreBlockchainRpcClient {
         let config = WebSocketConfig {
             url: self.wss_rpc_url.clone(),
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
-            heartbeat: Some(heartbeat_interval),
-            heartbeat_msg: None,
-            reconnect_timeout_ms: Some(10_000),
+            heartbeat_interval_secs: Some(heartbeat_interval),
+            heartbeat_payload: None,
+            connect_timeout_ms: Some(10_000),
             reconnect_delay_initial_ms: Some(1_000),
             reconnect_delay_max_ms: Some(30_000),
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(1_000),
             reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
         };
 
-        let client =
-            WebSocketClient::connect(config, Some(handler), None, None, vec![], None).await?;
+        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None).await?;
 
         self.wss_client = Some(Arc::new(client));
         self.wss_consumer_rx = Some(rx);
@@ -662,6 +662,31 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn debug_redacts_websocket_rpc_url() {
+        const USERINFO_SECRET: &str = "core-wss-userinfo-secret";
+        const PATH_SECRET: &str = "core-wss-path-secret";
+        const QUERY_SECRET: &str = "core-wss-query-secret";
+        let wss_rpc_url = format!(
+            "wss://rpc-user:{USERINFO_SECRET}@rpc.example.com/{PATH_SECRET}?api_key={QUERY_SECRET}"
+        );
+        let client = CoreBlockchainRpcClient::new(
+            Chain::from_chain_id(1)
+                .expect("Ethereum chain should exist")
+                .clone(),
+            wss_rpc_url.clone(),
+            None,
+        );
+
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains("wss_rpc_url: \"<redacted>\""));
+        assert!(!debug.contains(USERINFO_SECRET));
+        assert!(!debug.contains(PATH_SECRET));
+        assert!(!debug.contains(QUERY_SECRET));
+        assert!(!debug.contains(&wss_rpc_url));
+    }
 
     #[rstest]
     fn pool_logs_subscription_params_use_logs_filter_with_sorted_addresses() {

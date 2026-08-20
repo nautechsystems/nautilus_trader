@@ -19,9 +19,13 @@ use nautilus_common::config::{ConfigError, ConfigErrorCollector, ConfigResult};
 use nautilus_core::serialization::{default_false, default_true};
 use nautilus_model::{
     enums::{OmsType, TimeInForce},
-    identifiers::{InstrumentId, StrategyId},
+    identifiers::{InstrumentId, StrategyId, check_order_id_tag},
 };
 use serde::{Deserialize, Serialize};
+
+// Upper bound for `market_exit_interval_ms` so the nanosecond conversion on the market exit
+// timer path (`interval_ms * 1_000_000`) cannot overflow a `u64`.
+const MAX_MARKET_EXIT_INTERVAL_MS: u64 = u64::MAX / 1_000_000;
 
 /// The base model for all trading strategy configurations.
 #[cfg_attr(
@@ -36,11 +40,7 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.trading",
-        subclass,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.trading", subclass, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -50,7 +50,8 @@ pub struct StrategyConfig {
     /// The unique ID for the strategy. Will become the strategy ID if not None.
     pub strategy_id: Option<StrategyId>,
     /// The unique order ID tag for the strategy. Must be unique
-    /// amongst all running strategies for a particular trader ID.
+    /// amongst all running strategies for a particular trader ID, and cannot contain the '-'
+    /// strategy ID separator.
     pub order_id_tag: Option<String>,
     /// If UUID4's should be used for client order ID values.
     #[serde(default = "default_false")]
@@ -153,12 +154,28 @@ impl StrategyConfig {
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 
+        if let Some(order_id_tag) = &self.order_id_tag
+            && let Err(e) = check_order_id_tag(order_id_tag)
+        {
+            errors.push(ConfigError::invalid_value("order_id_tag", e.to_string()));
+        }
+
         let interval_ms = self.market_exit_interval_ms;
         errors.check(
             interval_ms > 0,
             ConfigError::range(
                 "market_exit_interval_ms",
                 format!("must be a positive number of milliseconds, was {interval_ms}"),
+            ),
+        );
+        errors.check(
+            interval_ms <= MAX_MARKET_EXIT_INTERVAL_MS,
+            ConfigError::range(
+                "market_exit_interval_ms",
+                format!(
+                    "must be at most {MAX_MARKET_EXIT_INTERVAL_MS} milliseconds to convert to \
+                    nanoseconds without overflow, was {interval_ms}"
+                ),
             ),
         );
 
@@ -168,6 +185,15 @@ impl StrategyConfig {
             ConfigError::range(
                 "market_exit_max_attempts",
                 format!("must be a positive number of attempts, was {max_attempts}"),
+            ),
+        );
+
+        let time_in_force = self.market_exit_time_in_force;
+        errors.check(
+            time_in_force != TimeInForce::Gtd,
+            ConfigError::unsupported_value(
+                "market_exit_time_in_force",
+                format!("{time_in_force} is not supported for market orders"),
             ),
         );
 
@@ -187,7 +213,7 @@ impl StrategyConfig {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.trading", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -213,6 +239,7 @@ impl Default for StrategyConfig {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use strum::IntoEnumIterator;
 
     use super::*;
 
@@ -230,6 +257,31 @@ mod tests {
     }
 
     #[rstest]
+    fn test_market_exit_interval_above_nanosecond_bound_rejected() {
+        let result = StrategyConfig::builder()
+            .market_exit_interval_ms(18_446_744_073_710)
+            .build();
+        let Err(ConfigError::Range { field, reason }) = result else {
+            panic!("expected ConfigError::Range");
+        };
+        assert_eq!(field, "market_exit_interval_ms");
+        assert_eq!(
+            reason,
+            "must be at most 18446744073709 milliseconds to convert to nanoseconds without overflow, \
+            was 18446744073710"
+        );
+    }
+
+    #[rstest]
+    fn test_market_exit_interval_at_nanosecond_bound_accepted() {
+        let config = StrategyConfig::builder()
+            .market_exit_interval_ms(18_446_744_073_709)
+            .build();
+
+        assert!(config.is_ok());
+    }
+
+    #[rstest]
     fn test_zero_market_exit_max_attempts_rejected() {
         let result = StrategyConfig::builder()
             .market_exit_max_attempts(0)
@@ -240,15 +292,90 @@ mod tests {
     }
 
     #[rstest]
+    #[case("001")]
+    #[case("ABC")]
+    fn test_order_id_tag_without_separator_accepted(#[case] order_id_tag: &str) {
+        let config = StrategyConfig::builder()
+            .order_id_tag(order_id_tag.to_string())
+            .build()
+            .unwrap();
+
+        assert_eq!(config.order_id_tag.as_deref(), Some(order_id_tag));
+    }
+
+    #[rstest]
+    #[case("A-B")]
+    #[case("XNAS-T01")]
+    fn test_order_id_tag_with_separator_rejected(#[case] order_id_tag: &str) {
+        let result = StrategyConfig::builder()
+            .order_id_tag(order_id_tag.to_string())
+            .build();
+
+        let ConfigError::InvalidValue { field, reason } = result.unwrap_err() else {
+            panic!("expected ConfigError::InvalidValue");
+        };
+        assert_eq!(field, "order_id_tag");
+        assert_eq!(
+            reason,
+            format!(
+                "`order_id_tag` cannot contain the '-' strategy ID separator, was '{order_id_tag}'"
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_gtd_market_exit_time_in_force_rejected() {
+        let result = StrategyConfig::builder()
+            .market_exit_time_in_force(TimeInForce::Gtd)
+            .build();
+        let Err(ConfigError::UnsupportedValue { field, reason }) = result else {
+            panic!("expected ConfigError::UnsupportedValue");
+        };
+        assert_eq!(field, "market_exit_time_in_force");
+        assert_eq!(reason, "GTD is not supported for market orders");
+    }
+
+    // Iterates the enum rather than listing cases, so a variant added later is covered
+    // without editing this test: the invariant is that every time in force except GTD
+    // is accepted, mirroring `MarketOrder::new_checked`.
+    #[rstest]
+    fn test_non_gtd_market_exit_time_in_force_accepted() {
+        for time_in_force in TimeInForce::iter().filter(|t| *t != TimeInForce::Gtd) {
+            assert!(
+                StrategyConfig::builder()
+                    .market_exit_time_in_force(time_in_force)
+                    .build()
+                    .is_ok(),
+                "{time_in_force} should be accepted"
+            );
+        }
+    }
+
+    #[rstest]
     fn test_multiple_violations_collected() {
         let result = StrategyConfig::builder()
             .market_exit_interval_ms(0)
             .market_exit_max_attempts(0)
+            .market_exit_time_in_force(TimeInForce::Gtd)
             .build();
         let ConfigError::Multiple { errors } = result.unwrap_err() else {
             panic!("expected ConfigError::Multiple");
         };
-        assert_eq!(errors.len(), 2);
+        // Asserted by index, not membership: the collector preserves insertion order, so
+        // checking position also pins that the new check runs after the two numeric ones.
+        assert_eq!(errors.len(), 3);
+        assert!(matches!(
+            &errors[0],
+            ConfigError::Range { field, .. } if field == "market_exit_interval_ms"
+        ));
+        assert!(matches!(
+            &errors[1],
+            ConfigError::Range { field, .. } if field == "market_exit_max_attempts"
+        ));
+        assert!(matches!(
+            &errors[2],
+            ConfigError::UnsupportedValue { field, .. } if field == "market_exit_time_in_force"
+        ));
     }
 
     #[rstest]

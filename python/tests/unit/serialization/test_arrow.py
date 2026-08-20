@@ -140,7 +140,7 @@ def test_trades_to_arrow_record_batch_bytes():
             instrument_id=INSTRUMENT_ID,
             price=Price.from_str("0.80000"),
             size=Quantity.from_int(100_000),
-            aggressor_side=AggressorSide.BUYER,
+            aggressor_side=AggressorSide.BUY,
             trade_id=TradeId("T-001"),
             ts_event=1,
             ts_init=2,

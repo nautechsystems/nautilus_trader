@@ -15,15 +15,15 @@
 
 //! Python bindings for the Interactive Brokers historical data client.
 
-use chrono::{DateTime, Utc};
 use ibapi::contracts::Contract;
+use jiff::Timestamp;
 use nautilus_common::live::get_runtime;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{Bar, Data},
     identifiers::InstrumentId,
     instruments::any::InstrumentAny,
-    python::{data::data_to_pycapsule, instruments::instrument_any_to_pyobject},
+    python::{data::data_to_pyobject, instruments::instrument_any_to_pyobject},
 };
 use pyo3::{prelude::*, types::PyList};
 
@@ -52,6 +52,15 @@ impl HistoricalInteractiveBrokersClient {
 
     /// Request historical bars.
     ///
+    /// # Continuous futures
+    ///
+    /// Continuous futures (`CONTFUT`) reject an explicit end date/time with IB
+    /// error 10339. For these contracts the end date is dropped and only the
+    /// first duration segment is requested, anchored to the current time, so
+    /// the returned bars may fall outside `[start_date_time, end_date_time]`.
+    /// A warning is logged when the requested end date/time is in the past or
+    /// the range spans more than one duration segment.
+    ///
     /// # Arguments
     ///
     /// * `bar_specifications` - List of bar specifications (e.g., ["1-HOUR-LAST"])
@@ -70,8 +79,8 @@ impl HistoricalInteractiveBrokersClient {
         &self,
         py: Python<'py>,
         bar_specifications: Vec<String>,
-        end_date_time: DateTime<Utc>,
-        start_date_time: Option<DateTime<Utc>>,
+        end_date_time: Timestamp,
+        start_date_time: Option<Timestamp>,
         duration: Option<String>,
         contracts: Option<Py<PyList>>,
         instrument_ids: Option<Vec<InstrumentId>>,
@@ -136,8 +145,8 @@ impl HistoricalInteractiveBrokersClient {
         &self,
         py: Python<'py>,
         tick_type: IbHistoricalTickType,
-        start_date_time: DateTime<Utc>,
-        end_date_time: DateTime<Utc>,
+        start_date_time: Timestamp,
+        end_date_time: Timestamp,
         contracts: Option<Py<PyList>>,
         instrument_ids: Option<Vec<InstrumentId>>,
         use_rth: bool,
@@ -173,12 +182,10 @@ impl HistoricalInteractiveBrokersClient {
                 )
                 .await
                 .map_err(to_pyruntime_err)?;
-            // Convert Data enum to Python objects using pycapsules
             Python::attach(|py| -> PyResult<Py<PyList>> {
                 let py_list = PyList::empty(py);
                 for data in data_vec {
-                    let py_capsule = data_to_pycapsule(py, data);
-                    py_list.append(py_capsule)?;
+                    py_list.append(data_to_pyobject(py, data)?)?;
                 }
                 Ok(py_list.into())
             })

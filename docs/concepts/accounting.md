@@ -12,19 +12,23 @@ configuration (starting balances, margin-model selection per venue), see
 ## Account types
 
 When you attach a venue to the engine for either live trading or a backtest, you
-pick one of three accounting modes via `account_type`:
+pick one of three accounting modes via `account_type`: Cash, Margin, or Betting.
+A fourth account type, Wallet, models on‑chain wallet state. The Blockchain
+adapter selects it, and its execution client is still in development.
 
 | Account type | Typical use case                                | What the engine locks                                                     |
 | ------------ | ----------------------------------------------- | ------------------------------------------------------------------------- |
-| Cash         | Spot trading (e.g., BTC/USDT, stocks)           | Notional value for every position a pending order would open.             |
+| Cash         | Spot trading (e.g., BTC/USDT, stocks)           | Notional for pending buy orders; quantity for pending sell orders.        |
 | Margin       | Derivatives or any product that allows leverage | Initial margin for each order plus maintenance margin for open positions. |
 | Betting      | Sports betting, bookmaking                      | Stake required by the venue; no leverage.                                 |
+| Wallet       | Blockchain wallets (DeFi)                       | Amounts reserved locally for pending orders; no leverage or borrowing.    |
 
 ### Cash accounts
 
 Cash accounts settle trades in full; there is no leverage and therefore no
-concept of margin. Locked balances reflect the notional reserved for pending
-orders.
+concept of margin. Locked balances reflect the value reserved for pending
+orders: the notional value of each pending buy and the quantity each pending
+sell would deliver.
 
 ### Margin accounts
 
@@ -33,7 +37,7 @@ leveraged crypto perps. They track account balances, reserve margin for open
 orders and positions, and apply a configurable leverage per instrument. Margin
 is tracked in two scopes; see [Margin scopes](#margin-scopes) below.
 
-**Key terms**:
+**Terms**:
 
 - **Leverage**: amplifies exposure relative to account equity. Higher leverage
   raises both potential returns and risk.
@@ -42,9 +46,10 @@ is tracked in two scopes; see [Margin scopes](#margin-scopes) below.
 - **Locked balance**: funds reserved as collateral, not available for new orders.
 
 :::note
-Reduce-only orders do not contribute to `balance_locked` on cash accounts and do
-not add to initial margin on margin accounts, since they can only decrease
-exposure.
+Reduce‑only orders do not contribute to `balance_locked` on cash accounts and
+do not add to initial margin on margin accounts, since they can only decrease
+exposure. Wallet orders still reserve the input asset because the on‑chain
+transaction spends that asset even when the order reduces a position.
 :::
 
 ### Betting accounts
@@ -52,6 +57,25 @@ exposure.
 Betting accounts are specialised for venues where you stake an amount to win or
 lose a fixed payout (prediction markets, sports books). The engine locks only
 the stake required by the venue; leverage and margin do not apply.
+
+### Wallet accounts
+
+Wallet accounts represent blockchain wallets: unleveraged, multi-currency
+holdings of native and ERC-20 token balances with no margin and no borrowing.
+For reported states, `total` is the observed on‑chain balance; `locked` tracks
+local pending‑order reservations, and `free = total - locked`. Account state
+events contribute totals only: the account ignores incoming `locked` and `free`
+values, retains its local reservations, and rederives `free`. It rebuilds
+transient reservations from submitted and open orders during live startup.
+While an amendment is pending, the account reserves the full observed balance
+of the debit currency because the pending event does not carry the requested
+terms. If the reserved amount exceeds the latest observed total, `locked` is
+capped at `total` and `free` remains zero until the balance or reservation
+changes.
+
+A balance with a negative total is rejected rather than applied. ERC‑20
+allowances are spender authorizations and are never represented as balances or
+locked funds.
 
 ## Balance model
 
@@ -69,14 +93,14 @@ fields up front. Adapter code written in Rust has two additional derived
 constructors that enforce the invariant centrally; prefer them over
 `AccountBalance::new` whenever the venue reports only two of the three values:
 
-| Rust helper                             | When to use                                                                    |
-| --------------------------------------- | ------------------------------------------------------------------------------ |
-| `AccountBalance::from_total_and_locked` | Venue reports total and locked; `free` is derived and clamped to `[0, total]`. |
-| `AccountBalance::from_total_and_free`   | Venue reports total and free; `locked` is derived and clamped.                 |
-| `AccountBalance::new`                   | All three values are already known and consistent (tests, pass‑through).       |
+| Rust helper                             | When to use                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------ |
+| `AccountBalance::from_total_and_locked` | Venue reports total and locked; `free` is derived from the two.          |
+| `AccountBalance::from_total_and_free`   | Venue reports total and free; `locked` is derived from the two.          |
+| `AccountBalance::new`                   | All three values are already known and consistent (tests, pass‑through). |
 
-The helpers clamp the derived field to `[0, total]` when `total >= 0`, so
-transient overshoots from venue rounding never leave the account in a broken
+Each helper clamps the venue‑reported field into `[0, total]` when `total >= 0`,
+so transient overshoots from venue rounding never leave the account in a broken
 state.
 
 ## Currency and valuation contracts
@@ -136,9 +160,11 @@ An `AccountState` event may carry entries in either or both scopes, and
 
 :::note
 `MarginAccount.apply()` **replaces** both stores from the incoming event. It does
-not merge with prior state. Adapters that emit partial snapshots must include
-every live margin entry on each update or those entries will be dropped until
-the next full snapshot. The balances list is likewise replaced.
+not merge with prior state, and an event carrying neither balances nor margins
+leaves the prior stores in place. Adapters that emit partial snapshots must
+include every live margin entry on each update or those entries will be dropped
+until the next full snapshot. Balances the event carries replace the stored
+entry for their currency; currencies the event omits are retained.
 :::
 
 ## Strategy query API
@@ -147,84 +173,83 @@ Use the query that matches the venue's reporting shape. If a venue reports
 per-instrument margins, ask by `InstrumentId`. If it reports account-wide
 margins, ask by `Currency`.
 
-| Scope of the value you want            | Use                                                                                             |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Per‑instrument margin (isolated)       | `margin(id)` / `margin_init(id)` / `margin_maint(id)`                                           |
-| Account‑wide margin for one collateral | `margin_for_currency(ccy)` / `margin_init_for_currency(ccy)` / `margin_maint_for_currency(ccy)` |
-| Combined total across both scopes      | `total_margin_init(ccy)` / `total_margin_maint(ccy)`                                            |
+| Scope          | Queries                                                                      |
+| -------------- | ---------------------------------------------------------------------------- |
+| Per‑instrument | `margin`, `initial_margin`, and `maintenance_margin`                         |
+| Account‑wide   | `account_margin`, `account_initial_margin`, and `account_maintenance_margin` |
+| Both scopes    | `total_initial_margin` and `total_maintenance_margin`                        |
 
-Point queries return `None` when the entry is absent; total queries always
-return a `Money` (zero for the currency if nothing matches).
-
-:::note
-The names below are the Python / Cython API on `MarginAccount`. Rust strategies
-using the `nautilus-model` crate call `account_margin(&currency)`,
-`account_initial_margin(&currency)`, `account_maintenance_margin(&currency)`,
-`total_initial_margin(currency)`, and `total_maintenance_margin(currency)`: the
-same split by `Option<InstrumentId>`, with different method names.
-:::
+The signatures below describe the Python bindings. Point queries return `None`
+when the entry is absent; total queries always return a `Money` (zero for the
+currency if nothing matches).
 
 ### Per-instrument queries (`MarginAccount`)
 
 - `margin(instrument_id) -> MarginBalance | None`
-- `margin_init(instrument_id) -> Money | None`
-- `margin_maint(instrument_id) -> Money | None`
+- `initial_margin(instrument_id) -> Money | None`
+- `maintenance_margin(instrument_id) -> Money | None`
 - `margins() -> dict[InstrumentId, MarginBalance]` (all per-instrument entries)
-- `margins_init() -> dict[InstrumentId, Money]`
-- `margins_maint() -> dict[InstrumentId, Money]`
+- `initial_margins() -> dict[InstrumentId, Money]`
+- `maintenance_margins() -> dict[InstrumentId, Money]`
 
 These methods only see the per-instrument store. On a cross-margin venue they
 return empty dicts or `None`. Use the account-wide queries below.
 
 ### Account-wide queries (`MarginAccount`)
 
-- `margin_for_currency(currency) -> MarginBalance | None`
-- `margin_init_for_currency(currency) -> Money | None`
-- `margin_maint_for_currency(currency) -> Money | None`
+- `account_margin(currency) -> MarginBalance | None`
+- `account_initial_margin(currency) -> Money | None`
+- `account_maintenance_margin(currency) -> Money | None`
 - `account_margins() -> dict[Currency, MarginBalance]` (all account-wide entries)
-- `account_margins_init() -> dict[Currency, Money]`
-- `account_margins_maint() -> dict[Currency, Money]`
+- `account_initial_margins() -> dict[Currency, Money]`
+- `account_maintenance_margins() -> dict[Currency, Money]`
 
 ### Totals (`MarginAccount`)
 
 These sum across per-instrument and account-wide entries for a given currency:
 
-- `total_margin_init(currency) -> Money`
-- `total_margin_maint(currency) -> Money`
+- `total_initial_margin(currency) -> Money`
+- `total_maintenance_margin(currency) -> Money`
 
 Useful when a strategy trades on a venue where both scopes may appear (for
 example, isolated positions alongside cross-margin collateral).
 
-### Clearing account-wide entries
+### Python binding boundary
 
-- `clear_account_margin(currency)` removes the account-wide entry for a given
-  collateral currency and triggers a balance recalculation. The counterpart for
-  per-instrument entries is `clear_margin(instrument_id)`.
-
-These are system methods; adapter code calls them implicitly via
-`MarginAccount.apply()`. Strategies should not need them directly.
+This query surface does not expose the internal Rust mutation methods
+`update_margin`, `clear_margin`, `clear_account_margin`, `clear_initial_margin`,
+`clear_maintenance_margin`, or `set_margin_model`. Python does expose other
+mutation methods, including `update_initial_margin`, `update_maintenance_margin`,
+`set_default_leverage`, and `set_leverage`.
 
 ### Portfolio-level queries
 
 Margin queries:
 
-- `portfolio.margins_init(venue=..., account_id=...) -> dict[InstrumentId, Money]`
-- `portfolio.margins_maint(venue=..., account_id=...) -> dict[InstrumentId, Money]`
+- `portfolio.instrument_initial_margins(venue=..., account_id=...) -> dict[InstrumentId, Money] | None`
+- `portfolio.instrument_maintenance_margins(venue=..., account_id=...) -> dict[InstrumentId, Money] | None`
 
-These mirror `MarginAccount.margins_init` / `margins_maint` and return only the
-per-instrument entries. For account-wide data on cross-margin venues, query the
-account directly via `portfolio.account(venue).margin_init_for_currency(ccy)`.
+When a margin account resolves, these return the same per-instrument money
+views as `MarginAccount.initial_margins` and
+`MarginAccount.maintenance_margins`; otherwise, they return `None`. For
+account-wide data on cross-margin venues, query the account directly via
+`portfolio.account(venue=venue).account_initial_margin(ccy)`. The returned account is
+a detached snapshot and cannot mutate Portfolio state.
 
 PnL, exposure, mark-to-market, and equity queries all accept `venue` and an
 optional `account_id` to scope multi-account venues:
 
-- `portfolio.unrealized_pnls(venue=..., account_id=...) -> dict[Currency, Money]`
-- `portfolio.realized_pnls(venue=..., account_id=...) -> dict[Currency, Money]`
-- `portfolio.total_pnls(venue=..., account_id=...) -> dict[Currency, Money]`
-- `portfolio.net_exposures(venue=..., account_id=...) -> dict[Currency, Money]`
+- `portfolio.unrealized_pnls(venue=..., account_id=..., target_currency=...) -> dict[Currency, Money]`
+- `portfolio.realized_pnls(venue=..., account_id=..., target_currency=...) -> dict[Currency, Money]`
+- `portfolio.total_pnls(venue=..., account_id=..., target_currency=...) -> dict[Currency, Money]`
+- `portfolio.net_exposures(venue=..., account_id=..., target_currency=...) -> dict[Currency, Money] | None`
 - `portfolio.mark_values(venue=..., account_id=...) -> dict[Currency, Money]`
 - `portfolio.equity(venue=..., account_id=...) -> dict[Currency, Money]`
-- `portfolio.missing_price_instruments(venue) -> list[InstrumentId]`
+- `portfolio.missing_price_instruments(venue, account_id=...) -> list[InstrumentId]`
+
+If both scope arguments are present, they must identify the same account. A missing price, failed
+target‑currency conversion, or arithmetic overflow invalidates the whole affected collection: a
+query never returns partial or mixed‑currency totals.
 
 See the [Portfolio guide](portfolio.md#equity-and-mark-to-market) for the equity
 formula, price fallback chain, base-currency conversion behavior, and the
@@ -235,8 +260,8 @@ warn-once missing-price tracker.
 Single-collateral cross margin (one account-wide entry):
 
 ```python
-usdc_margin = margin_account.margin_init_for_currency(USDC)
-usdc_total = margin_account.total_margin_init(USDC)
+usdc_margin = margin_account.account_initial_margin(USDC)
+usdc_total = margin_account.total_initial_margin(USDC)
 ```
 
 Per-coin cross margin (one entry per collateral currency):
@@ -250,8 +275,8 @@ for ccy, margin_balance in margin_account.account_margins().items():
 
 NautilusTrader provides flexible margin calculation models for the calculated
 path (backtests, and live strategies running with `calculate_account_state=True`
-for reconciliation). Reported margins from a venue flow straight into
-`_account_margins` or `_margins` without going through a model.
+for reconciliation). Reported margins from a venue flow straight into the
+account's `margins` or `account_margins` stores without going through a model.
 
 ### Overview
 
@@ -264,8 +289,7 @@ Both built-in models compute margin as a percentage of notional using the
 instrument's `margin_init` and `margin_maint` fields. They differ only in
 whether leverage reduces the reservation. For venues with true per-contract
 fixed margin (CME / ICE), set `instrument.margin_init` and `margin_maint` so
-the percentage recovers the desired dollar amount, or implement a
-[custom model](#custom-models).
+the percentage recovers the desired dollar amount.
 
 ### HEDGING-mode netting
 
@@ -321,21 +345,8 @@ leverage affects margin requirements.
 
 ### Default behavior
 
-`MarginAccount` uses `LeveragedMarginModel` by default. Override programmatically:
-
-```python
-from nautilus_trader.backtest.models import LeveragedMarginModel
-from nautilus_trader.backtest.models import StandardMarginModel
-from nautilus_trader.test_kit.stubs.execution import TestExecStubs
-
-account = TestExecStubs.margin_account()
-
-# Traditional broker behavior
-account.set_margin_model(StandardMarginModel())
-
-# Or the leveraged model (default)
-account.set_margin_model(LeveragedMarginModel())
-```
+`MarginAccount` uses `LeveragedMarginModel` by default. Backtests select
+`StandardMarginModel` by passing it directly to `BacktestVenueConfig.margin_model`.
 
 ### Worked example: EUR/USD
 
@@ -351,50 +362,14 @@ account.set_margin_model(LeveragedMarginModel())
 | Standard  | $110,000 × 0.03        | $3,300 | 3.00%      |
 | Leveraged | ($110,000 ÷ 50) × 0.03 | $66    | 0.06%      |
 
-On a $10,000 account: the standard model blocks the trade; the leveraged model
+On a $1,000 account: the standard model blocks the trade; the leveraged model
 allows it.
 
-### Custom models
+### Python model selection
 
-Subclass `MarginModel` and receive configuration through `MarginModelConfig`:
-
-```python
-from decimal import Decimal
-
-from nautilus_trader.backtest.config import MarginModelConfig
-from nautilus_trader.backtest.models import MarginModel
-from nautilus_trader.model.objects import Money
-
-
-class RiskAdjustedMarginModel(MarginModel):
-    def __init__(self, config: MarginModelConfig) -> None:
-        self.risk_multiplier = Decimal(str(config.config.get("risk_multiplier", 1.0)))
-        self.use_leverage = config.config.get("use_leverage", False)
-
-    def calculate_margin_init(
-        self, instrument, quantity, price, leverage, use_quote_for_inverse=False
-    ):
-        notional = instrument.notional_value(quantity, price, use_quote_for_inverse)
-
-        if self.use_leverage:
-            adjusted = notional.as_decimal() / leverage
-        else:
-            adjusted = notional.as_decimal()
-
-        margin = adjusted * instrument.margin_init * self.risk_multiplier
-        return Money(margin, instrument.quote_currency)
-
-    def calculate_margin_maint(
-        self, instrument, side, quantity, price, leverage, use_quote_for_inverse=False
-    ):
-        return self.calculate_margin_init(
-            instrument, quantity, price, leverage, use_quote_for_inverse
-        )
-```
-
-For backtest-wide configuration of the margin model via `BacktestVenueConfig`
-and `MarginModelConfig`, see the margin-models section of
-[Backtesting](backtesting/accounts-and-margin.md#margin-models).
+Pass `StandardMarginModel()` or `LeveragedMarginModel()` directly to the backtest venue. The
+current Python binding does not accept custom margin model subclasses or a `MarginModelConfig`
+wrapper. See [Backtesting](backtesting/accounts-and-margin.md#margin-models).
 
 ## Adapter convention
 
@@ -426,9 +401,11 @@ are keyed by `currency`.
 
 ## Related guides
 
-- [Backtesting](backtesting/): starting balances, `MarginModelConfig`, and
-  backtest-specific account setup.
+- [Backtesting](backtesting/): starting balances, margin models, and backtest‑specific account
+  setup.
 - [Portfolio](portfolio.md): portfolio-level PnL, exposures, and currency
   conversion.
 - [Positions](positions.md): position lifecycle, aggregation, and PnL.
 - [Adapters](adapters.md): requirements and best practices for adapter authors.
+- [Blockchain](../integrations/blockchain.md): the adapter that selects wallet accounts, and its
+  execution status.

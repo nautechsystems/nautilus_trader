@@ -30,7 +30,7 @@ use crate::{
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators", unsendable)
+    pyo3::pyclass(module = "nautilus_trader.indicators", unsendable)
 )]
 #[cfg_attr(
     feature = "python",
@@ -155,7 +155,7 @@ mod tests {
 
     use crate::{
         average::MovingAverageType, indicator::Indicator, momentum::rsi::RelativeStrengthIndex,
-        stubs::*,
+        stubs::*, testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -205,7 +205,7 @@ mod tests {
         rsi_10.update_raw(7.0);
         rsi_10.update_raw(6.0);
 
-        assert_eq!(rsi_10.value, 0.683_736_332_582_526_5);
+        assert_approx_equal(rsi_10.value, 0.683736332583);
     }
 
     #[rstest]
@@ -219,7 +219,7 @@ mod tests {
         rsi_10.update_raw(6.0);
         rsi_10.update_raw(7.0);
 
-        assert_eq!(rsi_10.value, 0.761_534_466_766_272_5);
+        assert_approx_equal(rsi_10.value, 0.761534466766);
     }
 
     #[rstest]
@@ -308,9 +308,9 @@ mod tests {
 
     #[rstest]
     fn test_recovers_below_max_after_losses() {
-        // Regression for the flat-1.0 defect (mirrors Cython fix #2703): once real down-moves
-        // arrive, RSI must fall below `rsi_max` rather than staying pinned at 1.0 because
-        // `last_value` was never advanced on zero-loss bars.
+        // Regression for the flat-1.0 defect (#2703): once real down-moves arrive, RSI must
+        // fall below `rsi_max` rather than staying pinned at 1.0 because `last_value` was
+        // never advanced on zero-loss bars.
         let mut values: Vec<f64> = (1..=15).map(f64::from).collect();
         values.extend([14.0, 12.0, 9.0, 5.0, 2.0]);
 

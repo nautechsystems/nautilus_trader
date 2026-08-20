@@ -22,7 +22,7 @@ mod serial_tests {
     use bytes::Bytes;
     use indexmap::indexmap;
     use nautilus_common::{
-        cache::database::CacheDatabaseAdapter,
+        cache::{Cache, database::CacheDatabaseAdapter},
         signal::Signal,
         testing::{wait_until, wait_until_async},
     };
@@ -36,12 +36,14 @@ mod serial_tests {
         accounts::{AccountAny, CashAccount},
         data::{
             CustomData, DataType,
-            stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buyer},
+            stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buy},
         },
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
         events::{
             OrderEventAny, OrderFilled, OrderSnapshot, PositionSnapshot,
-            account::stubs::cash_account_state_million_usd,
+            account::stubs::{
+                cash_account_state_million_usd, wallet_account_state, wallet_account_state_changed,
+            },
         },
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId,
@@ -56,7 +58,7 @@ mod serial_tests {
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
-        types::{Currency, Price, Quantity},
+        types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use nautilus_persistence::test_data::RustTestCustomData;
     use nautilus_serialization::ensure_custom_data_registered;
@@ -391,6 +393,8 @@ mod serial_tests {
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from("1.0"))
+            .exec_algorithm_params(indexmap! { Ustr::from("speed") => Ustr::from("fast") })
+            .tags(vec![Ustr::from("tag-1"), Ustr::from("tag-2")])
             .build();
         let limit_order = OrderTestBuilder::new(OrderType::Limit)
             .client_order_id(client_order_id_2)
@@ -460,6 +464,169 @@ mod serial_tests {
                 .copied()
                 .collect::<HashSet<ClientId>>(),
             vec![client_id].into_iter().collect::<HashSet<ClientId>>()
+        );
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_index_order_clients_batch_survives_restart() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+        let instrument = currency_pair_ethusdt();
+        let client_a = ClientId::new("CLIENT-A");
+        let client_b = ClientId::new("CLIENT-B");
+        let order_1 = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-PG-ORIGIN-001"))
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .build();
+        let order_2 = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-PG-ORIGIN-002"))
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.0"))
+            .build();
+        let claims = [
+            (order_1.client_order_id(), client_a),
+            (order_2.client_order_id(), client_b),
+        ];
+
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache
+            .add_instrument(&InstrumentAny::CurrencyPair(instrument))
+            .unwrap();
+        pg_cache.add_order(&order_1, None).unwrap();
+        pg_cache.add_order(&order_2, None).unwrap();
+
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_order(&order_1.client_order_id())
+                    .await
+                    .unwrap()
+                    .is_some()
+                    && pg_cache
+                        .load_order(&order_2.client_order_id())
+                        .await
+                        .unwrap()
+                        .is_some()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let missing_order_id = ClientOrderId::new("O-PG-ORIGIN-MISSING");
+        let error = DatabaseQueries::index_order_clients(
+            &pg_cache.pool,
+            &[
+                (order_1.client_order_id(), client_a),
+                (missing_order_id, client_b),
+            ],
+        )
+        .await
+        .unwrap_err();
+        let index_after_rollback = pg_cache.load_index_order_client().unwrap();
+
+        assert!(error.to_string().contains("No persisted order events"));
+        assert!(!index_after_rollback.contains_key(&order_1.client_order_id()));
+        assert!(!index_after_rollback.contains_key(&missing_order_id));
+
+        pg_cache.index_order_clients(&claims).unwrap();
+        wait_until_async(
+            || async {
+                let index = pg_cache.load_index_order_client().unwrap();
+                index.get(&order_1.client_order_id()) == Some(&client_a)
+                    && index.get(&order_2.client_order_id()) == Some(&client_b)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let restarted_adapter = get_test_pg_cache_database().await.unwrap();
+        let mut cache = Cache::new(None, Some(Box::new(restarted_adapter)));
+        cache.cache_orders().await.unwrap();
+        cache.build_index();
+
+        assert!(cache.order(&order_1.client_order_id()).is_some());
+        assert!(cache.order(&order_2.client_order_id()).is_some());
+        assert_eq!(cache.client_id(&order_1.client_order_id()), Some(&client_a));
+        assert_eq!(cache.client_id(&order_2.client_order_id()), Some(&client_b));
+
+        cache.dispose();
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_index_order_clients_conflict_rolls_back_batch() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+        let instrument = currency_pair_ethusdt();
+        let existing_client = ClientId::new("CLIENT-EXISTING");
+        let conflicting_client = ClientId::new("CLIENT-CONFLICTING");
+        let unclaimed_order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-PG-ORIGIN-ROLLBACK-001"))
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .build();
+        let claimed_order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-PG-ORIGIN-ROLLBACK-002"))
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.0"))
+            .build();
+
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache
+            .add_instrument(&InstrumentAny::CurrencyPair(instrument))
+            .unwrap();
+        pg_cache.add_order(&unclaimed_order, None).unwrap();
+        pg_cache
+            .add_order(&claimed_order, Some(existing_client))
+            .unwrap();
+
+        wait_until_async(
+            || async {
+                let index = pg_cache.load_index_order_client().unwrap();
+                pg_cache
+                    .load_order(&unclaimed_order.client_order_id())
+                    .await
+                    .unwrap()
+                    .is_some()
+                    && index.get(&claimed_order.client_order_id()) == Some(&existing_client)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let error = DatabaseQueries::index_order_clients(
+            &pg_cache.pool,
+            &[
+                (unclaimed_order.client_order_id(), conflicting_client),
+                (claimed_order.client_order_id(), conflicting_client),
+            ],
+        )
+        .await
+        .unwrap_err();
+        let index_after_rollback = pg_cache.load_index_order_client().unwrap();
+
+        assert!(
+            error
+                .to_string()
+                .contains("already claimed by execution client")
+        );
+        assert!(!index_after_rollback.contains_key(&unclaimed_order.client_order_id()));
+        assert_eq!(
+            index_after_rollback.get(&claimed_order.client_order_id()),
+            Some(&existing_client)
         );
 
         pg_cache.flush().unwrap();
@@ -1047,6 +1214,99 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_and_update_wallet_account() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+
+        // Distinct account ID and flush: these tests share one database
+        pg_cache.flush().unwrap();
+
+        let mut init_state = wallet_account_state();
+        init_state.account_id = AccountId::from("WALLET-001");
+        let token = Currency::new(
+            "ENG729P",
+            6,
+            0,
+            "Postgres wallet token",
+            CurrencyType::Crypto,
+        );
+        let total = Money::from_mantissa_exponent(123_456_789, -6, token);
+        init_state.balances[1] = AccountBalance::new(total, Money::zero(token), total);
+        assert!(Currency::try_from_str("ENG729P").is_none());
+        let mut account = AccountAny::try_from_state(init_state).unwrap();
+        pg_cache.add_account(&account).unwrap();
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_account(&account.id())
+                    .await
+                    .unwrap()
+                    .is_some()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+        let account_result = pg_cache.load_account(&account.id()).await.unwrap();
+        let loaded = account_result.unwrap();
+        assert!(matches!(loaded, AccountAny::Wallet(_)));
+        assert_entirely_equal(loaded, account.clone());
+
+        // Update account
+        let mut changed_state = wallet_account_state_changed();
+        changed_state.account_id = AccountId::from("WALLET-001");
+        account.apply(changed_state).unwrap();
+        pg_cache.update_account(&account).unwrap();
+        wait_until_async(
+            || async {
+                let result = pg_cache.load_account(&account.id()).await.unwrap();
+                result.is_some() && result.unwrap().events().len() >= 2
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+        let account_result = pg_cache.load_account(&account.id()).await.unwrap();
+        let loaded = account_result.unwrap();
+        assert!(matches!(loaded, AccountAny::Wallet(_)));
+        assert_entirely_equal(loaded, account);
+        assert!(Currency::try_from_str("ENG729P").is_none());
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_load_wallet_account_rejects_malformed_balance() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+        pg_cache.flush().unwrap();
+
+        let mut event = wallet_account_state();
+        event.account_id = AccountId::from("WALLET-MALFORMED-001");
+        DatabaseQueries::add_account(&pg_cache.pool, false, event)
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE account_event SET balances = '[{\"currency\":\"USD\"}]'::jsonb \
+             WHERE account_id = 'WALLET-MALFORMED-001'",
+        )
+        .execute(&pg_cache.pool)
+        .await
+        .unwrap();
+
+        let error = DatabaseQueries::load_account_events(
+            &pg_cache.pool,
+            &AccountId::from("WALLET-MALFORMED-001"),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            error.to_string().contains("missing field `total`"),
+            "was: {error}"
+        );
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_update_account_without_existing_event_returns_error() {
         let mut pg_cache = get_test_pg_cache_database().await.unwrap();
         let event = cash_account_state_million_usd("1000000 USD", "100000 USD", "900000 USD");
@@ -1113,7 +1373,7 @@ mod serial_tests {
         pg_cache.add_instrument(&instrument).unwrap();
 
         // Add trade
-        let trade = stub_trade_ethusdt_buyer();
+        let trade = stub_trade_ethusdt_buy();
         pg_cache.add_trade(&trade).unwrap();
         wait_until_async(
             || async {
@@ -1259,13 +1519,28 @@ mod serial_tests {
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from("1.0"))
+            .tags(vec![Ustr::from("tag-1"), Ustr::from("tag-2")])
             .build();
+        let snapshot: OrderSnapshot = order.into();
 
-        pg_cache.add_order_snapshot(&order.into()).unwrap();
+        pg_cache.add_order_snapshot(&snapshot).unwrap();
 
-        let result = pg_cache.load_order_snapshot(&client_order_id);
+        wait_until(
+            || {
+                pg_cache
+                    .load_order_snapshot(&client_order_id)
+                    .unwrap()
+                    .is_some()
+            },
+            Duration::from_secs(5),
+        );
 
-        assert!(result.is_ok());
+        let loaded = pg_cache
+            .load_order_snapshot(&client_order_id)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(loaded.tags, snapshot.tags);
         pg_cache.flush().unwrap();
         pg_cache.close().unwrap();
     }

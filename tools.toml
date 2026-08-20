@@ -1,26 +1,29 @@
 # Version pins for external binaries without a native manifest.
 #
 # Rust toolchain: rust-toolchain.toml
-# Miri toolchain: tools.toml [miri]
+# Nightly toolchain (Miri, clippy-fix-nightly): tools.toml [miri]
 # Cargo CLIs:     Cargo.toml [workspace.metadata.tools]
-# Python CLIs:    tools.toml
-# uv:             pyproject.toml [tool.uv]
+# External CLIs:  tools.toml
+# uv range:       pyproject.toml [tool.uv]
 
 [miri]
-version = "nightly-2026-07-15"
+version = "nightly-2026-08-14"
 rustc-version = "1.99.0"
 
+[uv]
+version = "0.12.5"
+
 [prek]
-version = "0.4.10"
+version = "0.4.14"
 
 [pip-audit]
 version = "2.10.1"
 
 [pypi-attestations]
-version = "0.0.29"
+version = "0.0.30"
 
 [osv-scanner]
-version = "2.4.0"
+version = "2.5.1"
 
 [capnp]
 version = "1.5.0"

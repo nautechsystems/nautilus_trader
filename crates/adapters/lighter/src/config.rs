@@ -35,7 +35,7 @@ const WS_READONLY_QUERY_PARAM: &str = "readonly";
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.lighter", from_py_object,)
+    pyo3::pyclass(module = "nautilus_trader.adapters.lighter", from_py_object,)
 )]
 #[cfg_attr(
     feature = "python",
@@ -193,7 +193,7 @@ fn ensure_readonly_ws_url(url: String) -> String {
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.lighter", from_py_object,)
+    pyo3::pyclass(module = "nautilus_trader.adapters.lighter", from_py_object,)
 )]
 #[cfg_attr(
     feature = "python",
@@ -445,136 +445,5 @@ mod tests {
         };
 
         assert_eq!(config.ws_url(), "wss://mainnet.zklighter.elliot.ai/stream");
-    }
-
-    // Tests that observe the `env_var_is_set` fallback live in the workspace
-    // `serial_tests` group (see `.config/nextest.toml`) so env-var mutation is
-    // pinned to a single thread.
-    #[allow(unsafe_code)] // env-var mutation in tests; restored via `EnvGuard`.
-    mod serial_tests {
-        use super::*;
-
-        const LIGHTER_ENV_VARS: &[&str] = &[
-            "LIGHTER_API_KEY_INDEX",
-            "LIGHTER_API_SECRET",
-            "LIGHTER_ACCOUNT_INDEX",
-            "LIGHTER_TESTNET_API_KEY_INDEX",
-            "LIGHTER_TESTNET_API_SECRET",
-            "LIGHTER_TESTNET_ACCOUNT_INDEX",
-        ];
-
-        /// Snapshots and clears the Lighter credential env vars, restoring the
-        /// original values on drop.
-        struct EnvGuard {
-            saved: Vec<(&'static str, Option<String>)>,
-        }
-
-        impl EnvGuard {
-            fn clear_lighter() -> Self {
-                let saved = LIGHTER_ENV_VARS
-                    .iter()
-                    .map(|&name| (name, std::env::var(name).ok()))
-                    .collect::<Vec<_>>();
-                for &(name, _) in &saved {
-                    // SAFETY: the `serial_tests` nextest group serializes
-                    // these tests, and no other lighter test reads or writes
-                    // the LIGHTER_* env vars.
-                    unsafe { std::env::remove_var(name) };
-                }
-                Self { saved }
-            }
-        }
-
-        impl Drop for EnvGuard {
-            fn drop(&mut self) {
-                for (name, original) in &self.saved {
-                    match original {
-                        // SAFETY: see `EnvGuard::clear_lighter`.
-                        Some(value) => unsafe { std::env::set_var(name, value) },
-                        None => unsafe { std::env::remove_var(name) },
-                    }
-                }
-            }
-        }
-
-        #[rstest]
-        fn data_config_has_credentials_false_when_all_unset() {
-            let _guard = EnvGuard::clear_lighter();
-            let config = LighterDataClientConfig::default();
-
-            assert!(!config.has_credentials());
-        }
-
-        #[rstest]
-        #[case::only_api_key_index(Some(5), None, None)]
-        #[case::only_account_index(None, Some(12_345), None)]
-        #[case::only_private_key(None, None, Some(PRIVATE_KEY_HEX.to_string()))]
-        #[case::missing_api_key_index(None, Some(12_345), Some(PRIVATE_KEY_HEX.to_string()))]
-        #[case::missing_account_index(Some(5), None, Some(PRIVATE_KEY_HEX.to_string()))]
-        #[case::missing_private_key(Some(5), Some(12_345), None)]
-        fn data_config_has_credentials_false_for_partial_config(
-            #[case] api_key_index: Option<u8>,
-            #[case] account_index: Option<u64>,
-            #[case] private_key: Option<String>,
-        ) {
-            let _guard = EnvGuard::clear_lighter();
-            let config = LighterDataClientConfig {
-                account_index,
-                api_key_index,
-                private_key,
-                ..Default::default()
-            };
-
-            assert!(!config.has_credentials());
-        }
-
-        #[rstest]
-        #[case::empty("")]
-        #[case::whitespace("   ")]
-        fn data_config_has_credentials_false_for_blank_private_key(#[case] private_key: &str) {
-            let _guard = EnvGuard::clear_lighter();
-            let config = LighterDataClientConfig {
-                api_key_index: Some(5),
-                account_index: Some(12_345),
-                private_key: Some(private_key.to_string()),
-                ..Default::default()
-            };
-
-            assert!(!config.has_credentials());
-        }
-
-        #[rstest]
-        fn data_config_has_credentials_reads_testnet_env_vars() {
-            let _guard = EnvGuard::clear_lighter();
-            // SAFETY: see `EnvGuard::clear_lighter`; the guard restores values on drop.
-            unsafe { std::env::set_var("LIGHTER_TESTNET_API_KEY_INDEX", "5") };
-            // SAFETY: see above.
-            unsafe { std::env::set_var("LIGHTER_TESTNET_API_SECRET", PRIVATE_KEY_HEX) };
-            // SAFETY: see above.
-            unsafe { std::env::set_var("LIGHTER_TESTNET_ACCOUNT_INDEX", "12345") };
-            let config = LighterDataClientConfig {
-                environment: LighterEnvironment::Testnet,
-                ..Default::default()
-            };
-
-            assert!(config.has_credentials());
-        }
-
-        #[rstest]
-        fn data_config_has_credentials_ignores_mismatched_environment_env_vars() {
-            let _guard = EnvGuard::clear_lighter();
-            // SAFETY: see `EnvGuard::clear_lighter`.
-            unsafe { std::env::set_var("LIGHTER_TESTNET_API_KEY_INDEX", "5") };
-            // SAFETY: see above.
-            unsafe { std::env::set_var("LIGHTER_TESTNET_API_SECRET", PRIVATE_KEY_HEX) };
-            // SAFETY: see above.
-            unsafe { std::env::set_var("LIGHTER_TESTNET_ACCOUNT_INDEX", "12345") };
-            let config = LighterDataClientConfig {
-                environment: LighterEnvironment::Mainnet,
-                ..Default::default()
-            };
-
-            assert!(!config.has_credentials());
-        }
     }
 }

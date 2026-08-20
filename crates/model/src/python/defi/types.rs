@@ -26,7 +26,10 @@ use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use pyo3::{basic::CompareOp, prelude::*};
 
 use crate::{
-    defi::{AmmType, Blockchain, Chain, Dex, DexType, Pool, Token, chain::chains},
+    defi::{
+        AmmType, Blockchain, Chain, Dex, DexType, Pool, Token, chain::chains,
+        validation::validate_address,
+    },
     identifiers::InstrumentId,
 };
 
@@ -214,6 +217,9 @@ impl Dex {
         let amm_type = AmmType::from_str(&amm_type).map_err(to_pyvalue_err)?;
         let dex_type = DexType::from_dex_name(&name)
             .ok_or_else(|| to_pyvalue_err(format!("Invalid DEX name: {name}")))?;
+
+        validate_address(&factory).map_err(to_pyvalue_err)?;
+
         Ok(Self::new(
             chain,
             dex_type,

@@ -139,7 +139,8 @@ pub const PRICE_MIN: f64 = -9_223_372_036.0;
 
 // -----------------------------------------------------------------------------
 
-/// The sentinel `Price` representing errors (this will be removed when Cython is gone).
+/// The sentinel `Price` representing an error, returned by C FFI functions that
+/// cannot signal errors through `Option` or `Result`.
 pub const ERROR_PRICE: Price = Price {
     raw: 0,
     precision: 255,
@@ -159,11 +160,7 @@ pub const ERROR_PRICE: Price = Price {
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.model",
-        frozen,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.model", frozen, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

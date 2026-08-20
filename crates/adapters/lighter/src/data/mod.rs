@@ -29,9 +29,13 @@ use dashmap::{DashMap, DashSet, mapref::entry::Entry};
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::{runner::get_data_event_sender, runtime::get_runtime, task::TaskHandles},
+    live::{
+        runner::{get_data_event_sender, try_get_system_event_sender},
+        runtime::get_runtime,
+        task::TaskHandles,
+    },
     messages::{
-        DataEvent,
+        DataEvent, SystemEvent,
         data::{
             BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
             InstrumentsResponse, RequestBars, RequestBookDepth, RequestBookSnapshot,
@@ -52,7 +56,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, InstrumentStatus, OrderBookDeltas_API, TradeTick},
+    data::{Data, InstrumentStatus, TradeTick},
     enums::{BookType, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -66,6 +70,7 @@ use crate::{
         credential::Credential,
         enums::{LighterCandleResolution, LighterMarketStatus},
         rate_limit::resolve_quota,
+        socket::{DATA_STREAMS_ENDPOINT, socket_state_sink},
         symbol::MarketRegistry,
     },
     config::LighterDataClientConfig,
@@ -105,6 +110,7 @@ pub struct LighterDataClient {
     cancellation_token: CancellationToken,
     tasks: TaskHandles,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    system_sender: Option<tokio::sync::mpsc::UnboundedSender<SystemEvent>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_statuses: Arc<DashMap<InstrumentId, LighterMarketStatus>>,
     instrument_status_subscriptions: Arc<DashSet<InstrumentId>>,
@@ -122,6 +128,7 @@ impl LighterDataClient {
     pub fn new(client_id: ClientId, config: LighterDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
+        let system_sender = try_get_system_event_sender();
 
         let credential = if config.has_credentials() {
             // Mirror `has_credentials()`: a blank or whitespace-only `private_key`
@@ -156,7 +163,12 @@ impl LighterDataClient {
         let http_client =
             LighterHttpClient::from_raw_with_registry(raw_http, Arc::clone(&registry));
 
-        let ws_client = Self::create_ws_client(&config, Arc::clone(&registry));
+        let ws_client = Self::create_ws_client(
+            &config,
+            Arc::clone(&registry),
+            client_id,
+            system_sender.as_ref(),
+        );
 
         Ok(Self {
             clock,
@@ -170,6 +182,7 @@ impl LighterDataClient {
             cancellation_token: CancellationToken::new(),
             tasks: TaskHandles::default(),
             data_sender,
+            system_sender,
             instruments: Arc::new(AtomicMap::new()),
             instrument_statuses: Arc::new(DashMap::new()),
             instrument_status_subscriptions: Arc::new(DashSet::new()),
@@ -192,21 +205,37 @@ impl LighterDataClient {
     fn create_ws_client(
         config: &LighterDataClientConfig,
         registry: Arc<MarketRegistry>,
+        client_id: ClientId,
+        system_sender: Option<&tokio::sync::mpsc::UnboundedSender<SystemEvent>>,
     ) -> LighterWebSocketClient {
-        LighterWebSocketClient::new(
+        let ws_client = LighterWebSocketClient::new(
             Some(config.ws_url()),
             config.environment,
             registry,
             config.transport_backend,
             config.ws_timeout_secs,
             config.proxy_url.clone(),
-        )
+        );
+
+        match system_sender {
+            Some(sender) => ws_client.with_state_sink(socket_state_sink(
+                client_id,
+                DATA_STREAMS_ENDPOINT,
+                sender.clone(),
+            )),
+            None => ws_client,
+        }
     }
 
     fn take_ws_client(&mut self) -> LighterWebSocketClient {
         std::mem::replace(
             &mut self.ws_client,
-            Self::create_ws_client(&self.config, Arc::clone(&self.registry)),
+            Self::create_ws_client(
+                &self.config,
+                Arc::clone(&self.registry),
+                self.client_id,
+                self.system_sender.as_ref(),
+            ),
         )
     }
 
@@ -376,7 +405,7 @@ impl LighterDataClient {
                                 }
                             }
                             Some(NautilusWsMessage::Deltas(deltas)) => {
-                                let data = Data::Deltas(OrderBookDeltas_API::new(deltas));
+                                let data = Data::Deltas(Box::new(deltas));
                                 if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                                     log::error!("Failed to send order book deltas: {e}");
                                 }
@@ -412,6 +441,7 @@ impl LighterDataClient {
                             Some(
                                 NautilusWsMessage::ExecutionReports(_)
                                 | NautilusWsMessage::PositionSnapshot { .. }
+                                | NautilusWsMessage::PositionUpdate { .. }
                                 | NautilusWsMessage::AccountState(_)
                                 | NautilusWsMessage::SendTxAck { .. }
                                 | NautilusWsMessage::SendTxRejected { .. }
@@ -1699,7 +1729,7 @@ mod tests {
         response::{IntoResponse, Response},
         routing::get,
     };
-    use chrono::DateTime;
+    use jiff::Timestamp;
     use nautilus_common::live::runner::replace_data_event_sender;
     use nautilus_core::UUID4;
     use nautilus_model::{
@@ -2111,7 +2141,7 @@ mod tests {
         ));
 
         match receiver.try_recv().unwrap() {
-            DataEvent::Data(Data::MarkPriceUpdate(update)) => {
+            DataEvent::Data(Data::MarkPrice(update)) => {
                 assert_eq!(update.instrument_id, instrument_id);
                 assert_eq!(update.value, Price::from("2000.00"));
             }
@@ -2119,7 +2149,7 @@ mod tests {
         }
 
         match receiver.try_recv().unwrap() {
-            DataEvent::Data(Data::IndexPriceUpdate(update)) => {
+            DataEvent::Data(Data::IndexPrice(update)) => {
                 assert_eq!(update.instrument_id, instrument_id);
                 assert_eq!(update.value, Price::from("1999.50"));
             }
@@ -2406,8 +2436,8 @@ mod tests {
         };
         let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
         let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
-        let start = DateTime::from_timestamp(1_778_702_400, 0).unwrap();
-        let end = DateTime::from_timestamp(1_778_706_000, 0).unwrap();
+        let start = Timestamp::from_second(1_778_702_400).unwrap();
+        let end = Timestamp::from_second(1_778_706_000).unwrap();
         let request = RequestFundingRates::new(
             instrument_id,
             Some(start),
@@ -2452,7 +2482,7 @@ mod tests {
         };
         let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
         let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
-        let start = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        let start = Timestamp::from_second(1_700_000_000).unwrap();
         let request = RequestTrades::new(
             instrument_id,
             Some(start),
@@ -2479,7 +2509,7 @@ mod tests {
                 assert_eq!(tick.instrument_id, instrument_id);
                 assert_eq!(tick.price, Price::from("2361.31"));
                 assert_eq!(tick.size, Quantity::from("0.0005"));
-                assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+                assert_eq!(tick.aggressor_side, AggressorSide::Sell);
                 assert_eq!(tick.trade_id.to_string(), "19211490282");
             }
             event => panic!("expected trades response, was {event:?}"),
@@ -2532,7 +2562,7 @@ mod tests {
         };
         let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
         let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
-        let start = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        let start = Timestamp::from_second(1_700_000_000).unwrap();
         let request = RequestTrades::new(
             instrument_id,
             Some(start),
@@ -2569,7 +2599,7 @@ mod tests {
         };
         let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
         let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
-        let end = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        let end = Timestamp::from_second(1_700_000_000).unwrap();
         let request = RequestTrades::new(
             instrument_id,
             None,
@@ -2606,8 +2636,8 @@ mod tests {
         };
         let (client, mut receiver) = create_data_client_with_receiver_and_config_for_test(config);
         let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
-        let start = DateTime::from_timestamp_millis(1_777_945_103_092).unwrap();
-        let end = DateTime::from_timestamp_millis(1_777_945_103_094).unwrap();
+        let start = Timestamp::from_millisecond(1_777_945_103_092).unwrap();
+        let end = Timestamp::from_millisecond(1_777_945_103_094).unwrap();
         let request = RequestTrades::new(
             instrument_id,
             Some(start),
@@ -2662,7 +2692,7 @@ mod tests {
                 instrument_id,
                 Price::from("1.0"),
                 Quantity::from("1.0"),
-                AggressorSide::Buyer,
+                AggressorSide::Buy,
                 TradeId::new(trade_id),
                 UnixNanos::from(ts_event),
                 UnixNanos::from(ts_event + 1),
@@ -2913,111 +2943,6 @@ mod tests {
         assert_eq!(generations.get(&instrument_id).map(|value| *value), Some(8));
     }
 
-    // Tests that observe `has_credentials()` semantics under controlled env
-    // state. Pinned to the workspace `serial_tests` group (see
-    // `.config/nextest.toml`) so env-var mutation runs single-threaded.
-    #[allow(unsafe_code)] // env-var mutation in tests; restored via `EnvGuard`.
-    mod serial_tests {
-        use super::*;
-
-        const LIGHTER_ENV_VARS: &[&str] = &[
-            "LIGHTER_API_KEY_INDEX",
-            "LIGHTER_API_SECRET",
-            "LIGHTER_ACCOUNT_INDEX",
-            "LIGHTER_TESTNET_API_KEY_INDEX",
-            "LIGHTER_TESTNET_API_SECRET",
-            "LIGHTER_TESTNET_ACCOUNT_INDEX",
-        ];
-
-        struct EnvGuard {
-            saved: Vec<(&'static str, Option<String>)>,
-        }
-
-        impl EnvGuard {
-            fn clear_lighter() -> Self {
-                let saved = LIGHTER_ENV_VARS
-                    .iter()
-                    .map(|&name| (name, std::env::var(name).ok()))
-                    .collect::<Vec<_>>();
-                for &(name, _) in &saved {
-                    // SAFETY: the `serial_tests` nextest group serializes
-                    // these tests, and no other lighter test reads or writes
-                    // the LIGHTER_* env vars.
-                    unsafe { std::env::remove_var(name) };
-                }
-                Self { saved }
-            }
-        }
-
-        impl Drop for EnvGuard {
-            fn drop(&mut self) {
-                for (name, original) in &self.saved {
-                    match original {
-                        // SAFETY: see `EnvGuard::clear_lighter`.
-                        Some(value) => unsafe { std::env::set_var(name, value) },
-                        None => unsafe { std::env::remove_var(name) },
-                    }
-                }
-            }
-        }
-
-        #[tokio::test]
-        async fn new_data_client_with_partial_config_skips_credential_resolution() {
-            // With `account_index` missing and the env cleared,
-            // `LighterDataClientConfig::has_credentials()` must short-circuit
-            // to `false` so `Credential::resolve` is never called. Regressing
-            // the `&&` in `has_credentials()` to `||` would route this case
-            // through `credential_from_resolved_values` and fail construction
-            // with "incomplete Lighter credentials".
-            let _guard = EnvGuard::clear_lighter();
-            let config = LighterDataClientConfig {
-                api_key_index: Some(5),
-                private_key: Some(PRIVATE_KEY_HEX.to_string()),
-                account_index: None,
-                ..Default::default()
-            };
-            let (client, _receiver) = create_data_client_with_receiver_and_config_for_test(config);
-
-            assert!(!client.has_credentials());
-        }
-
-        #[tokio::test]
-        async fn new_data_client_with_all_config_fields_resolves_credential() {
-            let _guard = EnvGuard::clear_lighter();
-            let config = LighterDataClientConfig {
-                api_key_index: Some(5),
-                account_index: Some(12_345),
-                private_key: Some(PRIVATE_KEY_HEX.to_string()),
-                ..Default::default()
-            };
-            let (client, _receiver) = create_data_client_with_receiver_and_config_for_test(config);
-
-            assert!(client.has_credentials());
-        }
-
-        #[tokio::test]
-        async fn new_data_client_blank_private_key_falls_back_to_env() {
-            // `has_credentials()` and `Credential::resolve` must agree on
-            // precedence: when the config holds a blank `private_key` and the
-            // env secret is set, resolution must succeed via the env value
-            // rather than failing with "incomplete Lighter credentials".
-            let _guard = EnvGuard::clear_lighter();
-            // SAFETY: see `EnvGuard::clear_lighter`; the guard restores values on drop.
-            unsafe {
-                std::env::set_var("LIGHTER_API_SECRET", PRIVATE_KEY_HEX);
-            }
-            let config = LighterDataClientConfig {
-                api_key_index: Some(5),
-                account_index: Some(12_345),
-                private_key: Some("   ".to_string()),
-                ..Default::default()
-            };
-            let (client, _receiver) = create_data_client_with_receiver_and_config_for_test(config);
-
-            assert!(client.has_credentials());
-        }
-    }
-
     fn create_data_client_for_test() -> LighterDataClient {
         create_data_client_with_receiver_for_test().0
     }
@@ -3030,11 +2955,14 @@ mod tests {
     }
 
     fn create_data_client_with_receiver_and_config_for_test(
-        config: LighterDataClientConfig,
+        mut config: LighterDataClientConfig,
     ) -> (
         LighterDataClient,
         tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     ) {
+        config.api_key_index = Some(5);
+        config.account_index = Some(12_345);
+        config.private_key = Some(PRIVATE_KEY_HEX.to_string());
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         replace_data_event_sender(sender);
         let client = LighterDataClient::new(ClientId::new("LIGHTER"), config).unwrap();

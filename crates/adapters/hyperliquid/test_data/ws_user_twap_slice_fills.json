@@ -1,0 +1,49 @@
+{
+  "channel": "userTwapSliceFills",
+  "data": {
+    "isSnapshot": true,
+    "user": "0xe746435d136c4714383a64ee28e35c8bdb8d5cb1",
+    "twapSliceFills": [
+      {
+        "fill": {
+          "coin": "BTC",
+          "px": "64597.0",
+          "sz": "0.02066",
+          "side": "B",
+          "time": 1786016924051,
+          "startPosition": "4.04958",
+          "dir": "Open Long",
+          "closedPnl": "0.0",
+          "hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "oid": 511398503711,
+          "crossed": true,
+          "fee": "0.600558",
+          "tid": 541377480024384,
+          "feeToken": "USDC",
+          "twapId": null
+        },
+        "twapId": 2087225
+      },
+      {
+        "fill": {
+          "coin": "BTC",
+          "px": "64597.0",
+          "sz": "0.02066",
+          "side": "B",
+          "time": 1786016954036,
+          "startPosition": "4.07024",
+          "dir": "Open Long",
+          "closedPnl": "0.0",
+          "hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "oid": 511398756212,
+          "crossed": true,
+          "fee": "0.600558",
+          "tid": 380004986334712,
+          "feeToken": "USDC",
+          "twapId": null
+        },
+        "twapId": 2087225
+      }
+    ]
+  }
+}

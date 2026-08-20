@@ -20,15 +20,15 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc,
+        Arc, RwLock,
         atomic::{AtomicBool, Ordering},
     },
 };
 
 use ahash::AHashMap;
 use anyhow::Context;
-use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, datetime::NANOSECONDS_IN_SECOND,
@@ -48,9 +48,9 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, Method, USER_AGENT},
+    http::{HttpClient, HttpResponse, Method, USER_AGENT},
     ratelimiter::quota::Quota,
-    retry::{RetryConfig, RetryManager},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use rust_decimal::Decimal;
 use serde::de::DeserializeOwned;
@@ -78,7 +78,10 @@ use crate::{
     },
     http::{
         apply_count_limit,
-        error::{KrakenHttpError, kraken_http_should_retry},
+        error::{
+            KrakenBatchOrderError, KrakenHttpError, KrakenModifyOrderError, KrakenSubmitOrderError,
+            kraken_http_should_retry,
+        },
     },
 };
 
@@ -102,7 +105,7 @@ pub struct KrakenSpotRawHttpClient {
     client: HttpClient,
     credential: Option<KrakenCredential>,
     retry_manager: RetryManager<KrakenHttpError>,
-    cancellation_token: CancellationToken,
+    cancellation_token: RwLock<CancellationToken>,
     clock: &'static AtomicTime,
     /// Mutex to serialize authenticated requests, ensuring nonces arrive at Kraken in order
     auth_mutex: tokio::sync::Mutex<()>,
@@ -175,7 +178,7 @@ impl KrakenSpotRawHttpClient {
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
             credential: None,
             retry_manager,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: RwLock::new(CancellationToken::new()),
             clock: get_atomic_clock_realtime(),
             auth_mutex: tokio::sync::Mutex::new(()),
         })
@@ -224,7 +227,7 @@ impl KrakenSpotRawHttpClient {
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
             credential: Some(KrakenCredential::new(api_key, api_secret)),
             retry_manager,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: RwLock::new(CancellationToken::new()),
             clock: get_atomic_clock_realtime(),
             auth_mutex: tokio::sync::Mutex::new(()),
         })
@@ -250,12 +253,26 @@ impl KrakenSpotRawHttpClient {
 
     /// Cancels all pending HTTP requests.
     pub fn cancel_all_requests(&self) {
-        self.cancellation_token.cancel();
+        self.cancellation_token
+            .read()
+            .expect("cancellation token lock poisoned")
+            .cancel();
     }
 
-    /// Returns the cancellation token for this client.
-    pub fn cancellation_token(&self) -> &CancellationToken {
-        &self.cancellation_token
+    /// Replaces the canceled token so requests can proceed after reconnect.
+    pub fn reset_cancellation_token(&self) {
+        *self
+            .cancellation_token
+            .write()
+            .expect("cancellation token lock poisoned") = CancellationToken::new();
+    }
+
+    /// Returns a clone of the current cancellation token.
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.cancellation_token
+            .read()
+            .expect("cancellation token lock poisoned")
+            .clone()
     }
 
     fn default_headers() -> HashMap<String, String> {
@@ -323,103 +340,24 @@ impl KrakenSpotRawHttpClient {
         };
 
         let endpoint = endpoint.to_string();
-        let url = format!("{}{endpoint}", self.base_url);
         let method_clone = method.clone();
         let body_clone = body.clone();
 
         let operation = || {
-            let url = url.clone();
             let method = method_clone.clone();
             let body = body_clone.clone();
             let endpoint = endpoint.clone();
 
             async move {
-                let mut headers = Self::default_headers();
-
-                let final_body = if authenticate {
-                    let nonce = self.generate_nonce();
-                    log::debug!("Generated nonce {nonce} for {endpoint}");
-
-                    let params: HashMap<String, String> = if let Some(ref body_bytes) = body {
-                        let body_str = std::str::from_utf8(body_bytes).map_err(|e| {
-                            KrakenHttpError::ParseError(format!(
-                                "Invalid UTF-8 in request body: {e}"
-                            ))
-                        })?;
-                        serde_urlencoded::from_str(body_str).map_err(|e| {
-                            KrakenHttpError::ParseError(format!(
-                                "Failed to parse request params: {e}"
-                            ))
-                        })?
-                    } else {
-                        HashMap::new()
-                    };
-
-                    let (auth_headers, post_data) = self
-                        .sign_spot(&endpoint, nonce, &params)
-                        .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?;
-                    headers.extend(auth_headers);
-                    Some(post_data.into_bytes())
-                } else {
-                    body
-                };
-
-                if method == Method::POST {
-                    headers.insert(
-                        "Content-Type".to_string(),
-                        "application/x-www-form-urlencoded".to_string(),
-                    );
-                }
-
-                let rate_limit_keys = Self::rate_limit_keys(&endpoint);
-
-                let response = self
-                    .client
-                    .request(
-                        method,
-                        url,
-                        None,
-                        Some(headers),
-                        final_body,
-                        None,
-                        Some(rate_limit_keys),
-                    )
+                self.send_request_attempt(method, &endpoint, body, authenticate, None)
                     .await
-                    .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?;
-
-                let status = response.status.as_u16();
-                if status >= 400 {
-                    let body = String::from_utf8_lossy(&response.body).to_string();
-                    // Don't retry authentication errors
-                    if status == 401 || status == 403 {
-                        return Err(KrakenHttpError::AuthenticationError(format!(
-                            "HTTP error {status}: {body}"
-                        )));
-                    }
-                    return Err(KrakenHttpError::NetworkError(format!(
-                        "HTTP error {status}: {body}"
-                    )));
-                }
-
-                let response_text = String::from_utf8(response.body.to_vec()).map_err(|e| {
-                    KrakenHttpError::ParseError(format!("Failed to parse response as UTF-8: {e}"))
-                })?;
-
-                let kraken_response: KrakenResponse<T> = serde_json::from_str(&response_text)
-                    .map_err(|e| {
-                        KrakenHttpError::ParseError(format!("Failed to deserialize response: {e}"))
-                    })?;
-
-                if !kraken_response.error.is_empty() {
-                    return Err(KrakenHttpError::ApiError(kraken_response.error));
-                }
-
-                Ok(kraken_response)
             }
         };
 
         let should_retry = kraken_http_should_retry;
-        let create_error = |msg: String| -> KrakenHttpError { KrakenHttpError::NetworkError(msg) };
+        let create_error = |error: RetryError| KrakenHttpError::NetworkError(error.to_string());
+
+        let cancellation_token = self.cancellation_token();
 
         self.retry_manager
             .execute_with_retry_with_cancel(
@@ -427,9 +365,194 @@ impl KrakenSpotRawHttpClient {
                 operation,
                 should_retry,
                 create_error,
-                &self.cancellation_token,
+                &cancellation_token,
             )
             .await
+    }
+
+    async fn send_request_once<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        endpoint: &str,
+        body: Option<Vec<u8>>,
+        authenticate: bool,
+    ) -> anyhow::Result<KrakenResponse<T>, KrakenHttpError> {
+        let cancellation_token = self.cancellation_token();
+        let _guard = if authenticate {
+            Some(self.lock_order_request(&cancellation_token).await?)
+        } else {
+            None
+        };
+
+        self.send_request_attempt(
+            method,
+            endpoint,
+            body,
+            authenticate,
+            Some(&cancellation_token),
+        )
+        .await
+    }
+
+    async fn lock_order_request(
+        &self,
+        cancellation_token: &CancellationToken,
+    ) -> anyhow::Result<tokio::sync::MutexGuard<'_, ()>, KrakenHttpError> {
+        if cancellation_token.is_cancelled() {
+            return Err(KrakenHttpError::RequestNotStarted(
+                "Request canceled before transport invocation".to_string(),
+            ));
+        }
+
+        tokio::select! {
+            biased;
+            () = cancellation_token.cancelled() => Err(KrakenHttpError::RequestNotStarted(
+                "Request canceled before transport invocation".to_string(),
+            )),
+            guard = self.auth_mutex.lock() => Ok(guard),
+        }
+    }
+
+    async fn send_request_attempt<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        endpoint: &str,
+        body: Option<Vec<u8>>,
+        authenticate: bool,
+        cancellation_token: Option<&CancellationToken>,
+    ) -> anyhow::Result<KrakenResponse<T>, KrakenHttpError> {
+        let mut headers = Self::default_headers();
+        let final_body = if authenticate {
+            let nonce = self.generate_nonce();
+            log::debug!("Generated nonce {nonce} for {endpoint}");
+
+            let params: HashMap<String, String> = if let Some(ref body_bytes) = body {
+                let body_str = std::str::from_utf8(body_bytes).map_err(|e| {
+                    KrakenHttpError::RequestNotStarted(format!(
+                        "Invalid UTF-8 in request body: {e}"
+                    ))
+                })?;
+                serde_urlencoded::from_str(body_str).map_err(|e| {
+                    KrakenHttpError::RequestNotStarted(format!(
+                        "Failed to parse request params: {e}"
+                    ))
+                })?
+            } else {
+                HashMap::new()
+            };
+
+            let (auth_headers, post_data) =
+                self.sign_spot(endpoint, nonce, &params).map_err(|e| {
+                    KrakenHttpError::RequestNotStarted(format!("Failed to sign request: {e}"))
+                })?;
+            headers.extend(auth_headers);
+            Some(post_data.into_bytes())
+        } else {
+            body
+        };
+
+        if method == Method::POST {
+            headers.insert(
+                "Content-Type".to_string(),
+                "application/x-www-form-urlencoded".to_string(),
+            );
+        }
+
+        let response = if let Some(cancellation_token) = cancellation_token {
+            self.send_order_request(method, endpoint, headers, final_body, cancellation_token)
+                .await?
+        } else {
+            let url = format!("{}{endpoint}", self.base_url);
+            let rate_limit_keys = Self::rate_limit_keys(endpoint);
+            self.client
+                .request(
+                    method,
+                    url,
+                    None,
+                    Some(headers),
+                    final_body,
+                    None,
+                    Some(rate_limit_keys),
+                )
+                .await
+                .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?
+        };
+
+        let status = response.status.as_u16();
+        if status >= 400 {
+            let body = String::from_utf8_lossy(&response.body).to_string();
+            let http_error = if status == 401 || status == 403 {
+                KrakenHttpError::AuthenticationError(format!("HTTP error {status}: {body}"))
+            } else {
+                KrakenHttpError::NetworkError(format!("HTTP error {status}: {body}"))
+            };
+            return Err(http_error);
+        }
+
+        let response_text = String::from_utf8(response.body.to_vec()).map_err(|e| {
+            KrakenHttpError::ParseError(format!("Failed to parse response as UTF-8: {e}"))
+        })?;
+        let kraken_response: KrakenResponse<T> =
+            serde_json::from_str(&response_text).map_err(|e| {
+                KrakenHttpError::ParseError(format!("Failed to deserialize response: {e}"))
+            })?;
+
+        if !kraken_response.error.is_empty() {
+            return Err(KrakenHttpError::ApiError(kraken_response.error));
+        }
+
+        Ok(kraken_response)
+    }
+
+    async fn send_order_request(
+        &self,
+        method: Method,
+        endpoint: &str,
+        headers: HashMap<String, String>,
+        body: Option<Vec<u8>>,
+        cancellation_token: &CancellationToken,
+    ) -> anyhow::Result<HttpResponse, KrakenHttpError> {
+        if cancellation_token.is_cancelled() {
+            return Err(KrakenHttpError::RequestNotStarted(
+                "Request canceled before transport invocation".to_string(),
+            ));
+        }
+
+        let request_started = AtomicBool::new(false);
+        let url = format!("{}{endpoint}", self.base_url);
+        let rate_limit_keys = Self::rate_limit_keys(endpoint);
+        let request = async {
+            request_started.store(true, Ordering::Relaxed);
+            self.client
+                .request(
+                    method,
+                    url,
+                    None,
+                    Some(headers),
+                    body,
+                    None,
+                    Some(rate_limit_keys),
+                )
+                .await
+        };
+        tokio::pin!(request);
+
+        tokio::select! {
+            biased;
+            () = cancellation_token.cancelled() => {
+                if request_started.load(Ordering::Relaxed) {
+                    Err(KrakenHttpError::NetworkError(
+                        "Request canceled after transport invocation".to_string(),
+                    ))
+                } else {
+                    Err(KrakenHttpError::RequestNotStarted(
+                        "Request canceled before transport invocation".to_string(),
+                    ))
+                }
+            }
+            response = &mut request => response
+                .map_err(|e| KrakenHttpError::NetworkError(e.to_string())),
+        }
     }
 
     /// Requests the server time from Kraken.
@@ -767,17 +890,16 @@ impl KrakenSpotRawHttpClient {
         params: &KrakenSpotAddOrderParams,
     ) -> anyhow::Result<SpotAddOrderResponse, KrakenHttpError> {
         if self.credential.is_none() {
-            return Err(KrakenHttpError::AuthenticationError(
-                "API credentials required for adding orders".to_string(),
-            ));
+            return Err(KrakenHttpError::MissingCredentials);
         }
 
-        let param_string = serde_urlencoded::to_string(params)
-            .map_err(|e| KrakenHttpError::ParseError(format!("Failed to encode params: {e}")))?;
+        let param_string = serde_urlencoded::to_string(params).map_err(|e| {
+            KrakenHttpError::RequestNotStarted(format!("Failed to encode params: {e}"))
+        })?;
         let body = Some(param_string.into_bytes());
 
         let response: KrakenResponse<SpotAddOrderResponse> = self
-            .send_request(Method::POST, "/0/private/AddOrder", body, true)
+            .send_request_once(Method::POST, "/0/private/AddOrder", body, true)
             .await?;
 
         response
@@ -790,13 +912,13 @@ impl KrakenSpotRawHttpClient {
         &self,
         params: &KrakenSpotAddOrderBatchParams,
     ) -> anyhow::Result<SpotAddOrderBatchResponse, KrakenHttpError> {
-        let credential = self.credential.as_ref().ok_or_else(|| {
-            KrakenHttpError::AuthenticationError(
-                "API credentials required for adding orders".to_string(),
-            )
-        })?;
+        let credential = self
+            .credential
+            .as_ref()
+            .ok_or(KrakenHttpError::MissingCredentials)?;
 
-        let _guard = self.auth_mutex.lock().await;
+        let cancellation_token = self.cancellation_token();
+        let _guard = self.lock_order_request(&cancellation_token).await?;
 
         let endpoint = "/0/private/AddOrderBatch";
         let nonce = self.generate_nonce();
@@ -811,33 +933,26 @@ impl KrakenSpotRawHttpClient {
             json_body["asset_class"] = serde_json::json!(aclass);
         }
         let json_str = serde_json::to_string(&json_body)
-            .map_err(|e| KrakenHttpError::ParseError(format!("Failed to serialize: {e}")))?;
+            .map_err(|e| KrakenHttpError::RequestNotStarted(format!("Failed to serialize: {e}")))?;
 
         let signature = credential
             .sign_spot_json(endpoint, nonce, &json_str)
-            .map_err(|e| KrakenHttpError::AuthenticationError(format!("Failed to sign: {e}")))?;
+            .map_err(|e| KrakenHttpError::RequestNotStarted(format!("Failed to sign: {e}")))?;
 
         let mut headers = Self::default_headers();
         headers.insert("API-Key".to_string(), credential.api_key().to_string());
         headers.insert("API-Sign".to_string(), signature);
         headers.insert("Content-Type".to_string(), "application/json".to_string());
 
-        let url = format!("{}{endpoint}", self.base_url);
-        let rate_limit_keys = Self::rate_limit_keys(endpoint);
-
         let response = self
-            .client
-            .request(
+            .send_order_request(
                 Method::POST,
-                url,
-                None,
-                Some(headers),
+                endpoint,
+                headers,
                 Some(json_str.into_bytes()),
-                None,
-                Some(rate_limit_keys),
+                &cancellation_token,
             )
-            .await
-            .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?;
+            .await?;
 
         if !response.status.is_success() {
             return Err(KrakenHttpError::NetworkError(format!(
@@ -1017,18 +1132,17 @@ impl KrakenSpotRawHttpClient {
         params: &KrakenSpotAmendOrderParams,
     ) -> anyhow::Result<SpotAmendOrderResponse, KrakenHttpError> {
         if self.credential.is_none() {
-            return Err(KrakenHttpError::AuthenticationError(
-                "API credentials required for amending orders".to_string(),
-            ));
+            return Err(KrakenHttpError::MissingCredentials);
         }
 
-        let param_string = serde_urlencoded::to_string(params)
-            .map_err(|e| KrakenHttpError::ParseError(format!("Failed to encode params: {e}")))?;
+        let param_string = serde_urlencoded::to_string(params).map_err(|e| {
+            KrakenHttpError::RequestNotStarted(format!("Failed to encode params: {e}"))
+        })?;
 
         let body = Some(param_string.into_bytes());
 
         let response: KrakenResponse<SpotAmendOrderResponse> = self
-            .send_request(Method::POST, "/0/private/AmendOrder", body, true)
+            .send_request_once(Method::POST, "/0/private/AmendOrder", body, true)
             .await?;
 
         response
@@ -1112,6 +1226,26 @@ impl KrakenSpotRawHttpClient {
     }
 }
 
+pub(crate) type SpotBatchOrder = (
+    InstrumentId,
+    ClientOrderId,
+    OrderSide,
+    OrderType,
+    Quantity,
+    TimeInForce,
+    Option<UnixNanos>,
+    Option<Price>,
+    Option<Price>,
+    Option<TriggerType>,
+    Option<Decimal>,
+    Option<Decimal>,
+    bool,
+    bool,
+    bool,
+    Option<Quantity>,
+    Option<u16>,
+);
+
 /// High-level HTTP client for the Kraken Spot REST API.
 ///
 /// This client wraps the raw client and provides Nautilus domain types.
@@ -1119,7 +1253,7 @@ impl KrakenSpotRawHttpClient {
 /// into Nautilus domain objects.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.kraken", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1285,8 +1419,13 @@ impl KrakenSpotHttpClient {
         self.inner.cancel_all_requests();
     }
 
-    /// Returns the cancellation token for this client.
-    pub fn cancellation_token(&self) -> &CancellationToken {
+    /// Replaces the canceled token so requests can proceed after reconnect.
+    pub fn reset_cancellation_token(&self) {
+        self.inner.reset_cancellation_token();
+    }
+
+    /// Returns a clone of the current cancellation token.
+    pub fn cancellation_token(&self) -> CancellationToken {
         self.inner.cancellation_token()
     }
 
@@ -1437,8 +1576,8 @@ impl KrakenSpotHttpClient {
     pub async fn request_trades(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u64>,
     ) -> anyhow::Result<Vec<TradeTick>, KrakenHttpError> {
         let instrument = self
@@ -1454,13 +1593,13 @@ impl KrakenSpotHttpClient {
         let ts_init = self.generate_ts_init();
 
         // Kraken trades API expects nanoseconds since epoch as string
-        let since = start.map(|dt| (dt.timestamp_nanos_opt().unwrap_or(0) as u64).to_string());
+        let since = start.map(|dt| u64::try_from(dt.as_nanosecond()).unwrap_or(0).to_string());
         let response = self
             .inner
             .get_trades(&raw_symbol, since, asset_class)
             .await?;
 
-        let end_ns = end.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64);
+        let end_ns = end.map(|dt| u64::try_from(dt.as_nanosecond()).unwrap_or(0));
         let mut trades = Vec::new();
 
         for (_pair_name, trade_arrays) in &response.data {
@@ -1491,8 +1630,8 @@ impl KrakenSpotHttpClient {
     pub async fn request_bars(
         &self,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u64>,
     ) -> anyhow::Result<Vec<Bar>, KrakenHttpError> {
         let instrument_id = bar_type.instrument_id();
@@ -1514,8 +1653,8 @@ impl KrakenSpotHttpClient {
         );
 
         // Kraken OHLC API expects Unix timestamp in seconds
-        let since = start.map(|dt| dt.timestamp());
-        let end_ns = end.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64);
+        let since = start.map(|dt| dt.as_second());
+        let end_ns = end.map(|dt| u64::try_from(dt.as_nanosecond()).unwrap_or(0));
         let response = self
             .inner
             .get_ohlc(&raw_symbol, interval, since, asset_class)
@@ -1834,8 +1973,8 @@ impl KrakenSpotHttpClient {
         &self,
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         open_only: bool,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         const PAGE_SIZE: i32 = 50;
@@ -1870,8 +2009,8 @@ impl KrakenSpotHttpClient {
         }
 
         // Kraken API expects Unix timestamps in seconds
-        let start_ts = start.map(|dt| dt.timestamp());
-        let end_ts = end.map(|dt| dt.timestamp());
+        let start_ts = start.map(|dt| dt.as_second());
+        let end_ts = end.map(|dt| dt.as_second());
 
         let mut offset = 0;
 
@@ -1924,8 +2063,8 @@ impl KrakenSpotHttpClient {
         &self,
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
     ) -> anyhow::Result<Vec<FillReport>> {
         const PAGE_SIZE: i32 = 50;
 
@@ -1933,8 +2072,8 @@ impl KrakenSpotHttpClient {
         let mut all_reports = Vec::new();
 
         // Kraken API expects Unix timestamps in seconds
-        let start_ts = start.map(|dt| dt.timestamp());
-        let end_ts = end.map(|dt| dt.timestamp());
+        let start_ts = start.map(|dt| dt.as_second());
+        let end_ts = end.map(|dt| dt.as_second());
 
         let mut offset = 0;
 
@@ -2306,10 +2445,13 @@ impl KrakenSpotHttpClient {
         )?;
         let response = self.inner.add_order(&params).await?;
 
-        let venue_order_id = response
-            .txid
-            .first()
-            .ok_or_else(|| anyhow::anyhow!("No transaction ID in order response"))?;
+        let venue_order_id =
+            response
+                .txid
+                .first()
+                .ok_or_else(|| KrakenSubmitOrderError::MissingOrderId {
+                    detail: "transaction ID was absent".to_string(),
+                })?;
 
         Ok(VenueOrderId::new(venue_order_id))
     }
@@ -2342,12 +2484,38 @@ impl KrakenSpotHttpClient {
         )>,
         account_type: AccountType,
     ) -> anyhow::Result<Vec<String>> {
+        Ok(self
+            .send_order_batches(orders, account_type)
+            .await
+            .into_iter()
+            .map(|result| match result {
+                Ok(order) if order.txid.is_some() => "placed".to_string(),
+                Ok(order) => order.error.unwrap_or_else(|| "Unknown error".to_string()),
+                Err(e)
+                    if matches!(
+                        e.downcast_ref::<KrakenBatchOrderError>(),
+                        Some(KrakenBatchOrderError::Validation { .. })
+                    ) =>
+                {
+                    format!("validation_error: {e}")
+                }
+                Err(e) => format!("batch_error: {e}"),
+            })
+            .collect())
+    }
+
+    pub(crate) async fn send_order_batches(
+        &self,
+        orders: Vec<SpotBatchOrder>,
+        account_type: AccountType,
+    ) -> Vec<anyhow::Result<SpotBatchOrderResponse>> {
         let count = orders.len();
         if count == 0 {
-            return Ok(Vec::new());
+            return Vec::new();
         }
 
-        let mut all_statuses: Vec<Option<String>> = vec![None; count];
+        let mut results: Vec<Option<anyhow::Result<SpotBatchOrderResponse>>> =
+            (0..count).map(|_| None).collect();
         let mut grouped: AHashMap<Ustr, Vec<(usize, KrakenSpotAddOrderParams)>> = AHashMap::new();
 
         for (
@@ -2397,75 +2565,81 @@ impl KrakenSpotHttpClient {
                     grouped.entry(params.pair).or_default().push((idx, params));
                 }
                 Err(e) => {
-                    all_statuses[idx] = Some(format!("validation_error: {e}"));
+                    results[idx] = Some(Err(KrakenBatchOrderError::Validation {
+                        reason: e.to_string(),
+                    }
+                    .into()));
                 }
             }
         }
 
-        let mut grouped_batches: Vec<_> = grouped.into_values().collect();
-        grouped_batches.sort_by_key(|group| group.first().map_or(usize::MAX, |(idx, _)| *idx));
+        let mut batches = Vec::new();
+        let mut grouped_orders: Vec<_> = grouped.into_values().collect();
+        grouped_orders.sort_by_key(|group| group.first().map_or(usize::MAX, |(idx, _)| *idx));
+        for group in grouped_orders {
+            batches.extend(group.chunks(BATCH_SUBMIT_LIMIT).map(|chunk| chunk.to_vec()));
+        }
 
-        for grouped_orders in grouped_batches {
-            for chunk in grouped_orders.chunks(BATCH_SUBMIT_LIMIT) {
-                if chunk.len() == 1 {
-                    let (idx, params) = &chunk[0];
-                    match self.inner.add_order(params).await {
-                        Ok(response) => {
-                            let status = if response.txid.is_empty() {
-                                "Unknown error".to_string()
-                            } else {
-                                "placed".to_string()
-                            };
-                            all_statuses[*idx] = Some(status);
-                        }
-                        Err(e) => {
-                            all_statuses[*idx] = Some(format!("batch_error: {e}"));
-                        }
-                    }
-                    continue;
-                }
-
-                let batch_params = KrakenSpotAddOrderBatchParams {
-                    pair: chunk[0].1.pair,
-                    orders: chunk
+        for (batch_index, batch) in batches.iter().enumerate() {
+            let response = if batch.len() == 1 {
+                self.inner
+                    .add_order(&batch[0].1)
+                    .await
+                    .map(|response| SpotAddOrderBatchResponse {
+                        orders: vec![SpotBatchOrderResponse {
+                            descr: response.descr,
+                            error: None,
+                            txid: response.txid.into_iter().next(),
+                        }],
+                    })
+            } else {
+                let params = KrakenSpotAddOrderBatchParams {
+                    pair: batch[0].1.pair,
+                    orders: batch
                         .iter()
                         .map(|(_, params)| params.clone().into())
                         .collect(),
-                    asset_class: chunk[0].1.asset_class,
+                    asset_class: batch[0].1.asset_class,
                 };
+                self.inner.add_order_batch(&params).await
+            };
 
-                match self.inner.add_order_batch(&batch_params).await {
-                    Ok(response) => {
-                        for (offset, (idx, _)) in chunk.iter().enumerate() {
-                            let status = response.orders.get(offset).map_or_else(
-                                || "Unknown error".to_string(),
-                                |order| {
-                                    if order.txid.is_some() {
-                                        "placed".to_string()
-                                    } else {
-                                        order
-                                            .error
-                                            .clone()
-                                            .unwrap_or_else(|| "Unknown error".to_string())
-                                    }
-                                },
-                            );
-                            all_statuses[*idx] = Some(status);
+            match response {
+                // AddOrderBatch returns result items in request order, so exact cardinality makes
+                // positional correlation unambiguous.
+                Ok(response) if response.orders.len() == batch.len() => {
+                    for ((idx, _), order) in batch.iter().zip(response.orders) {
+                        results[*idx] = Some(Ok(order));
+                    }
+                }
+                Ok(response) => {
+                    for (idx, _) in batch {
+                        results[*idx] = Some(Err(KrakenBatchOrderError::ResponseCount {
+                            expected: batch.len(),
+                            actual: response.orders.len(),
+                        }
+                        .into()));
+                    }
+                }
+                Err(e) => {
+                    for (idx, _) in batch {
+                        results[*idx] = Some(Err(anyhow::Error::new(e.clone())));
+                    }
+
+                    for later_batch in &batches[batch_index + 1..] {
+                        for (idx, _) in later_batch {
+                            results[*idx] = Some(Err(KrakenBatchOrderError::NotAttempted.into()));
                         }
                     }
-                    Err(e) => {
-                        for (idx, _) in chunk {
-                            all_statuses[*idx] = Some(format!("batch_error: {e}"));
-                        }
-                    }
+                    break;
                 }
             }
         }
 
-        Ok(all_statuses
+        results
             .into_iter()
-            .map(|status| status.unwrap_or_else(|| "Unknown error".to_string()))
-            .collect())
+            .map(|result| result.unwrap_or_else(|| Err(KrakenBatchOrderError::NotAttempted.into())))
+            .collect()
     }
 
     /// Modifies an existing order on the Kraken Spot exchange using atomic amend.
@@ -2500,8 +2674,6 @@ impl KrakenSpotHttpClient {
         }
 
         let mut builder = KrakenSpotAmendOrderParamsBuilder::default();
-
-        // Prefer txid (venue_order_id) over cl_ord_id
         if let Some(ref id) = txid {
             builder.txid(id.clone());
         } else if let Some(ref id) = cl_ord_id {
@@ -2527,8 +2699,7 @@ impl KrakenSpotHttpClient {
         let _response = self.inner.amend_order(&params).await?;
 
         // AmendOrder modifies in-place, so the order keeps its original ID
-        let order_id = venue_order_id
-            .ok_or_else(|| anyhow::anyhow!("venue_order_id required for amend response"))?;
+        let order_id = venue_order_id.ok_or(KrakenModifyOrderError::MissingOrderId)?;
 
         Ok(order_id)
     }
@@ -2866,6 +3037,8 @@ fn compute_time_in_force(
 
 #[cfg(test)]
 mod tests {
+    use std::{sync::Arc, time::Duration};
+
     use nautilus_model::instruments::CurrencyPair;
     use rstest::rstest;
 
@@ -2893,6 +3066,53 @@ mod tests {
         )
         .unwrap();
         assert!(client.credential.is_some());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_order_request_cancellation_before_transport() {
+        let client = Arc::new(KrakenSpotRawHttpClient::default());
+        let guard = client.auth_mutex.lock().await;
+        let cancellation_token = client.cancellation_token();
+        let waiting_token = cancellation_token.clone();
+        let waiting_client = Arc::clone(&client);
+        let waiting = tokio::spawn(async move {
+            waiting_client
+                .lock_order_request(&waiting_token)
+                .await
+                .map(drop)
+        });
+
+        tokio::task::yield_now().await;
+        client.cancel_all_requests();
+        let waiting_result = tokio::time::timeout(Duration::from_secs(1), waiting)
+            .await
+            .expect("auth lock wait should stop on cancellation")
+            .expect("auth lock task should complete");
+        let request_result = client
+            .send_order_request(
+                Method::POST,
+                "/0/private/AddOrder",
+                KrakenSpotRawHttpClient::default_headers(),
+                None,
+                &cancellation_token,
+            )
+            .await;
+        drop(guard);
+        client.reset_cancellation_token();
+        let reset_token = client.cancellation_token();
+
+        assert!(matches!(
+            waiting_result,
+            Err(KrakenHttpError::RequestNotStarted(ref message))
+                if message == "Request canceled before transport invocation"
+        ));
+        assert!(matches!(
+            request_result,
+            Err(KrakenHttpError::RequestNotStarted(ref message))
+                if message == "Request canceled before transport invocation"
+        ));
+        assert!(!reset_token.is_cancelled());
     }
 
     #[rstest]

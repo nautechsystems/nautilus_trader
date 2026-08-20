@@ -26,7 +26,7 @@ use crate::indicator::{Indicator, MovingAverage};
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.indicators")
 )]
 #[cfg_attr(
     feature = "python",
@@ -149,6 +149,7 @@ mod tests {
         average::ema::ExponentialMovingAverage,
         indicator::{Indicator, MovingAverage},
         stubs::*,
+        testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -158,7 +159,7 @@ mod tests {
         assert_eq!(display_str, "ExponentialMovingAverage(10)");
         assert_eq!(ema.period, 10);
         assert_eq!(ema.price_type, PriceType::Mid);
-        assert_eq!(ema.alpha, 0.181_818_181_818_181_82);
+        assert_approx_equal(ema.alpha, 0.181818181818);
         assert!(!ema.initialized);
     }
 
@@ -187,7 +188,7 @@ mod tests {
         assert!(ema.has_inputs());
         assert!(ema.initialized());
         assert_eq!(ema.count, 10);
-        assert_eq!(ema.value, 6.239_368_480_121_215_5);
+        assert_approx_equal(ema.value, 6.23936848012);
     }
 
     #[rstest]
@@ -220,7 +221,7 @@ mod tests {
         indicator_ema_10.handle_quote(&tick1).unwrap();
         indicator_ema_10.handle_quote(&tick2).unwrap();
         assert_eq!(indicator_ema_10.count, 2);
-        assert_eq!(indicator_ema_10.value, 1_501.363_636_363_636_3);
+        assert_approx_equal(indicator_ema_10.value, 1501.36363636);
     }
 
     #[rstest]

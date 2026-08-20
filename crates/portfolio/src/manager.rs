@@ -15,20 +15,26 @@
 
 //! Provides account management functionality.
 
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, cmp::Ordering, fmt::Debug, rc::Rc};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    accounts::{Account, AccountAny, BaseAccount, BettingAccount, CashAccount, MarginAccount},
+    accounts::{
+        Account, AccountAny, BaseAccount, BettingAccount, CashAccount, MarginAccount, WalletAccount,
+    },
     enums::{AccountType, OrderSide, OrderType, PriceType},
     events::{AccountState, OrderFilled},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     position::{Position, fold_net_position},
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{
+        AccountBalance, Currency, Money, Price, Quantity,
+        fixed::{FIXED_PRECISION, check_fixed_raw_i128, check_fixed_raw_u128},
+        money::MoneyRaw,
+    },
 };
 use rust_decimal::Decimal;
 
@@ -152,7 +158,7 @@ impl AccountsManager {
 
     /// Updates account balances based on open orders in place.
     ///
-    /// For cash accounts, updates the balance locked by open orders.
+    /// For cash and wallet accounts, updates the balance locked by open orders.
     /// For margin accounts, updates the initial margin requirements.
     #[must_use]
     pub fn update_orders_in_place(
@@ -175,6 +181,9 @@ impl AccountsManager {
                 orders_open,
                 ts_event,
             ),
+            AccountAny::Wallet(wallet_account) => {
+                self.update_balance_locked_wallet(wallet_account, instrument, orders_open, ts_event)
+            }
         }
     }
 
@@ -374,7 +383,7 @@ impl AccountsManager {
     ) -> Option<AccountState> {
         if orders_open.is_empty() {
             account.clear_balance_locked(instrument.id());
-            return Some(self.generate_cash_account_state(account, ts_event));
+            return Some(self.generate_unleveraged_account_state(account, ts_event));
         }
 
         let mut total_locked: AHashMap<Currency, Money> = AHashMap::new();
@@ -456,7 +465,11 @@ impl AccountsManager {
 
         if total_locked.is_empty() {
             account.clear_balance_locked(instrument.id());
-            return Some(self.generate_cash_account_state(account, ts_event));
+            return Some(self.generate_unleveraged_account_state(account, ts_event));
+        }
+
+        if !reservation_precisions_match(account, &total_locked) {
+            return None;
         }
 
         // Clear existing locks before applying new ones to remove stale currency entries
@@ -467,7 +480,188 @@ impl AccountsManager {
             log::info!("{} balance_locked={balance_locked}", instrument.id());
         }
 
-        Some(self.generate_cash_account_state(account, ts_event))
+        Some(self.generate_unleveraged_account_state(account, ts_event))
+    }
+
+    fn update_balance_locked_wallet(
+        &self,
+        account: &mut WalletAccount,
+        instrument: &InstrumentAny,
+        orders: &[&OrderAny],
+        ts_event: UnixNanos,
+    ) -> Option<AccountState> {
+        let mut total_locked: AHashMap<Currency, Money> = AHashMap::new();
+        let mut fully_locked = AHashSet::new();
+
+        for order in orders {
+            if order.instrument_id() != instrument.id() {
+                log::error!(
+                    "Cannot calculate wallet balance locked: order {} is for instrument {}, expected {}",
+                    order.client_order_id(),
+                    order.instrument_id(),
+                    instrument.id()
+                );
+                return None;
+            }
+
+            if !(order.is_open() || order.is_inflight()) {
+                continue;
+            }
+
+            if order.is_pending_update() {
+                let source_currency = match order.order_side() {
+                    OrderSide::Buy => instrument.quote_currency(),
+                    OrderSide::Sell => instrument
+                        .base_currency()
+                        .unwrap_or_else(|| instrument.quote_currency()),
+                    OrderSide::NoOrderSide => {
+                        log::error!("Cannot calculate wallet balance locked: invalid order side");
+                        return None;
+                    }
+                };
+                let Some(total) = account.balance_total(Some(source_currency)) else {
+                    log::error!(
+                        "Cannot calculate wallet balance locked: no observed balance for {source_currency}"
+                    );
+                    return None;
+                };
+                total_locked.insert(total.currency, total);
+                fully_locked.insert(total.currency);
+                continue;
+            }
+
+            let quantity = order.leaves_qty();
+            if quantity.is_zero() {
+                continue;
+            }
+
+            let locked = match order.order_side() {
+                OrderSide::Sell if order.is_quote_quantity() => {
+                    log::error!(
+                        "Cannot calculate wallet balance locked for quote-denominated SELL order {}",
+                        order.client_order_id()
+                    );
+                    return None;
+                }
+                OrderSide::Sell => {
+                    let source_currency = instrument
+                        .base_currency()
+                        .unwrap_or_else(|| instrument.quote_currency());
+                    let Some(total) = account.balance_total(Some(source_currency)) else {
+                        log::error!(
+                            "Cannot calculate wallet balance locked: no observed balance for {source_currency}"
+                        );
+                        return None;
+                    };
+
+                    match wallet_money_from_quantity(quantity, total.currency) {
+                        Ok(locked) => locked,
+                        Err(e) => {
+                            log::error!("Cannot calculate wallet balance locked: {e}");
+                            return None;
+                        }
+                    }
+                }
+                OrderSide::Buy if order.is_quote_quantity() => {
+                    let source_currency = instrument.quote_currency();
+                    let Some(total) = account.balance_total(Some(source_currency)) else {
+                        log::error!(
+                            "Cannot calculate wallet balance locked: no observed balance for {source_currency}"
+                        );
+                        return None;
+                    };
+
+                    match wallet_money_from_quantity(quantity, total.currency) {
+                        Ok(locked) => locked,
+                        Err(e) => {
+                            log::error!("Cannot calculate wallet balance locked: {e}");
+                            return None;
+                        }
+                    }
+                }
+                OrderSide::Buy => {
+                    let Some(price) = order.price().or_else(|| order.trigger_price()) else {
+                        log::error!(
+                            "Cannot calculate wallet balance locked for order {} without a price",
+                            order.client_order_id()
+                        );
+                        return None;
+                    };
+
+                    match account.calculate_balance_locked(
+                        instrument,
+                        OrderSide::Buy,
+                        quantity,
+                        price,
+                        None,
+                    ) {
+                        Ok(locked) => locked,
+                        Err(e) => {
+                            log::error!("Cannot calculate wallet balance locked: {e}");
+                            return None;
+                        }
+                    }
+                }
+                OrderSide::NoOrderSide => {
+                    log::error!("Cannot calculate wallet balance locked: invalid order side");
+                    return None;
+                }
+            };
+
+            if account.balance_total(Some(locked.currency)).is_none() {
+                log::error!(
+                    "Cannot calculate wallet balance locked: no observed balance for {}",
+                    locked.currency
+                );
+                return None;
+            }
+
+            if fully_locked.contains(&locked.currency) {
+                continue;
+            }
+
+            if let Some(total) = total_locked.get_mut(&locked.currency) {
+                let Some(sum) = total.checked_add(locked) else {
+                    log::error!(
+                        "Cannot calculate wallet balance locked: {} total exceeds Money bounds",
+                        locked.currency
+                    );
+                    return None;
+                };
+                *total = sum;
+            } else {
+                total_locked.insert(locked.currency, locked);
+            }
+        }
+
+        let balances_before = account.base.balances.clone();
+        let locks_before = account.balances_locked.clone();
+        account.clear_balance_locked(instrument.id());
+        if account
+            .balances_locked
+            .keys()
+            .any(|(instrument_id, _)| *instrument_id == instrument.id())
+        {
+            log::error!(
+                "Cannot update wallet balance locked: prior reservations for {} were not cleared",
+                instrument.id()
+            );
+            account.base.balances = balances_before;
+            account.balances_locked = locks_before;
+            return None;
+        }
+
+        for balance_locked in total_locked.into_values() {
+            if let Err(e) = account.update_balance_locked(instrument.id(), balance_locked) {
+                log::error!("Cannot update wallet balance locked: {e}");
+                account.base.balances = balances_before;
+                account.balances_locked = locks_before;
+                return None;
+            }
+            log::info!("{} balance_locked={balance_locked}", instrument.id());
+        }
+
+        Some(self.generate_unleveraged_account_state(account, ts_event))
     }
 
     fn update_margin_init(
@@ -718,6 +912,10 @@ impl AccountsManager {
             return Some(self.generate_betting_account_state(account, ts_event));
         }
 
+        if !reservation_precisions_match(account, &total_locked) {
+            return None;
+        }
+
         account.clear_balance_locked(instrument.id());
 
         for (_, balance_locked) in total_locked {
@@ -893,6 +1091,19 @@ impl AccountsManager {
                     return false;
                 }
             }
+            AccountAny::Wallet(wallet) => {
+                if let Err(e) = wallet.update_balances(&balances) {
+                    log::error!("Cannot update wallet account balance: {e}");
+                    return false;
+                }
+
+                if let Some(comm) = commission
+                    && let Err(e) = wallet.try_update_commissions(comm)
+                {
+                    log::error!("Cannot update wallet account commissions: {e}");
+                    return false;
+                }
+            }
         }
         true
     }
@@ -961,7 +1172,7 @@ impl AccountsManager {
                 // existing-currency branch above lets the per-account
                 // `update_balances` enforce the borrowing policy, so the two
                 // branches are intentionally asymmetric until cross-currency
-                // equity tracking lands (see TODO in `manager.pyx`).
+                // equity tracking is implemented.
                 if pnl.as_decimal() < Decimal::ZERO {
                     log::error!(
                         "Cannot complete transaction: no {currency} to deduct a {pnl} realized PnL from"
@@ -1060,6 +1271,19 @@ impl AccountsManager {
                     return false;
                 }
             }
+            AccountAny::Wallet(wallet) => {
+                if let Err(e) = wallet.update_balances(&new_balances) {
+                    log::error!("Cannot update wallet account balance: {e}");
+                    return false;
+                }
+
+                if let Some(commission) = commission
+                    && let Err(e) = wallet.try_update_commissions(commission)
+                {
+                    log::error!("Cannot update wallet account commissions: {e}");
+                    return false;
+                }
+            }
         }
         true
     }
@@ -1077,10 +1301,13 @@ impl AccountsManager {
                 self.generate_margin_account_state(margin_account, ts_event)
             }
             AccountAny::Cash(cash_account) => {
-                self.generate_cash_account_state(cash_account, ts_event)
+                self.generate_unleveraged_account_state(cash_account, ts_event)
             }
             AccountAny::Betting(betting_account) => {
                 self.generate_betting_account_state(betting_account, ts_event)
+            }
+            AccountAny::Wallet(wallet_account) => {
+                self.generate_unleveraged_account_state(wallet_account, ts_event)
             }
         }
     }
@@ -1108,21 +1335,21 @@ impl AccountsManager {
         )
     }
 
-    fn generate_cash_account_state(
+    fn generate_unleveraged_account_state(
         &self,
-        cash_account: &CashAccount,
+        account: &impl Account,
         ts_event: UnixNanos,
     ) -> AccountState {
         AccountState::new(
-            cash_account.id,
-            AccountType::Cash,
-            cash_account.balances.clone().into_values().collect(),
+            account.id(),
+            account.account_type(),
+            account.balances().into_values().collect(),
             vec![],
             false,
             UUID4::new(),
             ts_event,
             self.clock.borrow().timestamp_ns(),
-            cash_account.base_currency(),
+            account.base_currency(),
         )
     }
 
@@ -1168,11 +1395,73 @@ impl AccountsManager {
     }
 }
 
+#[allow(
+    clippy::useless_conversion,
+    reason = "the raw width differs when high-precision is disabled"
+)]
+fn wallet_money_from_quantity(quantity: Quantity, currency: Currency) -> anyhow::Result<Money> {
+    anyhow::ensure!(!quantity.is_undefined(), "quantity was undefined");
+    Quantity::from_raw_checked(quantity.raw, quantity.precision)?;
+    check_fixed_raw_u128(u128::from(quantity.raw), quantity.precision)?;
+
+    let source_precision = quantity.precision.max(FIXED_PRECISION);
+    let target_precision = currency.precision.max(FIXED_PRECISION);
+    let raw = i128::try_from(u128::from(quantity.raw))
+        .map_err(|_| anyhow::anyhow!("quantity for {currency} exceeds signed raw bounds"))?;
+    let raw = match source_precision.cmp(&target_precision) {
+        Ordering::Less => {
+            let scale = 10_i128.pow(u32::from(target_precision - source_precision));
+            raw.checked_mul(scale).ok_or_else(|| {
+                anyhow::anyhow!("quantity for {currency} overflowed while increasing raw scale")
+            })?
+        }
+        Ordering::Greater => {
+            let scale = 10_i128.pow(u32::from(source_precision - target_precision));
+            anyhow::ensure!(
+                raw % scale == 0,
+                "quantity for {currency} loses precision when decreasing raw scale"
+            );
+            raw / scale
+        }
+        Ordering::Equal => raw,
+    };
+    check_fixed_raw_i128(raw, currency.precision)?;
+    let raw: MoneyRaw = raw
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("quantity for {currency} exceeds Money raw bounds"))?;
+
+    Money::from_raw_checked(raw, currency).map_err(Into::into)
+}
+
+fn reservation_precisions_match(
+    account: &dyn Account,
+    reservations: &AHashMap<Currency, Money>,
+) -> bool {
+    for reservation in reservations.values() {
+        let Some(balance) = account.balance(Some(reservation.currency)) else {
+            continue;
+        };
+
+        if balance.currency.precision != reservation.currency.precision {
+            log::error!(
+                "Cannot update {} reservation: precision {} differed from balance precision {}",
+                reservation.currency,
+                reservation.currency.precision,
+                balance.currency.precision
+            );
+            return false;
+        }
+    }
+
+    true
+}
+
 fn base_account(account: &AccountAny) -> &BaseAccount {
     match account {
         AccountAny::Margin(margin) => margin,
         AccountAny::Cash(cash) => cash,
         AccountAny::Betting(betting) => betting,
+        AccountAny::Wallet(wallet) => wallet,
     }
 }
 
@@ -1181,6 +1470,7 @@ fn base_account_mut(account: &mut AccountAny) -> &mut BaseAccount {
         AccountAny::Margin(margin) => margin,
         AccountAny::Cash(cash) => cash,
         AccountAny::Betting(betting) => betting,
+        AccountAny::Wallet(wallet) => wallet,
     }
 }
 
@@ -1192,23 +1482,29 @@ mod tests {
     use nautilus_model::{
         accounts::{BettingAccount, CashAccount, MarginAccount},
         data::QuoteTick,
-        enums::{AccountType, OmsType, OrderSide, OrderType},
+        enums::{AccountType, CurrencyType, OmsType, OrderSide, OrderType},
         events::{
             AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted,
-            order::spec::{OrderAcceptedSpec, OrderFilledSpec, OrderSubmittedSpec},
+            account::stubs::wallet_account_state,
+            order::spec::{
+                OrderAcceptedSpec, OrderFilledSpec, OrderPendingUpdateSpec, OrderSubmittedSpec,
+            },
         },
         identifiers::{
             AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, Venue,
             VenueOrderId,
         },
         instruments::{
-            CryptoFuture, Instrument, InstrumentAny,
-            stubs::{audusd_sim, betting, currency_pair_btcusdt, default_fx_ccy},
+            CryptoFuture, CurrencyPair, Instrument, InstrumentAny,
+            stubs::{
+                audusd_sim, betting, currency_pair_btcusdt, currency_pair_ethusdt, default_fx_ccy,
+            },
         },
         orders::{OrderAny, OrderTestBuilder},
         position::Position,
         types::{
-            AccountBalance, Currency, MarginBalance, Money, Price, Quantity, money::MONEY_MAX,
+            AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
+            money::{MONEY_MAX, MONEY_RAW_MAX, MoneyRaw},
         },
     };
     use rstest::rstest;
@@ -1317,6 +1613,59 @@ mod tests {
     }
 
     #[rstest]
+    fn test_update_orders_cash_precision_mismatch_preserves_state() {
+        let mut cash = multi_currency_cash_account(false);
+        let usd = Currency::USD();
+        let mut instrument = audusd_sim();
+        let instrument_id = instrument.id();
+        cash.update_balance_locked(instrument_id, Money::from("10 USD"));
+        let balances_before = cash.base.balances.clone();
+        let locks_before = cash.balances_locked.clone();
+        let events_before = cash.base.events.clone();
+        instrument.quote_currency = Currency::new(
+            "USD",
+            usd.precision + 1,
+            840,
+            "US Dollar",
+            CurrencyType::Fiat,
+        );
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("0.75"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for(&order)))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(order_accepted_for(
+                &order,
+                VenueOrderId::new("1"),
+            )))
+            .unwrap();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+        let mut account = AccountAny::Cash(cash);
+
+        let result = manager.update_orders_in_place(
+            &mut account,
+            &InstrumentAny::CurrencyPair(instrument),
+            &[&order],
+            UnixNanos::default(),
+        );
+
+        assert_eq!(result, None);
+        let AccountAny::Cash(cash) = account else {
+            panic!("Expected CashAccount")
+        };
+        assert_eq!(cash.base.balances, balances_before);
+        assert_eq!(cash.balances_locked, locks_before);
+        assert_eq!(cash.base.events, events_before);
+    }
+
+    #[rstest]
     fn test_update_orders_betting_account_uses_liability_for_locked_balance() {
         let gbp = Currency::GBP();
         let account_state = AccountState::new(
@@ -1412,6 +1761,78 @@ mod tests {
         } else {
             panic!("Expected BettingAccount");
         }
+    }
+
+    #[rstest]
+    fn test_update_orders_betting_precision_mismatch_preserves_state() {
+        let gbp = Currency::GBP();
+        let account_state = AccountState::new(
+            AccountId::new("BETTING-001"),
+            AccountType::Betting,
+            vec![AccountBalance::new(
+                Money::from("1000 GBP"),
+                Money::zero(gbp),
+                Money::from("1000 GBP"),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        let mut betting_account = BettingAccount::new(account_state, true);
+        let mut instrument = betting();
+        let instrument_id = instrument.id();
+        betting_account.update_balance_locked(instrument_id, Money::from("100 GBP"));
+        let balances_before = betting_account.base.balances.clone();
+        let locks_before = betting_account.balances_locked.clone();
+        let events_before = betting_account.base.events.clone();
+        instrument.currency = Currency::new(
+            "GBP",
+            gbp.precision + 1,
+            826,
+            "Pound Sterling",
+            CurrencyType::Fiat,
+        );
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("50"))
+            .price(Price::from("2.0"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for_account(
+                &order,
+                AccountId::new("BETTING-001"),
+            )))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(order_accepted_for_account(
+                &order,
+                VenueOrderId::new("1"),
+                AccountId::new("BETTING-001"),
+            )))
+            .unwrap();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+        let mut account = AccountAny::Betting(betting_account);
+
+        let result = manager.update_orders_in_place(
+            &mut account,
+            &InstrumentAny::Betting(instrument),
+            &[&order],
+            UnixNanos::default(),
+        );
+
+        assert_eq!(result, None);
+        let AccountAny::Betting(betting_account) = account else {
+            panic!("Expected BettingAccount")
+        };
+        assert_eq!(betting_account.base.balances, balances_before);
+        assert_eq!(betting_account.balances_locked, locks_before);
+        assert_eq!(betting_account.base.events, events_before);
     }
 
     #[rstest]
@@ -1633,6 +2054,474 @@ mod tests {
         } else {
             panic!("Expected CashAccount");
         }
+    }
+
+    #[rstest]
+    fn test_update_orders_wallet_account_locks_submitted_reduce_only_market_sell() {
+        let eth = Currency::ETH();
+        let usdc = Currency::USDC();
+        let account_state = AccountState::new(
+            AccountId::new("WALLET-001"),
+            AccountType::Wallet,
+            vec![
+                AccountBalance::new(
+                    Money::new(10.0, eth),
+                    Money::zero(eth),
+                    Money::new(10.0, eth),
+                ),
+                AccountBalance::new(
+                    Money::new(25_000.0, usdc),
+                    Money::zero(usdc),
+                    Money::new(25_000.0, usdc),
+                ),
+            ],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+
+        let account = WalletAccount::new(account_state, true);
+
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        cache
+            .borrow_mut()
+            .add_account(AccountAny::Wallet(account.clone()))
+            .unwrap();
+
+        let manager = AccountsManager::new(clock, cache);
+        let instrument = currency_pair_ethusdt();
+
+        let mut sell_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("2"))
+            .reduce_only(true)
+            .build();
+
+        let submitted = order_submitted_for(&sell_order);
+        sell_order
+            .apply(OrderEventAny::Submitted(submitted))
+            .unwrap();
+
+        let orders: Vec<&OrderAny> = vec![&sell_order];
+        let result = manager.update_orders(
+            &AccountAny::Wallet(account),
+            &InstrumentAny::CurrencyPair(instrument),
+            &orders,
+            UnixNanos::default(),
+        );
+
+        assert!(result.is_some());
+        let (updated_account, state) = result.unwrap();
+
+        assert_eq!(state.account_type, AccountType::Wallet);
+        assert_eq!(state.balances.len(), 2);
+        let AccountAny::Wallet(wallet_account) = &updated_account else {
+            panic!("Expected WalletAccount")
+        };
+        assert_eq!(
+            wallet_account.balance_locked(Some(eth)),
+            Some(Money::new(2.0, eth))
+        );
+        assert_eq!(
+            wallet_account.balance_free(Some(eth)),
+            Some(Money::new(8.0, eth))
+        );
+        assert_eq!(
+            wallet_account.balance_total(Some(eth)),
+            Some(Money::new(10.0, eth))
+        );
+        assert_eq!(
+            wallet_account.balance_locked(Some(usdc)),
+            Some(Money::zero(usdc))
+        );
+    }
+
+    #[rstest]
+    fn test_update_orders_wallet_wrong_instrument_preserves_locks() {
+        let instrument = currency_pair_ethusdt();
+        let mut wallet = WalletAccount::new(wallet_account_state(), true);
+        wallet
+            .update_balance_locked(instrument.id(), Money::from("2 ETH"))
+            .unwrap();
+        let mut account = AccountAny::Wallet(wallet);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(currency_pair_btcusdt().id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for(&order)))
+            .unwrap();
+
+        let result = manager.update_orders_in_place(
+            &mut account,
+            &InstrumentAny::CurrencyPair(instrument),
+            &[&order],
+            UnixNanos::default(),
+        );
+
+        assert_eq!(result, None);
+        let AccountAny::Wallet(wallet) = account else {
+            panic!("Expected WalletAccount")
+        };
+        assert_eq!(
+            wallet.balance_locked(Some(Currency::ETH())),
+            Some(Money::from("2 ETH"))
+        );
+        assert_eq!(
+            wallet.balance_free(Some(Currency::ETH())),
+            Some(Money::from("8 ETH"))
+        );
+    }
+
+    #[rstest]
+    fn test_update_orders_wallet_error_restores_locks() {
+        let instrument = currency_pair_ethusdt();
+        let mut wallet = WalletAccount::new(wallet_account_state(), true);
+        wallet
+            .update_balance_locked(instrument.id(), Money::from("2 ETH"))
+            .unwrap();
+        wallet.balances_locked.insert(
+            (InstrumentId::from("WETHDAI.BLOCKCHAIN"), Currency::ETH()),
+            Money::from("-1 ETH"),
+        );
+        let balances_before = wallet.base.balances.clone();
+        let locks_before = wallet.balances_locked.clone();
+        let events_before = wallet.events.clone();
+        let mut account = AccountAny::Wallet(wallet);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for(&order)))
+            .unwrap();
+
+        let result = manager.update_orders_in_place(
+            &mut account,
+            &InstrumentAny::CurrencyPair(instrument),
+            &[&order],
+            UnixNanos::default(),
+        );
+
+        assert_eq!(result, None);
+        let AccountAny::Wallet(wallet) = account else {
+            panic!("Expected WalletAccount")
+        };
+        assert_eq!(wallet.base.balances, balances_before);
+        assert_eq!(wallet.balances_locked, locks_before);
+        assert_eq!(wallet.events, events_before);
+    }
+
+    #[rstest]
+    fn test_update_orders_wallet_account_fully_locks_pending_update_debit_currency() {
+        let account = WalletAccount::new(wallet_account_state(), true);
+        let account_id = account.id;
+        let eth = Currency::ETH();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        cache
+            .borrow_mut()
+            .add_account(AccountAny::Wallet(account.clone()))
+            .unwrap();
+
+        let manager = AccountsManager::new(clock, cache);
+        let instrument = currency_pair_ethusdt();
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("2"))
+            .price(Price::from("3000"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for_account(
+                &order, account_id,
+            )))
+            .unwrap();
+        let venue_order_id = VenueOrderId::new("1");
+        order
+            .apply(OrderEventAny::Accepted(order_accepted_for_account(
+                &order,
+                venue_order_id,
+                account_id,
+            )))
+            .unwrap();
+        let pending_update = OrderPendingUpdateSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .account_id(account_id)
+            .venue_order_id(venue_order_id)
+            .build();
+        order
+            .apply(OrderEventAny::PendingUpdate(pending_update))
+            .unwrap();
+
+        let result = manager.update_orders(
+            &AccountAny::Wallet(account),
+            &InstrumentAny::CurrencyPair(instrument),
+            &[&order],
+            UnixNanos::default(),
+        );
+
+        let (updated_account, _) = result.unwrap();
+        let AccountAny::Wallet(wallet) = updated_account else {
+            panic!("Expected WalletAccount")
+        };
+        assert_eq!(wallet.balance_total(Some(eth)), Some(Money::from("10 ETH")));
+        assert_eq!(
+            wallet.balance_locked(Some(eth)),
+            Some(Money::from("10 ETH"))
+        );
+        assert_eq!(wallet.balance_free(Some(eth)), Some(Money::from("0 ETH")));
+    }
+
+    #[rstest]
+    fn test_update_orders_wallet_preserves_dex_terms_at_observed_precision() {
+        let Some((wallet, instrument, base, quote)) = wallet_precision_pair(18) else {
+            return;
+        };
+        let mut sell = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from_raw(1_234_567_890_123_456, 16))
+            .build();
+        let mut buy = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from_raw(1_000_000_000_000_000, 16))
+            .price(Price::from_raw(1_234_567_890_123_456, 16))
+            .build();
+        let mut buy_quote = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from_raw(1_234_567_890_123_456, 16))
+            .quote_quantity(true)
+            .build();
+        sell.apply(OrderEventAny::Submitted(order_submitted_for(&sell)))
+            .unwrap();
+        buy.apply(OrderEventAny::Submitted(order_submitted_for(&buy)))
+            .unwrap();
+        buy_quote
+            .apply(OrderEventAny::Submitted(order_submitted_for(&buy_quote)))
+            .unwrap();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+
+        let result = manager.update_orders(
+            &AccountAny::Wallet(wallet),
+            &InstrumentAny::CurrencyPair(instrument),
+            &[&sell, &buy, &buy_quote],
+            UnixNanos::default(),
+        );
+
+        let (AccountAny::Wallet(wallet), _) = result.unwrap() else {
+            panic!("Expected WalletAccount")
+        };
+        let base_balance = wallet.balance(Some(base)).unwrap();
+        let quote_balance = wallet.balance(Some(quote)).unwrap();
+        assert_eq!(base_balance.currency.precision, 18);
+        assert_eq!(base_balance.total.raw, 1_000_000_000_000_000_000);
+        assert_eq!(base_balance.locked.raw, 123_456_789_012_345_600);
+        assert_eq!(base_balance.free.raw, 876_543_210_987_654_400);
+        assert_eq!(quote_balance.currency.precision, 18);
+        assert_eq!(quote_balance.total.raw, 2_000_000_000_000_000_000);
+        assert_eq!(quote_balance.locked.raw, 135_802_467_913_580_160);
+        assert_eq!(quote_balance.free.raw, 1_864_197_532_086_419_840);
+    }
+
+    #[rstest]
+    fn test_update_orders_wallet_uses_observed_currency_grid() {
+        let Some((wallet, instrument, base, quote)) = wallet_precision_pair(6) else {
+            return;
+        };
+        let mut sell = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from_raw(1_234_560_000_000_000, 16))
+            .build();
+        let mut buy = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from_raw(1_000_000_000_000_000, 16))
+            .price(Price::from_raw(12_345_670_000_000_000, 16))
+            .build();
+        let mut buy_quote = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from_raw(2_345_670_000_000_000, 16))
+            .quote_quantity(true)
+            .build();
+        sell.apply(OrderEventAny::Submitted(order_submitted_for(&sell)))
+            .unwrap();
+        buy.apply(OrderEventAny::Submitted(order_submitted_for(&buy)))
+            .unwrap();
+        buy_quote
+            .apply(OrderEventAny::Submitted(order_submitted_for(&buy_quote)))
+            .unwrap();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+        let scale = money_raw(10_i128.pow(u32::from(FIXED_PRECISION)));
+        let grid = money_raw(10_i128.pow(u32::from(FIXED_PRECISION - quote.precision)));
+
+        let result = manager.update_orders(
+            &AccountAny::Wallet(wallet),
+            &InstrumentAny::CurrencyPair(instrument),
+            &[&sell, &buy, &buy_quote],
+            UnixNanos::default(),
+        );
+
+        let (AccountAny::Wallet(wallet), _) = result.unwrap() else {
+            panic!("Expected WalletAccount")
+        };
+        let base_balance = wallet.balance(Some(base)).unwrap();
+        let quote_balance = wallet.balance(Some(quote)).unwrap();
+        assert_eq!(base_balance.currency.precision, 6);
+        assert_eq!(base_balance.total.raw, scale);
+        assert_eq!(base_balance.locked.raw, 123_456 * grid);
+        assert_eq!(base_balance.free.raw, scale - 123_456 * grid);
+        assert_eq!(quote_balance.currency.precision, 6);
+        assert_eq!(quote_balance.total.raw, 2 * scale);
+        assert_eq!(quote_balance.locked.raw, 358_024 * grid);
+        assert_eq!(quote_balance.free.raw, 2 * scale - 358_024 * grid);
+    }
+
+    #[rstest]
+    #[case::sell(OrderSide::Sell, false, 1, 18, 10_000_000_000_000_000)]
+    #[case::buy_quote(OrderSide::Buy, true, 1, 18, 10_000_000_000_000_000)]
+    #[case::sell_currency_grid(OrderSide::Sell, false, 1, 16, 10_000_000_000_000_000)]
+    #[case::buy_quote_currency_grid(OrderSide::Buy, true, 1, 16, 10_000_000_000_000_000)]
+    fn test_update_orders_wallet_explicit_quantity_loss_preserves_state(
+        #[case] side: OrderSide,
+        #[case] quote_quantity: bool,
+        #[case] quantity_raw: u128,
+        #[case] quantity_precision: u8,
+        #[case] price_raw: i128,
+    ) {
+        let wallet_precision = if quantity_precision == 18 { 16 } else { 6 };
+        let Some((mut wallet, instrument, base, _)) = wallet_precision_pair(wallet_precision)
+        else {
+            return;
+        };
+        let grid =
+            money_raw(10_i128.pow(u32::from(FIXED_PRECISION.saturating_sub(wallet_precision))));
+        wallet
+            .update_balance_locked(
+                InstrumentId::from("OTHER.BLOCKCHAIN"),
+                Money::from_raw(grid, base),
+            )
+            .unwrap();
+        let balances_before = wallet.base.balances.clone();
+        let locks_before = wallet.balances_locked.clone();
+        let events_before = wallet.events.clone();
+        let mut account = AccountAny::Wallet(wallet);
+        #[allow(
+            clippy::useless_conversion,
+            reason = "the test input width differs when high-precision is disabled"
+        )]
+        let quantity_raw = quantity_raw.try_into().unwrap();
+        #[allow(
+            clippy::useless_conversion,
+            reason = "the test input width differs when high-precision is disabled"
+        )]
+        let price_raw = price_raw.try_into().unwrap();
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(side)
+            .quantity(Quantity::from_raw(quantity_raw, quantity_precision))
+            .price(Price::from_raw(price_raw, 16))
+            .quote_quantity(quote_quantity)
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for(&order)))
+            .unwrap();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+
+        let result = manager.update_orders_in_place(
+            &mut account,
+            &InstrumentAny::CurrencyPair(instrument),
+            &[&order],
+            UnixNanos::default(),
+        );
+
+        assert_eq!(result, None);
+        let AccountAny::Wallet(wallet) = account else {
+            panic!("Expected WalletAccount")
+        };
+        assert_eq!(wallet.base.balances, balances_before);
+        assert_eq!(wallet.balances_locked, locks_before);
+        assert_eq!(wallet.events, events_before);
+    }
+
+    #[rstest]
+    fn test_update_orders_wallet_aggregate_overflow_preserves_state() {
+        let Some((mut wallet, instrument, base, _)) = wallet_precision_pair(16) else {
+            return;
+        };
+        wallet
+            .update_balance_locked(
+                InstrumentId::from("OTHER.BLOCKCHAIN"),
+                Money::from_raw(1_000, base),
+            )
+            .unwrap();
+        let balances_before = wallet.base.balances.clone();
+        let locks_before = wallet.balances_locked.clone();
+        let events_before = wallet.events.clone();
+        let mut account = AccountAny::Wallet(wallet);
+        let quantity_raw = MONEY_RAW_MAX.try_into().unwrap();
+        let mut first = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from_raw(quantity_raw, 16))
+            .quote_quantity(true)
+            .build();
+        let mut second = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from_raw(quantity_raw, 16))
+            .quote_quantity(true)
+            .build();
+        first
+            .apply(OrderEventAny::Submitted(order_submitted_for(&first)))
+            .unwrap();
+        second
+            .apply(OrderEventAny::Submitted(order_submitted_for(&second)))
+            .unwrap();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+
+        let result = manager.update_orders_in_place(
+            &mut account,
+            &InstrumentAny::CurrencyPair(instrument),
+            &[&first, &second],
+            UnixNanos::default(),
+        );
+
+        assert_eq!(result, None);
+        let AccountAny::Wallet(wallet) = account else {
+            panic!("Expected WalletAccount")
+        };
+        assert_eq!(wallet.base.balances, balances_before);
+        assert_eq!(wallet.balances_locked, locks_before);
+        assert_eq!(wallet.events, events_before);
     }
 
     #[rstest]
@@ -2734,6 +3623,79 @@ mod tests {
         );
         assert!(cash.commissions().is_empty());
         assert_eq!(state.balances[0].total, Money::new(1_000_000.0, usd));
+    }
+
+    fn wallet_precision_pair(
+        wallet_precision: u8,
+    ) -> Option<(WalletAccount, CurrencyPair, Currency, Currency)> {
+        Currency::new_checked("WPREC", 18, 0, "WPREC", CurrencyType::Crypto).ok()?;
+        let instrument_base = Currency::new("WBASE", 16, 0, "WBASE", CurrencyType::Crypto);
+        let instrument_quote = Currency::new("WQUOTE", 16, 0, "WQUOTE", CurrencyType::Crypto);
+        let observed_base =
+            Currency::new("WBASE", wallet_precision, 0, "WBASE", CurrencyType::Crypto);
+        let observed_quote = Currency::new(
+            "WQUOTE",
+            wallet_precision,
+            0,
+            "WQUOTE",
+            CurrencyType::Crypto,
+        );
+        let instrument = CurrencyPair::new(
+            InstrumentId::from("WBASEWQUOTE.BLOCKCHAIN"),
+            Symbol::from("WBASEWQUOTE"),
+            instrument_base,
+            instrument_quote,
+            16,
+            16,
+            Price::from_raw(1, 16),
+            Quantity::from_raw(1, 16),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        let scale = money_raw(10_i128.pow(u32::from(wallet_precision.max(FIXED_PRECISION))));
+        let base_total = Money::from_raw(scale, observed_base);
+        let quote_total = Money::from_raw(2 * scale, observed_quote);
+        let wallet = WalletAccount::new(
+            AccountState::new(
+                AccountId::from("WALLET-PRECISION"),
+                AccountType::Wallet,
+                vec![
+                    AccountBalance::new(base_total, Money::zero(observed_base), base_total),
+                    AccountBalance::new(quote_total, Money::zero(observed_quote), quote_total),
+                ],
+                vec![],
+                true,
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                None,
+            ),
+            true,
+        );
+
+        Some((wallet, instrument, observed_base, observed_quote))
+    }
+
+    #[allow(
+        clippy::useless_conversion,
+        reason = "the raw width differs when high-precision is disabled"
+    )]
+    fn money_raw(raw: i128) -> MoneyRaw {
+        raw.try_into().unwrap()
     }
 
     fn multi_currency_cash_account(allow_borrowing: bool) -> CashAccount {

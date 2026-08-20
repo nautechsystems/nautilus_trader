@@ -644,8 +644,8 @@ impl<'a> PortfolioApi<'a> {
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn margins_init(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
-        self.portfolio.borrow().margins_init(venue)
+    pub fn instrument_initial_margins(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
+        self.portfolio.borrow().instrument_initial_margins(venue)
     }
 
     /// Returns the maintenance margin requirements for the given venue.
@@ -654,8 +654,10 @@ impl<'a> PortfolioApi<'a> {
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn margins_maint(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
-        self.portfolio.borrow().margins_maint(venue)
+    pub fn instrument_maintenance_margins(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
+        self.portfolio
+            .borrow()
+            .instrument_maintenance_margins(venue)
     }
 
     /// Returns the unrealized PnLs for all positions at the given venue.
@@ -668,10 +670,10 @@ impl<'a> PortfolioApi<'a> {
         &self,
         venue: &Venue,
         account_id: Option<&AccountId>,
-    ) -> IndexMap<Currency, Money> {
+    ) -> Option<IndexMap<Currency, Money>> {
         self.portfolio
             .borrow_mut()
-            .unrealized_pnls(venue, account_id)
+            .unrealized_pnls(venue, account_id, None)
     }
 
     /// Returns the realized PnLs for all positions at the given venue.
@@ -684,8 +686,10 @@ impl<'a> PortfolioApi<'a> {
         &self,
         venue: &Venue,
         account_id: Option<&AccountId>,
-    ) -> IndexMap<Currency, Money> {
-        self.portfolio.borrow_mut().realized_pnls(venue, account_id)
+    ) -> Option<IndexMap<Currency, Money>> {
+        self.portfolio
+            .borrow_mut()
+            .realized_pnls(venue, account_id, None)
     }
 
     /// Returns net exposures by currency for the given venue.
@@ -699,7 +703,9 @@ impl<'a> PortfolioApi<'a> {
         venue: &Venue,
         account_id: Option<&AccountId>,
     ) -> Option<IndexMap<Currency, Money>> {
-        self.portfolio.borrow().net_exposures(venue, account_id)
+        self.portfolio
+            .borrow()
+            .net_exposures(venue, account_id, None)
     }
 
     /// Returns the unrealized PnL for the given instrument ID.
@@ -723,9 +729,12 @@ impl<'a> PortfolioApi<'a> {
         instrument_id: &InstrumentId,
         account_id: Option<&AccountId>,
     ) -> Option<Money> {
-        self.portfolio
-            .borrow_mut()
-            .unrealized_pnl_for_account(instrument_id, account_id)
+        self.portfolio.borrow_mut().unrealized_pnl_for_account(
+            instrument_id,
+            None,
+            account_id,
+            None,
+        )
     }
 
     /// Returns the realized PnL for the given instrument ID.
@@ -751,7 +760,7 @@ impl<'a> PortfolioApi<'a> {
     ) -> Option<Money> {
         self.portfolio
             .borrow_mut()
-            .realized_pnl_for_account(instrument_id, account_id)
+            .realized_pnl_for_account(instrument_id, account_id, None)
     }
 
     /// Returns the total PnL for the given instrument ID.
@@ -777,7 +786,7 @@ impl<'a> PortfolioApi<'a> {
     ) -> Option<Money> {
         self.portfolio
             .borrow_mut()
-            .total_pnl_for_account(instrument_id, account_id)
+            .total_pnl_for_account(instrument_id, None, account_id, None)
     }
 
     /// Returns the total PnLs for the given venue.
@@ -790,8 +799,10 @@ impl<'a> PortfolioApi<'a> {
         &self,
         venue: &Venue,
         account_id: Option<&AccountId>,
-    ) -> IndexMap<Currency, Money> {
-        self.portfolio.borrow_mut().total_pnls(venue, account_id)
+    ) -> Option<IndexMap<Currency, Money>> {
+        self.portfolio
+            .borrow_mut()
+            .total_pnls(venue, account_id, None)
     }
 
     /// Returns the per-currency mark-to-market value of open positions at the given venue.
@@ -859,7 +870,9 @@ impl<'a> PortfolioApi<'a> {
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
     pub fn missing_price_instruments(&self, venue: &Venue) -> Vec<InstrumentId> {
-        self.portfolio.borrow().missing_price_instruments(venue)
+        self.portfolio
+            .borrow()
+            .missing_price_instruments(venue, None)
     }
 
     /// Returns the net exposure for the given instrument ID.
@@ -875,7 +888,7 @@ impl<'a> PortfolioApi<'a> {
     ) -> Option<Money> {
         self.portfolio
             .borrow()
-            .net_exposure(instrument_id, account_id)
+            .net_exposure(instrument_id, None, account_id, None)
     }
 
     /// Returns the net position for the given instrument ID.
@@ -914,8 +927,8 @@ impl<'a> PortfolioApi<'a> {
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn is_flat(&self, instrument_id: &InstrumentId) -> bool {
-        self.portfolio.borrow().is_flat(instrument_id)
+    pub fn is_net_flat(&self, instrument_id: &InstrumentId) -> bool {
+        self.portfolio.borrow().is_net_flat(instrument_id)
     }
 
     /// Returns whether every net position is flat.
@@ -924,8 +937,8 @@ impl<'a> PortfolioApi<'a> {
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn is_completely_flat(&self) -> bool {
-        self.portfolio.borrow().is_completely_flat()
+    pub fn is_completely_net_flat(&self) -> bool {
+        self.portfolio.borrow().is_completely_net_flat()
     }
 
     /// Returns realized PnLs recorded during portfolio event processing.
@@ -1054,10 +1067,10 @@ mod tests {
 
         assert!(!api.is_initialized());
         assert!(api.balances_locked(&venue).is_empty());
-        assert!(api.margins_init(&venue).is_empty());
-        assert!(api.margins_maint(&venue).is_empty());
-        assert!(api.unrealized_pnls(&venue, None).is_empty());
-        assert!(api.realized_pnls(&venue, None).is_empty());
+        assert!(api.instrument_initial_margins(&venue).is_empty());
+        assert!(api.instrument_maintenance_margins(&venue).is_empty());
+        assert_eq!(api.unrealized_pnls(&venue, None), Some(IndexMap::new()));
+        assert_eq!(api.realized_pnls(&venue, None), Some(IndexMap::new()));
         assert_eq!(api.net_exposures(&venue, None), None);
         assert_eq!(api.unrealized_pnl(&instrument_id), None);
         assert_eq!(
@@ -1074,7 +1087,7 @@ mod tests {
             api.total_pnl_for_account(&instrument_id, Some(&account_id)),
             None
         );
-        assert!(api.total_pnls(&venue, None).is_empty());
+        assert_eq!(api.total_pnls(&venue, None), Some(IndexMap::new()));
         assert!(api.mark_values(&venue, None).is_empty());
         assert!(api.equity(&venue, None).is_empty());
         assert_eq!(api.build_snapshot(&account_id), None);
@@ -1084,8 +1097,8 @@ mod tests {
         assert_eq!(api.net_position(&instrument_id), Decimal::ZERO);
         assert!(!api.is_net_long(&instrument_id));
         assert!(!api.is_net_short(&instrument_id));
-        assert!(api.is_flat(&instrument_id));
-        assert!(api.is_completely_flat());
+        assert!(api.is_net_flat(&instrument_id));
+        assert!(api.is_completely_net_flat());
         assert!(api.recorded_realized_pnls().is_empty());
 
         let _statistics = api.statistics();

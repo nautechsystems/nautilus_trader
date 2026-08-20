@@ -419,9 +419,9 @@ fn aggregate_order_levels(
 
 fn aggressor_side_from_is_maker_ask(is_maker_ask: bool) -> AggressorSide {
     if is_maker_ask {
-        AggressorSide::Buyer
+        AggressorSide::Buy
     } else {
-        AggressorSide::Seller
+        AggressorSide::Sell
     }
 }
 
@@ -791,8 +791,8 @@ mod tests {
         let seller = parse_trade_tick(&stub_trade(false), &instrument, ts_init).unwrap();
         let buyer = parse_trade_tick(&stub_trade(true), &instrument, ts_init).unwrap();
 
-        assert_eq!(seller.aggressor_side, AggressorSide::Seller);
-        assert_eq!(buyer.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(seller.aggressor_side, AggressorSide::Sell);
+        assert_eq!(buyer.aggressor_side, AggressorSide::Buy);
         assert_eq!(seller.price, Price::from("2352.73"));
         assert_eq!(seller.size, Quantity::from("0.1336"));
         assert_eq!(seller.trade_id.to_string(), "19209006902");

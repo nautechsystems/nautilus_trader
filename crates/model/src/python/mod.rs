@@ -75,7 +75,7 @@ pub fn currency_lookup_error_to_pyvalue_err(e: CurrencyLookupError) -> PyErr {
     to_pyvalue_err(e)
 }
 
-/// Loaded as `nautilus_pyo3.model`.
+/// Exposed through `nautilus_trader.model`.
 ///
 /// # Errors
 ///
@@ -96,7 +96,6 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::types::balance::MarginBalance>()?;
     m.add_class::<crate::python::common::EnumIterator>()?;
     // Data
-    m.add_function(wrap_pyfunction!(data::drop_cvec_pycapsule, m)?)?;
     m.add_class::<crate::data::DataType>()?;
     m.add_class::<crate::data::CustomData>()?;
     m.add_function(pyo3::wrap_pyfunction!(
@@ -179,7 +178,6 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::OrderType>()?;
     m.add_class::<crate::enums::PositionAdjustmentType>()?;
     m.add_class::<crate::enums::PositionSide>()?;
-    m.add_class::<crate::enums::PositionSideSpecified>()?;
     m.add_class::<crate::enums::PriceType>()?;
     m.add_class::<crate::enums::RecordFlag>()?;
     m.add_class::<crate::enums::TimeInForce>()?;
@@ -288,6 +286,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::accounts::BettingAccount>()?;
     m.add_class::<crate::accounts::CashAccount>()?;
     m.add_class::<crate::accounts::MarginAccount>()?;
+    m.add_class::<crate::accounts::WalletAccount>()?;
     m.add_class::<crate::accounts::margin_model::StandardMarginModel>()?;
     m.add_class::<crate::accounts::margin_model::LeveragedMarginModel>()?;
     m.add_function(wrap_pyfunction!(
@@ -300,6 +299,10 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(
         crate::python::account::transformer::margin_account_from_account_events,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::account::transformer::wallet_account_from_account_events,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(

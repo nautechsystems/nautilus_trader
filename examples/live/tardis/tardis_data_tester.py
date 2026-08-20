@@ -18,7 +18,7 @@ from nautilus_trader.adapters.tardis import TARDIS
 from nautilus_trader.adapters.tardis import TARDIS_CLIENT_ID
 from nautilus_trader.adapters.tardis import TardisDataClientConfig
 from nautilus_trader.adapters.tardis import TardisLiveDataClientFactory
-from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -33,7 +33,10 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # Run the following to start the tardis-machine server:
 # - The TM_API_KEY environment variable should be set
 # - The TARDIS_MACHINE_WS_URL environment variable should be set to ws://localhost:8001
-# - docker run -p 8000:8000 -p 8001:8001 -d tardisdev/tardis-machine
+# - docker run \
+#     -p 127.0.0.1:8000:8000 \
+#     -p 127.0.0.1:8001:8001 \
+#     -d tardisdev/tardis-machine
 
 instrument_ids = [
     # InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),

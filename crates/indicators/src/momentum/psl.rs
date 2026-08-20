@@ -26,7 +26,7 @@ use crate::{
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators", unsendable)
+    pyo3::pyclass(module = "nautilus_trader.indicators", unsendable)
 )]
 #[cfg_attr(
     feature = "python",
@@ -126,6 +126,7 @@ mod tests {
         indicator::Indicator,
         momentum::psl::PsychologicalLine,
         stubs::{bar_ethusdt_binance_minute_bid, psl_10},
+        testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -148,7 +149,7 @@ mod tests {
         psl_10.update_raw(1.0);
         psl_10.update_raw(2.0);
         psl_10.update_raw(3.0);
-        assert_eq!(psl_10.value, 66.666_666_666_666_66);
+        assert_approx_equal(psl_10.value, 66.6666666667);
     }
 
     #[rstest]

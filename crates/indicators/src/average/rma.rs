@@ -26,7 +26,7 @@ use crate::indicator::{Indicator, MovingAverage};
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.indicators")
 )]
 #[cfg_attr(
     feature = "python",
@@ -145,6 +145,7 @@ mod tests {
         average::rma::WilderMovingAverage,
         indicator::{Indicator, MovingAverage},
         stubs::*,
+        testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -189,7 +190,7 @@ mod tests {
         assert!(rma.has_inputs());
         assert!(rma.initialized());
         assert_eq!(rma.count, 10);
-        assert_eq!(rma.value, 4.486_784_401);
+        assert_approx_equal(rma.value, 4.486_784_401);
     }
 
     #[rstest]
@@ -271,8 +272,7 @@ mod tests {
 
         assert!(rma.initialized());
         assert_eq!(rma.count(), 10);
-        let expected = 4.486_784_401_f64;
-        assert!((rma.value() - expected).abs() < 1e-12);
+        assert_approx_equal(rma.value(), 4.486_784_401);
     }
 
     /// Period = 1 should act as a pure 1-tick MA (α = 1) and be initialized immediately.

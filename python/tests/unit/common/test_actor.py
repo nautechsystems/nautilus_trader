@@ -15,17 +15,26 @@
 
 import datetime as dt
 import inspect
+import subprocess
+import sys
 from decimal import Decimal
 
 import pytest
 
+import nautilus_trader.model
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.common import ComponentState
 from nautilus_trader.common import CustomData
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import ImportableActorConfig
+from nautilus_trader.common import QueueCondition
+from nautilus_trader.common import QueueState
+from nautilus_trader.common import QueueStateChanged
 from nautilus_trader.common import Signal
+from nautilus_trader.common import SocketState
+from nautilus_trader.common import SocketStateChanged
+from nautilus_trader.common import SystemChannel
 from nautilus_trader.common import TimeEvent
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import ActorId
@@ -65,8 +74,12 @@ from nautilus_trader.model import PoolSwap
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
+from nautilus_trader.model import StrikeRange
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import SyntheticInstrument
 from nautilus_trader.model import Token
 from nautilus_trader.model import TradeId
+from nautilus_trader.model import TraderId
 from nautilus_trader.model import TradeTick
 from nautilus_trader.model import Venue
 from tests.providers import TestInstrumentProvider
@@ -98,6 +111,8 @@ TYPED_CALLBACKS = [
     ("on_time_event", "time_event"),
     ("on_data", "custom_data"),
     ("on_signal", "signal"),
+    ("on_queue_state", "queue_state_changed"),
+    ("on_socket_state", "socket_state_changed"),
     ("on_instrument", "instrument"),
     ("on_quote", "quote"),
     ("on_trade", "trade"),
@@ -131,6 +146,7 @@ HISTORICAL_CALLBACKS = [
 
 NO_PARAMETERS = ()
 STATE_PARAMETERS = ("state",)
+STATE_SUBSCRIPTION_PARAMETERS = ("priority",)
 
 LIFECYCLE_HOOK_SIGNATURES = [
     ("on_start", NO_PARAMETERS),
@@ -149,6 +165,8 @@ DATA_CALLBACK_SIGNATURES = [
     ("on_time_event", ("event",)),
     ("on_data", ("data",)),
     ("on_signal", ("signal",)),
+    ("on_queue_state", ("event",)),
+    ("on_socket_state", ("event",)),
     ("on_instrument", ("instrument",)),
     ("on_quote", ("quote",)),
     ("on_trade", ("trade",)),
@@ -190,6 +208,8 @@ CALLBACK_SIGNATURES = (
 
 DATA_SUBSCRIPTION_PARAMETERS = ("data_type", "client_id", "params")
 DATA_REQUEST_PARAMETERS = ("data_type", "client_id", "start", "end", "limit", "params")
+SIGNAL_SUBSCRIPTION_PARAMETERS = ("name", "priority")
+SIGNAL_UNSUBSCRIBE_PARAMETERS = ("name",)
 VENUE_SUBSCRIPTION_PARAMETERS = ("venue", "client_id", "params")
 VENUE_REQUEST_PARAMETERS = ("venue", "start", "end", "client_id", "params")
 INSTRUMENT_SUBSCRIPTION_PARAMETERS = ("instrument_id", "client_id", "params")
@@ -197,6 +217,13 @@ BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
     "book_type",
     "depth",
+    "client_id",
+    "managed",
+    "params",
+)
+BOOK_DEPTH10_SUBSCRIPTION_PARAMETERS = (
+    "instrument_id",
+    "book_type",
     "client_id",
     "managed",
     "params",
@@ -241,12 +268,26 @@ INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
 )
 BAR_REQUEST_PARAMETERS = ("bar_type", "start", "end", "limit", "client_id", "params")
 OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS = ("series_id", "client_id")
+PUBLISH_DATA_PARAMETERS = ("data_type", "data")
+PUBLISH_SIGNAL_PARAMETERS = ("name", "value", "ts_event")
+SYNTHETIC_PARAMETERS = ("synthetic",)
+DATA_OPERATION_REGISTRATION_ERROR = (
+    "DataActor must be registered before publishing, managing synthetics, or requesting data"
+)
 
 REGISTRATION_REQUIRED_SIGNATURES = [
+    ("publish_data", PUBLISH_DATA_PARAMETERS),
+    ("publish_signal", PUBLISH_SIGNAL_PARAMETERS),
+    ("add_synthetic", SYNTHETIC_PARAMETERS),
+    ("update_synthetic", SYNTHETIC_PARAMETERS),
     ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_signal", SIGNAL_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_queue_state", STATE_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_socket_state", STATE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_book_depth10", BOOK_DEPTH10_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_at_interval", BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS),
     ("subscribe_quotes", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_trades", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -265,9 +306,13 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("subscribe_pool_fee_collects", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_pool_flash_events", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_signal", SIGNAL_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_queue_state", NO_PARAMETERS),
+    ("unsubscribe_socket_state", NO_PARAMETERS),
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_book_depth10", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_at_interval", BOOK_INTERVAL_UNSUBSCRIBE_PARAMETERS),
     ("unsubscribe_quotes", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_trades", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -333,6 +378,149 @@ def _create_recording_actor_type():
 RecordingActor = _create_recording_actor_type()
 
 
+class FirstDefaultActor(DataActor):
+    pass
+
+
+class SecondDefaultActor(DataActor):
+    pass
+
+
+def test_data_actor_derives_default_id_from_runtime_class():
+    base = DataActor()
+    first = FirstDefaultActor()
+    second = SecondDefaultActor(TestActorConfig(actor_id=None))
+
+    assert base.actor_id == ActorId("DataActor")
+    assert first.actor_id == ActorId("FirstDefaultActor")
+    assert first.log.name == "FirstDefaultActor"
+    assert second.actor_id == ActorId("SecondDefaultActor")
+    assert second.log.name == "SecondDefaultActor"
+
+
+def test_data_actor_retains_configured_id_over_runtime_class():
+    actor = FirstDefaultActor(TestActorConfig(actor_id=ActorId("CONFIGURED-001")))
+
+    assert actor.actor_id == ActorId("CONFIGURED-001")
+    assert actor.log.name == "CONFIGURED-001"
+
+
+def test_backtest_engine_registers_distinct_default_actor_ids():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    first = FirstDefaultActor()
+    second = SecondDefaultActor()
+
+    try:
+        engine.add_actor(first)
+        engine.add_actor(second)
+
+        assert first.actor_id == ActorId("FirstDefaultActor")
+        assert first.state() == ComponentState.READY
+        assert second.actor_id == ActorId("SecondDefaultActor")
+        assert second.state() == ComponentState.READY
+    finally:
+        engine.dispose()
+
+
+def test_queue_state_changed_exposes_all_fields():
+    trader_id = TraderId("TRADER-001")
+    event_id = UUID4()
+
+    event = QueueStateChanged(
+        trader_id,
+        SystemChannel.EXEC_COMMANDS,
+        QueueCondition.BACKLOGGED,
+        QueueState.TRIGGERED,
+        17,
+        23,
+        event_id,
+        29,
+        31,
+    )
+
+    assert type(event) is QueueStateChanged
+    assert event.trader_id == trader_id
+    assert type(event.channel) is SystemChannel
+    assert event.channel == SystemChannel.EXEC_COMMANDS
+    assert type(event.condition) is QueueCondition
+    assert event.condition == QueueCondition.BACKLOGGED
+    assert type(event.state) is QueueState
+    assert event.state == QueueState.TRIGGERED
+    assert event.queue_depth == 17
+    assert event.mean_dispatch_ns == 23
+    assert event.event_id == event_id
+    assert event.ts_event == 29
+    assert event.ts_init == 31
+    assert event == QueueStateChanged(
+        trader_id,
+        SystemChannel.EXEC_COMMANDS,
+        QueueCondition.BACKLOGGED,
+        QueueState.TRIGGERED,
+        17,
+        23,
+        event_id,
+        29,
+        31,
+    )
+    assert repr(event) == (
+        f"QueueStateChanged(trader_id={trader_id}, channel=ExecCommands, "
+        "condition=Backlogged, state=Triggered, queue_depth=17, mean_dispatch_ns=23, "
+        f"event_id={event_id})"
+    )
+
+
+@pytest.mark.parametrize(
+    ("venue", "state"),
+    [
+        pytest.param(Venue("BINANCE"), SocketState.CONNECTED, id="connected-with-venue"),
+        pytest.param(None, SocketState.DISCONNECTED, id="disconnected-without-venue"),
+    ],
+)
+def test_socket_state_changed_exposes_all_fields(venue, state):
+    trader_id = TraderId("TRADER-001")
+    client_id = ClientId("BINANCE")
+    endpoint = "binance-futures-market-streams"
+    event_id = UUID4()
+
+    event = SocketStateChanged(
+        trader_id,
+        client_id,
+        venue,
+        endpoint,
+        state,
+        event_id,
+        11,
+        13,
+    )
+
+    assert type(event) is SocketStateChanged
+    assert event.trader_id == trader_id
+    assert event.client_id == client_id
+    assert event.venue == venue
+    assert event.endpoint == endpoint
+    assert type(event.state) is SocketState
+    assert event.state == state
+    assert event.event_id == event_id
+    assert event.ts_event == 11
+    assert event.ts_init == 13
+    assert event == SocketStateChanged(
+        trader_id,
+        client_id,
+        venue,
+        endpoint,
+        state,
+        event_id,
+        11,
+        13,
+    )
+    venue_repr = f'Some("{venue}")' if venue is not None else "None"
+    state_repr = "Connected" if state == SocketState.CONNECTED else "Disconnected"
+    assert repr(event) == (
+        f"SocketStateChanged(trader_id={trader_id}, client_id={client_id}, "
+        f"venue={venue_repr}, endpoint={endpoint}, state={state_repr}, event_id={event_id})"
+    )
+
+
 class HistoricalRequestProbeActor(TestActor):
     observed_request_ids = {}
     request_time = dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
@@ -361,6 +549,11 @@ class HistoricalRequestProbeActor(TestActor):
                 venue,
                 end=request_time,
                 params={"kind": "instruments"},
+            ),
+            "book_snapshot": self.request_book_snapshot(
+                instrument_id,
+                depth=5,
+                params={"kind": "snapshot"},
             ),
             "book_deltas": self.request_book_deltas(
                 instrument_id,
@@ -529,6 +722,213 @@ def test_data_actor_shutdown_system_requires_registration(actor):
         actor.shutdown_system("unit test shutdown")
 
 
+def _subscription_registration_cases():
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+    bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
+    series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
+    strike_range = StrikeRange.atm_relative(1, 1)
+
+    return [
+        ("subscribe_data", (DataType("TestData"),)),
+        ("subscribe_signal", ("risk",)),
+        ("subscribe_queue_state", ()),
+        ("subscribe_socket_state", ()),
+        ("subscribe_instruments", (Venue("SIM"),)),
+        ("subscribe_instrument", (instrument_id,)),
+        ("subscribe_book_deltas", (instrument_id, BookType.L2_MBP)),
+        ("subscribe_book_depth10", (instrument_id, BookType.L2_MBP)),
+        ("subscribe_book_at_interval", (instrument_id, BookType.L2_MBP, 100)),
+        ("subscribe_quotes", (instrument_id,)),
+        ("subscribe_trades", (instrument_id,)),
+        ("subscribe_bars", (bar_type,)),
+        ("subscribe_mark_prices", (instrument_id,)),
+        ("subscribe_index_prices", (instrument_id,)),
+        ("subscribe_funding_rates", (instrument_id,)),
+        ("subscribe_option_greeks", (instrument_id,)),
+        ("subscribe_instrument_status", (instrument_id,)),
+        ("subscribe_instrument_close", (instrument_id,)),
+        ("subscribe_option_chain", (series_id, strike_range)),
+        ("subscribe_blocks", (Blockchain.BASE,)),
+        ("subscribe_pool", (instrument_id,)),
+        ("subscribe_pool_swaps", (instrument_id,)),
+        ("subscribe_pool_liquidity_updates", (instrument_id,)),
+        ("subscribe_pool_fee_collects", (instrument_id,)),
+        ("subscribe_pool_flash_events", (instrument_id,)),
+        ("unsubscribe_data", (DataType("TestData"),)),
+        ("unsubscribe_signal", ("risk",)),
+        ("unsubscribe_queue_state", ()),
+        ("unsubscribe_socket_state", ()),
+        ("unsubscribe_instruments", (Venue("SIM"),)),
+        ("unsubscribe_instrument", (instrument_id,)),
+        ("unsubscribe_book_deltas", (instrument_id,)),
+        ("unsubscribe_book_depth10", (instrument_id,)),
+        ("unsubscribe_book_at_interval", (instrument_id, 100)),
+        ("unsubscribe_quotes", (instrument_id,)),
+        ("unsubscribe_trades", (instrument_id,)),
+        ("unsubscribe_bars", (bar_type,)),
+        ("unsubscribe_mark_prices", (instrument_id,)),
+        ("unsubscribe_index_prices", (instrument_id,)),
+        ("unsubscribe_funding_rates", (instrument_id,)),
+        ("unsubscribe_option_greeks", (instrument_id,)),
+        ("unsubscribe_instrument_status", (instrument_id,)),
+        ("unsubscribe_instrument_close", (instrument_id,)),
+        ("unsubscribe_option_chain", (series_id,)),
+        ("unsubscribe_blocks", (Blockchain.BASE,)),
+        ("unsubscribe_pool", (instrument_id,)),
+        ("unsubscribe_pool_swaps", (instrument_id,)),
+        ("unsubscribe_pool_liquidity_updates", (instrument_id,)),
+        ("unsubscribe_pool_fee_collects", (instrument_id,)),
+        ("unsubscribe_pool_flash_events", (instrument_id,)),
+    ]
+
+
+def _data_operation_registration_cases():
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+    bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
+    custom_data = _model_custom_data()
+    synthetic = _synthetic("(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2")
+
+    return [
+        ("publish_data", (custom_data.data_type, custom_data)),
+        ("publish_signal", ("risk", "value")),
+        ("add_synthetic", (synthetic,)),
+        ("update_synthetic", (synthetic,)),
+        ("request_data", (DataType("TestData"), ClientId("SIM"))),
+        ("request_instrument", (instrument_id,)),
+        ("request_instruments", (Venue("SIM"),)),
+        ("request_book_snapshot", (instrument_id,)),
+        ("request_book_deltas", (instrument_id,)),
+        ("request_book_depth", (instrument_id,)),
+        ("request_quotes", (instrument_id,)),
+        ("request_trades", (instrument_id,)),
+        ("request_funding_rates", (instrument_id,)),
+        ("request_bars", (bar_type,)),
+    ]
+
+
+def _model_custom_data():
+    class Payload:
+        ts_event = 3
+        ts_init = 4
+
+    return nautilus_trader.model.CustomData(DataType("Payload"), Payload())
+
+
+def _synthetic(formula):
+    return SyntheticInstrument(
+        symbol=Symbol("BTC-ETH"),
+        price_precision=8,
+        components=[
+            TestInstrumentProvider.btcusdt_binance().id,
+            TestInstrumentProvider.ethusdt_binance().id,
+        ],
+        formula=formula,
+        ts_event=0,
+        ts_init=1,
+    )
+
+
+@pytest.mark.parametrize(("method_name", "args"), _subscription_registration_cases())
+def test_data_actor_subscriptions_require_registration(actor, method_name, args):
+    with pytest.raises(RuntimeError) as exc_info:
+        getattr(actor, method_name)(*args)
+
+    assert str(exc_info.value) == "DataActor must be registered before managing subscriptions"
+
+
+@pytest.mark.parametrize(("method_name", "args"), _data_operation_registration_cases())
+def test_data_actor_data_operations_require_registration(actor, method_name, args):
+    with pytest.raises(RuntimeError) as exc_info:
+        getattr(actor, method_name)(*args)
+
+    assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
+
+
+def test_data_actor_registration_precedes_publish_signal_conversion(actor):
+    class InvalidSignalValue:
+        def __str__(self):
+            raise ValueError("invalid signal value")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        actor.publish_signal("risk", InvalidSignalValue())
+
+    assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
+
+
+def test_data_actor_registration_precedes_request_params_conversion(actor):
+    with pytest.raises(RuntimeError) as exc_info:
+        actor.request_instruments(params={"invalid": object()})
+
+    assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
+
+
+def test_data_actor_unregistered_publish_signal_does_not_abort_subprocess():
+    code = (
+        "from nautilus_trader.common import DataActor\n"
+        "try:\n"
+        "    DataActor().publish_signal('risk', 'value')\n"
+        "except RuntimeError as e:\n"
+        "    print(e)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == DATA_OPERATION_REGISTRATION_ERROR
+
+
+def test_data_actor_data_operations_succeed_when_registered(actor):
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    custom_data = _model_custom_data()
+    synthetic = _synthetic("(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2")
+    updated = _synthetic("BTCUSDT.BINANCE + ETHUSDT.BINANCE")
+    engine.add_actor(actor)
+
+    try:
+        assert actor.publish_data(custom_data.data_type, custom_data) is None
+        assert actor.publish_signal("risk", "value") is None
+        assert actor.add_synthetic(synthetic) is None
+        assert actor.update_synthetic(updated) is None
+        assert actor.cache.synthetic(updated.id) == updated
+    finally:
+        engine.dispose()
+
+
+def test_data_actor_subscription_validation_precedes_registration(actor):
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+
+    with pytest.raises(ValueError, match="interval_ms must be > 0"):
+        actor.subscribe_book_at_interval(
+            instrument_id,
+            BookType.L2_MBP,
+            0,
+            params={"invalid": object()},
+        )
+
+
+def test_data_actor_registration_precedes_params_conversion(actor):
+    with pytest.raises(RuntimeError) as exc_info:
+        actor.subscribe_data(DataType("TestData"), params={"invalid": object()})
+
+    assert str(exc_info.value) == "DataActor must be registered before managing subscriptions"
+
+
+def test_queue_state_changed_subscription_priority_defaults_to_none(actor):
+    signature = inspect.signature(actor.subscribe_queue_state)
+
+    assert signature.parameters["priority"].default is None
+
+
+def test_socket_state_changed_subscription_priority_defaults_to_none(actor):
+    signature = inspect.signature(actor.subscribe_socket_state)
+
+    assert signature.parameters["priority"].default is None
+
+
 @pytest.mark.parametrize(("method_name", "parameter_names"), CALLBACK_SIGNATURES)
 def test_data_actor_callback_methods_expose_expected_signatures(
     actor,
@@ -576,6 +976,7 @@ def test_data_actor_historical_requests_accept_datetimes_when_registered(request
             "data",
             "instrument",
             "instruments",
+            "book_snapshot",
             "book_deltas",
             "book_depth",
             "quotes",
@@ -643,11 +1044,34 @@ def sample_objects():
     mark_price = MarkPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
     index_price = IndexPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
     funding_rate = FundingRateUpdate(instrument.id, Decimal("0.0001"), 1, 2, interval=480)
+    queue_state_changed = QueueStateChanged(
+        TraderId("TRADER-001"),
+        SystemChannel.EXEC_COMMANDS,
+        QueueCondition.BACKLOGGED,
+        QueueState.TRIGGERED,
+        17,
+        23,
+        UUID4(),
+        7,
+        8,
+    )
+    socket_state_changed = SocketStateChanged(
+        TraderId("TRADER-001"),
+        ClientId("BINANCE"),
+        Venue("BINANCE"),
+        "binance-futures-market-streams",
+        SocketState.CONNECTED,
+        UUID4(),
+        7,
+        8,
+    )
 
     return {
         "time_event": time_event,
         "custom_data": custom_data,
         "signal": Signal("sig", "value", 1, 2),
+        "queue_state_changed": queue_state_changed,
+        "socket_state_changed": socket_state_changed,
         "instrument": instrument,
         "quote": quote,
         "trade": trade,
@@ -700,7 +1124,7 @@ def _make_trade(instrument_id):
         instrument_id,
         Price.from_str("1.00000"),
         Quantity.from_int(10),
-        AggressorSide.BUYER,
+        AggressorSide.BUY,
         TradeId("T-001"),
         1,
         2,

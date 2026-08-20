@@ -37,8 +37,9 @@ use sqlx::postgres::PgConnectOptions;
 
 use crate::{
     cache::{
-        consistency::CachedBlocksConsistencyStatus, database::BlockchainCacheDatabase,
-        rows::PoolRow,
+        consistency::CachedBlocksConsistencyStatus,
+        database::BlockchainCacheDatabase,
+        rows::{ExecutionTransactionRow, PoolRow},
     },
     events::initialize::InitializeEvent,
 };
@@ -129,6 +130,107 @@ impl BlockchainCache {
     pub async fn initialize_database(&mut self, pg_connect_options: PgConnectOptions) {
         let database = BlockchainCacheDatabase::init(pg_connect_options).await;
         self.database = Some(database);
+    }
+
+    /// Returns whether a persistent database is attached to the cache.
+    #[must_use]
+    pub const fn has_database(&self) -> bool {
+        self.database.is_some()
+    }
+
+    /// Persists an execution transaction record, failing closed when no database is attached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no database is configured or the database operation fails.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters mirror the persisted execution transaction fields"
+    )]
+    pub async fn add_execution_transaction(
+        &self,
+        chain_id: u32,
+        wallet_address: &str,
+        nonce: u64,
+        transaction_hash: &str,
+        purpose: &str,
+        status: &str,
+        client_order_id: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let database = self.database.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "No durable store configured; refusing to persist execution transaction"
+            )
+        })?;
+
+        database
+            .add_execution_transaction(
+                chain_id,
+                wallet_address,
+                nonce,
+                transaction_hash,
+                purpose,
+                status,
+                client_order_id,
+            )
+            .await
+    }
+
+    /// Migrates the execution transaction table and installs its signer and order uniqueness
+    /// constraints, failing closed when no database is attached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no database is configured or the database operation fails.
+    pub async fn ensure_execution_transaction_schema(&self) -> anyhow::Result<()> {
+        let database = self.database.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "No durable store configured; refusing to migrate execution transaction"
+            )
+        })?;
+
+        database.ensure_execution_transaction_schema().await
+    }
+
+    /// Updates the status of a persisted execution transaction record, failing closed when no
+    /// database is attached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no database is configured or the database operation fails.
+    pub async fn update_execution_transaction_status(
+        &self,
+        chain_id: u32,
+        transaction_hash: &str,
+        status: &str,
+    ) -> anyhow::Result<()> {
+        let database = self.database.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("No durable store configured; refusing to update execution transaction")
+        })?;
+
+        database
+            .update_execution_transaction_status(chain_id, transaction_hash, status)
+            .await
+    }
+
+    /// Loads an execution transaction record by chain ID and transaction hash, failing closed
+    /// when no database is attached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no database is configured or the database operation fails.
+    pub async fn get_execution_transaction(
+        &self,
+        chain_id: u32,
+        transaction_hash: &str,
+    ) -> anyhow::Result<Option<ExecutionTransactionRow>> {
+        let database = self.database.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("No durable store configured; refusing to load execution transaction")
+        })?;
+
+        database
+            .get_execution_transaction(chain_id, transaction_hash)
+            .await
     }
 
     /// Toggles performance optimization settings in the database.

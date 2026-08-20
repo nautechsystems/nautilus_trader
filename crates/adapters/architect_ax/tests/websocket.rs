@@ -17,8 +17,12 @@
 
 mod common;
 
-use std::{sync::atomic::Ordering, time::Duration};
+use std::{
+    sync::{Mutex, atomic::Ordering},
+    time::Duration,
+};
 
+use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_architect_ax::{
     common::enums::{AxCandleWidth, AxMarketDataLevel},
     websocket::{
@@ -38,6 +42,143 @@ use rstest::rstest;
 use ustr::Ustr;
 
 use crate::common::server::{create_test_instrument, start_test_server, wait_for_connection};
+
+const SECRET_MARKER: &str = "OUTBOUND_SECRET_MARKER";
+
+struct OutboundLogCapture {
+    messages: Mutex<Vec<(String, String)>>,
+}
+
+static OUTBOUND_LOG_CAPTURE: OutboundLogCapture = OutboundLogCapture {
+    messages: Mutex::new(Vec::new()),
+};
+
+impl OutboundLogCapture {
+    fn clear(&self) {
+        self.messages.lock().unwrap().clear();
+    }
+
+    fn messages(&self) -> Vec<(String, String)> {
+        self.messages.lock().unwrap().clone()
+    }
+}
+
+impl Log for OutboundLogCapture {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+        metadata.level() == Level::Trace
+            && matches!(
+                metadata.target(),
+                "nautilus_architect_ax::websocket::data::handler"
+                    | "nautilus_architect_ax::websocket::orders::handler"
+            )
+    }
+
+    fn log(&self, record: &Record<'_>) {
+        if self.enabled(record.metadata()) {
+            let message = record.args().to_string();
+            if message.starts_with("Sending WebSocket payload") {
+                self.messages
+                    .lock()
+                    .unwrap()
+                    .push((record.target().to_string(), message));
+            }
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_outbound_logs_omit_payload_bodies() {
+    log::set_logger(&OUTBOUND_LOG_CAPTURE).expect("test logger already installed");
+    log::set_max_level(LevelFilter::Trace);
+
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut data_client = AxMdWebSocketClient::new(
+        format!("ws://{addr}/md/ws"),
+        SECRET_MARKER.to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
+    let account_id = AccountId::from("AX-001");
+    let trader_id = TraderId::from("TESTER-001");
+    let mut orders_client = AxOrdersWebSocketClient::new(
+        format!("ws://{addr}/orders/ws"),
+        account_id,
+        trader_id,
+        30,
+        TransportBackend::default(),
+        None,
+    );
+
+    data_client.connect().await.unwrap();
+    orders_client.connect(SECRET_MARKER).await.unwrap();
+    OUTBOUND_LOG_CAPTURE.clear();
+
+    data_client.subscribe_quotes(SECRET_MARKER).await.unwrap();
+    orders_client
+        .cancel_order(
+            ClientOrderId::from("SECRET-CANCEL"),
+            Some(VenueOrderId::new(SECRET_MARKER)),
+        )
+        .await
+        .unwrap();
+
+    wait_until_async(
+        || async {
+            state
+                .get_messages()
+                .await
+                .iter()
+                .filter(|message| message.to_string().contains(SECRET_MARKER))
+                .count()
+                == 2
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let wire_messages = state.get_messages().await;
+    let data_len = wire_messages
+        .iter()
+        .find(|message| {
+            message.get("symbol").and_then(|value| value.as_str()) == Some(SECRET_MARKER)
+        })
+        .map(|message| message.to_string().len())
+        .expect("expected marked market data request");
+    let orders_len = wire_messages
+        .iter()
+        .find(|message| message.get("oid").and_then(|value| value.as_str()) == Some(SECRET_MARKER))
+        .map(|message| message.to_string().len())
+        .expect("expected marked order request");
+    let messages = OUTBOUND_LOG_CAPTURE.messages();
+
+    assert!(
+        messages
+            .iter()
+            .all(|(_, message)| !message.contains(SECRET_MARKER)),
+        "outbound logs exposed the secret marker: {messages:?}"
+    );
+    assert!(
+        messages.iter().any(|(target, message)| {
+            target == "nautilus_architect_ax::websocket::data::handler"
+                && message == &format!("Sending WebSocket payload ({data_len} bytes)")
+        }),
+        "market data send metadata missing or inaccurate: {messages:?}"
+    );
+    assert!(
+        messages.iter().any(|(target, message)| {
+            target == "nautilus_architect_ax::websocket::orders::handler"
+                && message == &format!("Sending WebSocket payload ({orders_len} bytes)")
+        }),
+        "orders send metadata missing or inaccurate: {messages:?}"
+    );
+
+    data_client.close().await;
+    orders_client.close().await;
+}
 
 #[rstest]
 #[tokio::test]

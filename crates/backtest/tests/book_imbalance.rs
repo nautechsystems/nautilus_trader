@@ -22,7 +22,7 @@ use nautilus_backtest::{
 use nautilus_common::actor::registry::try_get_actor_unchecked;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{BookOrder, Data, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
+    data::{BookOrder, Data, OrderBookDelta, OrderBookDeltas},
     enums::{AccountType, BookAction, BookType, OmsType, OrderSide},
     identifiers::{ActorId, InstrumentId, Venue},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
@@ -104,7 +104,7 @@ fn book_deltas(instrument_id: InstrumentId) -> Vec<Data> {
         } else {
             BookAction::Update
         };
-        Data::Deltas(OrderBookDeltas_API::new(OrderBookDeltas::new(
+        Data::Deltas(Box::new(OrderBookDeltas::new(
             instrument_id,
             vec![
                 OrderBookDelta::new(

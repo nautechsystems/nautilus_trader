@@ -28,6 +28,7 @@ use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use nautilus_common::{
     cache::{InstrumentLookupError, fifo::FifoCacheMap},
+    clients::SocketReconnectRegistration,
     live::get_runtime,
 };
 use nautilus_core::{AtomicMap, MUTEX_POISONED};
@@ -41,6 +42,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
+    SocketStateSink,
     mode::ConnectionMode,
     websocket::{
         AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -61,6 +63,7 @@ use crate::{
             order_to_hyperliquid_request_with_asset_and_cloid, round_to_sig_figs,
             time_in_force_to_hyperliquid_tif,
         },
+        socket::SocketControl,
     },
     http::{
         client::HyperliquidHttpClient,
@@ -112,10 +115,7 @@ pub(super) enum AssetContextDataType {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.hyperliquid", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -146,6 +146,9 @@ pub struct HyperliquidWebSocketClient {
     account_id: Option<AccountId>,
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
+    socket_sink: Option<SocketStateSink>,
+    socket_control: Option<SocketControl>,
+    socket_registration: Option<SocketReconnectRegistration>,
 }
 
 impl Clone for HyperliquidWebSocketClient {
@@ -175,6 +178,9 @@ impl Clone for HyperliquidWebSocketClient {
             account_id: self.account_id,
             transport_backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
+            socket_sink: self.socket_sink.clone(),
+            socket_control: self.socket_control.clone(),
+            socket_registration: None,
         }
     }
 }
@@ -227,7 +233,25 @@ impl HyperliquidWebSocketClient {
             account_id,
             transport_backend,
             proxy_url,
+            socket_sink: None,
+            socket_control: None,
+            socket_registration: None,
         }
+    }
+
+    /// Configures socket state reporting for the underlying transport.
+    #[must_use]
+    pub fn with_state_sink(mut self, state_sink: SocketStateSink) -> Self {
+        self.socket_sink = Some(state_sink);
+        self
+    }
+
+    /// Configures state reporting and reconnect control for the underlying transport.
+    #[must_use]
+    pub(crate) fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_sink = Some(control.sink());
+        self.socket_control = Some(control);
+        self
     }
 
     /// Establishes WebSocket connection and spawns the message handler.
@@ -245,20 +269,32 @@ impl HyperliquidWebSocketClient {
         let cfg = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![],
-            heartbeat: Some(30),
-            heartbeat_msg: Some(HYPERLIQUID_HEARTBEAT_MSG.to_string()),
-            reconnect_timeout_ms: Some(15_000),
+            heartbeat_interval_secs: Some(30),
+            heartbeat_payload: Some(HYPERLIQUID_HEARTBEAT_MSG.to_string()),
+            connect_timeout_ms: Some(15_000),
             reconnect_delay_initial_ms: Some(250),
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(200),
             reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
         };
-        let client =
-            WebSocketClient::connect(cfg, Some(message_handler), None, None, vec![], None).await?;
+        let client = WebSocketClient::connect_with_state_sink(
+            cfg,
+            Some(message_handler),
+            None,
+            vec![],
+            None,
+            self.socket_sink.clone(),
+        )
+        .await?;
+        self.socket_registration = self
+            .socket_control
+            .as_ref()
+            .map(|control| control.register(client.reconnect_handle()));
 
         // Create channels for handler communication
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -375,6 +411,15 @@ impl HyperliquidWebSocketClient {
                     Some(NautilusWsMessage::Reconnected) => {
                         log::info!("WebSocket reconnected");
                         resubscribe_all();
+
+                        if handler.send(NautilusWsMessage::Reconnected).is_err() {
+                            if handler.is_stopped() {
+                                log::debug!("Failed to send reconnect event (receiver dropped)");
+                            } else {
+                                log::error!("Failed to send reconnect event (receiver dropped)");
+                            }
+                            break;
+                        }
                     }
                     Some(msg) => {
                         if handler.send(msg).is_err() {
@@ -422,6 +467,7 @@ impl HyperliquidWebSocketClient {
         self.signal.store(true, Ordering::Relaxed);
         self.connection_mode
             .store(Arc::new(AtomicU8::new(ConnectionMode::Closed as u8)));
+        self.socket_registration = None;
 
         if let Some(handle) = self.task_handle.take() {
             handle.abort();
@@ -445,6 +491,7 @@ impl HyperliquidWebSocketClient {
         self.all_dex_asset_ctxs_instrument_ids = Arc::new(AtomicMap::new());
         self.cloid_cache = Arc::new(Mutex::new(FifoCacheMap::new()));
         self.out_rx = None;
+        self.socket_registration = None;
         self.connection_mode
             .store(Arc::new(AtomicU8::new(ConnectionMode::Closed as u8)));
         self.signal.store(false, Ordering::Relaxed);
@@ -453,6 +500,7 @@ impl HyperliquidWebSocketClient {
     /// Disconnects the WebSocket connection.
     pub async fn disconnect(&mut self) -> anyhow::Result<()> {
         log::debug!("Disconnecting Hyperliquid WebSocket");
+        self.socket_registration = None;
         self.signal.store(true, Ordering::Relaxed);
 
         if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
@@ -1564,9 +1612,76 @@ impl HyperliquidWebSocketClient {
     ///
     /// Note: `userEvents` already includes fills, so we don't subscribe to `userFills`
     /// separately to avoid duplicate fill messages.
+    ///
+    /// This does **not** include opt-in TWAP custom-data channels
+    /// (`userTwapHistory` / `userTwapSliceFills`).
     pub async fn subscribe_all_user_channels(&self, user: &str) -> anyhow::Result<()> {
         self.subscribe_order_updates(user).await?;
         self.subscribe_user_events(user).await?;
+        Ok(())
+    }
+
+    /// Subscribe to TWAP history for a user address (`userTwapHistory`).
+    ///
+    /// Opt-in custom data. The address need not be the adapter trading account.
+    pub async fn subscribe_user_twap_history(&self, user: &str) -> anyhow::Result<()> {
+        let subscription = SubscriptionRequest::UserTwapHistory {
+            user: user.to_string(),
+        };
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::Subscribe {
+                subscriptions: vec![subscription],
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
+        Ok(())
+    }
+
+    /// Unsubscribe from TWAP history for a user address.
+    pub async fn unsubscribe_user_twap_history(&self, user: &str) -> anyhow::Result<()> {
+        let subscription = SubscriptionRequest::UserTwapHistory {
+            user: user.to_string(),
+        };
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::Unsubscribe {
+                subscriptions: vec![subscription],
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send unsubscribe command: {e}"))?;
+        Ok(())
+    }
+
+    /// Subscribe to TWAP slice fills for a user address (`userTwapSliceFills`).
+    ///
+    /// Opt-in custom data. The address need not be the adapter trading account.
+    pub async fn subscribe_user_twap_slice_fills(&self, user: &str) -> anyhow::Result<()> {
+        let subscription = SubscriptionRequest::UserTwapSliceFills {
+            user: user.to_string(),
+        };
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::Subscribe {
+                subscriptions: vec![subscription],
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
+        Ok(())
+    }
+
+    /// Unsubscribe from TWAP slice fills for a user address.
+    pub async fn unsubscribe_user_twap_slice_fills(&self, user: &str) -> anyhow::Result<()> {
+        let subscription = SubscriptionRequest::UserTwapSliceFills {
+            user: user.to_string(),
+        };
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::Unsubscribe {
+                subscriptions: vec![subscription],
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send unsubscribe command: {e}"))?;
         Ok(())
     }
 
@@ -2235,7 +2350,11 @@ fn subscription_from_topic(topic: &str) -> anyhow::Result<SubscriptionRequest> {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::clients::{
+        SocketReconnectHandle, SocketReconnectRegistry, SocketReconnectRequestOutcome,
+    };
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{
@@ -2294,6 +2413,50 @@ mod tests {
 
         let topic = subscription_topic(&sub);
         assert_eq!(topic, "candle:BTC:1h");
+    }
+
+    #[rstest]
+    fn with_state_sink_survives_clone() {
+        let client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        )
+        .with_state_sink(SocketStateSink::new(|_| {}));
+
+        let cloned = client.clone();
+        assert!(client.socket_sink.is_some());
+        assert!(cloned.socket_sink.is_some());
+    }
+
+    #[rstest]
+    fn clone_does_not_take_socket_registration() {
+        let registry = SocketReconnectRegistry::default();
+        let endpoint = Ustr::from("hyperliquid-data-streams");
+        let mut client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        client.socket_registration = Some(registry.register(
+            endpoint,
+            SocketReconnectHandle::new(|| SocketReconnectRequestOutcome::Accepted),
+        ));
+
+        let cloned = client.clone();
+        assert!(cloned.socket_registration.is_none());
+        assert!(client.socket_registration.is_some());
+        assert!(registry.get(endpoint).is_some());
+
+        drop(cloned);
+        assert!(registry.get(endpoint).is_some());
+
+        drop(client);
+        assert!(registry.get(endpoint).is_none());
     }
 
     #[rstest]

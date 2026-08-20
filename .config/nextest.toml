@@ -15,7 +15,10 @@ test-threads = 2
 slow-timeout = { period = "120s", terminate-after = 5 }
 
 [[profile.default.overrides]]
-filter = 'test(serial_tests)'
+# Blockchain execution client tests use per-test PostgreSQL pools that can exhaust connections.
+# The two gated Anvil fork suites also share the PostgreSQL schema-creation path and the fork
+# evidence directory, so they serialize with each other and with the client tests.
+filter = 'test(serial_tests) | (package(nautilus-blockchain) & (test(execution::client::tests) | binary(execution_fork) | binary(execution_livenode_fork)))'
 test-group = 'serial-tests'
 
 [[profile.default.overrides]]
@@ -27,7 +30,10 @@ slow-timeout = { period = "300s" }
 filter = 'binary(grid_mm_itch) | binary(backtest_node_itch) | binary(orderbook_integration) | binary(large_data) | binary(test_pinned_data_direct_session)'
 test-group = 'large-data-tests'
 
-# Websocket and data client tests can be flaky due to timing on low-spec runners
+# Execution client, websocket, and data client tests spawn order and stream
+# tasks on the global tokio runtime, separate from the #[tokio::test] runtime.
+# Under heavy parallelism the global runtime's worker threads can be starved,
+# causing internal wait-for-request timeouts (e.g. wait_for_command_requests).
 [[profile.default.overrides]]
-filter = 'binary(websocket) | binary(data_client)'
+filter = 'binary(websocket) | binary(data_client) | test(exec_client)'
 retries = 3

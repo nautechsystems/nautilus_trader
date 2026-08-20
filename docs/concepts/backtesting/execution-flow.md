@@ -16,7 +16,7 @@ For each data point the engine runs three phases:
   the incoming market data and iterates the matching engine. This fills any existing
   orders that now match against the new market state.
 - **Strategy receives data.** The data engine dispatches the data point to actors
-  and strategies via their callbacks (e.g. `on_quote_tick`, `on_bar`). Strategies
+  and strategies via their callbacks (e.g. `on_quote`, `on_bar`). Strategies
   may submit, cancel, or modify orders during these callbacks.
 - **Settle venues.** The engine drains all queued venue commands and then iterates
   matching engines to fill newly submitted orders. This loop repeats until no
@@ -43,7 +43,7 @@ sequenceDiagram
     rect rgb(245, 255, 245)
     note right of BL: Phase 2 - Strategy receives data
     BL->>DE: process(data)
-    DE->>Stgy: on_quote_tick() / on_bar()
+    DE->>Stgy: on_quote() / on_bar()
     Stgy-->>Exch: submit_order (queued or immediate)
     end
 

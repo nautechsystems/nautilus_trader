@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pickle
+import sys
 from datetime import timedelta
 
 import pytest
@@ -164,6 +165,44 @@ def test_bar_spec_from_str_rejects_invalid_periodic_step():
 
 
 @pytest.mark.parametrize(
+    ("step", "aggregation", "expected_days"),
+    [
+        (213_503, BarAggregation.DAY, 213_503),
+        (30_500, BarAggregation.WEEK, 213_500),
+        (584, BarAggregation.YEAR, 213_160),
+        (12, BarAggregation.MONTH, 360),
+    ],
+)
+def test_bar_spec_max_interval_converts_without_panic(step, aggregation, expected_days):
+    spec = BarSpecification(step, aggregation, PriceType.LAST)
+    parsed = BarSpecification.from_str(f"{step}-{aggregation.name}-LAST")
+
+    interval = spec.timedelta
+    interval_ns = spec.get_interval_ns()
+
+    assert parsed == spec
+    assert interval == timedelta(days=expected_days)
+    assert interval_ns == expected_days * 86_400_000_000_000
+
+
+@pytest.mark.parametrize(
+    ("step", "aggregation"),
+    [
+        (213_504, BarAggregation.DAY),
+        (30_501, BarAggregation.WEEK),
+        (585, BarAggregation.YEAR),
+        (sys.maxsize, BarAggregation.WEEK),
+    ],
+)
+def test_bar_spec_rejects_unrepresentable_interval(step, aggregation):
+    with pytest.raises(ValueError, match=r"Invalid step in bar_type\.spec\.step"):
+        BarSpecification(step, aggregation, PriceType.LAST)
+
+    with pytest.raises(ValueError, match=r"Invalid step in bar_type\.spec\.step"):
+        BarSpecification.from_str(f"{step}-{aggregation.name.replace('_', '')}-LAST")
+
+
+@pytest.mark.parametrize(
     ("step", "aggregation", "expected"),
     [
         (500, BarAggregation.MILLISECOND, timedelta(milliseconds=500)),
@@ -286,10 +325,7 @@ def test_bar_type_composite():
 
 
 def test_bar_fully_qualified_name():
-    module_name, _, type_name = Bar.fully_qualified_name().partition(":")
-
-    assert module_name
-    assert type_name == "Bar"
+    assert Bar.fully_qualified_name() == "nautilus_trader.model:Bar"
     assert Bar.__module__ == "nautilus_trader.model"
 
 

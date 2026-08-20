@@ -25,7 +25,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, Params, datetime::nanos_to_millis, nanos::UnixNanos,
@@ -43,7 +43,7 @@ use nautilus_model::{
 use nautilus_network::{
     http::{HttpClient, Method},
     ratelimiter::quota::Quota,
-    retry::{RetryConfig, RetryManager},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::json;
@@ -54,7 +54,7 @@ use ustr::Ustr;
 use super::{
     error::DeribitHttpError,
     models::{
-        DeribitAccountSummariesResponse, DeribitBookSummary, DeribitCombo, DeribitCurrency,
+        DeribitAccountSummariesResponse, DeribitBookSummaryRaw, DeribitCombo, DeribitCurrency,
         DeribitExpirationsResponse, DeribitInstrument, DeribitJsonRpcRequest,
         DeribitJsonRpcResponse, DeribitPosition, DeribitProductType, DeribitTicker,
         DeribitUserTradesResponse,
@@ -569,11 +569,12 @@ impl DeribitRawHttpClient {
         // (e.g., "invalid_credentials", "not_enough_funds", "order_not_found")
         let should_retry = |error: &DeribitHttpError| -> bool { error.is_retryable() };
 
-        let create_error = |msg: String| -> DeribitHttpError {
-            if msg == "canceled" {
-                DeribitHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
-            } else {
-                DeribitHttpError::NetworkError(msg)
+        let create_error = |error: RetryError| -> DeribitHttpError {
+            match error {
+                RetryError::Canceled => {
+                    DeribitHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
+                }
+                error => DeribitHttpError::NetworkError(error.to_string()),
             }
         };
 
@@ -848,7 +849,7 @@ impl DeribitRawHttpClient {
     pub async fn get_book_summary_by_currency(
         &self,
         params: GetBookSummaryByCurrencyParams,
-    ) -> Result<DeribitJsonRpcResponse<Vec<DeribitBookSummary>>, DeribitHttpError> {
+    ) -> Result<DeribitJsonRpcResponse<Vec<DeribitBookSummaryRaw>>, DeribitHttpError> {
         self.send_request("public/get_book_summary_by_currency", params, false)
             .await
     }
@@ -889,7 +890,7 @@ impl DeribitRawHttpClient {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.deribit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1251,8 +1252,8 @@ impl DeribitHttpClient {
     pub async fn request_trades(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         // Get instrument from cache to determine precisions
@@ -1265,16 +1266,16 @@ impl DeribitHttpClient {
             };
 
         // Convert timestamps to milliseconds
-        let now = Utc::now();
+        let now = Timestamp::now();
         let end_dt = end.unwrap_or(now);
-        let start_dt = start.unwrap_or(end_dt - chrono::Duration::hours(1));
+        let start_dt = start.unwrap_or(end_dt - jiff::SignedDuration::from_hours(1));
 
         if let (Some(s), Some(e)) = (start, end) {
             anyhow::ensure!(s < e, "Invalid time range: start={s:?} end={e:?}");
         }
 
-        let start_ms = start_dt.timestamp_millis();
-        let end_ms = end_dt.timestamp_millis();
+        let start_ms = start_dt.as_millisecond();
+        let end_ms = end_dt.as_millisecond();
         let ts_init = self.generate_ts_init();
         let mut all_trades = Vec::new();
         let mut paginator = TradePaginator::new(start_ms, end_ms);
@@ -1374,8 +1375,8 @@ impl DeribitHttpClient {
     pub async fn request_bars(
         &self,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<Bar>> {
         anyhow::ensure!(
@@ -1383,11 +1384,11 @@ impl DeribitHttpClient {
             "Only EXTERNAL aggregation is supported"
         );
 
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Default to last hour if no start/end provided
         let end_dt = end.unwrap_or(now);
-        let start_dt = start.unwrap_or(end_dt - chrono::Duration::hours(1));
+        let start_dt = start.unwrap_or(end_dt - jiff::SignedDuration::from_hours(1));
 
         if let (Some(s), Some(e)) = (start, end) {
             anyhow::ensure!(s < e, "Invalid time range: start={s:?} end={e:?}");
@@ -1428,8 +1429,8 @@ impl DeribitHttpClient {
             };
 
         let instrument_name = instrument_id.symbol.to_string();
-        let start_timestamp = start_dt.timestamp_millis();
-        let end_timestamp = end_dt.timestamp_millis();
+        let start_timestamp = start_dt.as_millisecond();
+        let end_timestamp = end_dt.as_millisecond();
 
         let params = GetTradingViewChartDataParams::new(
             instrument_name,
@@ -1614,7 +1615,7 @@ impl DeribitHttpClient {
         let mut seen_order_ids = AHashSet::new();
 
         let mut parse_and_add = |order: &DeribitOrderMsg| {
-            let symbol = Ustr::from(&order.instrument_name);
+            let symbol = order.instrument_name;
             if let Some(instrument) = self.get_instrument(&symbol) {
                 match parse_user_order_msg(order, &instrument, account_id, ts_init) {
                     Ok(report) => {
@@ -1769,7 +1770,7 @@ impl DeribitHttpClient {
         end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<FillReport>> {
         let ts_init = self.generate_ts_init();
-        let now_ms = Utc::now().timestamp_millis();
+        let now_ms = Timestamp::now().as_millisecond();
 
         // Convert UnixNanos to milliseconds for Deribit API
         let start_ms = start.map_or(0, |ns| nanos_to_millis(ns.as_u64()) as i64);
@@ -1778,7 +1779,7 @@ impl DeribitHttpClient {
 
         // Helper closure to parse trade and add to reports
         let mut parse_and_add = |trade: &DeribitUserTradeMsg| {
-            let symbol = Ustr::from(&trade.instrument_name);
+            let symbol = trade.instrument_name;
             if let Some(instrument) = self.get_instrument(&symbol) {
                 match parse_user_trade_msg(trade, &instrument, account_id, ts_init) {
                     Ok(report) => reports.push(report),
@@ -1898,10 +1899,10 @@ impl DeribitHttpClient {
             .ok_or_else(|| anyhow::anyhow!("No result in ticker response"))
     }
 
-    /// Requests book summaries for options of a given currency.
+    /// Requests book summaries for a currency via `public/get_book_summary_by_currency`.
     ///
-    /// Returns raw `DeribitBookSummary` items which include `underlying_price`
-    /// (the forward price) for each option instrument.
+    /// Defaults to product kind `option`.
+    /// Entries include mark/IV, bid-ask, volumes, and `underlying_price` (forward) when present.
     ///
     /// # Errors
     ///
@@ -1909,8 +1910,27 @@ impl DeribitHttpClient {
     pub async fn request_book_summaries(
         &self,
         currency: &str,
-    ) -> anyhow::Result<Vec<DeribitBookSummary>> {
-        let params = GetBookSummaryByCurrencyParams::options(currency);
+    ) -> anyhow::Result<Vec<DeribitBookSummaryRaw>> {
+        self.request_book_summaries_kind(currency, Some("option"))
+            .await
+    }
+
+    /// Requests book summaries for a currency with an optional product `kind` filter.
+    ///
+    /// When `kind` is `None`, Deribit returns summaries for all product kinds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn request_book_summaries_kind(
+        &self,
+        currency: &str,
+        kind: Option<&str>,
+    ) -> anyhow::Result<Vec<DeribitBookSummaryRaw>> {
+        let params = GetBookSummaryByCurrencyParams {
+            currency: currency.to_string(),
+            kind: kind.map(str::to_string),
+        };
         let full_response = self
             .inner
             .get_book_summary_by_currency(params)

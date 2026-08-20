@@ -174,10 +174,7 @@ pub static HYPERLIQUID_REST_QUOTA: LazyLock<Quota> =
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.hyperliquid", from_py_object)
 )]
 pub struct HyperliquidRawHttpClient {
     client: HttpClient,
@@ -467,7 +464,15 @@ impl HyperliquidRawHttpClient {
 
     /// Get frontend open orders (includes more detail) for a user.
     pub async fn info_frontend_open_orders(&self, user: &str) -> Result<Value> {
-        let request = InfoRequest::frontend_open_orders(user);
+        self.info_frontend_open_orders_for_dex(user, None).await
+    }
+
+    async fn info_frontend_open_orders_for_dex(
+        &self,
+        user: &str,
+        dex: Option<&str>,
+    ) -> Result<Value> {
+        let request = InfoRequest::frontend_open_orders_for_dex(user, dex);
         self.send_info_request(&request).await
     }
 
@@ -483,7 +488,15 @@ impl HyperliquidRawHttpClient {
 
     /// Get clearinghouse state (balances, positions, margin) for a user.
     pub async fn info_clearinghouse_state(&self, user: &str) -> Result<Value> {
-        let request = InfoRequest::clearinghouse_state(user);
+        self.info_clearinghouse_state_for_dex(user, None).await
+    }
+
+    async fn info_clearinghouse_state_for_dex(
+        &self,
+        user: &str,
+        dex: Option<&str>,
+    ) -> Result<Value> {
+        let request = InfoRequest::clearinghouse_state_for_dex(user, dex);
         self.send_info_request(&request).await
     }
 
@@ -873,10 +886,7 @@ impl HyperliquidRawHttpClient {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.hyperliquid", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1786,6 +1796,16 @@ impl HyperliquidHttpClient {
         self.inner.info_frontend_open_orders(user).await
     }
 
+    async fn info_frontend_open_orders_for_dex(
+        &self,
+        user: &str,
+        dex: Option<&str>,
+    ) -> Result<Value> {
+        self.inner
+            .info_frontend_open_orders_for_dex(user, dex)
+            .await
+    }
+
     /// Get the most recent historical orders for a user.
     pub async fn info_historical_orders(
         &self,
@@ -1797,6 +1817,14 @@ impl HyperliquidHttpClient {
     /// Get clearinghouse state (balances, positions, margin) for a user.
     pub async fn info_clearinghouse_state(&self, user: &str) -> Result<Value> {
         self.inner.info_clearinghouse_state(user).await
+    }
+
+    async fn info_clearinghouse_state_for_dex(
+        &self,
+        user: &str,
+        dex: Option<&str>,
+    ) -> Result<Value> {
+        self.inner.info_clearinghouse_state_for_dex(user, dex).await
     }
 
     /// Get spot clearinghouse state (per-token spot balances) for a user.
@@ -2201,7 +2229,8 @@ impl HyperliquidHttpClient {
 
     /// Request order status reports for a user.
     ///
-    /// Fetches open orders via `info_frontend_open_orders` and parses them into OrderStatusReports.
+    /// Fetches frontend open orders from the default and all cached builder dexes when unfiltered,
+    /// or from the dex selected by an instrument filter, then parses them into OrderStatusReports.
     /// This method requires instruments to be added to the client cache via `cache_instrument()`.
     ///
     /// For vault tokens (starting with "vntls:") that are not in the cache, synthetic instruments
@@ -2218,51 +2247,44 @@ impl HyperliquidHttpClient {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-        let response = self.info_frontend_open_orders(user).await?;
-
-        // Parse the JSON response into a vector of orders
-        let orders: Vec<serde_json::Value> = serde_json::from_value(response)
-            .map_err(|e| Error::bad_request(format!("Failed to parse orders: {e}")))?;
-
         let mut reports = Vec::new();
         let ts_init = self.clock.get_time_ns();
 
-        for order_value in orders {
-            // Parse the order data
-            let order: WsBasicOrderData = match serde_json::from_value(order_value.clone()) {
-                Ok(o) => o,
-                Err(e) => {
-                    log::warn!("Failed to parse order: {e}");
+        for dex in self.reconciliation_dexes(instrument_id) {
+            let response = self
+                .info_frontend_open_orders_for_dex(user, dex.as_deref())
+                .await?;
+            let orders: Vec<serde_json::Value> = serde_json::from_value(response)
+                .map_err(|e| Error::bad_request(format!("Failed to parse orders: {e}")))?;
+
+            for order_value in orders {
+                let order: WsBasicOrderData = match serde_json::from_value(order_value) {
+                    Ok(order) => order,
+                    Err(e) => {
+                        log::warn!("Failed to parse order: {e}");
+                        continue;
+                    }
+                };
+
+                let instrument = match self.get_or_create_instrument(&order.coin, None) {
+                    Some(instrument) => instrument,
+                    None => continue,
+                };
+
+                if instrument_id.is_some_and(|filter_id| instrument.id() != filter_id) {
                     continue;
                 }
-            };
 
-            // Get instrument from cache or create synthetic for vault tokens
-            let instrument = match self.get_or_create_instrument(&order.coin, None) {
-                Some(inst) => inst,
-                None => continue, // Skip if instrument not found
-            };
-
-            // Filter by instrument_id if specified
-            if let Some(filter_id) = instrument_id
-                && instrument.id() != filter_id
-            {
-                continue;
-            }
-
-            // Determine status from order data - orders from frontend_open_orders are open
-            let status = HyperliquidOrderStatusEnum::Open;
-
-            // Parse to OrderStatusReport
-            match parse_order_status_report_from_basic(
-                &order,
-                &status,
-                &instrument,
-                account_id,
-                ts_init,
-            ) {
-                Ok(report) => reports.push(report),
-                Err(e) => log::error!("Failed to parse order status report: {e}"),
+                match parse_order_status_report_from_basic(
+                    &order,
+                    &HyperliquidOrderStatusEnum::Open,
+                    &instrument,
+                    account_id,
+                    ts_init,
+                ) {
+                    Ok(report) => reports.push(report),
+                    Err(e) => log::error!("Failed to parse order status report: {e}"),
+                }
             }
         }
 
@@ -2601,10 +2623,10 @@ impl HyperliquidHttpClient {
 
     /// Request position status reports for a user.
     ///
-    /// Fetches perp clearinghouse state and spot clearinghouse state, then returns
-    /// the union of perp asset positions (short/long with PnL) and spot holdings
-    /// (long only). This method requires instruments to be added to the client
-    /// cache via `cache_instrument()`.
+    /// Fetches clearinghouse state from the default and all cached builder dexes when unfiltered,
+    /// plus spot clearinghouse state, then returns the union of perp asset positions (short/long
+    /// with PnL) and spot holdings (long only). This method requires instruments to be added to the
+    /// client cache via `cache_instrument()`.
     ///
     /// When `instrument_id` resolves to a specific product type, the opposite
     /// product's endpoint is skipped to avoid wasted round trips and make
@@ -2618,8 +2640,8 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if either clearinghouse request fails (when that
-    /// product is in scope) or parsing fails.
+    /// Returns an error if any clearinghouse request fails (when that product or dex is in scope)
+    /// or parsing fails.
     ///
     /// Returns an error if `account_id` has not been set on the client.
     pub async fn request_position_status_reports(
@@ -2651,41 +2673,43 @@ impl HyperliquidHttpClient {
             return Ok(reports);
         }
 
-        let state_response = self.info_clearinghouse_state(user).await?;
+        for dex in self.reconciliation_dexes(instrument_id) {
+            let state_response = self
+                .info_clearinghouse_state_for_dex(user, dex.as_deref())
+                .await?;
+            let asset_positions: Vec<serde_json::Value> = state_response
+                .get("assetPositions")
+                .and_then(|value| value.as_array())
+                .ok_or_else(|| {
+                    Error::bad_request("assetPositions not found in clearinghouse state")
+                })?
+                .clone();
 
-        // Extract asset positions from the clearinghouse state
-        let asset_positions: Vec<serde_json::Value> = state_response
-            .get("assetPositions")
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| Error::bad_request("assetPositions not found in clearinghouse state"))?
-            .clone();
+            for position_value in asset_positions {
+                let coin = position_value
+                    .get("position")
+                    .and_then(|position| position.get("coin"))
+                    .and_then(|coin| coin.as_str())
+                    .ok_or_else(|| Error::bad_request("coin not found in position"))?;
 
-        for position_value in asset_positions {
-            // Extract coin from position data
-            let coin = position_value
-                .get("position")
-                .and_then(|p| p.get("coin"))
-                .and_then(|c| c.as_str())
-                .ok_or_else(|| Error::bad_request("coin not found in position"))?;
+                let instrument = match self.get_or_create_instrument(&Ustr::from(coin), None) {
+                    Some(instrument) => instrument,
+                    None => continue,
+                };
 
-            // Get instrument from cache - convert &str to Ustr for lookup
-            let coin_ustr = Ustr::from(coin);
-            let instrument = match self.get_or_create_instrument(&coin_ustr, None) {
-                Some(inst) => inst,
-                None => continue, // Skip if instrument not found
-            };
+                if instrument_id.is_some_and(|filter_id| instrument.id() != filter_id) {
+                    continue;
+                }
 
-            // Filter by instrument_id if specified
-            if let Some(filter_id) = instrument_id
-                && instrument.id() != filter_id
-            {
-                continue;
-            }
-
-            // Parse to PositionStatusReport
-            match parse_position_status_report(&position_value, &instrument, account_id, ts_init) {
-                Ok(report) => reports.push(report),
-                Err(e) => log::error!("Failed to parse position status report: {e}"),
+                match parse_position_status_report(
+                    &position_value,
+                    &instrument,
+                    account_id,
+                    ts_init,
+                ) {
+                    Ok(report) => reports.push(report),
+                    Err(e) => log::error!("Failed to parse position status report: {e}"),
+                }
             }
         }
 
@@ -2875,8 +2899,8 @@ impl HyperliquidHttpClient {
     pub async fn request_bars(
         &self,
         bar_type: BarType,
-        start: Option<chrono::DateTime<chrono::Utc>>,
-        end: Option<chrono::DateTime<chrono::Utc>>,
+        start: Option<jiff::Timestamp>,
+        end: Option<jiff::Timestamp>,
         limit: Option<u32>,
     ) -> Result<Vec<Bar>> {
         let instrument_id = bar_type.instrument_id();
@@ -2910,10 +2934,10 @@ impl HyperliquidHttpClient {
             bar_type_to_interval(&bar_type).map_err(|e| Error::bad_request(e.to_string()))?;
 
         // Hyperliquid uses millisecond timestamps
-        let now = chrono::Utc::now();
-        let end_time = end.unwrap_or(now).timestamp_millis() as u64;
+        let now = jiff::Timestamp::now();
+        let end_time = end.unwrap_or(now).as_millisecond() as u64;
         let start_time = if let Some(start) = start {
-            start.timestamp_millis() as u64
+            start.as_millisecond() as u64
         } else {
             // Default to 1000 bars before end_time
             let spec = bar_type.spec();
@@ -2933,7 +2957,7 @@ impl HyperliquidHttpClient {
             .await?;
 
         // Filter out incomplete bars where end_timestamp >= current time
-        let now_ms = now.timestamp_millis() as u64;
+        let now_ms = now.as_millisecond() as u64;
 
         let mut bars: Vec<Bar> = candles
             .iter()
@@ -2977,8 +3001,8 @@ impl HyperliquidHttpClient {
     pub async fn request_public_trades(
         &self,
         instrument_id: InstrumentId,
-        start: Option<chrono::DateTime<chrono::Utc>>,
-        end: Option<chrono::DateTime<chrono::Utc>>,
+        start: Option<jiff::Timestamp>,
+        end: Option<jiff::Timestamp>,
         limit: Option<usize>,
     ) -> Result<Vec<HyperliquidPublicTrade>> {
         let symbol = instrument_id.symbol;
@@ -3534,6 +3558,32 @@ impl HyperliquidHttpClient {
 
         Ok(Some(report))
     }
+
+    fn reconciliation_dexes(&self, instrument_id: Option<InstrumentId>) -> Vec<Option<Ustr>> {
+        if let Some(instrument_id) = instrument_id {
+            return vec![perp_dex_from_symbol(instrument_id.symbol.as_str())];
+        }
+
+        let cached = self.instruments.load();
+        let mut builder_dexs = cached
+            .keys()
+            .filter_map(|symbol| perp_dex_from_symbol(symbol.as_str()))
+            .collect::<Vec<_>>();
+        builder_dexs.sort_unstable_by(|a, b| a.as_str().cmp(b.as_str()));
+        builder_dexs.dedup();
+
+        let mut dexes = Vec::with_capacity(builder_dexs.len() + 1);
+        dexes.push(None);
+        dexes.extend(builder_dexs.into_iter().map(Some));
+        dexes
+    }
+}
+
+fn perp_dex_from_symbol(symbol: &str) -> Option<Ustr> {
+    symbol
+        .strip_suffix("-PERP")?
+        .split_once(':')
+        .map(|(dex, _)| Ustr::from(dex))
 }
 
 /// Extracts the order-status payload from an exchange response.

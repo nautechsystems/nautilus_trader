@@ -17,7 +17,7 @@ use std::{
     any::Any,
     env,
     ffi::OsStr,
-    io,
+    io::{self, Read},
     panic::{self, AssertUnwindSafe},
     path::{Path, PathBuf},
     process::{Command, ExitCode, Output, Stdio},
@@ -484,20 +484,47 @@ fn run_worker(path: &Path) -> io::Result<WorkerOutput> {
     let timeout = worker_timeout();
     let deadline = Instant::now() + timeout;
 
-    loop {
-        if child.try_wait()?.is_some() {
-            return child.wait_with_output().map(WorkerOutput::Exited);
+    // A report larger than the OS pipe buffer would otherwise block mid-print
+    // and be killed as a timeout.
+    let stdout_drain = spawn_pipe_drain(child.stdout.take());
+    let stderr_drain = spawn_pipe_drain(child.stderr.take());
+
+    let mut timed_out = false;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
         }
 
         if Instant::now() >= deadline {
             let _ = child.kill();
-            return child
-                .wait_with_output()
-                .map(|output| WorkerOutput::TimedOut { output, timeout });
+            timed_out = true;
+            break child.wait()?;
         }
 
         thread::sleep(WORKER_POLL_INTERVAL);
+    };
+
+    let output = Output {
+        status,
+        stdout: stdout_drain.join().unwrap_or_default(),
+        stderr: stderr_drain.join().unwrap_or_default(),
+    };
+
+    if timed_out {
+        Ok(WorkerOutput::TimedOut { output, timeout })
+    } else {
+        Ok(WorkerOutput::Exited(output))
     }
+}
+
+fn spawn_pipe_drain<R: Read + Send + 'static>(pipe: Option<R>) -> thread::JoinHandle<Vec<u8>> {
+    thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = pipe {
+            let _ = pipe.read_to_end(&mut buf);
+        }
+        buf
+    })
 }
 
 fn relay_output(output: &Output) {

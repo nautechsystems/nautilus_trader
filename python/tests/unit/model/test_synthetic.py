@@ -14,12 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytest
+from tests.providers import TestInstrumentProvider
 
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Symbol
 from nautilus_trader.model import SyntheticInstrument
-from tests.providers import TestInstrumentProvider
 
 
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()

@@ -48,7 +48,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.lighter",
+        module = "nautilus_trader.adapters.lighter",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -345,6 +345,16 @@ pub enum LighterMarketStatus {
     Inactive,
     /// Market is available for trading.
     Active,
+}
+
+/// Numeric transaction status returned by Lighter transaction queries.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize_repr, Deserialize_repr)]
+#[repr(i64)]
+pub enum LighterTxStatus {
+    Failed = 0,
+    Pending = 1,
+    Executed = 2,
+    PendingFinal = 3,
 }
 
 /// String order type used by REST and WebSocket order payloads.

@@ -31,14 +31,16 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use rust_decimal::prelude::ToPrimitive;
-use ustr::Ustr;
 
 use super::messages::{
     DeriveOrderbookData, DeriveOrderbookLevel, DeriveOrderbookMsg, DerivePublicWsData,
     DeriveTickerData, DeriveTickerMsg, DeriveTradesMsg, WsSubscriptionPayload,
 };
 use crate::{
-    common::{enums::DeriveOrderSide, parse::format_instrument_id},
+    common::{
+        enums::{DeriveLiquidityRole, DeriveOrderSide},
+        parse::format_instrument_id,
+    },
     http::models::{
         DerivePublicCandle, DerivePublicFundingRate, DerivePublicTrade, DeriveTickerSnapshot,
     },
@@ -77,7 +79,7 @@ pub fn parse_orderbook_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<De
     let data = serde_json::from_str::<DeriveOrderbookData>(payload.data.get())
         .context("failed to decode Derive orderbook data")?;
     Ok(DeriveOrderbookMsg {
-        channel: Ustr::from(payload.channel.as_str()),
+        channel: payload.channel,
         data,
     })
 }
@@ -91,7 +93,7 @@ pub fn parse_trades_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<Deriv
     let trades = serde_json::from_str::<Vec<DerivePublicTrade>>(payload.data.get())
         .context("failed to decode Derive trades data")?;
     Ok(DeriveTradesMsg {
-        channel: Ustr::from(payload.channel.as_str()),
+        channel: payload.channel,
         trades,
     })
 }
@@ -107,7 +109,7 @@ pub fn parse_ticker_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<Deriv
     data.apply_channel_context(payload.channel.as_str())
         .map_err(anyhow::Error::msg)?;
     Ok(DeriveTickerMsg {
-        channel: Ustr::from(payload.channel.as_str()),
+        channel: payload.channel,
         data,
     })
 }
@@ -239,6 +241,9 @@ pub fn parse_orderbook_depth10(
 
 /// Parses a public trade message into a Nautilus trade tick.
 ///
+/// The public WS feed defines `direction` as the taker's direction, so it maps
+/// directly to the aggressor side.
+///
 /// Pass price and size precision from the instrument definition rather than
 /// inferring them from the wire values, since Derive may trim trailing zeroes.
 ///
@@ -251,15 +256,75 @@ pub fn parse_trade_tick(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<TradeTick> {
+    let aggressor_side = match trade.direction {
+        DeriveOrderSide::Buy => AggressorSide::Buy,
+        DeriveOrderSide::Sell => AggressorSide::Sell,
+    };
+    build_trade_tick(
+        trade,
+        aggressor_side,
+        price_precision,
+        size_precision,
+        ts_init,
+    )
+}
+
+/// Parses a REST `public/get_trade_history` row into a Nautilus trade tick.
+///
+/// The endpoint returns one maker row and one taker row per trade under the
+/// same `trade_id`, and each row's `direction` is that participant's own side:
+/// the aggressor side is the taker row's direction and the inverse of the maker
+/// row's. A missing role keeps the public WS contract where `direction` already
+/// denotes the taker; an unknown role degrades the same way so the trade is
+/// still emitted.
+///
+/// Pass price and size precision from the instrument definition rather than
+/// inferring them from the wire values, since Derive may trim trailing zeroes.
+///
+/// # Errors
+///
+/// Returns an error when price, size, or timestamp conversion fails.
+pub fn parse_trade_tick_from_rest(
+    trade: &DerivePublicTrade,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<TradeTick> {
+    if trade.liquidity_role == Some(DeriveLiquidityRole::Unknown) {
+        log::warn!(
+            "Unknown Derive liquidity role for trade {}, treating direction as the taker side",
+            trade.trade_id,
+        );
+    }
+
+    let aggressor_side = match (trade.liquidity_role, trade.direction) {
+        (Some(DeriveLiquidityRole::Maker), DeriveOrderSide::Buy) => AggressorSide::Sell,
+        (Some(DeriveLiquidityRole::Maker), DeriveOrderSide::Sell) => AggressorSide::Buy,
+        (_, DeriveOrderSide::Buy) => AggressorSide::Buy,
+        (_, DeriveOrderSide::Sell) => AggressorSide::Sell,
+    };
+
+    build_trade_tick(
+        trade,
+        aggressor_side,
+        price_precision,
+        size_precision,
+        ts_init,
+    )
+}
+
+fn build_trade_tick(
+    trade: &DerivePublicTrade,
+    aggressor_side: AggressorSide,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<TradeTick> {
     let instrument_id = format_instrument_id(trade.instrument_name.as_str());
     let price = Price::from_decimal_dp(trade.trade_price, price_precision)
         .with_context(|| format!("invalid trade price for {}", trade.instrument_name))?;
     let size = Quantity::from_decimal_dp(trade.trade_amount, size_precision)
         .with_context(|| format!("invalid trade amount for {}", trade.instrument_name))?;
-    let aggressor_side = match trade.direction {
-        DeriveOrderSide::Buy => AggressorSide::Buyer,
-        DeriveOrderSide::Sell => AggressorSide::Seller,
-    };
     let trade_id = TradeId::new(&trade.trade_id);
     let timestamp = u64::try_from(trade.timestamp).context("negative Derive trade timestamp")?;
     let ts_event = timestamp_millis_to_nanos(timestamp, "timestamp")?;
@@ -435,7 +500,7 @@ fn timestamp_millis_to_nanos(value: u64, field: &str) -> anyhow::Result<UnixNano
     Ok(UnixNanos::from(nanos))
 }
 
-fn ticker_ts_event(timestamp_ms: i64) -> anyhow::Result<UnixNanos> {
+pub(crate) fn ticker_ts_event(timestamp_ms: i64) -> anyhow::Result<UnixNanos> {
     let timestamp = u64::try_from(timestamp_ms).context("negative Derive ticker timestamp")?;
     timestamp_millis_to_nanos(timestamp, "timestamp")
 }
@@ -562,11 +627,7 @@ pub fn parse_candle_record(
     let timestamp =
         u64::try_from(record.timestamp_bucket).context("negative Derive candle timestamp")?;
     let bucket_start = timestamp_seconds_to_nanos(timestamp, "candle timestamp_bucket")?;
-    let interval_ns = bar_type
-        .spec()
-        .timedelta()
-        .num_nanoseconds()
-        .context("bar specification produced non-integer interval")?;
+    let interval_ns = bar_type.spec().timedelta().as_nanos();
     let interval_ns = u64::try_from(interval_ns)
         .context("bar interval overflowed the u64 range for nanoseconds")?;
     let ts_event = bucket_start
@@ -684,6 +745,7 @@ mod tests {
     use rstest::rstest;
     use rust_decimal::Decimal;
     use serde_json::{Value, json};
+    use ustr::Ustr;
 
     use super::*;
     use crate::websocket::messages::DeriveWsFrame;
@@ -745,6 +807,10 @@ mod tests {
         value["trade_id"] = json!("trade-1");
         value["trade_price"] = json!(trade_price);
         value
+    }
+
+    fn fixture_trade(filename: &str) -> DerivePublicTrade {
+        serde_json::from_value(load_json(filename)).expect("invalid Derive public trade")
     }
 
     fn ticker_json_with_timestamp(timestamp: i64) -> Value {
@@ -829,7 +895,7 @@ mod tests {
         assert_eq!(tick.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
         assert_eq!(tick.price, price("3500.2"));
         assert_eq!(tick.size, quantity("0.25"));
-        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
         assert_eq!(tick.trade_id, TradeId::from("trade-1"));
         assert_eq!(tick.ts_event, UnixNanos::from(1_700_000_000_001_000_000));
     }
@@ -910,7 +976,7 @@ mod tests {
         assert_eq!(tick.instrument_id, InstrumentId::from("ETH-USDC.DERIVE"));
         assert_eq!(tick.price, price("2050"));
         assert_eq!(tick.size, quantity("0.1"));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(
             tick.trade_id,
             TradeId::from("0445f96a-10fb-4fdc-a0f9-eed94a2f32e1")
@@ -1155,7 +1221,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
     }
 
     #[rstest]
@@ -1183,6 +1249,97 @@ mod tests {
         assert_eq!(tick.size, quantity("1"));
         assert_eq!(tick.price.precision, PRICE_PRECISION);
         assert_eq!(tick.size.precision, SIZE_PRECISION);
+    }
+
+    #[rstest]
+    #[case("buy", AggressorSide::Sell)]
+    #[case("sell", AggressorSide::Buy)]
+    fn test_parse_trade_tick_from_rest_inverts_maker_row(
+        #[case] direction: &str,
+        #[case] expected: AggressorSide,
+    ) {
+        let mut value = load_json("perps/http_public_trade_eth_maker.json");
+        value["direction"] = json!(direction);
+        let trade: DerivePublicTrade =
+            serde_json::from_value(value).expect("invalid Derive public trade");
+
+        let tick = parse_trade_tick_from_rest(
+            &trade,
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            UnixNanos::from(456),
+        )
+        .unwrap();
+
+        assert_eq!(tick.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
+        assert_eq!(tick.price, price("3499.0"));
+        assert_eq!(tick.size, quantity("0.5"));
+        assert_eq!(tick.aggressor_side, expected);
+        assert_eq!(tick.trade_id, TradeId::from("trade-1"));
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick_from_rest_maps_taker_row_directly() {
+        let trade = fixture_trade("perps/http_public_trade_eth_sell.json");
+
+        let tick = parse_trade_tick_from_rest(
+            &trade,
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            UnixNanos::from(456),
+        )
+        .unwrap();
+
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
+        assert_eq!(tick.trade_id, TradeId::from("trade-1"));
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick_from_rest_degrades_absent_role_to_taker_side() {
+        let trade = fixture_trade("perps/ws_trade_eth_absent_role.json");
+
+        let tick = parse_trade_tick_from_rest(
+            &trade,
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            UnixNanos::from(456),
+        )
+        .unwrap();
+
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
+        assert_eq!(tick.trade_id, TradeId::from("perp-trade-1"));
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick_from_rest_degrades_unknown_role_to_taker_side() {
+        let trade = fixture_trade("perps/http_public_trade_eth_unknown_role.json");
+
+        let tick = parse_trade_tick_from_rest(
+            &trade,
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            UnixNanos::from(456),
+        )
+        .unwrap();
+
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
+        assert_eq!(tick.trade_id, TradeId::from("trade-1"));
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick_maps_absent_role_directly() {
+        let trade = fixture_trade("perps/ws_trade_eth_absent_role.json");
+
+        let tick = parse_trade_tick(
+            &trade,
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            UnixNanos::from(456),
+        )
+        .unwrap();
+
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
+        assert_eq!(tick.trade_id, TradeId::from("perp-trade-1"));
     }
 
     #[rstest]

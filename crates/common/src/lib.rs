@@ -34,7 +34,6 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
 //! - `indicators`: Includes the `nautilus-indicators` crate and indicator utilities.
@@ -101,6 +100,13 @@
     clippy::match_same_arms,
     reason = "explicit per-variant arms document message dispatch even when bodies coincide"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
+// pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
+// macro expansion; an item-level `allow` cannot reach the expansion
+#![allow(clippy::clone_on_copy)]
 #![cfg_attr(
     test,
     allow(
@@ -145,9 +151,6 @@ pub mod live;
 
 #[cfg(feature = "defi")]
 pub mod defi;
-
-#[cfg(feature = "ffi")]
-pub mod ffi;
 
 #[cfg(feature = "python")]
 pub mod python;

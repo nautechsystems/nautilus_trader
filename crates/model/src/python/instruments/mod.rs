@@ -39,7 +39,7 @@ use crate::{
 /// Crypto instrument roundtrips (e.g. `CryptoPerpetual.from_dict(...)`) can carry
 /// newly listed assets not present in the built-in currency map. Looking up each
 /// named field with [`Currency::get_or_create_crypto`] registers any unknown code
-/// as a crypto currency (precision 8), mirroring the non-strict Cython path.
+/// as a crypto currency (precision 8) instead of failing the roundtrip.
 ///
 /// Callers must only pass fields that are guaranteed to hold crypto assets (the
 /// underlying of a derivative); `quote_currency` and `settlement_currency` can

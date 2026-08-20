@@ -37,8 +37,8 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::{get, post},
 };
-use chrono::{DateTime, TimeZone, Utc};
 use futures_util::{SinkExt, StreamExt};
+use jiff::Timestamp;
 use nautilus_common::{
     clients::DataClient,
     live::runner::replace_data_event_sender,
@@ -53,7 +53,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_derive::{
     common::{
         consts::{DERIVE_CLIENT_ID, DERIVE_VENUE},
@@ -64,8 +64,8 @@ use nautilus_derive::{
 };
 use nautilus_model::{
     data::{BarType, Data},
-    enums::BookType,
-    identifiers::{InstrumentId, Venue},
+    enums::{AggressorSide, BookType},
+    identifiers::{InstrumentId, TradeId, Venue},
     instruments::Instrument,
     types::{Price, Quantity},
 };
@@ -281,8 +281,8 @@ fn candle_json(bucket: i64) -> Value {
     })
 }
 
-fn datetime_from_secs(secs: i64) -> DateTime<Utc> {
-    Utc.timestamp_opt(secs, 0).unwrap()
+fn datetime_from_secs(secs: i64) -> Timestamp {
+    Timestamp::from_second(secs).unwrap()
 }
 
 async fn handle_get_tickers(State(state): State<RestState>, body: axum::body::Bytes) -> Response {
@@ -1222,8 +1222,8 @@ fn request_bars(bar_type: BarType, limit: Option<usize>) -> RequestBars {
 
 fn request_bars_window(
     bar_type: BarType,
-    start: Option<DateTime<Utc>>,
-    end: Option<DateTime<Utc>>,
+    start: Option<Timestamp>,
+    end: Option<Timestamp>,
     limit: Option<usize>,
 ) -> RequestBars {
     RequestBars::new(
@@ -1315,6 +1315,67 @@ async fn connect_with_eth_currency(rest_addr: SocketAddr, ws_addr: SocketAddr) -
     client
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_ws_trades_emit_direction_as_aggressor_side() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let channel = "trades.perp.ETH";
+    let mut notification = subscription_notification(channel).unwrap();
+    let row = notification["params"]["data"][0].clone();
+    let mut buy = row.clone();
+    buy["direction"] = json!("buy");
+    buy["trade_id"] = json!("perp-trade-buy");
+    let mut sell = row;
+    sell["direction"] = json!("sell");
+    sell["trade_id"] = json!("perp-trade-sell");
+    notification["params"]["data"] = json!([buy, sell]);
+    ws_state
+        .subscription_notifications
+        .lock()
+        .await
+        .insert(channel.to_string(), vec![notification]);
+    let rest_addr = start_rest_server(rest_state).await;
+    let ws_addr = start_ws_server(ws_state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+
+    let mut client = connect_with_eth_currency(rest_addr, ws_addr).await;
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
+    while rx.try_recv().is_ok() {}
+
+    client
+        .subscribe_trades(subscribe_trades(instrument_id))
+        .unwrap();
+    wait_for_subscribe(&ws_state, channel).await;
+
+    match recv_data(&mut rx).await {
+        Data::Trade(trade) => {
+            assert_eq!(trade.instrument_id, instrument_id);
+            assert_eq!(trade.aggressor_side, AggressorSide::Buy);
+            assert_eq!(trade.trade_id, TradeId::from("perp-trade-buy"));
+            assert_eq!(trade.price, Price::from("3500.00"));
+            assert_eq!(trade.size, Quantity::from("1.000"));
+        }
+        other => panic!("expected trade data, was {other:?}"),
+    }
+
+    match recv_data(&mut rx).await {
+        Data::Trade(trade) => {
+            assert_eq!(trade.instrument_id, instrument_id);
+            assert_eq!(trade.aggressor_side, AggressorSide::Sell);
+            assert_eq!(trade.trade_id, TradeId::from("perp-trade-sell"));
+        }
+        other => panic!("expected trade data, was {other:?}"),
+    }
+
+    client
+        .unsubscribe_trades(&unsubscribe_trades(instrument_id))
+        .unwrap();
+    wait_for_unsubscribe(&ws_state, channel).await;
+    client.disconnect().await.unwrap();
+}
 #[rstest]
 #[tokio::test]
 async fn test_request_trades_paginates_with_constant_page_size() {
@@ -1425,6 +1486,72 @@ async fn test_request_trades_returns_newest_unique_records_in_chronological_orde
             .all(|window| window[0] == window[1]),
         "pagination must use one fixed end bound: {to_timestamps:?}",
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trades_normalizes_paired_maker_first_rows_to_single_taker_tick() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *rest_state.trade_history_pages.lock().await = vec![load_json(
+        "perps/http_public_trades_result_eth_paired_maker_first.json",
+    )];
+    let rest_addr = start_rest_server(rest_state.clone()).await;
+    let ws_addr = start_ws_server(ws_state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+
+    let client = connect_with_eth_currency(rest_addr, ws_addr).await;
+
+    client
+        .request_trades(request_trades(InstrumentId::from("ETH-PERP.DERIVE"), None))
+        .unwrap();
+
+    let response = recv_response(&mut rx).await;
+    let DataResponse::Trades(trades) = response else {
+        panic!("expected trades response");
+    };
+
+    assert_eq!(trades.data.len(), 1, "paired rows must emit one tick");
+    let tick = &trades.data[0];
+    assert_eq!(tick.aggressor_side, AggressorSide::Buy);
+    assert_eq!(tick.trade_id, TradeId::from("pub-pair-1"));
+    assert_eq!(tick.price, Price::from("3500.00"));
+    assert_eq!(tick.size, Quantity::from("0.250"));
+    assert_eq!(tick.ts_event, UnixNanos::from(1_700_000_000_000_000_000));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trades_normalizes_paired_taker_first_rows_to_identical_tick() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *rest_state.trade_history_pages.lock().await = vec![load_json(
+        "perps/http_public_trades_result_eth_paired_taker_first.json",
+    )];
+    let rest_addr = start_rest_server(rest_state.clone()).await;
+    let ws_addr = start_ws_server(ws_state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+
+    let client = connect_with_eth_currency(rest_addr, ws_addr).await;
+
+    client
+        .request_trades(request_trades(InstrumentId::from("ETH-PERP.DERIVE"), None))
+        .unwrap();
+
+    let response = recv_response(&mut rx).await;
+    let DataResponse::Trades(trades) = response else {
+        panic!("expected trades response");
+    };
+
+    assert_eq!(trades.data.len(), 1, "paired rows must emit one tick");
+    let tick = &trades.data[0];
+    assert_eq!(tick.aggressor_side, AggressorSide::Buy);
+    assert_eq!(tick.trade_id, TradeId::from("pub-pair-1"));
+    assert_eq!(tick.price, Price::from("3500.00"));
+    assert_eq!(tick.size, Quantity::from("0.250"));
+    assert_eq!(tick.ts_event, UnixNanos::from(1_700_000_000_000_000_000));
 }
 
 #[rstest]
@@ -1696,7 +1823,7 @@ async fn test_request_bars_excludes_forming_bucket() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     let period = 60;
-    let now_secs = Utc::now().timestamp();
+    let now_secs = Timestamp::now().as_second();
     *rest_state.candles_response.lock().await =
         Value::Array(vec![candle_json(now_secs - period), candle_json(now_secs)]);
     let rest_addr = start_rest_server(rest_state).await;
@@ -2162,11 +2289,14 @@ async fn test_request_forward_prices_emits_response_with_record() {
     let client = connect_with_eth_currency(rest_addr, ws_addr).await;
     let instrument_id = InstrumentId::from("ETH-20260627-3500-C.DERIVE");
 
+    let clock = get_atomic_clock_realtime();
+    let before_ns = clock.get_time_ns();
     client
         .request_forward_prices(request_forward_prices("ETH", Some(instrument_id)))
         .unwrap();
 
     let response = recv_response(&mut rx).await;
+    let after_ns = clock.get_time_ns();
     let DataResponse::ForwardPrices(forward) = response else {
         panic!("expected forward prices response");
     };
@@ -2175,6 +2305,17 @@ async fn test_request_forward_prices_emits_response_with_record() {
     assert_eq!(forward.data[0].instrument_id, instrument_id);
     assert_eq!(forward.data[0].forward_price.to_string(), "3505");
     assert_eq!(forward.data[0].underlying_index.as_deref(), Some("ETH"));
+    // The event time comes from the venue ticker snapshot; the init time comes
+    // from the local realtime clock, bracketed by the reads around the request.
+    assert_eq!(
+        forward.data[0].ts_event,
+        UnixNanos::from(1_700_000_000_000_000_000)
+    );
+    assert_ne!(forward.data[0].ts_init, forward.data[0].ts_event);
+    assert!(
+        forward.data[0].ts_init >= before_ns && forward.data[0].ts_init <= after_ns,
+        "ts_init must come from the local realtime clock"
+    );
 
     let calls = rest_state.ticker_calls().await;
     assert_eq!(calls.len(), 1);
@@ -2351,6 +2492,42 @@ async fn test_request_forward_prices_emits_empty_response_when_ticker_lacks_opti
     assert!(
         forward.data.is_empty(),
         "must emit empty data when option_pricing is absent"
+    );
+}
+
+#[rstest]
+#[case::negative(-1)]
+#[case::overflowing(i64::MAX)]
+#[tokio::test]
+async fn test_request_forward_prices_emits_empty_response_for_invalid_ticker_timestamp(
+    #[case] timestamp: i64,
+) {
+    // A venue timestamp that cannot become a UNIX nanoseconds event time
+    // degrades to the empty response without fabricating venue time.
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut ticker = load_json("options/http_ticker_eth_snapshot.json");
+    ticker["timestamp"] = json!(timestamp);
+    *rest_state.ticker_response.lock().await = ticker;
+    let rest_addr = start_rest_server(rest_state.clone()).await;
+    let ws_addr = start_ws_server(ws_state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+
+    let client = connect_with_eth_currency(rest_addr, ws_addr).await;
+    let instrument_id = InstrumentId::from("ETH-20260627-3500-C.DERIVE");
+
+    client
+        .request_forward_prices(request_forward_prices("ETH", Some(instrument_id)))
+        .unwrap();
+
+    let response = recv_response(&mut rx).await;
+    let DataResponse::ForwardPrices(forward) = response else {
+        panic!("expected forward prices response");
+    };
+    assert!(
+        forward.data.is_empty(),
+        "must emit empty data for ticker timestamp {timestamp}"
     );
 }
 
@@ -2598,8 +2775,8 @@ fn request_quotes(instrument_id: InstrumentId) -> RequestQuotes {
 
 fn request_quotes_window(
     instrument_id: InstrumentId,
-    start: Option<DateTime<Utc>>,
-    end: Option<DateTime<Utc>>,
+    start: Option<Timestamp>,
+    end: Option<Timestamp>,
 ) -> RequestQuotes {
     RequestQuotes::new(
         instrument_id,

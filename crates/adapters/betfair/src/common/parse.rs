@@ -16,8 +16,8 @@
 //! Parsing utilities that convert Betfair payloads into Nautilus domain models.
 
 use anyhow::Context;
-use chrono::DateTime;
-use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
+use jiff::Timestamp;
+use nautilus_core::{Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
     enums::AccountType,
     events::AccountState,
@@ -72,17 +72,17 @@ pub fn make_instrument_id(market_id: &str, selection_id: u64, handicap: Decimal)
 ///
 /// Returns an error if the string is not a valid RFC 3339 datetime.
 ///
-/// # Panics
-///
-/// Panics if the parsed datetime cannot be represented as nanoseconds.
 pub fn parse_betfair_timestamp(s: &str) -> anyhow::Result<UnixNanos> {
-    let dt = DateTime::parse_from_rfc3339(s)
+    let dt = s
+        .parse::<Timestamp>()
         .or_else(|_| {
             // Betfair sometimes uses ".000Z" millis suffix
-            DateTime::parse_from_rfc3339(&s.replace(".000Z", "Z"))
+            s.replace(".000Z", "Z").parse::<Timestamp>()
         })
         .with_context(|| format!("invalid Betfair timestamp: {s}"))?;
-    Ok(UnixNanos::from(dt.timestamp_nanos_opt().unwrap() as u64))
+    let nanos = u64::try_from(dt.as_nanosecond())
+        .with_context(|| format!("Betfair timestamp is outside the UnixNanos range: {s}"))?;
+    Ok(UnixNanos::from(nanos))
 }
 
 /// Converts a millisecond epoch timestamp (as used in stream `pt` field) into [`UnixNanos`].
@@ -447,6 +447,35 @@ pub fn parse_account_state(
 
     let balance = AccountBalance::from_total_and_locked(total, exposure, currency)?;
 
+    let mut info = Params::new();
+    let mut push_decimal = |key: &str, val: Option<Decimal>| {
+        if let Some(decimal) = val {
+            info.insert(
+                key.to_string(),
+                serde_json::Value::from(decimal.to_string()),
+            );
+        }
+    };
+    push_decimal("available_to_bet_balance", funds.available_to_bet_balance);
+    push_decimal("exposure", funds.exposure);
+    push_decimal("retained_commission", funds.retained_commission);
+    push_decimal("exposure_limit", funds.exposure_limit);
+    push_decimal("discount_rate", funds.discount_rate);
+    if let Some(points) = funds.points_balance {
+        info.insert(
+            "points_balance".to_string(),
+            serde_json::Value::from(points),
+        );
+    }
+
+    if let Some(wallet) = funds.wallet {
+        info.insert(
+            "wallet".to_string(),
+            serde_json::Value::from(wallet.to_string()),
+        );
+    }
+    let info = if info.is_empty() { None } else { Some(info) };
+
     Ok(AccountState::new(
         account_id,
         AccountType::Betting,
@@ -457,7 +486,8 @@ pub fn parse_account_state(
         ts_event,
         ts_init,
         Some(currency),
-    ))
+    )
+    .with_info(info))
 }
 
 /// Extracts the Betfair market ID from a Nautilus instrument ID.
@@ -703,8 +733,15 @@ mod tests {
 
     #[rstest]
     fn test_parse_account_state() {
-        let data = load_test_json("rest/account_funds_with_exposure.json");
-        let funds: AccountFundsResponse = serde_json::from_str(&data).unwrap();
+        let funds = AccountFundsResponse {
+            available_to_bet_balance: Some("1000.0000000000000001".parse().unwrap()),
+            exposure: Some("-100.0000000000000002".parse().unwrap()),
+            retained_commission: Some("3.0000000000000003".parse().unwrap()),
+            exposure_limit: Some("-15000.0000000000000004".parse().unwrap()),
+            discount_rate: Some("5.0000000000000005".parse().unwrap()),
+            points_balance: Some(10),
+            wallet: Some(Ustr::from("UK")),
+        };
 
         let state = parse_account_state(
             &funds,
@@ -719,6 +756,24 @@ mod tests {
         assert_eq!(state.balances.len(), 1);
         assert!(state.is_reported);
         assert_eq!(state.base_currency, Some(Currency::GBP()));
+        let info = state.info.as_ref().unwrap();
+        assert_eq!(info.len(), 7);
+        assert_eq!(
+            info.get_str("available_to_bet_balance"),
+            Some("1000.0000000000000001")
+        );
+        assert_eq!(info.get_str("exposure"), Some("-100.0000000000000002"));
+        assert_eq!(
+            info.get_str("retained_commission"),
+            Some("3.0000000000000003")
+        );
+        assert_eq!(
+            info.get_str("exposure_limit"),
+            Some("-15000.0000000000000004")
+        );
+        assert_eq!(info.get_str("discount_rate"), Some("5.0000000000000005"));
+        assert_eq!(info.get_i64("points_balance"), Some(10));
+        assert_eq!(info.get_str("wallet"), Some("UK"));
     }
 
     #[rstest]

@@ -22,6 +22,7 @@ from nautilus_trader.live import LiveExecEngineConfig as LiveExecEngineConfig
 from nautilus_trader.live import LiveNodeConfig as LiveNodeConfig
 from nautilus_trader.live import LiveRiskEngineConfig as LiveRiskEngineConfig
 from nautilus_trader.live import PluginConfig as PluginConfig
+from nautilus_trader.live import QueueMonitorConfig as QueueMonitorConfig
 from nautilus_trader.live import RoutingConfig as RoutingConfig
 from nautilus_trader.portfolio import PortfolioConfig as PortfolioConfig
 from nautilus_trader.risk import RiskEngineConfig as RiskEngineConfig
@@ -58,6 +59,7 @@ __all__ = [
     "OrderEmulatorConfig",
     "PluginConfig",
     "PortfolioConfig",
+    "QueueMonitorConfig",
     "RiskEngineConfig",
     "RoutingConfig",
     "StrategyConfig",

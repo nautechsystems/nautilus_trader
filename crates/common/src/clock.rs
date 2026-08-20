@@ -15,8 +15,6 @@
 
 //! Real-time and static `Clock` implementations.
 
-#![warn(clippy::clone_on_ref_ptr)]
-
 use std::{
     any::Any,
     cell::RefCell,
@@ -27,7 +25,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::{
     AtomicTime, UUID4, UnixNanos,
     correctness::{check_positive_u64, check_predicate_true, check_valid_string_utf8},
@@ -47,9 +45,9 @@ use crate::timer::{
 ///
 /// An active timer is one which has not expired (`timer.is_expired == False`).
 pub trait Clock: Debug + Any {
-    /// Returns the current date and time as a timezone-aware `DateTime<UTC>`.
-    fn utc_now(&self) -> DateTime<Utc> {
-        DateTime::from_timestamp_nanos(self.timestamp_ns().as_i64())
+    /// Returns the current UTC timestamp.
+    fn utc_now(&self) -> Timestamp {
+        self.timestamp_ns().to_datetime_utc()
     }
 
     /// Returns the current UNIX timestamp in nanoseconds (ns).
@@ -80,21 +78,18 @@ pub trait Clock: Debug + Any {
     /// Cancel the registered default event handler (if any).
     ///
     /// Releases the held callback so any Python object owned by it can be dropped.
-    /// Required to break reference cycles between Python components and their clock,
-    /// since the clock stores callbacks as `Py<PyAny>` which Python's GC cannot trace.
+    /// `Trader::release_component` calls this at component retirement to break the cycle
+    /// between a Python component and its clock: the clock holds the callback as a
+    /// `Py<PyAny>` that Python's cycle collector cannot reach through.
     fn cancel_default_handler(&mut self);
 
     /// Cancel all registered named event callbacks.
     ///
     /// Releases callbacks registered via [`Clock::set_time_alert_ns`] or
-    /// [`Clock::set_timer_ns`] with an explicit `callback` argument. Called during
-    /// component disposal to break reference cycles via Python `Py<PyAny>` callbacks.
+    /// [`Clock::set_timer_ns`] with an explicit `callback` argument.
+    /// `Trader::release_component` calls this at component retirement, breaking the same
+    /// cycle as [`Clock::cancel_default_handler`].
     fn cancel_callbacks(&mut self);
-
-    /// Get handler for [`TimeEvent`].
-    ///
-    /// Note: Panics if the event does not have an associated handler
-    fn get_handler(&self, event: TimeEvent) -> TimeEventHandler;
 
     /// Set a timer to alert at the specified time.
     ///
@@ -113,7 +108,7 @@ pub trait Clock: Debug + Any {
     fn set_time_alert(
         &mut self,
         name: &str,
-        alert_time: DateTime<Utc>,
+        alert_time: Timestamp,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
@@ -168,23 +163,26 @@ pub trait Clock: Debug + Any {
     ///
     /// # Errors
     ///
-    /// Returns an error if `name` is invalid, `interval` is not positive, `start_time` or
-    /// `stop_time` is before the UNIX epoch or out of range for `UnixNanos`, or if any
-    /// predicate check fails.
+    /// Returns an error if:
+    /// - `name` is invalid.
+    /// - `interval` is zero or exceeds `u64::MAX` nanoseconds.
+    /// - `start_time` or `stop_time` is before the UNIX epoch or out of range for `UnixNanos`.
+    /// - The first event timestamp is out of range for `UnixNanos`.
+    /// - Any other timer predicate check fails.
     #[expect(clippy::too_many_arguments)]
     fn set_timer(
         &mut self,
         name: &str,
         interval: Duration,
-        start_time: Option<DateTime<Utc>>,
-        stop_time: Option<DateTime<Utc>>,
+        start_time: Option<Timestamp>,
+        stop_time: Option<Timestamp>,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> anyhow::Result<()> {
         self.set_timer_ns(
             name,
-            interval.as_nanos() as u64,
+            duration_to_nanos(interval)?,
             start_time.map(try_datetime_to_unix_nanos).transpose()?,
             stop_time.map(try_datetime_to_unix_nanos).transpose()?,
             callback,
@@ -219,8 +217,11 @@ pub trait Clock: Debug + Any {
     ///
     /// # Errors
     ///
-    /// Returns an error if `name` is invalid, `interval_ns` is not positive,
-    /// or if any predicate check fails.
+    /// Returns an error if:
+    /// - `name` is invalid.
+    /// - `interval_ns` is zero.
+    /// - `start_time_ns + interval_ns` is out of range for `UnixNanos` when not firing immediately.
+    /// - Any other timer predicate check fails.
     #[expect(clippy::too_many_arguments)]
     fn set_timer_ns(
         &mut self,
@@ -436,12 +437,10 @@ impl<'a> ClockApi<'a> {
     ///
     /// Panics if the clock is already mutably borrowed.
     #[must_use]
-    pub fn utc_now(&self) -> DateTime<Utc> {
+    pub fn utc_now(&self) -> Timestamp {
         match &self.backing {
             ClockApiBacking::Native(clock) => clock.borrow().utc_now(),
-            ClockApiBacking::Handlers(handlers) => {
-                DateTime::from_timestamp_nanos((handlers.timestamp_ns)().as_i64())
-            }
+            ClockApiBacking::Handlers(handlers) => (handlers.timestamp_ns)().to_datetime_utc(),
         }
     }
 
@@ -458,7 +457,7 @@ impl<'a> ClockApi<'a> {
     pub fn set_time_alert(
         &self,
         name: &str,
-        alert_time: DateTime<Utc>,
+        alert_time: Timestamp,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
@@ -519,8 +518,8 @@ impl<'a> ClockApi<'a> {
         &self,
         name: &str,
         interval: Duration,
-        start_time: Option<DateTime<Utc>>,
-        stop_time: Option<DateTime<Utc>>,
+        start_time: Option<Timestamp>,
+        stop_time: Option<Timestamp>,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
@@ -537,7 +536,7 @@ impl<'a> ClockApi<'a> {
             ),
             ClockApiBacking::Handlers(handlers) => (handlers.set_timer_ns)(
                 name,
-                interval.as_nanos() as u64,
+                duration_to_nanos(interval)?,
                 start_time.map(try_datetime_to_unix_nanos).transpose()?,
                 stop_time.map(try_datetime_to_unix_nanos).transpose()?,
                 callback,
@@ -672,6 +671,11 @@ impl<'a> ClockApi<'a> {
     }
 }
 
+fn duration_to_nanos(duration: Duration) -> anyhow::Result<u64> {
+    u64::try_from(duration.as_nanos())
+        .map_err(|_| anyhow::anyhow!("Interval exceeds u64 nanoseconds"))
+}
+
 /// Registry for timer event callbacks.
 ///
 /// Provides shared callback registration and retrieval logic used by both
@@ -785,7 +789,12 @@ pub fn validate_and_prepare_time_alert(
 ///
 /// # Errors
 ///
-/// Returns an error if name is invalid, interval is not positive, or stop time validation fails.
+/// Returns an error if:
+/// - `name` is invalid.
+/// - `interval_ns` is zero.
+/// - `start_time_ns + interval_ns` is out of range for `UnixNanos` when not firing immediately.
+/// - The first event or stop time is invalid when past times are disallowed.
+/// - The stop time is not after the start time.
 pub fn validate_and_prepare_timer(
     name: &str,
     interval_ns: u64,
@@ -807,19 +816,21 @@ pub fn validate_and_prepare_timer(
     if start_time_ns == 0 {
         // Zero start time indicates no explicit start; we use the current time
         start_time_ns = ts_now;
-    } else if !allow_past {
-        let next_event_time = if fire_immediately {
-            start_time_ns
-        } else {
-            start_time_ns + interval_ns
-        };
+    }
 
-        if next_event_time < ts_now {
-            anyhow::bail!(
-                "Timer '{name}' next event time {} would be in the past (current time is {ts_now})",
-                next_event_time.to_rfc3339(),
-            );
-        }
+    let next_event_time = if fire_immediately {
+        start_time_ns
+    } else {
+        start_time_ns.checked_add(interval_ns).ok_or_else(|| {
+            anyhow::anyhow!("Timer '{name}' first event time exceeds UnixNanos range")
+        })?
+    };
+
+    if !allow_past && next_event_time < ts_now {
+        anyhow::bail!(
+            "Timer '{name}' next event time {} would be in the past (current time is {ts_now})",
+            next_event_time.to_rfc3339(),
+        );
     }
 
     if let Some(stop_time) = stop_time_ns {
@@ -873,12 +884,6 @@ impl TestClock {
             timer_queue: BinaryHeap::new(),
             callbacks: CallbackRegistry::new(),
         }
-    }
-
-    /// Returns a reference to the internal timers for the clock.
-    #[must_use]
-    pub const fn get_timers(&self) -> &BTreeMap<Ustr, TestTimer> {
-        &self.timers
     }
 
     /// Advances the internal clock to the specified `to_time_ns` and optionally sets the clock to that time.
@@ -1088,15 +1093,6 @@ impl Clock for TestClock {
 
     fn cancel_callbacks(&mut self) {
         self.callbacks.clear();
-    }
-
-    /// Returns the handler for the given `TimeEvent`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if no event-specific or default callback has been registered for the event.
-    fn get_handler(&self, event: TimeEvent) -> TimeEventHandler {
-        self.callbacks.get_handler(event)
     }
 
     fn set_time_alert_ns(
@@ -2137,7 +2133,7 @@ mod tests {
     #[rstest]
     fn test_set_time_alert_default_impl(mut test_clock: TestClock) {
         let current_time = test_clock.utc_now();
-        let alert_time = current_time + chrono::Duration::seconds(1);
+        let alert_time = current_time + jiff::SignedDuration::from_secs(1);
 
         // Test the default implementation that delegates to set_time_alert_ns
         test_clock
@@ -2166,7 +2162,7 @@ mod tests {
     #[rstest]
     fn test_set_timer_default_impl(mut test_clock: TestClock) {
         let current_time = test_clock.utc_now();
-        let start_time = current_time + chrono::Duration::seconds(1);
+        let start_time = current_time + jiff::SignedDuration::from_secs(1);
         let interval = Duration::from_millis(500);
 
         // Test the default implementation that delegates to set_timer_ns
@@ -2201,8 +2197,8 @@ mod tests {
     #[rstest]
     fn test_set_timer_with_stop_time_default_impl(mut test_clock: TestClock) {
         let current_time = test_clock.utc_now();
-        let start_time = current_time + chrono::Duration::seconds(1);
-        let stop_time = current_time + chrono::Duration::seconds(3);
+        let start_time = current_time + jiff::SignedDuration::from_secs(1);
+        let stop_time = current_time + jiff::SignedDuration::from_secs(3);
         let interval = Duration::from_secs(1);
 
         // Test with stop time
@@ -2236,7 +2232,7 @@ mod tests {
     #[rstest]
     fn test_set_timer_fire_immediately_default_impl(mut test_clock: TestClock) {
         let current_time = test_clock.utc_now();
-        let start_time = current_time + chrono::Duration::seconds(1);
+        let start_time = current_time + jiff::SignedDuration::from_secs(1);
         let interval = Duration::from_millis(500);
 
         // Test with fire_immediately=true
@@ -2414,7 +2410,7 @@ mod tests {
 
     #[rstest]
     fn test_set_time_alert_rejects_unconvertible_datetime(mut test_clock: TestClock) {
-        let pre_epoch = DateTime::from_timestamp_nanos(-1);
+        let pre_epoch = Timestamp::from_nanosecond(-1).unwrap();
 
         let err = test_clock
             .set_time_alert("pre_epoch_alert", pre_epoch, None, None)
@@ -2425,7 +2421,7 @@ mod tests {
         );
 
         let err = test_clock
-            .set_time_alert("out_of_range_alert", DateTime::<Utc>::MAX_UTC, None, None)
+            .set_time_alert("out_of_range_alert", Timestamp::MAX, None, None)
             .unwrap_err();
         assert!(
             err.to_string().contains("out of range"),
@@ -2437,8 +2433,8 @@ mod tests {
 
     #[rstest]
     fn test_set_timer_rejects_unconvertible_datetime(mut test_clock: TestClock) {
-        let pre_epoch = DateTime::from_timestamp_nanos(-1);
-        let valid_start = test_clock.utc_now() + chrono::Duration::seconds(1);
+        let pre_epoch = Timestamp::from_nanosecond(-1).unwrap();
+        let valid_start = test_clock.utc_now() + jiff::SignedDuration::from_secs(1);
 
         let err = test_clock
             .set_timer(
@@ -2476,7 +2472,43 @@ mod tests {
     }
 
     #[rstest]
-    fn test_clock_api_handlers_reject_unconvertible_datetime() {
+    fn test_set_timer_rejects_interval_exceeding_u64_nanos(mut test_clock: TestClock) {
+        let interval = Duration::from_secs(u64::MAX / NANOSECONDS_IN_SECOND + 1);
+
+        let err = test_clock
+            .set_timer("overflow", interval, None, None, None, None, None)
+            .unwrap_err();
+
+        assert_eq!(err.to_string(), "Interval exceeds u64 nanoseconds");
+        assert_eq!(test_clock.timer_count(), 0);
+    }
+
+    #[rstest]
+    fn test_set_timer_ns_rejects_unrepresentable_first_event_without_replacing_timer(
+        mut test_clock: TestClock,
+    ) {
+        test_clock.set_time(UnixNanos::from(1));
+        test_clock
+            .set_timer_ns("overflow", 1, None, None, None, None, None)
+            .unwrap();
+
+        let err = test_clock
+            .set_timer_ns("overflow", u64::MAX, None, None, None, None, None)
+            .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Timer 'overflow' first event time exceeds UnixNanos range"
+        );
+        assert_eq!(test_clock.timer_count(), 1);
+        assert_eq!(
+            test_clock.next_time_ns("overflow"),
+            Some(UnixNanos::from(2))
+        );
+    }
+
+    #[rstest]
+    fn test_clock_api_handlers_reject_invalid_time_inputs() {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let calls_for_alert = Arc::clone(&calls);
         let calls_for_timer = Arc::clone(&calls);
@@ -2505,7 +2537,7 @@ mod tests {
             || {},
         );
 
-        let pre_epoch = DateTime::from_timestamp_nanos(-1);
+        let pre_epoch = Timestamp::from_nanosecond(-1).unwrap();
         clock
             .set_time_alert("alert", pre_epoch, None, None)
             .unwrap_err();
@@ -2520,7 +2552,12 @@ mod tests {
                 None,
             )
             .unwrap_err();
+        let interval = Duration::from_secs(u64::MAX / NANOSECONDS_IN_SECOND + 1);
+        let err = clock
+            .set_timer("overflow", interval, None, None, None, None, None)
+            .unwrap_err();
 
+        assert_eq!(err.to_string(), "Interval exceeds u64 nanoseconds");
         assert!(calls.lock().expect(MUTEX_POISONED).is_empty());
     }
 
@@ -2602,9 +2639,9 @@ mod tests {
             },
         );
 
-        let alert_time = DateTime::from_timestamp_nanos(1_700_000_000_333_000_000);
-        let start_time = DateTime::from_timestamp_nanos(1_700_000_000_444_000_000);
-        let stop_time = DateTime::from_timestamp_nanos(1_700_000_001_444_000_000);
+        let alert_time = Timestamp::from_nanosecond(1_700_000_000_333_000_000).unwrap();
+        let start_time = Timestamp::from_nanosecond(1_700_000_000_444_000_000).unwrap();
+        let stop_time = Timestamp::from_nanosecond(1_700_000_001_444_000_000).unwrap();
         clock
             .set_time_alert("alert", alert_time, None, Some(false))
             .unwrap();
@@ -2650,7 +2687,7 @@ mod tests {
         assert_eq!(clock.timestamp(), 1_700_000_000.123_456_7);
         assert_eq!(
             clock.utc_now(),
-            DateTime::from_timestamp_nanos(1_700_000_000_123_456_789)
+            Timestamp::from_nanosecond(1_700_000_000_123_456_789).unwrap()
         );
         assert_eq!(clock.timer_names(), vec!["alpha", "beta"]);
         assert_eq!(clock.timer_count(), 2);

@@ -15,8 +15,8 @@
 
 //! Builder types for BitMEX REST query parameters and filters.
 
-use chrono::{DateTime, Utc};
 use derive_builder::Builder;
+use jiff::Timestamp;
 use serde::{self, Deserialize, Serialize, Serializer};
 use serde_json::Value;
 
@@ -83,10 +83,10 @@ pub struct GetTradeParams {
     pub reverse: Option<bool>,
     /// Starting date filter for results.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub start_time: Option<DateTime<Utc>>,
+    pub start_time: Option<Timestamp>,
     /// Ending date filter for results.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub end_time: Option<DateTime<Utc>>,
+    pub end_time: Option<Timestamp>,
 }
 
 /// Parameters for the GET /trade/bucketed endpoint.
@@ -127,10 +127,10 @@ pub struct GetTradeBucketedParams {
     pub reverse: Option<bool>,
     /// Starting date filter for results.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub start_time: Option<DateTime<Utc>>,
+    pub start_time: Option<Timestamp>,
     /// Ending date filter for results.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub end_time: Option<DateTime<Utc>>,
+    pub end_time: Option<Timestamp>,
 }
 
 /// Parameters for the GET /orderBook/L2 endpoint.
@@ -178,10 +178,10 @@ pub struct GetFundingParams {
     pub reverse: Option<bool>,
     /// Starting date filter for results.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub start_time: Option<DateTime<Utc>>,
+    pub start_time: Option<Timestamp>,
     /// Ending date filter for results.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub end_time: Option<DateTime<Utc>>,
+    pub end_time: Option<Timestamp>,
 }
 
 /// Parameters for the GET /order endpoint.
@@ -216,10 +216,10 @@ pub struct GetOrderParams {
     pub reverse: Option<bool>,
     /// Starting date filter for results.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub start_time: Option<DateTime<Utc>>,
+    pub start_time: Option<Timestamp>,
     /// Ending date filter for results.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub end_time: Option<DateTime<Utc>>,
+    pub end_time: Option<Timestamp>,
 }
 
 /// Parameters for the POST /order endpoint.
@@ -436,10 +436,10 @@ pub struct GetExecutionParams {
     pub reverse: Option<bool>,
     /// Starting date filter for results.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub start_time: Option<DateTime<Utc>>,
+    pub start_time: Option<Timestamp>,
     /// Ending date filter for results.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub end_time: Option<DateTime<Utc>>,
+    pub end_time: Option<Timestamp>,
 }
 
 /// Parameters for the POST /position/leverage endpoint.

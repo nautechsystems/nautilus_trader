@@ -25,6 +25,9 @@
 //! Run with:
 //! `cargo run -p nautilus-backtest --features examples,streaming --example tardis-option-chain`
 
+#[cfg(feature = "mimalloc")]
+mod allocator;
+
 use std::{fmt::Debug, path::Path, str::FromStr};
 
 use nautilus_backtest::{
@@ -261,6 +264,9 @@ impl DataActor for OptionChainBacktest {
 }
 
 fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "mimalloc")]
+    allocator::register();
+
     nautilus_common::logging::ensure_logging_initialized();
 
     let catalog_path = CATALOG_PATH.to_string();

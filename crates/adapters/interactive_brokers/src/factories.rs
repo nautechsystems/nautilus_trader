@@ -54,7 +54,7 @@ impl ClientConfig for InteractiveBrokersExecClientConfig {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object
     )
 )]
@@ -124,7 +124,7 @@ impl DataClientFactory for InteractiveBrokersDataClientFactory {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object
     )
 )]

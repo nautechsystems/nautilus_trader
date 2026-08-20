@@ -5,13 +5,18 @@ venue. The `ExecutionEngine` applies it to the order, updates the `Cache`, and p
 it on the `MessageBus`. It fires when the system dispatches a cancel request and awaits
 venue acknowledgement.
 
-Transition: `ACCEPTED` -> `PENDING_CANCEL`. Handler: `on_order_pending_cancel`.
+Typical transition: `ACCEPTED` -> `PENDING_CANCEL`. Handler: `on_order_pending_cancel`.
 
 ## Fields
 
-`OrderPendingCancel` carries only the [common order event fields](index.md#common-order-event-fields). On this event, `venue_order_id` and
-`account_id` are usually populated but may be `None`, and `reconciliation` carries a real
-value.
+Beyond the [common Python order event fields](index.md#common-python-order-event-fields),
+`OrderPendingCancel` carries:
+
+| Field            | Python type              | Required/default | Description                                      |
+| ---------------- | ------------------------ | ---------------- | ------------------------------------------------ |
+| `venue_order_id` | `VenueOrderId` or `None` | `None`           | The venue‑assigned order identifier, if known.   |
+| `account_id`     | `AccountId` or `None`    | Required         | The account associated with the order, if known. |
+| `reconciliation` | `bool`                   | Required         | If generated during reconciliation.              |
 
 ## Example
 

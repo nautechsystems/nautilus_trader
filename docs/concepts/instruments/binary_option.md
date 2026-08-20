@@ -50,7 +50,7 @@ Examples include prediction market outcomes and binary event contracts.
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::AssetClass,
@@ -64,7 +64,7 @@ use ustr::Ustr;
 let raw_symbol = Symbol::from(
     "0x12a0cb60174abc437bf1178367c72d11f069e1a3add20b148fb0ab4279b772b2-92544998123698303655208967887569360731013655782348975589292031774495159624905",
 );
-let expiration = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+let expiration: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
 
 let yes_outcome = BinaryOption::builder()
     .instrument_id(InstrumentId::new(raw_symbol, Venue::from("POLYMARKET")))
@@ -72,7 +72,7 @@ let yes_outcome = BinaryOption::builder()
     .asset_class(AssetClass::Alternative)
     .currency(Currency::from("USDC"))
     .activation_ns(UnixNanos::default())
-    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .expiration_ns(UnixNanos::from(expiration))
     .price_precision(3)
     .size_precision(2)
     .price_increment(Price::from("0.001"))

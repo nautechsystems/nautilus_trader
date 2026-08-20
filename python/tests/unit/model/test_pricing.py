@@ -177,16 +177,32 @@ def test_option_chain_slice_empty_state_and_lookups():
     assert chain.get_put_greeks(Price.from_str("50000.0")) is None
 
 
-def test_black_scholes_greeks_result_properties():
-    result = black_scholes_greeks(100.0, 0.01, 0.01, 0.2, True, 100.0, 0.5)
+@pytest.mark.parametrize(
+    ("is_call", "price", "delta", "theta"),
+    [
+        (True, 10.4505767822, 0.6368305683, -0.0175606508),
+        (False, 5.5735168457, -0.3631694317, -0.0045390302),
+    ],
+)
+def test_black_scholes_greeks_result_properties(is_call, price, delta, theta):
+    result = black_scholes_greeks(100.0, 0.05, 0.05, 0.2, is_call, 100.0, 1.0)
 
     assert isinstance(result, BlackScholesGreeksResult)
-    assert result.price > 0.0
-    assert result.vol == pytest.approx(0.2)
-    assert 0.0 < result.delta < 1.0
-    assert result.gamma > 0.0
-    assert result.vega > 0.0
-    assert 0.0 <= result.itm_prob <= 1.0
+    assert result.price == pytest.approx(price, abs=1e-5)
+    assert result.vol == 0.2
+    assert result.delta == pytest.approx(delta, abs=1e-5)
+    assert result.gamma == pytest.approx(0.0187620167, abs=1e-5)
+    assert result.vega == pytest.approx(0.3752403641, abs=1e-5)
+    assert result.theta == pytest.approx(theta, abs=1e-5)
+
+
+def test_black_scholes_greeks_itm_probability_uses_d2():
+    call = black_scholes_greeks(100.0, 0.05, 0.05, 0.2, True, 100.0, 1.0)
+    put = black_scholes_greeks(100.0, 0.05, 0.05, 0.2, False, 100.0, 1.0)
+
+    assert 0.0 < call.itm_prob < call.delta
+    assert 0.0 < put.itm_prob < 1.0
+    assert call.itm_prob + put.itm_prob == pytest.approx(1.0)
 
 
 def test_imply_vol_and_greeks_matches_input_price():
@@ -195,6 +211,14 @@ def test_imply_vol_and_greeks_matches_input_price():
 
     assert implied.vol == pytest.approx(0.2, rel=1e-5)
     assert implied.delta == pytest.approx(baseline.delta)
+
+
+def test_imply_vol_and_greeks_matches_put_price():
+    baseline = black_scholes_greeks(100.0, 0.05, 0.05, 0.25, False, 105.0, 0.5)
+    implied = imply_vol_and_greeks(100.0, 0.05, 0.05, False, 105.0, 0.5, baseline.price)
+
+    assert implied.vol == pytest.approx(0.25, abs=1e-2)
+    assert implied.price == pytest.approx(baseline.price, abs=1e-2)
 
 
 def test_imply_vol_matches_baseline_vol():

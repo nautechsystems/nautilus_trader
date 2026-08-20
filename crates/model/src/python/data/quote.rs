@@ -38,9 +38,8 @@ use pyo3::{
     types::{PyDict, PyInt, PyString, PyTuple},
 };
 
-use super::data_to_pycapsule;
 use crate::{
-    data::{Data, QuoteTick},
+    data::QuoteTick,
     enums::PriceType,
     identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
@@ -49,54 +48,6 @@ use crate::{
         quantity::{Quantity, QuantityRaw},
     },
 };
-
-impl QuoteTick {
-    /// Creates a new [`QuoteTick`] from a Python object.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `PyErr` if extracting any attribute or converting types fails.
-    pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
-        let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;
-        let instrument_id =
-            InstrumentId::from_str(instrument_id_str.as_str()).map_err(to_pyvalue_err)?;
-
-        let bid_price_py: Bound<'_, PyAny> = obj.getattr("bid_price")?.extract()?;
-        let bid_price_raw: PriceRaw = bid_price_py.getattr("raw")?.extract()?;
-        let bid_price_prec: u8 = bid_price_py.getattr("precision")?.extract()?;
-        let bid_price = Price::from_raw(bid_price_raw, bid_price_prec);
-
-        let ask_price_py: Bound<'_, PyAny> = obj.getattr("ask_price")?.extract()?;
-        let ask_price_raw: PriceRaw = ask_price_py.getattr("raw")?.extract()?;
-        let ask_price_prec: u8 = ask_price_py.getattr("precision")?.extract()?;
-        let ask_price = Price::from_raw(ask_price_raw, ask_price_prec);
-
-        let bid_size_py: Bound<'_, PyAny> = obj.getattr("bid_size")?.extract()?;
-        let bid_size_raw: QuantityRaw = bid_size_py.getattr("raw")?.extract()?;
-        let bid_size_prec: u8 = bid_size_py.getattr("precision")?.extract()?;
-        let bid_size = Quantity::from_raw(bid_size_raw, bid_size_prec);
-
-        let ask_size_py: Bound<'_, PyAny> = obj.getattr("ask_size")?.extract()?;
-        let ask_size_raw: QuantityRaw = ask_size_py.getattr("raw")?.extract()?;
-        let ask_size_prec: u8 = ask_size_py.getattr("precision")?.extract()?;
-        let ask_size = Quantity::from_raw(ask_size_raw, ask_size_prec);
-
-        let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
-        let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
-
-        Self::new_checked(
-            instrument_id,
-            bid_price,
-            ask_price,
-            bid_size,
-            ask_size,
-            ts_event.into(),
-            ts_init.into(),
-        )
-        .map_err(to_pyvalue_err)
-    }
-}
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -336,26 +287,6 @@ impl QuoteTick {
         self.extract_size(price_type).map_err(to_pyvalue_err)
     }
 
-    /// Creates a `PyCapsule` containing a raw pointer to a `Data::Quote` object.
-    ///
-    /// This function takes the current object (assumed to be of a type that can be represented as
-    /// `Data::Quote`), and encapsulates a raw pointer to it within a `PyCapsule`.
-    ///
-    /// # Safety
-    ///
-    /// This function is safe as long as the following conditions are met:
-    /// - The `Data::Quote` object pointed to by the capsule must remain valid for the lifetime of the capsule.
-    /// - The consumer of the capsule must ensure proper handling to avoid dereferencing a dangling pointer.
-    ///
-    /// # Panics
-    ///
-    /// The function will panic if the `PyCapsule` creation fails, which can occur if the
-    /// `Data::Quote` object cannot be converted into a raw pointer.
-    #[pyo3(name = "as_pycapsule")]
-    fn py_as_pycapsule(&self, py: Python<'_>) -> Py<PyAny> {
-        data_to_pycapsule(py, Data::Quote(*self))
-    }
-
     /// Return a dictionary representation of the object.
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
@@ -396,7 +327,7 @@ impl QuoteTick {
 
 #[cfg(test)]
 mod tests {
-    use pyo3::{IntoPyObjectExt, Python};
+    use pyo3::Python;
     use rstest::rstest;
 
     use crate::{
@@ -462,18 +393,6 @@ mod tests {
             let dict = quote.py_to_dict(py).unwrap();
             let parsed = QuoteTick::py_from_dict(py, dict).unwrap();
             assert_eq!(parsed, quote);
-        });
-    }
-
-    #[rstest]
-    fn test_from_pyobject(quote_ethusdt_binance: QuoteTick) {
-        let quote = quote_ethusdt_binance;
-
-        Python::initialize();
-        Python::attach(|py| {
-            let tick_pyobject = quote.into_py_any(py).unwrap();
-            let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
-            assert_eq!(parsed_tick, quote);
         });
     }
 }

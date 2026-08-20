@@ -19,8 +19,9 @@ Example: option-chain backtest from a Tardis-backed catalog.
 The catalog must already contain option instruments plus per-instrument QuoteTick
 and OptionGreeks data, such as data written by the Tardis Machine replay pipeline.
 
-Run with a built v2 extension:
+Run with a built extension:
     python examples/backtest/tardis_option_chain.py --catalog-path /path/to/catalog
+
 """
 
 from __future__ import annotations
@@ -32,11 +33,13 @@ from pathlib import Path
 from typing import Any
 from typing import Self
 
-from nautilus_trader.backtest import BacktestDataConfig  # type: ignore[attr-defined]
-from nautilus_trader.backtest import BacktestEngineConfig  # type: ignore[attr-defined]
 from nautilus_trader.backtest import BacktestNode  # type: ignore[attr-defined]
-from nautilus_trader.backtest import BacktestRunConfig  # type: ignore[attr-defined]
-from nautilus_trader.backtest import BacktestVenueConfig  # type: ignore[attr-defined]
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core import UUID4
 from nautilus_trader.execution import CappedOptionFeeModel  # type: ignore[attr-defined]
 from nautilus_trader.execution import TieredNotionalOptionFeeModel  # type: ignore[attr-defined]
@@ -57,9 +60,7 @@ from nautilus_trader.model import StrikeRange  # type: ignore[attr-defined]
 from nautilus_trader.model import TimeInForce  # type: ignore[attr-defined]
 from nautilus_trader.model import TraderId
 from nautilus_trader.persistence import ParquetDataCatalog  # type: ignore[attr-defined]
-from nautilus_trader.trading import ImportableStrategyConfig  # type: ignore[attr-defined]
 from nautilus_trader.trading import Strategy
-from nautilus_trader.trading import StrategyConfig  # type: ignore[attr-defined]
 
 
 VENUE = "DERIBIT"

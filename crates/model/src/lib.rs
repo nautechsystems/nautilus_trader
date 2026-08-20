@@ -61,10 +61,6 @@
     reason = "match can be clearer than let-else for some patterns"
 )]
 #![allow(
-    clippy::redundant_closure_for_method_calls,
-    reason = "causes clippy ICE on Rust 1.94; matches the workaround in workspace Cargo.toml"
-)]
-#![allow(
     clippy::float_cmp,
     reason = "numeric domain crate: float equality comparisons are pervasive and intentional"
 )]
@@ -107,6 +103,13 @@
     clippy::large_types_passed_by_value,
     reason = "PyO3 methods require owned values extracted from Python objects"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
+// pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
+// macro expansion; an item-level `allow` cannot reach the expansion
+#![allow(clippy::clone_on_copy)]
 
 pub mod accounts;
 pub mod currencies;

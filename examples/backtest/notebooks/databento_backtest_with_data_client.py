@@ -30,12 +30,12 @@ import asyncio
 import nautilus_trader.adapters.databento.data_utils as db_data_utils
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.factories import DatabentoLiveDataClientFactory
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.config import BacktestRunConfig
-from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import RoutingConfig
 from nautilus_trader.config import StrategyConfig

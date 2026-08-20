@@ -386,7 +386,7 @@ impl DeribitWsFeedHandler {
                         }
                     },
                     |e| matches!(e, DeribitWsError::Send(_)),
-                    DeribitWsError::Timeout,
+                    |e| DeribitWsError::Timeout(e.to_string()),
                 )
                 .await
         } else {
@@ -1137,8 +1137,7 @@ impl DeribitWsFeedHandler {
                                                 .terminal_order_contexts
                                                 .contains_key(&venue_order_id)
                                         {
-                                            let instrument_name_ustr =
-                                                Ustr::from(order_msg.instrument_name.as_str());
+                                            let instrument_name_ustr = order_msg.instrument_name;
 
                                             if let Some(instrument) =
                                                 self.instruments_cache.get(&instrument_name_ustr)
@@ -1813,8 +1812,7 @@ impl DeribitWsFeedHandler {
                                                 ts_init,
                                             ) {
                                                 Ok(mark_price) => {
-                                                    data_vec
-                                                        .push(Data::MarkPriceUpdate(mark_price));
+                                                    data_vec.push(Data::MarkPrice(mark_price));
                                                 }
                                                 Err(e) => {
                                                     log::warn!("Failed to parse mark price: {e}");
@@ -1830,8 +1828,7 @@ impl DeribitWsFeedHandler {
                                                 ts_init,
                                             ) {
                                                 Ok(index_price) => {
-                                                    data_vec
-                                                        .push(Data::IndexPriceUpdate(index_price));
+                                                    data_vec.push(Data::IndexPrice(index_price));
                                                 }
                                                 Err(e) => {
                                                     log::warn!("Failed to parse index price: {e}");

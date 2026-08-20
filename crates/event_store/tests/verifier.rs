@@ -171,25 +171,32 @@ fn verify_bin(path: &std::path::Path) -> std::process::Output {
 }
 
 fn flip_stored_entry_payload_byte(path: &std::path::Path, seq: u64) {
+    flip_stored_entry_payload_bytes(path, seq..=seq);
+}
+
+fn flip_stored_entry_payload_bytes(path: &std::path::Path, seqs: std::ops::RangeInclusive<u64>) {
     let entries: redb::TableDefinition<u64, &[u8]> = redb::TableDefinition::new("entries");
     let db = redb::Database::create(path).expect("open redb");
     let txn = db.begin_write().expect("begin write");
     {
         let mut table = txn.open_table(entries).expect("open entries");
-        let mut bytes = {
-            let row = table.get(seq).expect("get entry").expect("entry present");
-            row.value().to_vec()
-        };
-        // `build_entry` uses this fixed payload for every entry; flipping inside it
-        // preserves the stored hash and forces the verifier's recompute check to fail.
-        let payload_offset = bytes
-            .windows(4)
-            .position(|window| window == b"\x01\x02\x03\x04")
-            .expect("payload bytes present");
-        bytes[payload_offset + 2] ^= 0xFF;
-        table
-            .insert(seq, bytes.as_slice())
-            .expect("overwrite entry");
+
+        for seq in seqs {
+            let mut bytes = {
+                let row = table.get(seq).expect("get entry").expect("entry present");
+                row.value().to_vec()
+            };
+            // `build_entry` uses this fixed payload for every entry; flipping inside it
+            // preserves the stored hash and forces the verifier's recompute check to fail.
+            let payload_offset = bytes
+                .windows(4)
+                .position(|window| window == b"\x01\x02\x03\x04")
+                .expect("payload bytes present");
+            bytes[payload_offset + 2] ^= 0xFF;
+            table
+                .insert(seq, bytes.as_slice())
+                .expect("overwrite entry");
+        }
     }
     txn.commit().expect("commit flip");
 }
@@ -214,7 +221,14 @@ fn truncate_stored_entry(path: &std::path::Path, seq: u64) {
 
 fn zero_tail_truncate(path: &std::path::Path) {
     let original_len = fs::metadata(path).expect("metadata").len();
-    let retained_len = original_len / 2;
+    // redb 4.2 packs ascending-key tables in about half the previous space, so
+    // zeroing the second half leaves live pages intact. Keep two 4KiB pages
+    // (super-header plus slack) and zero the rest so the mutation hits data.
+    let retained_len = 8192;
+    assert!(
+        original_len > retained_len,
+        "zero-tail file too small: {original_len}"
+    );
     let zeroed_len = usize::try_from(original_len - retained_len).expect("tail length fits");
     let mut file = fs::OpenOptions::new()
         .read(true)
@@ -529,6 +543,36 @@ fn binary_worker_timeout_exits_corrupt_without_quarantine() {
     assert!(stderr.is_empty(), "stderr was: {stderr}");
 }
 
+#[rstest]
+fn binary_worker_output_past_pipe_capacity_still_reports_findings() {
+    let tmp = TempDir::new().expect("tempdir");
+    let run_id = "1700000000-cafe0116";
+    write_sealed_run_of(&tmp, run_id, 4_000);
+
+    let path = run_path(&tmp, run_id);
+    flip_stored_entry_payload_bytes(&path, 1..=4_000);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_verify"))
+        .env("NAUTILUS_EVENT_STORE_VERIFY_TIMEOUT_SECS", "10")
+        .arg(&path)
+        .output()
+        .expect("run verifier binary");
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout");
+    let stderr = String::from_utf8(output.stderr).expect("stderr");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout={stdout} stderr={stderr}",
+    );
+    assert!(stdout.contains("corrupt"), "stdout was: {stdout}");
+    assert!(!stdout.contains("timeout"), "stdout was: {stdout}");
+    assert!(
+        stdout.contains("hash mismatch at seq 4000"),
+        "stdout was: {stdout}",
+    );
+}
+
 #[cfg(unix)]
 #[rstest]
 fn verifier_opens_read_only_run_file() {
@@ -601,7 +645,9 @@ fn zero_tail_truncated_run_file_reports_corrupt() {
     write_sealed_run_of(&tmp, run_id, 128);
 
     let path = run_path(&tmp, run_id);
+    let original_len = fs::metadata(&path).expect("metadata").len();
     zero_tail_truncate(&path);
+    assert_eq!(fs::metadata(&path).expect("metadata").len(), original_len);
 
     let output = verify_bin(&path);
 

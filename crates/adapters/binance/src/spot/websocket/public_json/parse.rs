@@ -84,9 +84,9 @@ pub fn parse_trade(
     let size = parse_positive_quantity(&msg.quantity, size_precision, "trade quantity")?;
 
     let aggressor_side = if msg.is_buyer_maker {
-        AggressorSide::Seller
+        AggressorSide::Sell
     } else {
-        AggressorSide::Buyer
+        AggressorSide::Buy
     };
 
     let ts_event = parse_millis_or_init(msg.trade_time, "Spot JSON trade time", ts_init);

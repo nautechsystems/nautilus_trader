@@ -91,8 +91,9 @@ excluded_files=(
   CLA.md
   RELEASES.md
   patches/upstream/README.md
-  tests/integration/sample/resources/payload.json
-  tests/test_data/payload.csv
+  python/tests/integration/sample/resources/payload.json
+  test_data/payload.csv
+  crates/sample/test_data/payload.json
 )
 for file in "${excluded_files[@]}"; do
   write_codepoint "$excluded_case/$file" 2014
@@ -100,9 +101,14 @@ done
 expect_success "$excluded_case" "${excluded_files[@]}"
 
 authored_resource_case="$CASE_ROOT/reject-authored-resource"
-authored_resource_file="tests/integration/sample/resources/__init__.py"
+authored_resource_file="python/tests/integration/sample/resources/__init__.py"
 write_codepoint "$authored_resource_case/$authored_resource_file" 2014
 expect_failure "$authored_resource_case" "$authored_resource_file" "U+2014 EM DASH"
+
+authored_test_data_case="$CASE_ROOT/reject-authored-test-data"
+authored_test_data_file="test_data/__init__.py"
+write_codepoint "$authored_test_data_case/$authored_test_data_file" 2014
+expect_failure "$authored_test_data_case" "$authored_test_data_file" "U+2014 EM DASH"
 
 ascii_case="$CASE_ROOT/allow-ascii"
 mkdir -p "$ascii_case"

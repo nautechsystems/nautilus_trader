@@ -17,6 +17,7 @@
 
 use std::sync::Mutex;
 
+use ahash::AHashMap;
 use indexmap::IndexMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::MUTEX_POISONED;
@@ -63,7 +64,7 @@ pub(crate) struct BufferedFill {
 /// drain that follows it.
 #[derive(Debug, Default)]
 struct TrackerInner {
-    orders: FifoCacheMap<VenueOrderId, OrderFillState, 10_000>,
+    orders: AHashMap<VenueOrderId, OrderFillState>,
     pending_fills: FifoCacheMap<VenueOrderId, Vec<BufferedFill>, 1_000>,
     pending_reports: FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>,
     voided_trades: FifoCache<String, 10_000>,
@@ -475,7 +476,7 @@ fn new_order_state(submitted_qty: Quantity, order_side: OrderSide) -> OrderFillS
 }
 
 fn buy_overfill_bump_in(
-    orders: &mut FifoCacheMap<VenueOrderId, OrderFillState, 10_000>,
+    orders: &mut AHashMap<VenueOrderId, OrderFillState>,
     venue_order_id: &VenueOrderId,
 ) -> Option<Quantity> {
     let state = orders.get_mut(venue_order_id)?;
@@ -544,6 +545,16 @@ impl OrderFillTrackerMap {
             .insert(venue_order_id, new_order_state(submitted_qty, order_side));
     }
 
+    /// Returns the registered submitted quantity for an order, if tracked.
+    pub(crate) fn submitted_qty(&self, venue_order_id: &VenueOrderId) -> Option<Quantity> {
+        self.inner
+            .lock()
+            .expect(MUTEX_POISONED)
+            .orders
+            .get(venue_order_id)
+            .map(|s| s.submitted_qty)
+    }
+
     /// Records a fill against a registered order, for tests that drive fill accumulation directly.
     pub(crate) fn record_fill(&self, venue_order_id: &VenueOrderId, qty: Quantity) {
         record_fill_in(
@@ -609,7 +620,7 @@ impl OrderFillTrackerMap {
 }
 
 fn record_fill_in(
-    orders: &mut FifoCacheMap<VenueOrderId, OrderFillState, 10_000>,
+    orders: &mut AHashMap<VenueOrderId, OrderFillState>,
     venue_order_id: &VenueOrderId,
     qty: Quantity,
 ) {
@@ -619,7 +630,7 @@ fn record_fill_in(
 }
 
 fn reverse_fill_in(
-    orders: &mut FifoCacheMap<VenueOrderId, OrderFillState, 10_000>,
+    orders: &mut AHashMap<VenueOrderId, OrderFillState>,
     venue_order_id: &VenueOrderId,
     qty: Quantity,
 ) {
@@ -633,7 +644,7 @@ fn reverse_fill_in(
 }
 
 fn snap_fill_qty_in(
-    orders: &FifoCacheMap<VenueOrderId, OrderFillState, 10_000>,
+    orders: &AHashMap<VenueOrderId, OrderFillState>,
     venue_order_id: &VenueOrderId,
     fill_qty: Quantity,
 ) -> Quantity {
@@ -663,6 +674,7 @@ mod tests {
         types::{Currency, Money, Price},
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -685,6 +697,38 @@ mod tests {
             2,
         );
         assert!(tracker.contains(&vid));
+    }
+
+    #[rstest]
+    fn test_register_retains_fill_state_after_later_capacity_flood() {
+        let tracker = OrderFillTrackerMap::new();
+        let retained = VenueOrderId::from("order-retain");
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+        tracker.register(
+            retained,
+            Quantity::from("100"),
+            OrderSide::Buy,
+            instrument_id,
+            6,
+            2,
+        );
+
+        for index in 0..10_000 {
+            tracker.register(
+                VenueOrderId::from(format!("order-flood-{index}").as_str()),
+                Quantity::from("1"),
+                OrderSide::Sell,
+                instrument_id,
+                6,
+                2,
+            );
+        }
+
+        assert!(tracker.contains(&retained));
+        assert_eq!(
+            tracker.submitted_qty(&retained),
+            Some(Quantity::from("100"))
+        );
     }
 
     #[rstest]
@@ -879,7 +923,7 @@ mod tests {
         );
 
         let make_report =
-            |venue_order_id: VenueOrderId, last_qty: f64, commission: f64| FillReport {
+            |venue_order_id: VenueOrderId, last_qty: f64, commission: Decimal| FillReport {
                 account_id: AccountId::from("POLY-001"),
                 instrument_id: InstrumentId::from("TEST.POLYMARKET"),
                 venue_order_id,
@@ -887,7 +931,7 @@ mod tests {
                 order_side: OrderSide::Buy,
                 last_qty: Quantity::new(last_qty, 6),
                 last_px: Price::new(0.55, 2),
-                commission: Money::new(commission, pusd()),
+                commission: Money::from_decimal(commission, pusd()).unwrap(),
                 liquidity_side: LiquiditySide::Taker,
                 avg_px: None,
                 report_id: UUID4::new(),
@@ -900,17 +944,17 @@ mod tests {
         // Known order: 4-ulp overfill, within band, last_qty must snap down.
         // Unknown order: tracker has no entry, reports pass through unchanged.
         let mut reports = vec![
-            make_report(known_id, 714.285714, 1.234),
-            make_report(unknown_id, 999.0, 5.678),
+            make_report(known_id, 714.285714, dec!(1.234)),
+            make_report(unknown_id, 999.0, dec!(5.678)),
         ];
 
         tracker.snap_fill_reports(&mut reports);
 
         assert_eq!(reports[0].last_qty, Quantity::new(714.285710, 6));
         // Commission untouched even though qty was snapped: it tracks venue truth.
-        assert_eq!(reports[0].commission, Money::new(1.234, pusd()));
+        assert_eq!(reports[0].commission.as_decimal(), dec!(1.234));
         assert_eq!(reports[1].last_qty, Quantity::new(999.0, 6));
-        assert_eq!(reports[1].commission, Money::new(5.678, pusd()));
+        assert_eq!(reports[1].commission.as_decimal(), dec!(5.678));
     }
 
     #[rstest]

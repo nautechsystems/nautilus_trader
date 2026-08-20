@@ -24,14 +24,20 @@
 //! a stream positioned for the WebSocket handshake rather than performing that handshake itself.
 //!
 //! SOCKS URLs are recognized but not tunneled: the client logs a warning and connects directly.
-//! Selecting the Sockudo backend with a proxy instead routes the connection through Tungstenite.
+//! Both transport backends tunnel through the same [`ProxiedStream`], which implements the IO
+//! traits over every tunnel shape so each backend runs its own handshake over the finished stream.
 
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    io,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use nautilus_core::string::secret::REDACTED;
 use rustls::{ClientConfig, RootCertStore, pki_types::ServerName};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio_rustls::{TlsConnector, client::TlsStream};
 use url::Url;
 
@@ -97,6 +103,65 @@ pub enum ProxiedStream {
     TlsOverTlsProxy(Box<TlsStream<TlsStream<TcpStream>>>),
 }
 
+/// Combines the two IO traits so [`ProxiedStream`] resolves its variant in one place.
+trait ProxiedIo: AsyncRead + AsyncWrite + Send + Unpin {}
+
+impl<T: AsyncRead + AsyncWrite + Send + Unpin> ProxiedIo for T {}
+
+impl ProxiedStream {
+    fn inner_mut(&mut self) -> &mut dyn ProxiedIo {
+        match self {
+            Self::Plain(s) => s,
+            Self::PlainOverTlsProxy(s) | Self::Tls(s) => s.as_mut(),
+            Self::TlsOverTlsProxy(s) => s.as_mut(),
+        }
+    }
+}
+
+impl AsyncRead for ProxiedStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(self.get_mut().inner_mut()).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for ProxiedStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(self.get_mut().inner_mut()).poll_write(cx, buf)
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(self.get_mut().inner_mut()).poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        match self {
+            Self::Plain(s) => s.is_write_vectored(),
+            Self::PlainOverTlsProxy(s) | Self::Tls(s) => s.is_write_vectored(),
+            Self::TlsOverTlsProxy(s) => s.is_write_vectored(),
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(self.get_mut().inner_mut()).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(self.get_mut().inner_mut()).poll_shutdown(cx)
+    }
+}
+
 /// Parsed components of a target WebSocket URL needed by the proxy hop.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WsTarget {
@@ -109,7 +174,7 @@ pub struct WsTarget {
 }
 
 impl WsTarget {
-    /// Parse a `ws://` or `wss://` URL into the host/port/TLS components.
+    /// Parses a `ws://` or `wss://` URL into the host, port, and TLS components.
     ///
     /// # Errors
     ///
@@ -165,7 +230,7 @@ pub enum ProxyKind {
 }
 
 impl ProxyKind {
-    /// Parse a proxy URL into a [`ProxyKind`]. Returns
+    /// Parses a proxy URL into a [`ProxyKind`]. Returns
     /// [`TransportError::InvalidUrl`] for malformed input or non-proxy
     /// schemes (`ftp://`, `ws://`, etc.).
     ///
@@ -226,7 +291,7 @@ impl Debug for ProxyTarget {
 }
 
 impl ProxyTarget {
-    /// Parse a proxy URL into the components needed to establish the tunnel.
+    /// Parses a proxy URL into the components needed to establish the tunnel.
     ///
     /// Only `http://` and `https://` schemes are accepted here. Use
     /// [`ProxyKind::parse`] when callers need to distinguish recognised but
@@ -321,9 +386,7 @@ pub async fn tunnel_via_proxy(
         .await
         .map_err(TransportError::Io)?;
 
-    if let Err(e) = tcp.set_nodelay(true) {
-        log::warn!("Failed to enable TCP_NODELAY on proxy connection: {e:?}");
-    }
+    crate::net::apply_socket_options(&tcp);
 
     if proxy.is_tls {
         let proxy_tls = wrap_tls(tcp, &proxy.host).await?;
@@ -345,7 +408,7 @@ pub async fn tunnel_via_proxy(
     }
 }
 
-/// Send a `CONNECT` request and return the underlying stream once a `2xx`
+/// Sends a `CONNECT` request and returns the underlying stream once a `2xx`
 /// status is received. The returned stream is positioned after the empty line
 /// terminating the proxy response headers.
 async fn send_connect<S>(
@@ -388,7 +451,7 @@ fn format_host_header(host: &str, port: u16) -> String {
     }
 }
 
-/// Read the proxy's response up to the empty line that terminates the
+/// Reads the proxy's response up to the empty line that terminates the
 /// headers, validating the status line.
 async fn read_connect_response<S>(stream: &mut S) -> Result<(), TransportError>
 where
@@ -454,7 +517,7 @@ where
     Ok(())
 }
 
-/// Wrap a stream in a `rustls`-backed TLS session using `webpki_roots`.
+/// Wraps a stream in a `rustls`‑backed TLS session using `webpki_roots`.
 async fn wrap_tls<S>(stream: S, server_name: &str) -> Result<TlsStream<S>, TransportError>
 where
     S: AsyncRead + AsyncWrite + Unpin,

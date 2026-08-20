@@ -18,6 +18,10 @@
 //! derives).
 
 #![warn(clippy::pedantic)]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
 
 mod custom;
 

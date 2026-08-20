@@ -40,10 +40,10 @@ use nautilus_common::{
     },
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{UnixNanos, WeakCell, datetime::NANOSECONDS_IN_SECOND};
+use nautilus_core::{Params, UnixNanos, WeakCell, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_execution::{
     client::core::ExecutionClientCore,
-    matching_engine::adapter::OrderEngineAdapter,
+    matching_engine::OrderMatchingEngine,
     models::{fee::FeeModelHandle, fill::FillModelHandle},
 };
 use nautilus_model::{
@@ -77,7 +77,7 @@ struct SandboxInner {
     /// The sandbox configuration.
     config: SandboxExecutionClientConfig,
     /// Matching engines per instrument.
-    matching_engines: AHashMap<InstrumentId, OrderEngineAdapter>,
+    matching_engines: AHashMap<InstrumentId, OrderMatchingEngine>,
     /// Next raw ID assigned to a matching engine.
     next_engine_raw_id: u32,
     /// Current account balances.
@@ -186,7 +186,7 @@ impl SandboxInner {
             let raw_id = self.next_engine_raw_id;
             self.next_engine_raw_id = self.next_engine_raw_id.wrapping_add(1);
 
-            let engine = OrderEngineAdapter::new(
+            let mut engine = OrderMatchingEngine::new(
                 instrument.clone(),
                 raw_id,
                 fill_model,
@@ -200,7 +200,7 @@ impl SandboxInner {
             );
 
             if let Some(handler) = &self.event_handler {
-                engine.get_engine_mut().set_event_handler(handler.clone());
+                engine.set_event_handler(handler.clone());
             }
 
             self.matching_engines.insert(instrument_id, engine);
@@ -221,7 +221,7 @@ impl SandboxInner {
             self.ensure_matching_engine(&instrument);
 
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-                engine.get_engine_mut().process_quote_tick(quote);
+                engine.process_quote_tick(quote);
             }
         }
     }
@@ -243,7 +243,7 @@ impl SandboxInner {
             self.ensure_matching_engine(&instrument);
 
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-                engine.get_engine_mut().process_trade_tick(trade);
+                engine.process_trade_tick(trade);
             }
         }
     }
@@ -265,7 +265,7 @@ impl SandboxInner {
             self.ensure_matching_engine(&instrument);
 
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-                engine.get_engine_mut().process_bar(bar);
+                engine.process_bar(bar);
             }
         }
     }
@@ -278,7 +278,7 @@ impl SandboxInner {
             self.ensure_matching_engine(&instrument);
 
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id)
-                && let Err(e) = engine.get_engine_mut().process_order_book_deltas(deltas)
+                && let Err(e) = engine.process_order_book_deltas(deltas)
             {
                 log::error!("Error processing order book deltas: {e}");
             }
@@ -289,7 +289,7 @@ impl SandboxInner {
         let instrument_id = status.instrument_id;
 
         if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-            engine.get_engine_mut().process_status(status.action);
+            engine.process_status(status.action);
             return;
         }
 
@@ -298,7 +298,7 @@ impl SandboxInner {
             self.ensure_matching_engine(&instrument);
 
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-                engine.get_engine_mut().process_status(status.action);
+                engine.process_status(status.action);
             }
         } else {
             log::warn!(
@@ -315,7 +315,7 @@ impl SandboxInner {
         // cache after rotation/unsubscribe; pending-settlement ownership stays
         // with the already-initialized matching engine.
         if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-            engine.get_engine_mut().process_instrument_close(*close);
+            engine.process_instrument_close(*close);
             self.sync_expired_cleanup(instrument_id);
         } else {
             log::warn!(
@@ -331,7 +331,6 @@ impl SandboxInner {
 
         let now_ns = self.clock.borrow().timestamp_ns();
         engine
-            .get_engine()
             .instrument
             .expiration_ns()
             .is_some_and(|ns| now_ns >= ns)
@@ -778,7 +777,7 @@ impl SandboxExecutionClient {
         let mut inner = self.inner.borrow_mut();
         inner.ensure_matching_engine(&instrument);
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
-            engine.get_engine_mut().process_quote_tick(quote);
+            engine.process_quote_tick(quote);
         }
         Ok(())
     }
@@ -803,7 +802,7 @@ impl SandboxExecutionClient {
         let mut inner = self.inner.borrow_mut();
         inner.ensure_matching_engine(&instrument);
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
-            engine.get_engine_mut().process_trade_tick(trade);
+            engine.process_trade_tick(trade);
         }
         Ok(())
     }
@@ -828,7 +827,7 @@ impl SandboxExecutionClient {
         let mut inner = self.inner.borrow_mut();
         inner.ensure_matching_engine(&instrument);
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
-            engine.get_engine_mut().process_bar(bar);
+            engine.process_bar(bar);
         }
         Ok(())
     }
@@ -845,7 +844,7 @@ impl SandboxExecutionClient {
         let mut inner = self.inner.borrow_mut();
         inner.ensure_matching_engine(&instrument);
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
-            engine.get_engine_mut().process_order_book_deltas(deltas)?;
+            engine.process_order_book_deltas(deltas)?;
         }
         Ok(())
     }
@@ -854,7 +853,7 @@ impl SandboxExecutionClient {
     pub fn reset(&self) {
         let mut inner = self.inner.borrow_mut();
         for engine in inner.matching_engines.values_mut() {
-            engine.get_engine_mut().reset();
+            engine.reset();
         }
 
         inner.balances.clear();
@@ -911,7 +910,7 @@ impl ExecutionClient for SandboxExecutionClient {
         let instrument_id = instrument.id();
         let mut inner = self.inner.borrow_mut();
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id)
-            && let Err(e) = engine.get_engine_mut().update_instrument(instrument)
+            && let Err(e) = engine.update_instrument(instrument)
         {
             log::error!("Failed to update instrument {instrument_id} in sandbox engine: {e}");
         }
@@ -928,11 +927,12 @@ impl ExecutionClient for SandboxExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         let ts_init = self.clock.borrow().timestamp_ns();
         let state = self
             .factory
-            .generate_account_state(balances, margins, reported, ts_event, ts_init);
+            .generate_account_state(balances, margins, reported, ts_event, ts_init, info);
         let endpoint = MessagingSwitchboard::portfolio_update_account();
         msgbus::send_account_state(endpoint, &state);
         self.sync_cached_account_config()?;
@@ -953,7 +953,7 @@ impl ExecutionClient for SandboxExecutionClient {
             let mut inner = self.inner.borrow_mut();
             inner.event_handler = Some(handler.clone());
             for engine in inner.matching_engines.values_mut() {
-                engine.get_engine_mut().set_event_handler(handler.clone());
+                engine.set_event_handler(handler.clone());
             }
         }
 
@@ -998,7 +998,7 @@ impl ExecutionClient for SandboxExecutionClient {
 
         let balances = self.get_account_balances();
         let ts_event = self.clock.borrow().timestamp_ns();
-        self.generate_account_state(balances, vec![], false, ts_event)?;
+        self.generate_account_state(balances, vec![], false, ts_event, None)?;
 
         self.core.borrow().set_connected();
         log::info!(
@@ -1046,14 +1046,14 @@ impl ExecutionClient for SandboxExecutionClient {
             if let Some(quote) = cache.quote(&instrument_id)
                 && check_quote_or_drop("cached quote tick", quote, &instrument)
             {
-                engine.get_engine_mut().process_quote_tick(quote);
+                engine.process_quote_tick(quote);
             }
 
             if self.config.trade_execution
                 && let Some(trade) = cache.trade(&instrument_id)
                 && check_trade_or_drop("cached trade tick", trade, &instrument)
             {
-                engine.get_engine_mut().process_trade_tick(trade);
+                engine.process_trade_tick(trade);
             }
         }
         drop(cache);
@@ -1061,9 +1061,7 @@ impl ExecutionClient for SandboxExecutionClient {
         let account_id = self.core.borrow().account_id;
 
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
-            engine
-                .get_engine_mut()
-                .process_order(&mut order, account_id);
+            engine.process_order(&mut order, account_id);
             inner.sync_expired_cleanup(instrument_id);
         }
 
@@ -1113,23 +1111,21 @@ impl ExecutionClient for SandboxExecutionClient {
                     if let Some(quote) = cache.quote(&instrument_id)
                         && check_quote_or_drop("cached quote tick", quote, &instrument)
                     {
-                        engine.get_engine_mut().process_quote_tick(quote);
+                        engine.process_quote_tick(quote);
                     }
 
                     if self.config.trade_execution
                         && let Some(trade) = cache.trade(&instrument_id)
                         && check_trade_or_drop("cached trade tick", trade, &instrument)
                     {
-                        engine.get_engine_mut().process_trade_tick(trade);
+                        engine.process_trade_tick(trade);
                     }
                 }
                 drop(cache);
 
                 if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
                     let mut order_clone = order.clone();
-                    engine
-                        .get_engine_mut()
-                        .process_order(&mut order_clone, account_id);
+                    engine.process_order(&mut order_clone, account_id);
                 }
             }
         }
@@ -1149,7 +1145,7 @@ impl ExecutionClient for SandboxExecutionClient {
 
         let mut inner = self.inner.borrow_mut();
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
-            engine.get_engine_mut().process_modify(&cmd, account_id);
+            engine.process_modify(&cmd, account_id);
         }
         Ok(())
     }
@@ -1160,9 +1156,7 @@ impl ExecutionClient for SandboxExecutionClient {
 
         let mut inner = self.inner.borrow_mut();
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
-            engine
-                .get_engine_mut()
-                .process_batch_modify(&cmd, account_id);
+            engine.process_batch_modify(&cmd, account_id);
         }
         Ok(())
     }
@@ -1173,7 +1167,7 @@ impl ExecutionClient for SandboxExecutionClient {
 
         let mut inner = self.inner.borrow_mut();
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
-            engine.get_engine_mut().process_cancel(&cmd, account_id);
+            engine.process_cancel(&cmd, account_id);
         }
         Ok(())
     }
@@ -1184,7 +1178,7 @@ impl ExecutionClient for SandboxExecutionClient {
 
         let mut inner = self.inner.borrow_mut();
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
-            engine.get_engine_mut().process_cancel_all(&cmd, account_id);
+            engine.process_cancel_all(&cmd, account_id);
         }
         Ok(())
     }
@@ -1195,9 +1189,7 @@ impl ExecutionClient for SandboxExecutionClient {
 
         let mut inner = self.inner.borrow_mut();
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
-            engine
-                .get_engine_mut()
-                .process_batch_cancel(&cmd, account_id);
+            engine.process_batch_cancel(&cmd, account_id);
         }
         Ok(())
     }
@@ -1205,7 +1197,7 @@ impl ExecutionClient for SandboxExecutionClient {
     fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         let balances = self.get_current_account_balances();
         let ts_event = self.clock.borrow().timestamp_ns();
-        self.generate_account_state(balances, vec![], false, ts_event)?;
+        self.generate_account_state(balances, vec![], false, ts_event, None)?;
         Ok(())
     }
 

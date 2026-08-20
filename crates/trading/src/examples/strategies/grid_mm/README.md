@@ -97,7 +97,7 @@ Pass the config to `add_builtin_strategy` on a `LiveNode` or
 runs entirely in Rust.
 
 ```python
-from nautilus_trader.core.nautilus_pyo3.trading import GridMarketMakerConfig
+from nautilus_trader.trading import GridMarketMakerConfig
 
 config = GridMarketMakerConfig(
     instrument_id=InstrumentId.from_str("BTC-USDT-SWAP.OKX"),

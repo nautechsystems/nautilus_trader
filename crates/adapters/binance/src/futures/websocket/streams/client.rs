@@ -37,6 +37,7 @@ use nautilus_common::live::get_runtime;
 use nautilus_core::{AtomicMap, string::secret::REDACTED};
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
+    SocketStateSink,
     mode::ConnectionMode,
     websocket::{
         PingHandler, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -101,6 +102,7 @@ pub struct BinanceFuturesWebSocketClient {
     instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
+    state_sink: Option<SocketStateSink>,
 }
 
 impl Debug for BinanceFuturesWebSocketClient {
@@ -162,6 +164,7 @@ impl BinanceFuturesWebSocketClient {
             instruments_cache: Arc::new(AtomicMap::new()),
             transport_backend,
             proxy_url: None,
+            state_sink: None,
         })
     }
 
@@ -169,6 +172,13 @@ impl BinanceFuturesWebSocketClient {
     #[must_use]
     pub fn with_proxy(mut self, proxy_url: Option<String>) -> Self {
         self.proxy_url = proxy_url;
+        self
+    }
+
+    /// Configures socket state reporting for every connection in the stream pool.
+    #[must_use]
+    pub fn with_state_sink(mut self, state_sink: SocketStateSink) -> Self {
+        self.state_sink = Some(state_sink);
         self
     }
 
@@ -481,14 +491,15 @@ impl BinanceFuturesWebSocketClient {
         let config = WebSocketConfig {
             url: self.url.clone(),
             headers,
-            heartbeat: self.heartbeat,
-            heartbeat_msg: None,
-            reconnect_timeout_ms: Some(5_000),
+            heartbeat_interval_secs: self.heartbeat,
+            heartbeat_payload: None,
+            connect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
@@ -499,13 +510,13 @@ impl BinanceFuturesWebSocketClient {
             *BINANCE_WS_SUBSCRIPTION_QUOTA,
         )];
 
-        let client = WebSocketClient::connect(
+        let client = WebSocketClient::connect_with_state_sink(
             config,
             Some(raw_handler),
             Some(ping_handler),
-            None,
             keyed_quotas,
             Some(*BINANCE_WS_CONNECTION_QUOTA),
+            self.state_sink.clone(),
         )
         .await
         .map_err(|e| BinanceWsError::NetworkError(e.to_string()))?;

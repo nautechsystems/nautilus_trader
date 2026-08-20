@@ -16,10 +16,12 @@
 use std::{
     collections::{BTreeMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
+    sync::Mutex,
 };
 
 use ahash::AHashSet;
 use indexmap::IndexMap;
+use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_core::UnixNanos;
 use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
@@ -1243,7 +1245,7 @@ fn test_book_update_trade_tick_l1() {
         instrument_id,
         price,
         size,
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("123456789"),
         0.into(),
         0.into(),
@@ -1319,7 +1321,7 @@ fn test_book_update_trade_tick_advances_sequence() {
         instrument_id,
         Price::from("15000.000"),
         Quantity::from("10.00000000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("123456789"),
         UnixNanos::from(5000),
         UnixNanos::from(6000),
@@ -1337,7 +1339,7 @@ fn test_book_update_trade_tick_advances_sequence() {
         instrument_id,
         Price::from("15100.000"),
         Quantity::from("20.00000000"),
-        AggressorSide::Seller,
+        AggressorSide::Sell,
         TradeId::new("987654321"),
         UnixNanos::from(7000),
         UnixNanos::from(8000),
@@ -1380,7 +1382,7 @@ fn test_book_update_stale_trade_tick_does_not_mutate_l1() {
         instrument_id,
         Price::from("11.000"),
         Quantity::from("1.00000000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("1"),
         UnixNanos::from(1),
         UnixNanos::from(1),
@@ -1401,7 +1403,7 @@ fn test_book_update_stale_quote_tick_does_not_mutate_l1() {
         instrument_id,
         Price::from("10.000"),
         Quantity::from("1.00000000"),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::new("1"),
         UnixNanos::from(2),
         UnixNanos::from(2),
@@ -1427,6 +1429,389 @@ fn test_book_update_stale_quote_tick_does_not_mutate_l1() {
     assert_eq!(book.ts_last, UnixNanos::from(2));
     assert_eq!(book.best_bid_price().unwrap(), Price::from("10.000"));
     assert_eq!(book.best_ask_price().unwrap(), Price::from("10.000"));
+}
+
+struct BookWarnCapture {
+    messages: Mutex<Vec<String>>,
+}
+
+impl BookWarnCapture {
+    // Other book tests log warnings on the same target, and `cargo test` runs them as threads in
+    // one process, so drain only the messages naming this test's instrument
+    fn take_for(&self, instrument_id: InstrumentId) -> Vec<String> {
+        let marker = format!("instrument_id={instrument_id})");
+        let mut messages = self.messages.lock().unwrap();
+        let (mine, rest) = messages
+            .drain(..)
+            .partition(|message| message.ends_with(&marker));
+        *messages = rest;
+        mine
+    }
+}
+
+impl Log for BookWarnCapture {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+        metadata.level() == Level::Warn && metadata.target() == "nautilus_model::orderbook::book"
+    }
+
+    fn log(&self, record: &Record<'_>) {
+        if self.enabled(record.metadata()) {
+            self.messages
+                .lock()
+                .unwrap()
+                .push(record.args().to_string());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static BOOK_WARN_CAPTURE: BookWarnCapture = BookWarnCapture {
+    messages: Mutex::new(Vec::new()),
+};
+static BOOK_WARN_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+// Seeds an L2 book with one bid of 100 at 99.00, applied at ts_event 2000. The stale updates
+// under test arrive at ts_event 1000, so every regression these tests assert reads `1000 < 2000`.
+fn seed_book_with_bid(instrument_id: InstrumentId) -> OrderBook {
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    let delta = OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("99.00"),
+            Quantity::from("100"),
+            0,
+        ),
+        0,
+        0,
+        UnixNanos::from(2000),
+        UnixNanos::from(2000),
+    );
+    book.apply_delta(&delta).unwrap();
+    book
+}
+
+#[rstest]
+fn test_apply_deltas_snapshot_rebuild_with_earlier_ts_event_warns_once() {
+    let _guard = BOOK_WARN_TEST_LOCK.lock().unwrap();
+    let _ = log::set_logger(&BOOK_WARN_CAPTURE);
+    log::set_max_level(LevelFilter::Warn);
+
+    let instrument_id = InstrumentId::from("SNAPTS.TEST");
+    let mut book = seed_book_with_bid(instrument_id);
+    BOOK_WARN_CAPTURE.take_for(instrument_id);
+
+    // Venue snapshot stamped behind the last applied update, as Polymarket emits when its
+    // book and price-change producers skew by a millisecond
+    let snapshot_flag = RecordFlag::F_SNAPSHOT as u8;
+    let snapshot = OrderBookDeltas::new(
+        instrument_id,
+        vec![
+            OrderBookDelta::clear(
+                instrument_id,
+                0,
+                UnixNanos::from(1000),
+                UnixNanos::from(1000),
+            ),
+            OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                BookOrder::new(
+                    OrderSide::Buy,
+                    Price::from("98.00"),
+                    Quantity::from("50"),
+                    0,
+                ),
+                snapshot_flag,
+                0,
+                UnixNanos::from(1000),
+                UnixNanos::from(1000),
+            ),
+            OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                BookOrder::new(
+                    OrderSide::Sell,
+                    Price::from("101.00"),
+                    Quantity::from("75"),
+                    0,
+                ),
+                snapshot_flag | RecordFlag::F_LAST as u8,
+                0,
+                UnixNanos::from(1000),
+                UnixNanos::from(1000),
+            ),
+        ],
+    );
+
+    book.apply_deltas(&snapshot).unwrap();
+
+    let messages = BOOK_WARN_CAPTURE.take_for(instrument_id);
+
+    assert_eq!(
+        messages,
+        vec![
+            "Out-of-order snapshot: ts_event 1000 < 2000 (deltas=3, \
+             instrument_id=SNAPTS.TEST)"
+                .to_string()
+        ],
+    );
+    assert_eq!(book.bids(None).count(), 1);
+    assert_eq!(book.asks(None).count(), 1);
+    assert_eq!(book.best_bid_price().unwrap(), Price::from("98.00"));
+    assert_eq!(book.best_bid_size().unwrap(), Quantity::from("50"));
+    assert_eq!(book.best_ask_price().unwrap(), Price::from("101.00"));
+    assert_eq!(book.best_ask_size().unwrap(), Quantity::from("75"));
+    assert_eq!(book.ts_last, UnixNanos::from(2000));
+    assert_eq!(book.sequence, 0);
+    assert_eq!(book.update_count, 4);
+}
+
+#[rstest]
+fn test_apply_deltas_snapshot_rebuild_with_earlier_sequence_warns_once() {
+    let _guard = BOOK_WARN_TEST_LOCK.lock().unwrap();
+    let _ = log::set_logger(&BOOK_WARN_CAPTURE);
+    log::set_max_level(LevelFilter::Warn);
+
+    let instrument_id = InstrumentId::from("SNAPSEQ.TEST");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("99.00"),
+            Quantity::from("100"),
+            0,
+        ),
+        0,
+        50,
+        UnixNanos::from(1000),
+        UnixNanos::from(1000),
+    ))
+    .unwrap();
+    BOOK_WARN_CAPTURE.take_for(instrument_id);
+
+    // Venues such as Betfair stamp the snapshot CLEAR with a real sequence, so a snapshot
+    // batch can regress on sequence while its timestamp advances
+    let snapshot_flag = RecordFlag::F_SNAPSHOT as u8;
+    let snapshot = OrderBookDeltas::new(
+        instrument_id,
+        vec![
+            OrderBookDelta::clear(
+                instrument_id,
+                20,
+                UnixNanos::from(2000),
+                UnixNanos::from(2000),
+            ),
+            OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                BookOrder::new(
+                    OrderSide::Buy,
+                    Price::from("98.00"),
+                    Quantity::from("50"),
+                    0,
+                ),
+                snapshot_flag | RecordFlag::F_LAST as u8,
+                20,
+                UnixNanos::from(2000),
+                UnixNanos::from(2000),
+            ),
+        ],
+    );
+
+    book.apply_deltas(&snapshot).unwrap();
+
+    assert_eq!(
+        BOOK_WARN_CAPTURE.take_for(instrument_id),
+        vec![
+            "Out-of-order snapshot: sequence 20 < 50 (deltas=2, \
+             instrument_id=SNAPSEQ.TEST)"
+                .to_string()
+        ],
+    );
+    assert_eq!(book.bids(None).count(), 1);
+    assert_eq!(book.best_bid_price().unwrap(), Price::from("98.00"));
+    assert_eq!(book.sequence, 50);
+    assert_eq!(book.ts_last, UnixNanos::from(2000));
+    assert_eq!(book.update_count, 3);
+}
+
+#[rstest]
+fn test_apply_delta_standalone_snapshot_with_earlier_ts_event_still_reports() {
+    let _guard = BOOK_WARN_TEST_LOCK.lock().unwrap();
+    let _ = log::set_logger(&BOOK_WARN_CAPTURE);
+    log::set_max_level(LevelFilter::Warn);
+
+    let instrument_id = InstrumentId::from("SNAPONE.TEST");
+    let mut book = seed_book_with_bid(instrument_id);
+    BOOK_WARN_CAPTURE.take_for(instrument_id);
+
+    // Callers such as the Kraken shadow book, the data engine, PyO3 `OrderBook.apply_delta`, and
+    // the C FFI apply snapshot deltas one at a time, so no batch wraps them
+    book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("98.00"),
+            Quantity::from("50"),
+            0,
+        ),
+        RecordFlag::F_SNAPSHOT as u8,
+        0,
+        UnixNanos::from(1000),
+        UnixNanos::from(1000),
+    ))
+    .unwrap();
+
+    assert_eq!(
+        BOOK_WARN_CAPTURE.take_for(instrument_id),
+        vec![
+            "Out-of-order snapshot: ts_event 1000 < 2000 (deltas=1, \
+             instrument_id=SNAPONE.TEST)"
+                .to_string()
+        ],
+    );
+    assert_eq!(book.bids(None).count(), 2);
+    assert_eq!(book.ts_last, UnixNanos::from(2000));
+    assert_eq!(book.update_count, 2);
+}
+
+#[rstest]
+fn test_apply_delta_skipped_snapshot_delta_still_reports() {
+    let _guard = BOOK_WARN_TEST_LOCK.lock().unwrap();
+    let _ = log::set_logger(&BOOK_WARN_CAPTURE);
+    log::set_max_level(LevelFilter::Warn);
+
+    let instrument_id = InstrumentId::from("SNAPSKIP.TEST");
+    let mut book = seed_book_with_bid(instrument_id);
+    BOOK_WARN_CAPTURE.take_for(instrument_id);
+
+    // The report describes the incoming snapshot, so an unknown order ID that is skipped without
+    // touching the book still reports the venue's stale metadata
+    book.apply_delta(&OrderBookDelta::new(
+        instrument_id,
+        BookAction::Update,
+        BookOrder::new(
+            OrderSide::NoOrderSide,
+            Price::from("98.00"),
+            Quantity::from("50"),
+            999,
+        ),
+        RecordFlag::F_SNAPSHOT as u8,
+        0,
+        UnixNanos::from(1000),
+        UnixNanos::from(1000),
+    ))
+    .unwrap();
+
+    assert_eq!(
+        BOOK_WARN_CAPTURE.take_for(instrument_id),
+        vec![
+            "Out-of-order snapshot: ts_event 1000 < 2000 (deltas=1, \
+             instrument_id=SNAPSKIP.TEST)"
+                .to_string()
+        ],
+    );
+    assert_eq!(book.bids(None).count(), 1);
+    assert_eq!(book.best_bid_price().unwrap(), Price::from("99.00"));
+    assert_eq!(book.ts_last, UnixNanos::from(2000));
+    assert_eq!(book.update_count, 1);
+}
+
+#[rstest]
+fn test_apply_depth_with_earlier_ts_event_warns_once(stub_depth10: OrderBookDepth10) {
+    let _guard = BOOK_WARN_TEST_LOCK.lock().unwrap();
+    let _ = log::set_logger(&BOOK_WARN_CAPTURE);
+    log::set_max_level(LevelFilter::Warn);
+
+    let instrument_id = InstrumentId::from("SNAPDEPTH.TEST");
+    let mut book = seed_book_with_bid(instrument_id);
+    BOOK_WARN_CAPTURE.take_for(instrument_id);
+
+    // Adapters such as Hyperliquid stamp depth10 with F_SNAPSHOT. Depth increments once per
+    // snapshot, so it must keep its single warning rather than fall under batch suppression.
+    let mut depth = stub_depth10;
+    depth.instrument_id = instrument_id;
+    depth.flags = RecordFlag::F_SNAPSHOT as u8;
+    depth.sequence = 0;
+    depth.ts_event = UnixNanos::from(1000);
+
+    book.apply_depth(&depth).unwrap();
+
+    assert_eq!(
+        BOOK_WARN_CAPTURE.take_for(instrument_id),
+        vec![
+            "Out-of-order update: ts_event 1000 < 2000 (instrument_id=SNAPDEPTH.TEST)".to_string()
+        ],
+    );
+    assert_eq!(book.ts_last, UnixNanos::from(2000));
+    assert_eq!(book.update_count, 2);
+}
+
+#[rstest]
+fn test_apply_deltas_incremental_with_earlier_ts_event_warns_per_delta() {
+    let _guard = BOOK_WARN_TEST_LOCK.lock().unwrap();
+    let _ = log::set_logger(&BOOK_WARN_CAPTURE);
+    log::set_max_level(LevelFilter::Warn);
+
+    let instrument_id = InstrumentId::from("INCRTS.TEST");
+    let mut book = seed_book_with_bid(instrument_id);
+    BOOK_WARN_CAPTURE.take_for(instrument_id);
+
+    let stale = OrderBookDeltas::new(
+        instrument_id,
+        vec![
+            OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                BookOrder::new(
+                    OrderSide::Buy,
+                    Price::from("98.00"),
+                    Quantity::from("50"),
+                    0,
+                ),
+                0,
+                0,
+                UnixNanos::from(1000),
+                UnixNanos::from(1000),
+            ),
+            OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                BookOrder::new(
+                    OrderSide::Sell,
+                    Price::from("101.00"),
+                    Quantity::from("75"),
+                    0,
+                ),
+                0,
+                0,
+                UnixNanos::from(1000),
+                UnixNanos::from(1000),
+            ),
+        ],
+    );
+
+    book.apply_deltas(&stale).unwrap();
+
+    let messages = BOOK_WARN_CAPTURE.take_for(instrument_id);
+
+    assert_eq!(
+        messages,
+        vec![
+            "Out-of-order update: ts_event 1000 < 2000 (instrument_id=INCRTS.TEST)".to_string(),
+            "Out-of-order update: ts_event 1000 < 2000 (instrument_id=INCRTS.TEST)".to_string(),
+        ],
+    );
+    assert_eq!(book.bids(None).count(), 2);
+    assert_eq!(book.asks(None).count(), 1);
+    assert_eq!(book.ts_last, UnixNanos::from(2000));
+    assert_eq!(book.update_count, 3);
 }
 
 #[rstest]
@@ -7033,15 +7418,15 @@ fn positive_quantity_strategy() -> impl Strategy<Value = Quantity> {
         // Small positive quantities (precision 2): 0.01 to 10.00
         (1u64..=1000u64)
             .prop_map(move |base| Quantity::from_raw(QuantityRaw::from(base) * scale_prec2, 2))
-            .prop_filter("quantity must be positive", |q| q.is_positive()),
+            .prop_filter("quantity must be positive", Quantity::is_positive),
         // Medium positive quantities (precision 3): 1.000 to 100.000
         (1000u64..=100_000_u64)
             .prop_map(move |base| Quantity::from_raw(QuantityRaw::from(base) * scale_prec3, 3))
-            .prop_filter("quantity must be positive", |q| q.is_positive()),
+            .prop_filter("quantity must be positive", Quantity::is_positive),
         // Large positive quantities (precision 2): 100.00 to 10000.00
         (10000u64..=1_000_000_u64)
             .prop_map(move |base| Quantity::from_raw(QuantityRaw::from(base) * scale_prec2, 2))
-            .prop_filter("quantity must be positive", |q| q.is_positive()),
+            .prop_filter("quantity must be positive", Quantity::is_positive),
     ]
 }
 
@@ -7649,7 +8034,7 @@ fn l1_operation_strategy() -> impl Strategy<Value = L1Operation> {
         3 => (
             (1i64..=10000i64).prop_map(move |base| Price::from_raw(PriceRaw::from(base) * price_scale, 2)),
             (1u64..=10000u64).prop_map(move |base| Quantity::from_raw(QuantityRaw::from(base) * qty_scale, 2)),
-            prop::sample::select(vec![AggressorSide::Buyer, AggressorSide::Seller])
+            prop::sample::select(vec![AggressorSide::Buy, AggressorSide::Sell])
         ).prop_map(|(price, size, aggressor)| {
             L1Operation::TradeUpdate(price, size, aggressor)
         }),
@@ -7915,6 +8300,90 @@ fn test_apply_delta_error_when_order_not_found_for_side_resolution() {
         result.unwrap_err(),
         BookIntegrityError::NoOrderSide
     ));
+}
+
+#[rstest]
+fn test_apply_deltas_does_not_validate_children_constructed_literally() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let other_id = InstrumentId::from("MSFT.XNAS");
+    let good_delta = OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("100.00"),
+            Quantity::from("10"),
+            1,
+        ),
+        0,
+        1,
+        1.into(),
+        1.into(),
+    );
+    let foreign_delta = OrderBookDelta::new(
+        other_id,
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("101.00"),
+            Quantity::from("5"),
+            2,
+        ),
+        0,
+        2,
+        2.into(),
+        2.into(),
+    );
+    let deltas = OrderBookDeltas {
+        instrument_id,
+        deltas: vec![good_delta, foreign_delta],
+        flags: 0,
+        sequence: 2,
+        ts_event: 2.into(),
+        ts_init: 2.into(),
+    };
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    // A literal struct bypasses `new_checked`, so the foreign child still reaches
+    // the book: `apply_deltas` validates the wrapper only.
+    let result = book.apply_deltas(&deltas);
+
+    assert!(result.is_ok());
+    assert_eq!(book.best_bid_price(), Some(Price::from("100.00")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("101.00")));
+    assert_eq!(book.update_count, 2);
+
+    // Priced inside the resting ask so it becomes the best, making its arrival
+    // observable rather than hidden behind the level from the first batch.
+    let mismatched_delta = OrderBookDelta::new(
+        other_id,
+        BookAction::Add,
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("100.50"),
+            Quantity::from("7"),
+            3,
+        ),
+        0,
+        3,
+        3.into(),
+        3.into(),
+    );
+    // The unchecked form is a documented FFI accommodation; pin that it still
+    // accepts a foreign child rather than preserving that by omission.
+    let mismatched_deltas = OrderBookDeltas {
+        instrument_id,
+        deltas: vec![mismatched_delta],
+        flags: 0,
+        sequence: 3,
+        ts_event: 3.into(),
+        ts_init: 3.into(),
+    };
+
+    book.apply_deltas_unchecked(&mismatched_deltas).unwrap();
+
+    assert_eq!(book.best_ask_price(), Some(Price::from("100.50")));
+    assert_eq!(book.update_count, 3);
 }
 
 #[rstest]

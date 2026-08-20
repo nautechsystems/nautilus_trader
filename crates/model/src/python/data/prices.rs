@@ -45,35 +45,6 @@ use crate::{
     types::price::{Price, PriceRaw},
 };
 
-impl MarkPriceUpdate {
-    /// Creates a new [`MarkPriceUpdate`] from a Python object.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `PyErr` if attribute extraction or type conversion fails.
-    pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
-        let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;
-        let instrument_id =
-            InstrumentId::from_str(instrument_id_str.as_str()).map_err(to_pyvalue_err)?;
-
-        let value_py: Bound<'_, PyAny> = obj.getattr("value")?.extract()?;
-        let value_raw: PriceRaw = value_py.getattr("raw")?.extract()?;
-        let value_prec: u8 = value_py.getattr("precision")?.extract()?;
-        let value = Price::from_raw(value_raw, value_prec);
-
-        let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
-        let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
-
-        Ok(Self::new(
-            instrument_id,
-            value,
-            ts_event.into(),
-            ts_init.into(),
-        ))
-    }
-}
-
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MarkPriceUpdate {
@@ -247,35 +218,6 @@ impl MarkPriceUpdate {
     #[pyo3(name = "from_msgpack")]
     fn py_from_msgpack(data: &[u8]) -> PyResult<Self> {
         Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
-    }
-}
-
-impl IndexPriceUpdate {
-    /// Creates a new [`IndexPriceUpdate`] from a Python object.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `PyErr` if attribute extraction or type conversion fails.
-    pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
-        let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;
-        let instrument_id =
-            InstrumentId::from_str(instrument_id_str.as_str()).map_err(to_pyvalue_err)?;
-
-        let value_py: Bound<'_, PyAny> = obj.getattr("value")?.extract()?;
-        let value_raw: PriceRaw = value_py.getattr("raw")?.extract()?;
-        let value_prec: u8 = value_py.getattr("precision")?.extract()?;
-        let value = Price::from_raw(value_raw, value_prec);
-
-        let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
-        let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
-
-        Ok(Self::new(
-            instrument_id,
-            value,
-            ts_event.into(),
-            ts_init.into(),
-        ))
     }
 }
 
@@ -457,7 +399,7 @@ impl IndexPriceUpdate {
 
 #[cfg(test)]
 mod tests {
-    use pyo3::{IntoPyObjectExt, Python};
+    use pyo3::Python;
     use rstest::{fixture, rstest};
 
     use super::*;
@@ -504,16 +446,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_mark_price_from_pyobject(mark_price: MarkPriceUpdate) {
-        Python::initialize();
-        Python::attach(|py| {
-            let tick_pyobject = mark_price.into_py_any(py).unwrap();
-            let parsed_tick = MarkPriceUpdate::from_pyobject(tick_pyobject.bind(py)).unwrap();
-            assert_eq!(parsed_tick, mark_price);
-        });
-    }
-
-    #[rstest]
     fn test_index_price_to_dict(index_price: IndexPriceUpdate) {
         Python::initialize();
         Python::attach(|py| {
@@ -530,16 +462,6 @@ mod tests {
             let dict = index_price.py_to_dict(py).unwrap();
             let parsed = IndexPriceUpdate::py_from_dict(py, dict).unwrap();
             assert_eq!(parsed, index_price);
-        });
-    }
-
-    #[rstest]
-    fn test_index_price_from_pyobject(index_price: IndexPriceUpdate) {
-        Python::initialize();
-        Python::attach(|py| {
-            let tick_pyobject = index_price.into_py_any(py).unwrap();
-            let parsed_tick = IndexPriceUpdate::from_pyobject(tick_pyobject.bind(py)).unwrap();
-            assert_eq!(parsed_tick, index_price);
         });
     }
 }

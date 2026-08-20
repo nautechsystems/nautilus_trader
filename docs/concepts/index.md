@@ -12,7 +12,7 @@ The principles, structures, and designs that underpin the platform.
 
 ## Actors
 
-The `Actor` is the base component for interacting with the trading system.
+The `DataActor` is the base component for interacting with the trading system.
 Covers capabilities and implementation details.
 
 ## Strategies
@@ -145,10 +145,20 @@ while the node runs.
 
 Requirements and best practices for developing integration adapters for data providers and trading venues.
 
+## Networking
+
+Architecture, reliability policy, and performance characteristics for the shared HTTP, WebSocket,
+and raw TCP socket clients.
+
 ## Rust
 
 Writing actors, strategies, and running backtests and live trading in pure Rust
 using the `crates/` implementation directly.
+
+## Python
+
+Python application composition and user components running on the Rust core through PyO3,
+including ownership, async execution, and public API boundaries.
 
 ## Deterministic simulation testing (DST)
 

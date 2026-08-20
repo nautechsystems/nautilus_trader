@@ -32,7 +32,7 @@ use crate::{identifiers::Venue, instruments::CryptoOption};
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -134,6 +134,32 @@ impl OptionSeriesId {
         })
     }
 
+    /// Creates an [`OptionSeriesId`] from venue name, underlying symbol, settlement currency, and
+    /// expiration timestamp.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `venue` is invalid.
+    pub fn from_expiry_ns(
+        venue: &str,
+        underlying: &str,
+        settlement_currency: &str,
+        expiration_ns: UnixNanos,
+    ) -> Result<Self, OptionSeriesIdError> {
+        let venue =
+            Venue::new_checked(venue).map_err(|source| OptionSeriesIdError::InvalidVenue {
+                value: format!("{venue}:{underlying}:{settlement_currency}:{expiration_ns}"),
+                source: Box::new(source),
+            })?;
+
+        Ok(Self {
+            venue,
+            underlying: Ustr::from(underlying),
+            settlement_currency: Ustr::from(settlement_currency),
+            expiration_ns,
+        })
+    }
+
     /// Returns the canonical wire representation with nanosecond expiry
     /// (e.g. `DERIBIT:BTC:BTC:1772524800000000000`).
     ///
@@ -167,7 +193,7 @@ impl Display for OptionSeriesId {
             self.venue,
             self.underlying,
             self.settlement_currency,
-            dt.format("%Y-%m-%dT%H:%M:%SZ"),
+            dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
     }
 }
@@ -181,7 +207,7 @@ impl Debug for OptionSeriesId {
             self.venue,
             self.underlying,
             self.settlement_currency,
-            dt.format("%Y-%m-%dT%H:%M:%SZ"),
+            dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
     }
 }
@@ -485,5 +511,87 @@ mod tests {
         let s = id.to_string();
         let parsed = OptionSeriesId::from_str(&s).unwrap();
         assert_eq!(id, parsed);
+    }
+
+    #[rstest]
+    fn test_from_expiry_ns_happy_path() {
+        let id = OptionSeriesId::from_expiry_ns(
+            "DERIBIT",
+            "ETH",
+            "USDC",
+            UnixNanos::from(1_700_000_000_000_000_000u64),
+        )
+        .unwrap();
+
+        assert_eq!(id.venue, Venue::new("DERIBIT"));
+        assert_eq!(id.underlying, Ustr::from("ETH"));
+        assert_eq!(id.settlement_currency, Ustr::from("USDC"));
+        assert_eq!(
+            id.expiration_ns,
+            UnixNanos::from(1_700_000_000_000_000_000u64)
+        );
+    }
+
+    #[rstest]
+    fn test_from_expiry_ns_empty_venue() {
+        let error = OptionSeriesId::from_expiry_ns(
+            "",
+            "ETH",
+            "USDC",
+            UnixNanos::from(1_700_000_000_000_000_000u64),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            OptionSeriesIdError::InvalidVenue {
+                value: ":ETH:USDC:1700000000000000000".to_string(),
+                source: Box::new(CorrectnessError::EmptyString {
+                    param: "value".to_string(),
+                }),
+            },
+        );
+        assert_eq!(
+            error.to_string(),
+            concat!(
+                "invalid `OptionSeriesId` value ':ETH:USDC:1700000000000000000': ",
+                "invalid venue: invalid string for 'value', was empty",
+            ),
+        );
+    }
+
+    #[rstest]
+    fn test_from_expiry_ns_non_ascii_venue() {
+        let error = OptionSeriesId::from_expiry_ns(
+            "DÉRIBIT",
+            "ETH",
+            "USDC",
+            UnixNanos::from(1_700_000_000_000_000_000u64),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            OptionSeriesIdError::InvalidVenue {
+                value: "DÉRIBIT:ETH:USDC:1700000000000000000".to_string(),
+                source: Box::new(CorrectnessError::NonAsciiString {
+                    param: "value".to_string(),
+                    value: "DÉRIBIT".to_string(),
+                }),
+            },
+        );
+    }
+
+    #[rstest]
+    fn test_from_expiry_ns_accepts_empty_components() {
+        let id = OptionSeriesId::from_expiry_ns(
+            "DERIBIT",
+            "",
+            "",
+            UnixNanos::from(1_700_000_000_000_000_000u64),
+        )
+        .unwrap();
+
+        assert_eq!(id.to_wire_string(), "DERIBIT:::1700000000000000000");
     }
 }

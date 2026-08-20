@@ -2,8 +2,8 @@
 
 Nautilus has a complete Rust implementation under the `crates/` directory.
 You can write actors, strategies, run backtests, and trade live without Python.
-The domain model is shared across all paths, and the v2 PyO3 path runs
-Python strategies on the Rust engine directly.
+The domain model is shared with the Python package, which runs user components
+on the same Rust engine through PyO3.
 
 :::warning
 The Rust API is under active development. Method signatures and trait
@@ -12,75 +12,74 @@ requirements may change between releases.
 
 ## System implementations
 
-Nautilus has three implementations. Understanding where each stands helps
-you choose the right one for your use case.
+Nautilus has two paths. Choose the one that matches how you want to author
+and deploy the system.
 
-- **v1 legacy**: Cython/Python classes under `nautilus_trader/`. Fully
-  featured with the broadest component coverage.
-- **v2 Rust**: Pure Rust under `crates/`. Runs without Python.
-- **v2 PyO3**: Python user-components (actors, strategies) running on
-  the Rust core via PyO3 bindings. Combines Python convenience with
-  Rust engine performance.
+- **Rust**: Pure Rust under `crates/`. Runs without Python.
+- **Python**: [Python user components](python.md) running on the Rust core through PyO3
+  bindings under `python/nautilus_trader/`.
 
 ### Capability matrix
 
-| Component            | v1 legacy (Cython) | v2 Rust | v2 PyO3 (Python on Rust) |
-| -------------------- | ------------------ | ------- | ------------------------ |
-| Strategy             | ✓                  | ✓       | ✓                        |
-| Actor                | ✓                  | ✓       | ✓                        |
-| DataEngine           | ✓                  | ✓       | ✓                        |
-| ExecutionEngine      | ✓                  | ✓       | ✓                        |
-| RiskEngine           | ✓                  | ✓       | ✓                        |
-| BacktestEngine       | ✓                  | ✓       | ✓                        |
-| BacktestNode         | ✓                  | ✓       | ✓                        |
-| LiveNode             | ✓                  | ✓       | ✓                        |
-| OrderEmulator        | ✓                  | ✓       | ✓                        |
-| Matching engine      | ✓                  | ✓       | ✓                        |
-| Portfolio            | ✓                  | ✓       | ✓                        |
-| Accounts             | ✓                  | ✓       | ✓                        |
-| Cache                | ✓                  | ✓       | ✓                        |
-| MessageBus           | ✓                  | ✓       | ✓                        |
-| Data catalog         | ✓                  | ✓       | ✓                        |
-| Indicators           | ✓                  | ✓       | ✓                        |
-| Exec algorithms      | TWAP               | TWAP    | TWAP                     |
-| Controller           | ✓                  | -       | ✓                        |
-| Tearsheets           | ✓                  | -       | ✓                        |
-| Config serialization | ✓                  | -       | -                        |
+| Component       | Rust | Python |
+| --------------- | ---- | ------ |
+| Strategy        | ✓    | ✓      |
+| Actor           | ✓    | ✓      |
+| DataEngine      | ✓    | ✓      |
+| ExecutionEngine | ✓    | ✓      |
+| RiskEngine      | ✓    | ✓      |
+| BacktestEngine  | ✓    | ✓      |
+| BacktestNode    | ✓    | ✓      |
+| LiveNode        | ✓    | ✓      |
+| OrderEmulator   | ✓    | ✓      |
+| Matching engine | ✓    | ✓      |
+| Portfolio       | ✓    | ✓      |
+| Accounts        | ✓    | ✓      |
+| Cache           | ✓    | ✓      |
+| MessageBus      | ✓    | ✓      |
+| Data catalog    | ✓    | ✓      |
+| Indicators      | ✓    | ✓      |
+| Exec algorithms | TWAP | TWAP   |
+| Controller      | -    | ✓      |
+| Tearsheets      | -    | ✓      |
+
+:::note
+The Controller runtime is implemented in Rust and powers the Python `Controller`
+base class. The matrix marks it absent for Rust because the supported
+registration path (importable controller configs) is Python-only.
+:::
 
 ### Adapters
 
-| Adapter             | v1 legacy (Cython) | v2 Rust | v2 PyO3 |
-| ------------------- | ------------------ | ------- | ------- |
-| Architect AX        | ✓                  | ✓       | ✓       |
-| Betfair             | ✓                  | ✓       | ✓       |
-| Binance             | ✓                  | ✓       | ✓       |
-| BitMEX              | ✓                  | ✓       | ✓       |
-| Blockchain          | -                  | ✓       | ✓       |
-| Bybit               | ✓                  | ✓       | ✓       |
-| Coinbase            | -                  | ✓       | ✓       |
-| Databento           | ✓                  | ✓       | ✓       |
-| Deribit             | ✓                  | ✓       | ✓       |
-| Derive              | -                  | ✓       | ✓       |
-| dYdX                | ✓                  | ✓       | ✓       |
-| Hyperliquid         | ✓                  | ✓       | ✓       |
-| Interactive Brokers | ✓                  | ✓       | ✓       |
-| Kraken              | ✓                  | ✓       | ✓       |
-| Lighter             | -                  | ✓       | ✓       |
-| OKX                 | ✓                  | ✓       | ✓       |
-| Polymarket          | ✓                  | ✓       | ✓       |
-| Sandbox             | ✓                  | ✓       | ✓       |
-| Tardis              | ✓                  | ✓       | ✓       |
+| Adapter             | Rust | Python |
+| ------------------- | ---- | ------ |
+| Architect AX        | ✓    | ✓      |
+| Betfair             | ✓    | ✓      |
+| Binance             | ✓    | ✓      |
+| BitMEX              | ✓    | ✓      |
+| Blockchain          | ✓    | ✓      |
+| Bybit               | ✓    | ✓      |
+| Coinbase            | ✓    | ✓      |
+| Databento           | ✓    | ✓      |
+| Deribit             | ✓    | ✓      |
+| Derive              | ✓    | ✓      |
+| dYdX                | ✓    | ✓      |
+| Hyperliquid         | ✓    | ✓      |
+| Interactive Brokers | ✓    | ✓      |
+| Kraken              | ✓    | ✓      |
+| Lighter             | ✓    | ✓      |
+| OKX                 | ✓    | ✓      |
+| Polymarket          | ✓    | ✓      |
+| Sandbox             | ✓    | ✓      |
+| Tardis              | ✓    | ✓      |
 
 ### Choosing a path
 
-- **v1 legacy** is the most complete today. Use it if you need the
-  Controller or config serialization.
-- **v2 Rust** gives native performance without a Python runtime. All core
+- **Rust** gives native performance without a Python runtime. All core
   trading functionality is available. Use it for latency-sensitive
   deployments or teams that prefer a compiled language.
-- **v2 PyO3**: Python user-components (actors, strategies) run on the
-  Rust core engine with Rust performance for data processing and
-  execution, while keeping the Python authoring experience.
+- **Python** keeps the Python authoring experience. User components (actors,
+  strategies) run on the Rust core for data processing and execution.
 
 ## Project setup
 
@@ -90,11 +89,11 @@ The Nautilus crates are published to
 
 ```toml
 [dependencies]
-nautilus-backtest = "0.60"
-nautilus-common = "0.60"
-nautilus-execution = "0.60"
-nautilus-model = { version = "0.60", features = ["stubs"] }
-nautilus-trading = { version = "0.60", features = ["examples"] }
+nautilus-backtest = "0.61"
+nautilus-common = "0.61"
+nautilus-execution = "0.61"
+nautilus-model = { version = "0.61", features = ["stubs"] }
+nautilus-trading = { version = "0.61", features = ["examples"] }
 
 anyhow = "1"
 log = "0.4"
@@ -104,8 +103,8 @@ For live trading, add the live crate and the adapter for your venue:
 
 ```toml
 [dependencies]
-nautilus-live = "0.60"
-nautilus-okx = "0.60"
+nautilus-live = "0.61"
+nautilus-okx = "0.61"
 ```
 
 To track the latest development branch, point all Nautilus dependencies at the
@@ -140,9 +139,8 @@ places (e.g. `0.00000001`).
 
 ### Memory allocator
 
-The Python wheels and the `nautilus` CLI use [mimalloc](https://crates.io/crates/mimalloc)
-for Rust allocations. A Rust binary chooses its own allocator, so add mimalloc to yours
-to match:
+The `nautilus` CLI and Python wheels use [mimalloc](https://crates.io/crates/mimalloc) for Rust
+allocations. A Rust binary chooses its own allocator, so add mimalloc to yours to match:
 
 ```toml
 [dependencies]
@@ -151,10 +149,19 @@ mimalloc = "0.1"
 
 ```rust
 use mimalloc::MiMalloc;
+use nautilus_common::logging::headers::register_allocator_mimalloc;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
+
+fn main() {
+    register_allocator_mimalloc();
+}
 ```
+
+Declaring `GLOBAL` selects mimalloc. Call `register_allocator_mimalloc` at the start of `main`,
+before constructing a Nautilus node, so the version header reports `allocator: mimalloc <version>`.
+Registration only updates the header metadata; it does not select the allocator.
 
 The default system allocator also works, but backtest throughput drops materially,
 especially on Windows, where allocator overhead can reach half of hot-loop run time.
@@ -191,8 +198,6 @@ override what you need.
 | `on_option_greeks`     | `OptionGreeks`            |
 | `on_option_chain`      | `OptionChainSlice`        |
 | `on_instrument_status` | `InstrumentStatus`        |
-| `on_order_filled`      | `OrderFilled`             |
-| `on_order_canceled`    | `OrderCanceled`           |
 | `on_time_event`        | `TimeEvent`               |
 
 For a step-by-step walkthrough, see the
@@ -208,6 +213,8 @@ into the strategy runtime contract. `StrategyCore` stores the runtime strategy
 state; normal strategy logic reaches it through facade methods on `self`.
 Runtime registration requires the native wiring generated by the macro, but
 normal strategy logic uses `Strategy` methods and the facade methods on `self`.
+Strategies also override order event handlers on the `Strategy` trait, such as
+`on_order_filled` (`OrderFilled`) and `on_order_canceled` (`OrderCanceled`).
 
 ### Order management
 
@@ -256,17 +263,6 @@ argument when needed. They do not make the actor, strategy, or `StrategyCore`
 deref to runtime internals.
 The execution algorithm macro takes an `on_order()` implementation block because
 that method defines the algorithm's required order handling.
-Normal code uses facade methods such as:
-
-- `actor_id()`
-- `trader_id()`
-- `is_registered()`
-- `config()`
-- `strategy_id()`
-- `clock()`
-- `cache()`
-- `order()`
-- `portfolio()`
 
 ### Native traits
 
@@ -374,7 +370,7 @@ and tests. It is not a first-class extension path for adding native
 strategies. For custom native components, use pure Rust.
 
 ```python
-from nautilus_trader.core.nautilus_pyo3.trading import GridMarketMakerConfig
+from nautilus_trader.trading import GridMarketMakerConfig
 
 config = GridMarketMakerConfig(
     instrument_id=InstrumentId.from_str("BTC-USDT-SWAP.OKX"),
@@ -475,6 +471,7 @@ against live venues.
 
 ## Related guides
 
+- [Python](python.md) - Python ownership, runtime, and public API boundaries.
 - [Write an Actor (Rust)](../how_to/write_rust_actor.md) - Step-by-step actor walkthrough.
 - [Write a Strategy (Rust)](../how_to/write_rust_strategy.md) - Step-by-step strategy walkthrough.
 - [Run a Backtest (Rust)](../how_to/run_rust_backtest.md) - BacktestEngine and BacktestNode usage.

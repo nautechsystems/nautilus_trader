@@ -19,7 +19,8 @@ use alloy_primitives::{Address, U256};
 
 use crate::{
     defi::Token,
-    types::{Money, Quantity},
+    enums::CurrencyType,
+    types::{AccountBalance, Currency, Money, Quantity},
 };
 
 /// Represents the balance of a specific ERC-20 token held in a wallet.
@@ -54,6 +55,17 @@ impl TokenBalance {
     /// Returns an error if the U256 amount cannot be converted to a `Quantity`.
     pub fn as_quantity(&self) -> anyhow::Result<Quantity> {
         Quantity::from_u256(self.amount, self.token.decimals).map_err(Into::into)
+    }
+
+    fn as_money(&self) -> anyhow::Result<Money> {
+        let currency = Currency::new_checked(
+            &self.token.symbol,
+            self.token.decimals,
+            0,
+            &self.token.name,
+            CurrencyType::Crypto,
+        )?;
+        Money::from_u256(self.amount, currency).map_err(Into::into)
     }
 
     /// Sets the USD equivalent value for this token balance.
@@ -125,6 +137,135 @@ impl WalletBalance {
     pub fn add_token_balance(&mut self, token_balance: TokenBalance) {
         self.token_balances.push(token_balance);
     }
+
+    /// Replaces the complete native and token balance snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the token balances do not exactly match the configured universe,
+    /// contain duplicate currencies, or cannot be represented as account balances. The existing
+    /// snapshot remains unchanged on error.
+    pub fn replace_balances(
+        &mut self,
+        native_currency: Money,
+        mut token_balances: Vec<TokenBalance>,
+    ) -> anyhow::Result<Vec<AccountBalance>> {
+        token_balances.sort_unstable_by_key(|balance| balance.token.address);
+        let replacement = Self {
+            native_currency: Some(native_currency),
+            token_balances,
+            token_universe: self.token_universe.clone(),
+        };
+        let balances = replacement.account_balances(replacement.token_balances.iter())?;
+        *self = replacement;
+        Ok(balances)
+    }
+
+    /// Returns the complete wallet snapshot as account balances.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the snapshot is incomplete, contains duplicate currencies, or a token
+    /// amount cannot be represented as money.
+    pub fn as_account_balances(&self) -> anyhow::Result<Vec<AccountBalance>> {
+        let mut token_balances = self.token_balances.iter().collect::<Vec<_>>();
+        token_balances.sort_unstable_by_key(|balance| balance.token.address);
+        self.account_balances(token_balances)
+    }
+
+    fn account_balances<'a>(
+        &'a self,
+        token_balances: impl IntoIterator<Item = &'a TokenBalance>,
+    ) -> anyhow::Result<Vec<AccountBalance>> {
+        self.validate_token_addresses()?;
+
+        let native_currency = self
+            .native_currency
+            .ok_or_else(|| anyhow::anyhow!("Wallet balance snapshot has no native currency"))?;
+        let mut currencies = HashSet::new();
+        currencies.insert(native_currency.currency);
+
+        let mut balances = Vec::with_capacity(self.token_balances.len() + 1);
+        balances.push(AccountBalance::new_checked(
+            native_currency,
+            Money::zero(native_currency.currency),
+            native_currency,
+        )?);
+
+        for token_balance in token_balances {
+            let total = token_balance.as_money()?;
+            if !currencies.insert(total.currency) {
+                anyhow::bail!(
+                    "Wallet balance snapshot contains duplicate currency {}",
+                    total.currency
+                );
+            }
+            balances.push(AccountBalance::new_checked(
+                total,
+                Money::zero(total.currency),
+                total,
+            )?);
+        }
+
+        Ok(balances)
+    }
+
+    fn validate_token_addresses(&self) -> anyhow::Result<()> {
+        let mut token_addresses = HashSet::with_capacity(self.token_balances.len());
+        let mut duplicates = Vec::new();
+
+        for balance in &self.token_balances {
+            if !token_addresses.insert(balance.token.address) {
+                duplicates.push(balance.token.address);
+            }
+        }
+
+        if !duplicates.is_empty() {
+            duplicates.sort_unstable();
+            duplicates.dedup();
+            anyhow::bail!(
+                "Wallet balance snapshot contains duplicate token addresses: {}",
+                format_addresses(&duplicates)
+            );
+        }
+
+        let mut missing = self
+            .token_universe
+            .difference(&token_addresses)
+            .copied()
+            .collect::<Vec<_>>();
+        let mut unexpected = token_addresses
+            .difference(&self.token_universe)
+            .copied()
+            .collect::<Vec<_>>();
+        missing.sort_unstable();
+        unexpected.sort_unstable();
+
+        match (missing.is_empty(), unexpected.is_empty()) {
+            (false, false) => anyhow::bail!(
+                "Wallet balance snapshot is missing configured token addresses: {}; contains unexpected token addresses: {}",
+                format_addresses(&missing),
+                format_addresses(&unexpected)
+            ),
+            (false, true) => anyhow::bail!(
+                "Wallet balance snapshot is missing configured token addresses: {}",
+                format_addresses(&missing)
+            ),
+            (true, false) => anyhow::bail!(
+                "Wallet balance snapshot contains unexpected token addresses: {}",
+                format_addresses(&unexpected)
+            ),
+            (true, true) => Ok(()),
+        }
+    }
+}
+
+fn format_addresses(addresses: &[Address]) -> String {
+    addresses
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[cfg(test)]
@@ -300,5 +441,147 @@ mod tests {
         assert_eq!(wallet.token_balances.len(), 2);
         assert_eq!(wallet.token_balances[0].token.symbol, "USDC");
         assert_eq!(wallet.token_balances[1].token.symbol, "WETH");
+    }
+
+    #[rstest]
+    fn test_replace_balances_retains_snapshot_on_conversion_failure(weth: Token) {
+        let mut wallet = WalletBalance::new(HashSet::from([weth.address]));
+        let native_currency = weth.chain.native_currency();
+        let native = Money::from_wei(U256::from(1_000_000_000_000_000_000_u64), native_currency);
+        let token = TokenBalance::new(U256::from(2_000_000_000_000_000_000_u64), weth.clone());
+        wallet.replace_balances(native, vec![token]).unwrap();
+
+        let error = wallet
+            .replace_balances(
+                Money::from_wei(U256::from(3_000_000_000_000_000_000_u64), native_currency),
+                vec![TokenBalance::new(U256::MAX, weth)],
+            )
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains("exceeds QuantityRaw range"),
+            "was: {error}"
+        );
+        assert_eq!(wallet.native_currency.unwrap(), native);
+        assert_eq!(wallet.token_balances.len(), 1);
+        assert_eq!(
+            wallet.token_balances[0].amount,
+            U256::from(2_000_000_000_000_000_000_u64)
+        );
+    }
+
+    #[rstest]
+    fn test_account_balances_reports_missing_token_address(usdc: Token, weth: Token) {
+        let missing = weth.address;
+        let wallet = WalletBalance {
+            native_currency: None,
+            token_balances: vec![TokenBalance::new(U256::from(1_u64), usdc.clone())],
+            token_universe: HashSet::from([usdc.address, missing]),
+        };
+
+        let error = wallet.as_account_balances().unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Wallet balance snapshot is missing configured token addresses: {missing}")
+        );
+    }
+
+    #[rstest]
+    fn test_account_balances_reports_unexpected_token_address(usdc: Token, weth: Token) {
+        let unexpected = weth.address;
+        let wallet = WalletBalance {
+            native_currency: None,
+            token_balances: vec![
+                TokenBalance::new(U256::from(1_u64), usdc.clone()),
+                TokenBalance::new(U256::from(2_u64), weth),
+            ],
+            token_universe: HashSet::from([usdc.address]),
+        };
+
+        let error = wallet.as_account_balances().unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Wallet balance snapshot contains unexpected token addresses: {unexpected}")
+        );
+    }
+
+    #[rstest]
+    fn test_account_balances_reports_missing_and_unexpected_token_addresses(
+        usdc: Token,
+        weth: Token,
+    ) {
+        let missing = usdc.address;
+        let unexpected = weth.address;
+        let wallet = WalletBalance {
+            native_currency: None,
+            token_balances: vec![TokenBalance::new(U256::from(1_u64), weth)],
+            token_universe: HashSet::from([missing]),
+        };
+
+        let error = wallet.as_account_balances().unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Wallet balance snapshot is missing configured token addresses: {missing}; contains unexpected token addresses: {unexpected}"
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_account_balances_reports_duplicate_before_set_differences(usdc: Token, weth: Token) {
+        let duplicate = usdc.address;
+        let wallet = WalletBalance {
+            native_currency: None,
+            token_balances: vec![
+                TokenBalance::new(U256::from(1_u64), usdc.clone()),
+                TokenBalance::new(U256::from(2_u64), usdc),
+            ],
+            token_universe: HashSet::from([weth.address]),
+        };
+
+        let error = wallet.as_account_balances().unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Wallet balance snapshot contains duplicate token addresses: {duplicate}")
+        );
+    }
+
+    #[rstest]
+    fn test_replace_balances_rejects_duplicate_currency_symbols(
+        usdc: Token,
+        #[from(arbitrum)] chain: SharedChain,
+    ) {
+        let duplicate = Token::new(
+            chain,
+            address!("0x0000000000000000000000000000000000000001"),
+            "Other USD Coin".to_string(),
+            "USDC".to_string(),
+            18,
+        );
+        let mut wallet = WalletBalance::new(HashSet::from([usdc.address, duplicate.address]));
+
+        let error = wallet
+            .replace_balances(
+                Money::from_wei(
+                    U256::from(1_000_000_000_000_000_000_u64),
+                    usdc.chain.native_currency(),
+                ),
+                vec![
+                    TokenBalance::new(U256::from(1_u64), usdc),
+                    TokenBalance::new(U256::from(2_u64), duplicate),
+                ],
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Wallet balance snapshot contains duplicate currency USDC"
+        );
+        assert!(wallet.native_currency.is_none());
+        assert!(wallet.token_balances.is_empty());
     }
 }

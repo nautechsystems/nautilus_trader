@@ -72,19 +72,20 @@
 # - [NautilusTrader](https://pypi.org/project/nautilus_trader/) installed
 #   (`pip install nautilus_trader`). The `visualization` extra is only needed
 #   if you also want to regenerate the panels at the end of the tutorial.
+# - The sibling [`ema_cross.py`](./ema_cross.py) file. Keep it next to this
+#   tutorial when downloading or converting it with Jupytext.
 
 # %%
 from decimal import Decimal
 
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.modules import FXRolloverInterestConfig
-from nautilus_trader.backtest.modules import FXRolloverInterestModule
-from nautilus_trader.config import LoggingConfig
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.backtest import FXRolloverInterestModule
+from nautilus_trader.backtest import InterestRateRecord
+from nautilus_trader.config import LoggerConfig
 from nautilus_trader.config import RiskEngineConfig
-from nautilus_trader.examples.strategies.ema_cross import EMACross
-from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.execution import ProbabilisticFillModel
 from nautilus_trader.model import BarType
 from nautilus_trader.model import Money
 from nautilus_trader.model import Venue
@@ -93,8 +94,12 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
-from nautilus_trader.test_kit.providers import TestDataProvider
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.testkit.providers import TestDataProvider
+from nautilus_trader.testkit.providers import TestInstrumentProvider
+
+from ema_cross import EMACross
+from ema_cross import EMACrossConfig
+
 
 # %% [markdown]
 # ## Engine setup
@@ -105,7 +110,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 # %%
 config = BacktestEngineConfig(
     trader_id="BACKTESTER-001",
-    logging=LoggingConfig(log_level="ERROR"),
+    logging=LoggerConfig(stdout_level=LogLevel.ERROR),
     risk_engine=RiskEngineConfig(bypass=True),
 )
 engine = BacktestEngine(config=config)
@@ -120,8 +125,12 @@ engine = BacktestEngine(config=config)
 
 # %%
 provider = TestDataProvider()
-rollover_config = FXRolloverInterestConfig(provider.read_csv("short-term-interest.csv"))
-fx_rollover_interest = FXRolloverInterestModule(config=rollover_config)
+interest_rate_data = provider.read_csv("short-term-interest.csv")
+interest_rate_records = [
+    InterestRateRecord(location=row.LOCATION, time=row.TIME, value=row.Value)
+    for row in interest_rate_data.itertuples(index=False)
+]
+fx_rollover_interest = FXRolloverInterestModule(records=interest_rate_records)
 
 # %% [markdown]
 # ## Fill model
@@ -131,7 +140,7 @@ fx_rollover_interest = FXRolloverInterestModule(config=rollover_config)
 # The seed makes the run reproducible.
 
 # %%
-fill_model = FillModel(
+fill_model = ProbabilisticFillModel(
     prob_fill_on_limit=0.2,
     prob_slippage=0.5,
     random_seed=42,
@@ -207,17 +216,17 @@ engine.run()
 # %% [markdown]
 # ## Reports
 #
-# `engine.trader.generate_*` returns DataFrames covering the account state, the
+# `engine.generate_*` returns DataFrames covering the account state, the
 # fills, and the closed positions.
 
 # %%
-engine.trader.generate_account_report(SIM)
+engine.generate_account_report(SIM)
 
 # %%
-engine.trader.generate_order_fills_report()
+engine.generate_order_fills_report()
 
 # %%
-engine.trader.generate_positions_report()
+engine.generate_positions_report()
 
 # %% [markdown]
 # ## What the run produces

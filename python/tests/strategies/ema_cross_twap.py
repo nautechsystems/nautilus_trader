@@ -15,9 +15,8 @@
 """
 EMA cross strategy routing orders through the TWAP execution algorithm.
 
-Identical to ``EMACross`` except entries are submitted with an
-``exec_algorithm_id`` so the engine routes them to a registered TWAP
-execution algorithm for slicing.
+Identical to ``EMACross`` except entries are submitted with an ``exec_algorithm_id`` so
+the engine routes them to a registered TWAP execution algorithm for slicing.
 
 """
 

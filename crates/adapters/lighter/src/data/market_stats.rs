@@ -131,7 +131,7 @@ pub(super) fn emit_ws_message(
                 return false;
             }
 
-            if let Err(e) = sender.send(DataEvent::Data(Data::MarkPriceUpdate(*mark_price))) {
+            if let Err(e) = sender.send(DataEvent::Data(Data::MarkPrice(*mark_price))) {
                 log::error!("Failed to send mark price: {e}");
             }
             true
@@ -145,7 +145,7 @@ pub(super) fn emit_ws_message(
                 return false;
             }
 
-            if let Err(e) = sender.send(DataEvent::Data(Data::IndexPriceUpdate(*index_price))) {
+            if let Err(e) = sender.send(DataEvent::Data(Data::IndexPrice(*index_price))) {
                 log::error!("Failed to send index price: {e}");
             }
             true

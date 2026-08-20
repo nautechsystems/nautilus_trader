@@ -18,7 +18,6 @@
 use std::{
     fmt::Display,
     hash::{Hash, Hasher},
-    ops::{Deref, DerefMut},
 };
 
 use nautilus_core::{
@@ -36,7 +35,7 @@ use crate::identifiers::InstrumentId;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -62,7 +61,8 @@ impl OrderBookDeltas {
     ///
     /// # Panics
     ///
-    /// Panics if `deltas` is empty.
+    /// Panics if `deltas` is empty or contains an instrument ID that does not match
+    /// `instrument_id`.
     #[must_use]
     pub fn new(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) -> Self {
         Self::new_checked(instrument_id, deltas).expect(FAILED)
@@ -72,7 +72,8 @@ impl OrderBookDeltas {
     ///
     /// # Errors
     ///
-    /// Returns an error if `deltas` is empty.
+    /// Returns an error if `deltas` is empty or contains an instrument ID that does not match
+    /// `instrument_id`.
     ///
     /// # Notes
     ///
@@ -86,6 +87,24 @@ impl OrderBookDeltas {
         deltas: Vec<OrderBookDelta>,
     ) -> anyhow::Result<Self> {
         check_predicate_true(!deltas.is_empty(), "`deltas` cannot be empty")?;
+
+        let mismatch = deltas.iter().enumerate().find(|(_, delta)| {
+            instrument_id != delta.instrument_id
+                && (instrument_id.symbol.as_str() != delta.instrument_id.symbol.as_str()
+                    || instrument_id.venue.as_str() != delta.instrument_id.venue.as_str())
+        });
+
+        if let Some((index, delta)) = mismatch {
+            check_predicate_true(
+                false,
+                &format!(
+                    "`deltas` instrument IDs must match `instrument_id` {instrument_id}, but \
+                     delta at index {index} of {} has {}",
+                    deltas.len(),
+                    delta.instrument_id,
+                ),
+            )?;
+        }
         let last = deltas.last().expect("deltas not empty");
         let flags = last.flags;
         let sequence = last.sequence;
@@ -139,47 +158,6 @@ impl Display for OrderBookDeltas {
 impl HasTsInit for OrderBookDeltas {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
-    }
-}
-
-/// C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
-///
-/// This struct wraps `OrderBookDeltas` in a way that makes it compatible with C function
-/// calls, enabling interaction with `OrderBookDeltas` in a C environment.
-///
-/// It implements the `Deref` trait, allowing instances of `OrderBookDeltas_API` to be
-/// dereferenced to `OrderBookDeltas`, providing access to `OrderBookDeltas`'s methods without
-/// having to manually access the underlying `OrderBookDeltas` instance.
-#[repr(C)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(non_camel_case_types)]
-pub struct OrderBookDeltas_API(Box<OrderBookDeltas>);
-
-// TODO: This wrapper will go along with Cython
-impl OrderBookDeltas_API {
-    #[must_use]
-    pub fn new(deltas: OrderBookDeltas) -> Self {
-        Self(Box::new(deltas))
-    }
-
-    /// Consumes the wrapper and returns the inner `OrderBookDeltas`.
-    #[must_use]
-    pub fn into_inner(self) -> OrderBookDeltas {
-        *self.0
-    }
-}
-
-impl Deref for OrderBookDeltas_API {
-    type Target = OrderBookDeltas;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for OrderBookDeltas_API {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
 
@@ -336,6 +314,40 @@ mod tests {
         let deltas = result.unwrap();
         assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(deltas.deltas.len(), 1);
+    }
+
+    #[rstest]
+    fn test_order_book_deltas_new_checked_accepts_homogeneous_deltas() {
+        let instrument_id = InstrumentId::from("EURUSD.SIM");
+        let delta1 = create_test_delta();
+        let mut delta2 = create_test_delta();
+        delta2.sequence = 124;
+
+        let result = OrderBookDeltas::new_checked(instrument_id, vec![delta1, delta2]);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().deltas.len(), 2);
+    }
+
+    #[rstest]
+    #[case::first(0)]
+    #[case::later(1)]
+    fn test_order_book_deltas_new_checked_rejects_mismatched_instrument(
+        #[case] mismatch_index: usize,
+    ) {
+        let instrument_id = InstrumentId::from("EURUSD.SIM");
+        let mut deltas = vec![create_test_delta(), create_test_delta()];
+        deltas[mismatch_index].instrument_id = InstrumentId::from("GBPUSD.SIM");
+
+        let result = OrderBookDeltas::new_checked(instrument_id, deltas);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "`deltas` instrument IDs must match `instrument_id` EURUSD.SIM, but delta at \
+                 index {mismatch_index} of 2 has GBPUSD.SIM"
+            )
+        );
     }
 
     #[rstest]
@@ -523,8 +535,8 @@ mod tests {
 
     #[rstest]
     fn test_order_book_deltas_single_delta() {
-        let instrument_id = InstrumentId::from("BTCUSD.CRYPTO");
         let delta = create_test_delta();
+        let instrument_id = delta.instrument_id;
 
         let deltas = OrderBookDeltas::new(instrument_id, vec![delta]);
 
@@ -579,88 +591,6 @@ mod tests {
         assert_eq!(deltas.deltas[1].action, BookAction::Add);
         assert_eq!(deltas.deltas[2].action, BookAction::Update);
         assert_eq!(deltas.deltas[3].action, BookAction::Delete);
-    }
-
-    #[rstest]
-    fn test_order_book_deltas_api_new() {
-        let deltas = create_test_deltas();
-        let api_wrapper = OrderBookDeltas_API::new(deltas.clone());
-
-        assert_eq!(api_wrapper.instrument_id, deltas.instrument_id);
-        assert_eq!(api_wrapper.deltas.len(), deltas.deltas.len());
-        assert_eq!(api_wrapper.flags, deltas.flags);
-        assert_eq!(api_wrapper.sequence, deltas.sequence);
-    }
-
-    #[rstest]
-    fn test_order_book_deltas_api_into_inner() {
-        let deltas = create_test_deltas();
-        let api_wrapper = OrderBookDeltas_API::new(deltas.clone());
-        let inner_deltas = api_wrapper.into_inner();
-
-        assert_eq!(inner_deltas, deltas);
-    }
-
-    #[rstest]
-    fn test_order_book_deltas_api_deref() {
-        let deltas = create_test_deltas();
-        let api_wrapper = OrderBookDeltas_API::new(deltas.clone());
-
-        // Test Deref functionality
-        assert_eq!(api_wrapper.instrument_id, deltas.instrument_id);
-        assert_eq!(api_wrapper.ts_init(), deltas.ts_init());
-
-        // Test accessing methods through Deref
-        let display_str = format!("{}", *api_wrapper);
-        assert!(display_str.contains("EURUSD.SIM"));
-    }
-
-    #[rstest]
-    fn test_order_book_deltas_api_deref_mut() {
-        let deltas = create_test_deltas();
-        let mut api_wrapper = OrderBookDeltas_API::new(deltas);
-
-        // Test DerefMut functionality by modifying through the wrapper
-        let original_flags = api_wrapper.flags;
-        api_wrapper.flags = 64;
-
-        assert_ne!(api_wrapper.flags, original_flags);
-        assert_eq!(api_wrapper.flags, 64);
-    }
-
-    #[rstest]
-    fn test_order_book_deltas_api_clone() {
-        let deltas = create_test_deltas();
-        let api_wrapper1 = OrderBookDeltas_API::new(deltas);
-        let api_wrapper2 = api_wrapper1.clone();
-
-        assert_eq!(api_wrapper1.instrument_id, api_wrapper2.instrument_id);
-        assert_eq!(api_wrapper1.sequence, api_wrapper2.sequence);
-        assert_eq!(api_wrapper1, api_wrapper2);
-    }
-
-    #[rstest]
-    fn test_order_book_deltas_api_debug() {
-        let deltas = create_test_deltas();
-        let api_wrapper = OrderBookDeltas_API::new(deltas);
-        let debug_str = format!("{api_wrapper:?}");
-
-        assert!(debug_str.contains("OrderBookDeltas_API"));
-        assert!(debug_str.contains("EURUSD.SIM"));
-    }
-
-    #[rstest]
-    fn test_order_book_deltas_api_serialization() {
-        let deltas = create_test_deltas();
-        let api_wrapper = OrderBookDeltas_API::new(deltas);
-
-        // Test JSON serialization
-        let json = serde_json::to_string(&api_wrapper).unwrap();
-        let deserialized: OrderBookDeltas_API = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(api_wrapper.instrument_id, deserialized.instrument_id);
-        assert_eq!(api_wrapper.sequence, deserialized.sequence);
-        assert_eq!(api_wrapper, deserialized);
     }
 
     #[rstest]

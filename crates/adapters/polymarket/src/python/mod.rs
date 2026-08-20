@@ -29,8 +29,14 @@ pub mod loader;
 pub mod sort;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use nautilus_model::{data::ensure_rust_extractor_registered, identifiers::InstrumentId};
+use nautilus_core::python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err};
+use nautilus_execution::{models::fee::FeeModel, python::fee::PyFeeModel};
+use nautilus_model::{
+    data::ensure_rust_extractor_registered,
+    identifiers::InstrumentId,
+    python::{instruments::pyobject_to_instrument_any, orders::pyobject_to_order_any},
+    types::{Money, Price, Quantity},
+};
 use nautilus_network::websocket::TransportBackend;
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::{prelude::*, types::PyDict};
@@ -45,8 +51,58 @@ use crate::{
         PolymarketRtdsCryptoPrice, PolymarketRtdsEquityPrice, register_polymarket_custom_data,
     },
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
+    models::PolymarketFeeModel,
     providers::build_gamma_params_from_hashmap,
 };
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+impl PolymarketFeeModel {
+    /// Polymarket fee model for binary-option backtests.
+    ///
+    /// Taker fills pay the market's fee-equivalent amount. Maker fills receive a
+    /// per-fill approximation of the daily maker rebate by applying the market's
+    /// configured rebate rate to that fee-equivalent amount.
+    #[new]
+    #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
+    fn py_new() -> PyClassInitializer<Self> {
+        PyClassInitializer::from(PyFeeModel).add_subclass(Self)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    fn get_commission(
+        &self,
+        order: &Bound<'_, PyAny>,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &Bound<'_, PyAny>,
+    ) -> PyResult<Money> {
+        let py = order.py();
+        let instrument =
+            pyobject_to_instrument_any(py, instrument.clone().unbind()).map_err(|_| {
+                let type_name = instrument
+                    .get_type()
+                    .name()
+                    .map_or_else(|_| "unknown".to_string(), |name| name.to_string());
+                to_pytype_err(format!(
+                    "`instrument` must be an `Instrument`, was `{type_name}`"
+                ))
+            })?;
+        let order = pyobject_to_order_any(py, order.clone().unbind()).map_err(|_| {
+            let type_name = order
+                .get_type()
+                .name()
+                .map_or_else(|_| "unknown".to_string(), |name| name.to_string());
+            to_pytype_err(format!("`order` must be an `Order`, was `{type_name}`"))
+        })?;
+
+        FeeModel::get_commission(self, &order, fill_quantity, fill_px, &instrument)
+            .map_err(to_pyruntime_err)
+    }
+}
 
 fn getattr_optional<'py>(
     obj: &Bound<'py, PyAny>,
@@ -218,6 +274,9 @@ fn extract_provider_config_from_pyobject(
     let event_slug_builder = getattr_optional(obj, "event_slug_builder")?
         .map(|value| extract_event_slug_builder(&value))
         .transpose()?;
+    let series_ids = getattr_optional(obj, "series_ids")?
+        .map(|value| value.extract::<Vec<u64>>())
+        .transpose()?;
     let log_warnings = getattr_optional(obj, "log_warnings")?
         .map(|value| value.extract::<bool>())
         .transpose()?
@@ -234,6 +293,7 @@ fn extract_provider_config_from_pyobject(
         event_slugs,
         market_slugs,
         event_slug_builder,
+        series_ids,
         log_warnings,
         use_gamma_markets,
     };
@@ -294,15 +354,19 @@ fn extract_data_config_from_pyobject(
         .map(|value| value.extract::<bool>())
         .transpose()?
         .unwrap_or(default.subscribe_new_markets);
-    let drop_quotes_missing_side = getattr_optional(obj, "drop_quotes_missing_side")?
-        .map(|value| value.extract::<bool>())
-        .transpose()?
-        .unwrap_or(default.drop_quotes_missing_side);
     let new_market_fetch_max_concurrency =
         getattr_optional(obj, "new_market_fetch_max_concurrency")?
             .map(|value| value.extract::<usize>())
             .transpose()?
             .unwrap_or(default.new_market_fetch_max_concurrency);
+    let drop_quotes_missing_side = getattr_optional(obj, "drop_quotes_missing_side")?
+        .map(|value| value.extract::<bool>())
+        .transpose()?
+        .unwrap_or(default.drop_quotes_missing_side);
+    let compute_effective_deltas = getattr_optional(obj, "compute_effective_deltas")?
+        .map(|value| value.extract::<bool>())
+        .transpose()?
+        .unwrap_or(default.compute_effective_deltas);
     let auto_load_missing_instruments = getattr_optional(obj, "auto_load_missing_instruments")?
         .map(|value| value.extract::<bool>())
         .transpose()?
@@ -346,6 +410,7 @@ fn extract_data_config_from_pyobject(
     };
     let config = PolymarketDataClientConfig {
         instrument_config,
+        filters: Vec::new(),
         base_url_http,
         base_url_ws,
         base_url_rtds,
@@ -357,8 +422,10 @@ fn extract_data_config_from_pyobject(
         ws_max_subscriptions,
         update_instruments_interval_mins,
         subscribe_new_markets,
-        drop_quotes_missing_side,
+        new_market_filter: None,
         new_market_fetch_max_concurrency,
+        drop_quotes_missing_side,
+        compute_effective_deltas,
         auto_load_missing_instruments,
         auto_load_debounce_ms,
         auto_load_max_retries,
@@ -368,8 +435,6 @@ fn extract_data_config_from_pyobject(
         resolve_poll_interval_secs,
         resolve_poll_grace_secs,
         resolve_poll_max_wait_secs,
-        filters: Vec::new(),
-        new_market_filter: None,
         transport_backend,
     };
     validate_data_config(&config)?;
@@ -432,7 +497,7 @@ fn extract_polymarket_exec_config(
     }
 }
 
-/// Loaded as `nautilus_pyo3.polymarket`.
+/// Exposed through `nautilus_trader.adapters.polymarket`.
 #[pymodule]
 pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(POLYMARKET), POLYMARKET)?;
@@ -443,6 +508,7 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PolymarketInstrumentProviderConfig>()?;
     m.add_class::<PolymarketDataClientConfig>()?;
     m.add_class::<PolymarketExecClientConfig>()?;
+    m.add_class::<PolymarketFeeModel>()?;
     m.add_class::<PolymarketDataClientFactory>()?;
     m.add_class::<PolymarketExecutionClientFactory>()?;
     m.add_class::<loader::PyPolymarketDataLoader>()?;
@@ -560,10 +626,13 @@ mod tests {
                 .set_item("subscribe_new_markets", false)
                 .unwrap();
             config_kwargs
+                .set_item("new_market_fetch_max_concurrency", 13)
+                .unwrap();
+            config_kwargs
                 .set_item("drop_quotes_missing_side", false)
                 .unwrap();
             config_kwargs
-                .set_item("new_market_fetch_max_concurrency", 13)
+                .set_item("compute_effective_deltas", true)
                 .unwrap();
             config_kwargs
                 .set_item("base_url_gamma", "https://gamma.example")
@@ -639,8 +708,9 @@ mod tests {
             assert!(!instrument_config.log_warnings);
             assert_eq!(rust_config.update_instruments_interval_mins, Some(1));
             assert!(!rust_config.subscribe_new_markets);
-            assert!(!rust_config.drop_quotes_missing_side);
             assert_eq!(rust_config.new_market_fetch_max_concurrency, 13);
+            assert!(!rust_config.drop_quotes_missing_side);
+            assert!(rust_config.compute_effective_deltas);
             assert_eq!(
                 rust_config.base_url_gamma.as_deref(),
                 Some("https://gamma.example")

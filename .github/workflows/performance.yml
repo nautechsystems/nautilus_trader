@@ -12,11 +12,10 @@ jobs:
   performance-benchmarks:
     runs-on: [self-hosted, Linux, X64, self-hosted-linux-x86]
     env:
-      BUILD_MODE: release
       RUST_BACKTRACE: 1
       # Outside the workspace so it survives actions/checkout's git clean -ffdx,
       # giving us persistent on-disk Rust artifact reuse between runs.
-      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/performance-py3.12
+      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/performance
       SCCACHE_CACHE_SIZE: 1G
     # yamllint disable rule:line-length
     services:
@@ -42,19 +41,16 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
-          # Required for CodSpeed results upload
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            api.codspeed.io:443
-            *.s3.eu-west-1.amazonaws.com:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -62,6 +58,9 @@ jobs:
       # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (post-checkout)
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
+      - name: Remove obsolete Python performance cache
+        run: rm -rf /home/runner/.cache/cargo-target/performance-py3.12
 
       - name: Aggressive disk cleanup (pre-setup)
         if: runner.os == 'Linux' && !startsWith(runner.name, 'nautilus-ci-runner-')
@@ -131,32 +130,11 @@ jobs:
           CARGO_PROFILE_BENCH_INCREMENTAL: false
         run: make cargo-ci-benches
 
-      # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
-      - name: Verify immutable CI inputs (pre-wheel build)
-        run: bash scripts/ci/verify-ci-inputs.sh pre-wheel-build
-
-      - name: Build and install wheel
-        uses: ./.github/actions/common-wheel-build
-        with:
-          python-version: "3.12"
-          github_ref: ${{ github.ref }}
-
       # Skip on the nautilus-ci-runner-* pool: those machines keep CARGO_TARGET_DIR
       # and ~/.cargo persistent across runs as the primary cache strategy.
       - name: Cleanup build artifacts and caches
         if: runner.os == 'Linux' && !startsWith(runner.name, 'nautilus-ci-runner-')
-        run: |
+        run: |-
           set -euxo pipefail
           rm -rf "$CARGO_TARGET_DIR" target || true
           rm -rf ~/.cargo/registry ~/.cargo/git || true
-          uv cache prune || true
-          rm -rf dist build || true
-
-      # Run codspeed once only
-      - name: Run benchmarks
-        # https://github.com/CodSpeedHQ/action
-        uses: CodSpeedHQ/action@f99becdce5e5d51fd556489ebef684f4ecfd6286 # v4.18.5
-        with:
-          token: ${{ secrets.CODSPEED_TOKEN }}
-          mode: simulation
-          run: uv run --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed

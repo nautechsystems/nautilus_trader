@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
-
 import pytest
 from unit.adapters.example_modules import load_example_module
 
@@ -46,6 +44,12 @@ def test_okx_factories_expose_python_names() -> None:
     assert exec_factory.name() == OKX
 
 
+def test_okx_data_config_preserves_positional_environment() -> None:
+    config = OKXDataClientConfig(None, OKXEnvironment.DEMO)
+
+    assert config.environment == OKXEnvironment.DEMO
+
+
 def test_live_node_builder_accepts_okx_data_factory() -> None:
     trader_id = TraderId.from_str("TESTER-001")
 
@@ -55,7 +59,8 @@ def test_live_node_builder_accepts_okx_data_factory() -> None:
             None,
             OKXDataClientFactory(),
             OKXDataClientConfig(
-                instrument_types=[OKXInstrumentType.SPOT],
+                instrument_types=[OKXInstrumentType.OPTION],
+                instrument_families=["BTC-USD"],
                 environment=OKXEnvironment.DEMO,
             ),
         )
@@ -101,20 +106,8 @@ def test_live_node_builder_accepts_okx_exec_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
-@pytest.mark.parametrize(
-    ("extra_args", "expected_buys", "expected_sells", "expected_dry_run"),
-    [
-        ([], False, False, True),
-        (["--live-orders"], True, False, False),
-        (["--live-orders", "--limit-sells"], True, True, False),
-    ],
-)
-def test_okx_exec_tester_limit_sells_are_explicit(
+def test_okx_exec_tester_registers_exec_tester_strategy(
     monkeypatch: pytest.MonkeyPatch,
-    extra_args: list[str],
-    expected_buys: bool,
-    expected_sells: bool,
-    expected_dry_run: bool,
 ) -> None:
     captured: dict[str, object] = {}
 
@@ -126,6 +119,9 @@ def test_okx_exec_tester_limit_sells_are_explicit(
         def add_builtin_strategy(self, type_name: str, config: object) -> None:
             captured["strategy_type_name"] = type_name
             captured["strategy_config"] = config
+
+        def run(self) -> None:
+            captured["node_ran"] = True
 
     class CapturingBuilder:
         def with_reconciliation(self, reconciliation: bool) -> "CapturingBuilder":
@@ -153,15 +149,17 @@ def test_okx_exec_tester_limit_sells_are_explicit(
             captured["builder_args"] = (name, trader_id, environment)
             return CapturingBuilder()
 
-    monkeypatch.setattr(sys, "argv", ["exec_tester.py", *extra_args])
     monkeypatch.setattr(okx_exec_tester, "ExecTesterConfig", CapturingExecTesterConfig)
     monkeypatch.setattr(okx_exec_tester, "LiveNode", CapturingLiveNode)
 
     okx_exec_tester.main()
 
     assert captured["strategy_type_name"] == "ExecTester"
+    assert captured["node_ran"] is True
     kwargs = captured["exec_tester_kwargs"]
     assert isinstance(kwargs, dict)
-    assert kwargs["enable_limit_buys"] is expected_buys
-    assert kwargs["enable_limit_sells"] is expected_sells
-    assert kwargs["dry_run"] is expected_dry_run
+    assert kwargs["instrument_id"] == okx_exec_tester.INSTRUMENT_ID
+    assert kwargs["use_hyphens_in_client_order_ids"] is False
+    assert kwargs["enable_limit_buys"] is True
+    assert kwargs["enable_limit_sells"] is True
+    assert kwargs["dry_run"] is False

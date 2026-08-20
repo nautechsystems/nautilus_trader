@@ -45,7 +45,7 @@ use nautilus_network::{
     http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
-        AUTHENTICATION_TIMEOUT_SECS, AuthTracker, PingHandler, SubscriptionState, TransportBackend,
+        AUTHENTICATION_TIMEOUT_SECS, AuthTracker, SubscriptionState, TransportBackend,
         WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
@@ -406,8 +406,9 @@ impl BitmexWebSocketClient {
                             log::debug!("Re-authenticating after reconnection");
                             waiting_for_reconnect_auth = true;
 
-                            let expires =
-                                (chrono::Utc::now() + chrono::Duration::seconds(30)).timestamp();
+                            let expires = (jiff::Timestamp::now()
+                                + jiff::SignedDuration::from_secs(30))
+                            .as_second();
                             let signature = cred.sign("GET", "/realtime", expires, "");
 
                             let auth_message = BitmexAuthentication {
@@ -531,23 +532,21 @@ impl BitmexWebSocketClient {
     > {
         let (message_handler, rx) = channel_message_handler();
 
-        // No-op ping handler: handler owns the WebSocketClient and responds to pings directly
-        // in the message loop for minimal latency (see handler.rs pong response)
-        let ping_handler: PingHandler = Arc::new(move |_payload: Vec<u8>| {
-            // Handler responds to pings internally via select! loop
-        });
+        // Inbound Ping frames are answered by the transport, so no ping handler is needed;
+        // the reader routes them away from the message channel and the handler never sees them.
 
         let config = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
-            heartbeat: self.heartbeat,
-            heartbeat_msg: None,
-            reconnect_timeout_ms: Some(5_000),
+            heartbeat_interval_secs: self.heartbeat,
+            heartbeat_payload: None,
+            connect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None, // Use default
             reconnect_delay_max_ms: None,     // Use default
             reconnect_backoff_factor: None,   // Use default
             reconnect_jitter_ms: None,        // Use default
             reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
@@ -557,8 +556,7 @@ impl BitmexWebSocketClient {
         let client = WebSocketClient::connect(
             config,
             Some(message_handler),
-            Some(ping_handler),
-            None, // post_reconnection
+            None,
             keyed_quotas,
             None, // default_quota
         )
@@ -586,7 +584,7 @@ impl BitmexWebSocketClient {
 
         let receiver = self.auth_tracker.begin();
 
-        let expires = (chrono::Utc::now() + chrono::Duration::seconds(30)).timestamp();
+        let expires = (jiff::Timestamp::now() + jiff::SignedDuration::from_secs(30)).as_second();
         let signature = credential.sign("GET", "/realtime", expires, "");
 
         let auth_message = BitmexAuthentication {
@@ -1353,7 +1351,8 @@ mod tests {
 
         // Test the actual auth message building logic from lines 220-228
         if let Some(cred) = &client_with_creds.credential {
-            let expires = (chrono::Utc::now() + chrono::Duration::seconds(30)).timestamp();
+            let expires =
+                (jiff::Timestamp::now() + jiff::SignedDuration::from_secs(30)).as_second();
             let signature = cred.sign("GET", "/realtime", expires, "");
 
             let auth_message = BitmexAuthentication {

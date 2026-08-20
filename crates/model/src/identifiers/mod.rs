@@ -21,8 +21,8 @@
 //! - High-cardinality external IDs must not use `Ustr`, because interning
 //!   unique values grows process memory without bound.
 //! - Some identifiers still use fixed-size `repr(C)` storage because the
-//!   current Cython/C ABI shares raw layout by value.
-//! - A deeper storage redesign is deferred to V2, when the ABI can move to
+//!   supported C ABI shares raw layout by value.
+//! - A deeper storage redesign is deferred until the C ABI can move to
 //!   conversion-based bindings instead of layout sharing.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -62,7 +62,9 @@ pub use crate::identifiers::{
     option_series_id::{OptionSeriesId, OptionSeriesIdError},
     order_list_id::OrderListId,
     position_id::PositionId,
-    strategy_id::{StrategyId, normalize_order_id_tag},
+    strategy_id::{
+        StrategyId, UNASSIGNED_ORDER_ID_TAG, check_order_id_tag, normalize_order_id_tag,
+    },
     symbol::Symbol,
     trade_id::TradeId,
     trader_id::TraderId,

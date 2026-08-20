@@ -186,6 +186,14 @@ pub fn get_actor(id: &Ustr) -> Option<Rc<UnsafeCell<dyn Actor>>> {
     with_actor_registry(|registry| registry.get(id))
 }
 
+/// Removes the actor with `id` from the registry.
+///
+/// Only the exact ID is removed, so unrelated actors sharing the thread-local registry are
+/// untouched.
+pub fn deregister_actor(id: &Ustr) {
+    with_actor_registry(|registry| registry.remove(id));
+}
+
 /// Returns a guard providing mutable access to the registered actor of type `T`.
 ///
 /// The returned [`ActorRef`] holds an `Rc` to keep the actor alive, preventing

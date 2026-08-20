@@ -1,15 +1,21 @@
 # OrderCanceled
 
-`OrderCanceled` represents an order having been canceled at the trading venue. The
-`ExecutionEngine` applies it to the order, updates the `Cache`, and publishes it on the
-`MessageBus`. It fires when the venue confirms cancellation of the order.
+`OrderCanceled` records a confirmed cancellation. The execution pipeline applies it to the order,
+updates the `Cache`, and publishes it on the `MessageBus`. It can come from a trading venue,
+simulated matching engine, local order emulator, or reconciliation.
 
-Transition: `PENDING_CANCEL` / `ACCEPTED` -> `CANCELED`. Handler: `on_order_canceled`.
+Typical transition: `PENDING_CANCEL` / `ACCEPTED` -> `CANCELED`. Handler: `on_order_canceled`.
 
 ## Fields
 
-`OrderCanceled` carries only the [common order event fields](index.md#common-order-event-fields). On this event, `venue_order_id` and `account_id` are
-usually populated but may be `None`, and `reconciliation` carries a real value.
+Beyond the [common Python order event fields](index.md#common-python-order-event-fields),
+`OrderCanceled` carries:
+
+| Field            | Python type              | Required/default | Description                                      |
+| ---------------- | ------------------------ | ---------------- | ------------------------------------------------ |
+| `venue_order_id` | `VenueOrderId` or `None` | `None`           | The venue‑assigned order identifier, if known.   |
+| `account_id`     | `AccountId` or `None`    | `None`           | The account associated with the order, if known. |
+| `reconciliation` | `bool`                   | Required         | If generated during reconciliation.              |
 
 ## Example
 

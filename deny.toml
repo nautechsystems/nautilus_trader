@@ -15,16 +15,12 @@ feature-depth = 1
 # Security Advisories
 # =============================================================================
 [advisories]
+unused-ignored-advisory = "deny"
 # Ignored advisories (use sparingly - document the reason)
 ignore = [
   # paste unmaintained, transitive via alloy
   # TODO: Monitor https://github.com/alloy-rs/alloy for migration to pastey or alternative
   { id = "RUSTSEC-2024-0436", reason = "paste unmaintained, transitive via alloy" },
-
-  # rustls-pemfile unmaintained, transitive via nautilus-network and various TLS deps.
-  # Migration target is rustls-pki-types; not a vulnerability.
-  # TODO: Monitor upstream TLS deps for migration
-  { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a vulnerability)" },
 
   # unic-* unmaintained, transitive via pyo3-stub-gen -> rustpython-parser (dev tool only).
   # TODO: Monitor https://github.com/Jij-Inc/pyo3-stub-gen for migration away from rustpython-parser
@@ -40,22 +36,21 @@ ignore = [
   { id = "RUSTSEC-2025-0141", reason = "bincode unmaintained, transitive via madsim and hypersync-client (not a vulnerability)" },
 
   # capnp unsound APIs in constant::Reader and StructSchema, transitive via hypersync-client.
-  # Fix requires upstream update to capnp >= 0.24.0. Low risk: internal schema handling only.
-  # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for capnp update
+  # Generated code supplies static schema metadata; no remote schema input path is known.
   { id = "RUSTSEC-2025-0143", reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix" },
 
   # quick-xml duplicate-attribute check DoS, transitive via object_store 0.13.2.
-  # object_store has no release that depends on quick-xml >= 0.41.0.
-  # TODO: Remove when the DataFusion-aligned object_store release depends on quick-xml >= 0.41.0
-  { id = "RUSTSEC-2026-0194", reason = "quick-xml DoS via object_store 0.13.2; no fixed object_store release" },
+  # object_store 0.14 is fixed, but the current DataFusion release requires object_store 0.13.
+  { id = "RUSTSEC-2026-0194", reason = "quick-xml DoS via DataFusion-aligned object_store 0.13.2" },
 
   # quick-xml NsReader namespace-allocation DoS, transitive via object_store 0.13.2.
-  # object_store has no release that depends on quick-xml >= 0.41.0.
-  # TODO: Remove when the DataFusion-aligned object_store release depends on quick-xml >= 0.41.0
-  { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS via object_store 0.13.2; no fixed object_store release" },
+  # object_store 0.14 is fixed, but the current DataFusion release requires object_store 0.13.
+  { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS via DataFusion-aligned object_store 0.13.2" },
 
-  # NOTE: cargo-audit also flags RUSTSEC-2024-0388 (derivative), which cargo-deny
-  # does not surface; it is listed only in .cargo/audit.toml.
+  # NOTE: lockfile scanners also flag RUSTSEC-2024-0388 (derivative) and
+  # RUSTSEC-2026-0235 (inactive rust_decimal optional dependency), which cargo-deny
+  # does not surface. Their scanner-specific ignores are in .cargo/audit.toml and
+  # osv-scanner.toml.
 ]
 
 # =============================================================================
@@ -79,7 +74,7 @@ allow = [
   "Unicode-DFS-2016",
   "Unicode-3.0",
   "0BSD",
-  "LGPL-3.0-or-later",
+  "LGPL-3.0-only",
   "Unlicense",
   "bzip2-1.0.6",
 ]
@@ -194,6 +189,8 @@ skip = [
   { crate = "parquet" },
 
   # Common utility crates with version fragmentation across ecosystem
+  # base64 0.23 is used directly; upstream dependencies still require 0.22
+  { crate = "base64" },
   { crate = "hashbrown" },
   { crate = "itertools" },
   { crate = "foldhash" },
@@ -223,7 +220,7 @@ skip = [
   { crate = "prost" },
   { crate = "prost-derive" },
 
-  # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.25.0
+  # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.27.x
   { crate = "capnp" },
 
   # TOML parser - cbindgen requires 0.9.x, pyo3-stub-gen requires 1.0.x

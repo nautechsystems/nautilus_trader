@@ -15,11 +15,16 @@
 
 //! End-to-end benchmarks for the v2 [`BacktestEngine`] run path.
 //!
-//! Each case builds a full engine with a simulated venue, instrument, market data, and optional
-//! strategy outside the measured section. The timed section is `BacktestEngine::run`, while
-//! teardown happens after timing so global message-bus cleanup does not pollute the run profile.
+//! Each case runs a full engine with a simulated venue, instrument, market data, and optional
+//! strategy. Existing groups and `canonical/run_preloaded` build outside the measured section and
+//! time `BacktestEngine::run`. `canonical/load_build_run` includes data loading and engine setup.
+//! Teardown happens after timing so global message-bus cleanup does not pollute either profile.
 //!
 //! Workloads:
+//! - `canonical/run_preloaded`: replay-only, scheduled market-order, passive limit-order, and
+//!   bar-EMA workloads over the same preloaded checked-in data.
+//! - `canonical/load_build_run`: the same four workloads including CSV loading, engine setup, and
+//!   `BacktestEngine::run`.
 //! - `market_data_replay`: interleaved quote and trade ticks with no strategy orders.
 //! - `market_data_replay_4_streams`: the same events split across four streams to exercise heap
 //!   merging.
@@ -35,6 +40,9 @@
 //!   while quote and trade ticks drive matching and trigger evaluation.
 //!
 //! Run with `cargo bench -p nautilus-backtest --bench engine`.
+
+#[path = "engine/canonical.rs"]
+mod canonical;
 
 use std::{
     fmt::Debug,
@@ -53,7 +61,7 @@ use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
         InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN,
+        OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN,
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookAction, BookType,
@@ -80,6 +88,27 @@ const MARKET_ORDER_INTERVAL: usize = 10;
 const PASSIVE_ORDER_INTERVAL: usize = 20;
 const GTD_ORDER_INTERVAL: usize = 20;
 const GTD_EXPIRY_OFFSET_NS: u64 = TRADE_OFFSET_NS / 2;
+
+fn bench_canonical(c: &mut Criterion) {
+    canonical::verify_matrix().expect("canonical workload matrix should match its fingerprints");
+
+    let mut group = c.benchmark_group("backtest_engine/canonical");
+
+    for scenario in canonical::SCENARIOS {
+        let fixture = canonical::load_fixture().expect("canonical workload fixture should load");
+        let data_count = fixture.len();
+        group.throughput(Throughput::Elements(data_count as u64));
+
+        group.bench_function(BenchmarkId::new("run_preloaded", scenario.name()), |b| {
+            b.iter_custom(|iters| canonical::run_preloaded_iterations(iters, scenario, &fixture));
+        });
+        group.bench_function(BenchmarkId::new("load_build_run", scenario.name()), |b| {
+            b.iter_custom(|iters| canonical::run_full_iterations(iters, scenario));
+        });
+    }
+
+    group.finish();
+}
 
 fn bench_run(c: &mut Criterion) {
     let mut group = c.benchmark_group("backtest_engine/run");
@@ -540,9 +569,9 @@ fn generate_market_data(instrument_id: InstrumentId, quote_count: usize) -> Vec<
         let ask = price_from_cents(mid_cents + 5);
         let trade_price = price_from_cents(mid_cents);
         let aggressor_side = if i % 2 == 0 {
-            AggressorSide::Buyer
+            AggressorSide::Buy
         } else {
-            AggressorSide::Seller
+            AggressorSide::Sell
         };
 
         data.push(Data::Quote(QuoteTick::new(
@@ -654,9 +683,10 @@ fn generate_l2_delta_data(instrument_id: InstrumentId, event_count: usize) -> Ve
         if i.is_multiple_of(2) {
             data.push(Data::Delta(bid));
         } else {
-            data.push(Data::Deltas(OrderBookDeltas_API::new(
-                OrderBookDeltas::new(instrument_id, vec![bid, ask]),
-            )));
+            data.push(Data::Deltas(Box::new(OrderBookDeltas::new(
+                instrument_id,
+                vec![bid, ask],
+            ))));
         }
     }
 
@@ -742,19 +772,19 @@ fn generate_price_status_funding_data(
             MarketStatusAction::Trading
         };
 
-        data.push(Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        data.push(Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             price,
             UnixNanos::from(ts),
             UnixNanos::from(ts),
         )));
-        data.push(Data::IndexPriceUpdate(IndexPriceUpdate::new(
+        data.push(Data::IndexPrice(IndexPriceUpdate::new(
             instrument_id,
             price,
             UnixNanos::from(ts + 1),
             UnixNanos::from(ts + 1),
         )));
-        data.push(Data::FundingRateUpdate(FundingRateUpdate::new(
+        data.push(Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             Decimal::new(1, 4),
             None,
@@ -810,7 +840,7 @@ fn generate_order_trigger_data(instrument_id: InstrumentId, quote_count: usize) 
             instrument_id,
             Price::from(trade_price.as_str()),
             Quantity::from("1.000"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::from(format!("OT-{i}").as_str()),
             trade_ts.into(),
             trade_ts.into(),
@@ -846,7 +876,7 @@ impl AlternatingMarketOrders {
         Self {
             core: StrategyCore::new(config),
             instrument_id,
-            trade_size: Quantity::from("0.010"),
+            trade_size: Quantity::from("0.011"),
             max_orders,
             quote_count: 0,
             orders_submitted: 0,
@@ -1339,5 +1369,11 @@ fn passive_limit_price(side: OrderSide, order_index: usize) -> Price {
     Price::from(price_from_cents(cents).as_str())
 }
 
-criterion_group!(benches, bench_run, bench_data_routes, bench_order_types);
+criterion_group!(
+    benches,
+    bench_canonical,
+    bench_run,
+    bench_data_routes,
+    bench_order_types
+);
 criterion_main!(benches);

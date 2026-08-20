@@ -139,36 +139,20 @@ Use parametrized tests and fixtures (e.g., `@pytest.mark.parametrize`) to avoid 
 
 ## Running tests
 
-### v1 legacy Python tests
+### Python tests
 
-The v1 legacy test suite lives under `tests/` at the repository root and tests
-the Cython-based package. From the repository root:
+The Python test suite lives under `python/tests/` and tests the Rust‑backed PyO3 package. It requires
+a built extension module and uses the Python project under `python/`. From the repository root, run:
 
 ```bash
 make pytest
-# or
-uv run --active --no-sync pytest --new-first --failed-first
-```
-
-### Python tests
-
-The Python test suite lives under `python/tests/` and tests the Rust-backed PyO3
-package. It requires a built extension module (`make build-debug-v2`) and uses its
-own virtualenv under `python/.venv/`.
-
-For new live adapter examples and docs in the v2 path, prefer
-`nautilus_trader.live.LiveNode`. `nautilus_trader.live.node.TradingNode` remains the
-legacy v1/Cython runtime used by the root-level `tests/` suite and older examples.
-
-```bash
-make pytest-v2
 ```
 
 The Makefile target isolates certain test modules in separate pytest processes to avoid
-global Rust state conflicts. Use `make pytest-v2` rather than invoking pytest directly.
+global Rust state conflicts. Use `make pytest` rather than invoking pytest directly.
 
-Local `make pytest-v2` runs use the debug extension from `make build-debug-v2`.
-CI `build-v2` tests a release wheel.
+Local `make pytest` runs use the debug extension from `make build-debug`.
+CI tests a release wheel.
 Do not write `python/tests/` cases that probe Rust panic paths in process with
 `pytest.raises(BaseException)` or similar broad catches.
 Those tests can appear to pass against the debug build and abort the interpreter against the
@@ -176,15 +160,15 @@ release wheel.
 For abort-prone PyO3 or FFI methods, verify the Python signature and parameter names, or isolate
 the call in a subprocess.
 
-For performance tests:
+For the registered Rust benchmark set:
 
 ```bash
-make test-performance
-# or
-uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
+make cargo-ci-benches
 ```
 
-The `--benchmark-disable-gc` flag prevents garbage collection from skewing results. Run performance tests in isolation (not with unit tests) to avoid interference.
+No canonical Python performance suite is wired into CI. See the
+[Benchmarking guide](benchmarking.md) for focused Criterion and iai commands, profiling, and
+measurement policy. Run benchmarks separately from unit tests to avoid interference.
 
 ### Rust tests
 
@@ -193,6 +177,15 @@ make cargo-test
 # or
 cargo nextest run --workspace --features "arrow,ffi,python,high-precision,streaming,defi" --cargo-profile nextest --lib --tests
 ```
+
+:::info
+`cargo nextest` is the supported runner for the full Rust unit and integration suite. The suite
+relies on nextest's per‑test process isolation for process‑global and thread‑local state, including
+logging, the message bus, and deterministic test state. Plain `cargo test --workspace` runs a test
+binary's cases in a shared process, so it is not a supported full‑suite gate and is not guaranteed to
+pass. Plain `cargo test` remains appropriate for doctests and focused tests that are known to work
+with the libtest runner.
+:::
 
 #### Rust doctests
 
@@ -205,7 +198,7 @@ cargo test --doc --workspace --features "arrow,ffi,python,high-precision,streami
 ```
 
 Doc examples are a maintained test surface: CI runs this target on pull requests that touch Rust
-code, and both pre-flight targets include it. See the [Rust guide](rust.md#doc-examples) for how to
+code, and the `pre-flight` target includes it. See the [Rust guide](rust.md#doc-examples) for how to
 annotate a fence so it compiles.
 
 #### Testing with optional features
@@ -257,17 +250,11 @@ Use **pytest-style free functions and fixtures**. Do not use test classes.
 - Use `@pytest.mark.parametrize` to cover multiple inputs without duplicating
   test bodies.
 - Import model types from `nautilus_trader.model`, not from
-  `nautilus_trader.core.nautilus_pyo3`.
+  `nautilus_trader._libnautilus`.
 - Test providers live in `python/tests/providers.py`. Use `TestInstrumentProvider`
   and `TestDataProvider` for common instruments and data.
 - Mark tests that depend on unfinished features with
   `@pytest.mark.skip(reason="WIP: <description>")` rather than deleting them.
-
-### v1 legacy Python tests (`tests/`)
-
-The v1 legacy test suite uses a mix of test classes and free functions. New tests
-added to this suite may follow either pattern, but free functions with fixtures
-are preferred for new files.
 
 ### Rust
 
@@ -276,7 +263,8 @@ see the [Rust guide](rust.md#testing-conventions).
 
 ## Waiting for asynchronous effects
 
-When waiting for background work to complete, prefer the polling helpers `await eventually(...)` from `nautilus_trader.test_kit.functions` and `wait_until_async(...)` from `nautilus_common::testing` instead of arbitrary sleeps. They surface failures faster and reduce flakiness in CI because they stop as soon as the condition is satisfied or time out with a useful error.
+In Rust tests, prefer `wait_until_async(...)` from `nautilus_common::testing` to arbitrary sleeps.
+It stops as soon as the condition succeeds and applies a bounded timeout.
 
 ## Mocks
 
@@ -316,63 +304,24 @@ In IntelliJ IDEA, adjust the run configuration for parametrised `#[rstest]` case
 
 In VS Code you can pick the specific test case to debug directly.
 
-## Python + Rust Mixed Debugging
+## Debugging Python and Rust
 
-This workflow lets you debug Python and Rust code simultaneously from a Jupyter notebook inside VS Code.
+Build the PyO3 extension with the workspace's `debug-pyo3` Cargo profile when a native debugger
+needs Rust symbols:
 
-### Setup
-
-Install these VS Code extensions: Rust Analyzer, CodeLLDB, Python, Jupyter.
-
-### Step 0: Compile `nautilus_trader` with debug symbols
-
-   ```bash
-   cd nautilus_trader && make build-debug-pyo3
-   ```
-
-### Step 1: Set up debugging configuration
-
-```python
-from nautilus_trader.test_kit.debug_helpers import setup_debugging
-
-setup_debugging()
+```bash
+make sync
+(
+  cd python
+  UV_PROJECT_ENVIRONMENT=../.venv \
+    CARGO_TARGET_DIR=../target \
+    uv run --no-sync maturin develop --profile debug-pyo3
+)
 ```
 
-This command creates the required VS Code debugging configurations and starts a `debugpy` server for the Python debugger.
-
-By default `setup_debugging()` expects the `.vscode` folder one level above the `nautilus_trader` root directory.
-Adjust the target location if your workspace layout differs.
-
-### Step 2: Set breakpoints
-
-- **Python breakpoints:** Set in VS Code in the Python source files.
-- **Rust breakpoints:** Set in VS Code in the Rust source files.
-
-### Step 3: Start mixed debugging
-
-1. In VS Code select the **"Debug Jupyter + Rust (Mixed)"** configuration.
-2. Start debugging (F5) or press the green run arrow.
-3. Both Python and Rust debuggers attach to your Jupyter session.
-
-### Step 4: Execute code
-
-Run Jupyter notebook cells that call Rust functions. The debugger stops at breakpoints in both Python and Rust code.
-
-### Available configurations
-
-`setup_debugging()` creates these VS Code configurations:
-
-- **`Debug Jupyter + Rust (Mixed)`** - Mixed debugging for Jupyter notebooks.
-- **`Jupyter Mixed Debugging (Python)`** - Python-only debugging for notebooks.
-- **`Rust Debugger (for Jupyter debugging)`** - Rust-only debugging for notebooks.
-
-### Example
-
-Open and run the example notebook: `debug_mixed_jupyter.ipynb`.
-
-### Reference
-
-- [PyO3 debugging](https://pyo3.rs/v0.25.1/debugging.html?highlight=deb#debugging-from-jupyter-notebooks)
+Start the Python program or notebook with the Python debugger, then attach LLDB or GDB to that
+Python process for Rust breakpoints. The repository does not generate editor launch
+configurations, so configure both debugger sessions in the editor you use.
 
 ## Data type testing
 
@@ -388,9 +337,8 @@ existing types are tested, so new types can follow the same pattern.
 | DataActor subscribe    | `crates/common/src/actor/tests.rs`          | Actor subscribes and receives data via typed publish.      |
 | DataActor unsubscribe  | `crates/common/src/actor/tests.rs`          | Actor stops receiving data after unsubscribe.              |
 | PyO3 actor dispatch    | `crates/common/src/python/actor.rs`         | Rust handler dispatches to Python `on_*` method.           |
-| Python Actor subscribe | `tests/unit_tests/common/test_actor.py`     | Python actor subscribes; command count increments.         |
-| Python Actor unsub     | `tests/unit_tests/common/test_actor.py`     | Python actor unsubscribes; subscription list clears.       |
-| Backtest client        | `nautilus_trader/backtest/data_client.pyx`  | Backtest client overrides base subscribe/unsubscribe.      |
+| Python Actor subscribe | `python/tests/unit/common/test_actor.py`    | Python actor subscribes; command count increments.         |
+| Python Actor unsub     | `python/tests/unit/common/test_actor.py`    | Python actor unsubscribes; subscription list clears.       |
 | Adapter live tests     | `docs/developer_guide/spec_data_testing.md` | Live data acceptance tests (DataTester).                   |
 
 ### Coverage per data type
@@ -398,26 +346,25 @@ existing types are tested, so new types can follow the same pattern.
 The following table shows which layers have test coverage for each data type.
 Use this as a checklist when adding a new type.
 
-| Data type           | Engine | Actor (Rust) | PyO3 dispatch | Actor (Python) | Backtest client | Adapter spec |
-| ------------------- | ------ | ------------ | ------------- | -------------- | --------------- | ------------ |
-| `InstrumentAny`     | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
-| `OrderBookDeltas`   | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
-| `OrderBook`         | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
-| `QuoteTick`         | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
-| `TradeTick`         | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
-| `Bar`               | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
-| `MarkPriceUpdate`   | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
-| `IndexPriceUpdate`  | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
-| `FundingRateUpdate` | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
-| `InstrumentStatus`  | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
-| `InstrumentClose`   | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
-| `OptionGreeks`      | ✓      | ✓            | ✓             | ✓              | ✓               | ✓            |
-| `OptionChainSlice`  | -      | ✓            | ✓             | ✓              | -               | ✓            |
-| `CustomData`        | ✓      | ✓            | ✓             | ✓              | ✓               | -            |
+| Data type           | Engine | Actor (Rust) | PyO3 dispatch | Actor (Python) | Adapter spec |
+| ------------------- | ------ | ------------ | ------------- | -------------- | ------------ |
+| `InstrumentAny`     | ✓      | ✓            | ✓             | ✓              | ✓            |
+| `OrderBookDeltas`   | ✓      | ✓            | ✓             | ✓              | ✓            |
+| `OrderBook`         | ✓      | ✓            | ✓             | ✓              | ✓            |
+| `QuoteTick`         | ✓      | ✓            | ✓             | ✓              | ✓            |
+| `TradeTick`         | ✓      | ✓            | ✓             | ✓              | ✓            |
+| `Bar`               | ✓      | ✓            | ✓             | ✓              | ✓            |
+| `MarkPriceUpdate`   | ✓      | ✓            | ✓             | ✓              | ✓            |
+| `IndexPriceUpdate`  | ✓      | ✓            | ✓             | ✓              | ✓            |
+| `FundingRateUpdate` | ✓      | ✓            | ✓             | ✓              | ✓            |
+| `InstrumentStatus`  | ✓      | ✓            | ✓             | ✓              | ✓            |
+| `InstrumentClose`   | ✓      | ✓            | ✓             | ✓              | ✓            |
+| `OptionGreeks`      | ✓      | ✓            | ✓             | ✓              | ✓            |
+| `OptionChainSlice`  | -      | ✓            | ✓             | ✓              | ✓            |
+| `CustomData`        | ✓      | ✓            | ✓             | ✓              | -            |
 
 `OptionChainSlice` is assembled by the DataEngine's `OptionChainManager` from per-instrument
-greeks and quote subscriptions. It does not have its own engine subscribe command or
-backtest client override.
+greeks and quote subscriptions. It does not have its own engine subscribe command.
 
 ### Adding a new data type
 
@@ -427,33 +374,29 @@ When introducing a new data type, add tests at each layer:
    `test_execute_unsubscribe_<type>` tests. Follow the pattern in existing subscribe tests:
    register client, build command, call `engine.execute`, assert subscription list.
 
-2. **DataActor Rust** (`crates/common/src/actor/tests.rs`):
+1. **DataActor Rust** (`crates/common/src/actor/tests.rs`):
    - Add `received_<type>: Vec<Type>` field to `TestDataActor`.
    - Implement the `on_<type>` handler in the `DataActor` trait impl.
    - Add `test_subscribe_and_receive_<type>` and `test_unsubscribe_<type>` tests.
    - Use the typed publish function (`msgbus::publish_<type>`), not `publish_any`,
      for types that use `TypedHandler` routing.
 
-3. **PyO3 actor dispatch** (`crates/common/src/python/actor.rs`):
+1. **PyO3 actor dispatch** (`crates/common/src/python/actor.rs`):
    - Add `dispatch_on_<type>` method that calls `py_self.call_method1("on_<type>", ...)`.
    - Add `on_<type>` in the `DataActor` trait impl that calls the dispatch method.
    - Add `#[pyo3(name = "on_<type>")]` method in the `#[pymethods]` block.
    - Add `on_<type>` to `RustTestDataActor` wrapper and the inline Python test class.
    - Add handler test and dispatch test.
 
-4. **Python Actor** (`tests/unit_tests/common/test_actor.py`):
+1. **Python Actor** (`python/tests/unit/common/test_actor.py`):
    - Add `test_subscribe_<type>` and `test_unsubscribe_<type>` tests.
    - Assert `actor.subscribed_<type>()` returns expected entries after subscribe and
      is empty after unsubscribe.
 
-5. **Backtest client** (`nautilus_trader/backtest/data_client.pyx`): Override
-   `subscribe_<type>` and `unsubscribe_<type>` if the base `MarketDataClient` raises
-   `NotImplementedError` for the method.
-
-6. **Documentation**: Add entries to `actors.md` callback table, `strategies.md` handler
+1. **Documentation**: Add entries to `actors.md` callback table, `strategies.md` handler
    signatures, `adapters.md` subscribe method stubs, and `spec_data_testing.md` test cards.
 
 :::tip
-Search for an existing type like `instrument_close` or `funding_rate` across all six layers
+Search for an existing type like `instrument_close` or `funding_rate` across all five layers
 to find concrete examples of the patterns described above.
 :::

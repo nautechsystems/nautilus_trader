@@ -104,6 +104,8 @@ class DeriveExecClientConfig:
     @property
     def max_matching_requests_per_second(self) -> int | None: ...
     @property
+    def max_per_instrument_matching_requests_per_second(self) -> int | None: ...
+    @property
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
@@ -126,6 +128,7 @@ class DeriveExecClientConfig:
         signature_expiry_secs: int | None = None,
         market_order_slippage_bps: int | None = None,
         max_matching_requests_per_second: int | None = None,
+        max_per_instrument_matching_requests_per_second: int | None = None,
         transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property

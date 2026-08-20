@@ -18,9 +18,7 @@ event-driven architecture, providing research-to-live semantic parity.
 This crate provides feature flags to control source code inclusion during compilation:
 
 - `extension-module`: Builds as a Python extension module (automatically enabled by `maturin`).
-- `ffi`: Enables the C foreign function interface (FFI) support in dependent crates.
 - `high-precision`: Uses 128-bit value types throughout the workspace.
-- `cython-compat`: Adjusts the module name so it can be imported from Cython generated code.
 - `postgres`: Enables PostgreSQL (sqlx) back-ends in dependent crates.
 - `redis`: Enables Redis based infrastructure in dependent crates.
 - `hypersync`: Enables hypersync support (fast parallel hash maps) where available.

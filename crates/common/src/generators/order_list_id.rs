@@ -19,8 +19,8 @@ use std::{
     rc::Rc,
 };
 
-use chrono::{DateTime, Datelike, Timelike};
 use itoa::Buffer;
+use jiff::{Timestamp, tz::Offset};
 use nautilus_model::identifiers::{OrderListId, StrategyId, TraderId};
 
 use crate::clock::Clock;
@@ -140,8 +140,12 @@ fn fixed_prefix_capacity(trader_tag: &str, strategy_tag: &str) -> usize {
 }
 
 fn write_fixed_prefix(buf: &mut String, trader_tag: &str, strategy_tag: &str, epoch_second: u64) {
-    let now_utc = DateTime::from_timestamp_millis((epoch_second * 1_000) as i64)
-        .expect("Milliseconds timestamp should be within valid range");
+    let now_utc = Offset::UTC.to_datetime(
+        Timestamp::from_second(
+            i64::try_from(epoch_second).expect("seconds timestamp should fit i64"),
+        )
+        .expect("seconds timestamp should be within valid range"),
+    );
 
     buf.clear();
 

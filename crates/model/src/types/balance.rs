@@ -21,23 +21,23 @@ use nautilus_core::correctness::{
     CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED, check_predicate_true,
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::IgnoredAny,
+    ser::{SerializeSeq, SerializeStruct},
+};
 
 use crate::{
+    enums::CurrencyType,
     identifiers::InstrumentId,
-    types::{Currency, Money},
+    types::{Currency, Money, fixed::FIXED_PRECISION, money::MoneyRaw},
 };
 
 /// Represents an account balance denominated in a particular currency.
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.model",
-        frozen,
-        eq,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.model", frozen, eq, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -177,6 +177,208 @@ impl AccountBalance {
     }
 }
 
+pub(crate) struct WalletAccountBalances<'a> {
+    balances: &'a [AccountBalance],
+}
+
+impl<'a> WalletAccountBalances<'a> {
+    pub(crate) const fn new(balances: &'a [AccountBalance]) -> Self {
+        Self { balances }
+    }
+}
+
+impl Serialize for WalletAccountBalances<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut sequence = serializer.serialize_seq(Some(self.balances.len()))?;
+        for balance in self.balances {
+            sequence.serialize_element(&WalletAccountBalance(balance))?;
+        }
+        sequence.end()
+    }
+}
+
+struct WalletAccountBalance<'a>(&'a AccountBalance);
+
+impl Serialize for WalletAccountBalance<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let balance = self.0;
+        for money in [balance.total, balance.locked, balance.free] {
+            if !has_same_currency_identity(balance.currency, money.currency) {
+                return Err(serde::ser::Error::custom(format!(
+                    "Wallet account balance currency identity {} does not match {money}",
+                    balance.currency
+                )));
+            }
+        }
+
+        let mut state = serializer.serialize_struct("AccountBalance", 8)?;
+        state.serialize_field("currency", &balance.currency)?;
+        state.serialize_field("total", &balance.total)?;
+        state.serialize_field("locked", &balance.locked)?;
+        state.serialize_field("free", &balance.free)?;
+        state.serialize_field(
+            "currency_identity",
+            &CurrencyIdentity::from(balance.currency),
+        )?;
+        state.serialize_field(
+            "total_minor",
+            &minor_units(balance.total).map_err(serde::ser::Error::custom)?,
+        )?;
+        state.serialize_field(
+            "locked_minor",
+            &minor_units(balance.locked).map_err(serde::ser::Error::custom)?,
+        )?;
+        state.serialize_field(
+            "free_minor",
+            &minor_units(balance.free).map_err(serde::ser::Error::custom)?,
+        )?;
+        state.end()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct CurrencyIdentity {
+    code: String,
+    precision: u8,
+    iso4217: u16,
+    name: String,
+    currency_type: CurrencyType,
+}
+
+impl From<Currency> for CurrencyIdentity {
+    fn from(currency: Currency) -> Self {
+        Self {
+            code: currency.code.to_string(),
+            precision: currency.precision,
+            iso4217: currency.iso4217,
+            name: currency.name.to_string(),
+            currency_type: currency.currency_type,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct WalletAccountBalanceOwned {
+    #[serde(rename = "currency")]
+    _legacy_currency: IgnoredAny,
+    #[serde(rename = "total")]
+    _legacy_total: IgnoredAny,
+    #[serde(rename = "locked")]
+    _legacy_locked: IgnoredAny,
+    #[serde(rename = "free")]
+    _legacy_free: IgnoredAny,
+    currency_identity: CurrencyIdentity,
+    total_minor: String,
+    locked_minor: String,
+    free_minor: String,
+}
+
+#[derive(Deserialize)]
+struct AccountBalanceLegacy {
+    currency: Currency,
+    total: Money,
+    locked: Money,
+    free: Money,
+}
+
+impl<'de> Deserialize<'de> for AccountBalance {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if value
+            .as_object()
+            .is_some_and(|balance| balance.contains_key("currency_identity"))
+        {
+            let balance =
+                WalletAccountBalanceOwned::deserialize(value).map_err(serde::de::Error::custom)?;
+            let currency = Currency::new_checked(
+                balance.currency_identity.code,
+                balance.currency_identity.precision,
+                balance.currency_identity.iso4217,
+                balance.currency_identity.name,
+                balance.currency_identity.currency_type,
+            )
+            .map_err(serde::de::Error::custom)?;
+            let total = money_from_minor_units(&balance.total_minor, currency)
+                .map_err(serde::de::Error::custom)?;
+            let locked = money_from_minor_units(&balance.locked_minor, currency)
+                .map_err(serde::de::Error::custom)?;
+            let free = money_from_minor_units(&balance.free_minor, currency)
+                .map_err(serde::de::Error::custom)?;
+            Self::new_checked(total, locked, free).map_err(serde::de::Error::custom)
+        } else {
+            let balance =
+                AccountBalanceLegacy::deserialize(value).map_err(serde::de::Error::custom)?;
+            Ok(Self {
+                currency: balance.currency,
+                total: balance.total,
+                locked: balance.locked,
+                free: balance.free,
+            })
+        }
+    }
+}
+
+fn has_same_currency_identity(left: Currency, right: Currency) -> bool {
+    left.code == right.code
+        && left.precision == right.precision
+        && left.iso4217 == right.iso4217
+        && left.name == right.name
+        && left.currency_type == right.currency_type
+}
+
+#[allow(
+    clippy::useless_conversion,
+    reason = "i128::from narrows MoneyRaw when high-precision is disabled"
+)]
+fn minor_units(money: Money) -> Result<String, String> {
+    let scale = 10_i128.pow(u32::from(
+        FIXED_PRECISION.saturating_sub(money.currency.precision),
+    ));
+    let raw = i128::from(money.raw);
+    if raw % scale != 0 {
+        return Err(format!(
+            "Wallet money raw value {} is not aligned to currency precision {}",
+            money.raw, money.currency.precision
+        ));
+    }
+    Ok((raw / scale).to_string())
+}
+
+#[allow(
+    clippy::useless_conversion,
+    reason = "MoneyRaw::try_from narrows i128 when high-precision is disabled"
+)]
+fn money_from_minor_units(value: &str, currency: Currency) -> Result<Money, String> {
+    let minor = value
+        .parse::<i128>()
+        .map_err(|e| format!("Invalid wallet money minor units '{value}': {e}"))?;
+    let scale = 10_i128.pow(u32::from(
+        FIXED_PRECISION.saturating_sub(currency.precision),
+    ));
+    let raw = minor.checked_mul(scale).ok_or_else(|| {
+        format!(
+            "Wallet money minor units {minor} overflow at currency precision {}",
+            currency.precision
+        )
+    })?;
+    let raw = MoneyRaw::try_from(raw).map_err(|e| {
+        format!(
+            "Wallet money minor units {minor} exceed the raw range at currency precision {}: {e}",
+            currency.precision
+        )
+    })?;
+    Money::from_raw_checked(raw, currency).map_err(|e| e.to_string())
+}
+
 impl PartialEq for AccountBalance {
     fn eq(&self, other: &Self) -> bool {
         self.total == other.total && self.locked == other.locked && self.free == other.free
@@ -205,12 +407,7 @@ impl Display for AccountBalance {
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.model",
-        frozen,
-        eq,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.model", frozen, eq, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

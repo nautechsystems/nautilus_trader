@@ -574,8 +574,6 @@ async fn test_data_client_request_instruments() {
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
     while rx.try_recv().is_ok() {}
 
     let request = RequestInstruments::new(
@@ -613,8 +611,6 @@ async fn test_data_client_request_instrument() {
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -654,8 +650,6 @@ async fn test_data_client_request_book_snapshot() {
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -699,8 +693,6 @@ async fn test_data_client_request_book_snapshot_with_depth() {
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -747,8 +739,6 @@ async fn test_data_client_request_bars() {
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -799,8 +789,6 @@ async fn test_data_client_request_trades() {
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -1055,7 +1043,7 @@ async fn test_data_client_subscribe_index_and_funding_emits_both_kinds() {
         || {
             while let Ok(evt) = rx.try_recv() {
                 match evt {
-                    DataEvent::Data(Data::IndexPriceUpdate(ip)) => got_index = Some(ip),
+                    DataEvent::Data(Data::IndexPrice(ip)) => got_index = Some(ip),
                     DataEvent::FundingRate(fr) => got_funding = Some(fr),
                     _ => {}
                 }
@@ -1151,7 +1139,7 @@ async fn test_data_client_reconnect_resumes_derivatives_polls() {
             let mut seen = false;
 
             while let Ok(evt) = rx.try_recv() {
-                if matches!(evt, DataEvent::Data(Data::IndexPriceUpdate(_))) {
+                if matches!(evt, DataEvent::Data(Data::IndexPrice(_))) {
                     seen = true;
                 }
             }
@@ -1172,7 +1160,7 @@ async fn test_data_client_reconnect_resumes_derivatives_polls() {
     wait_until_async(
         || {
             while let Ok(evt) = rx.try_recv() {
-                if matches!(evt, DataEvent::Data(Data::IndexPriceUpdate(_))) {
+                if matches!(evt, DataEvent::Data(Data::IndexPrice(_))) {
                     resumed = true;
                 }
             }
@@ -1276,7 +1264,7 @@ async fn test_data_client_unsubscribe_during_inflight_poll_masks_dropped_kind() 
 
             while let Ok(evt) = rx.try_recv() {
                 match evt {
-                    DataEvent::Data(Data::IndexPriceUpdate(_)) => saw_index = true,
+                    DataEvent::Data(Data::IndexPrice(_)) => saw_index = true,
                     DataEvent::FundingRate(_) => saw_funding = true,
                     _ => {}
                 }
@@ -1321,7 +1309,7 @@ async fn test_data_client_unsubscribe_during_inflight_poll_masks_dropped_kind() 
             while let Ok(evt) = rx.try_recv() {
                 match evt {
                     DataEvent::FundingRate(_) => saw_funding = true,
-                    DataEvent::Data(Data::IndexPriceUpdate(_)) => {
+                    DataEvent::Data(Data::IndexPrice(_)) => {
                         saw_index_after_unsubscribe = true;
                     }
                     _ => {}
@@ -1380,7 +1368,7 @@ async fn test_data_client_unsubscribe_last_kind_during_inflight_poll_emits_nothi
             let mut seen = false;
 
             while let Ok(evt) = rx.try_recv() {
-                if matches!(evt, DataEvent::Data(Data::IndexPriceUpdate(_))) {
+                if matches!(evt, DataEvent::Data(Data::IndexPrice(_))) {
                     seen = true;
                 }
             }
@@ -1417,7 +1405,7 @@ async fn test_data_client_unsubscribe_last_kind_during_inflight_poll_emits_nothi
 
     while let Ok(evt) = rx.try_recv() {
         match evt {
-            DataEvent::Data(Data::IndexPriceUpdate(_)) | DataEvent::FundingRate(_) => {
+            DataEvent::Data(Data::IndexPrice(_)) | DataEvent::FundingRate(_) => {
                 stale_event = true;
             }
             _ => {}

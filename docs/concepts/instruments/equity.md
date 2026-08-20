@@ -91,7 +91,7 @@ aapl = Equity(
 Representative adapters that create or consume `Equity` instruments include:
 
 - [Databento](../../integrations/databento.md) for listed US equities and ETFs.
-- [Interactive Brokers](../../integrations/ib.md) for listed equity contracts.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for listed equity contracts.
 
 ## Related guides
 

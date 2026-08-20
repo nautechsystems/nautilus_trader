@@ -49,8 +49,9 @@ class RequestDemoStrategyConfig(StrategyConfig, frozen=True):
 
 class RequestDemoStrategy(Strategy):
     """
-    Strategy showcases how to request custom data from bybit adapter. BybitTickerData is
-    specific to Bybit adapter and you can request it with `request_data` method.
+    Strategy showcases how to request custom data from bybit adapter.
+
+    BybitTickerData is specific to Bybit adapter and you can request it with `request_data` method.
 
     Also this strategy demonstrate:
     - how to request BybitTickerData

@@ -706,11 +706,7 @@ pub fn parse_ws_kline_bar(
     let mut ts_event = parse_millis_i64(kline.start, "kline.start")?;
 
     if timestamp_on_close {
-        let interval_ns = bar_type
-            .spec()
-            .timedelta()
-            .num_nanoseconds()
-            .context("bar specification produced non-integer interval")?;
+        let interval_ns = bar_type.spec().timedelta().as_nanos();
         let interval_ns = u64::try_from(interval_ns)
             .context("bar interval overflowed the u64 range for nanoseconds")?;
         let updated = ts_event
@@ -1196,7 +1192,7 @@ mod tests {
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.price, instrument.make_price(27451.00));
         assert_eq!(tick.size, instrument.make_qty(0.010, None));
-        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
         assert_eq!(
             tick.trade_id.to_string(),
             "9dc75fca-4bdd-4773-9f78-6f5d7ab2a110"

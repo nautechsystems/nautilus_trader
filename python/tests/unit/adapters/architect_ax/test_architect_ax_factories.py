@@ -97,8 +97,8 @@ def test_live_node_builder_accepts_architect_ax_exec_factory() -> None:
     assert node.environment == Environment.SANDBOX
 
 
-def test_architect_ax_data_tester_builds_offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured = capture_data_tester_main(monkeypatch, architect_ax_data_tester, [])
+def test_architect_ax_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = capture_data_tester_main(monkeypatch, architect_ax_data_tester)
     kwargs = captured["data_tester_kwargs"]
     data_client_config = captured["data_client_args"][2]
 
@@ -131,32 +131,13 @@ def test_architect_ax_data_tester_builds_offline(monkeypatch: pytest.MonkeyPatch
         "stats_interval_secs": 0,
     }
     assert captured["delay_post_stop_secs"] == 5
-    assert "run_called" not in captured
+    assert captured["run_called"] is True
 
 
-@pytest.mark.parametrize(
-    (
-        "extra_args",
-        "expected_dry_run",
-        "expected_limit_sells",
-        "expected_reconciliation",
-        "expected_run",
-    ),
-    [
-        ([], True, False, False, False),
-        (["--run"], True, False, True, True),
-        (["--live-orders", "--limit-sells"], False, True, False, False),
-    ],
-)
-def test_architect_ax_exec_tester_gates_live_orders(
+def test_architect_ax_exec_tester_runs_live_orders(
     monkeypatch: pytest.MonkeyPatch,
-    extra_args: list[str],
-    expected_dry_run: bool,
-    expected_limit_sells: bool,
-    expected_reconciliation: bool,
-    expected_run: bool,
 ) -> None:
-    captured = capture_exec_tester_main(monkeypatch, architect_ax_exec_tester, extra_args)
+    captured = capture_exec_tester_main(monkeypatch, architect_ax_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
     exec_engine_config = captured["exec_engine_config"]
     exec_engine_repr = repr(exec_engine_config)
@@ -178,7 +159,7 @@ def test_architect_ax_exec_tester_gates_live_orders(
     assert 'reconciliation_instrument_ids: Some(["XAG-PERP.AX"])' in exec_engine_repr
     assert "open_check_interval_secs: Some(10.0)" in exec_engine_repr
     assert "position_check_interval_secs: Some(30.0)" in exec_engine_repr
-    assert captured["reconciliation"] is expected_reconciliation
+    assert captured["reconciliation"] is True
     assert captured["timeout_disconnection_secs"] == 10
     assert captured["delay_post_stop_secs"] == 5
     assert kwargs["strategy_id"] == StrategyId.from_str("EXEC_TESTER-001")
@@ -188,15 +169,15 @@ def test_architect_ax_exec_tester_gates_live_orders(
     assert kwargs["order_qty"] == Quantity.from_str("1")
     assert kwargs["subscribe_quotes"] is True
     assert kwargs["subscribe_trades"] is True
-    assert kwargs["open_position_on_start_qty"] == (None if expected_dry_run else Decimal(1))
-    assert kwargs["open_position_on_first_quote"] is not expected_dry_run
+    assert kwargs["open_position_on_start_qty"] == Decimal(1)
+    assert kwargs["open_position_on_first_quote"] is True
     assert kwargs["open_position_time_in_force"] == TimeInForce.IOC
-    assert kwargs["dry_run"] is expected_dry_run
-    assert kwargs["enable_limit_buys"] is not expected_dry_run
-    assert kwargs["enable_limit_sells"] is expected_limit_sells
+    assert kwargs["dry_run"] is False
+    assert kwargs["enable_limit_buys"] is True
+    assert kwargs["enable_limit_sells"] is True
     assert kwargs["tob_offset_ticks"] == 1
     assert kwargs["use_post_only"] is True
-    assert kwargs["cancel_orders_on_stop"] is not expected_dry_run
-    assert kwargs["close_positions_on_stop"] is not expected_dry_run
+    assert kwargs["cancel_orders_on_stop"] is True
+    assert kwargs["close_positions_on_stop"] is True
     assert kwargs["reduce_only_on_stop"] is False
-    assert ("run_called" in captured) is expected_run
+    assert captured["run_called"] is True

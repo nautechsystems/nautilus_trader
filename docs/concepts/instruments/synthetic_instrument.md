@@ -27,7 +27,6 @@ stores the same value as `id`.*
 
 - `SyntheticInstrument` is local to Nautilus and does not represent a venue orderable market.
 - It always uses the synthetic venue `SYNTH`.
-- Python requires at least two component instrument IDs.
 - The formula must compile against the supplied component identifiers before the object is valid.
 - It has no venue limits, margins, fees, order book, or adapter-specific metadata.
 

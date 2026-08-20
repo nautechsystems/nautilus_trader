@@ -90,6 +90,21 @@ pub const LIGHTER_AUTH_TOKEN_REFRESH_LEAD: Duration = Duration::from_secs(15 * 6
 /// Lighter requires a frame at least every 2 minutes; we send well below that.
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 
+/// Teardown window for a WebSocket carrying no inbound frame of any kind.
+///
+/// Liveness rests on the venue still sending frames rather than on market data
+/// arriving: a quiet market is legitimate, and the pong answering every
+/// [`HEARTBEAT_INTERVAL`] ping refreshes this window even when nothing trades.
+/// Three heartbeat cycles tolerate two lost replies before teardown.
+pub const HEARTBEAT_TIMEOUT: Duration =
+    Duration::from_secs(HEARTBEAT_INTERVAL.as_secs().saturating_mul(3));
+
+const _: () = assert!(
+    HEARTBEAT_TIMEOUT.as_secs() > HEARTBEAT_INTERVAL.as_secs(),
+    "heartbeat timeout must exceed the heartbeat interval, or every connection tears down \
+     before its first pong is due"
+);
+
 /// Base reconnect backoff for the WebSocket client.
 pub const RECONNECT_BASE_BACKOFF: Duration = Duration::from_millis(250);
 

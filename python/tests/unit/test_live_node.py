@@ -14,13 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from datetime import UTC
-from datetime import datetime
-from datetime import timedelta
 
 import pytest
-from strategies.acceptance import DualTimer
-from strategies.acceptance import DualTimerConfig
 
 from nautilus_trader.common import Cache
 from nautilus_trader.common import CacheConfig
@@ -36,9 +31,9 @@ from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.live import PortfolioConfig
+from nautilus_trader.model import ActorId
 from nautilus_trader.model import ExecAlgorithmId
-from nautilus_trader.model import OrderSide
-from nautilus_trader.model import OrderStatus
+from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TraderId
 from nautilus_trader.portfolio import Portfolio
 from nautilus_trader.trading import ExecutionAlgorithm
@@ -46,6 +41,8 @@ from nautilus_trader.trading import ExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableControllerConfig
 from nautilus_trader.trading import ImportableExecAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
+from nautilus_trader.trading import Strategy
+from nautilus_trader.trading import StrategyConfig
 from tests.unit.common.actor import ControllerRegistrationProbe
 from tests.unit.common.actor import LifecycleProbeStrategy
 
@@ -92,6 +89,46 @@ class FirstDefaultLiveExecutionAlgorithm(ExecutionAlgorithm):
 
 
 class SecondDefaultLiveExecutionAlgorithm(ExecutionAlgorithm):
+    pass
+
+
+class FirstDefaultLiveStrategy(Strategy):
+    pass
+
+
+class SecondDefaultLiveStrategy(Strategy):
+    pass
+
+
+class DefaultIdLiveStrategy(Strategy):
+    instances = []
+
+    def __init__(self, config: StrategyConfig | None = None):
+        super().__init__(config)
+        type(self).instances.append(self)
+
+
+class DefaultIdLiveActor(DataActor):
+    instances = []
+
+    def __init__(self, config: DataActorConfig | None = None):
+        super().__init__(config)
+        type(self).instances.append(self)
+
+
+class SecondDefaultIdLiveActor(DefaultIdLiveActor):
+    pass
+
+
+class NonForwardingLiveActor(DataActor):
+    instances = []
+
+    def __init__(self, config=None):
+        # Deliberately does not forward to `super().__init__()`
+        type(self).instances.append(self)
+
+
+class SecondNonForwardingLiveActor(NonForwardingLiveActor):
     pass
 
 
@@ -185,103 +222,13 @@ def test_live_node_exposes_cache_and_portfolio_inspection():
         node.dispose()
 
 
-def test_live_node_poll_requires_running_node_and_returns_processed_count():
-    node = LiveNode.build(
-        "TEST",
-        LiveNodeConfig(
-            trader_id=TraderId("TESTER-011"),
-            environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
-            timeout_connection_secs=0,
-            timeout_reconciliation_secs=0,
-            timeout_portfolio_secs=0,
-            timeout_disconnection_secs=0,
-            delay_post_stop_secs=0,
-            timeout_shutdown_secs=0,
-        ),
-    )
-
-    try:
-        with pytest.raises(RuntimeError, match="LiveNode is not running"):
-            node.poll()
-
-        node.start()
-        assert node.poll() == 0
-    finally:
-        node.dispose()
-
-
 @pytest.mark.asyncio
-async def test_live_node_poll_services_migrated_strategy_from_async_host_loop():
-    node = LiveNode.build(
-        "TEST",
-        LiveNodeConfig(
-            trader_id=TraderId("TESTER-012"),
-            environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
-            timeout_connection_secs=0,
-            timeout_reconciliation_secs=0,
-            timeout_portfolio_secs=0,
-            timeout_disconnection_secs=0,
-            delay_post_stop_secs=0,
-            timeout_shutdown_secs=0,
-        ),
-    )
-    strategy = DualTimer(
-        DualTimerConfig(
-            instrument_id="AUD/USD.SIM",
-            trade_size="100000",
-            alert_iso=(datetime.now(UTC) + timedelta(seconds=1)).isoformat(),
-        ),
-    )
-    node.add_strategy(strategy)
-    processed_counts = []
-
-    try:
-        assert strategy.is_ready() is True
-
-        node.start()
-
-        assert node.is_running is True
-        assert strategy.is_running() is True
-
-        async with asyncio.timeout(5):
-            while not (strategy.fired_a and strategy.fired_b):
-                processed_counts.append(node.poll())
-                await asyncio.sleep(0.01)
-
-        processed_counts.append(node.poll())
-        orders = node.cache.orders(strategy_id=strategy.strategy_id)
-
-        assert len(processed_counts) > 1
-        assert sum(processed_counts) == 5
-        assert strategy.fired_a is True
-        assert strategy.fired_b is True
-        assert len(orders) == 2
-        assert {order.side for order in orders} == {OrderSide.BUY, OrderSide.SELL}
-        assert {order.status for order in orders} == {OrderStatus.DENIED}
-
-        node.stop()
-
-        assert node.is_running is False
-        assert strategy.is_stopped() is True
-    finally:
-        node.dispose()
-
-
-@pytest.mark.parametrize(
-    ("trader_id", "stop_before_dispose"),
-    [
-        ("TESTER-004", True),
-        ("TESTER-005", False),
-    ],
-)
-def test_live_node_start_stop_dispose_local(trader_id, stop_before_dispose):
+async def test_live_node_start_stop_dispose_local():
     LifecycleProbeStrategy.reset()
     node = LiveNode.build(
         "TEST",
         LiveNodeConfig(
-            trader_id=TraderId(trader_id),
+            trader_id=TraderId("TESTER-004"),
             environment=Environment.SANDBOX,
             exec_engine=LiveExecEngineConfig(reconciliation=False),
             msgbus=MessageBusConfig(external_streams=["signals"]),
@@ -301,20 +248,21 @@ def test_live_node_start_stop_dispose_local(trader_id, stop_before_dispose):
         ),
     )
 
+    handle = node.handle()
+
     try:
-        assert node.is_running is False
+        assert handle.is_running is False
 
-        node.start()
-        assert node.is_running is True
+        task = asyncio.create_task(node.run_async())
+        await asyncio.sleep(0.1)
+        assert handle.is_running is True
 
-        if stop_before_dispose:
-            node.stop()
-        else:
-            node.dispose()
+        handle.stop()
+        async with asyncio.timeout(10.0):
+            await task
 
-        assert node.is_running is False
+        assert handle.is_running is False
     finally:
-        node.dispose()
         node.dispose()
 
     assert node.is_running is False
@@ -354,7 +302,8 @@ def test_live_node_stop_before_start_raises():
         node.dispose()
 
 
-def test_live_node_start_after_dispose_raises():
+@pytest.mark.asyncio
+async def test_live_node_run_after_dispose_raises():
     node = LiveNode.build(
         "TEST",
         LiveNodeConfig(
@@ -372,13 +321,14 @@ def test_live_node_start_after_dispose_raises():
     node.dispose()
 
     try:
-        with pytest.raises(RuntimeError, match="Invalid state trigger DISPOSED -> START"):
-            node.start()
+        with pytest.raises(RuntimeError, match="cannot be run from state Stopped"):
+            node.run_async()
     finally:
         node.dispose()
 
 
-def test_live_node_strategy_start_failure_disposes_resources():
+@pytest.mark.asyncio
+async def test_live_node_strategy_start_failure_disposes_resources():
     node = LiveNode.build(
         "TEST",
         LiveNodeConfig(
@@ -398,12 +348,12 @@ def test_live_node_strategy_start_failure_disposes_resources():
         ),
     )
 
+    handle = node.handle()
+
     with pytest.raises(RuntimeError, match="simulated live node strategy start failure"):
-        node.start()
+        await node.run_async()
 
-    assert node.is_running is False
-
-    node.dispose()
+    assert handle.is_running is False
     node.dispose()
 
 
@@ -459,6 +409,16 @@ def test_builder_accepts_supported_runtime_configs():
 
     assert node.trader_id == trader_id
     assert node.environment == Environment.SANDBOX
+
+
+def test_builder_rejects_unregistered_cache_database_factory():
+    builder = LiveNode.builder("TEST", TraderId("TESTER-003"), Environment.SANDBOX)
+
+    with pytest.raises(
+        NotImplementedError,
+        match="No cache database factory extractor registered for 'dict'",
+    ):
+        builder.with_cache_database_factory({})
 
 
 def test_add_actor_from_config_registers(live_node):
@@ -627,7 +587,97 @@ def test_add_exec_algorithms_registers_distinct_class_derived_ids(live_node):
     assert second.is_registered() is True
 
 
-def test_add_exec_algorithm_rejects_running_node():
+def test_add_strategies_registers_distinct_class_derived_ids():
+    node = LiveNode.builder("TEST", TraderId("TESTER-020"), Environment.SANDBOX).build()
+    first = FirstDefaultLiveStrategy()
+    second = SecondDefaultLiveStrategy()
+
+    try:
+        node.add_strategy(first)
+        node.add_strategy(second)
+
+        assert first.strategy_id == StrategyId("FirstDefaultLiveStrategy-000")
+        assert first.state() == ComponentState.READY
+        assert second.strategy_id == StrategyId("SecondDefaultLiveStrategy-001")
+        assert second.state() == ComponentState.READY
+    finally:
+        node.dispose()
+
+
+def test_add_strategy_from_config_derives_class_derived_id():
+    node = LiveNode.builder("TEST", TraderId("TESTER-021"), Environment.SANDBOX).build()
+    DefaultIdLiveStrategy.instances.clear()
+    config = ImportableStrategyConfig(
+        strategy_path="tests.unit.test_live_node:DefaultIdLiveStrategy",
+        config_path="nautilus_trader.trading:StrategyConfig",
+        config={},
+    )
+
+    try:
+        node.add_strategy_from_config(config)
+
+        registered = DefaultIdLiveStrategy.instances[-1]
+        assert registered.strategy_id == StrategyId("DefaultIdLiveStrategy-000")
+        assert registered.state() == ComponentState.READY
+    finally:
+        node.dispose()
+
+
+def test_add_actors_from_config_derive_distinct_class_derived_ids():
+    node = LiveNode.builder("TEST", TraderId("TESTER-022"), Environment.SANDBOX).build()
+    DefaultIdLiveActor.instances.clear()
+    configs = [
+        ImportableActorConfig(
+            actor_path=f"tests.unit.test_live_node:{class_name}",
+            config_path="nautilus_trader.common:DataActorConfig",
+            config={},
+        )
+        for class_name in ("DefaultIdLiveActor", "SecondDefaultIdLiveActor")
+    ]
+
+    try:
+        for config in configs:
+            node.add_actor_from_config(config)
+
+        first, second = DefaultIdLiveActor.instances
+        assert first.actor_id == ActorId("DefaultIdLiveActor")
+        assert first.state() == ComponentState.READY
+        assert second.actor_id == ActorId("SecondDefaultIdLiveActor")
+        assert second.state() == ComponentState.READY
+    finally:
+        node.dispose()
+
+
+def test_add_actors_from_config_derive_ids_without_a_forwarding_constructor():
+    # Without class-derived IDs at registration both fall back to the shared `DataActor`
+    # default and the second registration is rejected as a duplicate
+    node = LiveNode.builder("TEST", TraderId("TESTER-023"), Environment.SANDBOX).build()
+    configs = [
+        ImportableActorConfig(
+            actor_path=f"tests.unit.test_live_node:{class_name}",
+            config_path="nautilus_trader.common:DataActorConfig",
+            config={},
+        )
+        for class_name in ("NonForwardingLiveActor", "SecondNonForwardingLiveActor")
+    ]
+
+    NonForwardingLiveActor.instances.clear()
+
+    try:
+        for config in configs:
+            node.add_actor_from_config(config)
+
+        first, second = NonForwardingLiveActor.instances
+        assert first.actor_id == ActorId("NonForwardingLiveActor")
+        assert second.actor_id == ActorId("SecondNonForwardingLiveActor")
+        assert first.state() == ComponentState.READY
+        assert second.state() == ComponentState.READY
+    finally:
+        node.dispose()
+
+
+@pytest.mark.asyncio
+async def test_add_exec_algorithm_rejects_running_node():
     node = LiveNode.build(
         "TEST",
         LiveNodeConfig(
@@ -646,19 +696,22 @@ def test_add_exec_algorithm_rejects_running_node():
         ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-LIVE-RUNNING")),
     )
 
+    handle = node.handle()
+    task = asyncio.create_task(node.run_async())
+    await asyncio.sleep(0.1)
+
     try:
-        node.start()
+        # `run_async` owns the node, so registration is refused before the running check.
         with pytest.raises(RuntimeError) as exc_info:
             node.add_exec_algorithm(exec_algorithm)
     finally:
-        node.dispose()
+        handle.stop()
+        async with asyncio.timeout(10.0):
+            await task
 
-    assert str(exc_info.value) == (
-        "Cannot add exec algorithm while node is running, "
-        "add exec algorithms before calling start()"
-    )
+    assert "run_async" in str(exc_info.value)
     assert exec_algorithm.is_registered() is False
-    assert node.is_running is False
+    assert handle.is_running is False
 
 
 def test_add_exec_algorithm_rejects_data_actor_instance(live_node):

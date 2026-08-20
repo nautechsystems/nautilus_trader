@@ -313,7 +313,8 @@ fn test_prior_cycle_fill_void_drops_absorbed_snapshot_frames() {
         account_id,
     } = run_netting_reopen();
 
-    let realized_before = portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id));
+    let realized_before =
+        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None);
     let snapshots_before = cache.borrow().position_snapshot_count(&position_id);
 
     // Void 40,000 of cycle 1's closing fill: the position never closes in the corrected
@@ -332,7 +333,7 @@ fn test_prior_cycle_fill_void_drops_absorbed_snapshot_frames() {
     // Buy 100,000, sell 60,000, buy 100,000: -2.00 - 1.20 + 12.00 - 2.00
     assert_eq!(position.realized_pnl, Some(Money::from("6.80 USD")));
     assert_eq!(
-        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id)),
+        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None),
         Some(Money::from("6.80 USD")),
     );
 }
@@ -348,7 +349,8 @@ fn test_current_cycle_fill_void_keeps_snapshot_frames() {
         account_id,
     } = run_netting_reopen();
 
-    let realized_before = portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id));
+    let realized_before =
+        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None);
     let snapshots_before = cache.borrow().position_snapshot_count(&position_id);
 
     // Void 40,000 of cycle 2's opening fill: the corrected history still closes where it did,
@@ -367,7 +369,7 @@ fn test_current_cycle_fill_void_keeps_snapshot_frames() {
     // Cycle 2 alone: commission 2.00 less the 0.80 voided with the fill
     assert_eq!(position.realized_pnl, Some(Money::from("-1.20 USD")));
     assert_eq!(
-        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id)),
+        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None),
         Some(Money::from("14.80 USD")),
     );
 }
@@ -383,7 +385,8 @@ fn test_settle_replacing_one_frame_with_one_frame_refreshes_realized_pnl() {
         account_id,
     } = run_netting_split_close();
 
-    let realized_before = portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id));
+    let realized_before =
+        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None);
     let snapshots_before = cache.borrow().position_snapshot_count(&position_id);
 
     // Void 40,000 of cycle 1's opening fill. The corrected history is buy 60,000, sell 60,000,
@@ -393,7 +396,8 @@ fn test_settle_replacing_one_frame_with_one_frame_refreshes_realized_pnl() {
     let voided = build_fill_void_from_cached_fill(&execution_engine, CYCLE_1_OPEN);
     execution_engine.process(&voided);
 
-    let realized_after = portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id));
+    let realized_after =
+        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None);
     let cache = cache.borrow();
     let position = cache.position(&position_id).expect("position stays cached");
     let settled = cache.position_snapshots(Some(&position_id), None);
@@ -421,7 +425,8 @@ fn test_prior_cycle_fill_void_settles_cycles_the_rebuild_reshaped() {
         account_id,
     } = run_netting_three_cycles();
 
-    let realized_before = portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id));
+    let realized_before =
+        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None);
     let snapshots_before = cache.borrow().position_snapshot_count(&position_id);
 
     // Void 40,000 of cycle 1's closing fill. The corrected history is buy 100,000, sell 60,000,
@@ -444,7 +449,7 @@ fn test_prior_cycle_fill_void_settles_cycles_the_rebuild_reshaped() {
     // The reopened cycle alone: commissions on the 40,000 buy and the 100,000 buy
     assert_eq!(position.realized_pnl, Some(Money::from("-4.00 USD")));
     assert_eq!(
-        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id)),
+        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None),
         Some(Money::from("14.80 USD")),
     );
 }

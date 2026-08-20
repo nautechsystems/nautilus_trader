@@ -17,7 +17,7 @@ use std::{sync::Arc, time::Duration};
 
 use nautilus_common::live::{get_runtime, task::TaskHandles};
 use nautilus_core::{UUID4, time::AtomicTime};
-use nautilus_live::ExecutionEventEmitter;
+use nautilus_live::{ExecutionEventEmitter, execution::failure::CommandFailure};
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{OrderEventAny, OrderFilled, OrderUpdated},
@@ -35,10 +35,16 @@ use super::{
     pending::{PendingCancelTracker, PendingSubmitTracker},
     reconciliation::cap_order_report_filled_qty,
     reports::get_pusd_currency,
-    submitter::OrderSubmitter,
-    types::BatchLimitOrderContext,
+    submitter::{
+        OrderSubmitter, SubmitResponseOutcome, is_fok_unfilled, submit_response_outcome,
+        submit_response_unknown_reason, submit_response_venue_order_id,
+    },
+    types::{BatchLimitOrderContext, classify_http_command_failure},
 };
-use crate::http::query::OrderResponse;
+use crate::http::{
+    error::{sanitize_error_text, strategy_rejection_reason},
+    query::{OrderResponse, OrderResponseStatus},
+};
 
 #[expect(clippy::too_many_arguments)]
 pub(super) async fn handle_batch_order_responses(
@@ -49,7 +55,7 @@ pub(super) async fn handle_batch_order_responses(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     fill_tracker: &Arc<OrderFillTrackerMap>,
-    order_identities: &OrderIdentityRegistry,
+    order_identities: &Arc<OrderIdentityRegistry>,
     pending_submits: &PendingSubmitTracker,
     pending_cancels: &PendingCancelTracker,
     pending_tasks: &Arc<TaskHandles>,
@@ -64,61 +70,97 @@ pub(super) async fn handle_batch_order_responses(
         );
     }
 
-    let mut deferred = Vec::new();
+    let mut follow_ups = Vec::new();
 
-    for (batch_order, response) in batch_orders.iter().zip(responses) {
-        if let Some((order_id_str, venue_order_id)) = handle_order_response(
-            Ok(response),
-            &batch_order.order,
-            emitter,
-            clock,
-            fill_tracker,
-            order_identities,
-            pending_cancels,
-            account_id,
-            batch_order.size_precision,
-            batch_order.price_precision,
-        ) {
-            deferred.push((batch_order.order.clone(), order_id_str, venue_order_id));
-        }
-    }
-
-    if order_len > response_len {
-        for (batch_order, expected_venue_order_id) in batch_orders
-            .iter()
-            .zip(expected_venue_order_ids)
-            .skip(response_len)
+    for ((batch_order, response), expected_venue_order_id) in batch_orders
+        .iter()
+        .zip(responses)
+        .zip(&expected_venue_order_ids)
+    {
+        let (deferred_cancel, fok_order_id) = if submit_response_outcome(
+            &response,
+            batch_order.order.time_in_force() == TimeInForce::Fok,
+        ) == SubmitResponseOutcome::Unknown
         {
-            if let Some((order_id_str, venue_order_id)) = handle_unknown_submit_result(
-                &batch_order.order,
-                expected_venue_order_id,
-                "batch response omitted order",
+            (
+                handle_unknown_submit_result(
+                    &batch_order.order,
+                    *expected_venue_order_id,
+                    &submit_response_unknown_reason(&response, false, *expected_venue_order_id),
+                    None,
+                    emitter,
+                    clock,
+                    fill_tracker,
+                    order_identities,
+                    pending_submits,
+                    pending_cancels,
+                    account_id,
+                    batch_order.size_precision,
+                    batch_order.price_precision,
+                ),
                 None,
+            )
+        } else {
+            let fok_order_id = fok_check_order_id(&response, batch_order.order.time_in_force());
+            let deferred_cancel = handle_order_response(
+                Ok(response),
+                &batch_order.order,
                 emitter,
                 clock,
                 fill_tracker,
                 order_identities,
-                pending_submits,
                 pending_cancels,
                 account_id,
                 batch_order.size_precision,
                 batch_order.price_precision,
-            ) {
-                deferred.push((batch_order.order.clone(), order_id_str, venue_order_id));
-            }
+            );
+
+            (deferred_cancel, fok_order_id)
+        };
+
+        if deferred_cancel.is_some() || fok_order_id.is_some() {
+            follow_ups.push((batch_order.clone(), deferred_cancel, fok_order_id));
         }
     }
 
-    if !deferred.is_empty() {
-        for (order, order_id_str, venue_order_id) in deferred {
-            let submitter = submitter.clone();
-            let emitter = emitter.clone();
-            let pending_cancels = pending_cancels.clone();
+    for (batch_order, expected_venue_order_id) in batch_orders
+        .iter()
+        .zip(expected_venue_order_ids)
+        .skip(response_len)
+    {
+        let deferred_cancel = handle_unknown_submit_result(
+            &batch_order.order,
+            expected_venue_order_id,
+            "batch response omitted order",
+            None,
+            emitter,
+            clock,
+            fill_tracker,
+            order_identities,
+            pending_submits,
+            pending_cancels,
+            account_id,
+            batch_order.size_precision,
+            batch_order.price_precision,
+        );
 
-            let handle = get_runtime().spawn(async move {
+        if deferred_cancel.is_some() {
+            follow_ups.push((batch_order.clone(), deferred_cancel, None));
+        }
+    }
+
+    for (batch_order, deferred_cancel, fok_order_id) in follow_ups {
+        let submitter = submitter.clone();
+        let emitter = emitter.clone();
+        let fill_tracker = fill_tracker.clone();
+        let order_identities = order_identities.clone();
+        let pending_cancels = pending_cancels.clone();
+
+        let handle = get_runtime().spawn(async move {
+            if let Some((order_id_str, venue_order_id)) = deferred_cancel {
                 execute_deferred_cancel(
                     &submitter,
-                    &order,
+                    &batch_order.order,
                     &order_id_str,
                     venue_order_id,
                     &emitter,
@@ -126,9 +168,25 @@ pub(super) async fn handle_batch_order_responses(
                     clock,
                 )
                 .await;
-            });
-            pending_tasks.push(handle);
-        }
+            }
+
+            if let Some(order_id) = fok_order_id {
+                check_fok_status(
+                    &submitter,
+                    &order_id,
+                    &batch_order.order,
+                    &fill_tracker,
+                    &order_identities,
+                    &emitter,
+                    account_id,
+                    batch_order.size_precision,
+                    batch_order.price_precision,
+                    clock,
+                )
+                .await;
+            }
+        });
+        pending_tasks.push(handle);
     }
 }
 
@@ -139,8 +197,11 @@ pub(super) fn reject_submit_order(
     clock: &'static AtomicTime,
     pending_cancels: &PendingCancelTracker,
 ) {
+    let reason = strategy_rejection_reason(reason);
+
     let ts_now = clock.get_time_ns();
-    emitter.emit_order_rejected(order, reason, ts_now, is_post_only_crossing(reason));
+
+    emitter.emit_order_rejected(order, &reason, ts_now, is_post_only_crossing(&reason));
     pending_cancels.remove(&order.client_order_id());
 }
 
@@ -219,6 +280,7 @@ pub(super) async fn handle_single_order_response(
 ) {
     match result {
         Ok(response) => {
+            let fok_order_id = fok_check_order_id(&response, batch_order.order.time_in_force());
             if let Some((order_id_str, venue_order_id)) = handle_order_response(
                 Ok(response),
                 &batch_order.order,
@@ -242,44 +304,56 @@ pub(super) async fn handle_single_order_response(
                 )
                 .await;
             }
-        }
-        Err(e) if e.is_submit_outcome_unknown() => {
-            if let Some((order_id_str, venue_order_id)) = handle_unknown_submit_result(
-                &batch_order.order,
-                expected_venue_order_id,
-                &e.to_string(),
-                None,
-                emitter,
-                clock,
-                fill_tracker,
-                order_identities,
-                pending_submits,
-                pending_cancels,
-                account_id,
-                batch_order.size_precision,
-                batch_order.price_precision,
-            ) {
-                execute_deferred_cancel(
+
+            if let Some(order_id) = fok_order_id {
+                check_fok_status(
                     submitter,
+                    &order_id,
                     &batch_order.order,
-                    &order_id_str,
-                    venue_order_id,
+                    fill_tracker,
+                    order_identities,
                     emitter,
-                    pending_cancels,
+                    account_id,
+                    batch_order.size_precision,
+                    batch_order.price_precision,
                     clock,
                 )
                 .await;
             }
         }
-        Err(e) => {
-            reject_submit_order(
-                &batch_order.order,
-                &format!("{e}"),
-                emitter,
-                clock,
-                pending_cancels,
-            );
-        }
+        Err(e) => match classify_http_command_failure(&e) {
+            CommandFailure::Ambiguous(reason) => {
+                if let Some((order_id_str, venue_order_id)) = handle_unknown_submit_result(
+                    &batch_order.order,
+                    expected_venue_order_id,
+                    &reason,
+                    None,
+                    emitter,
+                    clock,
+                    fill_tracker,
+                    order_identities,
+                    pending_submits,
+                    pending_cancels,
+                    account_id,
+                    batch_order.size_precision,
+                    batch_order.price_precision,
+                ) {
+                    execute_deferred_cancel(
+                        submitter,
+                        &batch_order.order,
+                        &order_id_str,
+                        venue_order_id,
+                        emitter,
+                        pending_cancels,
+                        clock,
+                    )
+                    .await;
+                }
+            }
+            CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                reject_submit_order(&batch_order.order, &reason, emitter, clock, pending_cancels);
+            }
+        },
     }
 }
 
@@ -461,14 +535,19 @@ pub(super) fn handle_order_response(
 ) -> Option<(String, VenueOrderId)> {
     match result {
         Ok(response) => {
+            if let Some(reason) = fok_rejection_reason(&response, order.time_in_force()) {
+                reject_submit_order(order, reason, emitter, clock, pending_cancels);
+                return None;
+            }
+
             if response.success {
-                // VenueOrderId panics on an empty string
-                if let Some(order_id) = response.order_id.filter(|s| !s.is_empty()) {
-                    let venue_order_id = VenueOrderId::from(order_id.as_str());
+                if let Some(venue_order_id) = submit_response_venue_order_id(&response) {
+                    let decision = order_response_decision(response.status);
                     let ts_now = clock.get_time_ns();
+
                     order_identities
                         .register_order_identity(venue_order_id, OrderIdentity::from_order(order));
-                    if order_identities.mark_accepted(venue_order_id) {
+                    if decision.emit_accepted && order_identities.mark_accepted(venue_order_id) {
                         emitter.emit_order_accepted(order, venue_order_id, ts_now);
                     }
 
@@ -481,6 +560,31 @@ pub(super) fn handle_order_response(
 
                     // The register above precedes this drain, so a racing report can't be orphaned
                     let buffered = fill_tracker.take_pending_reports(&venue_order_id);
+                    let activity_proves_accepted = !fills.is_empty()
+                        || buffered.iter().any(|report| {
+                            matches!(
+                                report.order_status,
+                                OrderStatus::Accepted
+                                    | OrderStatus::PartiallyFilled
+                                    | OrderStatus::Filled
+                                    | OrderStatus::Canceled
+                                    | OrderStatus::Expired
+                            )
+                        });
+
+                    if !decision.emit_accepted
+                        && activity_proves_accepted
+                        && order_identities.mark_accepted(venue_order_id)
+                    {
+                        let ts_accepted = fills
+                            .iter()
+                            .map(|fill| fill.report.ts_event)
+                            .chain(buffered.iter().map(|report| report.ts_last))
+                            .min()
+                            .unwrap_or(ts_now);
+                        emitter.emit_order_accepted(order, venue_order_id, ts_accepted);
+                    }
+
                     emit_drained_activity(
                         order,
                         venue_order_id,
@@ -497,9 +601,12 @@ pub(super) fn handle_order_response(
                             order.client_order_id(),
                             venue_order_id
                         );
-                        return Some((order_id, venue_order_id));
+                        return Some((venue_order_id.to_string(), venue_order_id));
                     }
-                } else if let Some(reason) = response.error_msg.filter(|s| !s.is_empty()) {
+                } else if let Some(reason) = response
+                    .error_msg
+                    .filter(|reason| !reason.trim().is_empty())
+                {
                     // Batch endpoint reports a rejected leg as success=true with an empty orderID; reason in error_msg
                     reject_submit_order(order, &reason, emitter, clock, pending_cancels);
                 } else {
@@ -515,22 +622,74 @@ pub(super) fn handle_order_response(
                 reject_submit_order(order, &reason, emitter, clock, pending_cancels);
             }
         }
-        Err(e) => {
-            reject_submit_order(
-                order,
-                &format!("HTTP request failed: {e}"),
-                emitter,
-                clock,
-                pending_cancels,
-            );
-        }
+        Err(e) => match classify_http_command_failure(&e) {
+            CommandFailure::Ambiguous(reason) => {
+                log::warn!(
+                    "Submit outcome unknown for {} without an expected venue order ID: {reason}",
+                    order.client_order_id()
+                );
+            }
+            CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                reject_submit_order(order, &reason, emitter, clock, pending_cancels);
+            }
+        },
     }
+
     None
 }
 
-// Require both terms so only a post-only crossing matches, not any post-only reason
-fn is_post_only_crossing(reason: &str) -> bool {
-    reason.contains("post-only") && reason.contains("cross")
+struct OrderResponseDecision {
+    emit_accepted: bool,
+    poll_fok: bool,
+}
+
+fn order_response_decision(status: Option<OrderResponseStatus>) -> OrderResponseDecision {
+    match status {
+        Some(OrderResponseStatus::Matched) => OrderResponseDecision {
+            emit_accepted: true,
+            poll_fok: false,
+        },
+        Some(OrderResponseStatus::Delayed) => OrderResponseDecision {
+            emit_accepted: false,
+            poll_fok: true,
+        },
+        Some(OrderResponseStatus::Live | OrderResponseStatus::Unmatched) | None => {
+            OrderResponseDecision {
+                emit_accepted: true,
+                poll_fok: true,
+            }
+        }
+    }
+}
+
+pub(super) fn fok_check_order_id(
+    response: &OrderResponse,
+    time_in_force: TimeInForce,
+) -> Option<String> {
+    let decision = order_response_decision(response.status);
+    submit_response_venue_order_id(response)
+        .filter(|_| {
+            response.success
+                && time_in_force == TimeInForce::Fok
+                && decision.poll_fok
+                && fok_rejection_reason(response, time_in_force).is_none()
+        })
+        .map(|venue_order_id| venue_order_id.to_string())
+}
+
+fn fok_rejection_reason(response: &OrderResponse, time_in_force: TimeInForce) -> Option<&str> {
+    if !response.success || response.status.is_some() || time_in_force != TimeInForce::Fok {
+        return None;
+    }
+
+    response
+        .error_msg
+        .as_deref()
+        .filter(|reason| is_fok_unfilled(reason))
+}
+
+pub(crate) fn is_post_only_crossing(reason: &str) -> bool {
+    reason == "invalid post-only order: order crosses book"
 }
 
 /// Emits an `OrderFilled` event for a drained own-order fill.
@@ -724,7 +883,15 @@ fn emit_drained_order_report(
                 .cancel_reason
                 .clone()
                 .unwrap_or_else(|| "REJECTED".to_string());
-            emitter.emit_order_rejected(order, &reason, report.ts_last, false);
+
+            let reason = sanitize_error_text(&reason);
+
+            emitter.emit_order_rejected(
+                order,
+                &reason,
+                report.ts_last,
+                is_post_only_crossing(&reason),
+            );
         }
         _ => {}
     }
@@ -736,6 +903,7 @@ pub(super) async fn check_fok_status(
     order_id: &str,
     order: &OrderAny,
     fill_tracker: &Arc<OrderFillTrackerMap>,
+    order_identities: &OrderIdentityRegistry,
     emitter: &ExecutionEventEmitter,
     account_id: AccountId,
     size_precision: u8,
@@ -765,8 +933,24 @@ pub(super) async fn check_fok_status(
         }
     };
 
+    if fill_tracker.has_fills_or_settled(&venue_order_id) {
+        return;
+    }
+
     let order_status = OrderStatus::from(venue_order.status);
     let ts_now = clock.get_time_ns();
+
+    if matches!(
+        order_status,
+        OrderStatus::Accepted
+            | OrderStatus::PartiallyFilled
+            | OrderStatus::Filled
+            | OrderStatus::Canceled
+            | OrderStatus::Expired
+    ) && order_identities.mark_accepted(venue_order_id)
+    {
+        emitter.emit_order_accepted(order, venue_order_id, ts_now);
+    }
 
     match order_status {
         OrderStatus::Rejected => {
@@ -816,6 +1000,7 @@ pub(super) async fn check_fok_status(
             );
             emitter.send_order_status_report(report);
         }
+        OrderStatus::Accepted | OrderStatus::PartiallyFilled => {}
         _ => {}
     }
 }
@@ -832,6 +1017,7 @@ mod tests {
         types::{Currency, Money},
     };
     use rstest::rstest;
+    use rust_decimal::Decimal;
     use ustr::Ustr;
 
     use super::*;
@@ -932,6 +1118,259 @@ mod tests {
         ))
     }
 
+    fn successful_order_response(
+        venue_order_id: VenueOrderId,
+        status: Option<OrderResponseStatus>,
+    ) -> OrderResponse {
+        OrderResponse {
+            success: true,
+            order_id: Some(venue_order_id.to_string()),
+            status,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
+            error_msg: None,
+        }
+    }
+
+    #[rstest]
+    #[case::constructed_live(Some(OrderResponseStatus::Live), true, true)]
+    #[case::constructed_matched(Some(OrderResponseStatus::Matched), true, false)]
+    #[case::delayed(Some(OrderResponseStatus::Delayed), false, true)]
+    #[case::constructed_unmatched(Some(OrderResponseStatus::Unmatched), true, true)]
+    #[case::constructed_absent(None, true, true)]
+    fn test_order_response_decision(
+        #[case] status: Option<OrderResponseStatus>,
+        #[case] expected_accept: bool,
+        #[case] expected_check_fok: bool,
+    ) {
+        let decision = order_response_decision(status);
+
+        assert_eq!(decision.emit_accepted, expected_accept);
+        assert_eq!(decision.poll_fok, expected_check_fok);
+    }
+
+    #[rstest]
+    #[case::absent_status(true, Some("0xfok"), None, TimeInForce::Fok, Some("0xfok"))]
+    #[case::matched(
+        true,
+        Some("0xfok"),
+        Some(OrderResponseStatus::Matched),
+        TimeInForce::Fok,
+        None
+    )]
+    #[case::failed(false, Some("0xfok"), None, TimeInForce::Fok, None)]
+    #[case::empty_id(true, Some(""), None, TimeInForce::Fok, None)]
+    #[case::whitespace_id(true, Some(" \t"), None, TimeInForce::Fok, None)]
+    #[case::non_ascii_id(true, Some("é"), None, TimeInForce::Fok, None)]
+    #[case::non_fok(true, Some("0xgtc"), None, TimeInForce::Gtc, None)]
+    fn test_fok_check_order_id(
+        #[case] success: bool,
+        #[case] order_id: Option<&str>,
+        #[case] status: Option<OrderResponseStatus>,
+        #[case] time_in_force: TimeInForce,
+        #[case] expected: Option<&str>,
+    ) {
+        let mut response = successful_order_response(VenueOrderId::from("0xunused"), status);
+        response.success = success;
+        response.order_id = order_id.map(ToString::to_string);
+
+        assert_eq!(
+            fok_check_order_id(&response, time_in_force).as_deref(),
+            expected,
+        );
+    }
+
+    #[rstest]
+    fn test_fok_unfilled_error_skips_check() {
+        let mut response = successful_order_response(VenueOrderId::from("0xfok"), None);
+        response.error_msg = Some(
+            "order couldn't be fully filled. FOK orders are fully filled or killed.".to_string(),
+        );
+
+        assert_eq!(fok_check_order_id(&response, TimeInForce::Fok), None);
+    }
+
+    #[rstest]
+    #[case::constructed_live(Some(OrderResponseStatus::Live))]
+    #[case::constructed_matched(Some(OrderResponseStatus::Matched))]
+    #[case::constructed_unmatched(Some(OrderResponseStatus::Unmatched))]
+    #[case::constructed_absent(None)]
+    fn test_accepting_order_response_status_emits_accepted(
+        #[case] status: Option<OrderResponseStatus>,
+    ) {
+        let instrument = test_instrument();
+        let mut order = test_limit_order("O-CONFIRMED", instrument.id());
+        order
+            .apply(TestOrderEventStubs::submitted(
+                &order,
+                AccountId::from("POLY-001"),
+            ))
+            .unwrap();
+        let venue_order_id = VenueOrderId::from("0xconfirmed");
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let order_identities = OrderIdentityRegistry::default();
+        let pending_cancels = PendingCancelTracker::default();
+
+        let deferred = handle_order_response(
+            Ok(successful_order_response(venue_order_id, status)),
+            &order,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &fill_tracker,
+            &order_identities,
+            &pending_cancels,
+            AccountId::from("POLY-001"),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+
+        let accepted = match receiver.try_recv().expect("expected accepted event") {
+            ExecutionEvent::Order(event @ OrderEventAny::Accepted(_)) => {
+                let OrderEventAny::Accepted(accepted) = &event else {
+                    unreachable!()
+                };
+                assert_eq!(accepted.client_order_id, order.client_order_id());
+                assert_eq!(accepted.venue_order_id, venue_order_id);
+                event
+            }
+            other => panic!("expected accepted event, was {other:?}"),
+        };
+        order.apply(accepted).unwrap();
+
+        assert!(deferred.is_none());
+        assert!(order_identities.get(&venue_order_id).is_some());
+        assert!(fill_tracker.contains(&venue_order_id));
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_captured_delayed_response_stays_submitted_and_registers_tracking() {
+        let instrument = test_instrument();
+        let mut order = test_limit_order("O-DELAYED", instrument.id());
+        order
+            .apply(TestOrderEventStubs::submitted(
+                &order,
+                AccountId::from("POLY-001"),
+            ))
+            .unwrap();
+        let response: OrderResponse = load("http_order_response_ok.json");
+        let venue_order_id = VenueOrderId::from(
+            response
+                .order_id
+                .as_deref()
+                .expect("captured response should include order ID"),
+        );
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let order_identities = OrderIdentityRegistry::default();
+        let pending_cancels = PendingCancelTracker::default();
+
+        let deferred = handle_order_response(
+            Ok(response),
+            &order,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &fill_tracker,
+            &order_identities,
+            &pending_cancels,
+            AccountId::from("POLY-001"),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+
+        assert!(deferred.is_none());
+        assert!(order_identities.get(&venue_order_id).is_some());
+        assert!(fill_tracker.contains(&venue_order_id));
+        assert_eq!(order.status(), OrderStatus::Submitted);
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_captured_delayed_response_preserves_deferred_cancel() {
+        let instrument = test_instrument();
+        let order = test_limit_order("O-DELAYED-CANCEL", instrument.id());
+        let response: OrderResponse = load("http_order_response_ok.json");
+        let venue_order_id = VenueOrderId::from(
+            response
+                .order_id
+                .as_deref()
+                .expect("captured response should include order ID"),
+        );
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let order_identities = OrderIdentityRegistry::default();
+        let pending_cancels = PendingCancelTracker::default();
+        pending_cancels.insert(order.client_order_id());
+
+        let deferred = handle_order_response(
+            Ok(response),
+            &order,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &fill_tracker,
+            &order_identities,
+            &pending_cancels,
+            AccountId::from("POLY-001"),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+
+        assert_eq!(deferred, Some((venue_order_id.to_string(), venue_order_id)));
+        assert!(order_identities.get(&venue_order_id).is_some());
+        assert!(fill_tracker.contains(&venue_order_id));
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_captured_batch_delayed_responses_register_each_leg_without_accepting() {
+        let instrument = test_instrument();
+        let responses: Vec<OrderResponse> = load("http_batch_order_response.json");
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        let order_identities = OrderIdentityRegistry::default();
+        let pending_cancels = PendingCancelTracker::default();
+
+        for (index, response) in responses.into_iter().enumerate() {
+            let mut order = test_limit_order(&format!("O-BATCH-{index}"), instrument.id());
+            order
+                .apply(TestOrderEventStubs::submitted(
+                    &order,
+                    AccountId::from("POLY-001"),
+                ))
+                .unwrap();
+            let venue_order_id = VenueOrderId::from(
+                response
+                    .order_id
+                    .as_deref()
+                    .expect("captured batch leg should include order ID"),
+            );
+
+            let deferred = handle_order_response(
+                Ok(response),
+                &order,
+                &emitter,
+                nautilus_core::time::get_atomic_clock_realtime(),
+                &fill_tracker,
+                &order_identities,
+                &pending_cancels,
+                AccountId::from("POLY-001"),
+                instrument.size_precision(),
+                instrument.price_precision(),
+            );
+
+            assert!(deferred.is_none());
+            assert!(order_identities.get(&venue_order_id).is_some());
+            assert!(fill_tracker.contains(&venue_order_id));
+            assert_eq!(order.status(), OrderStatus::Submitted);
+        }
+
+        assert!(receiver.try_recv().is_err());
+    }
+
     #[rstest]
     fn test_market_sell_submission_uses_signed_wire_quantity() {
         let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
@@ -973,11 +1412,7 @@ mod tests {
             &emitter,
             nautilus_core::time::get_atomic_clock_realtime(),
         );
-        let response = OrderResponse {
-            success: true,
-            order_id: Some(venue_order_id.to_string()),
-            error_msg: None,
-        };
+        let response = successful_order_response(venue_order_id, None);
         let deferred_cancel = handle_order_response(
             Ok(response),
             &order,
@@ -1067,9 +1502,193 @@ mod tests {
             &instruments,
             None,
             UnixNanos::from(1_000_000_000u64),
-        );
+            None,
+        )
+        .expect("non-confirmed trades do not build fill reports");
 
         assert!(reports.is_empty());
+    }
+
+    #[rstest]
+    fn test_confirmed_maker_trade_owned_by_case_variant_address_generates_fill_report() {
+        let instrument = test_instrument();
+        let mut trade: crate::http::models::PolymarketTradeReport = load("http_trade_report.json");
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+
+        // Recorded venue payloads carry EIP-55 checksummed (mixed-case) maker
+        // addresses while configured funder addresses are commonly lowercase.
+        // Mirror that direction: give the payload side a case variant (all-
+        // uppercase hex stands in for the checksummed form), keep the
+        // configured side lowercase. Any case variant of the same address
+        // must still establish ownership.
+        let configured_address = trade.maker_orders[0].maker_address.clone();
+        let uppercase_variant_address = configured_address
+            .to_ascii_uppercase()
+            .replacen("0X", "0x", 1);
+        assert_ne!(uppercase_variant_address, configured_address);
+        trade.maker_orders[0].maker_address = uppercase_variant_address;
+        let foreign_api_key = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+        assert_ne!(trade.maker_orders[0].owner, foreign_api_key);
+        let expected_venue_order_id = VenueOrderId::from(trade.maker_orders[0].order_id.as_str());
+
+        let instruments = AtomicMap::new();
+        instruments.insert(trade.asset_id, instrument);
+        let ctx = crate::execution::reconciliation::FillContext {
+            account_id: AccountId::from("POLY-001"),
+            user_address: &configured_address,
+            api_key: foreign_api_key,
+            pusd: Currency::pUSD(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        let (reports, discards) = crate::execution::reconciliation::build_fill_reports_from_trades(
+            &[trade],
+            &ctx,
+            &instruments,
+            None,
+            UnixNanos::from(1_000_000_000u64),
+            None,
+        )
+        .expect("owned confirmed maker trade builds a fill report");
+
+        assert_eq!(
+            reports.len(),
+            1,
+            "the account's own confirmed maker fill must be reported",
+        );
+        assert_eq!(reports[0].venue_order_id, expected_venue_order_id);
+        assert_eq!(
+            discards.unowned_maker_trades, 0,
+            "entry-level skips of foreign entries in an owned trade are not trade drops",
+        );
+        assert_eq!(discards.unmapped_instruments, 0);
+    }
+
+    #[rstest]
+    #[case(PolymarketLiquiditySide::Maker)]
+    #[case(PolymarketLiquiditySide::Taker)]
+    fn test_confirmed_trade_without_instrument_counts_unmapped_discard(
+        #[case] trader_side: PolymarketLiquiditySide,
+    ) {
+        let mut trade: crate::http::models::PolymarketTradeReport = load("http_trade_report.json");
+        trade.trader_side = trader_side;
+        let instruments = AtomicMap::new();
+        let ctx = crate::execution::reconciliation::FillContext {
+            account_id: AccountId::from("POLY-001"),
+            user_address: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+            api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            pusd: Currency::pUSD(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        let (reports, discards) = crate::execution::reconciliation::build_fill_reports_from_trades(
+            &[trade],
+            &ctx,
+            &instruments,
+            None,
+            UnixNanos::from(1_000_000_000u64),
+            None,
+        )
+        .expect("unmapped instruments are counted rather than parsed");
+
+        assert_eq!(reports.len(), 0);
+        assert_eq!(
+            discards,
+            crate::execution::reconciliation::FillBuildDiscards {
+                unmapped_instruments: 1,
+                in_scope_historical: 1,
+                unowned_maker_trades: 0,
+            },
+        );
+    }
+
+    #[rstest]
+    fn test_confirmed_maker_trade_without_owned_order_is_counted() {
+        let instrument = test_instrument();
+        let mut trade: crate::http::models::PolymarketTradeReport = load("http_trade_report.json");
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+
+        let instruments = AtomicMap::new();
+        instruments.insert(trade.asset_id, instrument);
+        // Neither the address nor the API key matches any maker order, so the
+        // whole confirmed trade is dropped; the drop must be observable.
+        let ctx = crate::execution::reconciliation::FillContext {
+            account_id: AccountId::from("POLY-001"),
+            user_address: "0x000000000000000000000000000000000000dead",
+            api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            pusd: Currency::pUSD(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        let (reports, discards) = crate::execution::reconciliation::build_fill_reports_from_trades(
+            &[trade],
+            &ctx,
+            &instruments,
+            None,
+            UnixNanos::from(1_000_000_000u64),
+            None,
+        )
+        .expect("unowned maker trades are counted rather than parsed");
+
+        assert!(reports.is_empty());
+        assert_eq!(
+            discards.unowned_maker_trades, 1,
+            "a confirmed maker trade dropped whole must be counted, not silent",
+        );
+        assert_eq!(discards.unmapped_instruments, 0);
+    }
+
+    #[rstest]
+    fn test_fill_report_batch_fails_instead_of_returning_valid_prefix() {
+        let mut instrument = test_instrument();
+        let InstrumentAny::BinaryOption(binary_option) = &mut instrument else {
+            panic!("expected binary option test instrument");
+        };
+        binary_option.taker_fee =
+            Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0);
+
+        let mut taker: crate::http::models::PolymarketTradeReport = load("http_trade_report.json");
+        taker.id = "trade-unrepresentable-taker".to_string();
+        let mut maker = taker.clone();
+        maker.id = "trade-valid-maker".to_string();
+        maker.trader_side = PolymarketLiquiditySide::Maker;
+        let configured_address = maker.maker_orders[0].maker_address.clone();
+
+        let instruments = AtomicMap::new();
+        instruments.insert(taker.asset_id, instrument);
+        let ctx = crate::execution::reconciliation::FillContext {
+            account_id: AccountId::from("POLY-001"),
+            user_address: &configured_address,
+            api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            pusd: Currency::pUSD(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        let (maker_reports, _) = crate::execution::reconciliation::build_fill_reports_from_trades(
+            &[maker.clone()],
+            &ctx,
+            &instruments,
+            None,
+            UnixNanos::from(1_000_000_000u64),
+            None,
+        )
+        .expect("maker commission is zero and representable");
+        let result = crate::execution::reconciliation::build_fill_reports_from_trades(
+            &[maker, taker],
+            &ctx,
+            &instruments,
+            None,
+            UnixNanos::from(1_000_000_000u64),
+            None,
+        );
+
+        assert_eq!(maker_reports.len(), 1);
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("trade-unrepresentable-taker")
+        );
     }
 
     #[rstest]
@@ -1417,6 +2036,44 @@ mod tests {
     }
 
     #[rstest]
+    fn test_emit_drained_rejection_uses_clean_classified_reason() {
+        let instrument = test_instrument();
+        let order = test_limit_order("O-DRAIN-REJECTED", instrument.id());
+        let venue_order_id = VenueOrderId::from("0xdrain-rejected-order");
+        let (emitter, mut receiver) = test_emitter();
+        let mut report = OrderStatusReport::new(
+            AccountId::from("POLY-001"),
+            instrument.id(),
+            None,
+            venue_order_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Rejected,
+            Quantity::new(10.0, 0),
+            Quantity::new(0.0, 0),
+            UnixNanos::from(1_000u64),
+            UnixNanos::from(1_000u64),
+            UnixNanos::from(1_000u64),
+            None,
+        );
+        report.cancel_reason = Some("  invalid post-only order:\norder crosses book  ".to_string());
+
+        emit_drained_order_report(&order, &report, &emitter);
+
+        match receiver.try_recv().expect("expected rejected event") {
+            ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+                assert_eq!(
+                    event.reason.as_str(),
+                    "invalid post-only order: order crosses book"
+                );
+                assert!(event.due_post_only);
+            }
+            other => panic!("expected rejected event, was {other:?}"),
+        }
+    }
+
+    #[rstest]
     fn test_unknown_submit_drains_partial_fill_before_cancel() {
         let instrument = test_instrument();
         let instrument_id = instrument.id();
@@ -1705,11 +2362,9 @@ mod tests {
         );
 
         // Step 2: the submit response arrives, registers the order, and drains the buffered fill
-        let response = OrderResponse {
-            success: true,
-            order_id: Some(venue_order_id.to_string()),
-            error_msg: None,
-        };
+        // Reuse the captured delayed response shape with the race-specific order ID
+        let mut response: OrderResponse = load("http_order_response_ok.json");
+        response.order_id = Some(venue_order_id.to_string());
         assert!(
             handle_order_response(
                 Ok(response),
@@ -1816,6 +2471,11 @@ mod tests {
         let response = OrderResponse {
             success: true,
             order_id: Some(venue_order_id.to_string()),
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
             error_msg: None,
         };
         assert!(
@@ -1925,6 +2585,11 @@ mod tests {
         let response = OrderResponse {
             success: true,
             order_id: Some(venue_order_id.to_string()),
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
             error_msg: None,
         };
         handle_order_response(
@@ -1986,6 +2651,11 @@ mod tests {
         let response = OrderResponse {
             success: true,
             order_id: Some(String::new()),
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
             error_msg: None,
         };
 
@@ -2029,6 +2699,11 @@ mod tests {
         let response = OrderResponse {
             success: true,
             order_id: Some(String::new()),
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
             error_msg: Some(reason.to_string()),
         };
 
@@ -2077,6 +2752,11 @@ mod tests {
         let response = OrderResponse {
             success: false,
             order_id: None,
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
             error_msg: Some(reason.to_string()),
         };
 
@@ -2111,6 +2791,9 @@ mod tests {
     #[rstest]
     #[case("invalid post-only order: order crosses book", true)]
     #[case("invalid post-only order: unsupported tick size", false)]
+    #[case("Invalid post-only order: order crosses book", false)]
+    #[case("invalid post-only order: order crosses book now", false)]
+    #[case("HTTP error 400: invalid post-only order: order crosses book", false)]
     #[case("not enough balance / allowance", false)]
     fn test_reject_submit_order_flags_post_only_crossing(
         #[case] reason: &str,
@@ -2140,5 +2823,32 @@ mod tests {
 
         // The reject funnel clears any tracked pending cancel for the order
         assert!(!pending_cancels.contains(&order.client_order_id()));
+    }
+
+    #[rstest]
+    fn test_reject_submit_order_sanitizes_reason_before_classification() {
+        let instrument = test_instrument();
+        let order = test_limit_order("O-REJECT-SANITIZE", instrument.id());
+        let (emitter, mut receiver) = test_emitter();
+        let pending_cancels = PendingCancelTracker::default();
+
+        reject_submit_order(
+            &order,
+            "  invalid post-only order:\norder crosses book  ",
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &pending_cancels,
+        );
+
+        match receiver.try_recv().expect("expected rejected event") {
+            ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+                assert_eq!(
+                    event.reason.as_str(),
+                    "invalid post-only order: order crosses book"
+                );
+                assert!(event.due_post_only);
+            }
+            other => panic!("expected rejected event, was {other:?}"),
+        }
     }
 }

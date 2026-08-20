@@ -72,10 +72,9 @@ use pyo3::{
         PyException, PyKeyError, PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError,
     },
     prelude::*,
-    types::PyString,
+    types::{PyString, PyWeakrefMethods, PyWeakrefReference},
     wrap_pyfunction,
 };
-use pyo3_stub_gen::derive::gen_stub_pyfunction;
 
 use crate::{
     UUID4,
@@ -87,23 +86,46 @@ use crate::{
     },
 };
 
-/// Safely clones a Python object by acquiring the GIL and properly managing reference counts.
+/// Clones a Python object reference by attaching to the interpreter.
 ///
-/// This function exists to break reference cycles between Rust and Python that can occur
-/// when using `Arc<Py<PyAny>>` in callback-holding structs. The original design wrapped
-/// Python callbacks in `Arc` for thread-safe sharing, but this created circular references:
+/// The result is a second strong reference to the same object, so this does not break a reference
+/// cycle. When a Rust object holds a `Py<T>` whose Python object reaches back into Rust, cloning
+/// adds another strong edge to that cycle rather than removing one.
 ///
-/// 1. Rust `Arc` holds Python objects → increases Python reference count.
-/// 2. Python objects might reference Rust objects → creates cycles.
-/// 3. Neither side can be garbage collected → memory leak.
-///
-/// By using plain `Py<PyAny>` with GIL-based cloning instead of `Arc<Py<PyAny>>`, we:
-/// - Avoid circular references between Rust and Python memory management.
-/// - Ensure proper Python reference counting under the GIL.
-/// - Allow both Rust and Python garbage collectors to work correctly.
+/// Break such a back-reference with a Python weak reference (see [`upgrade_py_weakref`]) or an
+/// explicit terminal release point that drops the strong reference during disposal.
 #[must_use]
 pub fn clone_py_object(obj: &Py<PyAny>) -> Py<PyAny> {
     Python::attach(|py| obj.clone_ref(py))
+}
+
+/// Upgrades the weak reference a Rust object keeps to its Python wrapper.
+///
+/// Returns `Ok(None)` when no wrapper was ever attached, which is the case for a purely Rust
+/// construction. `owner` names the Rust object in the error message.
+///
+/// # Errors
+///
+/// Returns an error if a wrapper was attached but has since been collected. Callers propagate
+/// this rather than skipping a required callback, because a live wrapper is an ownership
+/// invariant of the caller rather than an optional extra.
+pub fn upgrade_py_weakref(
+    py_self: Option<&Py<PyWeakrefReference>>,
+    owner: &dyn Display,
+) -> PyResult<Option<Py<PyAny>>> {
+    let Some(py_self) = py_self else {
+        return Ok(None);
+    };
+
+    Python::attach(|py| {
+        py_self
+            .bind(py)
+            .upgrade()
+            .map(|wrapper| Some(wrapper.unbind()))
+            .ok_or_else(|| {
+                to_pyruntime_err(format!("Python wrapper for {owner} has been collected"))
+            })
+    })
 }
 
 /// Calls a Python callback with a single argument, logging any errors.
@@ -195,32 +217,7 @@ pub fn to_pynotimplemented_err(e: impl Display) -> PyErr {
     PyNotImplementedError::new_err(e.to_string())
 }
 
-/// Return a value indicating whether the `obj` is a `PyCapsule`.
-///
-/// Parameters
-/// ----------
-/// obj : Any
-///     The object to check.
-///
-/// # Returns
-///
-/// bool
-#[pyfunction(name = "is_pycapsule")]
-#[gen_stub_pyfunction(module = "nautilus_trader.core")]
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "Python FFI requires owned types"
-)]
-#[allow(unsafe_code)]
-fn py_is_pycapsule(obj: Py<PyAny>) -> bool {
-    // SAFETY: obj.as_ptr() returns a valid Python object pointer
-    unsafe {
-        // PyCapsule_CheckExact checks if the object is exactly a PyCapsule
-        pyo3::ffi::PyCapsule_CheckExact(obj.as_ptr()) != 0
-    }
-}
-
-/// Loaded as `nautilus_pyo3.core`.
+/// Exposed through `nautilus_trader.core`.
 ///
 /// # Errors
 ///
@@ -235,7 +232,6 @@ pub fn core(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(NANOSECONDS_IN_MILLISECOND), NANOSECONDS_IN_MILLISECOND)?;
     m.add(stringify!(NANOSECONDS_IN_MICROSECOND), NANOSECONDS_IN_MICROSECOND)?;
     m.add_class::<UUID4>()?;
-    m.add_function(wrap_pyfunction!(py_is_pycapsule, m)?)?;
     m.add_function(wrap_pyfunction!(casing::py_convert_to_snake_case, m)?)?;
     m.add_function(wrap_pyfunction!(string::py_mask_api_key, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_nanos, m)?)?;

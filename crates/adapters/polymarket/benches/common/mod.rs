@@ -161,10 +161,8 @@ pub(crate) mod fixtures {
 
     /// WS market `price_change` (tagged with `event_type: price_change`).
     ///
-    /// Single-change frame: production splits each `price_changes` entry into
-    /// its own one-element `PolymarketQuotes` and calls `parse_book_deltas`
-    /// per change (see `src/data.rs` `MarketWsMessage::PriceChange` handler),
-    /// so the bench unit is one change, not the multi-change envelope.
+    /// Single-change frame for the inbound parser benchmark. The dispatch
+    /// benchmark uses a separate interleaved multi-instrument fixture.
     pub(crate) const MARKET_PRICE_CHANGE: &str = r#"{
         "event_type": "price_change",
         "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",

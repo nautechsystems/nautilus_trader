@@ -9,12 +9,7 @@ no-default-features = false
 feature-depth = 1
 
 [advisories]
-unused-ignored-advisory = "allow"
-ignore = [
-  { id = "RUSTSEC-2024-0436", reason = "paste unmaintained, transitive via alloy" },
-  { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a vulnerability)" },
-  { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 unmaintained via tabled_derive; no patch available" },
-]
+unused-ignored-advisory = "deny"
 
 [licenses]
 unused-allowed-license = "allow"
@@ -34,7 +29,7 @@ allow = [
   "Unicode-DFS-2016",
   "Unicode-3.0",
   "0BSD",
-  "LGPL-3.0-or-later",
+  "LGPL-3.0-only",
   "Unlicense",
   "bzip2-1.0.6",
   "NCSA",

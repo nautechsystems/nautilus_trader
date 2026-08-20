@@ -33,7 +33,7 @@ use ustr::Ustr;
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.polymarket",
+        module = "nautilus_trader.adapters.polymarket",
         from_py_object,
     )
 )]
@@ -179,15 +179,10 @@ pub enum PolymarketOrderStatus {
     CanceledMarketResolved,
 }
 
-impl<'de> Deserialize<'de> for PolymarketOrderStatus {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        // Slow-path table for `<VARIANT>_<reason>` inputs. Polymarket sometimes
-        // appends `_<reason>` to a status (e.g. `CANCELED_order couldn't be
-        // fully filled...`). Match the longest known variant first so
-        // `CANCELED_MARKET_RESOLVED` is not truncated to `CANCELED`.
+impl PolymarketOrderStatus {
+    pub(crate) fn parse_wire(value: &str) -> Option<(Self, Option<&str>)> {
+        // Match the longest known variant first so `CANCELED_MARKET_RESOLVED`
+        // is not truncated to `CANCELED` when a reason suffix is present.
         const VARIANTS: &[(&str, PolymarketOrderStatus)] = &[
             (
                 "CANCELED_MARKET_RESOLVED",
@@ -201,25 +196,31 @@ impl<'de> Deserialize<'de> for PolymarketOrderStatus {
             ("CANCELED", PolymarketOrderStatus::Canceled),
         ];
 
+        let value = value.strip_prefix("ORDER_STATUS_").unwrap_or(value);
+
+        if let Ok(status) = <Self as std::str::FromStr>::from_str(value) {
+            return Some((status, None));
+        }
+
+        VARIANTS.iter().find_map(|(prefix, status)| {
+            value
+                .strip_prefix(prefix)
+                .and_then(|suffix| suffix.strip_prefix('_'))
+                .map(|reason| (*status, Some(reason)))
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for PolymarketOrderStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
         let s = String::deserialize(deserializer)?;
 
-        // Fast path: exact match through the strum-derived `FromStr`.
-        if let Ok(status) = <Self as std::str::FromStr>::from_str(&s) {
-            return Ok(status);
-        }
-
-        for (prefix, status) in VARIANTS {
-            if s.len() > prefix.len()
-                && s.is_char_boundary(prefix.len())
-                && &s[..prefix.len()] == *prefix
-                && s.as_bytes()[prefix.len()] == b'_'
-            {
-                return Ok(*status);
-            }
-        }
-        Err(serde::de::Error::custom(format!(
-            "Unknown PolymarketOrderStatus: {s}"
-        )))
+        Self::parse_wire(&s)
+            .map(|(status, _)| status)
+            .ok_or_else(|| serde::de::Error::custom(format!("Unknown PolymarketOrderStatus: {s}")))
     }
 }
 
@@ -231,14 +232,19 @@ impl<'de> Deserialize<'de> for PolymarketOrderStatus {
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum PolymarketTradeStatus {
     /// Sent to the executor service for on-chain submission.
+    #[serde(alias = "TRADE_STATUS_MATCHED")]
     Matched,
     /// Mined on-chain, no finality threshold yet.
+    #[serde(alias = "TRADE_STATUS_MINED")]
     Mined,
     /// Strong probabilistic finality achieved.
+    #[serde(alias = "TRADE_STATUS_CONFIRMED")]
     Confirmed,
     /// Transaction failed, being retried by the operator.
+    #[serde(alias = "TRADE_STATUS_RETRYING")]
     Retrying,
     /// Permanently failed, no more retries.
+    #[serde(alias = "TRADE_STATUS_FAILED")]
     Failed,
 }
 
@@ -280,8 +286,8 @@ impl TryFrom<OrderSide> for PolymarketOrderSide {
 impl From<PolymarketOrderSide> for AggressorSide {
     fn from(value: PolymarketOrderSide) -> Self {
         match value {
-            PolymarketOrderSide::Buy => Self::Buyer,
-            PolymarketOrderSide::Sell => Self::Seller,
+            PolymarketOrderSide::Buy => Self::Buy,
+            PolymarketOrderSide::Sell => Self::Sell,
         }
     }
 }
@@ -418,6 +424,19 @@ mod tests {
     }
 
     #[rstest]
+    fn test_order_status_deserializes_openapi_prefix() {
+        assert_eq!(
+            serde_json::from_str::<PolymarketOrderStatus>("\"ORDER_STATUS_LIVE\"").unwrap(),
+            PolymarketOrderStatus::Live
+        );
+        assert_eq!(
+            serde_json::from_str::<PolymarketOrderStatus>("\"ORDER_STATUS_CANCELED_reason\"")
+                .unwrap(),
+            PolymarketOrderStatus::Canceled
+        );
+    }
+
+    #[rstest]
     #[case(
         "\"CANCELED_order couldn't be fully filled. FOK orders are fully filled or killed.\"",
         PolymarketOrderStatus::Canceled
@@ -460,6 +479,14 @@ mod tests {
     }
 
     #[rstest]
+    fn test_trade_status_deserializes_openapi_prefix() {
+        assert_eq!(
+            serde_json::from_str::<PolymarketTradeStatus>("\"TRADE_STATUS_CONFIRMED\"").unwrap(),
+            PolymarketTradeStatus::Confirmed
+        );
+    }
+
+    #[rstest]
     #[case(PolymarketOrderSide::Buy, OrderSide::Buy)]
     #[case(PolymarketOrderSide::Sell, OrderSide::Sell)]
     fn test_order_side_to_nautilus(#[case] poly: PolymarketOrderSide, #[case] expected: OrderSide) {
@@ -477,8 +504,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(PolymarketOrderSide::Buy, AggressorSide::Buyer)]
-    #[case(PolymarketOrderSide::Sell, AggressorSide::Seller)]
+    #[case(PolymarketOrderSide::Buy, AggressorSide::Buy)]
+    #[case(PolymarketOrderSide::Sell, AggressorSide::Sell)]
     fn test_order_side_to_aggressor(
         #[case] poly: PolymarketOrderSide,
         #[case] expected: AggressorSide,

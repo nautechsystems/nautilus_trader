@@ -58,7 +58,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UUID4, UnixNanos,
+    MUTEX_POISONED, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
@@ -1183,9 +1183,10 @@ impl ExecutionClient for DydxExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
+            .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
     }
 
@@ -2293,6 +2294,7 @@ impl ExecutionClient for DydxExecutionClient {
                 account_state.margins.clone(),
                 account_state.is_reported,
                 account_state.ts_event,
+                account_state.info,
             );
             Ok(())
         });
@@ -2375,7 +2377,7 @@ impl ExecutionClient for DydxExecutionClient {
             .context("failed to fetch initial block height")?;
         // Use current time as approximation; actual timestamps will come from WebSocket updates
         self.block_time_monitor
-            .record_block(initial_height.0 as u64, chrono::Utc::now());
+            .record_block(initial_height.0 as u64, jiff::Timestamp::now());
         log::debug!("Initial block height: {}", initial_height.0);
 
         *self.grpc_client.write().await = Some(grpc_client.clone());
@@ -3063,7 +3065,7 @@ where
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use chrono::Utc;
+    use jiff::Timestamp;
     use nautilus_common::{
         cache::Cache, clock::TestClock, factories::OrderFactory, messages::ExecutionEvent,
     };
@@ -3196,7 +3198,9 @@ mod tests {
 
         let mut client =
             DydxExecutionClient::new(core, config, "dydx1test".to_string(), 0).unwrap();
-        client.block_time_monitor.record_block(100, Utc::now());
+        client
+            .block_time_monitor
+            .record_block(100, Timestamp::now());
 
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         client.emitter.set_sender(sender);

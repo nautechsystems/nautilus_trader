@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
-
 import pytest
 from unit.adapters.example_modules import load_example_module
 
@@ -94,18 +92,7 @@ def test_live_node_builder_accepts_coinbase_exec_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
-@pytest.mark.parametrize(
-    ("extra_args", "expected"),
-    [
-        ([], False),
-        (["--limit-sells"], True),
-    ],
-)
-def test_coinbase_exec_tester_limit_sells_are_explicit(
-    monkeypatch: pytest.MonkeyPatch,
-    extra_args: list[str],
-    expected: bool,
-) -> None:
+def test_coinbase_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
     class CapturingExecTesterConfig:
@@ -116,6 +103,9 @@ def test_coinbase_exec_tester_limit_sells_are_explicit(
         def add_builtin_strategy(self, type_name: str, config: object) -> None:
             captured["strategy_type_name"] = type_name
             captured["strategy_config"] = config
+
+        def run(self) -> None:
+            captured["run_called"] = True
 
     class CapturingBuilder:
         def with_reconciliation(self, reconciliation: bool) -> "CapturingBuilder":
@@ -143,7 +133,6 @@ def test_coinbase_exec_tester_limit_sells_are_explicit(
             captured["builder_args"] = (name, trader_id, environment)
             return CapturingBuilder()
 
-    monkeypatch.setattr(sys, "argv", ["exec_tester.py", "--live-orders", *extra_args])
     monkeypatch.setattr(coinbase_exec_tester, "ExecTesterConfig", CapturingExecTesterConfig)
     monkeypatch.setattr(coinbase_exec_tester, "LiveNode", CapturingLiveNode)
 
@@ -153,5 +142,6 @@ def test_coinbase_exec_tester_limit_sells_are_explicit(
     kwargs = captured["exec_tester_kwargs"]
     assert isinstance(kwargs, dict)
     assert kwargs["enable_limit_buys"] is True
-    assert kwargs["enable_limit_sells"] is expected
+    assert kwargs["enable_limit_sells"] is False  # Spot sells require holding the base currency
     assert kwargs["dry_run"] is False
+    assert captured["run_called"] is True

@@ -19,7 +19,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -36,7 +36,7 @@ use axum::{
 };
 use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
-use nautilus_network::websocket::TransportBackend;
+use nautilus_network::{SocketState, SocketStateSink, websocket::TransportBackend};
 use nautilus_polymarket::{
     common::credential::Credential,
     websocket::{
@@ -383,14 +383,21 @@ async fn test_subscribe_market_sends_assets_ids() {
 }
 
 #[rstest]
+#[case::custom_features_enabled(true)]
+#[case::custom_features_disabled(false)]
 #[tokio::test]
-async fn test_subscribe_unsubscribe_subscribe_uses_initial_then_incremental_market_messages() {
+async fn test_subscribe_unsubscribe_subscribe_uses_exact_market_messages(
+    #[case] custom_features_enabled: bool,
+) {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws/market");
 
-    let mut client =
-        PolymarketWebSocketClient::new_market(Some(ws_url), true, TransportBackend::default());
+    let mut client = PolymarketWebSocketClient::new_market(
+        Some(ws_url),
+        custom_features_enabled,
+        TransportBackend::default(),
+    );
     client.connect().await.expect("connect failed");
     wait_until_active(&client, 2.0).await;
 
@@ -418,13 +425,24 @@ async fn test_subscribe_unsubscribe_subscribe_uses_initial_then_incremental_mark
         "expected initial subscribe, unsubscribe, and incremental subscribe payloads"
     );
 
+    let mut expected_initial = json!({
+        "assets_ids": [TEST_ASSET_ID],
+        "type": "market",
+        "initial_dump": true,
+    });
+    let mut expected_incremental = json!({
+        "assets_ids": [TEST_ASSET_ID_2],
+        "operation": "subscribe",
+        "initial_dump": true,
+    });
+
+    if custom_features_enabled {
+        expected_initial["custom_feature_enabled"] = json!(true);
+        expected_incremental["custom_feature_enabled"] = json!(true);
+    }
+
     assert_eq!(
-        payloads[0],
-        json!({
-            "assets_ids": [TEST_ASSET_ID],
-            "type": "market",
-            "custom_feature_enabled": true,
-        }),
+        payloads[0], expected_initial,
         "first market subscribe should use MarketInitialSubscribeRequest"
     );
     assert_eq!(
@@ -436,12 +454,7 @@ async fn test_subscribe_unsubscribe_subscribe_uses_initial_then_incremental_mark
         "unsubscribe should use MarketUnsubscribeRequest"
     );
     assert_eq!(
-        payloads[2],
-        json!({
-            "assets_ids": [TEST_ASSET_ID_2],
-            "operation": "subscribe",
-            "custom_feature_enabled": true,
-        }),
+        payloads[2], expected_incremental,
         "second market subscribe should use MarketSubscribeRequest"
     );
 
@@ -775,8 +788,15 @@ async fn test_reconnect_resubscribes_all_market_assets() {
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws/market");
 
+    let socket_states = Arc::new(Mutex::new(Vec::new()));
+    let socket_states_callback = Arc::clone(&socket_states);
+    let sink = SocketStateSink::new(move |state| {
+        socket_states_callback.lock().unwrap().push(state);
+    });
+
     let mut client =
-        PolymarketWebSocketClient::new_market(Some(ws_url), true, TransportBackend::default());
+        PolymarketWebSocketClient::new_market(Some(ws_url), true, TransportBackend::default())
+            .with_state_sink(sink);
     client.connect().await.expect("connect failed");
     wait_until_active(&client, 2.0).await;
 
@@ -822,6 +842,145 @@ async fn test_reconnect_resubscribes_all_market_assets() {
         assets.contains(&TEST_ASSET_ID_2.to_string()),
         "asset_id_2 must be resubscribed after reconnect"
     );
+    let payloads = state.received_market_payloads.lock().await;
+    let mut replay = payloads.last().cloned().expect("reconnect replay payload");
+    drop(payloads);
+    replay["assets_ids"]
+        .as_array_mut()
+        .expect("replay assets_ids array")
+        .sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+    assert_eq!(
+        replay,
+        json!({
+            "assets_ids": [TEST_ASSET_ID_2, TEST_ASSET_ID],
+            "type": "market",
+            "initial_dump": true,
+            "custom_feature_enabled": true,
+        }),
+        "reconnect should replay an exact initial market subscribe payload"
+    );
+    wait_until_async(
+        || async { socket_states.lock().unwrap().len() == 3 },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_eq!(
+        *socket_states.lock().unwrap(),
+        vec![
+            SocketState::Connected,
+            SocketState::Disconnected,
+            SocketState::Connected,
+        ]
+    );
+
+    client.disconnect().await.expect("disconnect failed");
+    assert_eq!(socket_states.lock().unwrap().len(), 3);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_disconnect_connect_replays_discovery_without_assets() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/market");
+    let mut client =
+        PolymarketWebSocketClient::new_market(Some(ws_url), true, TransportBackend::default());
+
+    client.connect().await.expect("initial connect failed");
+    client
+        .subscribe_market(vec![])
+        .await
+        .expect("discovery subscribe failed");
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { count_discovery_payloads(&state).await >= 1 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    client.disconnect().await.expect("disconnect failed");
+    client.connect().await.expect("reconnect failed");
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { count_discovery_payloads(&state).await >= 2 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let payloads = state.received_market_payloads.lock().await;
+    let discovery_payloads: Vec<Value> = payloads
+        .iter()
+        .filter(|payload| {
+            payload
+                .get("assets_ids")
+                .and_then(Value::as_array)
+                .is_some_and(|ids| ids.is_empty())
+        })
+        .cloned()
+        .collect();
+    let expected = json!({
+        "assets_ids": [],
+        "type": "market",
+        "initial_dump": true,
+        "custom_feature_enabled": true,
+    });
+    assert_eq!(discovery_payloads, vec![expected.clone(), expected]);
+    drop(payloads);
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_disconnect_connect_does_not_infer_discovery_from_assets() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/market");
+    let mut client =
+        PolymarketWebSocketClient::new_market(Some(ws_url), true, TransportBackend::default());
+
+    client.connect().await.expect("initial connect failed");
+    client
+        .subscribe_market(vec![TEST_ASSET_ID.to_string()])
+        .await
+        .expect("asset subscribe failed");
+    wait_for_market_payload_count(&state, 1, Duration::from_secs(2)).await;
+    client
+        .unsubscribe_market(vec![TEST_ASSET_ID.to_string()])
+        .await
+        .expect("asset unsubscribe failed");
+    wait_for_market_payload_count(&state, 2, Duration::from_secs(2)).await;
+
+    client.disconnect().await.expect("disconnect failed");
+    client.connect().await.expect("reconnect failed");
+    client
+        .subscribe_market(vec![TEST_ASSET_ID_2.to_string()])
+        .await
+        .expect("post-reconnect asset subscribe failed");
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .received_market_payloads
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|payload| payload.get("assets_ids") == Some(&json!([TEST_ASSET_ID_2])))
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let payloads = state.received_market_payloads.lock().await;
+    assert_eq!(payloads.len(), 3);
+    drop(payloads);
+    assert_eq!(count_discovery_payloads(&state).await, 0);
 
     client.disconnect().await.expect("disconnect failed");
 }
@@ -1014,7 +1173,13 @@ async fn count_discovery_payloads(state: &TestServerState) -> usize {
 async fn pool_shards_assets_across_two_connections_at_cap() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
-    let pool = connect_market_pool(addr, false, 200).await;
+    let pool = PolymarketMarketConnectionPool::new(
+        Some(format!("ws://{addr}/ws/market")),
+        false,
+        TransportBackend::default(),
+        200,
+    );
+    pool.connect().await.expect("pool connect failed");
     wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
 
     let assets: Vec<String> = (0..250).map(|i| format!("asset-{i}")).collect();
@@ -1201,6 +1366,50 @@ async fn pool_new_market_discovery_subscribed_once() {
     pool.disconnect().await.expect("disconnect failed");
 }
 
+#[rstest]
+#[tokio::test]
+async fn pool_primary_reconnect_replays_discovery_without_assets() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let pool = connect_market_pool(addr, true, 200).await;
+
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+    pool.subscribe_new_markets_feed()
+        .await
+        .expect("discovery subscribe");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { count_discovery_payloads(&state).await >= 2 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let payloads = state.received_market_payloads.lock().await.clone();
+    let discovery_payloads: Vec<Value> = payloads
+        .iter()
+        .filter(|payload| {
+            payload
+                .get("assets_ids")
+                .and_then(Value::as_array)
+                .is_some_and(|ids| ids.is_empty())
+        })
+        .cloned()
+        .collect();
+    let expected = json!({
+        "assets_ids": [],
+        "type": "market",
+        "initial_dump": true,
+        "custom_feature_enabled": true,
+    });
+    assert_eq!(discovery_payloads, vec![expected.clone(), expected],);
+    assert_eq!(pool.connection_count(), 1);
+
+    pool.disconnect().await.expect("disconnect failed");
+}
+
 // A dropped primary connection reconnects and replays its own assets with no extra
 // shard; secondary shards are independent connections with their own replay state.
 #[rstest]
@@ -1227,6 +1436,72 @@ async fn pool_primary_reconnect_replays_assets() {
     wait_for_unique_subscribed_count(&state, 3, Duration::from_secs(10)).await;
     assert_eq!(pool.connection_count(), 1);
     assert_eq!(pool.subscription_count(), 3);
+
+    pool.disconnect().await.expect("disconnect failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn pool_primary_reconnect_replays_assets_and_discovery_together() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let pool = connect_market_pool(addr, true, 200).await;
+    let handle = pool.handle();
+
+    pool.subscribe_new_markets_feed()
+        .await
+        .expect("discovery subscribe");
+    handle
+        .subscribe_market(vec!["a".to_string(), "b".to_string()])
+        .await
+        .expect("subscribe a and b");
+    wait_for_unique_subscribed_count(&state, 2, Duration::from_secs(5)).await;
+
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+    handle
+        .subscribe_market(vec!["c".to_string()])
+        .await
+        .expect("subscribe c triggers drop");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .received_market_payloads
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|payload| {
+                        payload.get("type").and_then(Value::as_str) == Some("market")
+                            && payload.get("assets_ids") == Some(&json!(["a", "b", "c"]))
+                    })
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let payloads = state.received_market_payloads.lock().await;
+    let replay = payloads
+        .iter()
+        .find(|payload| {
+            payload.get("type").and_then(Value::as_str) == Some("market")
+                && payload.get("assets_ids") == Some(&json!(["a", "b", "c"]))
+        })
+        .expect("combined reconnect replay payload");
+    assert_eq!(
+        replay,
+        &json!({
+            "assets_ids": ["a", "b", "c"],
+            "type": "market",
+            "initial_dump": true,
+            "custom_feature_enabled": true,
+        }),
+    );
+    assert_eq!(pool.connection_count(), 1);
+    assert_eq!(pool.subscription_count(), 3);
+    drop(payloads);
 
     pool.disconnect().await.expect("disconnect failed");
 }

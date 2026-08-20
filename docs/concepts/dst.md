@@ -1,10 +1,17 @@
-# Deterministic Simulation Testing (DST)
+# DST
 
-Deterministic simulation testing (DST) runs NautilusTrader under a seed-controlled runtime so that
-timing-sensitive execution behavior is bitwise reproducible from a single integer. This page is the
-determinism contract: what the runtime guarantees under seed-controlled execution, the seams that
-implement those guarantees, the pre-commit hook that enforces them, and where they stop. Each claim
-names the source site behind it, so users and auditors can check the contract against the code.
+<!-- Keep this title as "DST"; longer titles do not render well in the left navigation. -->
+
+Deterministic simulation testing (DST) runs NautilusTrader under a seed‑controlled runtime. This
+guide defines:
+
+- The reproducibility guarantees for seed‑controlled execution.
+- The conditions required for those guarantees.
+- The source seams and checks that enforce the contract.
+- The paths where deterministic execution stops.
+
+Source locations accompany each claim so users and auditors can check the contract against the
+code.
 
 :::note
 A downstream harness that depends on NautilusTrader's determinism consumes the version of this
@@ -14,187 +21,229 @@ those consumers and should be reviewed as one.
 
 ## What DST is
 
-DST is a testing technique for concurrent systems. A single seed fully determines an execution,
-including task scheduling, timer firings, and random values. Two runs with the same seed, binary,
-and configuration produce identical observable behavior. When a property fails, the seed is the
-reproduction: the same seed replays the failure every time.
+DST controls the sources of nondeterminism in a concurrent system. Within the contract defined
+below, one seed determines task scheduling, timer firings, and random values. Two runs with the same
+seed, binary, configuration, and platform produce identical observable behavior. Record a failing
+seed to replay the same execution.
 
-Scheduling decisions in an async runtime come from ambient process state: task wake order,
-timer resolution, thread scheduling, hash seeds. None of that is controlled by the test harness,
-which is why a race that surfaces once in CI is usually hard to reproduce on demand. DST
-replaces those ambient sources with a seeded pseudorandom sequence, so the interleaving is a
-function of the seed.
+A conventional async runtime draws scheduling decisions from ambient process state, including:
 
-FoundationDB applied the pattern to a production distributed database starting around 2009. In the
-Rust ecosystem, [madsim](https://github.com/madsim-rs/madsim) intercepts `tokio` primitives to
-provide a deterministic scheduler.
+- Task wake order.
+- Timer resolution.
+- OS thread scheduling.
+- Randomized hash seeds.
 
-DST targets the bugs that escape unit, integration, property, and acceptance testing: channel
-wakeup ordering, drain races at shutdown, startup sequencing, reconciliation ordering, and
-recovery-path correctness. Each involves interleavings that other test layers cannot exhaustively
-cover but a deterministic scheduler can explore systematically.
+A conventional test harness does not control these sources, so a race that appears once in CI can
+be difficult to reproduce. DST replaces them with a seeded pseudorandom sequence. Varying the seed
+explores different interleavings; reusing it selects the same interleaving.
+
+[FoundationDB](https://apple.github.io/foundationdb/testing.html) uses the pattern to test a
+production distributed database. In the Rust ecosystem,
+[madsim](https://github.com/madsim-rs/madsim) intercepts `tokio` primitives to provide a
+deterministic scheduler.
+
+DST targets concurrency defects such as:
+
+- Channel wakeup ordering.
+- Drain races during shutdown.
+- Startup sequencing.
+- Reconciliation ordering.
+- Recovery‑path correctness.
+
+Other test layers cannot exhaustively cover these interleavings. A deterministic scheduler can
+explore them across seeds and replay a failing schedule.
 
 ## Goals
 
-- **Seed-reproducible execution** for the in-scope portion of the NautilusTrader runtime.
-- **Honest scope**. The contract lists what is covered and what is not. No silent fallbacks to
-  real wall-clock time or unseeded RNG; conditions that weaken the guarantee are enumerated.
-- **Enforcement in source**. A pre-commit hook fails commits that add banned patterns to the DST
-  path, so the contract stays true without relying on reviewer attention.
-- **Minimum necessary instrumentation**. The seams route time, task scheduling, and randomness
-  through a deterministic source only where the contract requires it; everything else runs
-  unchanged.
+| Goal                          | Requirement                                                                                                 |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Seed‑reproducible execution   | The in‑scope runtime produces the same observable behavior for the same seed and inputs.                    |
+| Explicit scope                | Every fallback to real time, unseeded randomness, or other nondeterminism is documented.                    |
+| Enforcement in source         | Static checks reject banned patterns on the DST path before they rely on reviewer attention.                |
+| Minimum required interception | Time, task scheduling, and randomness route through deterministic sources only where the contract needs it. |
 
 ## Approach
 
-`madsim` determinizes only the `tokio` primitives that route through its aliased submodules
-(`time`, `task`, `runtime`, `signal`). Wall-clock reads, monotonic reads, RNG draws, hash
-iteration, and `select!` polling bypass `tokio` entirely and need their own seams. Layer 1
-swaps the aliased submodules for `madsim`; Layer 2 supplies the seams.
+The implementation has two layers. The first replaces selected `tokio` primitives with `madsim`.
+The second controls sources of nondeterminism outside those primitives.
 
 ### Layer 1: runtime swap
 
-Under the `simulation` Cargo feature on `nautilus-common`, four `tokio` submodules are routed
-through `madsim` when `RUSTFLAGS="--cfg madsim"` is set:
+Under the `simulation` Cargo feature on `nautilus-common`, four facade submodules select simulation
+behavior when `RUSTFLAGS="--cfg madsim"` is set:
 
-- `time` (timers, intervals, monotonic `Instant`).
-- `task` (spawning and joining async tasks).
-- `runtime` (the runtime builder and handle).
-- `signal` (process signals such as `ctrl_c`). The re-export exists; call-site adoption is partial
-  (see [Signal handling](#signal-handling)).
+| Submodule | Covers                                          | Normal build  | Simulation build                                                 | Adoption                                          |
+| --------- | ----------------------------------------------- | ------------- | ---------------------------------------------------------------- | ------------------------------------------------- |
+| `time`    | Timers, intervals, and monotonic `Instant`.     | `tokio`       | `madsim`                                                         | Complete.                                         |
+| `task`    | Spawning and joining async tasks.               | `tokio`       | `madsim`                                                         | Complete.                                         |
+| `runtime` | Runtime builder and handle.                     | `tokio`       | `madsim`                                                         | Complete.                                         |
+| `signal`  | Process signals such as `ctrl_c` and `SIGTERM`. | `tokio` or OS | `madsim` for `ctrl_c`; a never‑completing future for `terminate` | Partial. See [Signal handling](#signal-handling). |
 
-These re-exports live in `nautilus_common::live::dst`. DST-path call sites for `time`, `task`,
-and `runtime` import from this module rather than directly from `tokio`, so toggling the feature
-switches the async runtime in one place for the primitives that are fully routed. Under normal
-builds, the re-exports resolve to real `tokio`. Under `simulation` + `cfg(madsim)`, they resolve
-to `madsim`'s deterministic counterparts.
+These re‑exports live in `nautilus_common::live::dst`. DST‑path call sites for `time`, `task`, and
+`runtime` import from this module. Normal builds resolve the imports to `tokio`; `simulation` with
+`cfg(madsim)` resolves them to `madsim`.
 
-Everything else that `tokio` provides (`sync`, `io`, `select!` as a macro, `fs`, `net`) uses real
-`tokio` unconditionally. Transitive crates (`tokio-tungstenite`, `tokio-rustls`, `reqwest`) are
+The `sync`, `io`, `fs`, and `net` submodules, plus the `select!` macro, continue to use real
+`tokio`. Transitive crates such as `tokio-tungstenite`, `tokio-rustls`, and `reqwest` are
 unaffected.
 
 ### Layer 2: nondeterminism substitution
 
-Nondeterminism outside the async runtime is redirected through explicit seams:
+Nondeterminism outside the aliased runtime needs explicit seams.
 
-- **Wall-clock reads** go through `nautilus_core::time::duration_since_unix_epoch`. Under
-  simulation this routes to `madsim::time::TimeHandle::try_current()`, preserving Unix-epoch
-  semantics for order and fill timestamps. When called outside a madsim runtime (plain
-  `#[rstest]` test bodies), it falls back to `SystemTime::now()`, which under `cfg(madsim)` is
-  libc-intercepted to the same real syscall a normal build would use. Production paths under
-  simulation always run inside a runtime, so they continue to receive virtual time.
-- **Monotonic reads** go through `nautilus_common::live::dst::time::Instant`. The type resolves to
-  `tokio::time::Instant` on normal builds, which keeps `tokio::test(start_paused)` tests working,
-  and to `madsim::time::Instant` under simulation.
-- **Network-local monotonic reads** go through `nautilus_network::dst::time`. The crate sits
-  below `nautilus-common` in the dependency graph and exposes a local re-export module with the
-  same semantics.
-- **Hash iteration order** in the reconciliation manager and the order matching engine uses
-  `IndexMap` and `IndexSet` rather than `AHashMap` and `AHashSet`. `AHash` randomizes its hasher
-  per process; insertion-order iteration is needed where order drives downstream event
-  publication or the sequence in which a seeded `FillModel` RNG is consumed.
-- **`tokio::select!` polling order** uses the `biased;` modifier at every production site on the
-  DST path. Unbiased `select!` polls branches in an order chosen by an unintercepted RNG.
+#### Wall-clock time
+
+Wall‑clock reads route through `nautilus_core::time::duration_since_unix_epoch`. Under simulation,
+the seam calls `madsim::time::TimeHandle::try_current()` to preserve Unix‑epoch semantics for order
+and fill timestamps.
+
+Plain `#[rstest]` bodies run outside a madsim runtime. In that context, the seam falls back to
+`SystemTime::now()`, which uses the same real syscall as a normal build. Production paths under
+simulation run inside a madsim runtime and receive virtual time.
+
+#### Monotonic time
+
+Monotonic reads route through `nautilus_common::live::dst::time::Instant`. Normal builds resolve
+the type to `tokio::time::Instant`, preserving compatibility with
+`#[tokio::test(start_paused = true)]`. Simulation builds resolve it to `madsim::time::Instant`.
+
+#### Network-local monotonic time
+
+Network code routes monotonic reads through `nautilus_network::dst::time`. `nautilus-network` sits
+below `nautilus-common` in the dependency graph, so it provides a local re‑export module with the
+same behavior.
+
+#### Iteration order
+
+Observable iteration order uses `IndexMap`, `IndexSet`, or an explicit sort instead of relying on
+`AHashMap` or `AHashSet`. `AHash` randomizes its hasher per process. Stable order is required when
+iteration controls event publication or the sequence of draws from a seeded `FillModel`.
+
+#### Select polling order
+
+Every production `tokio::select!` site on the DST path starts with `biased;`. Without it, an
+unintercepted RNG chooses the branch polling order.
 
 ## Determinism contract
 
 Under the conditions below, a run identified by `(seed, binary hash, configuration hash)` on the
-same platform produces bitwise-identical:
+same platform produces bitwise‑identical:
 
 - Scheduling order of async tasks.
-- Timer firings (virtual monotonic and virtual wall-clock).
+- Timer firings (virtual monotonic and virtual wall‑clock).
 - RNG output from `madsim::rand`.
 - Delivery order on `tokio::sync` channels.
 
 ### Required conditions
 
-The contract holds only when all of the following are true:
+The contract holds only when every row below is satisfied:
 
-- The `simulation` Cargo feature is active and `RUSTFLAGS="--cfg madsim"` is set. Both are
-  required. The feature activates the deterministic runtime; the cfg flag activates `madsim`'s
-  libc-level `clock_gettime` and `getrandom` intercepts. One without the other silently falls
-  back to real `tokio` and breaks determinism without an error.
-- Every `tokio::select!` call site on the DST path uses the `biased;` modifier.
-- Monotonic time reads route through the DST seam (either `nautilus_common::live::dst::time` or
-  `nautilus_network::dst::time`), not `std::time::Instant::now` directly.
-- Wall-clock time reads route through `nautilus_core::time::duration_since_unix_epoch`.
-- Randomness routes through `madsim::rand`. `rand::thread_rng`, `rand::rng()`, `fastrand`,
-  `getrandom`, and `OsRng` are not intercepted.
-- Iteration-order-sensitive collections either use `IndexMap` or `IndexSet`, or sort at the
-  point of use.
-- `tokio::task::LocalSet` construction is cfg-gated out under simulation. `madsim` does not
-  provide `LocalSet`; `spawn_local` works without it.
-- `tokio::task::spawn_blocking` call sites are cfg-gated or removed. A blocking call escapes
-  the deterministic scheduler.
+| Source of nondeterminism | Required condition                                                       | Failure when bypassed                                                                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Build selection          | Enable the `simulation` feature and set `RUSTFLAGS="--cfg madsim"`.      | Either setting alone falls back to real `tokio` without an error. The cfg also activates madsim's libc intercepts for `clock_gettime` and `getrandom`. |
+| `tokio::select!`         | Put `biased;` first in every production block on the DST path.           | An unintercepted RNG chooses the polling order.                                                                                                        |
+| Monotonic time           | Use `nautilus_common::live::dst::time` or `nautilus_network::dst::time`. | Direct `std::time::Instant::now` reads the host clock.                                                                                                 |
+| Wall‑clock time          | Use `nautilus_core::time::duration_since_unix_epoch`.                    | Direct clock reads bypass virtual time.                                                                                                                |
+| Randomness               | Use `madsim::rand`.                                                      | `rand::thread_rng`, `rand::rng()`, `fastrand`, `getrandom`, and `OsRng` are not intercepted.                                                           |
+| Iteration order          | Use `IndexMap`, `IndexSet`, or sort at the point of use.                 | Randomized hash iteration changes observable ordering.                                                                                                 |
+| Local tasks              | Gate out `tokio::task::LocalSet` under simulation.                       | `madsim` does not provide `LocalSet`; use `spawn_local` without it.                                                                                    |
+| Blocking tasks           | Gate out or remove `tokio::task::spawn_blocking`.                        | The blocking call escapes the deterministic scheduler.                                                                                                 |
 
 ## Static enforcement
 
 Static enforcement has two layers:
 
-- Clippy policy in `clippy.toml` and `[workspace.lints.clippy]` blocks APIs that are invalid
-  across the workspace DST contract: direct `getrandom::{fill,u32,u64}` calls and
-  `tokio::task::LocalSet`.
-- A pre-commit hook named `check-dst-conventions` enforces scoped, path-aware, and cfg-aware
-  structural checks that Clippy cannot express cleanly.
+| Layer                   | Enforces                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Clippy policy           | `clippy.toml` and `[workspace.lints.clippy]` reject direct `getrandom::{fill,u32,u64}` calls and `tokio::task::LocalSet`. |
+| `check-dst-conventions` | The pre‑commit hook applies path‑aware and cfg‑aware structural checks that Clippy cannot express cleanly.                |
 
-The hook lives at `.pre-commit-hooks/check_dst_conventions.sh` and runs both in the standard
-pre‑commit suite and in CI. Rules 1 to 6 apply to the 17 in‑scope workspace crates; Rule 7 applies
-to the nine crates on the madsim build path. The hook fails the commit when a rule detects:
+The hook lives at `.pre-commit-hooks/check_dst_conventions.sh` and runs in the standard pre‑commit
+suite and CI. Rules 1 to 6 apply to all 17 in‑scope workspace crates. Rule 7 applies to the nine
+crates on the madsim build path.
 
-- **Rule 1**: raw `std::time::Instant::now()`, `SystemTime::now()`, or `chrono::Utc::now()` reads,
-  including bare forms when the enclosing file imports the type from `std::time`, or from
-  `chrono` for `Utc`.
-- **Rule 2**: raw RNG usage (`rand::thread_rng`, `rand::rng()`, `fastrand::`, `getrandom::`,
-  `OsRng`) or `Uuid::new_v4()` without cfg gating.
-- **Rule 3**: `tokio::select!` blocks missing `biased;` within the first three lines.
-- **Rule 4**: `std::thread::spawn`, `std::thread::Builder::new`, or `tokio::task::spawn_blocking`
-  calls that lack a preceding `#[cfg(test)]`, `#[cfg(not(madsim))]`, or
-  `#[cfg(not(all(feature = "simulation", madsim)))]` attribute.
-- **Rule 5**: `AHashMap` or `AHashSet` in iteration-order-sensitive files on the DST path.
-  Enforcement covers the two audited files, `crates/live/src/execution/manager.rs` and
-  `crates/execution/src/matching_engine/engine.rs`; the full file set remains under audit.
-- **Rule 6**: direct `tokio::net::TcpStream::connect` / `tokio::net::TcpListener::bind` reaches
-  that bypass `nautilus_network::net`. The seam re-exports `tokio::net` types under normal builds
-  and swaps to `turmoil::net` under the `turmoil` feature, so all TCP entry points share a
-  single cfg-gated swap point.
-- **Rule 7**: raw `tokio::{time,task,runtime,signal}` paths in production code on the madsim build
-  path. Callers route these modules through `nautilus_common::live::dst`; the facade definition,
-  process-wide real Tokio runtime, and test infrastructure are explicit exceptions.
+| Rule | Rejects                                                                                                                                        | Scope or exception                                                                                          |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| 1    | Raw `std::time::Instant::now()`, `SystemTime::now()`, `jiff::Timestamp::now()`, and `jiff::Zoned::now()` reads, including imported bare forms. | Allows the wall‑clock seam, audited log or progress timing, and marked lines.                               |
+| 2    | Raw `rand::thread_rng`, `rand::rng()`, `fastrand::`, `getrandom::`, `OsRng`, and `Uuid::new_v4()` usage.                                       | Allows cfg‑gated and marked lines.                                                                          |
+| 3    | Production `tokio::select!` blocks without `biased;` in the first three lines.                                                                 | Excludes tests and marked lines.                                                                            |
+| 4    | `std::thread::spawn`, `std::thread::Builder::new`, and `tokio::task::spawn_blocking`.                                                          | Allows test‑only, non‑madsim, and marked sites.                                                             |
+| 5    | `AHashMap` or `AHashSet` in the reconciliation manager and matching engine.                                                                    | Covers the two audited files; the remaining file set stays outside this static rule until audited.          |
+| 6    | Direct `tokio::net::TcpStream::connect` and `tokio::net::TcpListener::bind` calls.                                                             | Callers must use `nautilus_network::net`, which swaps to `turmoil::net` under the `turmoil` feature.        |
+| 7    | Raw `tokio::{time,task,runtime,signal}` paths in production code on the madsim build path.                                                     | Allows the facade, process‑wide real Tokio runtime, test infrastructure, cfg‑gated sites, and marked lines. |
 
 The hook supports two exception forms:
 
 - An inline `// dst-ok` marker on a specific line, typically accompanied by a short reason (for
-  example, log-only wall-clock timing that does not affect state).
-- A small file-level allowlist in the hook script itself for sites classified as
-  leave-alone in the codebase audit (log timing in the cache module, log-record timestamping
+  example, log‑only wall‑clock timing that does not affect state).
+- A small file‑level allowlist in the hook script itself for sites classified as
+  leave‑alone in the codebase audit (log timing in the cache module, log‑record timestamping
   in the logging bridge and writer, progress reporting in the DeFi module).
 
-Test files, files under `tests/`, `python/`, and `ffi/` directories, and lines inside an inline
-`#[cfg(test)]` module are excluded because they are not part of the DST path.
+The hook excludes:
+
+- Files under `tests/`, `python/`, and `ffi/` directories.
+- Files named `tests.rs`, `*_test.rs`, or `*_tests.rs`.
+- Lines inside an inline `#[cfg(test)]` module.
+
+These paths are not part of the production DST contract.
 
 ### In-scope crates
 
-The hook applies to 17 workspace crates: the 16 crates in the transitive closure of `nautilus-live`
-(`analysis`, `common`, `core`, `cryptography`, `data`, `execution`, `indicators`, `live`, `model`,
-`network`, `persistence`, `portfolio`, `risk`, `serialization`, `system`, and `trading`), plus
-`backtest`.
+The transitive closure of `nautilus-live` contains 16 in‑scope crates:
+
+- `analysis`
+- `common`
+- `core`
+- `cryptography`
+- `data`
+- `execution`
+- `indicators`
+- `live`
+- `model`
+- `network`
+- `persistence`
+- `portfolio`
+- `risk`
+- `serialization`
+- `system`
+- `trading`
+
+The hook also covers `backtest`, bringing the total to 17 crates.
 
 Adapter crates and infrastructure crates (Redis, Postgres) are out of scope. Their DST
 suitability requires a separate audit before they enter the DST path.
 
 ## Network seed soaks
 
-[Turmoil](https://github.com/tokio-rs/turmoil) simulates the network under a seeded scheduler, so
-the `nautilus-network` transport tests can explore link and reconnect orderings that the madsim
-runtime swap does not reach. These tests run in two layers:
+[Turmoil](https://github.com/tokio-rs/turmoil) simulates the network under a seeded scheduler. The
+`nautilus-network` transport tests use it to reach link and reconnect orderings outside the madsim
+runtime swap.
 
-- Fixed-seed tests run in the nightly test suite. These cover connect, reconnect, partition,
-  close during reconnect, close during backoff, and repeated server-drop scenarios with
-  reproducible seeds.
-- An ignored reconnect soak sweeps Turmoil seeds until stopped, or until
-  `NAUTILUS_TURMOIL_SOAK_COUNT` seeds have run. Each seed runs the Tungstenite WebSocket backend
-  first and the Sockudo backend second when `transport-sockudo` is enabled, so both backends see
-  the same schedule search path.
+### Fixed-seed nightly tests
+
+The nightly suite runs reproducible scenarios for:
+
+- Initial connection.
+- Reconnection.
+- Network partitions.
+- Closing during reconnection.
+- Closing during backoff.
+- Repeated server drops with exact message‑order assertions.
+
+### Reconnect seed soak
+
+An ignored reconnect test sweeps Turmoil seeds until stopped or until the configured limit is
+reached. For each seed, the soak runs the Tungstenite WebSocket backend first. It then runs Sockudo
+when the `transport-sockudo` feature is enabled, giving both backends the same schedule search path.
+
+| Variable                                  | Default   | Effect                                              |
+| ----------------------------------------- | --------- | --------------------------------------------------- |
+| `NAUTILUS_TURMOIL_SOAK_START`             | `0`       | Selects the first seed, allowing a sweep to resume. |
+| `NAUTILUS_TURMOIL_SOAK_COUNT`             | Unbounded | Stops after the specified number of seeds.          |
+| `NAUTILUS_TURMOIL_SOAK_PROGRESS_INTERVAL` | `100`     | Logs progress after this many seeds per backend.    |
+
+### Run the soak
 
 Run the continuous soak with:
 
@@ -208,138 +257,226 @@ Run a bounded soak with:
 env NAUTILUS_TURMOIL_SOAK_COUNT=100 scripts/soak-network-turmoil.sh
 ```
 
-`NAUTILUS_TURMOIL_SOAK_START` sets the first seed, which resumes a sweep where an earlier run
-stopped. Within each seed, Turmoil runs the nodes in random order and randomizes link latency
-between 1 ms and 25 ms, while the scenario drops the server repeatedly, cycles the client through
-reconnect states, and asserts exact application-message order. The soak does not enable Turmoil
-`fail_rate`: for TCP, that breaks links without a retransmit model, which would overstate the
-client delivery contract for an order-preservation test.
+Each seed enables random node order and link latency from 1 ms to 25 ms. The scenario repeatedly
+drops the server, cycles the client through reconnect states, and asserts exact application‑message
+order.
 
-The Turmoil tests run against the simulated network and are not gated to Linux, so a seed sweep
-runs anywhere, including macOS. Several real localhost socket and WebSocket unit tests use
-`target_os = "linux"` for CI stability, so a macOS run leaves that host TCP coverage untouched.
-Treat the network test set as covered only after a run on Linux CI or a Linux workstation.
+The soak does not enable Turmoil `fail_rate`. For TCP, packet loss without a retransmit model would
+overstate the client delivery contract in an order‑preservation test.
+
+### Platform coverage
+
+The Turmoil tests use a simulated network and are not gated to Linux, so the seed sweep also runs on
+macOS. Several real localhost socket and WebSocket unit tests use `target_os = "linux"` for CI
+stability. A macOS run therefore leaves that host TCP coverage untouched. Treat the complete
+network test set as covered only after a run on Linux CI or a Linux workstation.
 
 ## Implementation notes
 
-Concrete changes the DST audit produced. Start here when checking whether a code path is on the
-DST path and how it routes.
+These sections map each deterministic seam to its source, purpose, and exceptions.
 
 ### Iteration-order seams
 
-Production sites that hold `IndexMap` / `IndexSet` rather than `AHashMap` / `AHashSet` because
-the iteration order is observable on the DST path:
+Production sites use ordered collections or explicit sorting when iteration is observable on the
+DST path.
 
-- **Matching engine** (`crates/execution/src/matching_engine/engine.rs`): ten fields
-  (`execution_bar_types`, `execution_bar_deltas`, `account_ids`, `cached_filled_qty`,
-  `bid_consumption`, `ask_consumption`, `queue_ahead_orders`, `queue_ahead_total`,
-  `queue_excess`, `queue_pending`). Iterated removes use `.shift_remove()`. Closes
-  [#3914](https://github.com/nautechsystems/nautilus_trader/issues/3914).
-- **Reconciliation manager** (`crates/live/src/execution/manager.rs`): hook-enforced; the
-  `ReconciliationResult` report maps (`orders`, `fills`) live in
-  `crates/execution/src/reconciliation/types.rs` as `IndexMap`.
-- **Account trait** (`crates/model/src/accounts/`): `balances`, `balances_total`,
-  `balances_free`, `balances_locked`, `starting_balances` returns. Balance and margin
-  storage fields on `BaseAccount` and `MarginAccount` are `IndexMap`; `commissions` and
-  `leverages` remain `AHashMap`.
-- **Position events** (`crates/model/src/position.rs`): `Position::commissions`, consumed via
-  `.values()` in `events/position/snapshot.rs`.
-- **Portfolio aggregation** (`crates/portfolio/src/portfolio.rs`): `unrealized_pnls`,
-  `realized_pnls`, `net_positions` storage; `accumulate_mark_values` builds
-  `IndexMap<Currency, Decimal>`.
-- **Data engine** (`crates/data/src/engine/`): `book_snapshot_counts`, `bar_aggregators`,
-  `BookSnapshotInfos`. Iterated removes use `.shift_remove()`.
-- **Execution engine** (`crates/execution/src/engine/`): `ExecutionEngine.clients`, plus
-  the `client_ids` / `venues` accumulators in `get_clients_for_orders()`.
-- **Backtest engine and exchange** (`crates/backtest/src/engine.rs`,
-  `crates/backtest/src/exchange.rs`): `BacktestEngine.venues` and
-  `SimulatedExchange.matching_engines` preserve venue and instrument iteration order for
-  settlement, expiration, liquidation, and seeded `FillModel` draws
-  ([#4480](https://github.com/nautechsystems/nautilus_trader/issues/4480)).
-- **Trading algorithm** (`crates/trading/src/algorithm/core.rs`):
-  `strategy_event_handlers` (drives ordered `msgbus::unsubscribe_*` fan-out).
-- **Analyzer** (`crates/analysis/src/analyzer.rs`): `account_balances`,
-  `account_balances_starting`.
-- **Cache API** (`crates/common/src/cache/mod.rs`): `get_orders_for_ids` and
-  `get_positions_for_ids` sort their `Vec` returns by `client_order_id` / `position_id`
-  before returning. Storage stays on `AHashSet` (set semantics).
-- **Instrument store** (`crates/common/src/providers.rs`): `InstrumentStore.instruments`,
-  because the Betfair, Derive, and Polymarket adapters publish one `DataEvent::Instrument`
-  per entry straight from `get_all()` / `list_all()`. Keeps the `ahash` hasher.
-- **Order emulator** (`crates/execution/src/order_emulator/emulator.rs`): `on_reset` sorts
-  the drained `subscribed_quotes`, `subscribed_trades`, and `subscribed_strategies` before
-  the `msgbus::unsubscribe_*` fan-out. The quote and trade paths also advance the seeded
-  `UUID4::new` draw sequence. Storage stays on `AHashSet`.
-- **WebSocket subscriptions** (`crates/network/src/websocket/subscription.rs`):
-  `topics_from_map` sorts its `Vec` return, which fixes the reconnect replay order behind
-  `all_topics()`. Storage stays on `DashMap` with `AHashSet` values.
+#### Matching engine
 
-Remaining `AHashMap` / `AHashSet` sites in the original `nautilus-live` closure are lookup‑only,
-behind concurrent shared‑ownership wrappers (`Arc<DashMap>`, `AtomicMap`), or feed into commutative
-aggregation. `backtest` retains additional hash collections outside rule 5's two‑file enforcement
-scope, including pre‑run validation and result maps. Treat their iteration order as outside the
-static guarantee until each path is audited.
+`crates/execution/src/matching_engine/mod.rs` uses eleven ordered collections:
+
+- `execution_bar_types`
+- `execution_bar_deltas`
+- `account_ids`
+- `cached_filled_qty`
+- `post_match_order_ids`
+- `bid_consumption`
+- `ask_consumption`
+- `queue_pending`
+- `queue_ahead_orders`
+- `queue_ahead_total`
+- `queue_excess`
+
+Removals from `queue_pending`, `queue_ahead_orders`, and `queue_ahead_total` use `.shift_remove()`
+so deleting an entry does not reorder the remainder.
+
+#### Reconciliation manager
+
+Rule 5 covers `crates/live/src/execution/manager.rs`. The `orders` and `fills` maps in
+`ReconciliationResult` use `IndexMap` in `crates/execution/src/reconciliation/types.rs`.
+
+#### Account balances
+
+The account trait returns `IndexMap` from:
+
+- `balances`
+- `balances_total`
+- `balances_free`
+- `balances_locked`
+- `starting_balances`
+
+Balance and margin storage on `BaseAccount` and `MarginAccount` also uses `IndexMap`. The
+`commissions` and `leverages` fields remain `AHashMap`.
+
+#### Position commissions
+
+`Position::commissions` in `crates/model/src/position.rs` uses `IndexMap`. Position snapshots consume
+the map through `.values()` in `crates/model/src/events/position/snapshot.rs`, making its order
+observable.
+
+#### Portfolio aggregation
+
+`crates/portfolio/src/portfolio.rs` stores `unrealized_pnls`, `realized_pnls`, and `net_positions`
+in `IndexMap`. `accumulate_mark_values` builds an `IndexMap<Currency, Decimal>`.
+
+#### Data engine
+
+`crates/data/src/engine/` uses ordered storage for `book_snapshot_counts`, `bar_aggregators`, and
+`BookSnapshotInfos`. Iterated removals use `.shift_remove()`.
+
+#### Execution engine
+
+`ExecutionEngine.clients` uses `IndexMap`. The `client_ids` and `venues` accumulators in
+`get_clients_for_orders()` use `IndexSet`.
+
+#### Backtest engine and exchange
+
+`BacktestEngine.venues` and `SimulatedExchange.matching_engines` preserve venue and instrument
+iteration order for:
+
+- Settlement.
+- Expiration.
+- Liquidation.
+- Seeded `FillModel` draws.
+
+The source locations are `crates/backtest/src/engine.rs` and `crates/backtest/src/exchange.rs`.
+
+#### Trading algorithm
+
+`strategy_event_handlers` in `crates/trading/src/algorithm/core.rs` uses `IndexMap` to drive ordered
+`msgbus::unsubscribe_*` fan‑out.
+
+#### Analyzer
+
+`account_balances` and `account_balances_starting` in `crates/analysis/src/analyzer.rs` use
+`IndexMap`.
+
+#### Cache API
+
+`get_orders_for_ids` and `get_positions_for_ids` in `crates/common/src/cache/mod.rs` sort returned
+vectors by `client_order_id` and `position_id`. The underlying storage keeps `AHashSet` because it
+has set semantics.
+
+#### Instrument store
+
+`InstrumentStore.instruments` in `crates/common/src/providers.rs` uses `IndexMap` with the `ahash`
+hasher. The order is observable because these adapters publish one `DataEvent::Instrument` per
+entry from `get_all()` or `list_all()`:
+
+- Betfair.
+- Derive.
+- Polymarket.
+
+#### Order emulator
+
+`on_reset` in `crates/execution/src/order_emulator/emulator.rs` sorts three drained sets before
+ordered `msgbus::unsubscribe_*` fan‑out:
+
+- `subscribed_quotes`
+- `subscribed_trades`
+- `subscribed_strategies`
+
+The quote and trade paths also advance the seeded `UUID4::new` draw sequence. Storage remains on
+`AHashSet`.
+
+#### WebSocket subscriptions
+
+`topics_from_map` in `crates/network/src/websocket/subscription.rs` sorts its returned vector to
+preserve reconnect replay order behind `all_topics()` while storage remains on `DashMap` with
+`AHashSet` values.
+
+#### Unordered collection limits
+
+`AHashMap` / `AHashSet` sites in the `nautilus-live` closure are lookup‑only, behind concurrent
+shared‑ownership wrappers (`Arc<DashMap>`, `AtomicMap`), or feed into commutative aggregation.
+`backtest` contains additional hash collections outside rule 5's two‑file enforcement scope,
+including pre‑run validation and result maps. Treat their iteration order as outside the static
+guarantee until each path is audited.
 
 ### Time seams
 
-`Instant::now` / `SystemTime::now` call sites that remain on the DST path are either
-inside `#[cfg(test)]`, file-allowlisted in the hook, or carry an inline `// dst-ok`
-marker with a reason:
+Remaining `Instant::now` and `SystemTime::now` sites are tests, file‑allowlisted locations, or
+marked exceptions:
 
-- `crates/common/src/testing.rs`: `wait_until` / `wait_until_async` timers.
-- `crates/execution/src/engine/mod.rs`: init log timing in `load_cache`.
-- `crates/common/src/cache/mod.rs`: timing in `check_integrity` and
-  `audit_own_order_books` (file-allowlisted).
-- `crates/model/src/defi/reporting.rs`: progress logging (file-allowlisted).
-- `crates/core/src/time.rs`: seam definition site (file-allowlisted).
+| Location                             | Use                                                      | Treatment                                                  |
+| ------------------------------------ | -------------------------------------------------------- | ---------------------------------------------------------- |
+| `crates/common/src/testing.rs`       | `wait_until` and `wait_until_async` timers.              | Inline `// dst-ok`: test controls use real time by design. |
+| `crates/execution/src/engine/mod.rs` | Initialization log timing in `load_cache`.               | Inline `// dst-ok`: timing does not affect DST state.      |
+| `crates/common/src/cache/mod.rs`     | Timing in `check_integrity` and `audit_own_order_books`. | File allowlist.                                            |
+| `crates/model/src/defi/reporting.rs` | Progress logging.                                        | File allowlist.                                            |
+| `crates/core/src/time.rs`            | Wall‑clock seam definition.                              | Explicit seam exception.                                   |
 
-`chrono::Utc::now` is hook-banned in the in-scope crates. The remaining call sites are the logging
-bridge and writer, scoped out under
+`jiff::Timestamp::now` and `jiff::Zoned::now` are hook‑banned in the in‑scope crates. The remaining
+timestamp call sites are the logging bridge and writer, scoped out under
 [Logging runs on real OS threads](#logging-runs-on-real-os-threads).
 `crates/core/src/datetime.rs::is_within_last_24_hours` routes through
 `nautilus_core::time::nanos_since_unix_epoch()` and compares in `u64` nanos directly.
 
 ### Randomness seams
 
-Production RNG sites on the DST path:
+Production randomness on the DST path uses three routed sites.
 
-- `crates/core/src/uuid.rs::UUID4::new()` routes through `madsim::rand::thread_rng()`
-  when called inside a madsim runtime under simulation, falling back to `rand::rng()`
-  outside one (and on normal builds). Production paths under simulation always run
-  inside a runtime, so they consume seeded bytes; plain `#[rstest]` tests under
-  `cfg(madsim)` use the host RNG. Reachable from order and event factories in
-  `nautilus-common` and `nautilus-risk`.
-- `crates/execution/src/models/fill.rs::default_std_rng()` routes the same way. Called
-  from `ProbabilisticFillState::new()` when no seed is provided. With a seed,
-  `StdRng::seed_from_u64` is deterministic by construction.
-- `crates/execution/src/matching_engine/ids_generator.rs` uses
-  `nautilus_core::UUID4::new()` in the position and venue order id generators for the
-  `use_random_ids` path. The default ID scheme (`{venue}-{raw_id}-{count}`) is
-  deterministic without it.
+#### UUID generation
+
+`crates/core/src/uuid.rs::UUID4::new()` uses `madsim::rand::thread_rng()` inside a madsim runtime
+under simulation. Normal builds and plain `#[rstest]` bodies outside a madsim runtime use
+`rand::rng()`.
+
+Production simulation paths run inside the runtime and consume seeded bytes. Order and event
+factories in `nautilus-common` and `nautilus-risk` reach this seam.
+
+#### Fill model randomness
+
+`crates/execution/src/models/fill.rs::default_std_rng()` follows the same runtime split.
+`ProbabilisticFillState::new()` calls it when no seed is provided. When a caller supplies a seed,
+`StdRng::seed_from_u64` is deterministic without the seam.
+
+#### Random matching-engine IDs
+
+The `use_random_ids` path in `crates/execution/src/matching_engine/ids_generator.rs` calls
+`nautilus_core::UUID4::new()` for position and venue order IDs. The default ID scheme,
+`{venue}-{raw_id}-{count}`, is deterministic without random bytes.
+
+#### Transport-layer exception
 
 One site carries a marker: jitter sampling for reconnect backoff in
 `crates/network/src/backoff.rs`, marked `// dst-ok` as transport layer.
 
 ### Tokio submodule split
 
-`madsim` aliases `time`, `task`, `runtime`, and `signal`. The other `tokio` submodules
-(`sync`, `io`, `select!`, `fs`, `net`) stay on real `tokio` under simulation. Extending
-the swap further would require rebuilding `tokio-tungstenite`, `tokio-rustls`, and
-`reqwest` against shimmed `tokio::net::TcpStream`, which the audit ruled out as too
-invasive.
+Only `time`, `task`, `runtime`, and `signal` route through `madsim`. The `sync`, `io`, `fs`, and
+`net` submodules, plus the `select!` macro, stay on real `tokio` under simulation.
 
-In-scope sites that touch real `tokio::net` / `tokio::io` directly:
+A wider swap would require rebuilding these dependencies against a shimmed
+`tokio::net::TcpStream`:
 
-- `crates/network/src/net.rs` re-exports `tokio::net::{TcpListener, TcpStream}`.
-- `crates/network/src/socket/client.rs` uses `tokio::io::{AsyncReadExt, AsyncWriteExt}`.
-- `crates/network/src/tls.rs` uses `tokio::io::{AsyncRead, AsyncWrite}`.
-- `crates/network/src/socket/types.rs` aliases `MaybeTlsStream<TcpStream>` split halves
-  via `tokio::io::{ReadHalf, WriteHalf}`; the TCP type itself comes through the
-  `crate::net` seam.
+- `tokio-tungstenite`
+- `tokio-rustls`
+- `reqwest`
 
-These run on real sockets even under simulation. Channel delivery order on
-`tokio::sync` stays deterministic because the sender and receiver tasks are scheduled
-by the madsim executor even though the channel implementation is real.
+That dependency replacement is outside the current scope.
+
+The in‑scope direct uses are:
+
+| Location                              | Real Tokio surface                         | Boundary                                                                 |
+| ------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------ |
+| `crates/network/src/net.rs`           | `tokio::net::{TcpListener, TcpStream}`     | Re‑exports the normal transport behind the `crate::net` seam.            |
+| `crates/network/src/socket/client.rs` | `tokio::io::{AsyncReadExt, AsyncWriteExt}` | Performs I/O on the selected transport.                                  |
+| `crates/network/src/tls.rs`           | `tokio::io::{AsyncRead, AsyncWrite}`       | Defines TLS I/O bounds.                                                  |
+| `crates/network/src/socket/types.rs`  | `tokio::io::{ReadHalf, WriteHalf}`         | Splits `MaybeTlsStream<TcpStream>`; `TcpStream` comes from `crate::net`. |
+
+These paths use real sockets even under simulation. The `tokio::sync` channel implementation also
+remains real, but madsim schedules its sender and receiver tasks. Channel delivery order therefore
+remains part of the deterministic scheduling contract.
 
 ### Raw thread escape rules
 
@@ -347,17 +484,17 @@ Rule 4 of the hook bans raw thread spawning outside three escape cases:
 
 - `#[cfg(test)]` test modules.
 - `#[cfg(not(madsim))]` or `#[cfg(not(all(feature = "simulation", madsim)))]` production
-  sites (e.g. the logging writer thread).
+  sites (for example, the logging writer thread).
 - An inline `// dst-ok` marker.
 
 `tokio::task::LocalSet` and `tokio::task::spawn_blocking` are not supported under
-`madsim`. The codebase audit found no production sites for either inside the in-scope
+`madsim`. The codebase audit found no production sites for either inside the in‑scope
 crates; new sites must carry a cfg gate or `// dst-ok` marker.
 
 ### Logging tests under simulation
 
-The logging writer thread is cfg-gated out under simulation; under `cfg(madsim)` log
-events are dropped. Tests that init the file-logging writer would either hang or assert
+The logging writer thread is cfg‑gated out under simulation; under `cfg(madsim)` log
+events are dropped. Tests that initialize the file‑logging writer would either hang or assert
 against an empty log file, so the affected submodules are gated out at the module
 boundary:
 
@@ -369,66 +506,92 @@ runs under simulation and pins the gated behavior.
 
 ## Scope boundaries
 
-The contract is deliberately narrow. The following weakenings are explicit, not oversights.
+The contract is limited by the boundaries below. Each subsection identifies behavior that can vary
+between runs or remains outside the audited DST path.
 
-### Python is not in DST scope
+### Python and FFI are not in DST scope
 
-DST runs under a native Rust test harness. No Python interpreter starts during a DST run. The
-PyO3 bindings under `crates/*/src/python/`, the `ffi/` directories, and the Python packages
-under `nautilus_trader/` are excluded from the contract as a policy, not as a weakness. Any
-code reachable only from Python call paths is out of scope; any Rust path reachable from the
-native DST harness must satisfy the contract even if the same type is also exported to Python.
+DST runs under a native Rust test harness and does not start a Python interpreter. The contract
+excludes:
 
-The `check-dst-conventions` hook encodes this policy by skipping `/python/` and `/ffi/` paths
-in the in-scope crates. Clock, RNG, and threading call sites behind those paths do not apply
-to the contract.
+- PyO3 bindings under `crates/*/src/python/`.
+- Rust FFI modules under `crates/core/src/ffi/` and `crates/model/src/ffi/`.
+- The Python package under `python/nautilus_trader/`.
 
-The primary objective of DST is reliability of the Rust engine itself: the order lifecycle,
-reconciliation, matching, risk, and execution state machines. Deterministic replay of user
-strategies is a secondary goal, reachable only for strategies authored in Rust or driven through a
-Rust-native test harness. A Python strategy that calls `time.time()`, issues arbitrary network
-requests, or relies on thread scheduling can vary its command stream between runs; the Rust core
-processes the varying stream deterministically, but end-to-end replay from a Python entry point is
-not guaranteed.
+Code reachable only through these bindings is out of scope. Any Rust path reachable from the native
+DST harness must satisfy the contract, even when the same type is also exported through a binding.
+
+The `check-dst-conventions` hook encodes this policy by skipping `/python/` and `/ffi/` paths in the
+in‑scope crates. Clock, RNG, and threading calls behind those paths do not apply to the contract.
+
+DST primarily covers the order lifecycle, reconciliation, matching, risk, and execution state
+machines in the Rust engine. User strategies are replayable only when written in Rust or driven
+through a Rust‑native test harness.
+
+A Python strategy can vary its command stream by:
+
+- Calling `time.time()`.
+- Issuing arbitrary network requests.
+- Relying on OS thread scheduling.
+
+The Rust core processes that command stream according to its deterministic contract, but DST does
+not guarantee end‑to‑end replay from a Python entry point.
 
 ### Platform-scoped
 
-`madsim`'s libc overrides for `clock_gettime` and `getrandom` are platform-specific.
-Cross-platform bitwise reproducibility is not claimed. A seed that reproduces a failure on Linux
-x86_64 may not reproduce on macOS aarch64.
+`madsim`'s libc overrides for `clock_gettime` and `getrandom` are platform‑specific. The contract
+does not claim cross‑platform bitwise reproducibility. A seed that reproduces a failure on Linux
+x86_64 may not reproduce it on macOS aarch64.
 
 ### Non-aliased dependencies escape silently
 
-Any dependency that reaches the OS through a non-aliased path (direct `libc` calls, `std::net`
-bypass, crates using `fastrand` or `OsRng`) escapes the simulator without raising an error. The
-in-scope crates have been audited; adapter crates and infrastructure crates require their own
-audits before entering the DST path.
+A dependency escapes the simulator without an error when it reaches the OS through:
+
+- Direct `libc` calls.
+- A `std::net` bypass.
+- Unrouted randomness such as `fastrand` or `OsRng`.
+
+The in‑scope crates have been audited. Adapter and infrastructure crates require separate audits
+before entering the DST path.
 
 ### Transport-layer I/O is not simulated
 
-`tokio-tungstenite`, `tokio-rustls`, `reqwest`, `redis`, and `sqlx` use real `tokio` internally.
-Under simulation, WebSocket and HTTP I/O run on real networking. This is intentional: the
-initial target is order lifecycle determinism, not transport fault injection. Transport-layer
-determinism would require per-crate `madsim` shims that do not exist.
+The following dependencies use real `tokio` internally:
 
-Test modules that drive real localhost sockets (`crates/network/src/socket/client.rs::tests`,
-`::rust_tests`; `crates/network/src/websocket/client.rs::tests`, `::rust_tests`;
-`crates/network/tests/websocket_proxy.rs`) are cfg-gated out under
-`all(feature = "simulation", madsim)` because their production code paths reach
-`dst::time::*` (madsim time primitives), which panic when called from a
-`#[tokio::test]` runtime. The retry test modules (`crates/network/src/retry.rs::tests`,
-`::proptest_tests`) run under simulation: each test attribute is `cfg_attr`-swapped
-between `#[tokio::test(start_paused = true)]` and `#[madsim::test]`, time reads and
-sleeps route through `crate::dst::time`, and explicit virtual-time advances go
-through a `cfg`-gated `advance_clock` function so the same body covers both runtimes.
+- `tokio-tungstenite`
+- `tokio-rustls`
+- `reqwest`
+- `redis`
+- `sqlx`
+
+WebSocket and HTTP I/O therefore use real networking under simulation. The contract covers order
+lifecycle determinism, while Turmoil provides the separate network simulation described in
+[Network seed soaks](#network-seed-soaks). General transport determinism would require per‑crate
+`madsim` shims that do not exist.
+
+The following test modules drive real localhost sockets and are cfg‑gated out under
+`all(feature = "simulation", madsim)`:
+
+- `crates/network/src/socket/client.rs::tests`
+- `crates/network/src/socket/client.rs::rust_tests`
+- `crates/network/src/websocket/client.rs::tests`
+- `crates/network/src/websocket/client.rs::rust_tests`
+- `crates/network/tests/websocket_proxy.rs`
+
+Their production paths reach madsim time primitives through `dst::time::*`, which panic when called
+from a `#[tokio::test]` runtime.
+
+The retry modules in `crates/network/src/retry.rs` run under both runtimes. Their test attributes
+switch between `#[tokio::test(start_paused = true)]` and `#[madsim::test]`; time reads and sleeps use
+`crate::dst::time`; explicit virtual‑time advances use a cfg‑gated `advance_clock` function. The same
+test bodies therefore cover normal and simulation builds.
 
 ### Signal handling
 
-`nautilus_common::live::dst::signal` exposes routed `ctrl_c` and `terminate` re-exports. The
-`crates/live/src/node/mod.rs` run loop routes through them, so node shutdown driven by
-`ctrl_c` is injectable from test code under `cfg(madsim)` via
-`madsim::runtime::Handle::send_ctrl_c`. Adapter-bin entry points still call
-`tokio::signal::ctrl_c` directly and remain scoped out.
+`nautilus_common::live::dst::signal` exposes routed `ctrl_c` and `terminate` re‑exports. The run loop
+in `crates/live/src/node/mod.rs` uses them. Under `cfg(madsim)`, tests can inject node shutdown through
+`madsim::runtime::Handle::send_ctrl_c`. Adapter binary entry points still call
+`tokio::signal::ctrl_c` directly and remain out of scope.
 
 ### Logging runs on real OS threads
 
@@ -439,10 +602,14 @@ simulation state.
 
 ### Adapters
 
-Adapter crates are out of scope. They carry their own direct clock, RNG, and transport-layer
-call sites (`chrono::Utc::now`, `SystemTime::now`, raw transport clients), varying by adapter.
-An adapter that enters the DST path must be audited for those call sites before the contract
-covers its behavior.
+Adapter crates are out of scope. Depending on the adapter, they contain:
+
+- Direct `jiff::Timestamp::now` or `jiff::Zoned::now` calls.
+- Direct `SystemTime::now` calls.
+- Unrouted RNG calls.
+- Raw transport clients.
+
+An adapter must be audited for these sites before the DST contract covers its behavior.
 
 ## Relationship to other testing layers
 
@@ -456,65 +623,104 @@ DST complements existing testing; it does not replace any of it.
 | Acceptance tests        | End‑to‑end backtest and live scenarios.              | Unchanged.                                      |
 | Deterministic sim (DST) | Async timing, scheduling, recovery correctness.      | Adds seed‑replayable exploration.               |
 
-DST's unique value is in the intersection of async concurrency and state-machine correctness.
-Bugs such as "a message at shutdown is dropped under a specific wakeup ordering" or "a
-reconciliation event is lost when iteration order reverses" are the target class. For anything
-else, the pre-existing test layers are the right tool.
+DST covers async concurrency and state‑machine correctness. Representative failures include:
+
+- A shutdown message dropped under one task wakeup order.
+- A reconciliation event lost when iteration order changes.
+
+The other testing layers retain responsibility for their existing scopes.
 
 ## Status
 
-- Layer 1 (runtime swap) is implemented. `nautilus_common::live::dst` exposes routed re-exports
-  for `time`, `task`, `runtime`, and `signal`. Production call sites for `time`, `task`, and
-  `runtime` route through the seam; signal call-site adoption is partial (see
-  [Signal handling](#signal-handling)).
-- Layer 2 (nondeterminism substitution) is implemented across the 17 in‑scope crates. Seams
-  exist for wall-clock time, monotonic time, randomness, and iteration order.
-  [Implementation notes](#implementation-notes) enumerates the audit closures and the remaining
-  allowed call sites.
-- Static enforcement via `check-dst-conventions` is active in pre-commit and CI. The hook
-  covers the load-bearing conditions; the `// dst-ok` marker convention permits per-line
-  exceptions when justified.
-- End-to-end runtime verification (a same-seed diff over an in-scope code path) is out of scope
-  for this repository. The hook enforces the structural conditions; the claim that a seed
-  reproduces identical observable behavior across runs is plausible from the seam design but is
-  not verified by a regression gate.
+### Runtime swap
+
+Layer 1 is implemented. `nautilus_common::live::dst` exposes routed re‑exports for `time`, `task`,
+`runtime`, and `signal`. Production call sites for `time`, `task`, and `runtime` use the seam.
+Signal adoption remains partial; see [Signal handling](#signal-handling).
+
+### Nondeterminism substitution
+
+Layer 2 is implemented across the 17 in‑scope crates. Seams cover wall‑clock time, monotonic time,
+randomness, and observable iteration order. [Implementation notes](#implementation-notes) lists the
+audited paths and remaining exceptions.
+
+### Static enforcement status
+
+`check-dst-conventions` runs in pre‑commit and CI. It covers the load‑bearing structural conditions
+and permits reviewed per‑line exceptions through `// dst-ok`.
+
+### Runtime verification limit
+
+This repository does not run an end‑to‑end same‑seed diff over an in‑scope application path. The
+seam design and static checks support the reproducibility contract, but no regression gate verifies
+identical observable behavior across complete runs.
 
 ### Simulation smoke gate
 
-The `dst` workflow (`.github/workflows/dst.yml`) invokes `make cargo-test-sim`, which builds
-`nautilus-common`, `nautilus-core`, `nautilus-network`, `nautilus-execution`, and `nautilus-live`
-with `--features simulation` under `cfg(madsim)`, then runs the sim-compatible legs below. Each
-leg runs with its own crate's `--features simulation` and uses `#[madsim::test]` where applicable,
-so the explicit cfg branches and virtual time are both validated. `nautilus-common` and
-`nautilus-execution` consume `nautilus-model` types, so each also runs a second leg with
-`--features "simulation,high-precision"`, exercising the seam-routed code paths under both
-fixed-point widths (`QuantityRaw` and `PriceRaw` as `u64` and as `u128`).
+The dedicated workflow and local pre‑flight use the same DST targets:
 
-The gate covers:
+| Entry point                 | Relevant order                                                               | Purpose                                                                   |
+| --------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `.github/workflows/dst.yml` | `check-code-sim` > `cargo-test-sim`                                          | Runs the nightly and manually dispatched DST smoke gate.                  |
+| `make pre-flight`           | `check-code-sim` > `cargo-test-doc` > `cargo-test-sim` > `cargo-test-extras` | Fails early on DST lint while keeping doctests ahead of nextest binaries. |
 
-- All simulation-compatible `nautilus-common` tests. This leg compiles with
-  `nautilus-core/simulation` propagated, so the explicit `wall_clock_now` cfg branch is selected
-  for every test in the suite. Plain `#[rstest]` tests run outside a madsim runtime and route
-  through the seam's `SystemTime::now()` fallback, the same path madsim's libc shim takes outside a
-  runtime. The `LiveClock` test module is cfg-gated out because its plain `#[rstest]` cases start
-  `LiveTimer` tasks without a madsim runtime, and most also block on wall-clock progress.
-  `live::dst::tests::test_dst_wall_clock_advances_with_virtual_time` uses `#[madsim::test]` and
-  asserts that `nanos_since_unix_epoch` advances with `madsim::time::sleep`, so virtual wall-clock
-  behavior is validated end-to-end on this leg.
-- The `nautilus-live` startup reconciliation timeout regression. This runs under a madsim
-  runtime and verifies that a pending mass-status request reaches the configured timeout,
-  reports the expected error, and cleans up the node instead of entering a real Tokio timer.
-- All of `nautilus-network`, with transport-bound test modules gated out at the source. Includes
-  the seam pinning tests for sleep, timeout, and the rate limiter under virtual time, plus the
-  retry suites that exercise backoff timing.
-- All of `nautilus-execution`. These are plain `#[rstest]` cases, so they compile and exercise the
-  cfg-gated branches in the matching engine, fill model, and execution-engine state machines
-  without entering a madsim runtime; `default_std_rng()` takes its host-RNG fallback there.
-- The cross-crate seam pinning tests in `nautilus-core` (`wall_clock_now` virtual time).
+`check-code-sim` runs pinned stable Clippy with `--features simulation` and `cfg(madsim)` across
+`nautilus-common`, `nautilus-core`, `nautilus-network`, `nautilus-execution`, and `nautilus-live`.
 
-Deterministic-scheduler coverage comes from the `#[madsim::test]` cases in `nautilus-common`,
-`nautilus-core`, `nautilus-network`, and `nautilus-live`. The gate as a whole catches drift in the
-cfg-gated DST seams; it does not verify determinism end-to-end.
+`cargo-test-sim` uses two feature‑coherent nextest invocations:
+
+| Precision | Packages                                                                                      | Features                    | Selection                                                                         |
+| --------- | --------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------- |
+| Standard  | `nautilus-common`, `nautilus-core`, `nautilus-network`, `nautilus-execution`, `nautilus-live` | `simulation`                | All compatible common, network, and execution tests; focused live and core tests. |
+| High      | `nautilus-common`, `nautilus-execution`                                                       | `simulation,high-precision` | All tests in both packages.                                                       |
+
+Nextest compiles the selected library and test targets, so the gate does not run a separate Cargo
+build. The two invocations resolve each feature set once across their package sets. Together they
+exercise seam‑routed `QuantityRaw` and `PriceRaw` paths at both fixed‑point widths: `u64` and `u128`.
+
+#### Common tests
+
+The standard‑precision run executes all simulation‑compatible `nautilus-common` tests. Its feature
+graph propagates `nautilus-core/simulation`, selecting the `wall_clock_now` cfg branch throughout
+the suite.
+
+Plain `#[rstest]` bodies run outside a madsim runtime and use the seam's `SystemTime::now()` fallback.
+This is the same path madsim's libc shim takes outside a runtime.
+
+The `LiveClock` test module is cfg‑gated out because its plain `#[rstest]` cases start `LiveTimer`
+tasks without a madsim runtime, and most wait for wall‑clock progress.
+
+`live::dst::tests::test_dst_wall_clock_advances_with_virtual_time` runs under `#[madsim::test]` and
+asserts that `nanos_since_unix_epoch` advances with `madsim::time::sleep`. This pins virtual
+wall‑clock behavior inside the runtime.
+
+#### Live startup reconciliation
+
+The focused `nautilus-live` regression runs under madsim. It verifies that a pending mass‑status
+request reaches its configured timeout, reports the expected error, and cleans up the node without
+entering a real Tokio timer.
+
+#### Network tests
+
+The run executes all `nautilus-network` tests except transport‑bound modules cfg‑gated out at the
+source. Coverage includes virtual‑time seam tests for sleep, timeout, and the rate limiter, plus the
+retry suites that exercise backoff timing.
+
+#### Execution tests
+
+The run executes all `nautilus-execution` tests. These plain `#[rstest]` cases exercise cfg‑gated
+branches in the matching engine, fill model, and execution engine without entering a madsim
+runtime. `default_std_rng()` therefore takes its host‑RNG fallback in these tests.
+
+#### Core seam tests
+
+The focused `nautilus-core` selection pins `wall_clock_now` against virtual time.
+
+#### Overall gate coverage
+
+`#[madsim::test]` cases in `nautilus-common`, `nautilus-core`, `nautilus-network`, and
+`nautilus-live` provide deterministic‑scheduler coverage. The complete gate catches drift in the
+cfg‑gated seams but does not verify end‑to‑end determinism.
 
 ## Further reading
 

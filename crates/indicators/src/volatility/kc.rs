@@ -27,7 +27,7 @@ use crate::{
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators", unsendable)
+    pyo3::pyclass(module = "nautilus_trader.indicators", unsendable)
 )]
 #[cfg_attr(
     feature = "python",
@@ -137,7 +137,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::stubs::kc_10;
+    use crate::{stubs::kc_10, testing::assert_approx_equal};
 
     #[rstest]
     fn test_name_returns_expected_string(kc_10: KeltnerChannel) {
@@ -179,9 +179,9 @@ mod tests {
         }
 
         assert!(kc_10.initialized());
-        assert_eq!(kc_10.upper, 13.436_666_666_666_666);
-        assert_eq!(kc_10.middle, 9.676_666_666_666_666);
-        assert_eq!(kc_10.lower, 5.916_666_666_666_666);
+        assert_approx_equal(kc_10.upper, 13.4366666667);
+        assert_approx_equal(kc_10.middle, 9.67666666667);
+        assert_approx_equal(kc_10.lower, 5.91666666667);
     }
 
     #[rstest]

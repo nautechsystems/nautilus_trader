@@ -109,6 +109,7 @@ impl DeriveExecClientConfig {
         signature_expiry_secs = None,
         market_order_slippage_bps = None,
         max_matching_requests_per_second = None,
+        max_per_instrument_matching_requests_per_second = None,
         transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
@@ -132,6 +133,7 @@ impl DeriveExecClientConfig {
         signature_expiry_secs: Option<u64>,
         market_order_slippage_bps: Option<u32>,
         max_matching_requests_per_second: Option<u32>,
+        max_per_instrument_matching_requests_per_second: Option<u32>,
         transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
@@ -158,6 +160,7 @@ impl DeriveExecClientConfig {
             market_order_slippage_bps: market_order_slippage_bps
                 .unwrap_or(defaults.market_order_slippage_bps),
             max_matching_requests_per_second,
+            max_per_instrument_matching_requests_per_second,
         }
     }
 

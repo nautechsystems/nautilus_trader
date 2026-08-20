@@ -58,7 +58,9 @@ static RISK_PROCESS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static ORDER_EMULATOR_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static PORTFOLIO_ACCOUNT_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static PORTFOLIO_ORDER_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
-static SHUTDOWN_SYSTEM_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
+static SYSTEM_QUEUE_STATE_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
+static SYSTEM_SOCKET_STATE_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
+static SYSTEM_SHUTDOWN_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
 static RECONCILIATION_RAW_ORDER_REPORT_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
 static RECONCILIATION_RAW_FILL_REPORT_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
 static RECONCILIATION_RAW_POSITION_REPORT_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
@@ -230,6 +232,20 @@ macro_rules! define_switchboard {
                 *PORTFOLIO_ORDER_ENDPOINT.get_or_init(|| "Portfolio.update_order".into())
             }
 
+            /// Pub/sub topic carrying `QueueStateChanged` events.
+            #[inline]
+            #[must_use]
+            pub fn queue_state_changed_topic() -> MStr<Topic> {
+                *SYSTEM_QUEUE_STATE_TOPIC.get_or_init(|| "events.system.QueueStateChanged".into())
+            }
+
+            /// Pub/sub topic carrying `SocketStateChanged` events.
+            #[inline]
+            #[must_use]
+            pub fn socket_state_changed_topic() -> MStr<Topic> {
+                *SYSTEM_SOCKET_STATE_TOPIC.get_or_init(|| "events.system.SocketStateChanged".into())
+            }
+
             /// Pub/sub topic carrying `ShutdownSystem` commands published by
             /// actors, engines, and strategies.
             ///
@@ -239,7 +255,7 @@ macro_rules! define_switchboard {
             #[inline]
             #[must_use]
             pub fn shutdown_system_topic() -> MStr<Topic> {
-                *SHUTDOWN_SYSTEM_TOPIC.get_or_init(|| "commands.system.shutdown".into())
+                *SYSTEM_SHUTDOWN_TOPIC.get_or_init(|| "commands.system.shutdown".into())
             }
 
             /// Pub/sub topic carrying raw `OrderStatusReport`s that arrived from
@@ -1024,6 +1040,22 @@ mod tests {
             switchboard
                 .snapshot_position_topics
                 .contains_key(&position_id)
+        );
+    }
+
+    #[rstest]
+    fn test_queue_state_changed_topic_identity() {
+        assert_eq!(
+            MessagingSwitchboard::queue_state_changed_topic().as_ref(),
+            "events.system.QueueStateChanged"
+        );
+    }
+
+    #[rstest]
+    fn test_socket_state_changed_topic_identity() {
+        assert_eq!(
+            MessagingSwitchboard::socket_state_changed_topic().as_ref(),
+            "events.system.SocketStateChanged"
         );
     }
 

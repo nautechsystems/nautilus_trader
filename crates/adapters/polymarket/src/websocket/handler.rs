@@ -36,7 +36,9 @@ use super::{
         UserWsMessage,
     },
 };
-use crate::common::credential::Credential;
+use crate::{common::credential::Credential, http::error::sanitize_error_text};
+
+const INITIAL_DUMP: bool = true;
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -58,10 +60,12 @@ pub(super) struct FeedHandler {
     channel: WsChannel,
     client: Option<WebSocketClient>,
     cmd_rx: UnboundedReceiver<HandlerCommand>,
-    raw_rx: UnboundedReceiver<Message>,
+    raw_rx: UnboundedReceiver<(u64, Message)>,
     out_tx: UnboundedSender<PolymarketWsMessage>,
     credential: Option<Credential>,
     subscriptions: SubscriptionState,
+    discovery_subscribed: Arc<AtomicBool>,
+    initial_market_replay: Option<(Vec<String>, u64)>,
     auth_tracker: AuthTracker,
     // True once SubscribeUser has been explicitly requested by the caller
     user_subscribed: bool,
@@ -78,11 +82,14 @@ impl FeedHandler {
     pub(super) fn new(
         signal: Arc<AtomicBool>,
         channel: WsChannel,
+        client: Option<WebSocketClient>,
         cmd_rx: UnboundedReceiver<HandlerCommand>,
-        raw_rx: UnboundedReceiver<Message>,
+        raw_rx: UnboundedReceiver<(u64, Message)>,
         out_tx: UnboundedSender<PolymarketWsMessage>,
         credential: Option<Credential>,
         subscriptions: SubscriptionState,
+        discovery_subscribed: Arc<AtomicBool>,
+        initial_market_replay: Option<(Vec<String>, u64)>,
         auth_tracker: AuthTracker,
         user_subscribed: bool,
         subscribe_new_markets: bool,
@@ -90,12 +97,14 @@ impl FeedHandler {
         Self {
             signal,
             channel,
-            client: None,
+            client,
             cmd_rx,
             raw_rx,
             out_tx,
             credential,
             subscriptions,
+            discovery_subscribed,
+            initial_market_replay,
             auth_tracker,
             user_subscribed,
             market_subscription_initialized: false,
@@ -114,7 +123,7 @@ impl FeedHandler {
         self.signal.load(Ordering::Relaxed)
     }
 
-    async fn send_subscribe_market(&mut self, asset_ids: &[String]) {
+    async fn send_subscribe_market(&mut self, asset_ids: &[String], connection_epoch: Option<u64>) {
         let Some(ref client) = self.client else {
             log::warn!("No client available for market subscribe");
             return;
@@ -128,19 +137,30 @@ impl FeedHandler {
             serde_json::to_string(&MarketSubscribeRequest {
                 assets_ids: asset_ids.to_vec(),
                 operation: "subscribe",
+                initial_dump: INITIAL_DUMP,
                 custom_feature_enabled: self.subscribe_new_markets,
             })
         } else {
             serde_json::to_string(&MarketInitialSubscribeRequest {
                 assets_ids: asset_ids.to_vec(),
                 msg_type: "market",
+                initial_dump: INITIAL_DUMP,
                 custom_feature_enabled: self.subscribe_new_markets,
             })
         };
 
         match payload {
             Ok(payload) => {
-                if let Err(e) = client.send_text(payload, None).await {
+                let result = match connection_epoch {
+                    Some(connection_epoch) => {
+                        client
+                            .send_text_on_connection(payload, None, connection_epoch)
+                            .await
+                    }
+                    None => client.send_text(payload, None).await,
+                };
+
+                if let Err(e) = result {
                     for id in asset_ids {
                         self.subscriptions.mark_failure(id);
                     }
@@ -225,18 +245,20 @@ impl FeedHandler {
         }
     }
 
-    async fn resubscribe_all(&mut self) {
+    async fn resubscribe_all(&mut self, connection_epoch: u64) {
         match self.channel {
             WsChannel::Market => {
                 let ids = self.subscriptions.all_topics();
-                if ids.is_empty() {
+                if ids.is_empty() && !self.discovery_subscribed.load(Ordering::Relaxed) {
                     return;
                 }
                 log::info!(
-                    "Resubscribing to {} market assets after reconnect",
-                    ids.len()
+                    "Restoring market subscription state after reconnect: assets={}, discovery={}",
+                    ids.len(),
+                    self.discovery_subscribed.load(Ordering::Relaxed),
                 );
-                self.send_subscribe_market(&ids).await;
+                self.send_subscribe_market(&ids, Some(connection_epoch))
+                    .await;
             }
             WsChannel::User => {
                 if self.user_subscribed {
@@ -254,6 +276,11 @@ impl FeedHandler {
             return vec![];
         }
 
+        // Reply to the application-level `PING` heartbeat, which is not JSON
+        if text == "PONG" {
+            return vec![];
+        }
+
         match self.channel {
             WsChannel::Market => {
                 if let Ok(msgs) = serde_json::from_str::<Vec<&RawValue>>(text) {
@@ -266,21 +293,33 @@ impl FeedHandler {
                             }
                         })
                         .collect()
-                } else if let Ok(msg) = MarketWsMessage::parse(text) {
-                    vec![PolymarketWsMessage::Market(msg)]
                 } else {
-                    log::warn!("Failed to parse market WS message: {text}");
-                    vec![]
+                    match MarketWsMessage::parse(text) {
+                        Ok(msg) => vec![PolymarketWsMessage::Market(msg)],
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to parse market WS message: {e}; payload={}",
+                                sanitize_error_text(text)
+                            );
+                            vec![]
+                        }
+                    }
                 }
             }
             WsChannel::User => {
                 if let Ok(msgs) = UserWsMessage::parse_batch(text) {
                     msgs.into_iter().map(PolymarketWsMessage::User).collect()
-                } else if let Ok(msg) = UserWsMessage::parse(text) {
-                    vec![PolymarketWsMessage::User(msg)]
                 } else {
-                    log::warn!("Failed to parse user WS message: {text}");
-                    vec![]
+                    match UserWsMessage::parse(text) {
+                        Ok(msg) => vec![PolymarketWsMessage::User(msg)],
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to parse user WS message: {e}; payload={}",
+                                sanitize_error_text(text)
+                            );
+                            vec![]
+                        }
+                    }
                 }
             }
         }
@@ -289,6 +328,11 @@ impl FeedHandler {
     pub(super) async fn next(&mut self) -> Option<PolymarketWsMessage> {
         if !self.message_buffer.is_empty() {
             return Some(self.message_buffer.remove(0));
+        }
+
+        if let Some((asset_ids, connection_epoch)) = self.initial_market_replay.take() {
+            self.send_subscribe_market(&asset_ids, Some(connection_epoch))
+                .await;
         }
 
         loop {
@@ -309,7 +353,10 @@ impl FeedHandler {
                             return None;
                         }
                         HandlerCommand::SubscribeMarket(ids) => {
-                            self.send_subscribe_market(&ids).await;
+                            if self.subscribe_new_markets && ids.is_empty() {
+                                self.discovery_subscribed.store(true, Ordering::Relaxed);
+                            }
+                            self.send_subscribe_market(&ids, None).await;
                         }
                         HandlerCommand::UnsubscribeMarket(ids) => {
                             for id in &ids {
@@ -326,12 +373,12 @@ impl FeedHandler {
                         }
                     }
                 }
-                Some(raw) = self.raw_rx.recv() => {
+                Some((connection_epoch, raw)) = self.raw_rx.recv() => {
                     match raw {
                         Message::Text(text) => {
                             if text == RECONNECTED {
                                 self.market_subscription_initialized = false;
-                                self.resubscribe_all().await;
+                                self.resubscribe_all(connection_epoch).await;
                                 return Some(PolymarketWsMessage::Reconnected);
                             }
                             let msgs = self.parse_messages(&text);
@@ -372,7 +419,13 @@ impl FeedHandler {
 
 #[cfg(test)]
 mod tests {
+    use std::{sync::Mutex, time::Duration};
+
+    use futures_util::StreamExt;
+    use nautilus_common::testing::wait_until_async;
+    use nautilus_network::websocket::{TransportBackend, WebSocketConfig, channel_message_handler};
     use rstest::{fixture, rstest};
+    use serde_json::{Value, json};
 
     use super::*;
     use crate::common::enums::PolymarketOrderSide;
@@ -395,15 +448,127 @@ mod tests {
         FeedHandler::new(
             Arc::new(AtomicBool::new(false)),
             channel,
+            None,
             cmd_rx,
             raw_rx,
             out_tx,
             None,
             SubscriptionState::new(':'),
+            Arc::new(AtomicBool::new(false)),
+            None,
             AuthTracker::new(),
             false,
             false,
         )
+    }
+
+    async fn recording_server() -> (String, Arc<Mutex<Vec<String>>>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind recording server");
+        let addr = listener.local_addr().expect("recording server address");
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let received = Arc::clone(&messages);
+
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept websocket client");
+            let mut socket = tokio_tungstenite::accept_async(stream)
+                .await
+                .expect("accept websocket handshake");
+
+            while let Some(message) = socket.next().await {
+                match message.expect("read websocket message") {
+                    Message::Text(text) => received
+                        .lock()
+                        .expect("recording mutex poisoned")
+                        .push(text.to_string()),
+                    Message::Close(_) => break,
+                    _ => {}
+                }
+            }
+        });
+
+        (format!("ws://{addr}"), messages)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn initial_market_replay_recovers_on_current_connection_epoch() {
+        let (url, messages) = recording_server().await;
+        let config = WebSocketConfig::builder()
+            .url(url)
+            .backend(TransportBackend::Tungstenite)
+            .build()
+            .expect("valid websocket config");
+        let (message_handler, _message_rx) = channel_message_handler();
+        let client = WebSocketClient::connect(config, Some(message_handler), None, vec![], None)
+            .await
+            .expect("connect websocket client");
+
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut handler = FeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            WsChannel::Market,
+            Some(client),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            SubscriptionState::new(':'),
+            Arc::new(AtomicBool::new(true)),
+            Some((vec![], 1)),
+            AuthTracker::new(),
+            false,
+            true,
+        );
+        raw_tx
+            .send((0, Message::Text(RECONNECTED.into())))
+            .expect("queue reconnect notification");
+
+        assert!(matches!(
+            handler.next().await,
+            Some(PolymarketWsMessage::Reconnected),
+        ));
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .send_text_on_connection("barrier".to_string(), None, 0)
+            .await
+            .expect("send barrier on current connection");
+
+        wait_until_async(
+            || {
+                let messages = Arc::clone(&messages);
+                async move { messages.lock().expect("recording mutex poisoned").len() >= 2 }
+            },
+            Duration::from_secs(1),
+        )
+        .await;
+
+        {
+            let messages = messages.lock().expect("recording mutex poisoned");
+            assert_eq!(messages.len(), 2);
+            assert_eq!(
+                serde_json::from_str::<Value>(&messages[0]).expect("valid subscribe payload"),
+                json!({
+                    "assets_ids": [],
+                    "type": "market",
+                    "initial_dump": true,
+                    "custom_feature_enabled": true,
+                }),
+            );
+            assert_eq!(messages[1], "barrier");
+        }
+
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .disconnect()
+            .await;
     }
 
     #[rstest]

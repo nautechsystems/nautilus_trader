@@ -35,7 +35,7 @@ use crate::{
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -180,7 +180,7 @@ mod tests {
 
     use super::TradeTickBuilder;
     use crate::{
-        data::{HasTsInit, TradeTick, stubs::stub_trade_ethusdt_buyer},
+        data::{HasTsInit, TradeTick, stubs::stub_trade_ethusdt_buy},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},
@@ -191,7 +191,7 @@ mod tests {
             InstrumentId::from("EURUSD.SIM"),
             Price::from("1.0500"),
             Quantity::from("100000"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::from("T-001"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -205,7 +205,7 @@ mod tests {
         assert_eq!(trade.instrument_id, InstrumentId::from("EURUSD.SIM"));
         assert_eq!(trade.price, Price::from("1.0500"));
         assert_eq!(trade.size, Quantity::from("100000"));
-        assert_eq!(trade.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(trade.aggressor_side, AggressorSide::Buy);
         assert_eq!(trade.trade_id, TradeId::from("T-001"));
         assert_eq!(trade.ts_event, UnixNanos::from(1_000_000_000));
         assert_eq!(trade.ts_init, UnixNanos::from(2_000_000_000));
@@ -217,7 +217,7 @@ mod tests {
             InstrumentId::from("GBPUSD.SIM"),
             Price::from("1.2500"),
             Quantity::from("50000"),
-            AggressorSide::Seller,
+            AggressorSide::Sell,
             TradeId::from("T-002"),
             UnixNanos::from(500_000_000),
             UnixNanos::from(1_500_000_000),
@@ -227,7 +227,7 @@ mod tests {
         let trade = result.unwrap();
         assert_eq!(trade.instrument_id, InstrumentId::from("GBPUSD.SIM"));
         assert_eq!(trade.price, Price::from("1.2500"));
-        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.aggressor_side, AggressorSide::Sell);
     }
 
     #[rstest]
@@ -236,7 +236,7 @@ mod tests {
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let price = Price::from("10000.00");
         let zero_size = Quantity::from(0);
-        let aggressor_side = AggressorSide::Buyer;
+        let aggressor_side = AggressorSide::Buy;
         let trade_id = TradeId::from("123456789");
         let ts_event = UnixNanos::from(0);
         let ts_init = UnixNanos::from(1);
@@ -257,7 +257,7 @@ mod tests {
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let price = Price::from("10000.00");
         let zero_size = Quantity::from(0);
-        let aggressor_side = AggressorSide::Buyer;
+        let aggressor_side = AggressorSide::Buy;
         let trade_id = TradeId::from("123456789");
         let ts_event = UnixNanos::from(0);
         let ts_init = UnixNanos::from(1);
@@ -287,7 +287,7 @@ mod tests {
             .instrument_id(InstrumentId::from("BTCUSD.CRYPTO"))
             .price(Price::from("50000.00"))
             .size(Quantity::from("0.50"))
-            .aggressor_side(AggressorSide::Seller)
+            .aggressor_side(AggressorSide::Sell)
             .trade_id(TradeId::from("T-999"))
             .ts_event(UnixNanos::from(3_000_000_000))
             .ts_init(UnixNanos::from(4_000_000_000))
@@ -297,7 +297,7 @@ mod tests {
         assert_eq!(trade.instrument_id, InstrumentId::from("BTCUSD.CRYPTO"));
         assert_eq!(trade.price, Price::from("50000.00"));
         assert_eq!(trade.size, Quantity::from("0.50"));
-        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.aggressor_side, AggressorSide::Sell);
         assert_eq!(trade.trade_id, TradeId::from("T-999"));
         assert_eq!(trade.ts_event, UnixNanos::from(3_000_000_000));
         assert_eq!(trade.ts_init, UnixNanos::from(4_000_000_000));
@@ -344,8 +344,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(AggressorSide::Buyer)]
-    #[case(AggressorSide::Seller)]
+    #[case(AggressorSide::Buy)]
+    #[case(AggressorSide::Sell)]
     #[case(AggressorSide::NoAggressor)]
     fn test_trade_tick_with_different_aggressor_sides(#[case] aggressor_side: AggressorSide) {
         let trade = TradeTick::new(
@@ -424,7 +424,7 @@ mod tests {
         assert!(debug_str.contains("TradeTick"));
         assert!(debug_str.contains("EURUSD.SIM"));
         assert!(debug_str.contains("1.0500"));
-        assert!(debug_str.contains("Buyer"));
+        assert!(debug_str.contains("Buy"));
         assert!(debug_str.contains("T-001"));
     }
 
@@ -442,7 +442,7 @@ mod tests {
         assert!(display_str.contains("EURUSD.SIM"));
         assert!(display_str.contains("1.0500"));
         assert!(display_str.contains("100000"));
-        assert!(display_str.contains("BUYER"));
+        assert!(display_str.contains("BUY"));
         assert!(display_str.contains("T-001"));
         assert!(display_str.contains("1000000000"));
     }
@@ -463,7 +463,7 @@ mod tests {
             InstrumentId::from("TEST.SIM"),
             Price::from("0.0000"),
             Quantity::from("1000.0000"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::from("T-ZERO"),
             UnixNanos::from(0),
             UnixNanos::from(0),
@@ -480,7 +480,7 @@ mod tests {
             InstrumentId::from("TEST.SIM"),
             Price::from("999999.9999"),
             Quantity::from("999999999.9999"),
-            AggressorSide::Seller,
+            AggressorSide::Sell,
             TradeId::from("T-MAX"),
             UnixNanos::from(u64::MAX),
             UnixNanos::from(u64::MAX),
@@ -496,7 +496,7 @@ mod tests {
             InstrumentId::from("TEST.SIM"),
             Price::from("100.00"),
             Quantity::from("1000"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::from("TRADE-123"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -506,7 +506,7 @@ mod tests {
             InstrumentId::from("TEST.SIM"),
             Price::from("100.00"),
             Quantity::from("1000"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::from("TRADE-456"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -517,11 +517,11 @@ mod tests {
     }
 
     #[rstest]
-    fn test_to_string(stub_trade_ethusdt_buyer: TradeTick) {
-        let trade = stub_trade_ethusdt_buyer;
+    fn test_to_string(stub_trade_ethusdt_buy: TradeTick) {
+        let trade = stub_trade_ethusdt_buy;
         assert_eq!(
             trade.to_string(),
-            "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUYER,123456789,0"
+            "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUY,123456789,0"
         );
     }
 
@@ -532,7 +532,7 @@ mod tests {
             "instrument_id": "ETHUSDT-PERP.BINANCE",
             "price": "10000.0000",
             "size": "1.00000000",
-            "aggressor_side": "BUYER",
+            "aggressor_side": "BUY",
             "trade_id": "123456789",
             "ts_event": 0,
             "ts_init": 1
@@ -540,7 +540,7 @@ mod tests {
 
         let trade: TradeTick = serde_json::from_str(raw_string).unwrap();
 
-        assert_eq!(trade.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(trade.aggressor_side, AggressorSide::Buy);
         assert_eq!(
             trade.instrument_id,
             InstrumentId::from("ETHUSDT-PERP.BINANCE")
@@ -548,20 +548,5 @@ mod tests {
         assert_eq!(trade.price, Price::from("10000.0000"));
         assert_eq!(trade.size, Quantity::from("1.00000000"));
         assert_eq!(trade.trade_id, TradeId::from("123456789"));
-    }
-
-    #[cfg(feature = "python")]
-    #[rstest]
-    fn test_from_pyobject(stub_trade_ethusdt_buyer: TradeTick) {
-        use pyo3::{IntoPyObjectExt, Python};
-
-        let trade = stub_trade_ethusdt_buyer;
-
-        Python::initialize();
-        Python::attach(|py| {
-            let tick_pyobject = trade.into_py_any(py).unwrap();
-            let parsed_tick = TradeTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
-            assert_eq!(parsed_tick, trade);
-        });
     }
 }

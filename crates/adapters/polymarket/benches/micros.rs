@@ -49,7 +49,7 @@ use nautilus_polymarket::{
             MarketWsMessage, PolymarketBookSnapshot, PolymarketQuotes, PolymarketTrade,
             UserWsMessage,
         },
-        parse::{parse_book_deltas, parse_book_snapshot, parse_trade_tick},
+        parse::{parse_book_deltas, parse_book_snapshot, parse_timestamp_ms, parse_trade_tick},
     },
 };
 use rust_decimal::Decimal;
@@ -203,18 +203,20 @@ fn bench_parse_book_deltas(c: &mut Criterion) {
         MarketWsMessage::PriceChange(q) => q,
         _ => unreachable!(),
     };
+    let changes = quotes.price_changes.iter().collect::<Vec<_>>();
+    let ts_event = parse_timestamp_ms(&quotes.timestamp).unwrap();
 
     let mut group = c.benchmark_group("parse_only");
     group.bench_function("book_deltas", |b| {
         b.iter(|| {
             let deltas = parse_book_deltas(
-                black_box(&quotes),
+                black_box(&changes),
                 id,
                 px_prec,
                 sz_prec,
+                ts_event,
                 UnixNanos::default(),
-            )
-            .unwrap();
+            );
             black_box(deltas);
         });
     });

@@ -37,7 +37,7 @@ pub use crate::events::{
         canceled::OrderCanceled,
         canceled_batch::OrderCanceledBatch,
         denied::OrderDenied,
-        denied_reason::{OrderDeniedCode, OrderDeniedReason},
+        denied_reason::{OrderDeniedCode, OrderDeniedReason, OrderPriceField},
         emulated::OrderEmulated,
         expired::OrderExpired,
         fill_voided::OrderFillVoided,

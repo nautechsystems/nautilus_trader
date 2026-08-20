@@ -32,7 +32,6 @@ This crate provides feature flags to control source code inclusion during compil
 
 - `examples`: Enables example strategies and the EMA crossover backtest example.
 - `streaming`: Enables `persistence` dependency for streaming configuration.
-- `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `extension-module`: Builds as a Python extension module.
 

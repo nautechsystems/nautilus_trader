@@ -15,7 +15,21 @@
 
 //! Python bindings for live node.
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    collections::HashMap,
+    fmt::Debug,
+    future::Future,
+    pin::Pin,
+    rc::Rc,
+    str::FromStr,
+    sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    task::{Context, Poll, Waker},
+    time::{Duration, Instant},
+};
 
 use nautilus_common::{
     actor::data_actor::ImportableActorConfig,
@@ -23,20 +37,22 @@ use nautilus_common::{
     enums::Environment,
     live::get_runtime,
     logging::logger::LoggerConfig,
+    msgbus::MessageBusConfig,
     python::{
-        actor::{PyDataActor, PyDataActorInner, register_python_exec_algorithm_endpoint},
-        cache::PyCache,
+        actor::{PyDataActor, apply_class_derived_actor_id},
+        cache::{PyCache, get_global_cache_database_factory_registry},
+        msgbus::get_global_msgbus_factory_registry,
     },
 };
 #[cfg(feature = "examples")]
 use nautilus_core::python::to_pytype_err;
 use nautilus_core::{
-    UUID4,
+    MUTEX_POISONED, UUID4,
     python::{to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::{
     enums::OmsType,
-    identifiers::{ActorId, ComponentId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId},
+    identifiers::{ActorId, ExecAlgorithmId, InstrumentId, TraderId},
 };
 use nautilus_portfolio::{config::PortfolioConfig, python::PyPortfolio};
 use nautilus_system::get_global_pyo3_registry;
@@ -53,36 +69,597 @@ use nautilus_trading::examples::{
 };
 use nautilus_trading::{
     ImportableControllerConfig, ImportableExecAlgorithmConfig, ImportableStrategyConfig,
-    python::{
-        algorithm::PyExecutionAlgorithm,
-        strategy::{PyStrategy, PyStrategyInner},
-    },
+    python::{algorithm::PyExecutionAlgorithm, strategy::PyStrategy},
 };
 use pyo3::{
+    ffi::c_str,
+    intern,
     prelude::*,
+    sync::PyOnceLock,
     types::{PyCFunction, PyDict, PyTuple},
 };
 use serde_json;
 
+// Re-exported so the `live` module registers every Python class through this module.
+pub use crate::node::NodeState;
 use crate::{
     builder::LiveNodeBuilder,
     config::{
         LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
         PluginConfig,
     },
-    node::{LiveNode, NodeState, config::RoutingConfig},
+    node::{LiveNode, LiveNodeHandle, NodeRunMode, config::RoutingConfig},
     python::config::coerce_json_config,
 };
 
 struct SendPtr<T>(*mut T);
 
-// SAFETY: `py_run` has exclusive access to `LiveNode` through `&mut self`.
+// SAFETY: the owner of a `SendPtr` holds the only reference to the pointee for the pointer's
+// lifetime, and the pointee outlives every use.
 #[allow(unsafe_code)]
 unsafe impl<T> Send for SendPtr<T> {}
 
+/// Python-facing wrapper owning a [`LiveNode`].
+///
+/// `run_async` moves the node into the returned awaitable, so the wrapper is empty for the
+/// remainder of a hosted run. Every method then fails with a clear error rather than aliasing the
+/// node the run future is driving. Capture `cache`, `portfolio`, and `handle` before starting a
+/// hosted run; each is an independent handle that stays usable while the node runs.
+#[pyo3::pyclass(module = "nautilus_trader.live", name = "LiveNode", unsendable)]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")]
+#[derive(Debug)]
+pub struct PyLiveNode {
+    inner: Rc<RefCell<Option<LiveNode>>>,
+    handle: LiveNodeHandle,
+}
+
+impl PyLiveNode {
+    /// Wraps an owned node for Python.
+    #[must_use]
+    pub fn new(node: LiveNode) -> Self {
+        Self {
+            handle: node.handle(),
+            inner: Rc::new(RefCell::new(Some(node))),
+        }
+    }
+
+    fn node(&self) -> PyResult<Ref<'_, LiveNode>> {
+        let borrow = self.inner.try_borrow().map_err(|_| node_busy_err())?;
+        if borrow.is_none() {
+            return Err(node_consumed_err());
+        }
+
+        Ok(Ref::map(borrow, |node| {
+            node.as_ref().expect("node presence checked above")
+        }))
+    }
+
+    fn node_mut(&self) -> PyResult<RefMut<'_, LiveNode>> {
+        let borrow = self.inner.try_borrow_mut().map_err(|_| node_busy_err())?;
+        if borrow.is_none() {
+            return Err(node_consumed_err());
+        }
+
+        Ok(RefMut::map(borrow, |node| {
+            node.as_mut().expect("node presence checked above")
+        }))
+    }
+
+    fn is_consumed(&self) -> bool {
+        self.inner.try_borrow().is_ok_and(|node| node.is_none())
+    }
+}
+
+/// Thread-safe control handle for a [`LiveNode`].
+///
+/// Stays valid for the node's whole lifetime, including while a hosted run owns the node, and is
+/// safe to call from any thread or from a signal handler.
+#[pyo3::pyclass(
+    module = "nautilus_trader.live",
+    name = "LiveNodeHandle",
+    frozen,
+    skip_from_py_object
+)]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")]
+#[derive(Clone, Debug)]
+pub struct PyLiveNodeHandle {
+    inner: LiveNodeHandle,
+}
+
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
-impl LiveNode {
+impl PyLiveNodeHandle {
+    /// Signals the node to stop, returning immediately.
+    ///
+    /// The node then runs its full shutdown sequence, so callers awaiting `run_async` observe
+    /// completion only once shutdown finishes.
+    #[pyo3(name = "stop")]
+    fn py_stop(&self) {
+        self.inner.stop();
+    }
+
+    /// Returns whether a stop has been requested.
+    #[getter]
+    #[pyo3(name = "is_stopping")]
+    fn py_is_stopping(&self) -> bool {
+        self.inner.should_stop()
+    }
+
+    /// Returns whether the node is currently running.
+    #[getter]
+    #[pyo3(name = "is_running")]
+    fn py_is_running(&self) -> bool {
+        self.inner.is_running()
+    }
+
+    /// Returns the node's current lifecycle state.
+    #[getter]
+    #[pyo3(name = "state")]
+    fn py_state(&self) -> NodeState {
+        self.inner.state()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("LiveNodeHandle(state={:?})", self.inner.state())
+    }
+}
+
+/// How long `close` drives a still-running node before giving up.
+///
+/// A closed host loop can no longer resume the run, so the node is driven to completion inline.
+/// Bounded so interpreter teardown cannot hang indefinitely on an unresponsive venue.
+const CLOSE_DRIVE_TIMEOUT: Duration = Duration::from_secs(30);
+
+thread_local! {
+    /// Guards against a second hosted run on the same thread.
+    ///
+    /// The runner binds its senders into thread-local storage and the msgbus is thread-local, so
+    /// two interleaved hosted nodes would cross-wire each other's events rather than fail.
+    static HOSTED_RUN_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Waker for driving a run to completion without an event loop.
+///
+/// The host loop is gone by the time this is used, so waking must not touch Python: a tokio worker
+/// that blocked acquiring the GIL could not then wake the thread waiting here.
+#[derive(Debug, Default)]
+struct BlockingWake {
+    woken: Mutex<bool>,
+    signal: Condvar,
+}
+
+impl BlockingWake {
+    /// Waits for a wake, returning `false` once the deadline passes.
+    fn wait_until(&self, deadline: Instant) -> bool {
+        let mut woken = self.woken.lock().expect(MUTEX_POISONED);
+        while !*woken {
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                return false;
+            };
+
+            let (guard, timeout) = self
+                .signal
+                .wait_timeout(woken, remaining)
+                .expect(MUTEX_POISONED);
+            woken = guard;
+
+            if timeout.timed_out() && !*woken {
+                return false;
+            }
+        }
+
+        *woken = false;
+        true
+    }
+}
+
+impl std::task::Wake for BlockingWake {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        *self.woken.lock().expect(MUTEX_POISONED) = true;
+        self.signal.notify_all();
+    }
+}
+
+/// Wake state shared between a hosted run and the callback that resumes it.
+#[derive(Debug, Default)]
+struct RunWakeState {
+    /// The asyncio future the awaiting task is currently suspended on.
+    pending: Mutex<Option<Py<PyAny>>>,
+    /// Set when a wake arrives, so a wake racing the suspend is not lost.
+    woken: AtomicBool,
+}
+
+impl RunWakeState {
+    /// Resolves the suspended future, resuming the awaiting task.
+    fn resume(&self, py: Python<'_>) -> PyResult<()> {
+        let Some(future) = self.pending.lock().expect(MUTEX_POISONED).take() else {
+            return Ok(());
+        };
+
+        let future = future.bind(py);
+        if !future
+            .call_method0(intern!(py, "done"))?
+            .extract::<bool>()?
+        {
+            future.call_method1(intern!(py, "set_result"), (py.None(),))?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Callable scheduled on the host event loop to resume a hosted run.
+#[pyo3::pyclass(name = "NodeRunWake", frozen)]
+struct PyNodeRunWake {
+    state: Arc<RunWakeState>,
+}
+
+#[pymethods]
+impl PyNodeRunWake {
+    fn __call__(&self, py: Python<'_>) -> PyResult<()> {
+        self.state.resume(py)
+    }
+}
+
+/// Waker that resumes a hosted run from whichever thread completed the work.
+struct HostLoopWaker {
+    event_loop: Py<PyAny>,
+    wake_callback: Py<PyAny>,
+    state: Arc<RunWakeState>,
+    handle: LiveNodeHandle,
+}
+
+impl std::task::Wake for HostLoopWaker {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        // Futures may wake redundantly. Scheduling only on the false-to-true edge keeps at most
+        // one callback outstanding, so a stale callback cannot resolve a later suspension.
+        if self
+            .state
+            .woken
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+
+        Python::attach(|py| {
+            if let Err(e) = self.event_loop.bind(py).call_method1(
+                intern!(py, "call_soon_threadsafe"),
+                (self.wake_callback.bind(py),),
+            ) {
+                // Nothing can resume the run once the host loop is gone, so request a stop and
+                // leave the awaiting task to surface the failure.
+                log::error!("Failed to schedule hosted run wake-up, stopping node: {e}");
+                self.handle.stop();
+            }
+        });
+    }
+}
+
+/// Awaitable driving a [`LiveNode`] on the host's asyncio event loop.
+///
+/// Polls the node's run future from loop callbacks, so the node shares the host's thread and never
+/// blocks it. Awaiting resolves once the node has fully stopped.
+#[pyo3::pyclass(name = "NodeRun", unsendable)]
+pub struct PyNodeRun {
+    // Declared before `node` so the future is dropped first; it borrows the node.
+    future: Option<Pin<Box<dyn Future<Output = anyhow::Result<()>>>>>,
+    node: Option<Box<LiveNode>>,
+    owner: Rc<RefCell<Option<LiveNode>>>,
+    handle: LiveNodeHandle,
+    event_loop: Py<PyAny>,
+    waker: Waker,
+    state: Arc<RunWakeState>,
+    pending_throw: Option<PyErr>,
+}
+
+#[allow(
+    clippy::missing_fields_in_debug,
+    reason = "the future and node fields have no useful debug representation"
+)]
+impl Debug for PyNodeRun {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(PyNodeRun))
+            .field("state", &self.handle.state())
+            .field("completed", &self.future.is_none())
+            .finish()
+    }
+}
+
+impl Drop for PyNodeRun {
+    fn drop(&mut self) {
+        self.restore_node();
+    }
+}
+
+impl PyNodeRun {
+    #[allow(
+        unsafe_code,
+        reason = "the run future borrows the boxed node this type owns"
+    )]
+    fn new(
+        node: LiveNode,
+        owner: Rc<RefCell<Option<LiveNode>>>,
+        event_loop: Bound<'_, PyAny>,
+        state: Arc<RunWakeState>,
+        wake_callback: Py<PyAny>,
+    ) -> Self {
+        let handle = node.handle();
+        let mut node = Box::new(node);
+        let node_ptr = SendPtr(std::ptr::from_mut::<LiveNode>(node.as_mut()));
+
+        let future: Pin<Box<dyn Future<Output = anyhow::Result<()>>>> = Box::pin(async move {
+            let ptr = node_ptr;
+            // SAFETY: the node is boxed, so its address is stable for as long as this type owns
+            // it. `run_async` moved the node out of the wrapper, so no other reference exists,
+            // and `future` is declared before `node` so it is dropped first.
+            unsafe { (*ptr.0).run_with_mode(NodeRunMode::Hosted).await }
+        });
+
+        let waker = Waker::from(Arc::new(HostLoopWaker {
+            event_loop: event_loop.clone().unbind(),
+            wake_callback,
+            state: state.clone(),
+            handle: handle.clone(),
+        }));
+
+        Self {
+            future: Some(future),
+            node: Some(node),
+            owner,
+            handle,
+            event_loop: event_loop.unbind(),
+            waker,
+            state,
+            pending_throw: None,
+        }
+    }
+
+    /// Returns the node to the wrapper, dropping the future that borrows it first.
+    ///
+    /// Releases the per-thread run guard here rather than only on drop, so a completed run does
+    /// not block the next one until the coroutine object happens to be collected.
+    fn restore_node(&mut self) {
+        self.future = None;
+
+        if let Some(node) = self.node.take() {
+            *self.owner.borrow_mut() = Some(*node);
+
+            // Release inside the take arm so this runs exactly once, and only for the run that
+            // set the guard. Clearing unconditionally would let a late drop release a newer run's.
+            HOSTED_RUN_ACTIVE.set(false);
+        }
+    }
+
+    /// Returns whether the host event loop is currently running.
+    ///
+    /// Treats an unavailable answer as running, because blocking a live loop is the worse error.
+    fn host_loop_is_running(&self, py: Python<'_>) -> bool {
+        self.event_loop
+            .bind(py)
+            .call_method0(intern!(py, "is_running"))
+            .and_then(|running| running.extract::<bool>())
+            .unwrap_or(true)
+    }
+
+    /// Drives the run to completion on this thread, bounded by [`CLOSE_DRIVE_TIMEOUT`].
+    fn drive_to_completion(&mut self, py: Python<'_>) {
+        let signal = Arc::new(BlockingWake::default());
+        let waker = Waker::from(signal.clone());
+        let deadline = Instant::now() + CLOSE_DRIVE_TIMEOUT;
+
+        loop {
+            let Some(future) = self.future.as_mut() else {
+                return;
+            };
+
+            let poll = {
+                let _guard = get_runtime().enter();
+                future.as_mut().poll(&mut Context::from_waker(&waker))
+            };
+
+            if let Poll::Ready(result) = poll {
+                if let Err(e) = result {
+                    log::error!("Hosted run failed during inline shutdown: {e}");
+                }
+                self.restore_node();
+                return;
+            }
+
+            // Release the GIL so tokio workers that need it can make progress.
+            if !py.detach(|| signal.wait_until(deadline)) {
+                log::error!(
+                    "Hosted run did not stop within {}s of the host loop closing; abandoning it \
+                     with resources still held",
+                    CLOSE_DRIVE_TIMEOUT.as_secs()
+                );
+                return;
+            }
+        }
+    }
+
+    /// Polls the run future once, returning the asyncio future to suspend on when still running.
+    fn step(&mut self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        let Some(future) = self.future.as_mut() else {
+            return Err(to_pyruntime_err("Hosted run has already completed"));
+        };
+
+        self.state.woken.store(false, Ordering::Release);
+
+        // Timers and the reactor are only reachable inside the runtime context.
+        let poll = {
+            let _guard = get_runtime().enter();
+            future.as_mut().poll(&mut Context::from_waker(&self.waker))
+        };
+
+        match poll {
+            Poll::Ready(result) => {
+                self.restore_node();
+
+                if let Err(e) = &result {
+                    log::error!("Hosted run failed: {e}");
+                }
+
+                if let Some(raised) = self.pending_throw.take() {
+                    // Shutdown finished, so the injected exception is now honoured. Reporting
+                    // success here would break `asyncio.timeout`, `wait_for`, and task groups.
+                    return Err(raised);
+                }
+
+                result.map(|()| None).map_err(to_pyruntime_err)
+            }
+            Poll::Pending => {
+                let suspended = self
+                    .event_loop
+                    .bind(py)
+                    .call_method0(intern!(py, "create_future"))?;
+                suspended.setattr(intern!(py, "_asyncio_future_blocking"), true)?;
+
+                *self.state.pending.lock().expect(MUTEX_POISONED) =
+                    Some(suspended.clone().unbind());
+
+                // A wake between the poll and publishing the future would otherwise be lost.
+                if self.state.woken.swap(false, Ordering::AcqRel) {
+                    self.state.resume(py)?;
+                }
+
+                Ok(Some(suspended.unbind()))
+            }
+        }
+    }
+}
+
+#[pymethods]
+impl PyNodeRun {
+    fn __await__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(&mut self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        self.step(py)
+    }
+
+    #[pyo3(signature = (value=None))]
+    fn send(
+        &mut self,
+        py: Python<'_>,
+        value: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Option<Py<PyAny>>> {
+        let _ = value;
+        self.step(py)
+    }
+
+    /// Converts an injected exception into a graceful stop, then re-raises once the node stopped.
+    ///
+    /// Later throws are absorbed while shutdown runs, so a half-stopped node is never abandoned
+    /// with clients connected and channels undrained. The first exception is the one raised.
+    #[pyo3(signature = (*args))]
+    fn throw(&mut self, py: Python<'_>, args: &Bound<'_, PyTuple>) -> PyResult<Option<Py<PyAny>>> {
+        let raised = args.get_item(0)?;
+
+        if self.pending_throw.is_none() {
+            let cancelled_type = cancelled_error_type(py)?;
+            let is_cancelled = raised.is_instance(&cancelled_type)? || raised.is(&cancelled_type);
+            if is_cancelled {
+                log::info!("Hosted run cancelled, requesting graceful shutdown");
+            } else {
+                log::warn!("Exception thrown into hosted run, requesting graceful shutdown");
+            }
+
+            self.pending_throw = Some(PyErr::from_value(raised));
+            self.handle.stop();
+        }
+
+        self.step(py)
+    }
+
+    /// Stops the node, and drives shutdown inline only when no host loop can finish it.
+    ///
+    /// Python calls this when the awaiting task is discarded. With the loop still running, this
+    /// requests the stop and returns, because driving inline would block every host callback; the
+    /// run is then dropped with shutdown incomplete, which the warning names. With no running loop
+    /// nothing else can finish the shutdown, so it is driven here rather than dropping the node
+    /// with venue connections still open.
+    fn close(&mut self, py: Python<'_>) {
+        if self.future.is_none() {
+            return;
+        }
+
+        self.handle.stop();
+
+        // Driving inline blocks this thread, so only do it when the host loop is not running and
+        // therefore cannot finish the shutdown itself.
+        if self.host_loop_is_running(py) {
+            log::warn!(
+                "Hosted run discarded while its event loop is running; shutdown was requested but \
+                 not completed, await the run instead of discarding it"
+            );
+            return;
+        }
+
+        log::warn!("Hosted run closed with no running event loop, draining shutdown inline");
+        self.drive_to_completion(py);
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
+/// Returns the driver that wraps a [`PyNodeRun`] in a native coroutine.
+///
+/// `asyncio.create_task` accepts only coroutines, so returning the awaitable directly would force
+/// every caller to wrap it. Awaiting the coroutine drives the same object, and a cancellation
+/// delivered to the task reaches [`PyNodeRun::throw`] unchanged.
+fn node_run_driver(py: Python<'_>) -> PyResult<&Py<PyAny>> {
+    static DRIVER: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+
+    DRIVER.get_or_try_init(py, || {
+        let module = PyModule::from_code(
+            py,
+            c_str!("async def drive(run):\n    return await run\n"),
+            c_str!("nautilus_trader/live/_hosted_run.py"),
+            c_str!("nautilus_trader._hosted_run"),
+        )?;
+        Ok(module.getattr("drive")?.unbind())
+    })
+}
+
+/// Returns the `asyncio.CancelledError` type.
+fn cancelled_error_type(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+    py.import("asyncio")?.getattr(intern!(py, "CancelledError"))
+}
+
+/// Reports a borrow that cannot be served because the node is busy inside a call.
+fn node_busy_err() -> PyErr {
+    to_pyruntime_err(
+        "LiveNode is busy servicing another call; do not re-enter the node from a component \
+         callback, use the cache, portfolio, and handle captured beforehand",
+    )
+}
+
+fn node_consumed_err() -> PyErr {
+    to_pyruntime_err(
+        "LiveNode is being run by `run_async`; use the handle returned by `handle()` to stop it, \
+         and the `cache` and `portfolio` captured before the run to read state",
+    )
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+impl PyLiveNode {
     /// Creates a new `LiveNode` directly from a kernel name and optional configuration.
     ///
     /// This is a convenience method for creating a live node with a pre-configured
@@ -96,7 +673,9 @@ impl LiveNode {
     #[pyo3(name = "build")]
     #[pyo3(signature = (name, config=None))]
     fn py_build(name: String, config: Option<LiveNodeConfig>) -> PyResult<Self> {
-        Self::build(name, config).map_err(to_pyruntime_err)
+        LiveNode::build(name, config)
+            .map(Self::new)
+            .map_err(to_pyruntime_err)
     }
 
     /// Creates a new `LiveNodeBuilder` for fluent configuration.
@@ -110,9 +689,9 @@ impl LiveNode {
         name: String,
         trader_id: TraderId,
         environment: Environment,
-    ) -> PyResult<LiveNodeBuilderPy> {
-        match Self::builder(trader_id, environment) {
-            Ok(builder) => Ok(LiveNodeBuilderPy {
+    ) -> PyResult<PyLiveNodeBuilder> {
+        match LiveNode::builder(trader_id, environment) {
+            Ok(builder) => Ok(PyLiveNodeBuilder {
                 inner: Rc::new(RefCell::new(Some(builder.with_name(name)))),
             }),
             Err(e) => Err(to_pyruntime_err(e)),
@@ -122,78 +701,145 @@ impl LiveNode {
     /// Gets the node's environment.
     #[getter]
     #[pyo3(name = "environment")]
-    fn py_environment(&self) -> Environment {
-        self.environment()
+    fn py_environment(&self) -> PyResult<Environment> {
+        Ok(self.node()?.environment())
     }
 
     /// Gets the node's trader ID.
     #[getter]
     #[pyo3(name = "trader_id")]
-    fn py_trader_id(&self) -> TraderId {
-        self.trader_id()
+    fn py_trader_id(&self) -> PyResult<TraderId> {
+        Ok(self.node()?.trader_id())
     }
 
     /// Gets the node's instance ID.
     #[getter]
     #[pyo3(name = "instance_id")]
-    const fn py_instance_id(&self) -> UUID4 {
-        self.instance_id()
+    fn py_instance_id(&self) -> PyResult<UUID4> {
+        Ok(self.node()?.instance_id())
     }
 
     /// Checks if the live node is currently running.
+    ///
+    /// Answered from the handle, so this stays truthful while a hosted run holds the node.
     #[getter]
     #[pyo3(name = "is_running")]
     fn py_is_running(&self) -> bool {
-        self.is_running()
+        self.handle.is_running()
     }
 
     /// Returns the cache shared with the kernel and registered components.
     #[getter]
     #[pyo3(name = "cache")]
-    fn py_cache(&self) -> PyCache {
-        PyCache::from_rc(self.kernel().cache())
+    fn py_cache(&self) -> PyResult<PyCache> {
+        Ok(PyCache::from_rc(self.node()?.kernel().cache()))
     }
 
     /// Returns the portfolio shared with the kernel and registered components.
     #[getter]
     #[pyo3(name = "portfolio")]
-    fn py_portfolio(&self) -> PyPortfolio {
-        PyPortfolio::from_rc(self.kernel().portfolio.clone())
+    fn py_portfolio(&self) -> PyResult<PyPortfolio> {
+        Ok(PyPortfolio::from_rc(
+            self.node()?.kernel().portfolio.clone(),
+        ))
     }
 
-    /// Starts the live node without entering a select loop.
+    /// Returns a thread-safe handle for controlling and observing this node.
     ///
-    /// Connects clients, runs reconciliation, and starts the trader, but does
-    /// not consume the runner or drive channel receivers. Channel traffic that
-    /// arrives after startup is not serviced until the caller provides a loop.
+    /// The handle stays valid for the node's whole lifetime, including while `run_async` owns the
+    /// node, and is the supported way to stop a hosted run.
+    #[pyo3(name = "handle")]
+    fn py_handle(&self) -> PyLiveNodeHandle {
+        PyLiveNodeHandle {
+            inner: self.handle.clone(),
+        }
+    }
+
+    /// Runs the live node on the caller's asyncio event loop.
     ///
-    /// For a self-contained entry point that owns the event loop, use `run`.
+    /// Takes the node and returns an awaitable that resolves once the node has stopped. The host
+    /// owns the loop and its signal handling, so this installs no signal handlers. Stop the node
+    /// through the handle from `handle()`; cancelling the awaiting task requests the same graceful
+    /// shutdown, waits for it to finish, then re-raises the cancellation.
+    ///
+    /// Capture `cache`, `portfolio`, and `handle()` before calling this. They stay usable while the
+    /// node runs, whereas the node itself is owned by the returned awaitable.
+    ///
+    /// # Limitations
+    ///
+    /// A node configured with a cache database backing is rejected. Those backings wait for their
+    /// worker task by blocking the calling thread, which stalls the host loop rather than merely
+    /// slowing it. Use `run()` for a database-backed node until the backings can be driven without
+    /// blocking a host loop.
     ///
     /// # Errors
     ///
-    /// Returns an error if startup fails.
-    #[pyo3(name = "start")]
-    fn py_start(&mut self) -> PyResult<()> {
-        if self.is_running() {
-            return Err(to_pyruntime_err("LiveNode is already running"));
+    /// Returns an error if the node has already been taken, no event loop is running, a cache
+    /// database backing is configured, or another node is already running on this loop.
+    #[gen_stub(override_return_type(
+        type_repr = "collections.abc.Coroutine[typing.Any, typing.Any, None]",
+        imports = ("collections.abc", "typing")
+    ))]
+    #[pyo3(name = "run_async")]
+    fn py_run_async(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let event_loop = py
+            .import("asyncio")?
+            .call_method0("get_running_loop")
+            .map_err(|_| {
+                to_pyruntime_err(
+                    "`run_async` requires a running asyncio event loop; use `run` to have the node \
+                     own the thread instead",
+                )
+            })?;
+
+        // A node runs once. Rejecting anything past `Idle` here turns a second run into an
+        // immediate error rather than a coroutine that fails only when awaited.
+        let state = self.node()?.state();
+        if state != NodeState::Idle {
+            return Err(to_pyruntime_err(format!(
+                "LiveNode cannot be run from state {state:?}; build a new node to run again"
+            )));
         }
 
-        get_runtime().block_on(async { self.start().await.map_err(to_pyruntime_err) })
-    }
+        // The Redis and SQL cache backings block the calling thread while awaiting their worker
+        // task, which would freeze the host loop inside a poll rather than merely slow it down.
+        // Fail before taking the node so the caller gets a clear boundary instead of a hang.
+        if self.node()?.has_pending_cache_database() {
+            return Err(to_pyruntime_err(
+                "a cache database backing is not supported on a host event loop, because its \
+                 blocking calls would stall the loop; use `run()` to have the node own the thread, \
+                 or configure the node without a cache database",
+            ));
+        }
 
-    /// Processes the live-node channel traffic queued when this method is called.
-    ///
-    /// This provides a non-blocking integration for host loops after `start`.
-    /// Events that arrive while polling remain queued for the next call.
-    /// Use `run` when the node should also own maintenance, external
-    /// ingress, signal handling, and automatic shutdown.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the node is not running or its runner is unavailable.
-    #[pyo3(name = "poll")]
-    fn py_poll(&mut self) -> PyResult<usize> {
-        self.poll().map_err(to_pyruntime_err)
+        if HOSTED_RUN_ACTIVE.get() {
+            return Err(to_pyruntime_err(
+                "another LiveNode is already running on this event loop; run one concurrent \
+                 LiveNode per process, or run additional nodes in separate processes",
+            ));
+        }
+
+        // Everything fallible happens before the node is taken, so a failure here cannot strand
+        // it. `PyNodeRun` restores the node on drop, covering the paths after this point.
+        let driver = node_run_driver(py)?.clone_ref(py);
+        let state = Arc::new(RunWakeState::default());
+        let wake_callback = Py::new(
+            py,
+            PyNodeRunWake {
+                state: state.clone(),
+            },
+        )?
+        .into_any();
+
+        let node = self
+            .inner
+            .borrow_mut()
+            .take()
+            .ok_or_else(node_consumed_err)?;
+        let run = PyNodeRun::new(node, self.inner.clone(), event_loop, state, wake_callback);
+        HOSTED_RUN_ACTIVE.set(true);
+
+        driver.call1(py, (Py::new(py, run)?,))
     }
 
     /// Run the live node with automatic shutdown handling.
@@ -218,13 +864,13 @@ impl LiveNode {
     ///
     /// Returns an error if the node fails to start or encounters a runtime error.
     #[pyo3(name = "run")]
-    fn py_run(&mut self, py: Python) -> PyResult<()> {
-        if self.is_running() {
+    fn py_run(&self, py: Python) -> PyResult<()> {
+        if self.node()?.is_running() {
             return Err(to_pyruntime_err("LiveNode is already running"));
         }
 
         // Get a handle for coordinating with the signal checker
-        let handle = self.handle();
+        let handle = self.node()?.handle();
 
         // Import signal module
         let signal_module = py.import("signal")?;
@@ -248,7 +894,8 @@ impl LiveNode {
         signal_module.call_method1("signal", (2, signal_callback))?;
 
         // Run the node and restore signal handler afterward
-        let result = run_live_node_detached(py, self);
+        let mut node = self.node_mut()?;
+        let result = run_live_node_detached(py, &mut node);
 
         // Restore original signal handler
         signal_module.call_method1("signal", (2, original_handler))?;
@@ -265,19 +912,28 @@ impl LiveNode {
     ///
     /// Returns an error if shutdown fails.
     #[pyo3(name = "stop")]
-    fn py_stop(&mut self, py: Python<'_>) -> PyResult<()> {
-        if !self.is_running() {
+    fn py_stop(&self, py: Python<'_>) -> PyResult<()> {
+        let mut node = self.node_mut()?;
+        if !node.is_running() {
             return Err(to_pyruntime_err("LiveNode is not running"));
         }
 
-        stop_live_node_detached(py, self)
+        stop_live_node_detached(py, &mut node)
     }
 
     /// Disposes the live node kernel and releases resources.
+    ///
+    /// Does nothing while a hosted run holds the node. The run returns the node when it finishes,
+    /// so a `try`/`finally` cleanup that outlives the run disposes it as usual.
     #[pyo3(name = "dispose")]
-    fn py_dispose(&mut self, py: Python<'_>) -> PyResult<()> {
-        let stop_result = if self.is_running() {
-            stop_live_node_detached(py, self)
+    fn py_dispose(&self, py: Python<'_>) -> PyResult<()> {
+        if self.is_consumed() {
+            return Ok(());
+        }
+
+        let mut node = self.node_mut()?;
+        let stop_result = if node.is_running() {
+            stop_live_node_detached(py, &mut node)
         } else {
             Ok(())
         };
@@ -286,21 +942,13 @@ impl LiveNode {
             log::error!("Failed to stop LiveNode during dispose: {err}");
         }
 
-        self.dispose();
+        node.dispose();
         stop_result
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "Required for Python actor component registration"
-    )]
     #[pyo3(name = "add_actor_from_config")]
     #[expect(clippy::needless_pass_by_value)]
-    fn py_add_actor_from_config(
-        &mut self,
-        _py: Python,
-        config: ImportableActorConfig,
-    ) -> PyResult<()> {
+    fn py_add_actor_from_config(&self, _py: Python, config: ImportableActorConfig) -> PyResult<()> {
         log::debug!("`add_actor_from_config` with: {config:?}");
 
         // Extract module and class name from actor_path
@@ -364,8 +1012,9 @@ impl LiveNode {
                     }
                 }
 
-                py_data_actor_ref.set_python_instance(python_actor.clone().unbind());
+                py_data_actor_ref.set_python_instance(&python_actor)?;
 
+                apply_class_derived_actor_id(&mut py_data_actor_ref, &python_actor)?;
                 let actor_id = py_data_actor_ref.actor_id();
 
                 Ok((python_actor.unbind(), actor_id))
@@ -374,6 +1023,7 @@ impl LiveNode {
 
         // Validate no duplicate before any mutations
         if self
+            .node_mut()?
             .kernel()
             .trader
             .borrow()
@@ -385,55 +1035,12 @@ impl LiveNode {
             )));
         }
 
-        // Phase 2: Create per-component clock via the trader.
-        // This requires `&mut self` access to the kernel, which cannot be held
-        // inside a `Python::attach` block, hence the separate phases.
-        let trader_id = self.kernel().trader_id();
-        let cache = self.kernel().cache();
-        let component_id = ComponentId::new(actor_id.inner().as_str());
-        let clock = self
+        // Phase 2: Register the actor through the trader's single Python registration path
+        self.node_mut()?
             .kernel_mut()
             .trader
             .borrow_mut()
-            .create_component_clock(component_id);
-
-        // Phase 3: Register the actor with its dedicated clock
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_actor = python_actor.bind(py);
-            let mut py_data_actor_ref = py_actor
-                .extract::<PyRefMut<PyDataActor>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
-
-            py_data_actor_ref
-                .register(trader_id, clock, cache)
-                .map_err(|e| anyhow::anyhow!("Failed to register PyDataActor: {e}"))?;
-
-            log::debug!(
-                "Internal PyDataActor registered: {}, state: {:?}",
-                py_data_actor_ref.is_registered(),
-                py_data_actor_ref.state()
-            );
-
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        // Phase 4: Register in global registries and track for lifecycle
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_actor = python_actor.bind(py);
-            let py_data_actor_ref = py_actor
-                .cast::<PyDataActor>()
-                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyDataActor: {e}"))?;
-            py_data_actor_ref.borrow().register_in_global_registries();
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        self.kernel_mut()
-            .trader
-            .borrow_mut()
-            .add_actor_id_for_lifecycle::<PyDataActorInner>(actor_id)
+            .add_python_actor_instance(&python_actor, actor_id)
             .map_err(to_pyruntime_err)?;
 
         log::info!("Registered Python actor {actor_id}");
@@ -450,15 +1057,20 @@ impl LiveNode {
     /// Returns an error if:
     /// - The node is currently running.
     /// - A strategy with the same ID is already registered.
+    /// - The strategy configures one or more external order claims and the request repeats
+    ///   an instrument, or either tier already contains a requested claim.
+    /// - The strategy configures one or more external order claims or an OMS type override,
+    ///   and the execution engine is already borrowed. A strategy configuring neither does
+    ///   not take the borrow and cannot fail this way.
     #[allow(
         unsafe_code,
         reason = "Required for Python strategy component registration"
     )]
     #[pyo3(name = "add_strategy")]
-    fn py_add_strategy(&mut self, strategy: &Bound<'_, PyAny>) -> PyResult<()> {
-        if self.state() != NodeState::Idle {
+    fn py_add_strategy(&self, strategy: &Bound<'_, PyAny>) -> PyResult<()> {
+        if self.node()?.state() != NodeState::Idle {
             return Err(to_pyruntime_err(
-                "Cannot add strategy while node is running, add strategies before calling start()",
+                "Cannot add strategy while node is running, add strategies before running the node",
             ));
         }
 
@@ -467,6 +1079,7 @@ impl LiveNode {
         let strategy = strategy.clone().unbind();
 
         let strategy_id = self
+            .node_mut()?
             .kernel_mut()
             .trader
             .borrow_mut()
@@ -505,18 +1118,21 @@ impl LiveNode {
         .map_err(to_pyruntime_err)?;
 
         if let Some(claims) = external_order_claims.filter(|claims| !claims.is_empty()) {
-            self.register_external_order_claims(strategy_id, &claims)
+            self.node_mut()?
+                .register_external_order_claims(strategy_id, &claims)
                 .map_err(to_pyruntime_err)?;
         }
 
-        self.kernel_mut()
+        self.node_mut()?
+            .kernel_mut()
             .trader
             .borrow_mut()
             .commit_python_strategy_instance(&strategy)
             .map_err(to_pyruntime_err)?;
 
         if let Some(oms_type) = oms_type {
-            self.kernel()
+            self.node_mut()?
+                .kernel()
                 .exec_engine
                 .borrow_mut()
                 .register_oms_type(strategy_id, oms_type);
@@ -526,14 +1142,10 @@ impl LiveNode {
         Ok(())
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "Required for Python strategy component registration"
-    )]
     #[pyo3(name = "add_strategy_from_config")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_strategy_from_config(
-        &mut self,
+        &self,
         _py: Python,
         config: ImportableStrategyConfig,
     ) -> PyResult<()> {
@@ -550,135 +1162,61 @@ impl LiveNode {
 
         log::info!("Importing strategy from module: {module_name} class: {class_name}");
 
-        // Phase 1: Create and configure the Python strategy, extract its strategy_id
-        let (python_strategy, strategy_id) =
-            Python::attach(|py| -> anyhow::Result<(Py<PyAny>, StrategyId)> {
-                let strategy_module = py
-                    .import(module_name)
-                    .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
-                let strategy_class = strategy_module
-                    .getattr(class_name)
-                    .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
+        // Phase 1: Create the Python strategy, then prepare it for registration so the strategy ID,
+        // order ID tag, and logging flags are sourced from the same config as the instance path
+        let python_strategy = Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
+            let strategy_module = py
+                .import(module_name)
+                .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
+            let strategy_class = strategy_module
+                .getattr(class_name)
+                .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
 
-                let config_instance =
-                    create_config_instance(py, &config.config_path, &config.config)?;
+            let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
 
-                let python_strategy = if let Some(config_obj) = config_instance.clone() {
-                    strategy_class.call1((config_obj,))?
-                } else {
-                    strategy_class.call0()?
-                };
+            let python_strategy = if let Some(config_obj) = config_instance {
+                strategy_class.call1((config_obj,))?
+            } else {
+                strategy_class.call0()?
+            };
 
-                log::debug!("Created Python strategy instance: {python_strategy:?}");
+            log::debug!("Created Python strategy instance: {python_strategy:?}");
 
-                let mut py_strategy_ref = python_strategy
-                    .extract::<PyRefMut<PyStrategy>>()
-                    .map_err(Into::<PyErr>::into)
-                    .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
+            Ok(python_strategy.unbind())
+        })
+        .map_err(to_pyruntime_err)?;
 
-                // Extract inherited config fields from the Python config
-                if let Some(config_obj) = config_instance.as_ref() {
-                    if let Ok(strategy_id) = config_obj.getattr("strategy_id")
-                        && !strategy_id.is_none()
-                    {
-                        let strategy_id_val = if let Ok(sid) = strategy_id.extract::<StrategyId>() {
-                            sid
-                        } else if let Ok(sid_str) = strategy_id.extract::<String>() {
-                            StrategyId::new_checked(&sid_str)?
-                        } else {
-                            anyhow::bail!("Invalid `strategy_id` type");
-                        };
-                        py_strategy_ref.set_strategy_id(strategy_id_val)?;
-                    }
-
-                    if let Ok(order_id_tag) = config_obj.getattr("order_id_tag")
-                        && !order_id_tag.is_none()
-                    {
-                        let order_id_tag_val = order_id_tag
-                            .extract::<String>()
-                            .map_err(|e| anyhow::anyhow!("Invalid `order_id_tag` type: {e}"))?;
-                        py_strategy_ref.set_order_id_tag(&order_id_tag_val)?;
-                    }
-
-                    if let Some(val) = extract_bool_config_attr(config_obj, "log_events") {
-                        py_strategy_ref.set_log_events(val);
-                    }
-
-                    if let Some(val) = extract_bool_config_attr(config_obj, "log_commands") {
-                        py_strategy_ref.set_log_commands(val);
-                    }
-
-                    if let Some(claims) = extract_external_order_claims_config_attr(config_obj)? {
-                        py_strategy_ref.set_external_order_claims(Some(claims));
-                    }
-                }
-
-                py_strategy_ref.set_python_instance(python_strategy.clone().unbind());
-
-                let strategy_id = py_strategy_ref.strategy_id();
-
-                Ok((python_strategy.unbind(), strategy_id))
-            })
-            .map_err(to_pyruntime_err)?;
-
-        // Validate no duplicate before any mutations
-        if self
-            .kernel()
-            .trader
-            .borrow()
-            .strategy_ids()
-            .contains(&strategy_id)
-        {
-            return Err(to_pyruntime_err(format!(
-                "Strategy '{strategy_id}' is already registered"
-            )));
-        }
-
-        // Phase 2: Create per-component clock via the trader.
-        // This requires `&mut self` access to the kernel, which cannot be held
-        // inside a `Python::attach` block, hence the separate phases.
-        let trader_id = self.kernel().trader_id();
-        let cache = self.kernel().cache();
-        let portfolio = self.kernel().portfolio.clone();
-        let component_id = ComponentId::new(strategy_id.inner().as_str());
-        let clock = self
+        let strategy_id = self
+            .node_mut()?
             .kernel_mut()
             .trader
             .borrow_mut()
-            .create_component_clock(component_id);
+            .prepare_python_strategy_instance(&python_strategy)
+            .map_err(to_pyruntime_err)?;
 
-        // Phase 3: Register the strategy with its dedicated clock
         Python::attach(|py| -> anyhow::Result<()> {
-            let py_strategy = python_strategy.bind(py);
-            let mut py_strategy_ref = py_strategy
+            let bound = python_strategy.bind(py);
+            let config_obj = bound
+                .getattr("config")
+                .ok()
+                .filter(|config| !config.is_none());
+
+            let mut py_strategy_ref = bound
                 .extract::<PyRefMut<PyStrategy>>()
                 .map_err(Into::<PyErr>::into)
                 .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
 
-            py_strategy_ref
-                .register(trader_id, clock, cache, portfolio)
-                .map_err(|e| anyhow::anyhow!("Failed to register PyStrategy: {e}"))?;
-
-            log::debug!(
-                "Internal PyStrategy registered: {}",
-                py_strategy_ref.is_registered()
-            );
+            if let Some(config_obj) = config_obj.as_ref()
+                && let Some(claims) = extract_external_order_claims_config_attr(config_obj)?
+            {
+                py_strategy_ref.set_external_order_claims(Some(claims));
+            }
 
             Ok(())
         })
         .map_err(to_pyruntime_err)?;
 
-        // Phase 4: Register in global registries and install event subscriptions
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_strategy = python_strategy.bind(py);
-            let py_strategy_ref = py_strategy
-                .cast::<PyStrategy>()
-                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyStrategy: {e}"))?;
-            py_strategy_ref.borrow().register_in_global_registries();
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
+        // Phase 2: Claim external orders before committing, matching the instance path
         let external_order_claims = Python::attach(|py| -> anyhow::Result<Option<Vec<_>>> {
             let py_strategy = python_strategy.bind(py);
             let py_strategy_ref = py_strategy
@@ -691,14 +1229,17 @@ impl LiveNode {
         .map_err(to_pyruntime_err)?;
 
         if let Some(claims) = external_order_claims.filter(|claims| !claims.is_empty()) {
-            self.register_external_order_claims(strategy_id, &claims)
+            self.node_mut()?
+                .register_external_order_claims(strategy_id, &claims)
                 .map_err(to_pyruntime_err)?;
         }
 
-        self.kernel_mut()
+        // Phase 3: Register the strategy through the trader's single Python registration path
+        self.node_mut()?
+            .kernel_mut()
             .trader
             .borrow_mut()
-            .add_strategy_id_with_subscriptions::<PyStrategyInner>(strategy_id)
+            .commit_python_strategy_instance(&python_strategy)
             .map_err(to_pyruntime_err)?;
 
         log::info!("Registered Python strategy {strategy_id}");
@@ -716,10 +1257,10 @@ impl LiveNode {
     /// - The node is currently running.
     /// - An execution algorithm with the same ID is already registered.
     #[pyo3(name = "add_exec_algorithm")]
-    fn py_add_exec_algorithm(&mut self, exec_algorithm: &Bound<'_, PyAny>) -> PyResult<()> {
-        if self.state() != NodeState::Idle {
+    fn py_add_exec_algorithm(&self, exec_algorithm: &Bound<'_, PyAny>) -> PyResult<()> {
+        if self.node()?.state() != NodeState::Idle {
             return Err(to_pyruntime_err(
-                "Cannot add exec algorithm while node is running, add exec algorithms before calling start()",
+                "Cannot add exec algorithm while node is running, add exec algorithms before running the node",
             ));
         }
 
@@ -745,31 +1286,31 @@ impl LiveNode {
                 py_exec_algorithm_ref.configure_from_py_config(config)?;
             }
 
-            py_exec_algorithm_ref.set_python_instance(exec_algorithm.clone_ref(py));
+            py_exec_algorithm_ref.set_python_instance(bound)?;
             Ok(py_exec_algorithm_ref.clone())
         })
         .map_err(to_pyruntime_err)?;
 
-        let exec_algorithm_id = py_exec_algorithm.exec_algorithm_id();
-        self.add_exec_algorithm(py_exec_algorithm)
+        let exec_algorithm_id = self
+            .node_mut()?
+            .kernel_mut()
+            .trader
+            .borrow_mut()
+            .add_py_execution_algorithm_instance(py_exec_algorithm, &exec_algorithm)
             .map_err(to_pyruntime_err)?;
 
         log::info!("Registered Python exec algorithm {exec_algorithm_id}");
         Ok(())
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "Required for Python exec algorithm component registration"
-    )]
     #[pyo3(name = "add_exec_algorithm_from_config")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_exec_algorithm_from_config(
-        &mut self,
+        &self,
         _py: Python,
         config: ImportableExecAlgorithmConfig,
     ) -> PyResult<()> {
-        if self.is_running() {
+        if self.node()?.is_running() {
             return Err(to_pyruntime_err(
                 "Cannot add exec algorithm while node is running",
             ));
@@ -815,8 +1356,7 @@ impl LiveNode {
                         py_exec_algorithm_ref.configure_from_py_config(config_obj)?;
                     }
 
-                    py_exec_algorithm_ref
-                        .set_python_instance(python_exec_algorithm.clone().unbind());
+                    py_exec_algorithm_ref.set_python_instance(&python_exec_algorithm)?;
                     let actor_id =
                         ActorId::from(py_exec_algorithm_ref.exec_algorithm_id().inner().as_str());
 
@@ -862,7 +1402,7 @@ impl LiveNode {
                     }
                 }
 
-                py_data_actor_ref.set_python_instance(python_exec_algorithm.clone().unbind());
+                py_data_actor_ref.set_python_instance(&python_exec_algorithm)?;
 
                 let actor_id = py_data_actor_ref.actor_id();
 
@@ -871,81 +1411,31 @@ impl LiveNode {
         )
         .map_err(to_pyruntime_err)?;
 
-        if let Some(py_execution_algorithm) = py_execution_algorithm {
-            let exec_algorithm_id = py_execution_algorithm.exec_algorithm_id();
-            self.add_exec_algorithm(py_execution_algorithm)
-                .map_err(to_pyruntime_err)?;
+        let exec_algorithm_id = if let Some(py_execution_algorithm) = py_execution_algorithm {
+            // This branch registered through `LiveNode::add_exec_algorithm` before the trader owned
+            // the path, so it keeps that method's stricter state requirement
+            if self.node()?.state() != NodeState::Idle {
+                return Err(to_pyruntime_err(
+                    "Cannot add exec algorithm while node is running, add exec algorithms before running the node",
+                ));
+            }
 
-            log::info!("Registered Python exec algorithm {exec_algorithm_id}");
-            return Ok(());
-        }
-
-        let exec_algorithm_id = ExecAlgorithmId::from(actor_id.inner().as_str());
-
-        if self
-            .kernel()
-            .trader
-            .borrow()
-            .exec_algorithm_ids()
-            .contains(&exec_algorithm_id)
-        {
-            return Err(to_pyruntime_err(format!(
-                "Execution algorithm '{exec_algorithm_id}' is already registered"
-            )));
-        }
-
-        // Phase 2: Create per-component clock via the trader.
-        // This requires `&mut self` access to the kernel, which cannot be held
-        // inside a `Python::attach` block, hence the separate phases.
-        let trader_id = self.kernel().trader_id();
-        let cache = self.kernel().cache();
-        let component_id = ComponentId::new(actor_id.inner().as_str());
-        let clock = self
-            .kernel_mut()
-            .trader
-            .borrow_mut()
-            .create_component_clock(component_id);
-
-        // Phase 3: Register the exec algorithm with its dedicated clock
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_algo = python_exec_algorithm.bind(py);
-            let mut py_data_actor_ref = py_algo
-                .extract::<PyRefMut<PyDataActor>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
-
-            py_data_actor_ref
-                .register(trader_id, clock, cache)
-                .map_err(|e| anyhow::anyhow!("Failed to register PyDataActor: {e}"))?;
-
-            log::debug!(
-                "Internal PyDataActor registered: {}, state: {:?}",
-                py_data_actor_ref.is_registered(),
-                py_data_actor_ref.state()
-            );
-
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        // Phase 4: Register in global registries and track for lifecycle
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_algo = python_exec_algorithm.bind(py);
-            let py_data_actor_ref = py_algo
-                .cast::<PyDataActor>()
-                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyDataActor: {e}"))?;
-            py_data_actor_ref.borrow().register_in_global_registries();
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        register_python_exec_algorithm_endpoint(exec_algorithm_id);
-
-        self.kernel_mut()
-            .trader
-            .borrow_mut()
-            .add_exec_algorithm_id_for_lifecycle(exec_algorithm_id)
-            .map_err(to_pyruntime_err)?;
+            self.node_mut()?
+                .kernel_mut()
+                .trader
+                .borrow_mut()
+                .add_py_execution_algorithm_instance(py_execution_algorithm, &python_exec_algorithm)
+                .map_err(to_pyruntime_err)?
+        } else {
+            // Phase 2: Register the DataActor-backed algorithm through the trader's single Python
+            // registration path
+            self.node_mut()?
+                .kernel_mut()
+                .trader
+                .borrow_mut()
+                .add_python_exec_algorithm_instance(&python_exec_algorithm, actor_id)
+                .map_err(to_pyruntime_err)?
+        };
 
         log::info!("Registered Python exec algorithm {exec_algorithm_id}");
         Ok(())
@@ -958,7 +1448,7 @@ impl LiveNode {
     /// Returns an error because dynamic plug-in hosting lives in the host-side integration.
     #[pyo3(name = "add_plugin", signature = (path, type_name, config=None, sha256=None))]
     fn py_add_plugin(
-        &mut self,
+        &self,
         path: String,
         type_name: String,
         config: Option<HashMap<String, Py<PyAny>>>,
@@ -974,7 +1464,9 @@ impl LiveNode {
             sha256,
         };
 
-        self.add_plugin(config).map_err(to_pyruntime_err)
+        self.node_mut()?
+            .add_plugin(config)
+            .map_err(to_pyruntime_err)
     }
 
     /// Adds a built-in example actor from its type name and config.
@@ -984,11 +1476,12 @@ impl LiveNode {
     /// adding native actors.
     #[cfg(feature = "examples")]
     #[pyo3(name = "add_builtin_actor")]
-    fn py_add_builtin_actor(&mut self, type_name: &str, config: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn py_add_builtin_actor(&self, type_name: &str, config: &Bound<'_, PyAny>) -> PyResult<()> {
         let register = builtin_actor_register(type_name).ok_or_else(|| {
             to_pytype_err(format!("Unsupported built-in actor type: {type_name}"))
         })?;
-        register(self, config)
+        let mut node = self.node_mut()?;
+        register(&mut node, config)
     }
 
     /// Adds a built-in example strategy from its type name and config.
@@ -998,23 +1491,24 @@ impl LiveNode {
     /// adding native strategies.
     #[cfg(feature = "examples")]
     #[pyo3(name = "add_builtin_strategy")]
-    fn py_add_builtin_strategy(
-        &mut self,
-        type_name: &str,
-        config: &Bound<'_, PyAny>,
-    ) -> PyResult<()> {
+    fn py_add_builtin_strategy(&self, type_name: &str, config: &Bound<'_, PyAny>) -> PyResult<()> {
         let register = builtin_strategy_register(type_name).ok_or_else(|| {
             to_pytype_err(format!("Unsupported built-in strategy type: {type_name}"))
         })?;
-        register(self, config)
+        let mut node = self.node_mut()?;
+        register(&mut node, config)
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "LiveNode(trader_id={}, environment={:?}, running={})",
-            self.trader_id(),
-            self.environment(),
-            self.is_running()
+            "LiveNode(trader_id={}, environment={}, running={})",
+            self.node()
+                .map_or_else(|_| "<running>".to_string(), |n| n.trader_id().to_string()),
+            self.node().map_or_else(
+                |_| "<running>".to_string(),
+                |n| format!("{:?}", n.environment())
+            ),
+            self.py_is_running()
         )
     }
 }
@@ -1147,13 +1641,13 @@ fn register_data_tester(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyRes
 #[derive(Debug)]
 #[pyclass(name = "LiveNodeBuilder", module = "nautilus_trader.live", unsendable)]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")]
-pub struct LiveNodeBuilderPy {
+pub struct PyLiveNodeBuilder {
     inner: Rc<RefCell<Option<LiveNodeBuilder>>>,
 }
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
-impl LiveNodeBuilderPy {
+impl PyLiveNodeBuilder {
     #[pyo3(name = "with_instance_id")]
     fn py_with_instance_id(&self, instance_id: UUID4) -> PyResult<Self> {
         let mut inner_ref = self.inner.borrow_mut();
@@ -1321,6 +1815,51 @@ impl LiveNodeBuilderPy {
         } else {
             Err(to_pyruntime_err("Builder already consumed"))
         }
+    }
+
+    #[pyo3(name = "with_cache_database_factory")]
+    fn py_with_cache_database_factory(&self, factory: Py<PyAny>) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if inner_ref.is_none() {
+            return Err(to_pyruntime_err("Builder already consumed"));
+        }
+
+        let factory =
+            Python::attach(|py| get_global_cache_database_factory_registry().extract(py, factory))?;
+        let builder = inner_ref.take().expect("Builder checked above");
+        *inner_ref = Some(builder.with_cache_database_factory(factory));
+        Ok(Self {
+            inner: self.inner.clone(),
+        })
+    }
+
+    #[pyo3(name = "with_msgbus_config")]
+    fn py_with_msgbus_config(&self, config: MessageBusConfig) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_msgbus_config(config));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_external_msgbus_factory")]
+    fn py_with_external_msgbus_factory(&self, factory: Py<PyAny>) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if inner_ref.is_none() {
+            return Err(to_pyruntime_err("Builder already consumed"));
+        }
+
+        let factory =
+            Python::attach(|py| get_global_msgbus_factory_registry().extract(py, factory))?;
+        let builder = inner_ref.take().expect("Builder checked above");
+        *inner_ref = Some(builder.with_external_msgbus_factory(factory));
+        Ok(Self {
+            inner: self.inner.clone(),
+        })
     }
 
     #[pyo3(name = "with_portfolio_config")]
@@ -1531,11 +2070,11 @@ impl LiveNodeBuilderPy {
     }
 
     #[pyo3(name = "build")]
-    fn py_build(&self) -> PyResult<LiveNode> {
+    fn py_build(&self) -> PyResult<PyLiveNode> {
         let mut inner_ref = self.inner.borrow_mut();
         if let Some(builder) = inner_ref.take() {
             match builder.build() {
-                Ok(node) => Ok(node),
+                Ok(node) => Ok(PyLiveNode::new(node)),
                 Err(e) => Err(to_pyruntime_err(e)),
             }
         } else {
@@ -1698,6 +2237,10 @@ fn extract_external_order_claims_config_attr(
 }
 
 #[cfg(all(test, feature = "python"))]
+#[allow(
+    clippy::await_holding_refcell_ref,
+    reason = "each test owns its node exclusively, so the wrapper borrow cannot contend"
+)]
 mod tests {
     use std::{
         any::Any,
@@ -1716,9 +2259,13 @@ mod tests {
     };
 
     use async_trait::async_trait;
+    use indexmap::IndexMap;
     use nautilus_common::{
         actor::DataActor,
-        cache::CacheView,
+        cache::{
+            CacheConfig, CacheView,
+            database::{CacheDatabaseAdapter, CacheDatabaseFactory},
+        },
         clients::DataClient,
         clock::Clock,
         enums::Environment,
@@ -1729,7 +2276,14 @@ mod tests {
             data::{BarsResponse, RequestBars},
             execution::{CancelAllOrders, SubmitOrder, TradingCommand},
         },
-        msgbus::{MessagingSwitchboard, get_message_bus},
+        msgbus::{
+            BusMessage, MessageBusBacking, MessageBusBackingFactory, MessageBusConfig,
+            MessagingSwitchboard, get_message_bus,
+        },
+        python::{
+            cache::get_global_cache_database_factory_registry,
+            msgbus::get_global_msgbus_factory_registry,
+        },
         runner::{TradingCommandMessage, get_trading_cmd_sender},
     };
     use nautilus_core::{UUID4, UnixNanos};
@@ -1737,29 +2291,387 @@ mod tests {
     use nautilus_model::{
         data::{Bar, BarType},
         enums::{OmsType, OrderSide, OrderStatus, OrderType},
-        identifiers::{AccountId, ClientId, InstrumentId, PositionId, StrategyId, TraderId, Venue},
+        identifiers::{
+            AccountId, ActorId, ClientId, InstrumentId, PositionId, StrategyId, TraderId, Venue,
+        },
         instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
         orders::{Order, OrderTestBuilder},
         types::{Price, Quantity},
     };
+    use nautilus_testkit::cache::{TestCacheDatabase, TestCacheDatabaseControl};
     use nautilus_trading::{
         ImportableStrategyConfig, nautilus_strategy,
         python::strategy::PyStrategy,
         strategy::{StrategyConfig, StrategyCore},
     };
     use pyo3::{
-        PyRef, Python,
+        Py, PyRef, Python,
         types::{PyAnyMethods, PyDict, PyModule, PyModuleMethods},
     };
     use rstest::rstest;
 
-    use super::LiveNode;
+    use super::{LiveNode, PyLiveNode, PyLiveNodeBuilder};
     use crate::node::config::RoutingConfig;
 
     #[derive(Clone, Copy, Debug)]
     enum ShutdownRunPath {
         Native,
         PyO3,
+    }
+
+    static TEST_MSGBUS_FACTORY_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    #[derive(Debug, Clone)]
+    #[pyo3::pyclass(name = "TestMessageBusFactory", from_py_object)]
+    struct TestMessageBusFactory;
+
+    impl MessageBusBackingFactory for TestMessageBusFactory {
+        fn create(
+            &self,
+            trader_id: TraderId,
+            _instance_id: UUID4,
+            config: MessageBusConfig,
+        ) -> anyhow::Result<Box<dyn MessageBusBacking>> {
+            TEST_MSGBUS_FACTORY_CALLS.fetch_add(1, Ordering::SeqCst);
+
+            anyhow::ensure!(
+                trader_id == TraderId::from("TESTER-001"),
+                "unexpected trader ID: {trader_id}"
+            );
+            anyhow::ensure!(
+                config.external_streams == Some(vec!["external-stream".to_string()]),
+                "unexpected external streams: {:?}",
+                config.external_streams
+            );
+
+            let (_tx, rx) = tokio::sync::mpsc::channel(1);
+            Ok(Box::new(TestMessageBusBacking {
+                rx: Some(rx),
+                closed: false,
+            }))
+        }
+    }
+
+    #[derive(Debug)]
+    struct TestMessageBusBacking {
+        rx: Option<tokio::sync::mpsc::Receiver<BusMessage>>,
+        closed: bool,
+    }
+
+    impl MessageBusBacking for TestMessageBusBacking {
+        fn is_closed(&self) -> bool {
+            self.closed
+        }
+
+        fn publish(&self, _message: BusMessage) {}
+
+        fn take_receiver(&mut self) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {
+            self.rx
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("Stream receiver already taken"))
+        }
+
+        fn close(&mut self) {
+            self.closed = true;
+        }
+    }
+
+    #[expect(clippy::needless_pass_by_value)]
+    fn extract_test_msgbus_factory(
+        py: Python<'_>,
+        factory: Py<pyo3::PyAny>,
+    ) -> pyo3::PyResult<Box<dyn MessageBusBackingFactory>> {
+        Ok(Box::new(factory.extract::<TestMessageBusFactory>(py)?))
+    }
+
+    #[rstest]
+    fn test_python_builder_installs_external_msgbus_factory() {
+        TEST_MSGBUS_FACTORY_CALLS.store(0, Ordering::SeqCst);
+        get_global_msgbus_factory_registry()
+            .register(
+                "TestMessageBusFactory".to_string(),
+                extract_test_msgbus_factory,
+            )
+            .unwrap();
+        Python::initialize();
+
+        Python::attach(|py| {
+            let factory = Py::new(py, TestMessageBusFactory).unwrap().into_any();
+            let builder = PyLiveNode::py_builder(
+                "TEST".to_string(),
+                TraderId::from("TESTER-001"),
+                Environment::Sandbox,
+            )
+            .unwrap()
+            .py_with_msgbus_config(MessageBusConfig {
+                external_streams: Some(vec!["external-stream".to_string()]),
+                ..Default::default()
+            })
+            .unwrap()
+            .py_with_external_msgbus_factory(factory)
+            .unwrap();
+
+            let node = builder.py_build().unwrap();
+
+            assert!(!node.node_mut().unwrap().is_running());
+            assert_eq!(TEST_MSGBUS_FACTORY_CALLS.load(Ordering::SeqCst), 1);
+            get_message_bus().borrow_mut().dispose();
+        });
+    }
+
+    static TEST_CACHE_DATABASE_FACTORY_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    #[derive(Debug, Clone)]
+    #[pyo3::pyclass(name = "TestCacheDatabaseFactory", from_py_object)]
+    struct TestCacheDatabaseFactory {
+        database: Arc<std::sync::Mutex<Option<TestCacheDatabase>>>,
+        instance_id: Arc<std::sync::Mutex<Option<UUID4>>>,
+    }
+
+    impl TestCacheDatabaseFactory {
+        fn new(database: Option<TestCacheDatabase>) -> Self {
+            Self {
+                database: Arc::new(std::sync::Mutex::new(database)),
+                instance_id: Arc::new(std::sync::Mutex::new(None)),
+            }
+        }
+
+        fn received_instance_id(&self) -> Option<UUID4> {
+            *self.instance_id.lock().unwrap()
+        }
+    }
+
+    #[async_trait]
+    impl CacheDatabaseFactory for TestCacheDatabaseFactory {
+        async fn create(
+            &self,
+            trader_id: TraderId,
+            instance_id: UUID4,
+            config: CacheConfig,
+        ) -> anyhow::Result<Box<dyn CacheDatabaseAdapter>> {
+            TEST_CACHE_DATABASE_FACTORY_CALLS.fetch_add(1, Ordering::SeqCst);
+            *self.instance_id.lock().unwrap() = Some(instance_id);
+
+            anyhow::ensure!(
+                trader_id == TraderId::from("TESTER-001"),
+                "unexpected trader ID: {trader_id}"
+            );
+            anyhow::ensure!(
+                config.buffer_interval_ms == Some(25),
+                "unexpected buffer interval: {:?}",
+                config.buffer_interval_ms
+            );
+
+            let database = self
+                .database
+                .lock()
+                .unwrap()
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("Test cache database unavailable"))?;
+            Ok(Box::new(database))
+        }
+    }
+
+    #[expect(clippy::needless_pass_by_value)]
+    fn extract_test_cache_database_factory(
+        py: Python<'_>,
+        factory: Py<pyo3::PyAny>,
+    ) -> pyo3::PyResult<Box<dyn CacheDatabaseFactory>> {
+        Ok(Box::new(factory.extract::<TestCacheDatabaseFactory>(py)?))
+    }
+
+    fn state_factory_builder(factory: &TestCacheDatabaseFactory) -> PyLiveNodeBuilder {
+        Python::attach(|py| {
+            PyLiveNode::py_builder(
+                "TEST".to_string(),
+                TraderId::from("TESTER-001"),
+                Environment::Sandbox,
+            )
+            .unwrap()
+            .py_with_cache_config(CacheConfig {
+                buffer_interval_ms: Some(25),
+                ..Default::default()
+            })
+            .unwrap()
+            .py_with_cache_database_factory(Py::new(py, factory.clone()).unwrap().into_any())
+            .unwrap()
+            .py_with_reconciliation(false)
+            .unwrap()
+            .py_with_timeout_connection(0)
+            .unwrap()
+            .py_with_timeout_reconciliation(0)
+            .unwrap()
+            .py_with_timeout_portfolio(0)
+            .unwrap()
+            .py_with_timeout_disconnection_secs(0)
+            .unwrap()
+            .py_with_delay_post_stop_secs(0)
+            .unwrap()
+            .py_with_delay_shutdown_secs(0)
+            .unwrap()
+        })
+    }
+
+    #[tokio::test]
+    async fn test_python_builder_installs_cache_database_factory_on_start() {
+        TEST_CACHE_DATABASE_FACTORY_CALLS.store(0, Ordering::SeqCst);
+        get_global_cache_database_factory_registry()
+            .register(
+                "TestCacheDatabaseFactory".to_string(),
+                extract_test_cache_database_factory,
+            )
+            .unwrap();
+        Python::initialize();
+
+        let (database, control) = TestCacheDatabaseControl::create();
+        let actor_id = ActorId::from("PY-CACHE-FACTORY-ACTOR");
+        let actor_state = IndexMap::from([("loaded".to_string(), b"value".to_vec())]);
+        control.set_actor_state(actor_id, &actor_state);
+        let factory = TestCacheDatabaseFactory::new(Some(database));
+
+        let node = state_factory_builder(&factory).py_build().unwrap();
+
+        assert_eq!(TEST_CACHE_DATABASE_FACTORY_CALLS.load(Ordering::SeqCst), 0);
+        assert!(
+            !node
+                .node_mut()
+                .unwrap()
+                .kernel()
+                .cache()
+                .borrow()
+                .has_backing()
+        );
+
+        node.node_mut().unwrap().start().await.unwrap();
+
+        assert_eq!(TEST_CACHE_DATABASE_FACTORY_CALLS.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            factory.received_instance_id(),
+            Some(node.node_mut().unwrap().instance_id())
+        );
+        assert!(
+            node.node_mut()
+                .unwrap()
+                .kernel()
+                .cache()
+                .borrow()
+                .has_backing()
+        );
+        assert_eq!(
+            node.node_mut()
+                .unwrap()
+                .kernel()
+                .cache()
+                .borrow()
+                .load_actor_state(&actor_id)
+                .unwrap(),
+            Some(actor_state)
+        );
+
+        node.node_mut().unwrap().stop().await.unwrap();
+        node.node_mut().unwrap().dispose();
+        get_message_bus().borrow_mut().dispose();
+    }
+
+    #[tokio::test]
+    async fn test_python_builder_propagates_cache_database_factory_error_on_start() {
+        get_global_cache_database_factory_registry()
+            .register(
+                "TestCacheDatabaseFactory".to_string(),
+                extract_test_cache_database_factory,
+            )
+            .unwrap();
+        Python::initialize();
+
+        let factory = TestCacheDatabaseFactory::new(None);
+        let node = state_factory_builder(&factory).py_build().unwrap();
+
+        let error = node.node_mut().unwrap().start().await.unwrap_err();
+
+        assert_eq!(
+            format!("{error:#}"),
+            "failed to create cache database backing: Test cache database unavailable"
+        );
+        assert!(
+            !node
+                .node_mut()
+                .unwrap()
+                .kernel()
+                .cache()
+                .borrow()
+                .has_backing()
+        );
+
+        let retry_error = node.node_mut().unwrap().start().await.unwrap_err();
+
+        assert_eq!(
+            format!("{retry_error:#}"),
+            "failed to create cache database backing: Test cache database unavailable"
+        );
+        assert!(
+            !node
+                .node_mut()
+                .unwrap()
+                .kernel()
+                .cache()
+                .borrow()
+                .has_backing()
+        );
+
+        node.node_mut().unwrap().dispose();
+        get_message_bus().borrow_mut().dispose();
+    }
+
+    #[rstest]
+    fn test_python_builder_rejects_unregistered_cache_database_factory() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let factory = PyDict::new(py).unbind().into_any();
+            let builder = PyLiveNode::py_builder(
+                "TEST".to_string(),
+                TraderId::from("TESTER-001"),
+                Environment::Sandbox,
+            )
+            .unwrap();
+
+            let error = builder.py_with_cache_database_factory(factory).unwrap_err();
+
+            assert_eq!(
+                error.to_string(),
+                "NotImplementedError: No cache database factory extractor registered for 'dict'"
+            );
+            builder
+                .py_with_cache_config(CacheConfig::default())
+                .unwrap();
+        });
+    }
+
+    #[rstest]
+    fn test_python_builder_rejects_unregistered_external_msgbus_factory() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let factory = PyDict::new(py).unbind().into_any();
+            let builder = PyLiveNode::py_builder(
+                "TEST".to_string(),
+                TraderId::from("TESTER-001"),
+                Environment::Sandbox,
+            )
+            .unwrap();
+
+            let error = builder
+                .py_with_external_msgbus_factory(factory)
+                .unwrap_err();
+
+            assert_eq!(
+                error.to_string(),
+                "NotImplementedError: No message bus factory extractor registered for 'dict'"
+            );
+            builder
+                .py_with_msgbus_config(MessageBusConfig::default())
+                .unwrap();
+        });
     }
 
     #[derive(Debug)]
@@ -2438,15 +3350,19 @@ class ClaimsStrategy(Strategy):
             .unwrap()
             .with_reconciliation(false)
             .build()
+            .map(PyLiveNode::new)
             .unwrap();
 
-        let cache = node.py_cache();
-        let portfolio = node.py_portfolio();
+        let cache = node.py_cache().unwrap();
+        let portfolio = node.py_portfolio().unwrap();
 
-        assert!(Rc::ptr_eq(&cache.cache_rc(), &node.kernel().cache));
+        assert!(Rc::ptr_eq(
+            &cache.cache_rc(),
+            &node.node_mut().unwrap().kernel().cache
+        ));
         assert!(Rc::ptr_eq(
             &portfolio.portfolio_rc(),
-            &node.kernel().portfolio
+            &node.node_mut().unwrap().kernel().portfolio
         ));
     }
 
@@ -2455,16 +3371,17 @@ class ClaimsStrategy(Strategy):
     fn test_builtin_strategy_register_rejects_mismatched_config() {
         Python::initialize();
 
-        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
             .build()
+            .map(PyLiveNode::new)
             .unwrap();
 
         Python::attach(|py| {
             let register = super::builtin_strategy_register("EmaCross").unwrap();
             let config = PyDict::new(py);
-            let error = register(&mut node, config.as_any()).unwrap_err();
+            let error = register(&mut node.node_mut().unwrap(), config.as_any()).unwrap_err();
 
             assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
         });
@@ -2475,16 +3392,17 @@ class ClaimsStrategy(Strategy):
     fn test_builtin_actor_register_rejects_mismatched_config() {
         Python::initialize();
 
-        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
             .build()
+            .map(PyLiveNode::new)
             .unwrap();
 
         Python::attach(|py| {
             let register = super::builtin_actor_register("DataTester").unwrap();
             let config = PyDict::new(py);
-            let error = register(&mut node, config.as_any()).unwrap_err();
+            let error = register(&mut node.node_mut().unwrap(), config.as_any()).unwrap_err();
 
             assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
         });
@@ -2498,19 +3416,22 @@ class ClaimsStrategy(Strategy):
     ) {
         Python::initialize();
 
-        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(1)
             .with_timeout_connection(1)
             .build()
+            .map(PyLiveNode::new)
             .unwrap();
-        node.add_strategy(ShutdownCancelStrategy::new(InstrumentId::from(
-            "TEST.POLYMARKET",
-        )))
-        .unwrap();
+        node.node_mut()
+            .unwrap()
+            .add_strategy(ShutdownCancelStrategy::new(InstrumentId::from(
+                "TEST.POLYMARKET",
+            )))
+            .unwrap();
 
-        let handle = node.handle();
+        let handle = node.node_mut().unwrap().handle();
         let stop_handle = handle.clone();
 
         let stop_thread = thread::spawn(move || {
@@ -2523,10 +3444,10 @@ class ClaimsStrategy(Strategy):
 
         match run_path {
             ShutdownRunPath::Native => get_runtime()
-                .block_on(node.run())
+                .block_on(node.node_mut().unwrap().run())
                 .expect("native LiveNode run should stop cleanly"),
             ShutdownRunPath::PyO3 => Python::attach(|py| {
-                super::run_live_node_detached(py, &mut node)
+                super::run_live_node_detached(py, &mut node.node_mut().unwrap())
                     .expect("Python LiveNode run should stop cleanly");
             }),
         }
@@ -2543,15 +3464,16 @@ class ClaimsStrategy(Strategy):
     fn test_run_live_node_detached_releases_gil() {
         Python::initialize();
 
-        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
             .with_timeout_connection(1)
             .build()
+            .map(PyLiveNode::new)
             .unwrap();
 
-        let handle = node.handle();
+        let handle = node.node_mut().unwrap().handle();
         let (gil_tx, gil_rx) = mpsc::channel();
         let acquired_before_stop = Arc::new(AtomicBool::new(false));
         let acquired_before_stop_for_thread = acquired_before_stop.clone();
@@ -2569,7 +3491,8 @@ class ClaimsStrategy(Strategy):
         });
 
         Python::attach(|py| {
-            super::run_live_node_detached(py, &mut node).expect("node should run cleanly");
+            super::run_live_node_detached(py, &mut node.node_mut().unwrap())
+                .expect("node should run cleanly");
         });
 
         stop_thread.join().expect("stop thread should join");
@@ -2632,15 +3555,18 @@ class ClaimsStrategy(Strategy):
     fn test_stop_live_node_detached_releases_gil() {
         Python::initialize();
 
-        let mut node = LiveNode::builder(TraderId::from("TESTER-002"), Environment::Sandbox)
+        let node = LiveNode::builder(TraderId::from("TESTER-002"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(1)
             .with_timeout_connection(1)
             .build()
+            .map(PyLiveNode::new)
             .unwrap();
 
-        node.py_start().expect("node should start");
+        get_runtime()
+            .block_on(async { node.node_mut().unwrap().start().await })
+            .expect("node should start");
 
         let (attempt_tx, attempt_rx) = mpsc::channel();
         let acquired_before_stop_return = Arc::new(AtomicBool::new(false));
@@ -2665,7 +3591,8 @@ class ClaimsStrategy(Strategy):
                 .recv_timeout(Duration::from_secs(1))
                 .expect("worker thread should attempt to acquire the GIL");
 
-            super::stop_live_node_detached(py, &mut node).expect("node should stop cleanly");
+            super::stop_live_node_detached(py, &mut node.node_mut().unwrap())
+                .expect("node should stop cleanly");
             stop_returned.store(true, Ordering::SeqCst);
         });
 
@@ -2678,7 +3605,7 @@ class ClaimsStrategy(Strategy):
             acquired_before_stop_return.load(Ordering::SeqCst),
             "worker thread should acquire the GIL while LiveNode::stop is blocked"
         );
-        assert!(!node.is_running());
+        assert!(!node.node_mut().unwrap().is_running());
     }
 
     #[rstest]
@@ -2688,7 +3615,7 @@ class ClaimsStrategy(Strategy):
         let dispose_count = Arc::new(AtomicUsize::new(0));
         let factory = TestDisconnectFailureDataClientFactory::new(dispose_count.clone());
         let config = TestDataClientConfig;
-        let mut node = LiveNode::builder(TraderId::from("TESTER-003"), Environment::Sandbox)
+        let node = LiveNode::builder(TraderId::from("TESTER-003"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
@@ -2701,11 +3628,14 @@ class ClaimsStrategy(Strategy):
             )
             .unwrap()
             .build()
+            .map(PyLiveNode::new)
             .unwrap();
 
         let dispose_result = Python::attach(|py| {
-            node.py_start().expect("node should start");
-            assert!(node.is_running());
+            get_runtime()
+                .block_on(async { node.node_mut().unwrap().start().await })
+                .expect("node should start");
+            assert!(node.node_mut().unwrap().is_running());
 
             node.py_dispose(py)
         });
@@ -2714,7 +3644,7 @@ class ClaimsStrategy(Strategy):
 
         assert!(error.to_string().contains("test disconnect failed"));
         assert_eq!(dispose_count.load(Ordering::Relaxed), 1);
-        assert!(!node.is_running());
+        assert!(!node.node_mut().unwrap().is_running());
     }
 
     #[rstest]
@@ -2724,12 +3654,13 @@ class ClaimsStrategy(Strategy):
         let module_name = "test_live_node_timer_strategy";
         Python::attach(|py| install_timer_strategy_module(py, module_name));
 
-        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
             .with_timeout_connection(1)
             .build()
+            .map(PyLiveNode::new)
             .unwrap();
 
         let importable = ImportableStrategyConfig {
@@ -2743,7 +3674,7 @@ class ClaimsStrategy(Strategy):
                 .expect("strategy should register");
         });
 
-        let handle = node.handle();
+        let handle = node.node_mut().unwrap().handle();
         let stop_handle = handle.clone();
         let watchdog_handle = handle;
         let (done_tx, done_rx) = mpsc::channel();
@@ -2775,7 +3706,8 @@ class ClaimsStrategy(Strategy):
         });
 
         Python::attach(|py| {
-            super::run_live_node_detached(py, &mut node).expect("node should run cleanly");
+            super::run_live_node_detached(py, &mut node.node_mut().unwrap())
+                .expect("node should run cleanly");
         });
 
         let _ = done_tx.send(());
@@ -2800,12 +3732,13 @@ class ClaimsStrategy(Strategy):
         let module_name = "test_live_node_claim_strategy";
         Python::attach(|py| install_claim_strategy_module(py, module_name));
 
-        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
             .with_timeout_connection(1)
             .build()
+            .map(PyLiveNode::new)
             .unwrap();
 
         let instrument_id = InstrumentId::from("AUDUSD.SIM");
@@ -2831,7 +3764,8 @@ class ClaimsStrategy(Strategy):
         });
 
         {
-            let exec_engine = node.kernel().exec_engine.borrow();
+            let guard = node.node_mut().unwrap();
+            let exec_engine = guard.kernel().exec_engine.borrow();
             assert_eq!(
                 exec_engine.get_external_order_claim(&instrument_id),
                 Some(strategy_id)
@@ -2839,6 +3773,8 @@ class ClaimsStrategy(Strategy):
         }
 
         let result = node
+            .node_mut()
+            .unwrap()
             .exec_manager_mut()
             .claim_external_orders(instrument_id, StrategyId::from("OTHER-001"));
 
@@ -2858,12 +3794,13 @@ class ClaimsStrategy(Strategy):
         let module_name = "test_live_node_add_strategy_instance";
         Python::attach(|py| install_claim_strategy_module(py, module_name));
 
-        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
             .with_timeout_connection(1)
             .build()
+            .map(PyLiveNode::new)
             .unwrap();
 
         let instrument_id = InstrumentId::from("AUDUSD.SIM");
@@ -2894,7 +3831,8 @@ class ClaimsStrategy(Strategy):
         });
 
         {
-            let exec_engine = node.kernel().exec_engine.borrow();
+            let guard = node.node_mut().unwrap();
+            let exec_engine = guard.kernel().exec_engine.borrow();
             assert_eq!(
                 exec_engine.get_external_order_claim(&instrument_id),
                 Some(strategy_id)
@@ -2909,12 +3847,13 @@ class ClaimsStrategy(Strategy):
         let module_name = "test_live_node_add_strategy_instance_oms_type";
         Python::attach(|py| install_claim_strategy_module(py, module_name));
 
-        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
             .with_timeout_connection(1)
             .build()
+            .map(PyLiveNode::new)
             .unwrap();
         let strategy_id = StrategyId::from("FUNDING_ARBITRAGE-003");
 
@@ -2944,12 +3883,16 @@ class ClaimsStrategy(Strategy):
         let instrument_id = instrument.id();
         let client_id = ClientId::from("STUB");
 
-        node.kernel()
+        node.node_mut()
+            .unwrap()
+            .kernel()
             .cache
             .borrow_mut()
             .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
             .unwrap();
-        node.kernel()
+        node.node_mut()
+            .unwrap()
+            .kernel()
             .exec_engine
             .borrow_mut()
             .register_client(Box::new(StubExecutionClient::new(
@@ -2962,14 +3905,16 @@ class ClaimsStrategy(Strategy):
             .unwrap();
 
         let order = OrderTestBuilder::new(OrderType::Market)
-            .trader_id(node.trader_id())
+            .trader_id(node.node_mut().unwrap().trader_id())
             .strategy_id(strategy_id)
             .instrument_id(instrument_id)
             .quantity(Quantity::from("1.000"))
             .build();
         let position_id = PositionId::new("CUSTOM-POSITION-003");
 
-        node.kernel()
+        node.node_mut()
+            .unwrap()
+            .kernel()
             .cache
             .borrow_mut()
             .add_order(order.clone(), Some(position_id), Some(client_id), true)
@@ -2990,12 +3935,15 @@ class ClaimsStrategy(Strategy):
             None,
         );
 
-        node.kernel()
+        node.node_mut()
+            .unwrap()
+            .kernel()
             .exec_engine
             .borrow()
             .execute(TradingCommand::SubmitOrder(submit_order));
 
-        let exec_engine = node.kernel().exec_engine.borrow();
+        let guard = node.node_mut().unwrap();
+        let exec_engine = guard.kernel().exec_engine.borrow();
         let cache = exec_engine.cache().borrow();
         let cached_order = cache
             .order(&order.client_order_id())
@@ -3011,12 +3959,13 @@ class ClaimsStrategy(Strategy):
         let module_name = "test_live_node_add_strategy_instance_claim_conflict";
         Python::attach(|py| install_claim_strategy_module(py, module_name));
 
-        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
             .with_timeout_connection(1)
             .build()
+            .map(PyLiveNode::new)
             .unwrap();
         let instrument_id = InstrumentId::from("AUDUSD.SIM");
         let first_strategy_id = StrategyId::from("CLAIMS-PRIMARY-001");
@@ -3072,9 +4021,21 @@ class ClaimsStrategy(Strategy):
             (error, is_registered)
         });
 
-        let strategy_ids = node.kernel().trader.borrow().strategy_ids();
-        let manager_claim = node.exec_manager().get_external_order_claim(&instrument_id);
+        let strategy_ids = node
+            .node_mut()
+            .unwrap()
+            .kernel()
+            .trader
+            .borrow()
+            .strategy_ids();
+        let manager_claim = node
+            .node_mut()
+            .unwrap()
+            .exec_manager()
+            .get_external_order_claim(&instrument_id);
         let engine_claim = node
+            .node_mut()
+            .unwrap()
             .kernel()
             .exec_engine
             .borrow()
@@ -3098,12 +4059,13 @@ class ClaimsStrategy(Strategy):
         let module_name = "test_live_node_add_strategy_instance_duplicate_tag";
         Python::attach(|py| install_claim_strategy_module(py, module_name));
 
-        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
             .with_timeout_connection(1)
             .build()
+            .map(PyLiveNode::new)
             .unwrap();
         let first_strategy_id = StrategyId::from("TAGGED-FIRST-777");
 
@@ -3153,7 +4115,13 @@ class ClaimsStrategy(Strategy):
             (error, is_registered)
         });
 
-        let strategy_ids = node.kernel().trader.borrow().strategy_ids();
+        let strategy_ids = node
+            .node_mut()
+            .unwrap()
+            .kernel()
+            .trader
+            .borrow()
+            .strategy_ids();
 
         assert!(error.to_string().contains("order_id_tag conflict"));
         assert!(!duplicate_strategy_registered);
@@ -3177,7 +4145,7 @@ class ClaimsStrategy(Strategy):
         );
         let config = TestDataClientConfig;
 
-        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
@@ -3189,6 +4157,7 @@ class ClaimsStrategy(Strategy):
             )
             .unwrap()
             .build()
+            .map(PyLiveNode::new)
             .unwrap();
 
         let importable = ImportableStrategyConfig {
@@ -3202,7 +4171,7 @@ class ClaimsStrategy(Strategy):
                 .expect("strategy should register");
         });
 
-        let handle = node.handle();
+        let handle = node.node_mut().unwrap().handle();
         let stop_handle = handle.clone();
         let response_sent_count_for_stop = response_sent_count.clone();
 
@@ -3221,7 +4190,11 @@ class ClaimsStrategy(Strategy):
             stop_handle.stop();
         });
 
-        node.run().await.expect("node should run cleanly");
+        node.node_mut()
+            .unwrap()
+            .run()
+            .await
+            .expect("node should run cleanly");
 
         let (on_start, on_historical_bars, historical_bar_count) =
             Python::attach(|py| get_results(py, module_name));

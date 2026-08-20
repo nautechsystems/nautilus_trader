@@ -60,7 +60,9 @@ use nautilus_model::{
         OrderSubmitted, OrderTriggered, OrderUpdated, PositionChanged, PositionClosed,
         PositionEvent, PositionOpened,
     },
-    identifiers::{AccountId, ClientId, ExecAlgorithmId, PositionId, StrategyId, TraderId},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, ExecAlgorithmId, PositionId, StrategyId, TraderId,
+    },
     orders::{LimitOrder, MarketOrder, MarketToLimitOrder, Order, OrderAny, OrderError, OrderList},
     types::{Price, Quantity},
 };
@@ -427,12 +429,12 @@ pub trait ExecutionAlgorithm: DataActor {
             primary.is_quote_quantity(),
             primary.contingency_type(),
             primary.order_list_id(),
-            primary.linked_order_ids().map(|ids| ids.to_vec()),
+            primary.linked_order_ids().map(<[ClientOrderId]>::to_vec),
             primary.parent_order_id(),
             Some(exec_algorithm_id),
             primary.exec_algorithm_params().cloned(),
             Some(primary.client_order_id()),
-            tags.or_else(|| primary.tags().map(|t| t.to_vec())),
+            tags.or_else(|| primary.tags().map(<[Ustr]>::to_vec)),
         )
     }
 
@@ -496,12 +498,12 @@ pub trait ExecutionAlgorithm: DataActor {
             None, // trigger_instrument_id
             primary.contingency_type(),
             primary.order_list_id(),
-            primary.linked_order_ids().map(|ids| ids.to_vec()),
+            primary.linked_order_ids().map(<[ClientOrderId]>::to_vec),
             primary.parent_order_id(),
             Some(exec_algorithm_id),
             primary.exec_algorithm_params().cloned(),
             Some(primary.client_order_id()),
-            tags.or_else(|| primary.tags().map(|t| t.to_vec())),
+            tags.or_else(|| primary.tags().map(<[Ustr]>::to_vec)),
             UUID4::new(),
             ts_init,
         )
@@ -562,12 +564,12 @@ pub trait ExecutionAlgorithm: DataActor {
             display_qty,
             primary.contingency_type(),
             primary.order_list_id(),
-            primary.linked_order_ids().map(|ids| ids.to_vec()),
+            primary.linked_order_ids().map(<[ClientOrderId]>::to_vec),
             primary.parent_order_id(),
             Some(exec_algorithm_id),
             primary.exec_algorithm_params().cloned(),
             Some(primary.client_order_id()),
-            tags.or_else(|| primary.tags().map(|t| t.to_vec())),
+            tags.or_else(|| primary.tags().map(<[Ustr]>::to_vec)),
             UUID4::new(),
             ts_init,
         );
@@ -787,7 +789,7 @@ pub trait ExecutionAlgorithm: DataActor {
         }
 
         msgbus::send_trading_command(
-            MessagingSwitchboard::risk_engine_execute(),
+            MessagingSwitchboard::risk_engine_queue_execute(),
             TradingCommand::SubmitOrder(command),
         );
 
@@ -906,7 +908,7 @@ pub trait ExecutionAlgorithm: DataActor {
             );
         } else {
             msgbus::send_trading_command(
-                MessagingSwitchboard::risk_engine_execute(),
+                MessagingSwitchboard::risk_engine_queue_execute(),
                 TradingCommand::ModifyOrder(command),
             );
         }
@@ -1094,7 +1096,7 @@ pub trait ExecutionAlgorithm: DataActor {
             );
         } else {
             msgbus::send_trading_command(
-                MessagingSwitchboard::exec_engine_execute(),
+                MessagingSwitchboard::exec_engine_queue_execute(),
                 TradingCommand::CancelOrder(command),
             );
         }
@@ -1306,6 +1308,15 @@ pub trait ExecutionAlgorithm: DataActor {
         Ok(())
     }
 
+    /// Called when the algorithm is resumed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if resume fails.
+    fn on_resume(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Called when the algorithm is reset.
     ///
     /// # Errors
@@ -1455,8 +1466,10 @@ mod tests {
         clock::{Clock, TestClock},
         component::Component,
         enums::ComponentTrigger,
-        msgbus,
-        msgbus::TypedHandler,
+        msgbus::{
+            self, TypedHandler,
+            stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
+        },
     };
     use nautilus_model::{
         enums::{OrderSide, OrderStatus, OrderType},
@@ -2576,7 +2589,7 @@ mod tests {
             }
         });
         msgbus::register_trading_command_endpoint(
-            MessagingSwitchboard::risk_engine_execute(),
+            MessagingSwitchboard::risk_engine_queue_execute(),
             handler,
         );
 
@@ -2598,6 +2611,85 @@ mod tests {
             cmd.params.as_ref().and_then(|p| p.get_bool("is_leverage")),
             Some(true),
         );
+    }
+
+    #[rstest]
+    fn test_algorithm_routes_modify_and_cancel_commands_through_engine_queues() {
+        let mut modify_algo = create_test_algorithm();
+        let mut cancel_algo = create_test_algorithm();
+        register_algorithm(&mut modify_algo);
+        register_algorithm(&mut cancel_algo);
+
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let mut modify_order = TestOrderStubs::make_accepted_order(
+            &OrderTestBuilder::new(OrderType::Limit)
+                .strategy_id(StrategyId::from("STRAT-ALGO-ROUTING"))
+                .instrument_id(InstrumentId::from("BTC/USDT.BINANCE"))
+                .client_order_id(ClientOrderId::from("O-ALGO-MODIFY"))
+                .quantity(Quantity::from("1.0"))
+                .price(Price::from("50000.0"))
+                .build(),
+        );
+        let mut cancel_order = TestOrderStubs::make_accepted_order(
+            &OrderTestBuilder::new(OrderType::Market)
+                .strategy_id(StrategyId::from("STRAT-ALGO-ROUTING"))
+                .instrument_id(InstrumentId::from("BTC/USDT.BINANCE"))
+                .client_order_id(ClientOrderId::from("O-ALGO-CANCEL"))
+                .quantity(Quantity::from("1.0"))
+                .build(),
+        );
+        {
+            let cache_rc = modify_algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache
+                .add_order(modify_order.clone(), None, None, false)
+                .unwrap();
+        }
+        {
+            let cache_rc = cancel_algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache
+                .add_order(cancel_order.clone(), None, None, false)
+                .unwrap();
+        }
+
+        modify_algo
+            .modify_order(
+                &mut modify_order,
+                None,
+                Some(Price::from("51000.0")),
+                None,
+                None,
+            )
+            .unwrap();
+        cancel_algo.cancel_order(&mut cancel_order, None).unwrap();
+
+        let risk_messages = risk_messages.get_messages();
+        let exec_messages = exec_messages.get_messages();
+        assert_eq!(risk_messages.len(), 1);
+        assert!(matches!(
+            risk_messages.first(),
+            Some(TradingCommand::ModifyOrder(command))
+                if command.client_order_id == modify_order.client_order_id()
+        ));
+        assert_eq!(exec_messages.len(), 1);
+        assert!(matches!(
+            exec_messages.first(),
+            Some(TradingCommand::CancelOrder(command))
+                if command.client_order_id == cancel_order.client_order_id()
+        ));
     }
 
     #[rstest]

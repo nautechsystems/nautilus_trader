@@ -183,6 +183,9 @@ pub fn should_retry_error_code(error_code: &str) -> bool {
     OKX_RETRY_ERROR_CODES.contains(error_code)
 }
 
+/// OKX error code returned when an order request timed out and the outcome is unknown.
+pub const OKX_ORDER_REQUEST_TIMEOUT_CODE: &str = "51149";
+
 /// OKX error code returned when a post-only order would immediately take liquidity.
 pub const OKX_POST_ONLY_ERROR_CODE: &str = "51019";
 

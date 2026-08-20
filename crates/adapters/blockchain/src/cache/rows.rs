@@ -543,6 +543,191 @@ pub fn transform_row_to_dex_pool_data(
     }
 }
 
+/// A data transfer object that maps database rows to persisted execution transaction records.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionTransactionRow {
+    pub wallet_address: Option<String>,
+    pub nonce: u64,
+    pub transaction_hash: String,
+    pub purpose: String,
+    pub status: String,
+    pub client_order_id: Option<String>,
+}
+
+/// Values persisted when reserving durable ownership of an execution intent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionIntentInsert {
+    pub chain_id: u32,
+    pub wallet_address: String,
+    pub purpose: String,
+    pub client_order_id: Option<String>,
+    pub trader_id: Option<String>,
+    pub strategy_id: Option<String>,
+    pub account_id: Option<String>,
+    pub instrument_id: Option<String>,
+    pub pool_address: Option<String>,
+    pub transaction_to: String,
+    pub transaction_input: String,
+    pub transaction_value: String,
+    pub amount_in: Option<String>,
+    pub created_block: u64,
+}
+
+/// A durable execution intent which owns the active signer slot and optional client order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionIntentRow {
+    pub id: i64,
+    pub schema_version: i16,
+    pub chain_id: u32,
+    pub wallet_address: String,
+    pub nonce: Option<u64>,
+    pub purpose: String,
+    pub status: String,
+    pub client_order_id: Option<String>,
+    pub trader_id: Option<String>,
+    pub strategy_id: Option<String>,
+    pub account_id: Option<String>,
+    pub instrument_id: Option<String>,
+    pub pool_address: Option<String>,
+    pub transaction_to: String,
+    pub transaction_input: String,
+    pub transaction_value: String,
+    pub amount_in: Option<String>,
+    pub created_block: u64,
+    pub acknowledgement_emitted: bool,
+    pub fill_emitted: bool,
+    pub terminal_emitted: bool,
+    pub active: bool,
+}
+
+impl<'r> FromRow<'r, PgRow> for ExecutionIntentRow {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let chain_id_i32 = row.try_get::<i32, _>("chain_id")?;
+        let chain_id = u32::try_from(chain_id_i32).map_err(|_| {
+            sqlx::Error::Decode(format!("Invalid negative chain ID {chain_id_i32}").into())
+        })?;
+        let nonce = row
+            .try_get::<Option<i64>, _>("nonce")?
+            .map(|nonce| {
+                u64::try_from(nonce).map_err(|_| {
+                    sqlx::Error::Decode(format!("Invalid negative nonce {nonce}").into())
+                })
+            })
+            .transpose()?;
+        let created_block_i64 = row.try_get::<i64, _>("created_block")?;
+        let created_block = u64::try_from(created_block_i64).map_err(|_| {
+            sqlx::Error::Decode(
+                format!("Invalid negative creation block {created_block_i64}").into(),
+            )
+        })?;
+
+        Ok(Self {
+            id: row.try_get("id")?,
+            schema_version: row.try_get("schema_version")?,
+            chain_id,
+            wallet_address: row.try_get("wallet_address")?,
+            nonce,
+            purpose: row.try_get("purpose")?,
+            status: row.try_get("status")?,
+            client_order_id: row.try_get("client_order_id")?,
+            trader_id: row.try_get("trader_id")?,
+            strategy_id: row.try_get("strategy_id")?,
+            account_id: row.try_get("account_id")?,
+            instrument_id: row.try_get("instrument_id")?,
+            pool_address: row.try_get("pool_address")?,
+            transaction_to: row.try_get("transaction_to")?,
+            transaction_input: row.try_get("transaction_input")?,
+            transaction_value: row.try_get("transaction_value")?,
+            amount_in: row.try_get("amount_in")?,
+            created_block,
+            acknowledgement_emitted: row.try_get("acknowledgement_emitted")?,
+            fill_emitted: row.try_get("fill_emitted")?,
+            terminal_emitted: row.try_get("terminal_emitted")?,
+            active: row.try_get("active")?,
+        })
+    }
+}
+
+/// A signed transaction hash associated with an execution intent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionTransactionHashRow {
+    pub id: i64,
+    pub intent_id: i64,
+    pub chain_id: u32,
+    pub transaction_hash: String,
+    pub raw_transaction: Option<Vec<u8>>,
+    pub status: String,
+    pub block_number: Option<u64>,
+    pub block_hash: Option<String>,
+    pub receipt_success: Option<bool>,
+    pub gas_used: Option<u64>,
+    pub effective_gas_price: Option<String>,
+    pub current: bool,
+}
+
+impl<'r> FromRow<'r, PgRow> for ExecutionTransactionHashRow {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let chain_id_i32 = row.try_get::<i32, _>("chain_id")?;
+        let chain_id = u32::try_from(chain_id_i32).map_err(|_| {
+            sqlx::Error::Decode(format!("Invalid negative chain ID {chain_id_i32}").into())
+        })?;
+        let block_number = row
+            .try_get::<Option<i64>, _>("block_number")?
+            .map(|block| {
+                u64::try_from(block).map_err(|_| {
+                    sqlx::Error::Decode(format!("Invalid negative block number {block}").into())
+                })
+            })
+            .transpose()?;
+        let gas_used = row
+            .try_get::<Option<i64>, _>("gas_used")?
+            .map(|gas| {
+                u64::try_from(gas).map_err(|_| {
+                    sqlx::Error::Decode(format!("Invalid negative gas used {gas}").into())
+                })
+            })
+            .transpose()?;
+
+        Ok(Self {
+            id: row.try_get("id")?,
+            intent_id: row.try_get("intent_id")?,
+            chain_id,
+            transaction_hash: row.try_get("transaction_hash")?,
+            raw_transaction: row.try_get("raw_transaction")?,
+            status: row.try_get("status")?,
+            block_number,
+            block_hash: row.try_get("block_hash")?,
+            receipt_success: row.try_get("receipt_success")?,
+            gas_used,
+            effective_gas_price: row.try_get("effective_gas_price")?,
+            current: row.try_get("current")?,
+        })
+    }
+}
+
+impl<'r> FromRow<'r, PgRow> for ExecutionTransactionRow {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let wallet_address = row.try_get::<Option<String>, _>("wallet_address")?;
+        let nonce_i64 = row.try_get::<i64, _>("nonce")?;
+        let nonce = u64::try_from(nonce_i64).map_err(|_| {
+            sqlx::Error::Decode(format!("Invalid negative nonce {nonce_i64}").into())
+        })?;
+        let transaction_hash = row.try_get::<String, _>("transaction_hash")?;
+        let purpose = row.try_get::<String, _>("purpose")?;
+        let status = row.try_get::<String, _>("status")?;
+        let client_order_id = row.try_get::<Option<String>, _>("client_order_id")?;
+
+        Ok(Self {
+            wallet_address,
+            nonce,
+            transaction_hash,
+            purpose,
+            status,
+            client_order_id,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_core::datetime::{

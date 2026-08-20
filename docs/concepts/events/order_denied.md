@@ -5,18 +5,16 @@
 `MessageBus`. It fires when an otherwise valid order cannot be submitted, for example due
 to a risk limit or an unsupported feature.
 
-Transition: `INITIALIZED` -> `DENIED`. Handler: `on_order_denied`.
+Typical transition: `INITIALIZED` -> `DENIED`. Handler: `on_order_denied`.
 
 ## Fields
 
-Beyond the [common order event fields](index.md#common-order-event-fields), `OrderDenied` carries:
+Beyond the [common Python order event fields](index.md#common-python-order-event-fields),
+`OrderDenied` carries:
 
 | Field    | Python type | Required/default | Description              |
 | -------- | ----------- | ---------------- | ------------------------ |
 | `reason` | `str`       | Required         | The order denied reason. |
-
-On this event, `venue_order_id` and `account_id` are both `None`, `reconciliation` is
-always `False`, and `ts_event` equals `ts_init`.
 
 ## Example
 

@@ -46,7 +46,7 @@ use strum::{Display, EnumIter, EnumString, FromRepr};
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.common.enums",
+        module = "nautilus_trader.common",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -120,7 +120,7 @@ impl ComponentState {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.common.enums",
+        module = "nautilus_trader.common",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -188,7 +188,7 @@ pub enum ComponentTrigger {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.common.enums",
+        module = "nautilus_trader.common",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -229,7 +229,7 @@ pub enum Environment {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.common.enums",
+        module = "nautilus_trader.common",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -291,7 +291,7 @@ pub enum LogLevel {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.common.enums",
+        module = "nautilus_trader.common",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -377,7 +377,7 @@ impl From<Level> for LogColor {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.common.enums",
+        module = "nautilus_trader.common",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -433,7 +433,7 @@ pub enum LogFormat {
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.common.enums",
+        module = "nautilus_trader.common",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )

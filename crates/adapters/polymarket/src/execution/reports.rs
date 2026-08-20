@@ -34,8 +34,8 @@ use ustr::Ustr;
 use super::{
     PolymarketExecutionClient,
     parse::{
-        parse_balance_allowance, parse_order_status_report, sum_filled_quantity,
-        weighted_average_price,
+        parse_balance_allowance, parse_order_status_report, recovered_terminal_order_status,
+        sum_filled_quantity, weighted_average_price,
     },
     reconciliation::{
         FillContext, apply_fill_filters, build_fill_reports_from_trades, build_position_reports,
@@ -44,7 +44,7 @@ use super::{
     },
 };
 use crate::{
-    common::{consts::DUST_SNAP_THRESHOLD_DEC, enums::SignatureType},
+    common::enums::SignatureType,
     http::{
         clob::PolymarketClobHttpClient,
         query::{GetBalanceAllowanceParams, GetTradesParams},
@@ -145,7 +145,8 @@ impl PolymarketExecutionClient {
             &self.shared_token_instruments,
             Some(instrument_id),
             ts_init,
-        );
+            self.config.reconciliation_load_ids(),
+        )?;
         order_fills.retain(|f| f.venue_order_id == venue_order_id);
         self.fill_tracker.snap_fill_reports(&mut order_fills);
 
@@ -248,13 +249,16 @@ impl PolymarketExecutionClient {
     pub(super) fn query_order_command(&self, cmd: &QueryOrder) {
         log::debug!("Querying order: client_order_id={}", cmd.client_order_id);
 
-        let venue_order_id = match &cmd.venue_order_id {
-            Some(id) => id.to_string(),
-            None => {
-                log::warn!("query_order requires venue_order_id for Polymarket");
-                return;
-            }
+        let Some(venue_order_id) =
+            self.resolve_venue_order_id(cmd.venue_order_id, Some(cmd.client_order_id))
+        else {
+            log::warn!(
+                "query_order requires a venue_order_id for Polymarket: {}",
+                cmd.client_order_id
+            );
+            return;
         };
+        let venue_order_id = venue_order_id.to_string();
 
         let instrument_id = cmd.instrument_id;
         let client_order_id = cmd.client_order_id;
@@ -277,6 +281,7 @@ impl PolymarketExecutionClient {
             .clone()
             .unwrap_or_else(|| self.secrets.address.clone());
         let api_key = self.secrets.credential.api_key().to_string();
+        let load_ids = self.config.reconciliation_load_ids().map(Vec::from);
         let cached_filled = cache
             .order(&client_order_id)
             .map_or_else(|| Quantity::zero(size_prec), |order| order.filled_qty());
@@ -314,6 +319,7 @@ impl PolymarketExecutionClient {
                             GetTradesParams::default(),
                             Some(instrument_id),
                             clock.get_time_ns(),
+                            load_ids.as_deref(),
                         )
                         .await
                         {
@@ -352,20 +358,14 @@ impl PolymarketExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        let venue_order_id = match cmd.venue_order_id {
-            Some(id) => id,
-            None => {
-                log::warn!("generate_order_status_report requires venue_order_id");
-                return Ok(None);
-            }
+        let Some(venue_order_id) =
+            self.resolve_venue_order_id(cmd.venue_order_id, cmd.client_order_id)
+        else {
+            anyhow::bail!("generate_order_status_report requires venue_order_id");
         };
 
-        let instrument_id = match cmd.instrument_id {
-            Some(id) => id,
-            None => {
-                log::warn!("generate_order_status_report requires instrument_id");
-                return Ok(None);
-            }
+        let Some(instrument_id) = cmd.instrument_id else {
+            anyhow::bail!("generate_order_status_report requires instrument_id");
         };
 
         let order = self
@@ -413,6 +413,7 @@ impl PolymarketExecutionClient {
                     GetTradesParams::default(),
                     Some(instrument_id),
                     self.clock.get_time_ns(),
+                    self.config.reconciliation_load_ids(),
                 )
                 .await
                 {
@@ -442,6 +443,15 @@ impl PolymarketExecutionClient {
         .await
     }
 
+    fn resolve_venue_order_id(
+        &self,
+        venue_order_id: Option<VenueOrderId>,
+        client_order_id: Option<ClientOrderId>,
+    ) -> Option<VenueOrderId> {
+        venue_order_id
+            .or_else(|| client_order_id.and_then(|id| self.order_identities.venue_order_id(&id)))
+    }
+
     pub(super) async fn generate_order_status_reports_impl(
         &self,
         cmd: &GenerateOrderStatusReports,
@@ -459,7 +469,8 @@ impl PolymarketExecutionClient {
             self.core.account_id,
             cmd.instrument_id,
             self.clock.get_time_ns(),
-        );
+            self.config.reconciliation_load_ids(),
+        )?;
 
         let needs_confirmed_fills = reports.iter().any(|report| {
             let cached_filled = report
@@ -476,6 +487,7 @@ impl PolymarketExecutionClient {
                 GetTradesParams::default(),
                 cmd.instrument_id,
                 self.clock.get_time_ns(),
+                self.config.reconciliation_load_ids(),
             )
             .await
             {
@@ -530,7 +542,9 @@ impl PolymarketExecutionClient {
     ) -> anyhow::Result<Vec<FillReport>> {
         let trades = self
             .http_client
-            .get_trades(GetTradesParams::default())
+            .get_trades(super::reconciliation::trades_params_for_window(
+                cmd.start, cmd.end,
+            ))
             .await
             .context("failed to fetch trades")?;
 
@@ -541,7 +555,8 @@ impl PolymarketExecutionClient {
             &self.shared_token_instruments,
             cmd.instrument_id,
             self.clock.get_time_ns(),
-        );
+            self.config.reconciliation_load_ids(),
+        )?;
 
         self.fill_tracker.snap_fill_reports(&mut reports);
 
@@ -563,7 +578,11 @@ impl PolymarketExecutionClient {
             .context("failed to fetch positions from Data API")?;
 
         let ts_now = self.clock.get_time_ns();
-        let mut reports = build_position_reports(&positions, self.core.account_id, ts_now);
+        let mut reports = super::reconciliation::retain_mapped_position_reports(
+            build_position_reports(&positions, self.core.account_id, ts_now),
+            &self.shared_token_instruments,
+            self.config.reconciliation_load_ids(),
+        )?;
 
         if let Some(ref filter_id) = cmd.instrument_id {
             reports.retain(|r| &r.instrument_id == filter_id);
@@ -587,25 +606,9 @@ impl PolymarketExecutionClient {
             self.core.client_id,
             self.core.venue,
             lookback_mins,
+            self.config.reconciliation_load_ids(),
         )
         .await
-    }
-}
-
-fn recovered_terminal_order_status(
-    time_in_force: TimeInForce,
-    quantity: Quantity,
-    filled_qty: Quantity,
-) -> OrderStatus {
-    if time_in_force == TimeInForce::Ioc && filled_qty < quantity {
-        return OrderStatus::Canceled;
-    }
-
-    let dust_diff = (quantity.as_decimal() - filled_qty.as_decimal()).abs();
-    if filled_qty >= quantity || dust_diff < DUST_SNAP_THRESHOLD_DEC {
-        OrderStatus::Filled
-    } else {
-        OrderStatus::Canceled
     }
 }
 
@@ -616,13 +619,20 @@ async fn fetch_confirmed_fill_reports(
     params: GetTradesParams,
     instrument_id: Option<InstrumentId>,
     ts_init: UnixNanos,
+    load_ids: Option<&[InstrumentId]>,
 ) -> anyhow::Result<Vec<FillReport>> {
     let trades = http_client
         .get_trades(params)
         .await
         .context("failed to fetch confirmed trades")?;
-    let (reports, _) =
-        build_fill_reports_from_trades(&trades, ctx, token_instruments, instrument_id, ts_init);
+    let (reports, _) = build_fill_reports_from_trades(
+        &trades,
+        ctx,
+        token_instruments,
+        instrument_id,
+        ts_init,
+        load_ids,
+    )?;
     Ok(reports)
 }
 
@@ -642,21 +652,21 @@ pub(super) async fn fetch_and_emit_account_state(
         ..Default::default()
     };
 
-    let balance_allowance = http_client
-        .get_balance_allowance(params)
+    let balance = http_client
+        .get_balance(params)
         .await
-        .context("failed to fetch balance allowance")?;
+        .context("failed to fetch balance")?;
 
     let pusd = get_pusd_currency();
-    let account_balance = parse_balance_allowance(balance_allowance.balance, pusd)
-        .context("failed to parse balance allowance")?;
+    let account_balance =
+        parse_balance_allowance(balance, pusd).context("failed to parse balance")?;
 
     let ts_event = clock.get_time_ns();
     log::debug!(
         "Account state updated: balance={} pUSD",
         account_balance.total
     );
-    emitter.emit_account_state(vec![account_balance], vec![], true, ts_event);
+    emitter.emit_account_state(vec![account_balance], vec![], true, ts_event, None);
     Ok(())
 }
 
@@ -670,13 +680,13 @@ pub(super) async fn fetch_collateral_balance_pusd(
         ..Default::default()
     };
 
-    let balance_allowance = http_client
-        .get_balance_allowance(params)
+    let balance = http_client
+        .get_balance(params)
         .await
-        .context("failed to fetch balance allowance")?;
+        .context("failed to fetch balance")?;
 
     let usdc_scale = Decimal::from(1_000_000u32);
-    Ok(balance_allowance.balance / usdc_scale)
+    Ok(balance / usdc_scale)
 }
 
 #[cfg(test)]

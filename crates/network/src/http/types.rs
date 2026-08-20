@@ -21,21 +21,16 @@ use bytes::Bytes;
 use http::{StatusCode, status::InvalidStatusCode};
 use reqwest::Method;
 
-/// Represents a HTTP status code.
+/// An HTTP status code.
 ///
-/// Wraps [`http::StatusCode`] to expose a Python-compatible type and reuse
-/// its validation and convenience methods.
+/// Wraps [`http::StatusCode`] to reuse its validation and convenience methods.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
-)]
 pub struct HttpStatus {
     inner: StatusCode,
 }
 
 impl HttpStatus {
-    /// Create a new [`HttpStatus`] instance from a given [`StatusCode`].
+    /// Creates an [`HttpStatus`] from a [`StatusCode`].
     #[must_use]
     pub const fn new(code: StatusCode) -> Self {
         Self { inner: code }
@@ -106,21 +101,8 @@ impl TryFrom<u16> for HttpStatus {
     }
 }
 
-/// Represents the HTTP methods supported by the `HttpClient`.
+/// An HTTP method supported by [`super::HttpClient`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        eq,
-        eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.network",
-        from_py_object
-    )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.network")
-)]
 pub enum HttpMethod {
     GET,
     POST,
@@ -141,19 +123,8 @@ impl From<HttpMethod> for Method {
     }
 }
 
-/// Represents the response from an HTTP request.
-///
-/// This struct encapsulates the status, headers, and body of an HTTP response,
-/// providing easy access to the key components of the response.
+/// The status, selected headers, and raw body returned by an HTTP request.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")
-)]
 pub struct HttpResponse {
     /// The HTTP status code.
     pub status: HttpStatus,

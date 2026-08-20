@@ -97,7 +97,7 @@ class MinimalStrategy(Strategy):
             self.config.instrument_id,
         )
 
-        is_flat = self.portfolio.is_completely_flat()
+        is_flat = self.portfolio.is_completely_net_flat()
 
         # Debug point 1: Open position
         # Problem is, that , but Portfolio return None: `self.portfolio.unrealized_pnl(self.config.instrument_id)`

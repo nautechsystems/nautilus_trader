@@ -24,7 +24,7 @@ pub use fx_rollover::FXRolloverInterestModule;
 use indexmap::IndexMap;
 use nautilus_common::cache::Cache;
 use nautilus_core::UnixNanos;
-use nautilus_execution::matching_engine::engine::OrderMatchingEngine;
+use nautilus_execution::matching_engine::OrderMatchingEngine;
 use nautilus_model::{
     data::Data,
     identifiers::{InstrumentId, Venue},

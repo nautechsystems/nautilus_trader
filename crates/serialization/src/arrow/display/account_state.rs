@@ -159,6 +159,7 @@ mod tests {
             event_id: UUID4::default(),
             ts_event: ts.into(),
             ts_init: (ts + 1).into(),
+            info: None,
         }
     }
 

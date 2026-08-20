@@ -55,6 +55,12 @@ pub const BINANCE_FUTURES_USD_HTTP_URL: &str = "https://fapi.binance.com";
 /// Binance COIN-M Futures API base URL (live exchange).
 pub const BINANCE_FUTURES_COIN_HTTP_URL: &str = "https://dapi.binance.com";
 
+/// Default WebSocket heartbeat interval in seconds.
+///
+/// Binance caps ping/pong frames at 5 per second, so this sits well inside the limit while keeping
+/// the derived liveness window tight.
+pub const BINANCE_WS_HEARTBEAT_SECS: u64 = 20;
+
 /// Binance European Options API base URL (live exchange).
 pub const BINANCE_OPTIONS_HTTP_URL: &str = "https://eapi.binance.com";
 

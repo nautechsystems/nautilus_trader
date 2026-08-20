@@ -13,18 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_common::{
-    cache::InstrumentLookupError,
-    messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList},
-};
+use anyhow::Context;
+use nautilus_common::messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList};
+use nautilus_live::execution::failure::CommandFailure;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
+    enums::{LiquiditySide, OrderSide, OrderType},
+    events::OrderDeniedReason,
     identifiers::VenueOrderId,
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     types::{Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
+#[cfg(test)]
+use rust_decimal_macros::dec;
 
 use super::{
     PolymarketExecutionClient,
@@ -33,19 +35,28 @@ use super::{
     parse::{compute_commission, instrument_fee_exponent, instrument_taker_fee},
     reports::fetch_collateral_balance_pusd,
     responses::{
-        check_fok_status, emit_market_order_submitted, handle_batch_order_responses,
-        handle_order_response, handle_single_order_response, handle_unknown_submit_result,
-        reject_submit_order,
+        check_fok_status, emit_market_order_submitted, fok_check_order_id,
+        handle_batch_order_responses, handle_order_response, handle_single_order_response,
+        handle_unknown_submit_result, reject_submit_order,
     },
-    submitter::{MarketBuyFeeContext, MarketOrderSubmitRequest, UnknownSubmitError},
-    types::{BatchLimitOrderContext, LimitOrderSubmitRequest},
+    submitter::{
+        InvalidMarketPriceError, MarketBuyFeeContext, MarketOrderSubmitRequest, UnknownSubmitError,
+    },
+    types::{BatchLimitOrderContext, LimitOrderSubmitRequest, classify_http_command_failure},
 };
-use crate::common::consts::BATCH_ORDER_LIMIT;
+use crate::{common::consts::BATCH_ORDER_LIMIT, http::error::Error as HttpError};
 
 impl PolymarketExecutionClient {
     pub(super) fn submit_limit_order(&self, order: OrderAny) {
         if let Err(reason) = PolymarketOrderBuilder::validate_limit_order(&order) {
-            self.emitter.emit_order_denied(&order, &reason);
+            self.emitter.emit_order_denied(&order, &reason.to_string());
+            return;
+        }
+
+        if let Err(reason) =
+            PolymarketOrderBuilder::validate_limit_expiration(&order, self.clock.get_time_ns())
+        {
+            self.emitter.emit_order_denied(&order, &reason.to_string());
             return;
         }
 
@@ -57,7 +68,7 @@ impl PolymarketExecutionClient {
         if let Err(reason) =
             PolymarketOrderBuilder::validate_limit_price(&order, instrument.price_increment())
         {
-            self.emitter.emit_order_denied(&order, &reason);
+            self.emitter.emit_order_denied(&order, &reason.to_string());
             return;
         }
 
@@ -82,8 +93,6 @@ impl PolymarketExecutionClient {
             tick_decimals,
         };
 
-        self.emitter.emit_order_submitted(&order);
-
         let submitter = self.submitter.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -96,6 +105,15 @@ impl PolymarketExecutionClient {
         let price_precision = instrument.price_precision();
 
         self.spawn_task("submit_limit_order", async move {
+            if let Err(reason) =
+                PolymarketOrderBuilder::validate_limit_expiration(&order, clock.get_time_ns())
+            {
+                emitter.emit_order_denied(&order, &reason.to_string());
+                return Ok(());
+            }
+
+            emitter.emit_order_submitted(&order);
+
             let submission = match submitter.prepare_limit_order_submission(&request).await {
                 Ok(submission) => submission,
                 Err(e) => {
@@ -107,6 +125,7 @@ impl PolymarketExecutionClient {
             let expected_venue_order_id = submission.expected_venue_order_id;
             match submitter.post_limit_order_submission(submission).await {
                 Ok(response) => {
+                    let fok_order_id = fok_check_order_id(&response, tif);
                     if let Some((order_id_str, venue_order_id)) = handle_order_response(
                         Ok(response),
                         &order,
@@ -130,38 +149,56 @@ impl PolymarketExecutionClient {
                         )
                         .await;
                     }
-                }
-                Err(e) if e.is_submit_outcome_unknown() => {
-                    if let Some((order_id_str, venue_order_id)) = handle_unknown_submit_result(
-                        &order,
-                        expected_venue_order_id,
-                        &e.to_string(),
-                        None,
-                        &emitter,
-                        clock,
-                        &fill_tracker,
-                        &order_identities,
-                        &pending_submits,
-                        &pending_cancels,
-                        account_id,
-                        size_precision,
-                        price_precision,
-                    ) {
-                        execute_deferred_cancel(
+
+                    if let Some(order_id) = fok_order_id {
+                        check_fok_status(
                             &submitter,
+                            &order_id,
                             &order,
-                            &order_id_str,
-                            venue_order_id,
+                            &fill_tracker,
+                            &order_identities,
                             &emitter,
-                            &pending_cancels,
+                            account_id,
+                            size_precision,
+                            price_precision,
                             clock,
                         )
                         .await;
                     }
                 }
-                Err(e) => {
-                    reject_submit_order(&order, &format!("{e}"), &emitter, clock, &pending_cancels);
-                }
+                Err(e) => match classify_http_command_failure(&e) {
+                    CommandFailure::Ambiguous(reason) => {
+                        if let Some((order_id_str, venue_order_id)) = handle_unknown_submit_result(
+                            &order,
+                            expected_venue_order_id,
+                            &reason,
+                            None,
+                            &emitter,
+                            clock,
+                            &fill_tracker,
+                            &order_identities,
+                            &pending_submits,
+                            &pending_cancels,
+                            account_id,
+                            size_precision,
+                            price_precision,
+                        ) {
+                            execute_deferred_cancel(
+                                &submitter,
+                                &order,
+                                &order_id_str,
+                                venue_order_id,
+                                &emitter,
+                                &pending_cancels,
+                                clock,
+                            )
+                            .await;
+                        }
+                    }
+                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                        reject_submit_order(&order, &reason, &emitter, clock, &pending_cancels);
+                    }
+                },
             }
             Ok(())
         });
@@ -169,7 +206,7 @@ impl PolymarketExecutionClient {
 
     pub(super) fn submit_market_order(&self, order: OrderAny) {
         if let Err(reason) = PolymarketOrderBuilder::validate_market_order(&order) {
-            self.emitter.emit_order_denied(&order, &reason);
+            self.emitter.emit_order_denied(&order, &reason.to_string());
             return;
         }
 
@@ -180,7 +217,7 @@ impl PolymarketExecutionClient {
 
         let neg_risk = self.get_neg_risk(&order.instrument_id());
         let token_id = instrument.raw_symbol().to_string();
-        let tick_decimals = instrument.price_precision() as u32;
+        let tick_size = instrument.price_increment();
         let side = order.order_side();
         let amount = order.quantity();
         let time_in_force = order.time_in_force();
@@ -223,7 +260,12 @@ impl PolymarketExecutionClient {
                     Err(e) => {
                         emitter.emit_order_denied(
                             &order,
-                            &format!("Failed to fetch pUSD balance for fee adjustment: {e}"),
+                            &OrderDeniedReason::ValidationFailed {
+                                detail: format!(
+                                    "Failed to fetch pUSD balance for fee adjustment: {e}"
+                                ),
+                            }
+                            .to_string(),
                         );
                         return Ok(());
                     }
@@ -239,7 +281,7 @@ impl PolymarketExecutionClient {
                     amount,
                     time_in_force,
                     neg_risk,
-                    tick_decimals,
+                    tick_size,
                     fee_context,
                 })
                 .await
@@ -260,6 +302,7 @@ impl PolymarketExecutionClient {
 
                     if result.response.success
                         && let Some(order_id) = result.response.order_id.as_ref()
+                        && !order_id.is_empty()
                     {
                         let venue_order_id = VenueOrderId::from(order_id.as_str());
                         if venue_order_id != result.expected_venue_order_id {
@@ -270,12 +313,7 @@ impl PolymarketExecutionClient {
                         }
                     }
 
-                    let fok_order_id = result
-                        .response
-                        .order_id
-                        .as_ref()
-                        .filter(|_| result.response.success && time_in_force == TimeInForce::Fok)
-                        .cloned();
+                    let fok_order_id = fok_check_order_id(&result.response, time_in_force);
 
                     if let Some((order_id_str, venue_order_id)) = handle_order_response(
                         Ok(result.response),
@@ -307,6 +345,7 @@ impl PolymarketExecutionClient {
                             &order_id,
                             &order,
                             &fill_tracker,
+                            &order_identities,
                             &emitter,
                             account_id,
                             size_precision,
@@ -365,9 +404,39 @@ impl PolymarketExecutionClient {
                             )
                             .await;
                         }
+                    } else if let Some(invalid_price) = e.downcast_ref::<InvalidMarketPriceError>()
+                    {
+                        emitter.emit_order_denied(
+                            &order,
+                            &OrderDeniedReason::ValidationFailed {
+                                detail: invalid_price.to_string(),
+                            }
+                            .to_string(),
+                        );
                     } else {
-                        let ts_now = clock.get_time_ns();
-                        emitter.emit_order_rejected(&order, &format!("{e}"), ts_now, false);
+                        let failure = e.downcast_ref::<HttpError>().map_or_else(
+                            || CommandFailure::not_sent(e.to_string()),
+                            classify_http_command_failure,
+                        );
+
+                        match failure {
+                            CommandFailure::Ambiguous(reason) => {
+                                log::warn!(
+                                    "Market submit outcome unknown for {}: {reason}",
+                                    order.client_order_id()
+                                );
+                            }
+                            CommandFailure::NotSent(reason)
+                            | CommandFailure::VenueRejected(reason) => {
+                                reject_submit_order(
+                                    &order,
+                                    &reason,
+                                    &emitter,
+                                    clock,
+                                    &pending_cancels,
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -387,7 +456,10 @@ impl PolymarketExecutionClient {
             None => {
                 self.emitter.emit_order_denied(
                     order,
-                    &InstrumentLookupError::not_found(order.instrument_id()).to_string(),
+                    &OrderDeniedReason::InstrumentNotFound {
+                        instrument_id: order.instrument_id(),
+                    }
+                    .to_string(),
                 );
                 None
             }
@@ -408,10 +480,10 @@ impl PolymarketExecutionClient {
             _ => {
                 self.emitter.emit_order_denied(
                     &order,
-                    &format!(
-                        "Unsupported order type for Polymarket: {:?}",
-                        order.order_type()
-                    ),
+                    &OrderDeniedReason::UnsupportedOrderType {
+                        order_type: order.order_type(),
+                    }
+                    .to_string(),
                 );
             }
         }
@@ -421,6 +493,7 @@ impl PolymarketExecutionClient {
     pub(super) fn submit_order_list_command(&self, cmd: &SubmitOrderList) {
         let mut batch_orders = Vec::with_capacity(cmd.order_inits.len());
         let neg_risk_index = self.neg_risk_index.load();
+        let ts_now = self.clock.get_time_ns();
 
         for order_init in &cmd.order_inits {
             let Some(order) = self
@@ -450,14 +523,19 @@ impl PolymarketExecutionClient {
                 other => {
                     self.emitter.emit_order_denied(
                         &order,
-                        &format!("Unsupported order type for Polymarket: {other:?}"),
+                        &OrderDeniedReason::UnsupportedOrderType { order_type: other }.to_string(),
                     );
                     continue;
                 }
             }
 
             if let Err(reason) = PolymarketOrderBuilder::validate_limit_order(&order) {
-                self.emitter.emit_order_denied(&order, &reason);
+                self.emitter.emit_order_denied(&order, &reason.to_string());
+                continue;
+            }
+
+            if let Err(reason) = PolymarketOrderBuilder::validate_limit_expiration(&order, ts_now) {
+                self.emitter.emit_order_denied(&order, &reason.to_string());
                 continue;
             }
 
@@ -469,7 +547,7 @@ impl PolymarketExecutionClient {
             if let Err(reason) =
                 PolymarketOrderBuilder::validate_limit_price(&order, instrument.price_increment())
             {
-                self.emitter.emit_order_denied(&order, &reason);
+                self.emitter.emit_order_denied(&order, &reason.to_string());
                 continue;
             }
 
@@ -518,6 +596,22 @@ impl PolymarketExecutionClient {
         let account_id = self.core.account_id;
 
         self.spawn_task("submit_order_list", async move {
+            let ts_now = clock.get_time_ns();
+            batch_orders.retain(|batch_order| {
+                match PolymarketOrderBuilder::validate_limit_expiration(&batch_order.order, ts_now)
+                {
+                    Ok(()) => true,
+                    Err(reason) => {
+                        emitter.emit_order_denied(&batch_order.order, &reason.to_string());
+                        false
+                    }
+                }
+            });
+
+            if batch_orders.is_empty() {
+                return Ok(());
+            }
+
             for batch_order in &batch_orders {
                 emitter.emit_order_submitted(&batch_order.order);
             }
@@ -603,51 +697,54 @@ impl PolymarketExecutionClient {
                             )
                             .await;
                         }
-                        Err(e) if e.is_submit_outcome_unknown() => {
-                            for (batch_order, expected_venue_order_id) in
-                                orders_chunk.into_iter().zip(expected_venue_order_ids)
-                            {
-                                if let Some((order_id_str, venue_order_id)) =
-                                    handle_unknown_submit_result(
-                                        &batch_order.order,
-                                        expected_venue_order_id,
-                                        &e.to_string(),
-                                        None,
-                                        &emitter,
-                                        clock,
-                                        &fill_tracker,
-                                        &order_identities,
-                                        &pending_submits,
-                                        &pending_cancels,
-                                        account_id,
-                                        batch_order.size_precision,
-                                        batch_order.price_precision,
-                                    )
+                        Err(e) => match classify_http_command_failure(&e) {
+                            CommandFailure::Ambiguous(reason) => {
+                                for (batch_order, expected_venue_order_id) in
+                                    orders_chunk.into_iter().zip(expected_venue_order_ids)
                                 {
-                                    execute_deferred_cancel(
-                                        &submitter,
-                                        &batch_order.order,
-                                        &order_id_str,
-                                        venue_order_id,
-                                        &emitter,
-                                        &pending_cancels,
-                                        clock,
-                                    )
-                                    .await;
+                                    if let Some((order_id_str, venue_order_id)) =
+                                        handle_unknown_submit_result(
+                                            &batch_order.order,
+                                            expected_venue_order_id,
+                                            &reason,
+                                            None,
+                                            &emitter,
+                                            clock,
+                                            &fill_tracker,
+                                            &order_identities,
+                                            &pending_submits,
+                                            &pending_cancels,
+                                            account_id,
+                                            batch_order.size_precision,
+                                            batch_order.price_precision,
+                                        )
+                                    {
+                                        execute_deferred_cancel(
+                                            &submitter,
+                                            &batch_order.order,
+                                            &order_id_str,
+                                            venue_order_id,
+                                            &emitter,
+                                            &pending_cancels,
+                                            clock,
+                                        )
+                                        .await;
+                                    }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            for batch_order in orders_chunk {
-                                reject_submit_order(
-                                    &batch_order.order,
-                                    &format!("{e}"),
-                                    &emitter,
-                                    clock,
-                                    &pending_cancels,
-                                );
+                            CommandFailure::NotSent(reason)
+                            | CommandFailure::VenueRejected(reason) => {
+                                for batch_order in orders_chunk {
+                                    reject_submit_order(
+                                        &batch_order.order,
+                                        &reason,
+                                        &emitter,
+                                        clock,
+                                        &pending_cancels,
+                                    );
+                                }
                             }
-                        }
+                        },
                     }
                 }
 
@@ -683,17 +780,86 @@ impl PolymarketExecutionClient {
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
-    ) -> Money {
-        let fee_rate = instrument_taker_fee(instrument);
-        let fee_exponent = instrument_fee_exponent(instrument);
-        let commission = compute_commission(
-            fee_rate,
-            fee_exponent,
-            last_qty.as_decimal(),
-            last_px.as_decimal(),
-            liquidity_side,
-        );
+    ) -> anyhow::Result<Money> {
+        calculate_commission(instrument, last_qty, last_px, liquidity_side)
+    }
+}
 
-        Money::new(commission, instrument.quote_currency())
+/// Calculates the venue commission for a fill of `last_qty` at `last_px`.
+///
+/// # Errors
+///
+/// Returns an error if the computed commission cannot be represented as [`Money`] in the
+/// instrument's quote currency.
+pub(super) fn calculate_commission(
+    instrument: &InstrumentAny,
+    last_qty: Quantity,
+    last_px: Price,
+    liquidity_side: LiquiditySide,
+) -> anyhow::Result<Money> {
+    let fee_rate = instrument_taker_fee(instrument);
+    let fee_exponent = instrument_fee_exponent(instrument);
+
+    let commission = compute_commission(
+        fee_rate,
+        fee_exponent,
+        last_qty.as_decimal(),
+        last_px.as_decimal(),
+        liquidity_side,
+    );
+
+    Money::from_decimal(commission, instrument.quote_currency()).with_context(|| {
+        format!(
+            "failed to represent commission {commission} for {} as Money",
+            instrument.id(),
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::instruments::stubs::binary_option;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_calculate_commission_returns_exact_money() {
+        let instrument = InstrumentAny::BinaryOption(binary_option());
+
+        let commission = calculate_commission(
+            &instrument,
+            Quantity::from("100"),
+            Price::from("0.50"),
+            LiquiditySide::Taker,
+        )
+        .expect("a representable commission succeeds");
+
+        assert_eq!(commission.currency, instrument.quote_currency());
+        assert_eq!(
+            commission.as_decimal(),
+            compute_commission(
+                instrument_taker_fee(&instrument),
+                instrument_fee_exponent(&instrument),
+                dec!(100),
+                dec!(0.50),
+                LiquiditySide::Taker,
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_calculate_commission_is_zero_for_maker_liquidity() {
+        let instrument = InstrumentAny::BinaryOption(binary_option());
+
+        let commission = calculate_commission(
+            &instrument,
+            Quantity::from("100"),
+            Price::from("0.50"),
+            LiquiditySide::Maker,
+        )
+        .expect("a zero commission is representable");
+
+        assert_eq!(commission.as_decimal(), dec!(0));
     }
 }

@@ -20,8 +20,8 @@ currency futures.
 | `currency`        | `Currency`         | `Currency`         | Required         | Quote and settlement currency.           |
 | `price_precision` | `u8`               | `int`              | Required         | Decimal places allowed for prices.       |
 | `price_increment` | `Price`            | `Price`            | Required         | Smallest valid price step.               |
-| `size_precision`  | `u8`               | `int`              | `0`              | Futures trade in whole contracts.        |
-| `size_increment`  | `Quantity`         | `Quantity`         | `1`              | Minimum contract size step.              |
+| `size_precision`  | `u8`               | `int`              | Fixed `0`        | Futures trade in whole contracts.        |
+| `size_increment`  | `Quantity`         | `Quantity`         | Fixed `1`        | Minimum contract size step.              |
 | `multiplier`      | `Quantity`         | `Quantity`         | Required         | Contract multiplier.                     |
 | `lot_size`        | `Quantity`         | `Quantity`         | Required         | Rounded lot or contract lot size.        |
 | `margin_init`     | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
@@ -50,7 +50,7 @@ currency futures.
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::AssetClass,
@@ -60,8 +60,8 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-let activation = Utc.with_ymd_and_hms(2021, 9, 10, 0, 0, 0).unwrap();
-let expiration = Utc.with_ymd_and_hms(2021, 12, 17, 0, 0, 0).unwrap();
+let activation: Timestamp = "2021-09-10T00:00:00Z".parse().unwrap();
+let expiration: Timestamp = "2021-12-17T00:00:00Z".parse().unwrap();
 
 let esz21 = FuturesContract::builder()
     .instrument_id(InstrumentId::from("ESZ21.GLBX"))
@@ -69,8 +69,8 @@ let esz21 = FuturesContract::builder()
     .asset_class(AssetClass::Index)
     .exchange(Ustr::from("XCME"))
     .underlying(Ustr::from("ES"))
-    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
-    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .activation_ns(UnixNanos::from(activation))
+    .expiration_ns(UnixNanos::from(expiration))
     .currency(Currency::from("USD"))
     .price_precision(2)
     .price_increment(Price::from("0.25"))
@@ -116,7 +116,7 @@ esz21 = FuturesContract(
 Representative adapters that create or consume `FuturesContract` instruments include:
 
 - [Databento](../../integrations/databento.md) for futures reference data and market data.
-- [Interactive Brokers](../../integrations/ib.md) for listed futures contracts.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for listed futures contracts.
 
 ## Related guides
 

@@ -17,7 +17,7 @@ echo "You can now run for example:"
 echo "  make install-debug                                            # Install nautilus in debug mode"
 echo "  make cargo-test                                               # Test Rust code"
 echo "  make pytest                                                   # Run Python tests"
-echo "  uv run python -c \"import nautilus_trader.backtest.engine;\"    # Run a Python instruction"
+echo "  uv run --project python python -c \"from nautilus_trader.core import UUID4; print(UUID4())\""
 echo
 
 # If no command is provided, check if we have a TTY and start appropriate shell

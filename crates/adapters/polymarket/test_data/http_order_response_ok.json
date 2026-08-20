@@ -1,5 +1,8 @@
 {
-  "success": true,
-  "orderID": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
-  "errorMsg": null
+  "errorMsg": "",
+  "orderID": "0x1111111111111111111111111111111111111111111111111111111111111111",
+  "takingAmount": "",
+  "makingAmount": "",
+  "status": "delayed",
+  "success": true
 }

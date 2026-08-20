@@ -1,45 +1,9 @@
 # Accounting
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.accounting
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.accounting.accounts.cash
-    :show-inheritance:
-    :inherited-members:
-    :members:
-    :member-order: bysource
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.accounting.accounts.margin
-    :show-inheritance:
-    :inherited-members:
-    :members:
-    :member-order: bysource
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.accounting.calculators
-    :show-inheritance:
-    :inherited-members:
-    :members:
-    :member-order: bysource
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.accounting.factory
-    :show-inheritance:
-    :inherited-members:
-    :members:
-    :member-order: bysource
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.accounting.manager
-    :show-inheritance:
-    :inherited-members:
-    :members:
-    :member-order: bysource
+.. automodule:: nautilus_trader.model
+   :no-index:
+   :show-inheritance:
+   :members: AccountBalance, AccountType, BettingAccount, CashAccount, MarginAccount, MarginBalance, WalletAccount, betting_account_from_account_events, cash_account_from_account_events, margin_account_from_account_events, wallet_account_from_account_events
+   :member-order: bysource
 ```

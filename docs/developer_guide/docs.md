@@ -47,7 +47,7 @@ they want X. Keep these distinct:
 - How-to guides should not teach background concepts.
 
 When one type needs to reference another, link to it instead of inlining. For
-example, a how-to guide that configures `TradingNodeConfig` should link to the
+example, a how-to guide that configures `LiveNodeConfig` should link to the
 API reference for field definitions rather than listing them again.
 
 ## Language and tone

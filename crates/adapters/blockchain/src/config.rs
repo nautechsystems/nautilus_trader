@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::any::Any;
+use std::{any::Any, fmt::Debug};
 
 use nautilus_common::factories::ClientConfig;
+use nautilus_core::string::secret::REDACTED;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{Chain, DexType, SharedChain},
@@ -29,10 +30,7 @@ use serde::{Deserialize, Serialize};
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.blockchain",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.blockchain", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -51,14 +49,11 @@ impl Default for DexPoolFilters {
 }
 
 /// Configuration for blockchain data clients.
-#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.blockchain",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.blockchain", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -95,10 +90,38 @@ pub struct BlockchainDataClientConfig {
     pub pool_filters: DexPoolFilters,
     /// Optional configuration for data client's Postgres cache database
     pub postgres_cache_database_config: Option<PostgresConnectOptions>,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
+    /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     #[serde(default)]
     pub transport_backend: TransportBackend,
+}
+
+impl Debug for BlockchainDataClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BlockchainDataClientConfig))
+            .field("chain", &self.chain)
+            .field("dex_ids", &self.dex_ids)
+            .field(
+                "use_hypersync_for_live_data",
+                &self.use_hypersync_for_live_data,
+            )
+            .field("http_rpc_url", &REDACTED)
+            .field("rpc_requests_per_second", &self.rpc_requests_per_second)
+            .field(
+                "multicall_calls_per_rpc_request",
+                &self.multicall_calls_per_rpc_request,
+            )
+            .field("wss_rpc_url", &self.wss_rpc_url.as_ref().map(|_| REDACTED))
+            .field("proxy_url", &self.proxy_url.as_ref().map(|_| REDACTED))
+            .field("from_block", &self.from_block)
+            .field("pool_filters", &self.pool_filters)
+            .field(
+                "postgres_cache_database_config",
+                &self.postgres_cache_database_config,
+            )
+            .field("transport_backend", &self.transport_backend)
+            .finish()
+    }
 }
 
 #[cfg(feature = "python")]
@@ -113,8 +136,16 @@ const fn default_multicall_calls_per_rpc_request() -> u32 {
     200
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.adapters.blockchain", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+)]
 pub struct BlockchainExecutionClientConfig {
     /// The trader ID for the client.
     pub trader_id: TraderId,
@@ -130,10 +161,81 @@ pub struct BlockchainExecutionClientConfig {
     pub http_rpc_url: String,
     /// The maximum number of RPC requests allowed per second.
     pub rpc_requests_per_second: Option<u32>,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
+    /// Name of the environment variable holding the signer private key.
+    pub signer_private_key_env: String,
+    /// Allowed SwapRouter addresses for approval and swap transactions.
+    pub router_addresses: Vec<String>,
+    /// Wrapped native token address for wrap operations.
+    pub weth_address: String,
+    /// Whether to approve routers with an unlimited allowance instead of the exact amount.
+    #[builder(default)]
+    #[serde(default)]
+    pub unlimited_approval: bool,
+    /// Hard ceiling for the derived max fee per gas in wei; conditions above it reject the
+    /// transaction.
+    pub max_fee_per_gas_wei: u64,
+    /// Buffer in basis points applied over the latest base fee.
+    pub base_fee_buffer_bps: u32,
+    /// Gas ceiling in units; buffered estimates above it reject the transaction before signing
+    /// (never clamp).
+    pub gas_limit: u64,
+    /// Buffer in basis points applied over the `eth_estimateGas` result.
+    pub gas_buffer_bps: u32,
+    /// Allowed (input token, output token) address pairs for swaps.
+    pub allowed_token_pairs: Option<Vec<(String, String)>>,
+    /// Default slippage in basis points applied to derive the swap minimum output.
+    pub slippage_bps: Option<u32>,
+    /// Maximum slippage in basis points accepted from a per-order parameter override.
+    pub max_slippage_bps: Option<u32>,
+    /// Per-order ceiling for the input amount, in raw units of the order's base token.
+    pub max_order_amount: Option<u64>,
+    /// Swap deadline offset in seconds from the latest block timestamp.
+    pub deadline_seconds: Option<u64>,
+    /// Maximum age of the local pool state in blocks for a quote to be usable.
+    pub max_quote_age_blocks: Option<u64>,
+    /// Inclusion timeout in seconds before a broadcast transaction is treated as dropped.
+    pub receipt_timeout_secs: Option<u64>,
+    /// Durable store for execution transaction records; the client refuses to submit any
+    /// transaction without it.
+    pub postgres_cache_database_config: Option<PostgresConnectOptions>,
+    /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     #[serde(default)]
     pub transport_backend: TransportBackend,
+}
+
+impl Debug for BlockchainExecutionClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BlockchainExecutionClientConfig))
+            .field("trader_id", &self.trader_id)
+            .field("client_id", &self.client_id)
+            .field("chain", &self.chain)
+            .field("wallet_address", &self.wallet_address)
+            .field("tokens", &self.tokens)
+            .field("http_rpc_url", &REDACTED)
+            .field("rpc_requests_per_second", &self.rpc_requests_per_second)
+            .field("signer_private_key_env", &self.signer_private_key_env)
+            .field("router_addresses", &self.router_addresses)
+            .field("weth_address", &self.weth_address)
+            .field("unlimited_approval", &self.unlimited_approval)
+            .field("max_fee_per_gas_wei", &self.max_fee_per_gas_wei)
+            .field("base_fee_buffer_bps", &self.base_fee_buffer_bps)
+            .field("gas_limit", &self.gas_limit)
+            .field("gas_buffer_bps", &self.gas_buffer_bps)
+            .field("allowed_token_pairs", &self.allowed_token_pairs)
+            .field("slippage_bps", &self.slippage_bps)
+            .field("max_slippage_bps", &self.max_slippage_bps)
+            .field("max_order_amount", &self.max_order_amount)
+            .field("deadline_seconds", &self.deadline_seconds)
+            .field("max_quote_age_blocks", &self.max_quote_age_blocks)
+            .field("receipt_timeout_secs", &self.receipt_timeout_secs)
+            .field(
+                "postgres_cache_database_config",
+                &self.postgres_cache_database_config,
+            )
+            .field("transport_backend", &self.transport_backend)
+            .finish()
+    }
 }
 
 impl ClientConfig for BlockchainExecutionClientConfig {
@@ -142,8 +244,33 @@ impl ClientConfig for BlockchainExecutionClientConfig {
     }
 }
 
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(BlockchainExecutionClientConfig {
+    base_fee_buffer_bps: u32,
+    deadline_seconds: Option<u64>,
+    gas_buffer_bps: u32,
+    gas_limit: u64,
+    http_rpc_url: String,
+    max_fee_per_gas_wei: u64,
+    max_order_amount: Option<u64>,
+    max_quote_age_blocks: Option<u64>,
+    max_slippage_bps: Option<u32>,
+    receipt_timeout_secs: Option<u64>,
+    router_addresses: Vec<String>,
+    signer_private_key_env: String,
+    slippage_bps: Option<u32>,
+    tokens: Option<Vec<String>>,
+    transport_backend: TransportBackend,
+    unlimited_approval: bool,
+    wallet_address: String,
+    weth_address: String,
+});
+
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use nautilus_model::defi::chain::chains;
     use rstest::rstest;
 
     use super::*;
@@ -180,6 +307,20 @@ trader_id = "TRADER-001"
 client_id = "BLOCKCHAIN-001"
 wallet_address = "0x0000000000000000000000000000000000000000"
 http_rpc_url = "https://eth-mainnet.example.com"
+signer_private_key_env = "BLOCKCHAIN_PRIVATE_KEY"
+router_addresses = ["0xE592427A0AEce92De3Edee1F18E0157C05861564"]
+weth_address = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+max_fee_per_gas_wei = 1000000000
+base_fee_buffer_bps = 2000
+gas_limit = 1000000
+gas_buffer_bps = 2000
+allowed_token_pairs = [["0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"]]
+slippage_bps = 50
+max_slippage_bps = 200
+max_order_amount = 1000000000000000000
+deadline_seconds = 300
+max_quote_age_blocks = 100
+receipt_timeout_secs = 60
 
 [chain]
 name = "Ethereum"
@@ -198,6 +339,167 @@ native_currency_decimals = 18
         );
         assert!(config.tokens.is_none());
         assert!(config.rpc_requests_per_second.is_none());
+        assert_eq!(config.signer_private_key_env, "BLOCKCHAIN_PRIVATE_KEY");
+        assert_eq!(
+            config.router_addresses,
+            vec!["0xE592427A0AEce92De3Edee1F18E0157C05861564".to_string()],
+        );
+        assert_eq!(
+            config.weth_address,
+            "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+        );
+        assert!(!config.unlimited_approval);
+        assert_eq!(config.max_fee_per_gas_wei, 1_000_000_000);
+        assert_eq!(config.base_fee_buffer_bps, 2_000);
+        assert_eq!(config.gas_limit, 1_000_000);
+        assert_eq!(config.gas_buffer_bps, 2_000);
+        assert_eq!(
+            config.allowed_token_pairs,
+            Some(vec![(
+                "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
+                "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
+            )]),
+        );
+        assert_eq!(config.slippage_bps, Some(50));
+        assert_eq!(config.max_slippage_bps, Some(200));
+        assert_eq!(config.max_order_amount, Some(1_000_000_000_000_000_000));
+        assert_eq!(config.deadline_seconds, Some(300));
+        assert_eq!(config.max_quote_age_blocks, Some(100));
+        assert_eq!(config.receipt_timeout_secs, Some(60));
+        assert!(config.postgres_cache_database_config.is_none());
         assert_eq!(config.transport_backend, TransportBackend::default());
+    }
+
+    #[rstest]
+    fn test_execution_config_toml_accepts_legacy_shape_without_transaction_limits() {
+        let config: BlockchainExecutionClientConfig = toml::from_str(
+            r#"
+trader_id = "TRADER-001"
+client_id = "BLOCKCHAIN-001"
+wallet_address = "0x0000000000000000000000000000000000000000"
+http_rpc_url = "https://eth-mainnet.example.com"
+signer_private_key_env = "BLOCKCHAIN_PRIVATE_KEY"
+router_addresses = ["0xE592427A0AEce92De3Edee1F18E0157C05861564"]
+weth_address = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+max_fee_per_gas_wei = 1000000000
+base_fee_buffer_bps = 2000
+gas_limit = 1000000
+gas_buffer_bps = 2000
+
+[chain]
+name = "Ethereum"
+chain_id = 1
+hypersync_url = "https://1.hypersync.xyz"
+native_currency_decimals = 18
+"#,
+        )
+        .unwrap();
+
+        assert!(config.allowed_token_pairs.is_none());
+        assert!(config.slippage_bps.is_none());
+        assert!(config.max_slippage_bps.is_none());
+        assert!(config.max_order_amount.is_none());
+        assert!(config.deadline_seconds.is_none());
+        assert!(config.max_quote_age_blocks.is_none());
+        assert!(config.receipt_timeout_secs.is_none());
+    }
+
+    #[rstest]
+    fn test_execution_config_toml_rejects_unknown_fields() {
+        let result: Result<BlockchainExecutionClientConfig, _> = toml::from_str(
+            r#"
+trader_id = "TRADER-001"
+client_id = "BLOCKCHAIN-001"
+wallet_address = "0x0000000000000000000000000000000000000000"
+http_rpc_url = "https://eth-mainnet.example.com"
+signer_private_key_env = "BLOCKCHAIN_PRIVATE_KEY"
+router_addresses = ["0xE592427A0AEce92De3Edee1F18E0157C05861564"]
+weth_address = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+max_fee_per_gas_wei = 1000000000
+base_fee_buffer_bps = 2000
+gas_limit = 1000000
+gas_buffer_bps = 2000
+allowed_token_pairs = [["0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"]]
+slippage_bps = 50
+max_slippage_bps = 200
+max_order_amount = 1000000000000000000
+deadline_seconds = 300
+max_quote_age_blocks = 100
+receipt_timeout_secs = 60
+unknown_field = 1
+
+[chain]
+name = "Ethereum"
+chain_id = 1
+hypersync_url = "https://1.hypersync.xyz"
+native_currency_decimals = 18
+"#,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_data_config_debug_redacts_rpc_urls() {
+        const HTTP_USERINFO_SECRET: &str = "data-http-userinfo-secret";
+        const WSS_QUERY_SECRET: &str = "data-wss-query-secret";
+        let http_rpc_url = format!(
+            "https://rpc-user:{HTTP_USERINFO_SECRET}@rpc.example.com/data-http-path-secret"
+        );
+        let wss_rpc_url = format!("wss://rpc.example.com/ws?api_key={WSS_QUERY_SECRET}");
+        let config = BlockchainDataClientConfig::builder()
+            .chain(Arc::new(chains::ETHEREUM.clone()))
+            .http_rpc_url(http_rpc_url.clone())
+            .wss_rpc_url(wss_rpc_url.clone())
+            .build();
+
+        let debug = format!("{config:?}");
+
+        assert!(debug.contains("http_rpc_url: \"<redacted>\""));
+        assert!(debug.contains("wss_rpc_url: Some(\"<redacted>\")"));
+        assert!(!debug.contains(HTTP_USERINFO_SECRET));
+        assert!(!debug.contains(WSS_QUERY_SECRET));
+        assert!(!debug.contains(&http_rpc_url));
+        assert!(!debug.contains(&wss_rpc_url));
+    }
+
+    #[rstest]
+    fn test_execution_config_debug_redacts_rpc_url() {
+        const PATH_SECRET: &str = "execution-http-path-secret";
+        const QUERY_SECRET: &str = "execution-http-query-secret";
+        let http_rpc_url = format!("https://rpc.example.com/{PATH_SECRET}?api_key={QUERY_SECRET}");
+        let config = BlockchainExecutionClientConfig::builder()
+            .trader_id(TraderId::from("TRADER-001"))
+            .client_id(AccountId::from("BLOCKCHAIN-001"))
+            .chain(chains::ETHEREUM.clone())
+            .wallet_address("0x0000000000000000000000000000000000000000".to_string())
+            .http_rpc_url(http_rpc_url.clone())
+            .signer_private_key_env("BLOCKCHAIN_PRIVATE_KEY".to_string())
+            .router_addresses(vec![
+                "0xE592427A0AEce92De3Edee1F18E0157C05861564".to_string(),
+            ])
+            .weth_address("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string())
+            .max_fee_per_gas_wei(1_000_000_000)
+            .base_fee_buffer_bps(2_000)
+            .gas_limit(1_000_000)
+            .gas_buffer_bps(2_000)
+            .allowed_token_pairs(vec![(
+                "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
+                "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
+            )])
+            .slippage_bps(50)
+            .max_slippage_bps(200)
+            .max_order_amount(1_000_000_000_000_000_000)
+            .deadline_seconds(300)
+            .max_quote_age_blocks(100)
+            .receipt_timeout_secs(60)
+            .build();
+
+        let debug = format!("{config:?}");
+
+        assert!(debug.contains("http_rpc_url: \"<redacted>\""));
+        assert!(!debug.contains(PATH_SECRET));
+        assert!(!debug.contains(QUERY_SECRET));
+        assert!(!debug.contains(&http_rpc_url));
     }
 }

@@ -22,7 +22,7 @@
 
 use std::{
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -30,11 +30,11 @@ use std::{
 
 use futures_util::{SinkExt, StreamExt};
 use nautilus_network::{
-    RECONNECTED,
+    Message as NetworkMessage, RECONNECTED,
     error::SendError,
     ratelimiter::RateLimiter,
     websocket::{
-        AuthTracker, TransportBackend, WebSocketClient, WebSocketConfig,
+        AuthTracker, MessageHandler, TransportBackend, WebSocketClient, WebSocketConfig,
         channel_epoch_message_handler, channel_message_handler,
     },
 };
@@ -60,7 +60,7 @@ const DISCONNECT_DURING_BACKOFF_SEED: u64 = 0x57EB_0005;
 const PROXY_REJECTION_SEED: u64 = 0x57EB_0006;
 const CONNECTION_EPOCH_RECONNECTION_SEED: u64 = 0x57EB_0007;
 const QUEUED_WRITE_DROP_SEED: u64 = 0x57EB_2001;
-const POST_RECONNECT_ACTIVE_DROP_SEED: u64 = 0x57EB_2002;
+const RECONNECT_ACTIVE_DROP_SEED: u64 = 0x57EB_2002;
 const ALTERNATING_TEXT_BINARY_SEED: u64 = 0x57EB_2003;
 const HANDSHAKE_DROP_SEED: u64 = 0x57EB_3001;
 const FIRST_READ_TASK_DROP_SEED: u64 = 0x57EB_3002;
@@ -80,6 +80,14 @@ const UNSTABLE_RECONNECT_DELAY_MS: u64 = 750;
 const HEARTBEAT_PING_SEED: u64 = 0x57EB_3010;
 const SERVER_PING_PONG_SEED: u64 = 0x57EB_3011;
 const SERVER_CLOSE_FRAME_SEED: u64 = 0x57EB_3012;
+const MISSING_PONG_SEED: u64 = 0x57EB_3013;
+const HEARTBEAT_TEXT_NO_RESPONSE_SEED: u64 = 0x57EB_3014;
+const HEARTBEAT_NON_PONG_TRAFFIC_SEED: u64 = 0x57EB_3015;
+const HEARTBEAT_PROTOCOL_NO_TIMEOUT_SEED: u64 = 0x57EB_3016;
+const RECONNECT_STORM_SEED: u64 = 0x57EB_3017;
+const TEXT_HEARTBEAT: &str = "heartbeat";
+const NON_PONG_FRAME: &str = "server-activity";
+const NON_PONG_FRAME_COUNT: usize = 6;
 const LARGE_WEBSOCKET_MESSAGE_LEN: usize = 16 * 1024;
 const BACKPRESSURE_TCP_CAPACITY: usize = 4;
 const BACKPRESSURE_MESSAGE_COUNT: usize = 16;
@@ -126,11 +134,35 @@ async fn recv_connection_message(
     None
 }
 
-async fn wait_for<F>(mut condition: F) -> bool
+fn tracked_channel_message_handler(
+    reconnected: Arc<AtomicBool>,
+) -> (
+    MessageHandler,
+    tokio::sync::mpsc::UnboundedReceiver<Message>,
+) {
+    let (handler, receiver) = channel_message_handler();
+    let tracked_handler = Arc::new(move |message: NetworkMessage| {
+        if matches!(&message, NetworkMessage::Text(text) if text == RECONNECTED) {
+            reconnected.store(true, Ordering::SeqCst);
+        }
+        handler(message);
+    });
+    (tracked_handler, receiver)
+}
+
+async fn wait_for<F>(condition: F) -> bool
 where
     F: FnMut() -> bool,
 {
-    for _ in 0..POLL_ITERS {
+    wait_for_within(POLL_ITERS, condition).await
+}
+
+/// Polls for longer than [`POLL_ITERS`], for conditions gated on a whole-second timer.
+async fn wait_for_within<F>(iters: u32, mut condition: F) -> bool
+where
+    F: FnMut() -> bool,
+{
+    for _ in 0..iters {
         if condition() {
             return true;
         }
@@ -149,14 +181,15 @@ fn websocket_config_for_backend(backend: TransportBackend) -> WebSocketConfig {
     WebSocketConfig {
         url: "ws://server:8080".to_string(),
         headers: vec![],
-        heartbeat: None,
-        heartbeat_msg: None,
-        reconnect_timeout_ms: Some(2_000),
+        heartbeat_interval_secs: None,
+        heartbeat_payload: None,
+        connect_timeout_ms: Some(2_000),
         reconnect_delay_initial_ms: Some(50),
         reconnect_delay_max_ms: Some(500),
         reconnect_backoff_factor: Some(1.5),
         reconnect_jitter_ms: Some(10),
         reconnect_max_attempts: None,
+        heartbeat_timeout_secs: None,
         idle_timeout_ms: None,
         backend,
         proxy_url: None,
@@ -243,6 +276,22 @@ async fn ws_drop_each_connection_server(
     }
 }
 
+async fn ws_drop_each_connection_timed_server(
+    accept_times: Arc<Mutex<Vec<tokio::time::Instant>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let mut websocket = accept_async(stream).await?;
+        accept_times
+            .lock()
+            .expect("mutex poisoned")
+            .push(tokio::time::Instant::now());
+        let _ = websocket.close(None).await;
+    }
+}
+
 async fn ws_hold_stable_reconnect_server(
     accepted: Arc<AtomicUsize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -278,10 +327,9 @@ fn test_turmoil_real_websocket_basic_connect(websocket_config: WebSocketConfig) 
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect("Should connect");
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Should connect");
 
         assert!(client.is_active(), "Client should be active after connect");
 
@@ -306,7 +354,7 @@ fn test_turmoil_real_websocket_basic_connect(websocket_config: WebSocketConfig) 
 
 #[rstest]
 fn test_turmoil_real_websocket_reconnection(mut websocket_config: WebSocketConfig) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(100);
 
     let mut sim = seeded_builder(RECONNECTION_SEED).build();
@@ -346,10 +394,9 @@ fn test_turmoil_real_websocket_reconnection(mut websocket_config: WebSocketConfi
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect("Should connect");
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Should connect");
 
         assert!(
             recv_text(&mut rx, "first").await,
@@ -383,7 +430,7 @@ fn test_turmoil_real_websocket_reconnection(mut websocket_config: WebSocketConfi
 
 #[rstest]
 fn test_turmoil_connection_epoch_owns_messages_and_sends(mut websocket_config: WebSocketConfig) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -437,7 +484,6 @@ fn test_turmoil_connection_epoch_owns_messages_and_sends(mut websocket_config: W
         let client = WebSocketClient::connect_with_rate_limiter_and_epoch_handler(
             websocket_config,
             handler,
-            None,
             None,
             rate_limiter,
         )
@@ -531,10 +577,9 @@ fn test_turmoil_websocket_unstable_reconnects_exhaust_attempts(
 
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect("Initial WebSocket connection should succeed");
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Initial WebSocket connection should succeed");
         let started_at = tokio::time::Instant::now();
 
         assert!(
@@ -576,10 +621,9 @@ fn test_turmoil_websocket_stable_reconnect_resets_attempts(mut websocket_config:
 
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect("Initial WebSocket connection should succeed");
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Initial WebSocket connection should succeed");
 
         tokio::time::sleep(Duration::from_secs(13)).await;
 
@@ -600,8 +644,67 @@ fn test_turmoil_websocket_stable_reconnect_resets_attempts(mut websocket_config:
 }
 
 #[rstest]
+fn test_turmoil_websocket_reconnect_storm_attempts_are_floored(
+    mut websocket_config: WebSocketConfig,
+) {
+    // A venue cycling connections faster than the stability threshold must not get an
+    // immediate reconnect: once three attempts land inside the rolling window, each
+    // further attempt waits at least one second regardless of the configured backoff.
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(25);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+    websocket_config.reconnect_max_attempts = None;
+
+    let accept_times = Arc::new(Mutex::new(Vec::new()));
+    let server_accept_times = Arc::clone(&accept_times);
+    let mut builder = seeded_builder_with_duration(RECONNECT_STORM_SEED, Duration::from_secs(20));
+    builder.min_message_latency(Duration::ZERO);
+    builder.max_message_latency(Duration::ZERO);
+    let mut sim = builder.build();
+
+    sim.host("server", move || {
+        ws_drop_each_connection_timed_server(Arc::clone(&server_accept_times))
+    });
+
+    sim.client("client", async move {
+        let (handler, _rx) = channel_message_handler();
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Initial WebSocket connection should succeed");
+
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run().unwrap();
+
+    let times = accept_times.lock().expect("mutex poisoned");
+    assert!(
+        times.len() >= 5,
+        "Expected the initial connection and several reconnects, was {}",
+        times.len()
+    );
+    assert!(
+        times.len() <= 25,
+        "Floored attempts should total well under the unfloored ~600, was {}",
+        times.len()
+    );
+
+    for pair in times.windows(2).skip(3) {
+        let gap = pair[1].duration_since(pair[0]);
+        assert!(
+            gap >= Duration::from_millis(900),
+            "Reconnect attempts should space at least ~1s once the window trips, was {gap:?}"
+        );
+    }
+}
+
+#[rstest]
 fn test_turmoil_real_websocket_network_partition(mut websocket_config: WebSocketConfig) {
-    websocket_config.reconnect_timeout_ms = Some(3_000);
+    websocket_config.connect_timeout_ms = Some(3_000);
 
     let mut sim = seeded_builder(NETWORK_PARTITION_SEED).build();
 
@@ -610,10 +713,9 @@ fn test_turmoil_real_websocket_network_partition(mut websocket_config: WebSocket
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect("Should connect");
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Should connect");
 
         client
             .send_text("before_partition".to_string(), None)
@@ -656,7 +758,7 @@ fn test_turmoil_real_websocket_network_partition(mut websocket_config: WebSocket
 
 #[rstest]
 fn test_turmoil_real_websocket_disconnect_during_reconnect(mut websocket_config: WebSocketConfig) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(100);
 
     let mut sim = seeded_builder(DISCONNECT_DURING_RECONNECT_SEED).build();
@@ -666,10 +768,9 @@ fn test_turmoil_real_websocket_disconnect_during_reconnect(mut websocket_config:
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect("Should connect");
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Should connect");
 
         assert!(client.is_active(), "Client should be active after connect");
 
@@ -695,7 +796,7 @@ fn test_turmoil_real_websocket_disconnect_during_reconnect(mut websocket_config:
 
 #[rstest]
 fn test_turmoil_real_websocket_disconnect_during_backoff(mut websocket_config: WebSocketConfig) {
-    websocket_config.reconnect_timeout_ms = Some(1_000);
+    websocket_config.connect_timeout_ms = Some(1_000);
     websocket_config.reconnect_delay_initial_ms = Some(10_000); // Long backoff
     websocket_config.reconnect_delay_max_ms = Some(10_000);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -710,10 +811,9 @@ fn test_turmoil_real_websocket_disconnect_during_backoff(mut websocket_config: W
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect("Should connect");
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect("Should connect");
 
         assert!(client.is_active());
 
@@ -752,10 +852,9 @@ fn test_turmoil_websocket_rejects_proxy_url(mut websocket_config: WebSocketConfi
     sim.host("server", ws_echo_server);
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
-        let err =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .expect_err("turmoil should reject proxy_url");
+        let err = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .expect_err("turmoil should reject proxy_url");
         let msg = err.to_string();
         assert!(
             msg.contains("turmoil"),
@@ -798,20 +897,20 @@ fn test_turmoil_websocket_sockudo_queued_write_drop_preserves_later_message_orde
 }
 
 #[rstest]
-fn test_turmoil_websocket_post_reconnect_active_drop_preserves_later_message_order() {
-    run_websocket_post_reconnect_active_drop_preserves_later_message_order(
+fn test_turmoil_websocket_reconnect_active_drop_preserves_later_message_order() {
+    run_websocket_reconnect_active_drop_preserves_later_message_order(
         websocket_config_for_backend(TransportBackend::Tungstenite),
-        POST_RECONNECT_ACTIVE_DROP_SEED,
+        RECONNECT_ACTIVE_DROP_SEED,
         "websocket/tungstenite",
     );
 }
 
 #[cfg(feature = "transport-sockudo")]
 #[rstest]
-fn test_turmoil_websocket_sockudo_post_reconnect_active_drop_preserves_later_message_order() {
-    run_websocket_post_reconnect_active_drop_preserves_later_message_order(
+fn test_turmoil_websocket_sockudo_reconnect_active_drop_preserves_later_message_order() {
+    run_websocket_reconnect_active_drop_preserves_later_message_order(
         websocket_config_for_backend(TransportBackend::Sockudo),
-        POST_RECONNECT_ACTIVE_DROP_SEED,
+        RECONNECT_ACTIVE_DROP_SEED,
         "websocket/sockudo",
     );
 }
@@ -924,6 +1023,26 @@ fn test_turmoil_websocket_silent_until_idle_timeout_reconnects_to_active_state()
 #[rstest]
 fn test_turmoil_websocket_sockudo_silent_until_idle_timeout_reconnects_to_active_state() {
     run_websocket_silent_until_idle_timeout_reconnects_to_active_state(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        SILENT_UNTIL_IDLE_TIMEOUT_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_dark_until_derived_heartbeat_timeout_reconnects_to_active_state() {
+    run_websocket_dark_until_derived_heartbeat_timeout_reconnects_to_active_state(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        SILENT_UNTIL_IDLE_TIMEOUT_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_dark_until_derived_heartbeat_timeout_reconnects_to_active_state()
+{
+    run_websocket_dark_until_derived_heartbeat_timeout_reconnects_to_active_state(
         websocket_config_for_backend(TransportBackend::Sockudo),
         SILENT_UNTIL_IDLE_TIMEOUT_SEED,
         "websocket/sockudo",
@@ -1083,6 +1202,82 @@ fn test_turmoil_websocket_sockudo_heartbeat_pings_reach_server() {
 }
 
 #[rstest]
+fn test_turmoil_websocket_missing_pong_reconnects() {
+    run_websocket_missing_pong_reconnects(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        MISSING_PONG_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_no_heartbeat_has_no_implicit_timeout() {
+    run_websocket_no_heartbeat_has_no_implicit_timeout(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        HEARTBEAT_PROTOCOL_NO_TIMEOUT_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_no_heartbeat_has_no_implicit_timeout() {
+    run_websocket_no_heartbeat_has_no_implicit_timeout(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        HEARTBEAT_PROTOCOL_NO_TIMEOUT_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_missing_pong_reconnects() {
+    run_websocket_missing_pong_reconnects(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        MISSING_PONG_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_unanswered_text_heartbeat_times_out() {
+    run_websocket_unanswered_text_heartbeat_times_out(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        HEARTBEAT_TEXT_NO_RESPONSE_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_unanswered_text_heartbeat_times_out() {
+    run_websocket_unanswered_text_heartbeat_times_out(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        HEARTBEAT_TEXT_NO_RESPONSE_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
+fn test_turmoil_websocket_non_pong_frames_prevent_heartbeat_timeout() {
+    run_websocket_non_pong_frames_prevent_heartbeat_timeout(
+        websocket_config_for_backend(TransportBackend::Tungstenite),
+        HEARTBEAT_NON_PONG_TRAFFIC_SEED,
+        "websocket/tungstenite",
+    );
+}
+
+#[cfg(feature = "transport-sockudo")]
+#[rstest]
+fn test_turmoil_websocket_sockudo_non_pong_frames_prevent_heartbeat_timeout() {
+    run_websocket_non_pong_frames_prevent_heartbeat_timeout(
+        websocket_config_for_backend(TransportBackend::Sockudo),
+        HEARTBEAT_NON_PONG_TRAFFIC_SEED,
+        "websocket/sockudo",
+    );
+}
+
+#[rstest]
 fn test_turmoil_websocket_server_ping_gets_pong() {
     run_websocket_server_ping_gets_pong(
         websocket_config_for_backend(TransportBackend::Tungstenite),
@@ -1148,7 +1343,7 @@ fn run_websocket_heartbeat_pings_reach_server(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.heartbeat = Some(1);
+    websocket_config.heartbeat_interval_secs = Some(1);
 
     let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
     let pings = Arc::new(AtomicUsize::new(0));
@@ -1160,11 +1355,12 @@ fn run_websocket_heartbeat_pings_reach_server(
     });
 
     sim.client("client", async move {
-        let (handler, _rx) = channel_message_handler();
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
+        websocket_config.heartbeat_timeout_secs = Some(2);
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         // Heartbeat cadence is 1s; allow up to 10s of simulated time for 3 pings
         let mut received_enough = false;
@@ -1181,6 +1377,248 @@ fn run_websocket_heartbeat_pings_reach_server(
             received_enough,
             "{label} seed {seed:#018x} server should receive heartbeat pings, received {}",
             pings.load(Ordering::SeqCst)
+        );
+        assert!(
+            client.is_active(),
+            "{label} seed {seed:#018x} should stay active when the quiet peer returns pongs"
+        );
+        assert!(
+            !reconnected.load(Ordering::SeqCst),
+            "{label} seed {seed:#018x} should not reconnect while pongs arrive"
+        );
+
+        client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+/// Without a heartbeat there is nothing to guarantee inbound frames, so no window is derived and a
+/// peer that has gone dark is left alone. The paired case, where a heartbeat is configured and the
+/// derived window does tear it down, is covered by
+/// `run_websocket_dark_until_derived_heartbeat_timeout_reconnects_to_active_state`.
+fn run_websocket_no_heartbeat_has_no_implicit_timeout(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.heartbeat_interval_secs = None;
+    websocket_config.heartbeat_timeout_secs = None;
+
+    let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
+    let first_connection_held = Arc::new(AtomicBool::new(false));
+    let release_first_connection = Arc::new(AtomicBool::new(false));
+    let server_first_connection_held = Arc::clone(&first_connection_held);
+    let server_release_first_connection = Arc::clone(&release_first_connection);
+
+    sim.host("server", move || {
+        let server_first_connection_held = Arc::clone(&server_first_connection_held);
+        let server_release_first_connection = Arc::clone(&server_release_first_connection);
+        async move {
+            ws_hold_first_connection_until_release_then_echo_server(
+                server_first_connection_held,
+                server_release_first_connection,
+            )
+            .await
+        }
+    });
+
+    sim.client("client", async move {
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        assert!(
+            wait_for(|| first_connection_held.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should hold the first connection without reads"
+        );
+
+        for _ in 0..400 {
+            tokio::time::sleep(POLL_STEP).await;
+        }
+
+        assert!(
+            client.is_active(),
+            "{label} seed {seed:#018x} should stay active with no heartbeat configured"
+        );
+        assert!(
+            !reconnected.load(Ordering::SeqCst),
+            "{label} seed {seed:#018x} should derive no liveness window without a heartbeat"
+        );
+        release_first_connection.store(true, Ordering::SeqCst);
+        client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_missing_pong_reconnects(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.heartbeat_interval_secs = Some(1);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
+
+    let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
+    let first_connection_held = Arc::new(AtomicBool::new(false));
+    let release_first_connection = Arc::new(AtomicBool::new(false));
+    let server_first_connection_held = Arc::clone(&first_connection_held);
+    let server_release_first_connection = Arc::clone(&release_first_connection);
+
+    sim.host("server", move || {
+        let server_first_connection_held = Arc::clone(&server_first_connection_held);
+        let server_release_first_connection = Arc::clone(&server_release_first_connection);
+        async move {
+            ws_hold_first_connection_until_release_then_echo_server(
+                server_first_connection_held,
+                server_release_first_connection,
+            )
+            .await
+        }
+    });
+
+    sim.client("client", async move {
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
+        websocket_config.heartbeat_timeout_secs = Some(2);
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        assert!(
+            wait_for(|| first_connection_held.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should hold the first connection without reads"
+        );
+
+        let mut recovered = false;
+
+        for _ in 0..500 {
+            if reconnected.load(Ordering::SeqCst) && client.is_active() {
+                recovered = true;
+                break;
+            }
+            tokio::time::sleep(POLL_STEP).await;
+        }
+
+        assert!(
+            recovered,
+            "{label} seed {seed:#018x} should reconnect when heartbeat pongs stop"
+        );
+        release_first_connection.store(true, Ordering::SeqCst);
+        client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+/// A text keepalive the peer never answers is a dead peer, so the derived window tears it down.
+/// This is the text-payload counterpart to the Ping-frame case covered by
+/// `run_websocket_dark_until_derived_heartbeat_timeout_reconnects_to_active_state`.
+fn run_websocket_unanswered_text_heartbeat_times_out(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.heartbeat_interval_secs = Some(1);
+    websocket_config.heartbeat_payload = Some(TEXT_HEARTBEAT.to_string());
+
+    let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
+    let heartbeats = Arc::new(AtomicUsize::new(0));
+    let server_heartbeats = Arc::clone(&heartbeats);
+
+    sim.host("server", move || {
+        let server_heartbeats = Arc::clone(&server_heartbeats);
+        async move { ws_text_heartbeat_counting_server(server_heartbeats).await }
+    });
+
+    sim.client("client", async move {
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        let mut received_enough = false;
+
+        for _ in 0..1_000 {
+            if heartbeats.load(Ordering::SeqCst) >= 3 {
+                received_enough = true;
+                break;
+            }
+            tokio::time::sleep(POLL_STEP).await;
+        }
+
+        assert!(
+            received_enough,
+            "{label} seed {seed:#018x} server should receive three text heartbeats, received {}",
+            heartbeats.load(Ordering::SeqCst)
+        );
+        assert!(
+            wait_for_within(1_000, || reconnected.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should tear down a text heartbeat the peer never answers"
+        );
+
+        client.disconnect().await;
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_non_pong_frames_prevent_heartbeat_timeout(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.heartbeat_interval_secs = Some(1);
+
+    let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
+    sim.host("server", ws_send_text_without_reading_server);
+
+    sim.client("client", async move {
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let (handler, mut rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
+        websocket_config.heartbeat_timeout_secs = Some(2);
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let mut received = Vec::with_capacity(NON_PONG_FRAME_COUNT);
+
+        for _ in 0..NON_PONG_FRAME_COUNT {
+            if let Some(message) = recv_application_text(&mut rx).await {
+                received.push(message);
+            }
+        }
+
+        assert_eq!(
+            received,
+            vec![NON_PONG_FRAME.to_string(); NON_PONG_FRAME_COUNT],
+            "{label} seed {seed:#018x} should receive non-Pong frames across the timeout window"
+        );
+        assert!(
+            client.is_active(),
+            "{label} seed {seed:#018x} should stay active while non-Pong frames arrive"
+        );
+        assert!(
+            !reconnected.load(Ordering::SeqCst),
+            "{label} seed {seed:#018x} should count every frame as heartbeat activity"
         );
 
         client.disconnect().await;
@@ -1208,10 +1646,9 @@ fn run_websocket_server_ping_gets_pong(
 
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         // A quiet client must auto-reply to server pings at the transport layer;
         // for sockudo this pins the pending_flush nudge that flushes pongs
@@ -1235,7 +1672,7 @@ fn run_websocket_server_close_frame_triggers_reconnect(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1247,10 +1684,9 @@ fn run_websocket_server_close_frame_triggers_reconnect(
 
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         // First connection receives a protocol Close frame; the client must
         // tear it down and reconnect; the second connection announces itself
@@ -1277,7 +1713,7 @@ fn run_websocket_repeated_drops_preserve_message_order(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1290,10 +1726,9 @@ fn run_websocket_repeated_drops_preserve_message_order(
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         let expected = (0..6)
             .map(|i| format!("drop-reconnect-{i}"))
@@ -1345,12 +1780,12 @@ fn run_websocket_repeated_drops_preserve_message_order(
         .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
 }
 
-fn run_websocket_post_reconnect_active_drop_preserves_later_message_order(
+fn run_websocket_reconnect_active_drop_preserves_later_message_order(
     mut websocket_config: WebSocketConfig,
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1371,24 +1806,14 @@ fn run_websocket_post_reconnect_active_drop_preserves_later_message_order(
     });
 
     sim.client("client", async move {
-        let (handler, mut rx) = channel_message_handler();
-        let trigger_reconnected_drop = Arc::clone(&drop_reconnected_connection);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            trigger_reconnected_drop.store(true, Ordering::SeqCst);
-        });
+        let (handler, mut rx) =
+            tracked_channel_message_handler(Arc::clone(&drop_reconnected_connection));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
-        let first_msg = "before-post-reconnect-active-drop".to_string();
+        let first_msg = "before-reconnect-active-drop".to_string();
         client
             .send_text(first_msg.clone(), None)
             .await
@@ -1456,7 +1881,7 @@ fn run_websocket_handshake_drop_reaches_active_state(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1474,10 +1899,9 @@ fn run_websocket_handshake_drop_reaches_active_state(
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         assert!(
             wait_for(|| handshake_dropped.load(Ordering::SeqCst)).await,
@@ -1506,7 +1930,7 @@ fn run_websocket_first_read_task_drop_reaches_active_state(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1525,23 +1949,12 @@ fn run_websocket_first_read_task_drop_reaches_active_state(
     });
 
     sim.client("client", async move {
-        let (handler, _rx) = channel_message_handler();
         let reconnected = Arc::new(AtomicBool::new(false));
-        let client_reconnected = Arc::clone(&reconnected);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            client_reconnected.store(true, Ordering::SeqCst);
-        });
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         assert!(
             wait_for(|| first_connection_dropped.load(Ordering::SeqCst)).await,
@@ -1574,7 +1987,7 @@ fn run_websocket_partition_while_reconnecting_reaches_active_state(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(1_000);
+    websocket_config.connect_timeout_ms = Some(1_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1599,23 +2012,12 @@ fn run_websocket_partition_while_reconnecting_reaches_active_state(
     });
 
     sim.client("client", async move {
-        let (handler, _rx) = channel_message_handler();
         let reconnected = Arc::new(AtomicBool::new(false));
-        let client_reconnected = Arc::clone(&reconnected);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            client_reconnected.store(true, Ordering::SeqCst);
-        });
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         assert!(
             wait_for(|| first_connection_dropped.load(Ordering::SeqCst)).await,
@@ -1659,7 +2061,7 @@ fn run_websocket_partition_during_backoff_sleep_reaches_active_state(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(1_000);
+    websocket_config.connect_timeout_ms = Some(1_000);
     websocket_config.reconnect_delay_initial_ms = Some(1_000);
     websocket_config.reconnect_delay_max_ms = Some(1_000);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1684,23 +2086,12 @@ fn run_websocket_partition_during_backoff_sleep_reaches_active_state(
     });
 
     sim.client("client", async move {
-        let (handler, _rx) = channel_message_handler();
         let reconnected = Arc::new(AtomicBool::new(false));
-        let client_reconnected = Arc::clone(&reconnected);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            client_reconnected.store(true, Ordering::SeqCst);
-        });
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         assert!(
             wait_for(|| first_handshake_dropped.load(Ordering::SeqCst)).await,
@@ -1752,12 +2143,79 @@ fn run_websocket_silent_until_idle_timeout_reconnects_to_active_state(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.idle_timeout_ms = Some(500);
+    run_websocket_silent_until_liveness_timeout_reconnects_to_active_state(
+        websocket_config,
+        seed,
+        label,
+    );
+}
+
+/// A configured heartbeat with no explicit timeout must still tear down a peer that has gone dark,
+/// because that derived window is what gives most adapters any dead-peer detection at all.
+fn run_websocket_dark_until_derived_heartbeat_timeout_reconnects_to_active_state(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.heartbeat_interval_secs = Some(1);
+    websocket_config.heartbeat_timeout_secs = None;
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
     websocket_config.reconnect_jitter_ms = Some(0);
-    websocket_config.idle_timeout_ms = Some(500);
+
+    let mut sim = stressed_builder(seed, Duration::from_secs(30)).build();
+    let first_connection_dark = Arc::new(AtomicBool::new(false));
+    let server_first_connection_dark = Arc::clone(&first_connection_dark);
+
+    sim.host("server", move || {
+        let server_first_connection_dark = Arc::clone(&server_first_connection_dark);
+        async move { ws_dark_first_connection_then_echo_server(server_first_connection_dark).await }
+    });
+
+    sim.client("client", async move {
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
+
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+
+        assert!(
+            wait_for(|| first_connection_dark.load(Ordering::SeqCst)).await,
+            "{label} seed {seed:#018x} should enter the dark first connection"
+        );
+        assert!(
+            wait_for_within(1_000, || reconnected.load(Ordering::SeqCst) && client.is_active())
+                .await,
+            "{label} seed {seed:#018x} should become active after derived heartbeat-timeout reconnect"
+        );
+
+        client.disconnect().await;
+        assert!(
+            client.is_disconnected(),
+            "{label} seed {seed:#018x} should disconnect after scenario"
+        );
+
+        Ok(())
+    });
+
+    sim.run()
+        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} simulation failed: {e:?}"));
+}
+
+fn run_websocket_silent_until_liveness_timeout_reconnects_to_active_state(
+    mut websocket_config: WebSocketConfig,
+    seed: u64,
+    label: &'static str,
+) {
+    websocket_config.connect_timeout_ms = Some(5_000);
+    websocket_config.reconnect_delay_initial_ms = Some(25);
+    websocket_config.reconnect_delay_max_ms = Some(100);
+    websocket_config.reconnect_backoff_factor = Some(1.0);
+    websocket_config.reconnect_jitter_ms = Some(0);
 
     let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
     let first_connection_silent = Arc::new(AtomicBool::new(false));
@@ -1771,23 +2229,12 @@ fn run_websocket_silent_until_idle_timeout_reconnects_to_active_state(
     });
 
     sim.client("client", async move {
-        let (handler, _rx) = channel_message_handler();
         let reconnected = Arc::new(AtomicBool::new(false));
-        let client_reconnected = Arc::clone(&reconnected);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            client_reconnected.store(true, Ordering::SeqCst);
-        });
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         assert!(
             wait_for(|| first_connection_silent.load(Ordering::SeqCst)).await,
@@ -1816,7 +2263,7 @@ fn run_websocket_no_read_backpressure_reconnects_to_active_state(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1844,23 +2291,12 @@ fn run_websocket_no_read_backpressure_reconnects_to_active_state(
     });
 
     sim.client("client", async move {
-        let (handler, _rx) = channel_message_handler();
         let reconnected = Arc::new(AtomicBool::new(false));
-        let client_reconnected = Arc::clone(&reconnected);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            client_reconnected.store(true, Ordering::SeqCst);
-        });
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         assert!(
             wait_for(|| first_connection_held.load(Ordering::SeqCst)).await,
@@ -1920,7 +2356,7 @@ fn run_websocket_disconnect_while_send_waits_for_reconnect_closes_send(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -1952,7 +2388,7 @@ fn run_websocket_disconnect_while_send_waits_for_reconnect_closes_send(
         let (handler, _rx) = channel_message_handler();
 
         let client = Arc::new(
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+            WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
                 .await
                 .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}")),
         );
@@ -2027,7 +2463,7 @@ fn run_websocket_disconnect_while_waiting_for_auth_closes_client(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -2047,23 +2483,12 @@ fn run_websocket_disconnect_while_waiting_for_auth_closes_client(
 
     sim.client("client", async move {
         let tracker = AuthTracker::new();
-        let (handler, _rx) = channel_message_handler();
         let reconnected = Arc::new(AtomicBool::new(false));
-        let client_reconnected = Arc::clone(&reconnected);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            client_reconnected.store(true, Ordering::SeqCst);
-        });
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         client.set_auth_tracker(tracker.clone(), true);
         tracker.succeed();
@@ -2135,7 +2560,7 @@ fn run_websocket_max_reconnect_attempts_while_waiting_for_auth_closes_client(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(500);
+    websocket_config.connect_timeout_ms = Some(500);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(25);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -2168,10 +2593,9 @@ fn run_websocket_max_reconnect_attempts_while_waiting_for_auth_closes_client(
         let tracker = AuthTracker::new();
         let (handler, _rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         client.set_auth_tracker(tracker.clone(), true);
         tracker.succeed();
@@ -2245,10 +2669,9 @@ fn run_websocket_stream_notify_closed_while_waiting_for_auth_closes_client(
 
     sim.client("client", async move {
         let tracker = AuthTracker::new();
-        let (_reader, client) =
-            WebSocketClient::connect_stream(websocket_config, vec![], None, None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let (_reader, client) = WebSocketClient::connect_stream(websocket_config, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         client.set_auth_tracker(tracker.clone(), true);
         tracker.succeed();
@@ -2321,10 +2744,9 @@ fn run_websocket_stream_dead_write_while_waiting_for_auth_closes_client(
 
     sim.client("client", async move {
         let tracker = AuthTracker::new();
-        let (_reader, client) =
-            WebSocketClient::connect_stream(websocket_config, vec![], None, None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let (_reader, client) = WebSocketClient::connect_stream(websocket_config, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         client.set_auth_tracker(tracker.clone(), true);
         tracker.succeed();
@@ -2396,7 +2818,7 @@ fn run_websocket_reconnectable_drop_while_waiting_for_auth_waits_for_reauth(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -2416,23 +2838,12 @@ fn run_websocket_reconnectable_drop_while_waiting_for_auth_waits_for_reauth(
 
     sim.client("client", async move {
         let tracker = AuthTracker::new();
-        let (handler, _rx) = channel_message_handler();
         let reconnected = Arc::new(AtomicBool::new(false));
-        let client_reconnected = Arc::clone(&reconnected);
-        let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            client_reconnected.store(true, Ordering::SeqCst);
-        });
+        let (handler, _rx) = tracked_channel_message_handler(Arc::clone(&reconnected));
 
-        let client = WebSocketClient::connect(
-            websocket_config,
-            Some(handler),
-            None,
-            Some(post_reconnection),
-            vec![],
-            None,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         client.set_auth_tracker(tracker.clone(), true);
         tracker.succeed();
@@ -2510,7 +2921,7 @@ fn run_websocket_alternating_text_binary_preserves_message_order(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -2523,10 +2934,9 @@ fn run_websocket_alternating_text_binary_preserves_message_order(
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         let expected = alternating_text_binary_messages();
         let mut received = Vec::with_capacity(expected.len());
@@ -2645,7 +3055,7 @@ fn run_websocket_queued_write_drop_preserves_later_message_order(
     seed: u64,
     label: &'static str,
 ) {
-    websocket_config.reconnect_timeout_ms = Some(5_000);
+    websocket_config.connect_timeout_ms = Some(5_000);
     websocket_config.reconnect_delay_initial_ms = Some(25);
     websocket_config.reconnect_delay_max_ms = Some(100);
     websocket_config.reconnect_backoff_factor = Some(1.0);
@@ -2658,10 +3068,9 @@ fn run_websocket_queued_write_drop_preserves_later_message_order(
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client =
-            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
-                .await
-                .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
+        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+            .await
+            .unwrap_or_else(|e| panic!("{label} seed {seed:#018x} should connect: {e}"));
 
         let in_flight_msg = "queued-before-drop".to_string();
         client
@@ -3089,6 +3498,62 @@ async fn ws_silent_first_connection_then_echo_server(
     }
 }
 
+/// Completes the handshake on the first connection then stops servicing the stream entirely.
+///
+/// Unlike the silent server, this never polls the stream, so tokio-tungstenite's automatic pong
+/// never runs and the peer emits no frame of any kind. That is the half-open connection the
+/// heartbeat timeout exists to catch: the socket stays open and writes keep succeeding.
+async fn ws_dark_first_connection_then_echo_server(
+    first_connection_dark: Arc<AtomicBool>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+    let mut connection_index = 0;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let current_connection = connection_index;
+        connection_index += 1;
+        let first_connection_dark = Arc::clone(&first_connection_dark);
+
+        tokio::spawn(async move {
+            match current_connection {
+                0 => {
+                    if let Ok(ws_stream) = accept_async(stream).await {
+                        first_connection_dark.store(true, Ordering::SeqCst);
+
+                        // Hold the stream without polling it so no pong is ever emitted.
+                        let _ws_stream = ws_stream;
+                        std::future::pending::<()>().await;
+                    }
+                }
+                _ => {
+                    if let Ok(mut ws_stream) = accept_async(stream).await {
+                        while let Some(msg) = ws_stream.next().await {
+                            match msg {
+                                Ok(Message::Text(text)) => {
+                                    let _ = ws_stream.send(Message::Text(text)).await;
+                                }
+                                Ok(Message::Binary(data)) => {
+                                    let _ = ws_stream.send(Message::Binary(data)).await;
+                                }
+                                Ok(Message::Ping(ping_data)) => {
+                                    let _ = ws_stream.send(Message::Pong(ping_data)).await;
+                                }
+                                Ok(Message::Close(_)) => {
+                                    let _ = ws_stream.close(None).await;
+                                    break;
+                                }
+                                Ok(Message::Pong(_) | Message::Frame(_)) => {}
+                                Err(_) => break,
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
 async fn ws_drop_first_connection_then_hold_reconnect_handshake_until_release_server(
     first_connection_dropped: Arc<AtomicBool>,
     reconnect_attempt_waiting: Arc<AtomicBool>,
@@ -3205,6 +3670,59 @@ async fn ws_ping_counting_server(
                 _ => {}
             }
         }
+    }
+}
+
+async fn ws_text_heartbeat_counting_server(
+    heartbeats: Arc<AtomicUsize>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let heartbeats = Arc::clone(&heartbeats);
+
+        tokio::spawn(async move {
+            if let Ok(mut websocket) = accept_async(stream).await {
+                while let Some(message) = websocket.next().await {
+                    match message {
+                        Ok(Message::Text(text)) if text == TEXT_HEARTBEAT => {
+                            heartbeats.fetch_add(1, Ordering::SeqCst);
+                        }
+                        Ok(Message::Close(_)) => {
+                            let _ = websocket.close(None).await;
+                            break;
+                        }
+                        Ok(_) => {}
+                        Err(_) => break,
+                    }
+                }
+            }
+        });
+    }
+}
+
+async fn ws_send_text_without_reading_server() -> Result<(), Box<dyn std::error::Error>> {
+    let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+
+        tokio::spawn(async move {
+            if let Ok(mut websocket) = accept_async(stream).await {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+
+                    if websocket
+                        .send(Message::Text(NON_PONG_FRAME.into()))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            }
+        });
     }
 }
 

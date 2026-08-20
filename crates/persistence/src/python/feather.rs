@@ -26,7 +26,7 @@ use nautilus_common::{
     msgbus::typed_handler::ShareableMessageHandler,
     python::{cache::PyCache, clock::PyClock},
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, datetime::get_timezone};
 use nautilus_model::{
     data::{
         Bar, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
@@ -57,7 +57,7 @@ use crate::{
 /// capabilities, matching the interface of Python's `StreamingFeatherWriter`.
 #[pyclass(
     name = "StreamingFeatherWriter",
-    module = "nautilus_trader.core.nautilus_pyo3.persistence",
+    module = "nautilus_trader.persistence",
     unsendable
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")]
@@ -184,7 +184,7 @@ impl PyStreamingFeatherWriter {
             }
             2 => {
                 let interval = rotation_interval_ns.unwrap_or(86_400_000_000_000); // Default 1 day
-                let tz = rotation_timezone.parse::<chrono_tz::Tz>().map_err(|e| {
+                let tz = get_timezone(rotation_timezone).map_err(|e| {
                     PyIOError::new_err(format!("Failed to parse rotation_timezone: {e}"))
                 })?;
                 let time_ns = rotation_time_ns.unwrap_or(0);
@@ -331,7 +331,7 @@ impl PyStreamingFeatherWriter {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
             return runtime
-                .block_on(async { writer.write_data(Data::IndexPriceUpdate(price)).await })
+                .block_on(async { writer.write_data(Data::IndexPrice(price)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write IndexPriceUpdate: {e}")));
         }
 
@@ -339,7 +339,7 @@ impl PyStreamingFeatherWriter {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
             return runtime
-                .block_on(async { writer.write_data(Data::MarkPriceUpdate(price)).await })
+                .block_on(async { writer.write_data(Data::MarkPrice(price)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write MarkPriceUpdate: {e}")));
         }
 

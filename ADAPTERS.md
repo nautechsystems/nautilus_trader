@@ -96,7 +96,6 @@ The following adapters are maintained in the core repository:
 | Lighter             | Data/Execution |
 | OKX                 | Data/Execution |
 | Polymarket          | Data/Execution |
-| Sandbox             | Execution      |
 | Tardis              | Data           |
 
 ## Community listings
@@ -126,10 +125,10 @@ Community adapters are externally maintained and are not supported by NautilusTr
 
 | Project                                      | Description                                | Maintainer   |
 | -------------------------------------------- | ------------------------------------------ | ------------ |
-| [mt5-connect][mt5-connect]                   | MetaTrader 5 adapter.                      | aulekator    |
+| [mt5-connector][mt5-connector]               | MetaTrader 5 adapter.                      | aulekator    |
 | [sinopac-nt-community][sinopac-nt-community] | SinoPac Securities Taiwan markets adapter. | Martingale42 |
 
-[mt5-connect]: https://github.com/aulekator/mt5-connect
+[mt5-connector]: https://github.com/aulekator/mt5-connector
 [sinopac-nt-community]: https://github.com/Martingale42/sinopac-nt-community
 
 ## Updates

@@ -198,10 +198,7 @@ dmypy.json
 # pytype static type analyzer
 .pytype/
 
-# Cython debug symbols
-cython_debug/
-
 # Nautilus
 docs/
-tests/
+test_data/
 !docs/tutorials

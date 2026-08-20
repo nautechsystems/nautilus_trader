@@ -48,13 +48,13 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use chrono::{TimeZone, Utc};
 use futures_util::{SinkExt, StreamExt};
+use jiff::Timestamp;
 use nautilus_common::{
     clients::DataClient,
-    live::runner::replace_data_event_sender,
+    live::runner::{replace_data_event_sender, replace_system_event_sender},
     messages::{
-        DataEvent,
+        DataEvent, SystemEvent,
         data::{
             DataResponse, RequestBars, RequestBookDepth, RequestBookSnapshot, RequestFundingRates,
             RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
@@ -63,6 +63,7 @@ use nautilus_common::{
             UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeIndexPrices,
             UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
+        system::{SocketState, SocketStateChange},
     },
     testing::wait_until_async,
 };
@@ -74,7 +75,7 @@ use nautilus_lighter::{
     http::{client::LIGHTER_FUNDINGS_MAX_LIMIT, query::LighterFundingsQuery},
 };
 use nautilus_model::{
-    data::{BarSpecification, BarType, Data, OrderBookDeltas_API},
+    data::{BarSpecification, BarType, Data, OrderBookDeltas},
     enums::{AggregationSource, BarAggregation, BookAction, BookType, PriceType, RecordFlag},
     identifiers::{ClientId, InstrumentId},
     instruments::Instrument,
@@ -85,6 +86,8 @@ use rstest::rstest;
 use serde_json::{Value, json};
 const ETH_PERP_SYMBOL: &str = "ETH-PERP";
 const HISTORY_REQUEST_PAGE_CAP: usize = 500;
+const PRIVATE_KEY_HEX: &str =
+    "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
 
 fn data_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
@@ -371,6 +374,9 @@ fn build_config(addr: SocketAddr) -> LighterDataClientConfig {
     LighterDataClientConfig {
         base_url_http: Some(format!("http://{addr}")),
         base_url_ws: Some(format!("ws://{addr}/stream")),
+        account_index: Some(12_345),
+        api_key_index: Some(5),
+        private_key: Some(PRIVATE_KEY_HEX.to_string()),
         // Disable the periodic refresh loop; tests drive bootstrap directly
         // via `connect()` and request_instruments(). A nonzero interval would
         // leak a background task across the entire crate's test run.
@@ -394,6 +400,34 @@ fn build_client(
     replace_data_event_sender(sender);
     let client = LighterDataClient::new(client_id(), config).expect("construct data client");
     (client, receiver)
+}
+
+/// Installs a fresh system event sender before building the client, so the data
+/// client captures it and attaches a socket state sink to its WebSocket client.
+fn build_client_with_system_events(
+    config: LighterDataClientConfig,
+) -> (
+    LighterDataClient,
+    tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
+) {
+    let (system_sender, system_receiver) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_sender);
+    let (client, receiver) = build_client(config);
+    (client, receiver, system_receiver)
+}
+
+/// Awaits the next socket state change emitted on the system event channel.
+async fn next_socket_state(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
+) -> SocketStateChange {
+    let event = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .expect("timed out waiting for a socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+
+    change
 }
 
 /// Pulls every event currently sitting in the receiver, returning the count.
@@ -471,7 +505,7 @@ async fn collect_managed_book_batches(
     client: &mut LighterDataClient,
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     state: &TestServerState,
-) -> (OrderBookDeltas_API, OrderBookDeltas_API) {
+) -> (OrderBookDeltas, OrderBookDeltas) {
     state
         .enqueue_push(load_json("ws_order_book_subscribed.json"))
         .await;
@@ -525,7 +559,7 @@ async fn collect_managed_book_batches(
         unreachable!("event predicate requires deltas")
     };
 
-    (snapshot, incremental)
+    (*snapshot, *incremental)
 }
 
 #[rstest]
@@ -1058,11 +1092,11 @@ async fn test_subscribe_mark_index_funding_share_one_ws_subscription() {
         };
 
         match event {
-            DataEvent::Data(Data::MarkPriceUpdate(update)) => {
+            DataEvent::Data(Data::MarkPrice(update)) => {
                 saw_mark = true;
                 assert_eq!(update.instrument_id, instrument_id);
             }
-            DataEvent::Data(Data::IndexPriceUpdate(update)) => {
+            DataEvent::Data(Data::IndexPrice(update)) => {
                 saw_index = true;
                 assert_eq!(update.instrument_id, instrument_id);
             }
@@ -1142,11 +1176,11 @@ async fn test_market_stats_retry_preserves_kinds_piggybacked_on_failed_attempt()
         };
 
         match event {
-            DataEvent::Data(Data::MarkPriceUpdate(update)) => {
+            DataEvent::Data(Data::MarkPrice(update)) => {
                 saw_mark = true;
                 assert_eq!(update.instrument_id, instrument_id);
             }
-            DataEvent::Data(Data::IndexPriceUpdate(update)) => {
+            DataEvent::Data(Data::IndexPrice(update)) => {
                 saw_index = true;
                 assert_eq!(update.instrument_id, instrument_id);
             }
@@ -1798,14 +1832,8 @@ async fn test_request_bars_emits_response() {
         BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
         AggregationSource::External,
     );
-    let start = Utc
-        .timestamp_millis_opt(1_700_000_000_000)
-        .single()
-        .unwrap();
-    let end = Utc
-        .timestamp_millis_opt(1_700_000_120_000)
-        .single()
-        .unwrap();
+    let start = Timestamp::from_millisecond(1_700_000_000_000).unwrap();
+    let end = Timestamp::from_millisecond(1_700_000_120_000).unwrap();
 
     client
         .request_bars(RequestBars::new(
@@ -1843,14 +1871,8 @@ async fn test_request_funding_rates_emits_response() {
     client.connect().await.expect("connect");
     drain_pending(&mut rx);
 
-    let start = Utc
-        .timestamp_millis_opt(1_778_702_400_000)
-        .single()
-        .unwrap();
-    let end = Utc
-        .timestamp_millis_opt(1_778_706_000_000)
-        .single()
-        .unwrap();
+    let start = Timestamp::from_millisecond(1_778_702_400_000).unwrap();
+    let end = Timestamp::from_millisecond(1_778_706_000_000).unwrap();
 
     client
         .request_funding_rates(RequestFundingRates::new(
@@ -1891,11 +1913,11 @@ async fn test_request_funding_rates_does_not_emit_partial_response_at_page_cap()
     drain_pending(&mut rx);
     state.funding_cap.store(true, Ordering::SeqCst);
 
-    let start = Utc.timestamp_millis_opt(0).single().unwrap();
+    let start = Timestamp::from_millisecond(0).unwrap();
     let interval_ms = LighterFundingResolution::OneHour.interval_millis();
     let page_span_ms = i64::from(LIGHTER_FUNDINGS_MAX_LIMIT - 1) * interval_ms;
     let end_ms = i64::try_from(HISTORY_REQUEST_PAGE_CAP + 1).unwrap() * page_span_ms;
-    let end = Utc.timestamp_millis_opt(end_ms).single().unwrap();
+    let end = Timestamp::from_millisecond(end_ms).unwrap();
 
     client
         .request_funding_rates(RequestFundingRates::new(
@@ -2046,6 +2068,77 @@ async fn test_unsubscribe_bars_is_noop_for_unsupported_resolution() {
             None,
         ))
         .expect("unsubscribe_bars must not error on unsupported resolution");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_socket_state_events_survive_websocket_client_replacement() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, mut system_rx) = build_client_with_system_events(build_config(addr));
+
+    client.connect().await.expect("connect");
+    await_connection_count(&state, 1).await;
+
+    let change = next_socket_state(&mut system_rx).await;
+
+    // `stop()` swaps in a freshly built WebSocket client. The replacement must
+    // carry the sink, or socket state reporting dies after the first cycle.
+    client.stop().expect("stop");
+    await_connection_count(&state, 0).await;
+
+    client.connect().await.expect("reconnect");
+    await_connection_count(&state, 1).await;
+
+    let replacement = next_socket_state(&mut system_rx).await;
+
+    assert_eq!(change.client_id, client_id());
+    assert_eq!(change.venue, Some(*LIGHTER_VENUE));
+    assert_eq!(change.endpoint.as_str(), "lighter-data-streams");
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(replacement.client_id, client_id());
+    assert_eq!(replacement.venue, Some(*LIGHTER_VENUE));
+    assert_eq!(replacement.endpoint.as_str(), "lighter-data-streams");
+    assert_eq!(replacement.state, SocketState::Connected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_socket_state_events_report_connection_loss_and_recovery() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, mut system_rx) = build_client_with_system_events(build_config(addr));
+
+    client.connect().await.expect("connect");
+    drain_pending(&mut rx);
+    assert_eq!(
+        next_socket_state(&mut system_rx).await.state,
+        SocketState::Connected
+    );
+
+    // The server acks this subscribe and then closes, so the client observes a
+    // connection loss rather than a deliberate disconnect.
+    state
+        .drop_after_next_subscribe
+        .store(true, Ordering::Relaxed);
+    client
+        .subscribe_trades(SubscribeTrades::new(
+            eth_perp_id(),
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("subscribe_trades");
+    await_subscribe_count(&state, 1).await;
+
+    let lost = next_socket_state(&mut system_rx).await;
+    let recovered = next_socket_state(&mut system_rx).await;
+
+    assert_eq!(lost.endpoint.as_str(), "lighter-data-streams");
+    assert_eq!(lost.state, SocketState::Disconnected);
+    assert_eq!(recovered.endpoint.as_str(), "lighter-data-streams");
+    assert_eq!(recovered.state, SocketState::Connected);
 }
 
 #[rstest]

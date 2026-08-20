@@ -28,7 +28,7 @@ use ustr::Ustr;
 use crate::common::enums::{
     LighterCandleResolution, LighterFundingResolution, LighterMarketStatus, LighterOrderKind,
     LighterOrderSide, LighterOrderStatus, LighterOrderTimeInForce, LighterPositionMarginMode,
-    LighterProductType, LighterTradeType, LighterTriggerStatus,
+    LighterProductType, LighterTradeType, LighterTriggerStatus, LighterTxStatus,
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -48,6 +48,22 @@ pub struct LighterNextNonce {
     pub code: i32,
     pub message: Option<String>,
     pub nonce: i64,
+}
+
+/// Response payload of `GET /api/v1/tx`.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LighterTx {
+    pub code: i32,
+    pub message: Option<String>,
+    pub hash: String,
+    #[serde(rename = "type")]
+    pub tx_type: u8,
+    pub info: String,
+    pub event_info: String,
+    pub status: LighterTxStatus,
+    pub account_index: i64,
+    pub nonce: i64,
+    pub api_key_index: u8,
 }
 
 /// One account row from `GET /api/v1/account`.

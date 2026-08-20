@@ -114,10 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.blockchain",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.blockchain", from_py_object)
 )]
 pub struct BlockchainSubscriberActorConfig {
     /// Base data actor configuration.
@@ -187,7 +184,7 @@ impl BlockchainSubscriberActorConfig {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.blockchain", unsendable)
+    pyo3::pyclass(module = "nautilus_trader.adapters.blockchain", unsendable)
 )]
 pub struct BlockchainSubscriberActor {
     core: DataActorCore,

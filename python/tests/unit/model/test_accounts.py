@@ -16,6 +16,7 @@
 from decimal import Decimal
 
 import pytest
+from tests.providers import TestInstrumentProvider
 
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountBalance
@@ -26,6 +27,7 @@ from nautilus_trader.model import BettingAccount
 from nautilus_trader.model import CashAccount
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LeveragedMarginModel
 from nautilus_trader.model import LiquiditySide
 from nautilus_trader.model import MarginAccount
@@ -41,10 +43,11 @@ from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import VenueOrderId
+from nautilus_trader.model import WalletAccount
 from nautilus_trader.model import betting_account_from_account_events
 from nautilus_trader.model import cash_account_from_account_events
 from nautilus_trader.model import margin_account_from_account_events
-from tests.providers import TestInstrumentProvider
+from nautilus_trader.model import wallet_account_from_account_events
 
 
 def test_cash_account_properties_and_balances():
@@ -305,6 +308,101 @@ def test_betting_account_from_account_events():
     assert account.balance_free() == Money.from_str("875.00 USD")
 
 
+def test_wallet_account():
+    state = AccountState(
+        account_id=AccountId("WALLET-001"),
+        account_type=AccountType.WALLET,
+        balances=[
+            AccountBalance(
+                total=Money.from_str("10.00000000 ETH"),
+                locked=Money.from_str("1.00000000 ETH"),
+                free=Money.from_str("9.00000000 ETH"),
+            ),
+            AccountBalance(
+                total=Money.from_str("25000.00000000 USDC"),
+                locked=Money.from_str("0.00000000 USDC"),
+                free=Money.from_str("25000.00000000 USDC"),
+            ),
+        ],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=1,
+        ts_init=2,
+        base_currency=None,
+    )
+
+    account = WalletAccount(state, calculate_account_state=True)
+
+    assert account.id == AccountId("WALLET-001")
+    assert account.account_type == AccountType.WALLET
+    assert account.base_currency is None
+    assert not account.is_cash_account()
+    assert not account.is_margin_account()
+    assert account.balance_total(Currency.from_str("ETH")) == Money.from_str(
+        "10.00000000 ETH",
+    )
+    assert account.balance_free(Currency.from_str("ETH")) == Money.from_str("10.00000000 ETH")
+    assert account.balance_locked(Currency.from_str("ETH")) == Money.from_str(
+        "0.00000000 ETH",
+    )
+    assert account.balance_total(Currency.from_str("USDC")) == Money.from_str(
+        "25000.00000000 USDC",
+    )
+
+
+def test_wallet_account_rejects_negative_total():
+    state = AccountState(
+        account_id=AccountId("WALLET-NEGATIVE"),
+        account_type=AccountType.WALLET,
+        balances=[
+            AccountBalance(
+                total=Money.from_str("-1.00000000 ETH"),
+                locked=Money.from_str("0.00000000 ETH"),
+                free=Money.from_str("-1.00000000 ETH"),
+            ),
+        ],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=1,
+        ts_init=2,
+        base_currency=None,
+    )
+
+    with pytest.raises(ValueError, match="Wallet account balance total was negative"):
+        WalletAccount(state, calculate_account_state=True)
+
+
+def test_wallet_account_from_account_events():
+    state = AccountState(
+        account_id=AccountId("WALLET-002"),
+        account_type=AccountType.WALLET,
+        balances=[
+            AccountBalance(
+                total=Money.from_str("10.00000000 ETH"),
+                locked=Money.from_str("0.00000000 ETH"),
+                free=Money.from_str("10.00000000 ETH"),
+            ),
+        ],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=1,
+        ts_init=2,
+        base_currency=None,
+    )
+
+    account = wallet_account_from_account_events(
+        [state.to_dict()],
+        calculate_account_state=True,
+    )
+
+    assert account.id == AccountId("WALLET-002")
+    assert account.account_type == AccountType.WALLET
+    assert account.balance_free(Currency.from_str("ETH")) == Money.from_str("10.00000000 ETH")
+
+
 def test_cash_account_multi_currency_balances():
     usd = Currency.from_str("USD")
     btc = Currency.from_str("BTC")
@@ -340,6 +438,48 @@ def test_cash_account_multi_currency_balances():
     assert len(account.balances_total()) == 2
     assert len(account.balances_free()) == 2
     assert len(account.balances_locked()) == 2
+
+
+def test_cash_account_multi_currency_from_account_events_round_trip():
+    usd = Currency.from_str("USD")
+    btc = Currency.from_str("BTC")
+    state = AccountState(
+        account_id=AccountId("BINANCE-002"),
+        account_type=AccountType.CASH,
+        balances=[
+            AccountBalance(
+                total=Money.from_str("10000.00 USD"),
+                locked=Money.from_str("2500.00 USD"),
+                free=Money.from_str("7500.00 USD"),
+            ),
+            AccountBalance(
+                total=Money.from_str("1.50000000 BTC"),
+                locked=Money.from_str("0.25000000 BTC"),
+                free=Money.from_str("1.25000000 BTC"),
+            ),
+        ],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=1,
+        ts_init=2,
+        base_currency=None,
+    )
+
+    account = cash_account_from_account_events(
+        [state.to_dict()],
+        calculate_account_state=True,
+        allow_borrowing=False,
+    )
+
+    assert account.id == AccountId("BINANCE-002")
+    assert account.base_currency is None
+    assert account.balance_total(usd) == Money.from_str("10000.00 USD")
+    assert account.balance_locked(usd) == Money.from_str("2500.00 USD")
+    assert account.balance_free(usd) == Money.from_str("7500.00 USD")
+    assert account.balance_total(btc) == Money.from_str("1.50000000 BTC")
+    assert account.balance_locked(btc) == Money.from_str("0.25000000 BTC")
+    assert account.balance_free(btc) == Money.from_str("1.25000000 BTC")
 
 
 def test_cash_account_calculate_balance_locked_buy():
@@ -550,9 +690,30 @@ def test_margin_account_leverage_operations():
     assert isinstance(account.leverages(), dict)
 
 
-def test_margin_account_initial_margins():
-    instrument = TestInstrumentProvider.audusd_sim()
+def test_margin_account_margin_queries():
+    audusd = TestInstrumentProvider.audusd_sim()
+    usdjpy = TestInstrumentProvider.usdjpy_sim()
     usd = Currency.from_str("USD")
+    jpy = Currency.from_str("JPY")
+    eur = Currency.from_str("EUR")
+    instrument_usd = MarginBalance(
+        initial=Money.from_str("101.00 USD"),
+        maintenance=Money.from_str("11.00 USD"),
+        instrument_id=audusd.id,
+    )
+    instrument_jpy = MarginBalance(
+        initial=Money.from_str("202 JPY"),
+        maintenance=Money.from_str("22 JPY"),
+        instrument_id=usdjpy.id,
+    )
+    account_usd = MarginBalance(
+        initial=Money.from_str("303.00 USD"),
+        maintenance=Money.from_str("33.00 USD"),
+    )
+    account_jpy = MarginBalance(
+        initial=Money.from_str("404 JPY"),
+        maintenance=Money.from_str("44 JPY"),
+    )
     state = AccountState(
         account_id=AccountId("SIM-002"),
         account_type=AccountType.MARGIN,
@@ -562,23 +723,110 @@ def test_margin_account_initial_margins():
                 locked=Money.from_str("0.00 USD"),
                 free=Money.from_str("100000.00 USD"),
             ),
+            AccountBalance(
+                total=Money.from_str("100000 JPY"),
+                locked=Money.from_str("0 JPY"),
+                free=Money.from_str("100000 JPY"),
+            ),
         ],
+        margins=[instrument_usd, instrument_jpy, account_usd, account_jpy],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+        base_currency=None,
+    )
+
+    account = MarginAccount(state, calculate_account_state=True)
+
+    assert account.margin(audusd.id) == instrument_usd
+    assert account.margin(usdjpy.id) == instrument_jpy
+    assert account.margins() == {
+        audusd.id: instrument_usd,
+        usdjpy.id: instrument_jpy,
+    }
+    assert account.initial_margin(audusd.id) == instrument_usd.initial
+    assert account.initial_margin(usdjpy.id) == instrument_jpy.initial
+    assert account.initial_margins() == {
+        audusd.id: instrument_usd.initial,
+        usdjpy.id: instrument_jpy.initial,
+    }
+    assert account.maintenance_margin(audusd.id) == instrument_usd.maintenance
+    assert account.maintenance_margin(usdjpy.id) == instrument_jpy.maintenance
+    assert account.maintenance_margins() == {
+        audusd.id: instrument_usd.maintenance,
+        usdjpy.id: instrument_jpy.maintenance,
+    }
+
+    assert account.account_margin(usd) == account_usd
+    assert account.account_margin(jpy) == account_jpy
+    assert account.account_margins() == {
+        usd: account_usd,
+        jpy: account_jpy,
+    }
+    assert account.account_initial_margin(usd) == account_usd.initial
+    assert account.account_initial_margin(jpy) == account_jpy.initial
+    assert account.account_initial_margins() == {
+        usd: account_usd.initial,
+        jpy: account_jpy.initial,
+    }
+    assert account.account_maintenance_margin(usd) == account_usd.maintenance
+    assert account.account_maintenance_margin(jpy) == account_jpy.maintenance
+    assert account.account_maintenance_margins() == {
+        usd: account_usd.maintenance,
+        jpy: account_jpy.maintenance,
+    }
+
+    assert account.total_initial_margin(usd) == Money.from_str("404.00 USD")
+    assert account.total_initial_margin(jpy) == Money.from_str("606 JPY")
+    assert account.total_maintenance_margin(usd) == Money.from_str("44.00 USD")
+    assert account.total_maintenance_margin(jpy) == Money.from_str("66 JPY")
+
+    missing_instrument = InstrumentId.from_str("MISSING.SIM")
+    assert account.margin(missing_instrument) is None
+    assert account.initial_margin(missing_instrument) is None
+    assert account.maintenance_margin(missing_instrument) is None
+    assert account.account_margin(eur) is None
+    assert account.account_initial_margin(eur) is None
+    assert account.account_maintenance_margin(eur) is None
+    assert account.total_initial_margin(eur) == Money.from_str("0.00 EUR")
+    assert account.total_maintenance_margin(eur) == Money.from_str("0.00 EUR")
+
+
+def test_margin_account_margin_query_collections_empty():
+    state = AccountState(
+        account_id=AccountId("SIM-002"),
+        account_type=AccountType.MARGIN,
+        balances=[],
         margins=[],
         is_reported=True,
         event_id=UUID4(),
         ts_event=0,
         ts_init=0,
-        base_currency=usd,
+        base_currency=None,
     )
 
     account = MarginAccount(state, calculate_account_state=True)
-    account.update_initial_margin(instrument.id, Money.from_str("500.00 USD"))
-    account.update_maintenance_margin(instrument.id, Money.from_str("250.00 USD"))
 
-    assert account.initial_margin(instrument.id) == Money.from_str("500.00 USD")
-    assert account.maintenance_margin(instrument.id) == Money.from_str("250.00 USD")
-    assert isinstance(account.initial_margins(), dict)
-    assert isinstance(account.maintenance_margins(), dict)
+    assert account.margins() == {}
+    assert account.initial_margins() == {}
+    assert account.maintenance_margins() == {}
+    assert account.account_margins() == {}
+    assert account.account_initial_margins() == {}
+    assert account.account_maintenance_margins() == {}
+
+
+def test_margin_account_engine_margin_commands_are_not_exposed():
+    excluded = {
+        "update_margin",
+        "clear_margin",
+        "clear_account_margin",
+        "clear_initial_margin",
+        "clear_maintenance_margin",
+        "set_margin_model",
+    }
+
+    assert {name for name in excluded if hasattr(MarginAccount, name)} == set()
 
 
 def test_margin_account_calculate_initial_margin():
@@ -678,10 +926,9 @@ def test_margin_account_full_account_api():
     MarginAccount must expose the full Account trait surface in pyo3 (parity with
     CashAccount and BettingAccount).
 
-    Each newly exposed method below was missing
-    before this patch; assert exact values rather than just ``isinstance`` so a
-    regression that returns the wrong field (e.g. ``balance_free`` from
-    ``balance_total``) would fail.
+    Each newly exposed method below was missing before this patch; assert exact values
+    rather than just ``isinstance`` so a regression that returns the wrong field (e.g.
+    ``balance_free`` from ``balance_total``) would fail.
 
     """
     usd = Currency.from_str("USD")

@@ -57,9 +57,9 @@ fn build_trades() -> Vec<TradeTick> {
         .map(|i| {
             // Flip aggressor every four trades: builds same-side runs that split, then neutralizes.
             let aggressor_side = if (i / 4) % 2 == 0 {
-                AggressorSide::Buyer
+                AggressorSide::Buy
             } else {
-                AggressorSide::Seller
+                AggressorSide::Sell
             };
             TradeTick {
                 instrument_id,

@@ -15,7 +15,7 @@
 
 //! Factory for generating order and account events.
 
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     enums::{AccountType, LiquiditySide},
     events::{
@@ -84,6 +84,7 @@ impl OrderEventFactory {
         reported: bool,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
+        info: Option<Params>,
     ) -> AccountState {
         AccountState::new(
             self.account_id,
@@ -96,6 +97,7 @@ impl OrderEventFactory {
             ts_init,
             self.base_currency,
         )
+        .with_info(info)
     }
 
     /// Generates an order denied event.

@@ -16,10 +16,26 @@
 //! DeFi-specific extensions for the [`Money`] type.
 
 use alloy_primitives::U256;
+use nautilus_core::correctness::{CorrectnessError, CorrectnessResult};
 
-use crate::types::{Currency, Money};
+use crate::types::{Currency, Money, Quantity};
 
 impl Money {
+    /// Creates a new [`Money`] instance from an unsigned integer amount at the currency precision.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the precision is invalid or the scaled amount exceeds the signed money
+    /// range.
+    pub fn from_u256(amount: U256, currency: Currency) -> CorrectnessResult<Self> {
+        let quantity = Quantity::from_u256(amount, currency.precision)?;
+        let raw =
+            i128::try_from(quantity.raw).map_err(|_| CorrectnessError::PredicateViolation {
+                message: format!("Amount for {currency} exceeds Money raw range"),
+            })?;
+        Self::from_raw_checked(raw, currency)
+    }
+
     /// Creates a new [`Money`] instance from raw wei value with 18-decimal precision.
     ///
     /// This method is specifically designed for DeFi applications where values are
@@ -91,6 +107,17 @@ mod tests {
         // Use decimal comparison for high precision values
         assert_eq!(money.as_decimal(), dec!(1));
         assert_eq!(money.currency.precision, 18);
+    }
+
+    #[rstest]
+    fn test_from_u256_scales_six_decimal_currency_exactly() {
+        let usdc = Currency::new("USDC", 6, 0, "USD Coin", CurrencyType::Crypto);
+
+        let money = Money::from_u256(U256::from(987_654_321_u64), usdc).unwrap();
+
+        assert_eq!(money.raw, 9_876_543_210_000_000_000);
+        assert_eq!(money.as_decimal(), dec!(987.654321));
+        assert_eq!(money.currency, usdc);
     }
 
     #[rstest]

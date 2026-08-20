@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import base64
+from decimal import Decimal
 
 import pytest
 from unit.adapters.example_modules import capture_data_tester_main
@@ -116,115 +117,75 @@ def test_live_node_builder_accepts_polymarket_exec_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
-def test_polymarket_data_tester_builds_offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured = capture_data_tester_main(monkeypatch, polymarket_data_tester, [])
+def test_polymarket_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = capture_data_tester_main(monkeypatch, polymarket_data_tester)
     kwargs = captured["data_tester_kwargs"]
     data_client_config = captured["data_client_args"][2]
 
     assert isinstance(kwargs, dict)
-    assert kwargs["instrument_ids"] == [
-        InstrumentId.from_str(polymarket_data_tester.DEFAULT_INSTRUMENT),
-    ]
+    assert kwargs["instrument_ids"] == [polymarket_data_tester.INSTRUMENT_ID]
     assert kwargs["subscribe_trades"] is True
     assert 'event_slugs: Some(["fed-decision-in-september-762"])' in repr(data_client_config)
-    assert "run_called" not in captured
+    assert captured["run_called"] is True
 
 
-@pytest.mark.parametrize(
-    (
-        "extra_args",
-        "expected_dry_run",
-        "expected_limit_buys",
-        "expected_quote_quantity",
-    ),
-    [
-        ([], True, False, False),
-        (["--live-orders"], False, False, True),
-        (["--limit-orders"], False, True, False),
-    ],
-)
-def test_polymarket_exec_tester_selects_one_live_order_mode(
-    monkeypatch: pytest.MonkeyPatch,
-    extra_args: list[str],
-    expected_dry_run: bool,
-    expected_limit_buys: bool,
-    expected_quote_quantity: bool,
-) -> None:
-    captured = capture_exec_tester_main(monkeypatch, polymarket_exec_tester, extra_args)
+def test_polymarket_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = capture_exec_tester_main(monkeypatch, polymarket_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
     exec_engine_config = captured["exec_engine_config"]
     exec_engine_repr = repr(exec_engine_config)
 
     assert isinstance(kwargs, dict)
     assert (
-        f'reconciliation_instrument_ids: Some(["{polymarket_exec_tester.DEFAULT_INSTRUMENT}"])'
+        f'reconciliation_instrument_ids: Some(["{polymarket_exec_tester.INSTRUMENT_ID}"])'
         in exec_engine_repr
     )
     assert "open_check_interval_secs: Some(10.0)" in exec_engine_repr
     assert "position_check_interval_secs: Some(30.0)" in exec_engine_repr
+    assert captured["reconciliation"] is True
     assert captured["timeout_disconnection_secs"] == 30
     assert captured["delay_post_stop_secs"] == 30
     assert kwargs["use_uuid_client_order_ids"] is True
-    assert kwargs["dry_run"] is expected_dry_run
-    assert kwargs["enable_limit_buys"] is expected_limit_buys
+    assert kwargs["dry_run"] is False
+    assert kwargs["enable_limit_buys"] is False
     assert kwargs["enable_limit_sells"] is False
-    assert kwargs["use_post_only"] is expected_limit_buys
-    assert kwargs["use_quote_quantity"] is expected_quote_quantity
-    assert kwargs["cancel_orders_on_stop"] is not expected_dry_run
-    assert kwargs["close_positions_on_stop"] is expected_quote_quantity
+    assert kwargs["use_post_only"] is False
+    assert kwargs["use_quote_quantity"] is True
+    assert kwargs["open_position_on_start_qty"] == Decimal(5)
+    assert kwargs["cancel_orders_on_stop"] is True
+    assert kwargs["close_positions_on_stop"] is True
     assert kwargs["close_positions_qty_precision"] == 2
     assert kwargs["close_positions_time_in_force"] == TimeInForce.IOC
     assert kwargs["enable_stop_buys"] is False
     assert kwargs["enable_stop_sells"] is False
-    assert "run_called" not in captured
+    assert captured["run_called"] is True
 
 
-def test_polymarket_updown_smoke_tester_uses_event_slug_builder(
+def test_polymarket_updown_smoke_tester_runs_live_orders(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured = capture_exec_tester_main(
-        monkeypatch,
+    monkeypatch.setattr(
         polymarket_updown_smoke_tester,
-        ["--instrument", UPDOWN_FIXTURE_INSTRUMENT],
+        "resolve_updown_instrument_id",
+        lambda **_: InstrumentId.from_str(UPDOWN_FIXTURE_INSTRUMENT),
     )
+    captured = capture_exec_tester_main(monkeypatch, polymarket_updown_smoke_tester)
     data_client_config = captured["data_client_args"][2]
     exec_kwargs = captured["exec_tester_kwargs"]
 
     assert "event_slug_builder: Some" in repr(data_client_config)
     assert 'assets: ["btc"]' in repr(data_client_config)
-    assert exec_kwargs["dry_run"] is True
-    assert exec_kwargs["enable_limit_buys"] is False
-    assert exec_kwargs["enable_limit_sells"] is False
-    assert exec_kwargs["open_position_on_start_qty"] is None
-    assert exec_kwargs["open_position_on_first_quote"] is False
-    assert "run_called" not in captured
-
-
-def test_polymarket_updown_smoke_tester_live_orders_are_opt_in(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured = capture_exec_tester_main(
-        monkeypatch,
-        polymarket_updown_smoke_tester,
-        [
-            "--instrument",
-            UPDOWN_FIXTURE_INSTRUMENT,
-            "--live-orders",
-            "--limit-sells",
-        ],
-    )
-    exec_kwargs = captured["exec_tester_kwargs"]
-
+    assert exec_kwargs["instrument_id"] == InstrumentId.from_str(UPDOWN_FIXTURE_INSTRUMENT)
     assert exec_kwargs["dry_run"] is False
     assert exec_kwargs["enable_limit_buys"] is True
-    assert exec_kwargs["enable_limit_sells"] is True
-    assert exec_kwargs["open_position_on_start_qty"] is not None
+    assert exec_kwargs["enable_limit_sells"] is False
+    assert exec_kwargs["open_position_on_start_qty"] == Decimal(5)
     assert exec_kwargs["open_position_on_first_quote"] is True
     assert exec_kwargs["cancel_orders_on_stop"] is True
     assert exec_kwargs["close_positions_on_stop"] is True
     assert exec_kwargs["close_positions_qty_precision"] == 2
     assert exec_kwargs["close_positions_time_in_force"] == TimeInForce.IOC
-    assert "run_called" not in captured
+    assert captured["run_called"] is True
 
 
 def test_polymarket_updown_smoke_tester_builds_aligned_slugs() -> None:

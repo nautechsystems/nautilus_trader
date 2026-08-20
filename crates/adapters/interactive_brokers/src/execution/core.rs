@@ -67,10 +67,10 @@ use nautilus_common::{
     msgbus::{send_account_state, switchboard::MessagingSwitchboard},
 };
 use nautilus_core::{
-    UUID4, UnixNanos,
+    Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::ExecutionClientCore;
+use nautilus_live::{ExecutionClientCore, execution::failure::CommandFailure};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
@@ -78,8 +78,9 @@ use nautilus_model::{
         TimeInForce, TrailingOffsetType,
     },
     events::{
-        AccountState, OrderAccepted, OrderCanceled, OrderDenied, OrderEventAny, OrderFilled,
-        OrderPendingCancel, OrderRejected, OrderSubmitted, OrderUpdated,
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEventAny, OrderFilled, OrderModifyRejected, OrderPendingCancel, OrderRejected,
+        OrderSubmitted, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
@@ -117,10 +118,7 @@ use crate::{
 /// It manages order submission, modification, cancellation, and execution reporting.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        unsendable
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.interactive_brokers", unsendable)
 )]
 pub struct InteractiveBrokersExecutionClient {
     /// Core execution client functionality.
@@ -502,6 +500,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         let factory = OrderEventFactory::new(
             self.core.trader_id,
@@ -515,6 +514,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             reported,
             ts_event,
             get_atomic_clock_realtime().get_time_ns(),
+            info,
         );
         get_exec_event_sender()
             .send(ExecutionEvent::Account(state))
@@ -692,7 +692,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         match crate::execution::account::subscribe_account_summary(&client_for_account, account_id)
             .await
         {
-            Ok((balances, margins)) => {
+            Ok((balances, margins, info)) => {
                 tracing::debug!(
                     "Received account summary: {} balances, {} margins",
                     balances.len(),
@@ -703,7 +703,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
                 if let Err(e) = ExecutionClient::generate_account_state(
                     self, balances, margins, true, // reported
-                    ts_event,
+                    ts_event, info,
                 ) {
                     tracing::warn!("Failed to generate account state: {}", e);
                 }
@@ -1040,7 +1040,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         // Build time filter from start if provided.
         let time_filter = if let Some(start) = cmd.start {
             let start_dt = start.to_datetime_utc();
-            start_dt.format("%Y%m%d-%H:%M:%S").to_string()
+            start_dt.strftime("%Y%m%d-%H:%M:%S").to_string()
         } else {
             String::new()
         };
@@ -1322,7 +1322,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             .await;
 
             match result {
-                Ok(Ok((balances, margins))) => {
+                Ok(Ok((balances, margins, info))) => {
                     let ts_event = clock.get_time_ns();
                     let ts_now = clock.get_time_ns();
 
@@ -1336,7 +1336,8 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                         ts_event,
                         ts_now,
                         base_currency,
-                    );
+                    )
+                    .with_info(info);
 
                     let endpoint = MessagingSwitchboard::portfolio_update_account();
                     send_account_state(endpoint, &account_state);
@@ -1530,12 +1531,14 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     }
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
-        // Not-ready warning already logged; leave the modify outcome for
-        // in-flight resolution.
-        if self
-            .ensure_client_ready_for_order_request("modify order")
-            .is_err()
-        {
+        if let Err(reason) = self.ensure_client_ready_for_order_request("modify order") {
+            Self::send_order_modify_rejected(
+                &cmd,
+                &reason,
+                &get_exec_event_sender(),
+                get_atomic_clock_realtime().get_time_ns(),
+                self.core.account_id,
+            )?;
             return Ok(());
         }
 
@@ -1577,7 +1580,17 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             )
             .await
             {
-                tracing::error!("Error modifying order: {e}");
+                let reason = format!("Failed to route modify order to IB: {e:#}");
+
+                if let Err(send_error) = Self::send_order_modify_rejected(
+                    &cmd,
+                    &reason,
+                    &exec_sender,
+                    clock.get_time_ns(),
+                    account_id,
+                ) {
+                    tracing::error!("{reason}; failed to emit OrderModifyRejected: {send_error}");
+                }
             }
         });
 
@@ -1590,12 +1603,14 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     }
 
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
-        // Not-ready warning already logged; leave the cancel outcome for
-        // in-flight resolution.
-        if self
-            .ensure_client_ready_for_order_request("cancel order")
-            .is_err()
-        {
+        if let Err(reason) = self.ensure_client_ready_for_order_request("cancel order") {
+            Self::send_order_cancel_rejected(
+                &cmd,
+                &reason,
+                &get_exec_event_sender(),
+                get_atomic_clock_realtime().get_time_ns(),
+                self.core.account_id,
+            )?;
             return Ok(());
         }
 
@@ -1628,7 +1643,17 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             )
             .await
             {
-                tracing::error!("Error canceling order: {e}");
+                let reason = format!("Failed to route cancel order to IB: {e:#}");
+
+                if let Err(send_error) = Self::send_order_cancel_rejected(
+                    &cmd,
+                    &reason,
+                    &exec_sender,
+                    clock.get_time_ns(),
+                    account_id,
+                ) {
+                    tracing::error!("{reason}; failed to emit OrderCancelRejected: {send_error}");
+                }
             }
         });
 
@@ -1848,6 +1873,56 @@ impl InteractiveBrokersExecutionClient {
             .send(ExecutionEvent::Order(OrderEventAny::Denied(event)))
             .map_err(|e| anyhow::anyhow!("Failed to send order denied event: {e}"))
     }
+
+    fn send_order_modify_rejected(
+        cmd: &ModifyOrder,
+        reason: &str,
+        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        ts_event: UnixNanos,
+        account_id: AccountId,
+    ) -> anyhow::Result<()> {
+        let event = OrderModifyRejected::new(
+            cmd.trader_id,
+            cmd.strategy_id,
+            cmd.instrument_id,
+            cmd.client_order_id,
+            Ustr::from(reason),
+            UUID4::new(),
+            ts_event,
+            ts_event,
+            false,
+            cmd.venue_order_id,
+            Some(account_id),
+        );
+        exec_sender
+            .send(ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)))
+            .map_err(|e| anyhow::anyhow!("Failed to send order modify rejected event: {e}"))
+    }
+
+    fn send_order_cancel_rejected(
+        cmd: &CancelOrder,
+        reason: &str,
+        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        ts_event: UnixNanos,
+        account_id: AccountId,
+    ) -> anyhow::Result<()> {
+        let event = OrderCancelRejected::new(
+            cmd.trader_id,
+            cmd.strategy_id,
+            cmd.instrument_id,
+            cmd.client_order_id,
+            Ustr::from(reason),
+            UUID4::new(),
+            ts_event,
+            ts_event,
+            false,
+            cmd.venue_order_id,
+            Some(account_id),
+        );
+        exec_sender
+            .send(ExecutionEvent::Order(OrderEventAny::CancelRejected(event)))
+            .map_err(|e| anyhow::anyhow!("Failed to send order cancel rejected event: {e}"))
+    }
 }
 
 #[allow(dead_code)]
@@ -2005,12 +2080,15 @@ impl InteractiveBrokersExecutionClient {
             Self::resolve_ib_order_id(client, order_selector, account_id, request_timeout_secs)
                 .await?;
 
-        let _cancel_subscription = client
-            .cancel_order(ib_order_id, "")
-            .await
-            .context("Failed to cancel order with IB")?;
+        if let Err(e) = client.cancel_order(ib_order_id, "").await {
+            tracing::error!(
+                "Cancel outcome is unknown after attempting to send order {} to IB: {e}",
+                cmd.client_order_id
+            );
+            return Ok(());
+        }
 
-        Self::emit_order_pending_cancel(
+        if let Err(e) = Self::emit_order_pending_cancel(
             ib_order_id,
             cmd.client_order_id,
             instrument_id_map,
@@ -2020,7 +2098,12 @@ impl InteractiveBrokersExecutionClient {
             exec_sender,
             ts_init,
             account_id,
-        )?;
+        ) {
+            tracing::error!(
+                "Cancel request for order {} was sent, but OrderPendingCancel emission failed: {e}",
+                cmd.client_order_id
+            );
+        }
 
         Ok(())
     }
@@ -2050,6 +2133,10 @@ impl InteractiveBrokersExecutionClient {
                 continue;
             };
 
+            if !Self::is_active_open_order(&data.order) {
+                continue;
+            }
+
             if !data.order.account.is_empty() && data.order.account != raw_account_id {
                 continue;
             }
@@ -2068,6 +2155,33 @@ impl InteractiveBrokersExecutionClient {
         }
 
         anyhow::bail!("Cannot resolve PERM-{target_perm_id}: no matching open order found")
+    }
+
+    fn is_active_open_order(order: &ibapi::orders::Order) -> bool {
+        !order.deactivate
+    }
+
+    fn is_definitive_order_submit_error(error: &ibapi::Error) -> bool {
+        matches!(
+            error,
+            ibapi::Error::InvalidArgument(_) | ibapi::Error::ServerVersion(_, _, _)
+        )
+    }
+
+    fn classify_order_submit_error(error: &ibapi::Error) -> CommandFailure {
+        let reason = error.to_string();
+
+        if Self::is_definitive_order_submit_error(error) {
+            CommandFailure::not_sent(reason)
+        } else if matches!(
+            error,
+            ibapi::Error::Notice(notice)
+                if notice.category() == ibapi::NoticeCategory::OrderRejection
+        ) {
+            CommandFailure::venue_rejected(reason)
+        } else {
+            CommandFailure::ambiguous(reason)
+        }
     }
 
     async fn handle_cancel_all_orders_async(

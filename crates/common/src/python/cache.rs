@@ -15,7 +15,7 @@
 
 //! Python bindings for the [`Cache`] component.
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::LazyLock};
 
 use bytes::Bytes;
 use nautilus_core::python::to_pyvalue_err;
@@ -28,8 +28,8 @@ use nautilus_model::{
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
-        OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
+        StrategyId, Venue, VenueOrderId,
     },
     instruments::SyntheticInstrument,
     orderbook::{OrderBook, own::OwnOrderBook},
@@ -46,10 +46,22 @@ use pyo3::prelude::*;
 use rust_decimal::prelude::ToPrimitive;
 
 use crate::{
-    cache::{Cache, CacheConfig},
+    cache::{Cache, CacheConfig, database::CacheDatabaseFactory},
     enums::SerializationEncoding,
-    python::config_error_to_pyvalue_err,
+    python::{config_error_to_pyvalue_err, factory::FactoryRegistry},
 };
+
+/// Registry for Python cache database factory extractors.
+pub type CacheDatabaseFactoryRegistry = FactoryRegistry<dyn CacheDatabaseFactory>;
+
+static GLOBAL_CACHE_DATABASE_FACTORY_REGISTRY: LazyLock<CacheDatabaseFactoryRegistry> =
+    LazyLock::new(|| CacheDatabaseFactoryRegistry::new("cache database factory"));
+
+/// Returns the global Python cache database factory registry.
+#[must_use]
+pub fn get_global_cache_database_factory_registry() -> &'static CacheDatabaseFactoryRegistry {
+    &GLOBAL_CACHE_DATABASE_FACTORY_REGISTRY
+}
 
 /// Wrapper providing shared access to [`Cache`] from Python.
 ///
@@ -57,7 +69,7 @@ use crate::{
 /// the same cache instance. All methods delegate to the underlying cache.
 #[allow(non_camel_case_types)]
 #[pyo3::pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.common",
+    module = "nautilus_trader.common",
     name = "Cache",
     unsendable,
     from_py_object
@@ -601,11 +613,6 @@ impl PyCache {
             )
             .into_iter()
             .collect()
-    }
-
-    #[pyo3(name = "actor_ids")]
-    fn py_actor_ids(&self) -> Vec<ComponentId> {
-        self.0.borrow().actor_ids().into_iter().collect()
     }
 
     #[pyo3(name = "strategy_ids")]
@@ -1554,7 +1561,10 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if not `replace_existing` and the `order.client_order_id` is already contained in the cache.
+    /// Returns an error if not `replace_existing` and the `order.client_order_id` is already contained in the cache,
+    /// or if persisting the order to the backing database fails. The order and every index are
+    /// committed to memory before persistence is attempted, so a persistence error leaves the
+    /// cache internally consistent.
     #[pyo3(name = "add_order")]
     fn py_add_order(
         &mut self,
@@ -1720,7 +1730,9 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if persisting the position to the backing database fails.
+    /// Returns an error if persisting the position to the backing database fails. After
+    /// serialization succeeds, the complete operation is committed to memory before persistence
+    /// is attempted, so a persistence error leaves the cache internally consistent.
     #[pyo3(name = "add_position")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_position(
@@ -2217,12 +2229,6 @@ impl Cache {
         )
         .into_iter()
         .collect()
-    }
-
-    /// Returns the `ComponentId`s of all actors.
-    #[pyo3(name = "actor_ids")]
-    fn py_actor_ids(&self) -> Vec<ComponentId> {
-        self.actor_ids().into_iter().collect()
     }
 
     /// Returns the `StrategyId`s of all strategies.

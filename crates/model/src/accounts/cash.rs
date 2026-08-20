@@ -42,19 +42,22 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    accounts::{Account, base::BaseAccount},
+    accounts::{
+        Account,
+        base::{self, BaseAccount},
+    },
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
     identifiers::{AccountId, InstrumentId},
     instruments::InstrumentAny,
     position::Position,
-    types::{AccountBalance, Currency, Money, Price, Quantity, money::MoneyRaw},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -80,34 +83,27 @@ impl CashAccount {
     }
 
     /// Updates the locked balance for the given instrument and currency.
+    /// Leaves the existing balance and reservations unchanged if their precision differs.
     ///
     /// # Panics
     ///
     /// Panics if `locked` is negative.
     pub fn update_balance_locked(&mut self, instrument_id: InstrumentId, locked: Money) {
-        assert!(locked.raw >= 0, "locked balance was negative: {locked}");
-        let currency = locked.currency;
-        self.balances_locked
-            .insert((instrument_id, currency), locked);
-        self.recalculate_balance(currency);
+        base::update_balance_locked(
+            &mut self.base.balances,
+            &mut self.balances_locked,
+            instrument_id,
+            locked,
+        );
     }
 
     /// Clears all locked balances for the given instrument ID.
     pub fn clear_balance_locked(&mut self, instrument_id: InstrumentId) {
-        let currencies_to_recalc: Vec<Currency> = self
-            .balances_locked
-            .keys()
-            .filter(|(id, _)| *id == instrument_id)
-            .map(|(_, currency)| *currency)
-            .collect();
-
-        for currency in &currencies_to_recalc {
-            self.balances_locked.remove(&(instrument_id, *currency));
-        }
-
-        for currency in currencies_to_recalc {
-            self.recalculate_balance(currency);
-        }
+        base::clear_balance_locked(
+            &mut self.base.balances,
+            &mut self.balances_locked,
+            instrument_id,
+        );
     }
 
     /// Updates the account balances, enforcing borrowing constraints.
@@ -155,37 +151,7 @@ impl CashAccount {
     /// If the total locked exceeds the total balance, clamps to total (free = 0).
     ///
     pub fn recalculate_balance(&mut self, currency: Currency) {
-        let current_balance = if let Some(balance) = self.balances.get(&currency) {
-            *balance
-        } else {
-            log::debug!("Cannot recalculate balance when no current balance for {currency}");
-            return;
-        };
-
-        let total_locked_raw: MoneyRaw = self
-            .balances_locked
-            .values()
-            .filter(|locked| locked.currency == currency)
-            .map(|locked| locked.raw)
-            .fold(0, |acc, raw| acc.saturating_add(raw));
-
-        let total_raw = current_balance.total.raw;
-
-        // Clamp locked to total if it exceeds and total is non-negative.
-        // When total is negative (borrowing), keep locked as-is and allow free to be negative.
-        let (locked_raw, free_raw) = if total_locked_raw > total_raw && total_raw >= 0 {
-            (total_raw, 0)
-        } else {
-            (total_locked_raw, total_raw - total_locked_raw)
-        };
-
-        let new_balance = AccountBalance::new(
-            current_balance.total,
-            Money::from_raw(locked_raw, currency),
-            Money::from_raw(free_raw, currency),
-        );
-
-        self.balances.insert(currency, new_balance);
+        base::recalculate_balance(&mut self.base.balances, &self.balances_locked, currency);
     }
 }
 
@@ -374,15 +340,16 @@ mod tests {
     use ahash::AHashSet;
     use indexmap::IndexMap;
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use crate::{
         accounts::{Account, CashAccount, stubs::*},
-        enums::{AccountType, LiquiditySide, OrderSide, OrderType},
+        enums::{AccountType, CurrencyType, LiquiditySide, OrderSide, OrderType},
         events::{AccountState, account::stubs::*},
         identifiers::{AccountId, InstrumentId, position_id::PositionId, stubs::uuid4},
         instruments::{
-            CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, Instrument, InstrumentAny,
-            stubs::*,
+            Commodity, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, Instrument,
+            InstrumentAny, stubs::*,
         },
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
@@ -395,6 +362,53 @@ mod tests {
             format!("{cash_account}"),
             "CashAccount(id=SIM-001, type=CASH, base=USD)"
         );
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_buy_at_negative_price_reserves_nothing(
+        mut cash_account: CashAccount,
+        commodity_gold: Commodity,
+    ) {
+        let instrument = InstrumentAny::Commodity(commodity_gold);
+        assert!(
+            instrument.allows_negative_price(),
+            "fixture must admit a negative price for this case to arise"
+        );
+
+        let locked = cash_account
+            .calculate_balance_locked(
+                &instrument,
+                OrderSide::Buy,
+                Quantity::from("1"),
+                Price::from("-10.00"),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(locked, Money::from("0.00 USD"));
+
+        // Storing it must not trip the non-negative invariant in `update_balance_locked`.
+        cash_account.update_balance_locked(instrument.id(), locked);
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_buy_at_positive_price_reserves_the_notional(
+        mut cash_account: CashAccount,
+        commodity_gold: Commodity,
+    ) {
+        let instrument = InstrumentAny::Commodity(commodity_gold);
+
+        let locked = cash_account
+            .calculate_balance_locked(
+                &instrument,
+                OrderSide::Buy,
+                Quantity::from("1"),
+                Price::from("10.00"),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(locked, Money::from("10.00 USD"));
     }
 
     #[rstest]
@@ -935,6 +949,25 @@ mod tests {
         assert_eq!(balance.total, Money::from("10 BTC"));
         assert_eq!(balance.locked, Money::from("5 BTC"));
         assert_eq!(balance.free, Money::from("5 BTC"));
+    }
+
+    #[rstest]
+    fn test_update_balance_locked_precision_mismatch_preserves_state(
+        mut cash_account_multi: CashAccount,
+    ) {
+        let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+        let btc = Currency::BTC();
+        cash_account_multi.update_balance_locked(instrument_id, Money::from("3 BTC"));
+        let balance_before = *cash_account_multi.balance(Some(btc)).unwrap();
+        let locks_before = cash_account_multi.balances_locked.clone();
+        let mismatched_btc =
+            Currency::new("BTC", btc.precision - 1, 0, "Bitcoin", CurrencyType::Crypto);
+        let locked = Money::from_decimal(Decimal::from(2), mismatched_btc).unwrap();
+
+        cash_account_multi.update_balance_locked(instrument_id, locked);
+
+        assert_eq!(cash_account_multi.balance(Some(btc)), Some(&balance_before));
+        assert_eq!(cash_account_multi.balances_locked, locks_before);
     }
 
     #[rstest]

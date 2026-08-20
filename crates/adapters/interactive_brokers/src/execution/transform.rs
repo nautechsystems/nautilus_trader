@@ -15,7 +15,6 @@
 
 //! Order transformation utilities for converting Nautilus orders to IB orders.
 
-use chrono::{DateTime, Utc};
 use ibapi::{
     contracts::Contract,
     orders::{Action, Order as IBOrder, TimeInForce},
@@ -140,8 +139,10 @@ fn transform_time_in_force(
 }
 
 pub(super) fn format_ib_datetime(value: UnixNanos) -> String {
-    let dt = DateTime::<Utc>::from(value);
-    dt.format("%Y%m%d %H:%M:%S UTC").to_string()
+    value
+        .to_datetime_utc()
+        .strftime("%Y%m%d %H:%M:%S UTC")
+        .to_string()
 }
 
 pub(super) fn convert_price(price: Price, magnifier: f64) -> f64 {
@@ -171,7 +172,6 @@ pub(super) fn trigger_type_to_ib_trigger_method(
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
     use ibapi::{
         contracts::{Contract, Currency, Exchange, SecurityType, Symbol},
         orders::OrderCondition,
@@ -595,8 +595,8 @@ mod tests {
     #[rstest]
     fn test_gtd_orders_encode_ib_timestamp_string() {
         let expire_time = UnixNanos::from(
-            Utc.with_ymd_and_hms(2025, 1, 15, 14, 30, 0)
-                .single()
+            "2025-01-15T14:30:00Z"
+                .parse::<jiff::Timestamp>()
                 .expect("valid datetime"),
         );
         let order = OrderTestBuilder::new(OrderType::Limit)

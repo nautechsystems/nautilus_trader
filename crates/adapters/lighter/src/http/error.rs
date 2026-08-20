@@ -80,7 +80,7 @@ pub fn should_retry_lighter_http_error(error: &LighterHttpError) -> bool {
     }
 }
 
-/// Constructs a transport-shaped error for retry-manager timeout / cancellation paths.
+/// Constructs a transport-shaped error for failures synthesized by retry machinery.
 #[must_use]
 pub fn create_lighter_http_timeout_error(msg: String) -> LighterHttpError {
     LighterHttpError::Network(msg)

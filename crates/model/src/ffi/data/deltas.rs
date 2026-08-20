@@ -13,17 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{UnixNanos, ffi::cvec::CVec};
+use nautilus_core::{
+    UnixNanos,
+    ffi::{abort_on_panic, cvec::CVec},
+};
 
 use crate::{
-    data::{OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
+    data::{OrderBookDelta, OrderBookDeltas},
     enums::BookAction,
     identifiers::InstrumentId,
 };
 
-/// Creates a new [`OrderBookDeltas_API`] instance from a `CVec` of `OrderBookDelta`.
+/// Creates a new `OrderBookDeltas` instance from a `CVec` of `OrderBookDelta`.
 ///
 /// The data is cloned into Rust-managed memory and remains owned by the caller.
+///
+/// Returns an owning pointer to the heap-allocated `OrderBookDeltas` which the caller
+/// must eventually pass to [`orderbook_deltas_drop`].
 ///
 /// # Safety
 ///
@@ -33,28 +39,44 @@ use crate::{
 pub unsafe extern "C" fn orderbook_deltas_new(
     instrument_id: InstrumentId,
     deltas: &CVec,
-) -> OrderBookDeltas_API {
+) -> *mut OrderBookDeltas {
     let cloned_deltas = unsafe { deltas.as_slice::<OrderBookDelta>() }.to_vec();
-    OrderBookDeltas_API::new(OrderBookDeltas::new(instrument_id, cloned_deltas))
+    Box::into_raw(Box::new(OrderBookDeltas::new(instrument_id, cloned_deltas)))
+}
+
+/// # Safety
+///
+/// `deltas` must be a live owning pointer returned by [`orderbook_deltas_new`],
+/// [`orderbook_deltas_clone`], or
+/// [`orderbook_to_snapshot_deltas`](crate::ffi::orderbook::book::orderbook_to_snapshot_deltas), and
+/// must not be used after this call.
+///
+/// # Panics
+///
+/// Panics if `deltas` is null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orderbook_deltas_drop(deltas: *mut OrderBookDeltas) {
+    abort_on_panic(|| {
+        assert!(!deltas.is_null(), "`deltas` was NULL");
+        // SAFETY: Caller guarantees exclusive ownership of a live `Box` allocation
+        drop(unsafe { Box::from_raw(deltas) }); // Memory freed here
+    });
+}
+
+/// Returns an owning pointer to a deep copy of `deltas` which the caller must
+/// eventually pass to [`orderbook_deltas_drop`].
+#[unsafe(no_mangle)]
+pub extern "C" fn orderbook_deltas_clone(deltas: &OrderBookDeltas) -> *mut OrderBookDeltas {
+    Box::into_raw(Box::new(deltas.clone()))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_deltas_drop(deltas: OrderBookDeltas_API) {
-    drop(deltas); // Memory freed here
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn orderbook_deltas_clone(deltas: &OrderBookDeltas_API) -> OrderBookDeltas_API {
-    deltas.clone()
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn orderbook_deltas_instrument_id(deltas: &OrderBookDeltas_API) -> InstrumentId {
+pub extern "C" fn orderbook_deltas_instrument_id(deltas: &OrderBookDeltas) -> InstrumentId {
     deltas.instrument_id
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_deltas_vec_deltas(deltas: &OrderBookDeltas_API) -> CVec {
+pub extern "C" fn orderbook_deltas_vec_deltas(deltas: &OrderBookDeltas) -> CVec {
     deltas.deltas.clone().into()
 }
 
@@ -62,7 +84,7 @@ pub extern "C" fn orderbook_deltas_vec_deltas(deltas: &OrderBookDeltas_API) -> C
 ///
 /// Returns `0` for empty delta vectors to avoid panicking on malformed FFI input.
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_deltas_is_snapshot(deltas: &OrderBookDeltas_API) -> u8 {
+pub extern "C" fn orderbook_deltas_is_snapshot(deltas: &OrderBookDeltas) -> u8 {
     deltas
         .deltas
         .first()
@@ -70,22 +92,22 @@ pub extern "C" fn orderbook_deltas_is_snapshot(deltas: &OrderBookDeltas_API) -> 
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_deltas_flags(deltas: &OrderBookDeltas_API) -> u8 {
+pub extern "C" fn orderbook_deltas_flags(deltas: &OrderBookDeltas) -> u8 {
     deltas.flags
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_deltas_sequence(deltas: &OrderBookDeltas_API) -> u64 {
+pub extern "C" fn orderbook_deltas_sequence(deltas: &OrderBookDeltas) -> u64 {
     deltas.sequence
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_deltas_ts_event(deltas: &OrderBookDeltas_API) -> UnixNanos {
+pub extern "C" fn orderbook_deltas_ts_event(deltas: &OrderBookDeltas) -> UnixNanos {
     deltas.ts_event
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_deltas_ts_init(deltas: &OrderBookDeltas_API) -> UnixNanos {
+pub extern "C" fn orderbook_deltas_ts_init(deltas: &OrderBookDeltas) -> UnixNanos {
     deltas.ts_init
 }
 
@@ -122,10 +144,14 @@ mod tests {
             cap: caller_owned.capacity(),
         };
 
-        let deltas = unsafe { orderbook_deltas_new(delta.instrument_id, &cvec) };
+        let deltas_ptr = unsafe { orderbook_deltas_new(delta.instrument_id, &cvec) };
 
+        // SAFETY: `deltas_ptr` was just returned by `orderbook_deltas_new`
+        let deltas = unsafe { &*deltas_ptr };
         assert_eq!(deltas.deltas, caller_owned);
         caller_owned[0].sequence += 1;
         assert_ne!(deltas.deltas, caller_owned);
+
+        unsafe { orderbook_deltas_drop(deltas_ptr) };
     }
 }

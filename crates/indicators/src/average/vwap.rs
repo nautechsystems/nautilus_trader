@@ -23,7 +23,7 @@ use crate::indicator::Indicator;
 #[derive(Debug, Default)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.indicators")
 )]
 #[cfg_attr(
     feature = "python",
@@ -117,7 +117,10 @@ mod tests {
     use nautilus_model::data::Bar;
     use rstest::rstest;
 
-    use crate::{average::vwap::VolumeWeightedAveragePrice, indicator::Indicator, stubs::*};
+    use crate::{
+        average::vwap::VolumeWeightedAveragePrice, indicator::Indicator, stubs::*,
+        testing::assert_approx_equal,
+    };
 
     const NANOSECONDS_PER_DAY: f64 = 86_400.0 * 1_000_000_000.0;
     const DAY0: f64 = 10.0 * 1_000_000_000.0;
@@ -174,7 +177,7 @@ mod tests {
         bar_ethusdt_binance_minute_bid: Bar,
     ) {
         indicator_vwap.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(indicator_vwap.value, 1522.333333333333);
+        assert_approx_equal(indicator_vwap.value, 1522.33333333);
         assert!(indicator_vwap.initialized);
     }
 

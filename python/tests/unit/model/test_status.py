@@ -81,7 +81,7 @@ def test_instrument_status_to_dict_and_from_dict_roundtrip(audusd_id):
 
 
 def test_instrument_status_fully_qualified_name():
-    assert "InstrumentStatus" in InstrumentStatus.fully_qualified_name()
+    assert InstrumentStatus.fully_qualified_name() == "nautilus_trader.model:InstrumentStatus"
 
 
 def test_instrument_status_json_roundtrip(audusd_id):
@@ -174,7 +174,7 @@ def test_instrument_close_to_dict_and_from_dict_roundtrip(audusd_id):
 
 
 def test_instrument_close_fully_qualified_name():
-    assert "InstrumentClose" in InstrumentClose.fully_qualified_name()
+    assert InstrumentClose.fully_qualified_name() == "nautilus_trader.model:InstrumentClose"
 
 
 def test_instrument_close_json_roundtrip(audusd_id):

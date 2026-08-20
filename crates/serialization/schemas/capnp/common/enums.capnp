@@ -13,8 +13,8 @@ enum AccountType {
 
 enum AggressorSide {
     noAggressor @0;
-    buyer @1;
-    seller @2;
+    buy @1;
+    sell @2;
 }
 
 enum AssetClass {
@@ -142,13 +142,6 @@ enum BookType {
     topOfBookBidOffer @0;  # Level 1 Top-of-book bid and offer
     marketByPrice @1;       # Level 2 Market by price
     marketByOrder @2;       # Level 3 Market by order
-}
-
-enum OrderBookDeltaType {
-    add @0;
-    update @1;
-    delete @2;
-    clear @3;
 }
 
 enum RecordFlag {

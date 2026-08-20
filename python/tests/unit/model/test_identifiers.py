@@ -25,6 +25,7 @@ from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import ComponentId
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OptionSeriesId
 from nautilus_trader.model import OrderListId
 from nautilus_trader.model import PositionId
 from nautilus_trader.model import StrategyId
@@ -33,6 +34,22 @@ from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import Venue
 from nautilus_trader.model import VenueOrderId
+
+
+GENERATED_IDENTIFIER_CASES = (
+    (ActorId, "Actor-001"),
+    (AccountId, "SIM-001"),
+    (ClientId, "Client-001"),
+    (ClientOrderId, "Order-001"),
+    (ComponentId, "Component-001"),
+    (ExecAlgorithmId, "Algorithm-001"),
+    (OrderListId, "OrderList-001"),
+    (PositionId, "Position-001"),
+    (StrategyId, "Strategy-001"),
+    (TraderId, "Trader-001"),
+    (Venue, "Venue-001"),
+    (VenueOrderId, "VenueOrder-001"),
+)
 
 
 def test_trader_id_equality_and_value():
@@ -213,6 +230,39 @@ def test_instrument_id_pickle():
     assert unpickled == iid
 
 
+def test_option_series_id_construction():
+    series_id = OptionSeriesId("DERIBIT", "ETH", "USDC", 1_700_000_000_000_000_000)
+
+    assert series_id.venue == Venue("DERIBIT")
+    assert series_id.underlying == "ETH"
+    assert series_id.settlement_currency == "USDC"
+    assert series_id.expiration_ns == 1_700_000_000_000_000_000
+    assert series_id.value == "DERIBIT:ETH:USDC:2023-11-14T22:13:20Z"
+
+
+@pytest.mark.parametrize(
+    ("venue", "expected_err"),
+    [
+        (
+            "",
+            "invalid `OptionSeriesId` value ':ETH:USDC:1700000000000000000': "
+            "invalid venue: invalid string for 'value', was empty",
+        ),
+        (
+            "DÉRIBIT",
+            "invalid `OptionSeriesId` value 'DÉRIBIT:ETH:USDC:1700000000000000000': "
+            "invalid venue: invalid string for 'value' contained a non-ASCII char, was 'DÉRIBIT'",
+        ),
+    ],
+)
+def test_option_series_id_invalid_venue_raises(venue, expected_err):
+    with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
+        OptionSeriesId(venue, "ETH", "USDC", 1_700_000_000_000_000_000)
+
+    assert type(exc_info.value) is ValueError
+    assert str(exc_info.value) == expected_err
+
+
 def test_exec_algorithm_id():
     ea1 = ExecAlgorithmId("VWAP")
     ea2 = ExecAlgorithmId("TWAP")
@@ -316,30 +366,89 @@ def test_trade_id():
     assert repr(t1) == "TradeId('T-123456')"
 
 
+def test_trade_id_pickle():
+    trade_id = TradeId("T-123456")
+    pickled = pickle.dumps(trade_id)
+    unpickled = pickle.loads(pickled)  # noqa: S301
+
+    assert type(unpickled) is TradeId
+    assert unpickled == trade_id
+    assert unpickled.value == "T-123456"
+
+
 def test_trade_id_maximum_length():
     with pytest.raises(ValueError, match="exceeds maximum length"):
         TradeId("A" * 37)
 
 
-@pytest.mark.parametrize(
-    "id_obj",
-    [
-        ClientId("MyClient"),
-        ClientOrderId("O-123456"),
-        ComponentId("MyComponent"),
-        ExecAlgorithmId("VWAP"),
-        OrderListId("OL-123456"),
-        PositionId("P-123456"),
-        TradeId("T-123456"),
-        VenueOrderId("V-123456"),
-    ],
-)
-def test_identifier_pickle_roundtrip(id_obj):
-    pickled = pickle.dumps(id_obj)
+@pytest.mark.parametrize(("identifier_type", "value"), GENERATED_IDENTIFIER_CASES)
+def test_generated_identifier_from_str_invalid(identifier_type, value):
+    with pytest.raises(
+        ValueError,
+        match=re.escape("invalid string for 'value', was empty"),
+    ) as exc_info:
+        identifier_type.from_str("")
+
+    assert type(exc_info.value) is ValueError
+    assert str(exc_info.value) == "invalid string for 'value', was empty"
+
+
+@pytest.mark.parametrize(("identifier_type", "value"), GENERATED_IDENTIFIER_CASES)
+def test_generated_identifier_pickle_roundtrip(identifier_type, value):
+    identifier = identifier_type(value)
+    pickled = pickle.dumps(identifier)
     unpickled = pickle.loads(pickled)  # noqa: S301
 
-    assert unpickled == id_obj
-    assert unpickled.value == id_obj.value
+    assert type(unpickled) is identifier_type
+    assert unpickled == identifier
+    assert unpickled.value == value
+
+
+@pytest.mark.parametrize(("identifier_type", "value"), GENERATED_IDENTIFIER_CASES)
+def test_generated_identifier_invalid_pickle_state(identifier_type, value):
+    identifier = identifier_type(value)
+
+    with pytest.raises(
+        ValueError,
+        match=re.escape("invalid string for 'value', was empty"),
+    ) as exc_info:
+        identifier.__setstate__(("",))
+
+    assert type(exc_info.value) is ValueError
+    assert str(exc_info.value) == "invalid string for 'value', was empty"
+    assert identifier.value == value
+
+
+@pytest.mark.parametrize(
+    ("identifier_type", "value", "expected_error"),
+    [
+        (Symbol, "BTC/USD", "invalid string for 'value', was empty"),
+        (TradeId, "Trade-001", "String is empty"),
+    ],
+)
+def test_custom_identifier_invalid_pickle_state(identifier_type, value, expected_error):
+    identifier = identifier_type(value)
+
+    with pytest.raises(ValueError, match=re.escape(expected_error)) as exc_info:
+        identifier.__setstate__(("",))
+
+    assert type(exc_info.value) is ValueError
+    assert str(exc_info.value) == expected_error
+    assert identifier.value == value
+
+
+def test_instrument_id_invalid_pickle_state():
+    instrument_id = InstrumentId.from_str("BTC/USD.BINANCE")
+
+    with pytest.raises(
+        ValueError,
+        match=re.escape("invalid string for 'value', was empty"),
+    ) as exc_info:
+        instrument_id.__setstate__(("ETH/USD", ""))
+
+    assert type(exc_info.value) is ValueError
+    assert str(exc_info.value) == "invalid string for 'value', was empty"
+    assert instrument_id.value == "BTC/USD.BINANCE"
 
 
 @pytest.mark.parametrize(

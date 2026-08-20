@@ -4,6 +4,7 @@ import datetime
 import enum
 import typing
 
+from nautilus_trader import execution
 from nautilus_trader import model
 from nautilus_trader import network
 
@@ -16,6 +17,7 @@ __all__ = [
     "PolymarketDataLoader",
     "PolymarketExecClientConfig",
     "PolymarketExecutionClientFactory",
+    "PolymarketFeeModel",
     "PolymarketInstrumentProviderConfig",
     "PolymarketRtdsCryptoPrice",
     "PolymarketRtdsEquityPrice",
@@ -75,6 +77,8 @@ class PolymarketDataClientConfig:
     def transport_backend(self) -> network.TransportBackend: ...
     @property
     def drop_quotes_missing_side(self) -> bool: ...
+    @property
+    def compute_effective_deltas(self) -> bool: ...
     def __init__(
         self,
         instrument_config: PolymarketInstrumentProviderConfig | None = ...,
@@ -101,6 +105,7 @@ class PolymarketDataClientConfig:
         transport_backend: network.TransportBackend | None = None,
         drop_quotes_missing_side: bool | None = None,
         proxy_url: str | None = None,
+        compute_effective_deltas: bool | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
@@ -138,6 +143,8 @@ class PolymarketExecClientConfig:
     def heartbeat_enabled(self) -> bool: ...
     @property
     def transport_backend(self) -> network.TransportBackend: ...
+    @property
+    def instrument_config(self) -> PolymarketInstrumentProviderConfig | None: ...
     def __init__(
         self,
         trader_id: str | None = None,
@@ -158,6 +165,7 @@ class PolymarketExecClientConfig:
         heartbeat_enabled: bool | None = None,
         transport_backend: network.TransportBackend | None = None,
         proxy_url: str | None = None,
+        instrument_config: PolymarketInstrumentProviderConfig | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
@@ -166,6 +174,17 @@ class PolymarketExecClientConfig:
 class PolymarketExecutionClientFactory:
     def __init__(self) -> None: ...
     def name(self) -> str: ...
+
+@typing.final
+class PolymarketFeeModel(execution.FeeModel):
+    def __new__(cls) -> typing.Self: ...
+    def get_commission(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+    ) -> model.Money: ...
 
 @typing.final
 class PolymarketInstrumentProviderConfig:
@@ -182,6 +201,8 @@ class PolymarketInstrumentProviderConfig:
     @property
     def event_slug_builder(self) -> PolymarketUpDownEventSlugConfig | None: ...
     @property
+    def series_ids(self) -> list[int] | None: ...
+    @property
     def log_warnings(self) -> bool: ...
     @property
     def use_gamma_markets(self) -> bool: ...
@@ -195,6 +216,7 @@ class PolymarketInstrumentProviderConfig:
         event_slug_builder: PolymarketUpDownEventSlugConfig | None = None,
         log_warnings: bool | None = None,
         use_gamma_markets: bool | None = None,
+        series_ids: typing.Sequence[int] | None = None,
     ) -> None: ...
 
 @typing.final

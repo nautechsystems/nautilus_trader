@@ -23,11 +23,28 @@ use nautilus_common::{
     live::runner::{replace_data_event_sender, replace_exec_event_sender},
     messages::{DataEvent, ExecutionEvent},
 };
-use nautilus_model::identifiers::{AccountId, ClientId, TraderId};
+use nautilus_core::UnixNanos;
+use nautilus_execution::{
+    models::fee::FeeModel,
+    python::fee::{PyFeeModel, pyobject_to_fee_model_handle},
+};
+use nautilus_model::{
+    enums::{LiquiditySide, OrderSide, OrderType},
+    identifiers::{AccountId, ClientId, InstrumentId, TraderId},
+    instruments::{Instrument, InstrumentAny},
+    orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
+    types::{Price, Quantity},
+};
 use nautilus_polymarket::{
     common::consts::POLYMARKET,
-    config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
+    config::{
+        PolymarketDataClientConfig, PolymarketExecClientConfig, PolymarketInstrumentProviderConfig,
+    },
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
+    http::{
+        models::GammaMarket,
+        parse::{create_instrument_from_def, parse_gamma_market},
+    },
     python,
 };
 use nautilus_system::get_global_pyo3_registry;
@@ -36,6 +53,7 @@ use pyo3::{
     types::{PyAnyMethods, PyModule},
 };
 use rstest::rstest;
+use rust_decimal_macros::dec;
 
 const SMOKE_PRIVATE_KEY: &str =
     "0x59c6995e998f97a5a0044966f094538a1da6d1310dce3f687da73cf015b05d7e";
@@ -77,6 +95,43 @@ fn test_polymarket_python_module_registers_data_loader() {
         );
         assert!(loader.getattr("from_market_slug").is_ok());
         assert!(loader.getattr("query_events").is_ok());
+    });
+}
+
+#[rstest]
+fn test_polymarket_python_fee_model_uses_runtime_handle() {
+    Python::initialize();
+
+    Python::attach(|py| {
+        let module = PyModule::new(py, "polymarket").expect("Polymarket module should be created");
+        python::polymarket(py, &module).expect("Polymarket Python module should register");
+        let model = module
+            .getattr("PolymarketFeeModel")
+            .expect("PolymarketFeeModel should be registered")
+            .call0()
+            .expect("PolymarketFeeModel should construct");
+        let handle = pyobject_to_fee_model_handle(&model).expect("fee model should extract");
+        let instrument = fee_instrument();
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .price(Price::from("0.50"))
+            .quantity(Quantity::from("100"))
+            .build();
+        let order = TestOrderStubs::make_filled_order(&order, &instrument, LiquiditySide::Maker);
+
+        let commission = handle
+            .get_commission(
+                &order,
+                Quantity::from("100"),
+                Price::from("0.50"),
+                &instrument,
+            )
+            .unwrap();
+
+        assert!(model.is_instance_of::<PyFeeModel>());
+        assert_eq!(commission.as_decimal(), dec!(-0.18750));
+        assert_eq!(commission.currency, instrument.quote_currency());
     });
 }
 
@@ -140,6 +195,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
 fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     let trader_id = TraderId::from("TRADER-001");
     let account_id = AccountId::from("POLYMARKET-001");
+    let scoped = InstrumentId::from("0xabc-123.POLYMARKET");
     let factory = Py::new(py, PolymarketExecutionClientFactory)
         .expect("factory should convert to Python object")
         .into_any();
@@ -153,6 +209,10 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             api_secret: Some(SMOKE_API_SECRET.to_string()),
             passphrase: Some(SMOKE_PASSPHRASE.to_string()),
             heartbeat_enabled: true,
+            instrument_config: Some(PolymarketInstrumentProviderConfig {
+                load_ids: Some(vec![scoped]),
+                ..Default::default()
+            }),
             ..PolymarketExecClientConfig::default()
         },
     )
@@ -188,8 +248,21 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     assert_eq!(polymarket_config.account_id, account_id);
     assert!(polymarket_config.heartbeat_enabled);
     assert_eq!(
+        polymarket_config.reconciliation_load_ids(),
+        Some([scoped].as_slice())
+    );
+    assert_eq!(
         client.client_id(),
         ClientId::from("POLYMARKET-EXEC-EXTRACTED")
     );
     assert_eq!(client.account_id(), account_id);
+}
+
+fn fee_instrument() -> InstrumentAny {
+    let market: GammaMarket = serde_json::from_str(include_str!(
+        "../test_data/gamma_market_sports_market_money_line.json"
+    ))
+    .unwrap();
+    let def = parse_gamma_market(&market).unwrap().remove(0);
+    create_instrument_from_def(&def, UnixNanos::default()).unwrap()
 }

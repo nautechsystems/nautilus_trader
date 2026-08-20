@@ -71,7 +71,7 @@ def test_mark_price_update_to_dict_and_from_dict_roundtrip(audusd_id):
 
 
 def test_mark_price_update_fully_qualified_name():
-    assert "MarkPriceUpdate" in MarkPriceUpdate.fully_qualified_name()
+    assert MarkPriceUpdate.fully_qualified_name() == "nautilus_trader.model:MarkPriceUpdate"
 
 
 def test_mark_price_update_pickle_roundtrip(audusd_id):
@@ -166,7 +166,7 @@ def test_index_price_update_to_dict_and_from_dict_roundtrip(audusd_id):
 
 
 def test_index_price_update_fully_qualified_name():
-    assert "IndexPriceUpdate" in IndexPriceUpdate.fully_qualified_name()
+    assert IndexPriceUpdate.fully_qualified_name() == "nautilus_trader.model:IndexPriceUpdate"
 
 
 def test_index_price_update_pickle_roundtrip(audusd_id):

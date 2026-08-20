@@ -272,6 +272,65 @@ mod tests {
     }
 
     #[rstest]
+    fn official_l1_dummy_action_signature_matches_python_sdk_for_both_environments() {
+        // Official L1 vector from hyperliquid-python-sdk tests/signing_test.py
+        // (revision 2fdb18f9517675ea03695a0962bd19eece9c83f0).
+        #[derive(Serialize)]
+        struct DummyAction<'a> {
+            #[serde(rename = "type")]
+            action_type: &'a str,
+            num: u64,
+        }
+
+        let python_quantity_hex = |value: &str| {
+            let digits = value.trim_start_matches("0x").trim_start_matches('0');
+            format!("0x{}", if digits.is_empty() { "0" } else { digits })
+        };
+
+        let private_key = EvmPrivateKey::new(
+            "0x0123456789012345678901234567890123456789012345678901234567890123",
+        )
+        .unwrap();
+        let signer = HyperliquidEip712Signer::new(&private_key).unwrap();
+        let action_bytes = rmp_serde::to_vec_named(&DummyAction {
+            action_type: "dummy",
+            num: 100_000_000_000,
+        })
+        .unwrap();
+        let request = |is_testnet| SignRequest {
+            action: None,
+            action_bytes: Some(action_bytes.clone()),
+            time_nonce: TimeNonce::from_millis(0),
+            action_type: HyperliquidActionType::L1,
+            is_testnet,
+            vault_address: None,
+            expires_after: None,
+        };
+
+        let mainnet = signer.sign_l1_action(&request(false)).unwrap();
+        assert_eq!(
+            python_quantity_hex(&mainnet.r),
+            "0x53749d5b30552aeb2fca34b530185976545bb22d0b3ce6f62e31be961a59298"
+        );
+        assert_eq!(
+            mainnet.s,
+            "0x755c40ba9bf05223521753995abb2f73ab3229be8ec921f350cb447e384d8ed8"
+        );
+        assert_eq!(mainnet.v, 27);
+
+        let testnet = signer.sign_l1_action(&request(true)).unwrap();
+        assert_eq!(
+            testnet.r,
+            "0x542af61ef1f429707e3c76c5293c80d01f74ef853e34b76efffcb57e574f9510"
+        );
+        assert_eq!(
+            testnet.s,
+            "0x17b8b32f086e8cdede991f1e2c529f5dd5297cbe8128500e00cbaf766204a613"
+        );
+        assert_eq!(testnet.v, 28);
+    }
+
+    #[rstest]
     fn test_sign_user_signed_returns_error() {
         let private_key = EvmPrivateKey::new(
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",

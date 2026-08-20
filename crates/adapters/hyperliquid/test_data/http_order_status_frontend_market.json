@@ -1,0 +1,25 @@
+{
+  "status": "order",
+  "order": {
+    "order": {
+      "coin": "ETH",
+      "side": "A",
+      "limitPx": "2412.7",
+      "sz": "0.0",
+      "oid": 1,
+      "timestamp": 1724361546645,
+      "triggerCondition": "N/A",
+      "isTrigger": false,
+      "triggerPx": "0.0",
+      "children": [],
+      "isPositionTpsl": false,
+      "reduceOnly": true,
+      "orderType": "Market",
+      "origSz": "0.0076",
+      "tif": "FrontendMarket",
+      "cloid": null
+    },
+    "status": "filled",
+    "statusTimestamp": 1724361546645
+  }
+}

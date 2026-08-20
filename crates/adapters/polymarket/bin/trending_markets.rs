@@ -89,10 +89,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (i, instrument) in instruments.into_iter().enumerate() {
         let id = Instrument::id(instrument);
         let expiration = Instrument::expiration_ns(instrument).map_or("N/A".to_string(), |ns| {
-            let secs = (ns.as_u64() / 1_000_000_000) as i64;
-            chrono::DateTime::from_timestamp(secs, 0).map_or("N/A".to_string(), |dt| {
-                dt.format("%Y-%m-%d %H:%M UTC").to_string()
-            })
+            ns.to_datetime_utc()
+                .strftime("%Y-%m-%d %H:%M UTC")
+                .to_string()
         });
 
         if let InstrumentAny::BinaryOption(opt) = instrument {

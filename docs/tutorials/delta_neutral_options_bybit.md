@@ -1,7 +1,7 @@
 # Delta-Neutral Options Strategy (Bybit)
 
 :::note
-This is a **Rust-only** v2 system tutorial. It runs a live delta-neutral
+This is a **Rust-only** system tutorial. It runs a live delta-neutral
 short-volatility strategy on Bybit using the Rust `LiveNode`.
 :::
 

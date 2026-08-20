@@ -2,21 +2,20 @@
 
 `FIX OrdType <40>=2`
 
-A *Limit* order is placed on the limit order book at a specific price, and will only
-execute at that price (or better).
+A *Limit* order rests on the limit order book at a specified price and executes only at that price
+or better.
 
 ## Use cases
 
-Use a *Limit* order when you want to control the execution price, and optionally provide liquidity:
-market making, scaling into or out of a position at chosen levels, or capturing maker fee tiers with
-`post_only`. The advantage is that it never fills worse than your price. The tradeoff is no execution
-guarantee: the order may rest unfilled, or only partially fill, if the market never reaches or holds
-your price.
+Use a *Limit* order to control the execution price and, when appropriate, provide liquidity. Common
+uses include market making, scaling into or out of a position at chosen levels, and targeting maker
+fees with `post_only`. The order cannot fill worse than its limit price, but it may remain unfilled or
+fill only partially.
 
 ## Example
 
-In the following example we create a *Limit* order on the Binance Futures Crypto exchange to SELL 20 ETHUSDT-PERP Perpetual Futures
-contracts at a limit price of 5000 USDT, as a market maker.
+In the following example we create a *Limit* order on the Binance Futures Crypto exchange to SELL
+20 ETHUSDT-PERP Perpetual Futures contracts at a limit price of 5000 USDT, as a market maker.
 
 ```rust tab="Rust"
 use nautilus_model::{
@@ -46,12 +45,12 @@ let order = self.order().limit(
 ```
 
 ```python tab="Python"
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import LimitOrder
+from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model import TimeInForce
 
 order: LimitOrder = self.order_factory.limit(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
@@ -67,7 +66,8 @@ order: LimitOrder = self.order_factory.limit(
 )
 ```
 
-See the [`LimitOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.limit.LimitOrder) for further details.
+See the [`LimitOrder` API reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.LimitOrder)
+for further details.
 
 ## Related guides
 

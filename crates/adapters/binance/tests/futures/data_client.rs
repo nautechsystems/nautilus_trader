@@ -52,9 +52,9 @@ use nautilus_binance::{
 };
 use nautilus_common::{
     clients::DataClient,
-    live::runner::set_data_event_sender,
+    live::runner::{set_data_event_sender, set_system_event_sender},
     messages::{
-        DataEvent,
+        DataEvent, SystemEvent,
         data::{
             DataResponse, RequestBars, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
             RequestTrades,
@@ -66,6 +66,7 @@ use nautilus_common::{
                 UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeQuotes, UnsubscribeTrades,
             },
         },
+        system::SocketState,
     },
     testing::wait_until_async,
 };
@@ -573,7 +574,7 @@ fn futures_agg_trades_response(
         .get("startTime")
         .or_else(|| query.get("endTime"))
         .and_then(|value| value.parse().ok())
-        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond());
     state
         .market_queries
         .lock()
@@ -621,7 +622,7 @@ fn futures_klines_response(
     let close_time = query
         .get("endTime")
         .and_then(|value| value.parse::<i64>().ok())
-        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis() - 1_000);
+        .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond() - 1_000);
     state
         .market_queries
         .lock()
@@ -897,6 +898,53 @@ async fn test_connect_emits_instruments() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_emits_socket_state_changes() {
+    let addr = start_data_test_server().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    set_system_event_sender(system_tx);
+    let (mut client, _data_rx) = create_test_data_client(base_url_http, base_url_ws);
+
+    client.connect().await.unwrap();
+
+    let mut changes = Vec::new();
+    wait_until_async(
+        || {
+            while let Ok(event) = system_rx.try_recv() {
+                let SystemEvent::SocketState(change) = event;
+                changes.push(change);
+            }
+            let done = changes.len() == 2;
+            async move { done }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(changes.len(), 2);
+    assert_eq!(changes[0].client_id, *BINANCE_CLIENT_ID);
+    assert_eq!(changes[0].venue, Some(*BINANCE_VENUE));
+    assert_eq!(
+        changes[0].endpoint,
+        ustr::Ustr::from("binance-futures-market-streams")
+    );
+    assert_eq!(changes[0].state, SocketState::Connected);
+    assert_eq!(changes[1].client_id, *BINANCE_CLIENT_ID);
+    assert_eq!(changes[1].venue, Some(*BINANCE_VENUE));
+    assert_eq!(
+        changes[1].endpoint,
+        ustr::Ustr::from("binance-futures-public-streams")
+    );
+    assert_eq!(changes[1].state, SocketState::Connected);
+
+    client.disconnect().await.unwrap();
+
+    assert!(system_rx.try_recv().is_err());
 }
 
 #[rstest]
@@ -1349,20 +1397,20 @@ async fn test_request_bounded_aggregate_trades_routes_futures_product(
 
     while rx.try_recv().is_ok() {}
     let instrument_id = InstrumentId::from(instrument);
-    let start = chrono::Utc::now() - chrono::Duration::minutes(10);
-    let end = start + chrono::Duration::minutes(5);
+    let start = jiff::Timestamp::now() - jiff::SignedDuration::from_mins(10);
+    let end = start + jiff::SignedDuration::from_mins(5);
     let (request_start, request_end) = match bounds {
         AggregateTradeBounds::Start => (Some(start), None),
         AggregateTradeBounds::End => (None, Some(end)),
         AggregateTradeBounds::Both => (Some(start), Some(end)),
     };
-    let expected_start = request_start.map(|value| value.timestamp_millis().to_string());
-    let expected_end = request_end.map(|value| value.timestamp_millis().to_string());
+    let expected_start = request_start.map(|value| value.as_millisecond().to_string());
+    let expected_end = request_end.map(|value| value.as_millisecond().to_string());
     let expected_event_time = request_start
         .as_ref()
         .or(request_end.as_ref())
         .unwrap()
-        .timestamp_millis();
+        .as_millisecond();
 
     client
         .request_trades(RequestTrades::new(
@@ -1444,8 +1492,8 @@ async fn test_request_historical_binance_bars_routes_futures_product(
     while rx.try_recv().is_ok() {}
     let bar_type = BarType::from(bar_type_raw);
     let data_type = binance_bar_data_type(bar_type);
-    let start = chrono::DateTime::from_timestamp_millis(1_700_000_000_000).unwrap();
-    let end = chrono::DateTime::from_timestamp_millis(1_700_000_059_999).unwrap();
+    let start = jiff::Timestamp::from_millisecond(1_700_000_000_000).unwrap();
+    let end = jiff::Timestamp::from_millisecond(1_700_000_059_999).unwrap();
 
     client
         .request_data(RequestCustomData::new(
@@ -1713,7 +1761,7 @@ async fn test_subscribe_l1_mbp_uses_book_ticker_and_rejects_invalid_depth() {
     let Data::Deltas(deltas) = data else {
         panic!("expected L1 deltas");
     };
-    assert_eq!(deltas.into_inner(), expected_l1_deltas(quote, 12345));
+    assert_eq!(*deltas, expected_l1_deltas(quote, 12345));
 
     let invalid = client.subscribe_book_deltas(SubscribeBookDeltas::new(
         InstrumentId::from("ETHUSDT-PERP.BINANCE"),

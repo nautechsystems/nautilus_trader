@@ -25,7 +25,7 @@ use strum::IntoEnumIterator;
 
 use crate::types::{Currency, Money};
 
-pub const PY_MODULE_MODEL: &str = "nautilus_trader.core.nautilus_pyo3.model";
+pub const PY_MODULE_MODEL: &str = "nautilus_trader.model";
 
 /// Python iterator over the variants of an enum.
 #[allow(missing_debug_implementations)]

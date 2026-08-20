@@ -30,7 +30,7 @@ def trade(audusd_id):
         instrument_id=audusd_id,
         price=Price.from_str("1.00001"),
         size=Quantity.from_int(10_000),
-        aggressor_side=AggressorSide.BUYER,
+        aggressor_side=AggressorSide.BUY,
         trade_id=TradeId("123456"),
         ts_event=1,
         ts_init=2,
@@ -38,10 +38,7 @@ def trade(audusd_id):
 
 
 def test_trade_fully_qualified_name():
-    module_name, _, type_name = TradeTick.fully_qualified_name().partition(":")
-
-    assert module_name
-    assert type_name == "TradeTick"
+    assert TradeTick.fully_qualified_name() == "nautilus_trader.model:TradeTick"
     assert TradeTick.__module__ == "nautilus_trader.model"
 
 
@@ -49,7 +46,7 @@ def test_trade_construction(trade, audusd_id):
     assert trade.instrument_id == audusd_id
     assert trade.price == Price.from_str("1.00001")
     assert trade.size == Quantity.from_int(10_000)
-    assert trade.aggressor_side == AggressorSide.BUYER
+    assert trade.aggressor_side == AggressorSide.BUY
     assert trade.trade_id == TradeId("123456")
     assert trade.ts_event == 1
     assert trade.ts_init == 2
@@ -60,15 +57,15 @@ def test_trade_hash_str_and_repr(audusd_id):
         instrument_id=audusd_id,
         price=Price.from_str("1.00000"),
         size=Quantity.from_int(50_000),
-        aggressor_side=AggressorSide.BUYER,
+        aggressor_side=AggressorSide.BUY,
         trade_id=TradeId("123456789"),
         ts_event=1,
         ts_init=2,
     )
 
     assert isinstance(hash(trade), int)
-    assert str(trade) == "AUD/USD.SIM,1.00000,50000,BUYER,123456789,1"
-    assert repr(trade) == "TradeTick(AUD/USD.SIM,1.00000,50000,BUYER,123456789,1)"
+    assert str(trade) == "AUD/USD.SIM,1.00000,50000,BUY,123456789,1"
+    assert repr(trade) == "TradeTick(AUD/USD.SIM,1.00000,50000,BUY,123456789,1)"
 
 
 def test_trade_equality(audusd_id):
@@ -76,7 +73,7 @@ def test_trade_equality(audusd_id):
         instrument_id=audusd_id,
         price=Price.from_str("1.00001"),
         size=Quantity.from_int(50_000),
-        aggressor_side=AggressorSide.BUYER,
+        aggressor_side=AggressorSide.BUY,
         trade_id=TradeId("123456"),
         ts_event=0,
         ts_init=0,
@@ -85,7 +82,7 @@ def test_trade_equality(audusd_id):
         instrument_id=audusd_id,
         price=Price.from_str("1.00001"),
         size=Quantity.from_int(50_000),
-        aggressor_side=AggressorSide.BUYER,
+        aggressor_side=AggressorSide.BUY,
         trade_id=TradeId("123456"),
         ts_event=0,
         ts_init=0,
@@ -99,7 +96,7 @@ def test_trade_pickle_roundtrip(audusd_id):
         instrument_id=audusd_id,
         price=Price.from_str("1.00001"),
         size=Quantity.from_int(50_000),
-        aggressor_side=AggressorSide.SELLER,
+        aggressor_side=AggressorSide.SELL,
         trade_id=TradeId("789"),
         ts_event=5,
         ts_init=6,
@@ -124,7 +121,7 @@ def test_trade_to_dict(audusd_id):
         instrument_id=audusd_id,
         price=Price.from_str("1.00000"),
         size=Quantity.from_int(10_000),
-        aggressor_side=AggressorSide.BUYER,
+        aggressor_side=AggressorSide.BUY,
         trade_id=TradeId("123456789"),
         ts_event=1,
         ts_init=2,
@@ -137,7 +134,7 @@ def test_trade_to_dict(audusd_id):
         "instrument_id": "AUD/USD.SIM",
         "price": "1.00000",
         "size": "10000",
-        "aggressor_side": "BUYER",
+        "aggressor_side": "BUY",
         "trade_id": "123456789",
         "ts_event": 1,
         "ts_init": 2,
@@ -149,7 +146,7 @@ def test_trade_from_dict_roundtrip(audusd_id):
         instrument_id=audusd_id,
         price=Price.from_str("1.00001"),
         size=Quantity.from_int(50_000),
-        aggressor_side=AggressorSide.BUYER,
+        aggressor_side=AggressorSide.BUY,
         trade_id=TradeId("TRADE-1"),
         ts_event=100,
         ts_init=200,
@@ -170,7 +167,7 @@ def test_trade_from_raw(audusd_id):
         price_prec=price.precision,
         size_raw=size.raw,
         size_prec=size.precision,
-        aggressor_side=AggressorSide.BUYER,
+        aggressor_side=AggressorSide.BUY,
         trade_id=TradeId("RAW-001"),
         ts_event=1,
         ts_init=2,
@@ -179,7 +176,7 @@ def test_trade_from_raw(audusd_id):
     assert trade.instrument_id == audusd_id
     assert trade.price == price
     assert trade.size == size
-    assert trade.aggressor_side == AggressorSide.BUYER
+    assert trade.aggressor_side == AggressorSide.BUY
     assert trade.trade_id == TradeId("RAW-001")
     assert trade.ts_event == 1
     assert trade.ts_init == 2

@@ -59,7 +59,7 @@ impl BlockPosition {
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -206,13 +206,23 @@ impl Display for Block {
 #[cfg(test)]
 mod tests {
     use alloy_primitives::U256;
-    use chrono::{TimeZone, Utc};
+    use jiff::{Timestamp, civil::Date, tz::Offset};
     use nautilus_core::UnixNanos;
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
     use super::Block;
     use crate::defi::{Blockchain, chain::chains, rpc::RpcNodeWssResponse};
+
+    fn utc_timestamp(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
+        Offset::UTC
+            .to_timestamp(
+                Date::new(year, month, day)
+                    .unwrap()
+                    .at(hour, minute, second, 0),
+            )
+            .unwrap()
+    }
 
     #[fixture]
     fn eth_rpc_block_response() -> String {
@@ -390,7 +400,7 @@ mod tests {
         // Timestamp of block is on Apr-18-2025 06:44:11 AM +UTC
         assert_eq!(
             block.timestamp,
-            UnixNanos::from(Utc.with_ymd_and_hms(2025, 4, 18, 6, 44, 11).unwrap())
+            UnixNanos::from(utc_timestamp(2025, 4, 18, 6, 44, 11))
         );
         assert_eq!(block.gas_used, 14_563_593);
         assert_eq!(block.gas_limit, 35_894_433);
@@ -426,7 +436,7 @@ mod tests {
         // Timestamp of block is on Apr-18-2025 01:17:09 PM +UTC
         assert_eq!(
             block.timestamp,
-            UnixNanos::from(Utc.with_ymd_and_hms(2025, 4, 18, 13, 17, 9).unwrap())
+            UnixNanos::from(utc_timestamp(2025, 4, 18, 13, 17, 9))
         );
         assert_eq!(block.gas_used, 19_336_980);
         assert_eq!(block.gas_limit, 30_000_000);
@@ -461,7 +471,7 @@ mod tests {
         // Timestamp of block is on Apr 19 2025 13:16:43 PM +UTC
         assert_eq!(
             block.timestamp,
-            UnixNanos::from(Utc.with_ymd_and_hms(2025, 4, 19, 13, 16, 43).unwrap())
+            UnixNanos::from(utc_timestamp(2025, 4, 19, 13, 16, 43))
         );
         assert_eq!(block.gas_used, 91_213_350);
         assert_eq!(block.gas_limit, 120_000_000);
@@ -497,7 +507,7 @@ mod tests {
         // Timestamp of block is on Apr-19-2025 13:32:54 PM +UTC
         assert_eq!(
             block.timestamp,
-            UnixNanos::from(Utc.with_ymd_and_hms(2025, 4, 19, 13, 32, 54).unwrap())
+            UnixNanos::from(utc_timestamp(2025, 4, 19, 13, 32, 54))
         );
         assert_eq!(block.gas_used, 97012);
         assert_eq!(block.gas_limit, 1_125_899_906_842_624);

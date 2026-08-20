@@ -23,7 +23,6 @@ use nautilus_core::{
 };
 use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::http::{HttpClient, USER_AGENT};
-use ustr::Ustr;
 
 use super::{
     error::{Error, TardisErrorResponse},
@@ -49,7 +48,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// See <https://docs.tardis.dev/api/http>.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.tardis", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -282,7 +281,7 @@ impl TardisHttpClient {
 
                 let info = TardisInstrumentMiniInfo::new(
                     instrument_id,
-                    Some(Ustr::from(&inst.id)),
+                    Some(inst.id),
                     *exchange,
                     price_precision,
                     size_precision,

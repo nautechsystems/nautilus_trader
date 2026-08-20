@@ -1,19 +1,18 @@
 # Positions
 
-This guide explains how positions work in NautilusTrader, including their lifecycle, aggregation
-from order fills, profit and loss calculations, and the important concept of position snapshotting
-for netting OMS configurations.
+This guide explains how NautilusTrader creates and updates positions from order fills, calculates
+profit and loss (PnL), and preserves closed cycles under `NETTING` order management system (OMS)
+configurations.
 
 ## Overview
 
-A position represents an open exposure to a particular instrument in the market. Positions are
-fundamental to tracking trading performance and risk, as they aggregate all fills for a particular
-instrument and continuously calculate metrics like unrealized PnL, average entry price, and total
-exposure.
+A position records exposure to an instrument during an open‑close cycle. It aggregates the fills
+assigned to one position ID and tracks its quantity, average prices, realized PnL, commissions, and
+related identifiers. Use a market price with the position's methods to calculate unrealized PnL and
+notional value.
 
-The system automatically creates positions when orders fill and tracks them
-from open to close. The platform supports both netting
-and hedging position management styles through its OMS (Order Management System) configuration.
+The execution engine creates positions when orders fill and tracks them from open to close. OMS
+configuration determines whether fills share a net position or remain in separate hedged positions.
 
 ## Position lifecycle
 
@@ -21,14 +20,15 @@ and hedging position management styles through its OMS (Order Management System)
 
 The system opens a position on the first fill:
 
-- **NETTING OMS**: Opens on first fill for an instrument (one position per instrument).
+- **NETTING OMS**: Opens on the first fill for an instrument and strategy. The position uses the
+  deterministic ID `{instrument_id}-{strategy_id}`.
 - **HEDGING OMS**: Opens on first fill for a new `position_id` (multiple positions per instrument).
 
 A position tracks:
 
 - Opening order and fill details.
-- Entry side (`LONG` or `SHORT`).
-- Initial quantity and average price.
+- Entry side (`BUY` or `SELL`).
+- Quantity and average entry price after applying the opening fill.
 - Timestamps for initialization and opening.
 
 :::tip
@@ -42,8 +42,8 @@ As additional fills occur, the position:
 
 - Aggregates quantities from buy and sell fills.
 - Recalculates average entry and exit prices.
-- Updates peak quantity (maximum exposure reached).
-- Tracks all associated order IDs and trade IDs.
+- Updates peak quantity for the current cycle.
+- Tracks the current cycle's order IDs and trade IDs.
 - Accumulates commissions by currency.
 
 ### Closure
@@ -53,7 +53,8 @@ A position closes when the net quantity becomes zero (`FLAT`). At closure:
 - The closing order ID is recorded.
 - Duration is calculated from open to close.
 - Final realized PnL is computed.
-- In `NETTING` OMS, when the position later reopens, the engine snapshots the closed state to preserve historical PnL (see [Position snapshotting](#position-snapshotting)).
+- In `NETTING` OMS, when the position later reopens, the engine snapshots the closed state to
+  preserve historical PnL (see [Position snapshotting](#position-snapshotting)).
 
 ## Order fill aggregation
 
@@ -92,7 +93,7 @@ The position maintains a `signed_qty` field representing the net exposure:
 signed_qty = +100  # LONG position
 
 # Subsequent SELL 150 units at $55
-signed_qty = -50  # Now SHORT position
+signed_qty = -50  # Closes the LONG cycle and opens a SHORT cycle
 
 # Final BUY 50 units at $52
 signed_qty = 0  # Position FLAT (closed)
@@ -100,13 +101,12 @@ signed_qty = 0  # Position FLAT (closed)
 
 ## Position adjustments
 
-Position adjustments track quantity or PnL changes that occur outside of normal order fills,
-ensuring the position quantity accurately reflects the true net asset position. The system
-generates `PositionAdjusted` events for these scenarios.
+Position adjustments record quantity or PnL changes that occur outside normal order fills. The
+system represents these changes as `PositionAdjusted` events.
 
-### Base currency commissions
+### Base-currency commissions
 
-When trading spot currency pairs (e.g., BTC/USDT) or FX spot, commissions paid in the base
+When trading spot currency pairs (for example, BTC/USDT) or FX spot, commissions paid in the base
 currency directly affect the net quantity received or delivered:
 
 - **Opening fills**: Commission is deducted from the traded quantity. A buy of 1.0 BTC with
@@ -117,7 +117,7 @@ currency directly affect the net quantity received or delivered:
 - **Flips**: Commission affects the final position size on both sides of the flip.
 
 :::note
-Base currency commissions only apply to spot currency pairs and FX spot instruments where the
+Base‑currency commissions only apply to spot currency pairs and FX spot instruments where the
 commission currency matches `instrument.base_currency`. For other instruments, commissions are
 tracked separately and do not affect position quantity.
 :::
@@ -125,31 +125,33 @@ tracked separately and do not affect position quantity.
 ### Funding payments
 
 Funding adjustments track periodic payments for perpetual futures without affecting position
-quantity. These are logged with `quantity_change = None` and can include PnL impacts.
+quantity. They use `quantity_change = None` and can include a PnL change.
 
 ### Adjustment tracking
 
-All adjustments are preserved in the position event history:
+The position exposes its retained adjustments:
 
-- `position.adjustments` returns the list of all `PositionAdjusted` events.
-- Each adjustment includes type (`COMMISSION` or `FUNDING`), quantity change, and timestamps.
-- The adjustment history is cleared when positions close and reopen. When events are purged,
-  commission adjustments tied to the removed fills are regenerated while non-commission adjustments
-  (for example funding) are preserved.
+- `position.adjustments()` returns the list of all `PositionAdjusted` events.
+- Each adjustment includes its type (`COMMISSION` or `FUNDING`), quantity or PnL change, reason,
+  event ID, and timestamps.
+- The current adjustment history is cleared when a closed position reopens.
+- If fills remain after `purge_events_for_order()`, the position regenerates commission adjustments
+  from the surviving fills and reapplies non‑commission adjustments. If no fills remain, the
+  position becomes an empty `FLAT` shell and clears its adjustment history.
 
 ## OMS types and position management
 
-NautilusTrader supports two primary OMS types that fundamentally affect how positions are tracked
-and managed. An `OmsType.UNSPECIFIED` option also exists, which defaults to the component's
-context. For full details, see the [Execution guide](execution.md#order-management-system-oms).
+NautilusTrader supports two position management modes. A strategy configured with
+`OmsType.UNSPECIFIED` uses the venue's OMS type. For configuration details and position ID rules,
+see the [Execution guide](execution.md#order-management-system-oms).
 
 ### `NETTING`
 
-In `NETTING` mode, all fills for an instrument are aggregated into a single position:
+In `NETTING` mode, fills for each instrument and strategy are aggregated into a single position:
 
-- One position per instrument ID.
+- One position per instrument and strategy.
 - All fills contribute to the same position.
-- Position flips from `LONG` to `SHORT` (or vice versa) as net quantity changes.
+- A fill that crosses zero closes the current cycle and opens a new cycle on the opposite side.
 - Historical snapshots preserve closed position states.
 
 ### `HEDGING`
@@ -160,36 +162,34 @@ In `HEDGING` mode, multiple positions can exist for the same instrument:
 - Each position has a unique position ID.
 - Positions are tracked independently.
 - No automatic netting across positions.
-- Closed positions remain in cache history but do not reopen; new fills create new positions.
+- A fill with a new position ID creates a separate position. If a later fill reuses a closed
+  position ID, it replaces the cached state without creating a closed‑cycle snapshot.
 
 :::warning
-When using `HEDGING` mode, be aware of increased margin requirements as each position
-consumes margin independently. Some venues may not support true hedging mode and will
-net positions automatically.
+`HEDGING` can increase margin requirements when a venue maintains long and short positions
+independently. A venue with a `NETTING` OMS exposes only its net position, even when NautilusTrader
+tracks multiple virtual positions. Check the venue's position mode and margin rules.
 :::
 
 ### Strategy vs venue OMS
 
-The platform allows different OMS configurations for strategies and venues:
+Strategy and venue OMS types can differ:
 
-| Strategy OMS | Venue OMS | Behavior                                                   |
-| ------------ | --------- | ---------------------------------------------------------- |
-| `NETTING`    | `NETTING` | Single position per instrument at both strategy and venue. |
-| `HEDGING`    | `HEDGING` | Multiple positions supported at both levels.               |
-| `NETTING`    | `HEDGING` | Venue tracks multiple, Nautilus maintains single position. |
-| `HEDGING`    | `NETTING` | Venue tracks single, Nautilus maintains virtual positions. |
+| Strategy OMS | Venue OMS | Result                                                              |
+| ------------ | --------- | ------------------------------------------------------------------- |
+| `NETTING`    | `NETTING` | One position per instrument and strategy.                           |
+| `HEDGING`    | `HEDGING` | Multiple positions per instrument and strategy.                     |
+| `NETTING`    | `HEDGING` | One virtual position across the venue positions.                    |
+| `HEDGING`    | `NETTING` | Multiple virtual positions against the venue's single net position. |
 
 :::tip
-For most trading scenarios, keeping strategy and venue OMS types aligned simplifies
-position management. Override configurations are primarily useful for prop trading
-desks or when interfacing with legacy systems. See the [Live guide](live.md)
-for venue-specific OMS configuration.
+Align the strategy and venue OMS types unless the strategy requires virtual positions. See the
+integration guide for the venue's position‑mode configuration.
 :::
 
 ## Position snapshotting
 
-Position snapshotting is an important feature for `NETTING` OMS configurations that preserves
-the state of closed positions for accurate PnL tracking and reporting.
+Position snapshotting preserves closed `NETTING` cycles for PnL tracking and reporting.
 
 ### Why snapshotting matters
 
@@ -199,17 +199,17 @@ realized PnL from the previous position cycle would be lost.
 
 ### How it works
 
-When a `NETTING` position closes and then receives a new fill for the same instrument, the execution
-engine snapshots the closed position state before resetting it, preserving:
+When a closed `NETTING` position receives another fill for the same instrument and strategy, the
+execution engine archives the closed state before opening the next cycle. The snapshot preserves:
 
 - Final quantities and prices.
 - Realized PnL.
 - All fill events.
 - Commission totals.
 
-This snapshot is stored in the cache indexed by position ID. The position then resets for the new
-cycle while previous snapshots remain accessible. The Portfolio aggregates PnL across all snapshots
-for accurate totals.
+The cache stores snapshots by position ID. The active cache entry then represents the new cycle,
+while previous snapshots remain accessible. The Portfolio includes their realized PnL in instrument
+totals.
 
 A fill void that corrects a fill from an earlier cycle is the one exception. The correction moves the
 cycle boundaries the stored snapshots describe, so the engine replaces them with the cycles the
@@ -217,14 +217,18 @@ corrected history actually closes, keeping each counted once. See
 [Position replay across NETTING cycles](execution.md#position-replay-across-netting-cycles).
 
 :::note
-This historical snapshot mechanism differs from optional position state snapshots (`snapshot_positions`),
-which periodically record open-position state for telemetry. See the [Live guide](live.md) for
-`snapshot_positions` and `snapshot_positions_interval_secs` settings.
+This closed‑cycle archive differs from optional position state snapshots. Setting
+`snapshot_positions=true` publishes state when a position opens or changes, while
+`snapshot_positions_interval_secs` periodically publishes all open positions. A cache with a
+backing database also persists these snapshots. The Rust live runtime has no cache database adapter,
+so it rejects `snapshot_positions=true`; the interval setting still publishes snapshots. See
+[`LiveExecEngineConfig`](/docs/python-api-latest/live.html#nautilus_trader.live.LiveExecEngineConfig)
+for the supported settings.
 :::
 
 ### Example scenario
 
-```python
+```text
 # NETTING OMS Example
 # Cycle 1: Open LONG position
 BUY 100 units at $50   # Position opens
@@ -239,33 +243,31 @@ BUY 50 units at $52    # Position closes, PnL = $100
 # Total realized PnL = $500 + $100 = $600 (from snapshots)
 ```
 
-Without snapshotting, only the most recent cycle's PnL would be available, leading to
-incorrect reporting and analysis.
-
 ## PnL calculations
 
-NautilusTrader provides PnL calculations that account for instrument
-specifications and market conventions.
+Position PnL calculations account for instrument specifications and market conventions.
 
 ### Realized PnL
 
-Calculated when positions are partially or fully closed:
+The price component of realized PnL is calculated when fills partially or fully close a position.
+Commissions in the position's cost currency affect realized PnL as each fill arrives.
 
 ```python
 # For standard instruments
-realized_pnl = (exit_price - entry_price) * closed_quantity * multiplier
+# LONG: realized_pnl = (exit_price - entry_price) * closed_quantity * multiplier
+# SHORT: realized_pnl = (entry_price - exit_price) * closed_quantity * multiplier
 
 # For inverse instruments (side-aware)
 # LONG: realized_pnl = closed_quantity * multiplier * (1/entry_price - 1/exit_price)
 # SHORT: realized_pnl = closed_quantity * multiplier * (1/exit_price - 1/entry_price)
 ```
 
-The engine automatically applies the correct formula based on position side.
+The position side selects the formula.
 
 ### Unrealized PnL
 
-Calculated using current market prices for open positions. The `price` parameter accepts any
-reference price (bid, ask, mid, last, or mark):
+`unrealized_pnl()` calculates PnL for an open position from the supplied `price`. You can pass a
+bid, ask, mid, last, or mark price:
 
 ```python
 position.unrealized_pnl(last_price)  # Using last traded price
@@ -273,11 +275,11 @@ position.unrealized_pnl(bid_price)  # Conservative for LONG positions
 position.unrealized_pnl(ask_price)  # Conservative for SHORT positions
 ```
 
-Returns `Money(0, cost_currency)` for `FLAT` positions regardless of the price provided.
+For a `FLAT` position, it returns `Money(0, cost_currency)` regardless of the supplied price.
 
 ### Total PnL
 
-Combines realized and unrealized components:
+`total_pnl()` combines the realized and unrealized components:
 
 ```python
 total_pnl = position.total_pnl(current_price)
@@ -290,11 +292,11 @@ total_pnl = position.total_pnl(current_price)
   inverse contracts, and settlement for quanto contracts.
 - For Forex, the cost currency is typically the quote currency.
 - Portfolio aggregates realized PnL per instrument in cost currency.
-- Multi-currency totals require conversion outside the Position class.
+- Multi‑currency totals require conversion outside the Position class.
 
 ## Commissions and costs
 
-Positions track all trading costs:
+Positions track fill commissions:
 
 - Commissions are accumulated by currency.
 - Each fill's commission is added to the running total.
@@ -310,9 +312,10 @@ notional = position.notional_value(current_price)
 # Returns Money in quote (linear), base (inverse), or settlement currency (quanto)
 ```
 
-**Limitation:**
-
-- Panics if inverse instrument has no `base_currency` set.
+In Python, `notional_value()` raises `ValueError` if an inverse position lacks a base currency, the
+supplied inverse price is not positive, or the result cannot be represented as `Money`.
+Rust callers can use `try_notional_value()` to handle these calculation errors; `notional_value()`
+panics if the calculation fails.
 
 ## Position properties and state
 
@@ -324,15 +327,16 @@ notional = position.notional_value(current_price)
 - `trader_id`: The trader who owns the position.
 - `strategy_id`: The strategy managing the position.
 - `opening_order_id`: Client order ID that opened the position.
-- `closing_order_id`: Client order ID that closed the position.
+- `closing_order_id`: Client order ID that closed the position, if closed.
 
 ### Position state
 
 - `side`: Current position side (`LONG`, `SHORT`, or `FLAT`).
-- `entry`: Direction of the currently open position (`Buy` for `LONG`, `Sell` for `SHORT`). Updates when position flips direction.
+- `entry`: Opening side for the current cycle (`Buy` for `LONG`, `Sell` for `SHORT`). Updates when
+  the position reverses direction.
 - `quantity`: Current absolute position size.
 - `signed_qty`: Signed position size (positive for `LONG`, negative for `SHORT`).
-- `peak_qty`: Maximum quantity reached during position lifetime.
+- `peak_qty`: Maximum quantity reached during the current open‑close cycle.
 - `is_open`: Whether position is currently open.
 - `is_closed`: Whether position is closed (`FLAT`).
 - `is_long`: Whether position side is `LONG`.
@@ -360,36 +364,37 @@ notional = position.notional_value(current_price)
 - `ts_init`: When position was initialized.
 - `ts_opened`: When position was opened.
 - `ts_last`: Last update timestamp.
-- `ts_closed`: When position was closed.
-- `duration_ns`: Duration from open to close in nanoseconds.
+- `ts_closed`: When the position was closed, if closed.
+- `duration_ns`: Duration from open to close in nanoseconds, or zero while open.
 
 ### Associated data
 
 - `symbol`: The instrument's ticker symbol.
 - `venue`: The trading venue.
-- `client_order_ids`: All client order IDs associated with position.
-- `venue_order_ids`: All venue order IDs associated with position.
-- `trade_ids`: All trade/fill IDs from venue.
-- `events`: All order fill events applied to position.
-- `event_count`: Total number of fill events applied.
-- `last_event`: Most recent fill event.
-- `last_trade_id`: Most recent trade ID.
+- `client_order_ids`: Unique client order IDs for retained fills in the current cycle.
+- `venue_order_ids`: Unique venue order IDs for retained fills in the current cycle.
+- `trade_ids`: Unique trade IDs for retained fills in the current cycle.
+- `events`: Retained order fill events in the current cycle.
+- `adjustments`: Retained position adjustments in the current cycle.
+- `event_count`: Number of retained fill events in the current cycle.
+- `last_event`: Most recently retained fill event.
+- `last_trade_id`: Trade ID of the most recently retained fill.
 
 :::info
 For complete type information and detailed property documentation, see the Position
-[API Reference](/docs/python-api-latest/model/position.html#nautilus_trader.model.position.Position).
+[API Reference](/docs/python-api-latest/model/position.html#nautilus_trader.model.Position).
 :::
 
 ## Events and tracking
 
-Positions maintain a complete history of events:
+Each `Position` object records the fills and adjustments for its current open‑close cycle:
 
-- All order fill events are stored chronologically.
-- Associated client order IDs are tracked.
-- Trade IDs from the venue are preserved.
-- Event count indicates total fills applied.
+- Fill events remain in application order.
+- Client order, venue order, and trade ID accessors return sorted, unique values.
+- `event_count` reports the number of retained fill events.
+- Closed `NETTING` cycles retain their event history in the cache snapshots described above.
 
-This historical data enables:
+This data supports:
 
 - Detailed position analysis.
 - Trade reconciliation.
@@ -397,68 +402,61 @@ This historical data enables:
 - Audit trails.
 
 :::tip
-Use `position.events` to access the full history of fills for reconciliation.
-The `position.trade_ids` property helps match against broker statements.
+Use `position.events()` to access the current cycle's retained fills for reconciliation.
+The `position.trade_ids()` result helps match against broker statements.
 See the [Execution guide](execution.md) for reconciliation best practices.
 :::
 
 ## Numerical precision
 
-Position calculations use 64-bit floating-point (`f64`) arithmetic for PnL and average price computations.
-While fixed-point types (`Price`, `Quantity`, `Money`) preserve exact precision at configured decimal places,
-internal calculations convert to `f64` for performance and overflow safety.
+`Position` uses `f64` for signed quantity, average prices, realized returns, and PnL intermediates.
+`Price`, `Quantity`, and `Money` retain their fixed‑point representations at the API boundary, but
+conversions between these types and `f64` can introduce rounding. `f64` represents every integer
+exactly only through `2^53`; above that boundary, conversion can lose low‑order bits. It provides
+roughly 15 to 16 significant decimal digits rather than a fixed number of exact decimal places.
 
-### Design rationale
+The design avoids the higher computational cost of arbitrary‑precision arithmetic. The
+average‑price calculation also avoids multiplying raw fixed‑point values because those products can
+overflow their integer representation. Average prices reuse the prior `f64` average, and realized
+PnL is converted between `Money` and `f64` as fills accumulate. The resulting precision depends on
+the values, settlement‑currency precision, and sequence of fills.
 
-The platform uses `f64` for position calculations to balance performance and accuracy:
+`quantity` is derived from `signed_qty` at the instrument's `size_precision`. If that conversion
+rounds a residual quantity to zero, the position becomes `FLAT` and normalizes `signed_qty` to zero.
+Inverse PnL calculations reject nonpositive open or close prices and positive prices below `1e-15`.
+With the `defi` feature, converting a `Price` or `Quantity` with more than 16 decimal places to
+`f64` panics, so `Position` does not support 17‑ or 18‑decimal fill values.
 
-- Floating-point operations are significantly faster than arbitrary-precision arithmetic.
-- Raw integer multiplication can overflow even with 128-bit integers.
-- Each calculation starts from precise fixed-point values, avoiding cumulative error.
-- IEEE-754 double precision provides ~15 decimal digits of accuracy.
+Tests in `crates/model/src/position.rs` cover a `0.01` USD commission, nine‑decimal price inputs, 100
+sequential fills, prices from `0.00001` to `99999.99999`, and same‑price round trips. These cases do
+not establish a universal precision bound.
 
-### Validated precision characteristics
-
-Testing confirms `f64` arithmetic maintains accuracy for typical trading scenarios:
-
-- Standard amounts: No precision loss for amounts ≥ 0.01 in standard currencies.
-- High-precision instruments: 9-decimal crypto prices preserved within 1e-6 tolerance.
-- Sequential fills: 100 fills show no drift (commission accuracy to 1e-10).
-- Extreme prices: Handles range from 0.00001 to 99,999.99999 without overflow.
-- Round-trip trades: Opening and closing at same price produces exact PnL (commissions only).
-
-For implementation details, see `test_position_pnl_precision_*` tests in `crates/model/src/position.rs`.
-
-:::note
-For regulatory compliance or audit trails requiring exact decimal arithmetic, consider using `Decimal`
-types from external libraries. Very small amounts below `f64` epsilon (~1e-15) may round to zero.
-This does not affect realistic trading scenarios with standard currency precisions (typically 2-9 decimals).
+:::warning
+If a workflow requires exact decimal arithmetic for regulatory reporting or audit records, perform
+and retain a separate decimal calculation from the original fills and adjustments. Converting
+`Position` float outputs back to decimal, including through `signed_decimal_qty()`, cannot restore
+discarded precision. `Position` does not provide an exact‑decimal guarantee. Validate the
+instruments, currencies, amount ranges, and fill sequences used by the application.
 :::
 
 ## Integration with other components
 
 Positions interact with several key components:
 
-- **Portfolio**: Aggregates positions across instruments and strategies.
+- **Portfolio**: Aggregates position exposure and PnL across instruments and strategies.
 - **ExecutionEngine**: Creates and updates positions from fills.
-- **Cache**: Stores position state and snapshots.
-- **RiskEngine**: Monitors position limits and exposure.
+- **Cache**: Stores current position state and closed‑cycle snapshots.
+- **RiskEngine**: Reads open positions when it checks whether an order reduces exposure.
 
 :::note
-Positions are not created for spread instruments. While contingent orders can still trigger for spreads,
-they operate without position linkage. The engine handles spread instruments separately from regular positions.
+Positions are not created for spread instruments. Contingent orders can still trigger for spreads,
+but they operate without position linkage. The engine handles spread instruments separately from
+regular positions.
 :::
-
-## Summary
-
-Positions are central to tracking trading activity and performance. Understanding how positions
-aggregate fills, calculate PnL, and handle different OMS configurations matters when building
-trading strategies. Position snapshotting provides accurate historical tracking in `NETTING`
-mode, and the event history supports detailed analysis and reconciliation.
 
 ## Related guides
 
-- [Events](events/) - How fills produce position events.
-- [Orders](orders/) - Orders that create and modify positions.
-- [Execution](execution.md) - Fill handling that updates positions.
-- [Portfolio](portfolio.md) - Portfolio-level position aggregation.
+- [Events](events/): How fills produce position events.
+- [Orders](orders/): Orders that create and modify positions.
+- [Execution](execution.md): Fill handling that updates positions.
+- [Portfolio](portfolio.md): Portfolio‑level position aggregation.

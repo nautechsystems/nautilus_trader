@@ -19,7 +19,7 @@ All value types are **immutable**. Once a value is constructed, it cannot be cha
 Operations do not mutate the original object.
 
 ```python
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model import Quantity
 
 qty1 = Quantity(100, precision=0)
 qty2 = Quantity(50, precision=0)
@@ -59,13 +59,13 @@ domain meaning (a price plus a price is still a price):
 | `Money - Money`       | `Money`    |
 
 ```python
-from nautilus_trader.model.objects import Price
+from nautilus_trader.model import Price
 
 price1 = Price(100.50, precision=2)
 price2 = Price(0.25, precision=2)
 
 result = price1 + price2  # Returns Price(100.75, precision=2)
-print(type(result))  # <class 'Price'>
+print(type(result))  # <class 'nautilus_trader.model.Price'>
 ```
 
 Multiplication, division, floor division, and modulo between two values of the
@@ -103,20 +103,21 @@ Unary operators preserve the value type where the result is valid for that type:
 unsigned and cannot represent a negative value.
 
 ```python
-from nautilus_trader.model.objects import Price, Quantity, Money
-from nautilus_trader.model.currencies import USD
+from nautilus_trader.model import Currency, Money, Price, Quantity
+
+USD = Currency.from_str("USD")
 
 price = Price(100.50, precision=2)
 print(-price)  # -100.50
-print(type(-price))  # <class 'Price'>
+print(type(-price))  # <class 'nautilus_trader.model.Price'>
 
 money = Money(-50.00, USD)
 print(abs(money))  # 50.00 USD
-print(type(abs(money)))  # <class 'Money'>
+print(type(abs(money)))  # <class 'nautilus_trader.model.Money'>
 
 qty = Quantity(10, precision=0)
 print(+qty)  # 10
-print(type(+qty))  # <class 'Quantity'>
+print(type(+qty))  # <class 'nautilus_trader.model.Quantity'>
 ```
 
 ### Mixed-type operations
@@ -140,7 +141,8 @@ in both directions (`value op scalar` and `scalar op value`):
 
 ```python
 from decimal import Decimal
-from nautilus_trader.model.objects import Quantity
+
+from nautilus_trader.model import Quantity
 
 qty = Quantity(100, precision=0)
 
@@ -159,18 +161,20 @@ print(type(result3))  # <class 'decimal.Decimal'>
 
 ## Precision handling
 
-Each value type stores a precision field indicating the number of decimal places.
-Precision is set at construction and is immutable. There is no "unspecified" precision.
+Each value type carries a precision indicating the number of decimal places:
+`Price` and `Quantity` store an explicit `precision` field, while `Money` uses its
+currency's precision. Precision is set at construction and is immutable. There is
+no "unspecified" precision.
 
 ### Fixed-point representation
 
 Value types are stored internally as integers scaled to a global fixed precision
-(e.g., 10^16 in high-precision mode), not floating-point numbers. The `precision`
-field tracks the number of decimal places used at construction, controlling display
+(e.g., 10^16 in high-precision mode), not floating-point numbers. The precision
+tracks the number of decimal places used at construction, controlling display
 formatting and serialization, but the underlying raw value always uses the global scale.
 
 ```python
-from nautilus_trader.model.objects import Price
+from nautilus_trader.model import Price
 
 p1 = Price(1.23, precision=2)  # displays as "1.23"
 p2 = Price(1.230, precision=3)  # displays as "1.230"
@@ -204,7 +208,7 @@ When performing arithmetic between values with different precisions, the result
 uses the maximum precision of the operands.
 
 ```python
-from nautilus_trader.model.objects import Price
+from nautilus_trader.model import Price
 
 price1 = Price(100.5, precision=1)  # 1 decimal place
 price2 = Price(0.125, precision=3)  # 3 decimal places
@@ -222,7 +226,7 @@ print(result.precision)  # 3 (max of 1 and 3)
 or subtract a larger quantity from a smaller one raises an error:
 
 ```python
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model import Quantity
 
 # This raises ValueError: Quantity cannot be negative
 qty = Quantity(-100, precision=0)
@@ -239,8 +243,10 @@ result = qty1 - qty2  # Would be -50, which is invalid
 require matching currencies:
 
 ```python
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.currencies import USD, EUR
+from nautilus_trader.model import Currency, Money
+
+USD = Currency.from_str("USD")
+EUR = Currency.from_str("EUR")
 
 usd_amount = Money(100.00, USD)
 eur_amount = Money(50.00, EUR)
@@ -259,8 +265,9 @@ result = usd_amount + eur_amount
 Since value types are immutable, accumulate by reassigning:
 
 ```python
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.currencies import USD
+from nautilus_trader.model import Currency, Money
+
+USD = Currency.from_str("USD")
 
 total = Money(0.00, USD)
 amounts = [Money(100.00, USD), Money(50.00, USD), Money(25.00, USD)]
@@ -276,7 +283,7 @@ print(total)  # 175.00 USD
 Value types provide conversion methods:
 
 ```python
-from nautilus_trader.model.objects import Price
+from nautilus_trader.model import Price
 
 price = Price(123.456, precision=3)
 
@@ -295,7 +302,7 @@ string_value = str(price)  # "123.456"
 Parse value types from string representations:
 
 ```python
-from nautilus_trader.model.objects import Quantity, Price, Money
+from nautilus_trader.model import Money, Price, Quantity
 
 qty = Quantity.from_str("100.5")
 price = Price.from_str("99.95")

@@ -37,7 +37,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.persistence.config import DataCatalogConfig
 
 
-# from nautilus_trader.live.config import RoutingConfig
+# from nautilus_trader.config import RoutingConfig
 
 
 # %%

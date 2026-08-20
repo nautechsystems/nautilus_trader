@@ -12,9 +12,10 @@ from pathlib import Path
 import pytest
 
 
-def _load_generate_stubs_module():
-    module_path = Path(__file__).resolve().parents[2] / "generate_stubs.py"
-    module_name = "generate_stubs_module"
+WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _load_module(module_path: Path, module_name: str):
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     assert spec is not None
@@ -24,7 +25,14 @@ def _load_generate_stubs_module():
     return module
 
 
-generate_stubs = _load_generate_stubs_module()
+generate_stubs = _load_module(
+    WORKSPACE_ROOT / "python" / "generate_stubs.py",
+    "generate_stubs_module",
+)
+check_pyo3_names = _load_module(
+    WORKSPACE_ROOT / ".pre-commit-hooks" / "check_pyo3_names.py",
+    "check_pyo3_names_module",
+)
 
 
 @pytest.mark.parametrize(
@@ -86,6 +94,39 @@ def test_python_libdir_env_does_not_mutate_os_environ(monkeypatch):
     # Assert
     assert env["LD_LIBRARY_PATH"] == "/uv/lib"
     assert "LD_LIBRARY_PATH" not in os.environ
+
+
+@pytest.mark.parametrize(
+    ("profile", "expected"),
+    [
+        (
+            None,
+            ["cargo", "run", "--bin", "python-stub-gen", "--features", "arrow,python"],
+        ),
+        (
+            "nextest",
+            [
+                "cargo",
+                "run",
+                "--bin",
+                "python-stub-gen",
+                "--profile",
+                "nextest",
+                "--features",
+                "arrow,python",
+            ],
+        ),
+    ],
+)
+def test_stub_generator_command_uses_selected_profile(monkeypatch, profile, expected):
+    if profile is None:
+        monkeypatch.delenv("NAUTILUS_STUB_PROFILE", raising=False)
+    else:
+        monkeypatch.setenv("NAUTILUS_STUB_PROFILE", profile)
+
+    command = generate_stubs.stub_generator_command(["arrow", "python"])
+
+    assert command == expected
 
 
 def test_write_config_stub_uses_runtime_exports(tmp_path):
@@ -1518,7 +1559,6 @@ class Client:
     assert "environment: BitmexEnvironment = BitmexEnvironment.MAINNET" in updated
 
 
-WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 STUB_ROOT = WORKSPACE_ROOT / "python" / "nautilus_trader"
 
 STUB_ENUM_CLASS_RE = re.compile(r"^class\s+(\w+)\s*\(\s*(?:enum\.)?Enum\s*\)\s*:")
@@ -1560,9 +1600,6 @@ CONFIG_READBACK_REPLACEMENTS = {
         "BacktestDataConfig",
         "catalog_fs_rust_storage_options",
     ): "catalog_fs_rust_storage_option_keys",
-    ("nautilus_trader.network", "SocketConfig", "handler"): "has_handler",
-    ("nautilus_trader.network", "WebSocketConfig", "headers"): "header_names",
-    ("nautilus_trader.network", "WebSocketConfig", "proxy_url"): "has_proxy_url",
 }
 
 WRITABLE_CONFIG_PROPERTIES = {
@@ -1582,6 +1619,8 @@ WRITABLE_CONFIG_PROPERTIES = {
         "InteractiveBrokersInstrumentProviderConfig",
     ): {"cache_path"},
 }
+
+PUBLIC_MEMBER_AFFIX_ALLOWLIST = check_pyo3_names.PUBLIC_SUFFIX_NAMES
 
 # Generated stubs intentionally omit every public property on these wire-schema,
 # acknowledgement, and error DTOs. They are confirmed non-contract runtime members
@@ -1640,6 +1679,11 @@ ADAPTER_CONFIG_FIELD_READBACK_REPLACEMENTS = {
         "postgres_cache_database_config",
     ): "has_postgres_cache_database_config",
     (
+        "nautilus_trader.adapters.blockchain",
+        "BlockchainExecutionClientConfig",
+        "postgres_cache_database_config",
+    ): "has_postgres_cache_database_config",
+    (
         "nautilus_trader.adapters.interactive_brokers",
         "DockerizedIBGatewayConfig",
         "password",
@@ -1692,11 +1736,25 @@ def test_live_stub_exposes_native_live_node_config_signature():
     live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
 
     assert "@typing.final\nclass LiveNodeConfig:" in live_stub
+    assert "@typing.final\nclass QueueMonitorConfig:" in live_stub
     assert re.search(
         r"portfolio:\s+(?:portfolio\.)?PortfolioConfig \| None = None",
         live_stub,
     )
+    assert re.search(
+        r"queue_monitor:\s+QueueMonitorConfig \| None = None",
+        live_stub,
+    )
     assert '"PortfolioConfig"' in live_stub
+
+
+def test_live_stub_exposes_run_async_coroutine_signature():
+    live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
+
+    assert (
+        "def run_async(self) -> collections.abc.Coroutine[typing.Any, typing.Any, None]: ..."
+        in live_stub
+    )
 
 
 def test_live_stub_exposes_builder_engine_config_methods():
@@ -1704,6 +1762,14 @@ def test_live_stub_exposes_builder_engine_config_methods():
 
     assert (
         "def with_cache_config(self, config: common.CacheConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+    assert (
+        "def with_msgbus_config(self, config: common.MessageBusConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+    assert (
+        "def with_external_msgbus_factory(self, factory: typing.Any) -> LiveNodeBuilder: ..."
         in live_stub
     )
     assert (
@@ -1728,6 +1794,9 @@ def test_live_stub_exposes_builder_engine_config_methods():
     ("module_name", "class_name"),
     [
         ("nautilus_trader.adapters.dydx", "DydxClientOrderIdEncoder"),
+        ("nautilus_trader.infrastructure", "RedisCacheConfig"),
+        ("nautilus_trader.infrastructure", "RedisMessageBusConfig"),
+        ("nautilus_trader.infrastructure", "RedisMessageBusFactory"),
         ("nautilus_trader.persistence", "DataBackendSession"),
         ("nautilus_trader.persistence", "ParquetDataCatalog"),
         ("nautilus_trader.persistence", "StreamingFeatherWriter"),
@@ -1777,11 +1846,12 @@ def test_stub_constructor_matches_runtime(module_name, class_name):
     assert stub_defaults == runtime_defaults
 
 
-def test_stub_members_match_runtime_names():
+def test_stub_members_match_runtime_names():  # noqa: C901
     forward_missing = []
     reverse_missing = []
     kind_mismatches = []
-    raw_runtime_names = []
+    affixed_names = set()
+    runtime_name_mismatches = []
 
     for stub_path in sorted(STUB_ROOT.rglob("__init__.pyi")):
         relative_package = stub_path.relative_to(STUB_ROOT).parent
@@ -1801,15 +1871,28 @@ def test_stub_members_match_runtime_names():
             f"{module_name}.{name}"
             for name in sorted(_stub_names_missing_at_runtime(stub_names, runtime_names))
         )
-        raw_runtime_names.extend(
-            f"{module_name}.{name}" for name in sorted(runtime_names) if name.startswith("py_")
+        affixed_names.update(
+            f"{module_name}.{name}" for name in runtime_names | stub_names if _has_rust_affix(name)
         )
 
+        for name in stub_names:
+            if name not in runtime_names:
+                continue
+            runtime_name = getattr(getattr(module, name), "__name__", name)
+            if runtime_name != name or _has_rust_affix(runtime_name):
+                runtime_name_mismatches.append(f"{module_name}.{name} -> {runtime_name}")
+
         for stub_class in (node for node in stub_module.body if isinstance(node, ast.ClassDef)):
+            if _has_rust_affix(stub_class.name):
+                affixed_names.add(f"{module_name}.{stub_class.name}")
             runtime_class = getattr(module, stub_class.name, None)
             if not isinstance(runtime_class, type):
                 forward_missing.append(f"{module_name}.{stub_class.name}")
                 continue
+            if runtime_class.__name__ != stub_class.name:
+                runtime_name_mismatches.append(
+                    f"{module_name}.{stub_class.name} -> {runtime_class.__name__}",
+                )
 
             class_key = (module_name, stub_class.name)
             runtime_names = set(dir(runtime_class))
@@ -1819,11 +1902,23 @@ def test_stub_members_match_runtime_names():
                 f"{module_name}.{stub_class.name}.{name}"
                 for name in sorted(_stub_names_missing_at_runtime(stub_names, runtime_names))
             )
-            raw_runtime_names.extend(
+            affixed_names.update(
                 f"{module_name}.{stub_class.name}.{name}"
-                for name in sorted(runtime_names)
-                if name.startswith("py_")
+                for name in runtime_names | stub_names
+                if _has_rust_affix(name, PUBLIC_MEMBER_AFFIX_ALLOWLIST)
             )
+
+            for name, obj in runtime_class.__dict__.items():
+                if name.startswith("_") or not callable(obj):
+                    continue
+                runtime_name = getattr(obj, "__name__", name)
+                if runtime_name != name or _has_rust_affix(
+                    runtime_name,
+                    PUBLIC_MEMBER_AFFIX_ALLOWLIST,
+                ):
+                    runtime_name_mismatches.append(
+                        f"{module_name}.{stub_class.name}.{name} -> {runtime_name}",
+                    )
             _collect_reverse_member_drift(
                 class_key,
                 runtime_class,
@@ -1847,8 +1942,19 @@ def test_stub_members_match_runtime_names():
             kind_mismatches,
         )
     )
-    assert not raw_runtime_names, "Raw Rust names exposed at runtime:\n" + "\n".join(
-        raw_runtime_names,
+    assert not affixed_names, "Rust affixes exposed at runtime or in stubs:\n" + "\n".join(
+        sorted(affixed_names),
+    )
+    assert not runtime_name_mismatches, "Runtime __name__ values differ from public names:\n" + (
+        "\n".join(runtime_name_mismatches)
+    )
+
+
+def _has_rust_affix(name, allowed_names=frozenset()):
+    return name not in allowed_names and (
+        name.startswith("py_")
+        or name.endswith("_py")
+        or (name.startswith("Py") and len(name) > 2 and name[2].isupper())
     )
 
 
@@ -2237,7 +2343,7 @@ def test_generated_config_stubs_include_signature_defaults():
         if updated != content:
             mismatches.append(stub_file.relative_to(WORKSPACE_ROOT).as_posix())
 
-    assert mismatches == [], "Run `make py-stubs-v2`; stale config defaults in " + ", ".join(
+    assert mismatches == [], "Run `make py-stubs`; stale config defaults in " + ", ".join(
         mismatches,
     )
 
@@ -2311,7 +2417,7 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path):
         app_key="readback-app-key",
         proxy_url="http://user:password@proxy.example.test",
         event_type_ids=[7, 9],
-        stream_heartbeat_ms=4321,
+        stream_heartbeat_secs=43,
     )
     bitmex_config = BitmexExecClientConfig(
         submitter_proxy_urls=["http://submitter.example.test"],
@@ -2337,7 +2443,7 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path):
     assert ax_config.has_proxy_url is True
     assert betfair_config.username == "readback-user"
     assert betfair_config.event_type_ids == ["7", "9"]
-    assert betfair_config.stream_heartbeat_ms == 4321
+    assert betfair_config.stream_heartbeat_secs == 43
     assert betfair_config.has_proxy_url is True
     assert bitmex_config.deadmans_switch_timeout_secs == 45
     assert bitmex_config.has_submitter_proxy_urls is True

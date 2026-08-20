@@ -13,8 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import datetime as dt
 import os
+from decimal import Decimal
+from zoneinfo import ZoneInfo
 
+import pandas as pd
+import pyarrow as pa
 import pytest
 
 from nautilus_trader.common import Cache
@@ -27,7 +32,10 @@ from nautilus_trader.model import BarType
 from nautilus_trader.model import BookAction
 from nautilus_trader.model import BookOrder
 from nautilus_trader.model import CurrencyPair
+from nautilus_trader.model import FundingRateUpdate
+from nautilus_trader.model import IndexPriceUpdate
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import MarkPriceUpdate
 from nautilus_trader.model import OrderBookDelta
 from nautilus_trader.model import OrderBookDepth10
 from nautilus_trader.model import OrderSide
@@ -65,7 +73,7 @@ def _make_bar(ts: int) -> Bar:
     return Bar(
         AUDUSD_1_MIN_BID,
         Price.from_str("1.00001"),
-        Price.from_str("1.1"),
+        Price.from_str("1.10000"),
         Price.from_str("1.00000"),
         Price.from_str("1.00000"),
         Quantity.from_int(100_000),
@@ -95,10 +103,15 @@ def test_backend_session_add_file_and_query_quotes():
     session = DataBackendSession()
     session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
 
-    result = session.to_query_result()
-    chunk_count = sum(1 for _ in result)
+    chunks = list(session.to_query_result())
+    quotes = chunks[0]
 
-    assert chunk_count > 0
+    assert len(chunks) == 1
+    assert isinstance(quotes, list)
+    assert len(quotes) == 9_500
+    assert all(isinstance(quote, QuoteTick) for quote in quotes)
+    assert quotes[0].ts_init == 1_577_898_000_000_000_065
+    assert quotes[-1].ts_init == 1_577_919_652_000_000_125
 
 
 def test_backend_session_to_list_queries_quotes():
@@ -423,6 +436,72 @@ def test_catalog_instrument_roundtrip(tmp_path):
     assert [instrument.to_dict() for instrument in read] == [inst.to_dict()]
 
 
+def test_catalog_query_filters_and_timestamp_metadata(tmp_path):
+    path = str(tmp_path / "catalog")
+    os.makedirs(path, exist_ok=True)
+    catalog = ParquetDataCatalog(path)
+    bar_type = str(AUDUSD_1_MIN_BID)
+    catalog.write_bars([_make_bar(1), _make_bar(2)])
+    catalog.write_bars([_make_bar(5), _make_bar(6)])
+
+    loaded = catalog.query_bars(
+        ["AUD/USD.SIM"],
+        start=1,
+        end=6,
+        where_clause="ts_init >= 5",
+    )
+
+    assert loaded == [_make_bar(5), _make_bar(6)]
+    assert catalog.query_first_timestamp("bars", bar_type) == 1
+    assert catalog.query_last_timestamp("bars", bar_type) == 6
+    assert catalog.get_missing_intervals_for_request(0, 10, "bars", bar_type) == [
+        (0, 0),
+        (3, 4),
+        (7, 10),
+    ]
+    assert "bars" in catalog.list_data_types()
+
+
+def test_catalog_delete_data_range_uses_nanosecond_boundaries(tmp_path):
+    path = str(tmp_path / "catalog")
+    os.makedirs(path, exist_ok=True)
+    catalog = ParquetDataCatalog(path)
+    timestamps = [1_000_000_000, 1_000_000_001, 1_000_000_002, 1_000_000_003]
+    catalog.write_bars([_make_bar(ts) for ts in timestamps])
+
+    catalog.delete_data_range(
+        "bars",
+        str(AUDUSD_1_MIN_BID),
+        1_000_000_001,
+        1_000_000_002,
+    )
+
+    loaded = catalog.query_bars(["AUD/USD.SIM"])
+    assert [bar.ts_init for bar in loaded] == [1_000_000_000, 1_000_000_003]
+
+
+def test_catalog_query_handles_multiple_instrument_identifier_patterns(tmp_path):
+    path = str(tmp_path / "catalog")
+    os.makedirs(path, exist_ok=True)
+    catalog = ParquetDataCatalog(path)
+    instrument_ids = [
+        InstrumentId.from_str("EUR/USD.SIM"),
+        InstrumentId.from_str("BTC-USD.COINBASE"),
+        InstrumentId.from_str("ETH/USDT.BINANCE"),
+    ]
+    quotes = [
+        TestDataProviderPyo3.quote_tick(instrument_id=instrument_id, ts_event=i, ts_init=i)
+        for i, instrument_id in enumerate(instrument_ids, start=1)
+    ]
+
+    for quote in quotes:
+        catalog.write_quote_ticks([quote])
+
+    loaded = catalog.query_quote_ticks([str(instrument_id) for instrument_id in instrument_ids])
+
+    assert loaded == quotes
+
+
 def test_quote_tick_wrangler_construction():
     wrangler = QuoteTickDataWrangler(
         instrument_id="AUD/USD.SIM",
@@ -525,6 +604,117 @@ def test_streaming_feather_writer_write_trade(tmp_path):
     writer.flush()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Feather stream path checks are not stable on Windows")
+@pytest.mark.parametrize(
+    ("data_name", "data_factory", "expected_metadata"),
+    [
+        (
+            "mark_prices",
+            lambda instrument_id: MarkPriceUpdate(
+                instrument_id,
+                Price.from_str("100.00"),
+                1_000,
+                1_000,
+            ),
+            {b"price_precision": b"2"},
+        ),
+        (
+            "index_prices",
+            lambda instrument_id: IndexPriceUpdate(
+                instrument_id,
+                Price.from_str("100.00"),
+                1_000,
+                1_000,
+            ),
+            {b"price_precision": b"2"},
+        ),
+        (
+            "funding_rate_update",
+            lambda instrument_id: FundingRateUpdate(
+                instrument_id,
+                Decimal("0.0001"),
+                1_000,
+                1_000,
+                interval=480,
+                next_funding_ns=2_000,
+            ),
+            {b"type": b"FundingRateUpdate"},
+        ),
+    ],
+)
+def test_streaming_feather_writer_uses_per_instrument_paths(
+    tmp_path,
+    data_name,
+    data_factory,
+    expected_metadata,
+):
+    path = tmp_path / f"streaming_{data_name}"
+    path.mkdir()
+    instrument_id = InstrumentId.from_str("ETHUSDT.BINANCE")
+    writer = StreamingFeatherWriter(
+        path=str(path),
+        cache=Cache(),
+        clock=Clock.new_test(),
+        include_types=[data_name],
+    )
+
+    writer.write(data_factory(instrument_id))
+    writer.close()
+
+    files = list(path.glob(f"{data_name}/{instrument_id}/*.feather"))
+    assert len(files) == 1
+    with files[0].open("rb") as stream:
+        table = pa.ipc.open_stream(stream).read_all()
+    assert table.schema.metadata is not None
+    assert table.schema.metadata[b"instrument_id"] == str(instrument_id).encode()
+    for key, value in expected_metadata.items():
+        assert table.schema.metadata[key] == value
+
+
+def test_streaming_feather_writer_replace_removes_local_files(tmp_path):
+    path = tmp_path / "streaming_replace"
+    path.mkdir()
+    instrument_id = InstrumentId.from_str("ETHUSDT.BINANCE")
+    writer = StreamingFeatherWriter(
+        path=str(path),
+        cache=Cache(),
+        clock=Clock.new_test(),
+        include_types=["quotes"],
+    )
+    writer.write(TestDataProviderPyo3.quote_tick(instrument_id=instrument_id))
+    writer.close()
+    assert len(list(path.glob(f"quotes/{instrument_id}/*.feather"))) == 1
+
+    replacement = StreamingFeatherWriter(
+        path=str(path),
+        cache=Cache(),
+        clock=Clock.new_test(),
+        include_types=["quotes"],
+        replace=True,
+    )
+    replacement.close()
+
+    assert list(path.glob(f"quotes/{instrument_id}/*.feather")) == []
+
+
+def test_streaming_feather_writer_replace_rejects_remote_root():
+    with pytest.raises(
+        OSError,
+        match="replace=True for remote streaming paths requires a non-empty prefix",
+    ):
+        StreamingFeatherWriter(
+            path="test-bucket",
+            cache=Cache(),
+            clock=Clock.new_test(),
+            fs_protocol="s3",
+            fs_storage_options={
+                "access_key_id": "not-a-key",
+                "secret_access_key": "not-a-secret",
+            },
+            replace=True,
+        )
+
+
 def test_streaming_feather_writer_close(tmp_path):
     path = str(tmp_path / "streaming")
     os.makedirs(path, exist_ok=True)
@@ -560,6 +750,62 @@ def test_streaming_feather_writer_rotation_modes(tmp_path):
             **kwargs,
         )
         assert writer is not None
+
+
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [
+        (
+            dt.datetime(2026, 3, 8, 7, 30, tzinfo=dt.UTC),
+            dt.datetime(2026, 3, 9, 5, 30, tzinfo=dt.UTC),
+        ),
+        (
+            dt.datetime(2026, 11, 1, 6, 30, tzinfo=dt.UTC),
+            dt.datetime(2026, 11, 2, 4, 30, tzinfo=dt.UTC),
+        ),
+    ],
+    ids=["cross_gap", "cross_fold"],
+)
+def test_streaming_feather_writer_scheduled_rotation_matches_python_across_dst(
+    tmp_path,
+    now,
+    expected,
+):
+    path = str(tmp_path / "streaming")
+    os.makedirs(path, exist_ok=True)
+    clock = Clock.new_test()
+    clock.set_time(pd.Timestamp(now).value)
+    writer = StreamingFeatherWriter(
+        path=path,
+        cache=Cache(),
+        clock=clock,
+        rotation_mode=2,
+        rotation_interval_ns=86_400_000_000_000,
+        rotation_time_ns=1_800_000_000_000,
+        rotation_timezone="America/New_York",
+    )
+    quote = TestDataProviderPyo3.quote_tick()
+
+    writer.write(quote)
+
+    next_rotation_rust = writer.get_next_rotation_time("quotes", str(quote.instrument_id))
+    next_rotation_python = _next_rotation_python(now)
+    expected_ns = pd.Timestamp(expected).value
+
+    assert next_rotation_rust == next_rotation_python.value
+    assert next_rotation_rust == expected_ns
+
+
+def _next_rotation_python(now):
+    now = pd.Timestamp(now)
+    rotation_timezone = ZoneInfo("America/New_York")
+    rotation_time = pd.Timestamp.combine(now.date(), dt.time(0, 30))
+    next_rotation = pd.Timestamp(rotation_time, tz=rotation_timezone).tz_convert("UTC")
+
+    while next_rotation <= now:
+        next_rotation += pd.Timedelta(days=1)
+
+    return next_rotation
 
 
 def test_streaming_feather_writer_include_types(tmp_path):

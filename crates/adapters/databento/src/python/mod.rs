@@ -75,9 +75,7 @@ fn extract_databento_data_config(
 
 /// Databento Python module.
 ///
-/// The module is exposed under different paths depending on the build configuration:
-/// - With `cython-compat` feature: `nautilus_trader.core.nautilus_pyo3.databento`
-/// - Without `cython-compat`: `nautilus_trader._libnautilus.databento`
+/// The module is exposed as `nautilus_trader._libnautilus.databento`.
 ///
 /// # Errors
 ///

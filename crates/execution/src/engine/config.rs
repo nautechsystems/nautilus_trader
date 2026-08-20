@@ -21,10 +21,7 @@ use serde::{Deserialize, Serialize};
 /// Configuration for `ExecutionEngine` instances.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.execution",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.execution", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -166,6 +163,31 @@ impl ExecutionEngineConfig {
             }
         }
 
+        for (field, value) in [
+            (
+                "purge_closed_orders_buffer_mins",
+                self.purge_closed_orders_buffer_mins,
+            ),
+            (
+                "purge_closed_positions_buffer_mins",
+                self.purge_closed_positions_buffer_mins,
+            ),
+            (
+                "purge_account_events_lookback_mins",
+                self.purge_account_events_lookback_mins,
+            ),
+        ] {
+            if let Some(mins) = value {
+                errors.check(
+                    checked_mins_to_nanos(u64::from(mins)).is_some(),
+                    ConfigError::range(
+                        field,
+                        format!("must fit in `u64` nanoseconds, was {mins} minutes"),
+                    ),
+                );
+            }
+        }
+
         errors.into_result()
     }
 }
@@ -294,6 +316,58 @@ mod tests {
                 ],
             }
         );
+    }
+
+    #[rstest]
+    #[case("purge_closed_orders_buffer_mins", 0)]
+    #[case("purge_closed_orders_buffer_mins", 307_445_734)]
+    #[case("purge_closed_positions_buffer_mins", 0)]
+    #[case("purge_closed_positions_buffer_mins", 307_445_734)]
+    #[case("purge_account_events_lookback_mins", 0)]
+    #[case("purge_account_events_lookback_mins", 307_445_734)]
+    fn test_purge_retention_minute_boundaries_accepted(#[case] field: &str, #[case] mins: u32) {
+        let mut config = ExecutionEngineConfig::default();
+
+        match field {
+            "purge_closed_orders_buffer_mins" => {
+                config.purge_closed_orders_buffer_mins = Some(mins);
+            }
+            "purge_closed_positions_buffer_mins" => {
+                config.purge_closed_positions_buffer_mins = Some(mins);
+            }
+            "purge_account_events_lookback_mins" => {
+                config.purge_account_events_lookback_mins = Some(mins);
+            }
+            _ => unreachable!(),
+        }
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[rstest]
+    #[case("purge_closed_orders_buffer_mins")]
+    #[case("purge_closed_positions_buffer_mins")]
+    #[case("purge_account_events_lookback_mins")]
+    fn test_overflowing_purge_retention_minutes_rejected(#[case] field: &str) {
+        let mut config = ExecutionEngineConfig::default();
+
+        match field {
+            "purge_closed_orders_buffer_mins" => {
+                config.purge_closed_orders_buffer_mins = Some(307_445_735);
+            }
+            "purge_closed_positions_buffer_mins" => {
+                config.purge_closed_positions_buffer_mins = Some(307_445_735);
+            }
+            "purge_account_events_lookback_mins" => {
+                config.purge_account_events_lookback_mins = Some(307_445_735);
+            }
+            _ => unreachable!(),
+        }
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::Range { field: error_field, .. }) if error_field == field
+        ));
     }
 
     #[rstest]

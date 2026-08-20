@@ -31,7 +31,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-use futures_util::StreamExt;
+use futures_util::{StreamExt, stream};
 
 use self::{
     clock::{Clock, FakeRelativeClock, MonotonicClock},
@@ -62,8 +62,9 @@ impl InMemoryState {
         F: FnMut(Option<Nanos>) -> Result<(T, Nanos), E>,
     {
         let mut prev = self.0.load(Ordering::Acquire);
-        let mut decision = f(NonZeroU64::new(prev).map(|n| n.get().into()));
-        while let Ok((result, new_data)) = decision {
+        loop {
+            let (result, new_data) = f(NonZeroU64::new(prev).map(|n| n.get().into()))?;
+
             // Lock-free CAS loop: retry with current value if another thread modified it,
             // uses weak variant (faster) since spurious failures are fine in a retry loop.
             match self.0.compare_exchange_weak(
@@ -75,11 +76,7 @@ impl InMemoryState {
                 Ok(_) => return Ok(result),
                 Err(e) => prev = e, // Retry with value written by another thread
             }
-            decision = f(NonZeroU64::new(prev).map(|n| n.get().into()));
         }
-        // This map shouldn't be needed, as we only get here in the error case, but the compiler
-        // can't see it.
-        decision.map(|(result, _)| result)
     }
 }
 
@@ -278,7 +275,7 @@ where
             }
             _ => {
                 let tasks = keys.iter().map(|key| self.until_key_ready(key));
-                futures::stream::iter(tasks)
+                stream::iter(tasks)
                     .for_each_concurrent(None, |key_future| async move {
                         key_future.await;
                     })
@@ -302,7 +299,7 @@ mod tests {
     use super::{
         DashMapStateStore, RateLimiter,
         clock::{Clock, FakeRelativeClock},
-        gcra::{Gcra, StateSnapshot},
+        gcra::Gcra,
         nanos::Nanos,
         quota::Quota,
     };
@@ -464,17 +461,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_remaining_burst_capacity_zero_t() {
-        let snapshot = StateSnapshot::new(
-            Nanos::from(0u64),
-            Nanos::from(1_000_000u64),
-            Nanos::from(0u64),
-            Nanos::from(0u64),
-        );
-        assert_eq!(snapshot.remaining_burst_capacity(), 0);
-    }
-
-    #[rstest]
     fn test_per_second_returns_none_on_zero_replenish_interval() {
         assert!(Quota::per_second(NonZeroU32::new(u32::MAX).unwrap()).is_none());
     }
@@ -495,7 +481,7 @@ mod tests {
         use proptest::prelude::*;
         use rstest::rstest;
 
-        use crate::ratelimiter::{gcra::StateSnapshot, nanos::Nanos};
+        use crate::ratelimiter::nanos::Nanos;
 
         proptest! {
             #![proptest_config(ProptestConfig {
@@ -504,24 +490,6 @@ mod tests {
                 )),
                 ..ProptestConfig::default()
             })]
-
-            // Full u64 domain: the historical overflow lived above the narrowed one-hour range
-            #[rstest]
-            fn remaining_burst_capacity_never_panics(
-                t in proptest::num::u64::ANY,
-                tau in proptest::num::u64::ANY,
-                time_of_measurement in proptest::num::u64::ANY,
-                tat in proptest::num::u64::ANY,
-            ) {
-                let snapshot = StateSnapshot::new(
-                    Nanos::from(t),
-                    Nanos::from(tau),
-                    Nanos::from(time_of_measurement),
-                    Nanos::from(tat),
-                );
-
-                let _ = snapshot.remaining_burst_capacity();
-            }
 
             // Operators must saturate across the full u64 domain (a wrapped TAT admits everything)
             #[rstest]

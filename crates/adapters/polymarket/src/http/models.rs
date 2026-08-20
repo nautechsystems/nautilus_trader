@@ -26,8 +26,10 @@ use crate::common::{
     },
     models::PolymarketMakerOrder,
     parse::{
-        deserialize_decimal_from_str, deserialize_optional_polymarket_game_id,
-        serialize_decimal_as_str,
+        deserialize_decimal_from_json_number, deserialize_decimal_from_str,
+        deserialize_optional_decimal_from_json_number, deserialize_optional_polymarket_game_id,
+        serialize_decimal_as_json_number, serialize_decimal_as_str,
+        serialize_optional_decimal_as_json_number,
     },
 };
 
@@ -177,6 +179,8 @@ pub struct GammaMarket {
     pub closed_time: Option<String>,
     /// UMA resolution state reported by Gamma.
     pub uma_resolution_status: Option<String>,
+    /// JSON-encoded UMA resolution states reported by Gamma.
+    pub uma_resolution_statuses: Option<String>,
     /// Source used to resolve the market.
     pub resolution_source: Option<String>,
     /// Whether CLOB is accepting orders.
@@ -184,9 +188,19 @@ pub struct GammaMarket {
     /// Whether order book trading is enabled.
     pub enable_order_book: Option<bool>,
     /// Minimum price increment.
-    pub order_price_min_tick_size: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub order_price_min_tick_size: Option<Decimal>,
     /// Minimum order size.
-    pub order_min_size: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub order_min_size: Option<Decimal>,
     /// Maker fee in basis points.
     pub maker_base_fee: Option<i64>,
     /// Taker fee in basis points.
@@ -240,11 +254,12 @@ pub struct GammaMarket {
     pub neg_risk_market_id: Option<String>,
     /// Fee schedule for this market.
     pub fee_schedule: Option<FeeSchedule>,
-    /// Game ID for sport markets. `null` and `-1` both mean "no game" and
-    /// surface as `None`. Reference shape:
+    /// Game ID for sport markets, kept verbatim because Gamma emits both
+    /// numeric and composite `<uuid>:<away>:<home>` forms. `null` and `-1`
+    /// both mean "no game" and surface as `None`. Reference shape:
     /// <https://github.com/Polymarket/rs-clob-client/blob/main/src/gamma/types/response.rs>.
     #[serde(default, deserialize_with = "deserialize_optional_polymarket_game_id")]
-    pub game_id: Option<u64>,
+    pub game_id: Option<String>,
     /// Events linked to this gamma market.
     pub events: Option<Vec<GammaEvent>>,
 }
@@ -252,10 +267,22 @@ pub struct GammaMarket {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeeSchedule {
-    pub exponent: f64,
-    pub rate: f64,
+    #[serde(
+        serialize_with = "serialize_decimal_as_json_number",
+        deserialize_with = "deserialize_decimal_from_json_number"
+    )]
+    pub exponent: Decimal,
+    #[serde(
+        serialize_with = "serialize_decimal_as_json_number",
+        deserialize_with = "deserialize_decimal_from_json_number"
+    )]
+    pub rate: Decimal,
     pub taker_only: bool,
-    pub rebate_rate: f64,
+    #[serde(
+        serialize_with = "serialize_decimal_as_json_number",
+        deserialize_with = "deserialize_decimal_from_json_number"
+    )]
+    pub rebate_rate: Decimal,
 }
 
 /// An event response from the Gamma API `GET /events`.
@@ -295,11 +322,12 @@ pub struct GammaEvent {
     pub neg_risk_market_id: Option<String>,
     /// Whether event is featured.
     pub featured: Option<bool>,
-    /// Game ID for sport markets. `null` and `-1` both mean "no game" and
-    /// surface as `None`. Reference shape:
+    /// Game ID for sport markets, kept verbatim because Gamma emits both
+    /// numeric and composite `<uuid>:<away>:<home>` forms. `null` and `-1`
+    /// both mean "no game" and surface as `None`. Reference shape:
     /// <https://github.com/Polymarket/rs-clob-client/blob/main/src/gamma/types/response.rs>.
     #[serde(default, deserialize_with = "deserialize_optional_polymarket_game_id")]
-    pub game_id: Option<u64>,
+    pub game_id: Option<String>,
 }
 
 /// A tag from the Gamma API `GET /tags`.
@@ -330,7 +358,8 @@ pub struct SearchResponse {
 #[derive(Clone, Debug, Deserialize)]
 pub struct TickSizeResponse {
     /// Minimum tick size (price increment) for a token.
-    pub minimum_tick_size: f64,
+    #[serde(deserialize_with = "deserialize_decimal_from_json_number")]
+    pub minimum_tick_size: Decimal,
 }
 
 /// Fee rate response from CLOB `GET /fee-rate`.
@@ -363,15 +392,86 @@ pub struct ClobBookResponse {
 pub struct ClobMarketToken {
     pub token_id: String,
     pub outcome: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub price: Option<Decimal>,
     pub winner: bool,
+}
+
+/// A daily reward rate in a CLOB market response.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ClobMarketRewardRate {
+    pub asset_address: String,
+    #[serde(
+        deserialize_with = "deserialize_decimal_from_json_number",
+        serialize_with = "serialize_decimal_as_json_number"
+    )]
+    pub rewards_daily_rate: Decimal,
+}
+
+/// Reward configuration in a CLOB market response.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ClobMarketRewards {
+    pub rates: Option<Vec<ClobMarketRewardRate>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub min_size: Option<Decimal>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub max_spread: Option<Decimal>,
 }
 
 /// Response from CLOB `GET /markets/{condition_id}`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ClobMarketResponse {
+    pub enable_order_book: Option<bool>,
+    pub active: Option<bool>,
     pub condition_id: String,
     pub closed: bool,
+    pub archived: Option<bool>,
+    pub accepting_orders: Option<bool>,
+    pub accepting_order_timestamp: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub minimum_order_size: Option<Decimal>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub minimum_tick_size: Option<Decimal>,
+    pub question_id: Option<String>,
+    pub question: Option<String>,
+    pub description: Option<String>,
+    pub market_slug: Option<String>,
+    pub end_date_iso: Option<String>,
+    pub game_start_time: Option<String>,
+    pub seconds_delay: Option<i64>,
+    pub fpmm: Option<String>,
+    pub maker_base_fee: Option<i64>,
+    pub taker_base_fee: Option<i64>,
+    pub notifications_enabled: Option<bool>,
+    pub neg_risk: Option<bool>,
+    pub neg_risk_market_id: Option<String>,
+    pub neg_risk_request_id: Option<String>,
+    pub icon: Option<String>,
+    pub image: Option<String>,
+    pub rewards: Option<ClobMarketRewards>,
+    pub is_50_50_outcome: Option<bool>,
     pub tokens: Vec<ClobMarketToken>,
+    pub tags: Option<Vec<String>>,
 }
 
 /// A position from the Polymarket Data API `GET /positions` endpoint.
@@ -389,12 +489,26 @@ pub struct DataApiPosition {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DataApiTrade {
+    pub proxy_wallet: Option<String>,
     pub asset: String,
     pub condition_id: String,
     pub side: PolymarketOrderSide,
-    pub price: f64,
-    pub size: f64,
+    #[serde(deserialize_with = "deserialize_decimal_from_json_number")]
+    pub price: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_from_json_number")]
+    pub size: Decimal,
     pub timestamp: i64,
+    pub title: Option<String>,
+    pub slug: Option<String>,
+    pub icon: Option<String>,
+    pub event_slug: Option<String>,
+    pub outcome: Option<String>,
+    pub outcome_index: Option<i64>,
+    pub name: Option<String>,
+    pub pseudonym: Option<String>,
+    pub bio: Option<String>,
+    pub profile_image: Option<String>,
+    pub profile_image_optimized: Option<String>,
     pub transaction_hash: String,
 }
 
@@ -651,7 +765,50 @@ mod tests {
 
         // one market has no game_id
         assert!(map_handicap.game_id.is_none());
-        assert_eq!(money_line.game_id, Some(1_427_074));
+        assert_eq!(money_line.game_id.as_deref(), Some("1427074"));
+    }
+
+    #[rstest]
+    fn test_gamma_event_composite_sports_game_id() {
+        // Live Gamma record from issue #4771: the event carries a numeric
+        // `gameId` while its first market carries a composite one.
+        let events: Vec<GammaEvent> = load("gamma_event_sports_composite_game_id.json");
+
+        assert_eq!(events.len(), 1);
+
+        let event = &events[0];
+
+        assert_eq!(event.id, "835109");
+        assert_eq!(event.game_id.as_deref(), Some("287011684"));
+        assert_eq!(event.markets.len(), 2);
+        assert_eq!(event.markets[0].id, "3524358");
+        assert_eq!(
+            event.markets[0].game_id.as_deref(),
+            Some("dd80aae9-52f9-4c7b-a1cf-7b4ab63cd281:STL:TEX")
+        );
+        assert_eq!(event.markets[1].id, "3554041");
+        assert_eq!(event.markets[1].game_id, None);
+
+        // Re-serialization feeds the Python loader, so the key stays a string
+        // even where Gamma sent a number.
+        let encoded = serde_json::to_value(event).unwrap();
+
+        assert_eq!(encoded["gameId"], serde_json::json!("287011684"));
+        assert_eq!(
+            encoded["markets"][0]["gameId"],
+            serde_json::json!("dd80aae9-52f9-4c7b-a1cf-7b4ab63cd281:STL:TEX")
+        );
+    }
+
+    #[rstest]
+    fn test_fee_schedule_decimal_fields() {
+        let market: GammaMarket = load("gamma_market_sports_market_money_line.json");
+        let schedule = market.fee_schedule.unwrap();
+
+        assert_eq!(schedule.exponent, Decimal::ONE);
+        assert_eq!(schedule.rate, dec!(0.03));
+        assert!(schedule.taker_only);
+        assert_eq!(schedule.rebate_rate, dec!(0.25));
     }
 
     #[rstest]
@@ -672,10 +829,20 @@ mod tests {
         assert_eq!(market.competitive, Some(0.9999750006249843));
         assert!(market.category.is_none());
         assert!(market.neg_risk_market_id.is_none());
+        assert!(market.uma_resolution_status.is_none());
+        assert_eq!(market.uma_resolution_statuses.as_deref(), Some("[]"));
         assert_eq!(
             market.outcome_prices.as_deref(),
             Some("[\"0.505\", \"0.495\"]")
         );
+    }
+
+    #[rstest]
+    fn test_gamma_market_uma_resolution_statuses() {
+        let market: GammaMarket = load("gamma_market.json");
+
+        assert!(market.uma_resolution_status.is_none());
+        assert_eq!(market.uma_resolution_statuses.as_deref(), Some("[]"));
     }
 
     #[rstest]
@@ -786,6 +953,162 @@ mod tests {
     }
 
     #[rstest]
+    fn test_clob_market_response_captured_fields() {
+        let response: ClobMarketResponse = load("clob_market_response.json");
+        let raw: serde_json::Value = load("clob_market_response.json");
+
+        assert_eq!(response.enable_order_book, Some(true));
+        assert_eq!(response.active, Some(true));
+        assert!(!response.closed);
+        assert_eq!(response.archived, Some(false));
+        assert_eq!(response.accepting_orders, Some(true));
+        assert_eq!(
+            response.accepting_order_timestamp.as_deref(),
+            Some("2026-08-01T22:56:49Z")
+        );
+        assert_eq!(response.minimum_order_size, Some(dec!(5)));
+        assert_eq!(response.minimum_tick_size, Some(dec!(0.01)));
+        assert_eq!(
+            response.condition_id,
+            "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        );
+        assert_eq!(
+            response.question_id.as_deref(),
+            Some("0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
+        );
+        assert_eq!(
+            response.question.as_deref(),
+            Some("LoL: T1 vs Hanwha Life Esports (BO3) - LCK Round 3-4 Legend Group")
+        );
+        assert_eq!(response.description.as_deref(), raw["description"].as_str());
+        assert_eq!(
+            response.market_slug.as_deref(),
+            Some("sanitized-clob-market")
+        );
+        assert_eq!(
+            response.end_date_iso.as_deref(),
+            Some("2026-08-08T00:00:00Z")
+        );
+        assert_eq!(
+            response.game_start_time.as_deref(),
+            Some("2026-08-08T08:00:00Z")
+        );
+        assert_eq!(response.seconds_delay, Some(1));
+        assert_eq!(response.fpmm.as_deref(), Some(""));
+        assert_eq!(response.maker_base_fee, Some(1000));
+        assert_eq!(response.taker_base_fee, Some(1000));
+        assert_eq!(response.notifications_enabled, Some(true));
+        assert_eq!(response.neg_risk, Some(false));
+        assert_eq!(response.neg_risk_market_id.as_deref(), Some(""));
+        assert_eq!(response.neg_risk_request_id.as_deref(), Some(""));
+        assert_eq!(
+            response.icon.as_deref(),
+            Some("https://example.com/sanitized-market.png")
+        );
+        assert_eq!(
+            response.image.as_deref(),
+            Some("https://example.com/sanitized-market.png")
+        );
+        let rewards = response.rewards.as_ref().expect("captured rewards");
+        assert!(rewards.rates.is_none());
+        assert_eq!(rewards.min_size, Some(dec!(50)));
+        assert_eq!(rewards.max_spread, Some(dec!(4.5)));
+        assert_eq!(response.is_50_50_outcome, Some(false));
+        assert_eq!(response.tokens.len(), 2);
+        assert_eq!(
+            response.tokens[0].token_id,
+            "10000000000000000000000000000000000000000000000000000000000000000000000000001"
+        );
+        assert_eq!(response.tokens[0].outcome, "T1");
+        assert_eq!(response.tokens[0].price, Some(dec!(0.715)));
+        assert!(!response.tokens[0].winner);
+        assert_eq!(
+            response.tokens[1].token_id,
+            "10000000000000000000000000000000000000000000000000000000000000000000000000002"
+        );
+        assert_eq!(response.tokens[1].outcome, "Hanwha Life Esports");
+        assert_eq!(response.tokens[1].price, Some(dec!(0.285)));
+        assert!(!response.tokens[1].winner);
+        assert_eq!(
+            response.tags.as_deref(),
+            Some(
+                &[
+                    "Sports".to_string(),
+                    "Esports".to_string(),
+                    "league of legends".to_string(),
+                    "Games".to_string(),
+                ][..]
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_clob_market_rewards_documented_rate_fields() {
+        // Constructed from the documented Rewards schema because the capture has `rates: null`
+        let json = r#"{
+            "rates":[{"asset_address":"0x1111111111111111111111111111111111111111","rewards_daily_rate":12.5}],
+            "min_size":25,
+            "max_spread":3.5
+        }"#;
+        let rewards: ClobMarketRewards = serde_json::from_str(json).unwrap();
+
+        let rates = rewards.rates.as_deref().expect("documented reward rate");
+        assert_eq!(rates.len(), 1);
+        assert_eq!(
+            rates[0].asset_address,
+            "0x1111111111111111111111111111111111111111"
+        );
+        assert_eq!(rates[0].rewards_daily_rate, dec!(12.5));
+        assert_eq!(rewards.min_size, Some(dec!(25)));
+        assert_eq!(rewards.max_spread, Some(dec!(3.5)));
+    }
+
+    #[rstest]
+    fn test_clob_market_decimal_fields_preserve_precision() {
+        let json = r#"{
+            "condition_id":"0xcondition",
+            "closed":false,
+            "minimum_order_size":123456789.1234567890123456789,
+            "minimum_tick_size":0.1234567890123456789012345678,
+            "rewards":{
+                "rates":[{
+                    "asset_address":"0x1111111111111111111111111111111111111111",
+                    "rewards_daily_rate":0.1234567890123456789012345678
+                }],
+                "min_size":123456789.1234567890123456789,
+                "max_spread":0.1234567890123456789012345678
+            },
+            "tokens":[{
+                "token_id":"token-1",
+                "outcome":"Yes",
+                "price":0.1234567890123456789012345678,
+                "winner":false
+            }]
+        }"#;
+        let market: ClobMarketResponse = serde_json::from_str(json).unwrap();
+        let precise = Decimal::from_str_exact("0.1234567890123456789012345678").unwrap();
+        let large = Decimal::from_str_exact("123456789.1234567890123456789").unwrap();
+
+        assert_eq!(market.minimum_order_size, Some(large));
+        assert_eq!(market.minimum_tick_size, Some(precise));
+        let rewards = market.rewards.as_ref().unwrap();
+        assert_eq!(
+            rewards.rates.as_ref().unwrap()[0].rewards_daily_rate,
+            precise
+        );
+        assert_eq!(rewards.min_size, Some(large));
+        assert_eq!(rewards.max_spread, Some(precise));
+        assert_eq!(market.tokens[0].price, Some(precise));
+        let serialized = serde_json::to_string(&market).unwrap();
+        assert!(serialized.contains("\"minimum_order_size\":123456789.1234567890123456789"));
+        assert!(serialized.contains("\"minimum_tick_size\":0.1234567890123456789012345678"));
+        assert!(serialized.contains("\"rewards_daily_rate\":0.1234567890123456789012345678"));
+        assert!(serialized.contains("\"min_size\":123456789.1234567890123456789"));
+        assert!(serialized.contains("\"max_spread\":0.1234567890123456789012345678"));
+        assert!(serialized.contains("\"price\":0.1234567890123456789012345678"));
+    }
+
+    #[rstest]
     fn test_clob_market_response_deserialization_accepting_false() {
         let response: ClobMarketResponse = load("clob_market_closed_binary_accepting_false.json");
         assert_eq!(
@@ -813,6 +1136,17 @@ mod tests {
         assert!(response.tokens[0].winner);
         assert_eq!(response.tokens[1].outcome, "No");
         assert!(!response.tokens[1].winner);
+    }
+
+    #[rstest]
+    fn test_tick_size_response_preserves_json_number() {
+        let response: TickSizeResponse =
+            serde_json::from_str(r#"{"minimum_tick_size":0.1234567890123456789012345678}"#)
+                .unwrap();
+        let precise =
+            rust_decimal::Decimal::from_str_exact("0.1234567890123456789012345678").unwrap();
+
+        assert_eq!(response.minimum_tick_size, precise);
     }
 
     #[rstest]
@@ -862,33 +1196,105 @@ mod tests {
 
     #[rstest]
     fn test_data_api_trade_deserialization() {
-        let trades: Vec<DataApiTrade> = load("data_api_trades_response.json");
+        let trades: Vec<DataApiTrade> = load("data_api_trades_captured_response.json");
 
         assert_eq!(trades.len(), 3);
         assert_eq!(
             trades[0].asset,
-            "71321045863084981365469005770620412523470745398083994982746259498689308907982"
+            "10000000000000000000000000000000000000000000000000000000000000000000000000001"
         );
         assert_eq!(
             trades[0].condition_id,
-            "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47"
+            "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
         );
-        assert_eq!(trades[0].side, PolymarketOrderSide::Buy);
-        assert_eq!(trades[0].price, 0.55);
-        assert_eq!(trades[0].size, 100.0);
-        assert_eq!(trades[0].timestamp, 1710000000);
+        assert_eq!(trades[0].side, PolymarketOrderSide::Sell);
+        assert_eq!(trades[0].price, dec!(0.7));
+        assert_eq!(trades[0].size, dec!(92.59));
+        assert_eq!(trades[0].timestamp, 1786179735);
         assert_eq!(
             trades[0].transaction_hash,
-            "0xabc123def456789012345678901234567890abcdef1234567890abcdef123456"
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         );
 
-        assert_eq!(trades[1].side, PolymarketOrderSide::Sell);
-        assert_eq!(trades[1].price, 0.53);
-
-        // Third trade has different asset (other outcome token)
+        assert_eq!(trades[1].asset, trades[0].asset);
+        assert_eq!(trades[1].condition_id, trades[0].condition_id);
+        assert_eq!(trades[1].side, PolymarketOrderSide::Buy);
+        assert_eq!(trades[1].price, dec!(0.709999959));
+        assert_eq!(trades[1].size, dec!(1.464786));
+        assert_eq!(trades[1].timestamp, 1786179730);
+        assert_eq!(
+            trades[1].transaction_hash,
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
         assert_eq!(
             trades[2].asset,
-            "99999999999999999999999999999999999999999999999999999999999999999999999999999"
+            "10000000000000000000000000000000000000000000000000000000000000000000000000002"
+        );
+        assert_eq!(trades[2].condition_id, trades[0].condition_id);
+        assert_eq!(trades[2].side, PolymarketOrderSide::Buy);
+        assert_eq!(trades[2].price, dec!(0.2972581967));
+        assert_eq!(trades[2].size, dec!(244));
+        assert_eq!(trades[2].timestamp, 1786179726);
+        assert_eq!(
+            trades[2].transaction_hash,
+            "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        );
+
+        for (trade, outcome, outcome_index) in [
+            (&trades[0], "T1", 0),
+            (&trades[1], "T1", 0),
+            (&trades[2], "Hanwha Life Esports", 1),
+        ] {
+            assert_eq!(
+                trade.proxy_wallet.as_deref(),
+                Some("0x1111111111111111111111111111111111111111")
+            );
+            assert_eq!(
+                trade.title.as_deref(),
+                Some("LoL: T1 vs Hanwha Life Esports (BO3) - LCK Round 3-4 Legend Group")
+            );
+            assert_eq!(trade.slug.as_deref(), Some("sanitized-market"));
+            assert_eq!(
+                trade.icon.as_deref(),
+                Some("https://example.com/sanitized-market.png")
+            );
+            assert_eq!(trade.event_slug.as_deref(), Some("sanitized-event"));
+            assert_eq!(trade.outcome.as_deref(), Some(outcome));
+            assert_eq!(trade.outcome_index, Some(outcome_index));
+            assert_eq!(trade.name.as_deref(), Some("Sanitized trader"));
+            assert_eq!(trade.pseudonym.as_deref(), Some("sanitized-trader"));
+            assert_eq!(trade.bio.as_deref(), Some("Sanitized profile"));
+            assert_eq!(
+                trade.profile_image.as_deref(),
+                Some("https://example.com/sanitized-profile.png")
+            );
+            assert_eq!(
+                trade.profile_image_optimized.as_deref(),
+                Some("https://example.com/sanitized-profile-optimized.png")
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_data_api_trade_decimal_fields_preserve_precision() {
+        let json = r#"{
+            "asset":"token-1",
+            "conditionId":"0xcondition",
+            "side":"BUY",
+            "price":0.1234567890123456789012345678,
+            "size":123456789.1234567890123456789,
+            "timestamp":1786179735,
+            "transactionHash":"0xtransaction"
+        }"#;
+        let trade: DataApiTrade = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            trade.price,
+            Decimal::from_str_exact("0.1234567890123456789012345678").unwrap()
+        );
+        assert_eq!(
+            trade.size,
+            Decimal::from_str_exact("123456789.1234567890123456789").unwrap()
         );
     }
 }

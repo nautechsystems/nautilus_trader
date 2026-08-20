@@ -32,7 +32,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    UnixNanos,
+    Params, UnixNanos,
     datetime::NANOSECONDS_IN_SECOND,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -354,9 +354,10 @@ impl ExecutionClient for DeribitExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
+            .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
     }
 
@@ -518,7 +519,7 @@ impl ExecutionClient for DeribitExecutionClient {
             match self.http_client.inner.get_order_state(params).await {
                 Ok(response) => {
                     if let Some(order) = response.result {
-                        let symbol = ustr::Ustr::from(&order.instrument_name);
+                        let symbol = order.instrument_name;
                         if let Some(instrument) = self.http_client.get_instrument(&symbol) {
                             let report = parse_user_order_msg(
                                 &order,

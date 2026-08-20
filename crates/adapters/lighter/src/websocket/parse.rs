@@ -492,8 +492,8 @@ pub fn parse_ws_order_status_report(
     let order_status = nautilus_order_status(order.status, &filled_qty);
     let cancel_reason = order.status.as_cancel_reason();
 
-    let ts_accepted = parse_optional_event_millis(order.created_at)?;
-    let ts_last = parse_optional_event_millis(order.updated_at)?;
+    let ts_accepted = parse_optional_order_timestamp(order.created_at)?;
+    let ts_last = parse_optional_order_timestamp(order.updated_at)?;
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -768,8 +768,8 @@ pub(crate) fn parse_lighter_order_event(
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<ParsedOrderEvent>> {
     let venue_order_id = VenueOrderId::new(order.order_id.as_str());
-    let ts_event = parse_optional_event_millis(order.updated_at)?;
-    let ts_accept = parse_optional_event_millis(order.created_at)?;
+    let ts_event = parse_optional_order_timestamp(order.updated_at)?;
+    let ts_accept = parse_optional_order_timestamp(order.created_at)?;
 
     match order.status {
         LighterOrderStatus::InProgress => Ok(None),
@@ -1152,10 +1152,22 @@ pub fn build_unified_account_state(
     )
 }
 
-fn parse_optional_event_millis(millis: i64) -> anyhow::Result<UnixNanos> {
-    if millis <= 0 {
+/// Largest ten-digit Unix timestamp. Lighter order frames deliver `created_at` and
+/// `updated_at` in seconds or milliseconds depending on the frame source, so parsing
+/// normalizes second-scale values before nanosecond conversion.
+const UNIX_TIMESTAMP_SECONDS_MAX: i64 = 9_999_999_999;
+
+fn parse_optional_order_timestamp(timestamp: i64) -> anyhow::Result<UnixNanos> {
+    if timestamp <= 0 {
         return Ok(UnixNanos::default());
     }
+
+    let millis = if timestamp <= UNIX_TIMESTAMP_SECONDS_MAX {
+        timestamp * 1_000
+    } else {
+        timestamp
+    };
+
     parse_millis_to_nanos(millis as u64)
 }
 
@@ -1882,6 +1894,32 @@ mod tests {
         assert_eq!(report.time_in_force, TimeInForce::Gtd);
         assert!(report.expire_time.is_some());
         assert_eq!(report.ts_init, UnixNanos::from(7));
+        assert_eq!(
+            report.ts_accepted,
+            UnixNanos::from(1_777_941_383_576_000_000),
+        );
+        assert_eq!(report.ts_last, UnixNanos::from(1_777_941_383_900_000_000));
+    }
+
+    #[rstest]
+    fn test_parse_ws_order_status_report_normalizes_second_scale_timestamps() {
+        let instrument = create_test_instrument();
+        // Mainnet order frames deliver `created_at`/`updated_at` in seconds,
+        // while other frame sources use milliseconds.
+        let mut order = stub_order(LighterOrderStatus::Open);
+        order.timestamp = 1_777_941_383;
+        order.created_at = 1_777_941_383;
+        order.updated_at = 1_777_941_383;
+
+        let report =
+            parse_ws_order_status_report(&order, &instrument, account_id(), UnixNanos::from(7))
+                .unwrap();
+
+        assert_eq!(
+            report.ts_accepted,
+            UnixNanos::from(1_777_941_383_000_000_000),
+        );
+        assert_eq!(report.ts_last, UnixNanos::from(1_777_941_383_000_000_000),);
     }
 
     #[rstest]

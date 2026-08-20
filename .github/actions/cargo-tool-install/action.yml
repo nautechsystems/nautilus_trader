@@ -19,7 +19,7 @@ runs:
       shell: bash
       env:
         TOOL_NAME: ${{ inputs.tool-name }}
-      run: |
+      run: | # zizmor: ignore[github-env] All callers use fixed repository tool metadata
         VERSION=$(bash scripts/cargo-tool-version.sh "$TOOL_NAME")
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"
         echo "TOOL_VERSION=$VERSION" >> "$GITHUB_ENV"
@@ -27,20 +27,20 @@ runs:
 
     - name: Get Rust toolchain version
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] Version comes from repository toolchain metadata
         TOOLCHAIN="$(bash scripts/rust-toolchain.sh)"
         echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
 
-    # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+      # https://github.com/actions-rust-lang/setup-rust-toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       with:
         toolchain: ${{ env.TOOLCHAIN }}
         override: true
 
-    # https://github.com/actions/cache
     - name: Cache tool binary
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      # https://github.com/actions/cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ runner.tool_cache }}/${{ inputs.tool-name }}
         key: ${{ inputs.tool-name }}-bin-${{ env.TOOL_VERSION }}-${{ runner.os }}-${{ env.TOOLCHAIN }}
@@ -49,7 +49,8 @@ runs:
       shell: bash
       env:
         TOOL_CACHE: ${{ runner.tool_cache }}
-      run: echo "$TOOL_CACHE/$TOOL_NAME/bin" >> "$GITHUB_PATH"
+      run: | # zizmor: ignore[github-env] Tool name comes from fixed repository callers
+        echo "$TOOL_CACHE/$TOOL_NAME/bin" >> "$GITHUB_PATH"
 
     - name: Install tool
       shell: bash

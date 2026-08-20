@@ -67,7 +67,7 @@ pub use custom::{
     get_python_data_class, reconstruct_python_custom_data, register_python_data_class,
 };
 pub use delta::OrderBookDelta;
-pub use deltas::{OrderBookDeltas, OrderBookDeltas_API};
+pub use deltas::OrderBookDeltas;
 pub use depth::{DEPTH10_LEN, OrderBookDepth10};
 pub use forward::ForwardPrice;
 pub use funding::FundingRateUpdate;
@@ -104,88 +104,20 @@ use crate::identifiers::{InstrumentId, Venue};
 #[derive(Debug)]
 pub enum Data {
     Delta(OrderBookDelta),
-    Deltas(OrderBookDeltas_API),
+    Deltas(Box<OrderBookDeltas>),
     Depth10(Box<OrderBookDepth10>), // This variant is significantly larger
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),
-    MarkPriceUpdate(MarkPriceUpdate), // TODO: Rename to MarkPrice once Cython gone
-    IndexPriceUpdate(IndexPriceUpdate), // TODO: Rename to IndexPrice once Cython gone
-    FundingRateUpdate(FundingRateUpdate),
+    MarkPrice(MarkPriceUpdate),
+    IndexPrice(IndexPriceUpdate),
+    FundingRate(FundingRateUpdate),
     OptionGreeks(OptionGreeks),
     InstrumentStatus(InstrumentStatus),
     InstrumentClose(InstrumentClose),
     Custom(CustomData),
     #[cfg(feature = "defi")]
     Defi(Box<DefiData>), // This variant is significantly larger
-}
-
-/// A C-compatible representation of [`Data`] for FFI.
-///
-/// This enum matches the standard variants of [`Data`] but excludes the `Custom`
-/// variant which is not FFI-safe.
-#[cfg(feature = "ffi")]
-#[repr(C)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(non_camel_case_types)]
-pub enum DataFFI {
-    Delta(OrderBookDelta),
-    Deltas(OrderBookDeltas_API),
-    Depth10(Box<OrderBookDepth10>),
-    Quote(QuoteTick),
-    Trade(TradeTick),
-    Bar(Bar),
-    MarkPriceUpdate(MarkPriceUpdate),
-    IndexPriceUpdate(IndexPriceUpdate),
-    InstrumentClose(InstrumentClose),
-}
-
-#[cfg(feature = "ffi")]
-impl TryFrom<Data> for DataFFI {
-    type Error = anyhow::Error;
-
-    fn try_from(value: Data) -> Result<Self, Self::Error> {
-        match value {
-            Data::Delta(x) => Ok(Self::Delta(x)),
-            Data::Deltas(x) => Ok(Self::Deltas(x)),
-            Data::Depth10(x) => Ok(Self::Depth10(x)),
-            Data::Quote(x) => Ok(Self::Quote(x)),
-            Data::Trade(x) => Ok(Self::Trade(x)),
-            Data::Bar(x) => Ok(Self::Bar(x)),
-            Data::MarkPriceUpdate(x) => Ok(Self::MarkPriceUpdate(x)),
-            Data::IndexPriceUpdate(x) => Ok(Self::IndexPriceUpdate(x)),
-            Data::FundingRateUpdate(_) => {
-                anyhow::bail!("Cannot convert Data::FundingRateUpdate to DataFFI")
-            }
-            Data::OptionGreeks(_) => {
-                anyhow::bail!("Cannot convert Data::OptionGreeks to DataFFI")
-            }
-            Data::InstrumentStatus(_) => {
-                anyhow::bail!("Cannot convert Data::InstrumentStatus to DataFFI")
-            }
-            Data::InstrumentClose(x) => Ok(Self::InstrumentClose(x)),
-            Data::Custom(_) => anyhow::bail!("Cannot convert Data::Custom to DataFFI"),
-            #[cfg(feature = "defi")]
-            Data::Defi(_) => anyhow::bail!("Cannot convert Data::Defi to DataFFI"),
-        }
-    }
-}
-
-#[cfg(feature = "ffi")]
-impl From<DataFFI> for Data {
-    fn from(value: DataFFI) -> Self {
-        match value {
-            DataFFI::Delta(x) => Self::Delta(x),
-            DataFFI::Deltas(x) => Self::Deltas(x),
-            DataFFI::Depth10(x) => Self::Depth10(x),
-            DataFFI::Quote(x) => Self::Quote(x),
-            DataFFI::Trade(x) => Self::Trade(x),
-            DataFFI::Bar(x) => Self::Bar(x),
-            DataFFI::MarkPriceUpdate(x) => Self::MarkPriceUpdate(x),
-            DataFFI::IndexPriceUpdate(x) => Self::IndexPriceUpdate(x),
-            DataFFI::InstrumentClose(x) => Self::InstrumentClose(x),
-        }
-    }
 }
 
 impl<'de> Deserialize<'de> for Data {
@@ -220,13 +152,13 @@ impl<'de> Deserialize<'de> for Data {
             "Bar" => Ok(Self::Bar(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
-            "MarkPriceUpdate" => Ok(Self::MarkPriceUpdate(
+            "MarkPriceUpdate" => Ok(Self::MarkPrice(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
-            "IndexPriceUpdate" => Ok(Self::IndexPriceUpdate(
+            "IndexPriceUpdate" => Ok(Self::IndexPrice(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
-            "FundingRateUpdate" => Ok(Self::FundingRateUpdate(
+            "FundingRateUpdate" => Ok(Self::FundingRate(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
             "OptionGreeks" => Ok(Self::OptionGreeks(
@@ -260,9 +192,9 @@ impl Clone for Data {
             Self::Quote(x) => Self::Quote(*x),
             Self::Trade(x) => Self::Trade(*x),
             Self::Bar(x) => Self::Bar(*x),
-            Self::MarkPriceUpdate(x) => Self::MarkPriceUpdate(*x),
-            Self::IndexPriceUpdate(x) => Self::IndexPriceUpdate(*x),
-            Self::FundingRateUpdate(x) => Self::FundingRateUpdate(*x),
+            Self::MarkPrice(x) => Self::MarkPrice(*x),
+            Self::IndexPrice(x) => Self::IndexPrice(*x),
+            Self::FundingRate(x) => Self::FundingRate(*x),
             Self::OptionGreeks(x) => Self::OptionGreeks(*x),
             Self::InstrumentStatus(x) => Self::InstrumentStatus(*x),
             Self::InstrumentClose(x) => Self::InstrumentClose(*x),
@@ -282,9 +214,9 @@ impl PartialEq for Data {
             (Self::Quote(a), Self::Quote(b)) => a == b,
             (Self::Trade(a), Self::Trade(b)) => a == b,
             (Self::Bar(a), Self::Bar(b)) => a == b,
-            (Self::MarkPriceUpdate(a), Self::MarkPriceUpdate(b)) => a == b,
-            (Self::IndexPriceUpdate(a), Self::IndexPriceUpdate(b)) => a == b,
-            (Self::FundingRateUpdate(a), Self::FundingRateUpdate(b)) => a == b,
+            (Self::MarkPrice(a), Self::MarkPrice(b)) => a == b,
+            (Self::IndexPrice(a), Self::IndexPrice(b)) => a == b,
+            (Self::FundingRate(a), Self::FundingRate(b)) => a == b,
             (Self::OptionGreeks(a), Self::OptionGreeks(b)) => a == b,
             (Self::InstrumentStatus(a), Self::InstrumentStatus(b)) => a == b,
             (Self::InstrumentClose(a), Self::InstrumentClose(b)) => a == b,
@@ -308,9 +240,9 @@ impl Serialize for Data {
             Self::Quote(x) => x.serialize(serializer),
             Self::Trade(x) => x.serialize(serializer),
             Self::Bar(x) => x.serialize(serializer),
-            Self::MarkPriceUpdate(x) => x.serialize(serializer),
-            Self::IndexPriceUpdate(x) => x.serialize(serializer),
-            Self::FundingRateUpdate(x) => x.serialize(serializer),
+            Self::MarkPrice(x) => x.serialize(serializer),
+            Self::IndexPrice(x) => x.serialize(serializer),
+            Self::FundingRate(x) => x.serialize(serializer),
             Self::OptionGreeks(x) => x.serialize(serializer),
             Self::InstrumentStatus(x) => x.serialize(serializer),
             Self::InstrumentClose(x) => x.serialize(serializer),
@@ -349,14 +281,24 @@ impl TryFrom<Data> for OrderBookDepth10 {
     }
 }
 
+impl TryFrom<Data> for OrderBookDeltas {
+    type Error = ();
+
+    fn try_from(value: Data) -> Result<Self, Self::Error> {
+        match value {
+            Data::Deltas(x) => Ok(*x),
+            _ => Err(()),
+        }
+    }
+}
+
 impl_try_from_data!(Quote, QuoteTick);
 impl_try_from_data!(Delta, OrderBookDelta);
-impl_try_from_data!(Deltas, OrderBookDeltas_API);
 impl_try_from_data!(Trade, TradeTick);
 impl_try_from_data!(Bar, Bar);
-impl_try_from_data!(MarkPriceUpdate, MarkPriceUpdate);
-impl_try_from_data!(IndexPriceUpdate, IndexPriceUpdate);
-impl_try_from_data!(FundingRateUpdate, FundingRateUpdate);
+impl_try_from_data!(MarkPrice, MarkPriceUpdate);
+impl_try_from_data!(IndexPrice, IndexPriceUpdate);
+impl_try_from_data!(FundingRate, FundingRateUpdate);
 impl_try_from_data!(OptionGreeks, OptionGreeks);
 impl_try_from_data!(InstrumentStatus, InstrumentStatus);
 impl_try_from_data!(InstrumentClose, InstrumentClose);
@@ -383,9 +325,9 @@ impl Data {
             Self::Quote(quote) => quote.instrument_id,
             Self::Trade(trade) => trade.instrument_id,
             Self::Bar(bar) => bar.bar_type.instrument_id(),
-            Self::MarkPriceUpdate(mark_price) => mark_price.instrument_id,
-            Self::IndexPriceUpdate(index_price) => index_price.instrument_id,
-            Self::FundingRateUpdate(funding_rate) => funding_rate.instrument_id,
+            Self::MarkPrice(mark_price) => mark_price.instrument_id,
+            Self::IndexPrice(index_price) => index_price.instrument_id,
+            Self::FundingRate(funding_rate) => funding_rate.instrument_id,
             Self::OptionGreeks(greeks) => greeks.instrument_id,
             Self::InstrumentStatus(status) => status.instrument_id,
             Self::InstrumentClose(close) => close.instrument_id,
@@ -474,9 +416,9 @@ impl HasTsInit for Data {
             Self::Quote(q) => q.ts_init,
             Self::Trade(t) => t.ts_init,
             Self::Bar(b) => b.ts_init,
-            Self::MarkPriceUpdate(p) => p.ts_init,
-            Self::IndexPriceUpdate(p) => p.ts_init,
-            Self::FundingRateUpdate(f) => f.ts_init,
+            Self::MarkPrice(p) => p.ts_init,
+            Self::IndexPrice(p) => p.ts_init,
+            Self::FundingRate(f) => f.ts_init,
             Self::OptionGreeks(g) => g.ts_init,
             Self::InstrumentStatus(s) => s.ts_init,
             Self::InstrumentClose(c) => c.ts_init,
@@ -501,9 +443,9 @@ impl From<OrderBookDelta> for Data {
     }
 }
 
-impl From<OrderBookDeltas_API> for Data {
-    fn from(value: OrderBookDeltas_API) -> Self {
-        Self::Deltas(value)
+impl From<OrderBookDeltas> for Data {
+    fn from(value: OrderBookDeltas) -> Self {
+        Self::Deltas(Box::new(value))
     }
 }
 
@@ -533,19 +475,19 @@ impl From<Bar> for Data {
 
 impl From<MarkPriceUpdate> for Data {
     fn from(value: MarkPriceUpdate) -> Self {
-        Self::MarkPriceUpdate(value)
+        Self::MarkPrice(value)
     }
 }
 
 impl From<IndexPriceUpdate> for Data {
     fn from(value: IndexPriceUpdate) -> Self {
-        Self::IndexPriceUpdate(value)
+        Self::IndexPrice(value)
     }
 }
 
 impl From<FundingRateUpdate> for Data {
     fn from(value: FundingRateUpdate) -> Self {
-        Self::FundingRateUpdate(value)
+        Self::FundingRate(value)
     }
 }
 
@@ -618,7 +560,7 @@ fn params_to_topic_suffix(params: &Params) -> String {
 #[derive(Clone, Serialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1060,26 +1002,6 @@ mod tests {
         let mut hasher = DefaultHasher::new();
         data_type.hash(&mut hasher);
         hasher.finish()
-    }
-
-    #[cfg(feature = "ffi")]
-    #[rstest]
-    fn test_funding_rate_update_does_not_convert_to_data_ffi() {
-        let funding_rate = FundingRateUpdate::new(
-            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
-            "0.0001".parse().unwrap(),
-            Some(480),
-            Some(UnixNanos::from(1_000_000_000)),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-        );
-
-        let err = DataFFI::try_from(Data::FundingRateUpdate(funding_rate)).unwrap_err();
-
-        assert_eq!(
-            err.to_string(),
-            "Cannot convert Data::FundingRateUpdate to DataFFI"
-        );
     }
 
     #[rstest]

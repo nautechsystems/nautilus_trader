@@ -34,12 +34,12 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{BarType, Data, InstrumentStatus, MarkPriceUpdate, OrderBookDeltas_API},
+    data::{BarType, Data, InstrumentStatus, MarkPriceUpdate},
     enums::{MarketStatusAction, OrderSide, TimeInForce},
     events::OrderCancelRejected,
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
-    python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
+    python::{data::data_to_pyobject, instruments::pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
 use nautilus_network::websocket::TransportBackend;
@@ -75,7 +75,7 @@ use crate::{
 /// at the Python boundary for parsing venue messages into Nautilus domain types.
 #[pyclass(
     name = "AxMdWebSocketClient",
-    module = "nautilus_trader.core.nautilus_pyo3.architect_ax"
+    module = "nautilus_trader.adapters.architect_ax"
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.architect_ax")]
 pub struct PyAxMdWebSocketClient {
@@ -476,7 +476,7 @@ impl PyAxMdWebSocketClient {
 /// parsing at the Python boundary.
 #[pyclass(
     name = "AxOrdersWebSocketClient",
-    module = "nautilus_trader.core.nautilus_pyo3.architect_ax"
+    module = "nautilus_trader.adapters.architect_ax"
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.architect_ax")]
 pub struct PyAxOrdersWebSocketClient {
@@ -797,11 +797,7 @@ fn handle_md_message(
 
             match parse_book_l2_deltas(&book, instrument, *sequence, ts_init) {
                 Ok(deltas) => {
-                    send_data_to_python(
-                        Data::Deltas(OrderBookDeltas_API::new(deltas)),
-                        call_soon,
-                        callback,
-                    );
+                    send_data_to_python(Data::Deltas(Box::new(deltas)), call_soon, callback);
                 }
                 Err(e) => log::error!("Failed to parse L2 deltas: {e}"),
             }
@@ -819,11 +815,7 @@ fn handle_md_message(
 
             match parse_book_l3_deltas(&book, instrument, *sequence, ts_init) {
                 Ok(deltas) => {
-                    send_data_to_python(
-                        Data::Deltas(OrderBookDeltas_API::new(deltas)),
-                        call_soon,
-                        callback,
-                    );
+                    send_data_to_python(Data::Deltas(Box::new(deltas)), call_soon, callback);
                 }
                 Err(e) => log::error!("Failed to parse L3 deltas: {e}"),
             }
@@ -894,7 +886,7 @@ fn handle_md_message(
                 match Price::from_decimal_dp(mark_price, price_precision) {
                     Ok(price) => {
                         let update = MarkPriceUpdate::new(instrument_id, price, ts_event, ts_init);
-                        send_data_to_python(Data::MarkPriceUpdate(update), call_soon, callback);
+                        send_data_to_python(Data::MarkPrice(update), call_soon, callback);
                     }
                     Err(e) => {
                         log::error!("Failed to parse mark price for {}: {e}", ticker.s);
@@ -1078,9 +1070,9 @@ fn drain_status_invalidations(
 }
 
 fn send_data_to_python(data: Data, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
-    Python::attach(|py| {
-        let py_obj = data_to_pycapsule(py, data);
-        call_python_threadsafe(py, call_soon, callback, py_obj);
+    Python::attach(|py| match data_to_pyobject(py, data) {
+        Ok(py_obj) => call_python_threadsafe(py, call_soon, callback, py_obj),
+        Err(e) => log::error!("Failed to convert data to Python object: {e}"),
     });
 }
 

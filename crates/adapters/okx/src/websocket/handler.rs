@@ -34,7 +34,7 @@ use std::{
 use nautilus_model::identifiers::ClientOrderId;
 use nautilus_network::{
     RECONNECTED,
-    retry::{RetryManager, create_websocket_retry_manager},
+    retry::{RetryError, RetryManager, create_websocket_retry_manager},
     websocket::{AuthTracker, SubscriptionState, TEXT_PING, TEXT_PONG, WebSocketClient},
 };
 use serde_json::Value;
@@ -142,17 +142,15 @@ impl OKXWsFeedHandler {
                             client
                                 .send_text(payload, keys.as_deref())
                                 .await
-                                .map_err(|e| OKXWsError::ClientError(format!("Send failed: {e}")))
+                                .map_err(|e| OKXWsError::SendFailed(e.to_string()))
                         }
                     },
                     should_retry_okx_error,
-                    create_okx_timeout_error,
+                    create_okx_retry_error,
                 )
                 .await
         } else {
-            Err(OKXWsError::ClientError(
-                "No active WebSocket client".to_string(),
-            ))
+            Err(OKXWsError::NoActiveClient)
         }
     }
 
@@ -225,7 +223,7 @@ impl OKXWsFeedHandler {
                                         request_id,
                                         client_order_id,
                                         op,
-                                        error: format!("{e}"),
+                                        error: e,
                                     });
                                 }
                             }
@@ -345,6 +343,10 @@ impl OKXWsFeedHandler {
             }
             OKXWsChannel::OrdersAlgo | OKXWsChannel::AlgoAdvance => {
                 parse_array_items(data, "algo orders", false).map(OKXWsMessage::AlgoOrders)
+            }
+            OKXWsChannel::LiquidationWarning => {
+                parse_array_items(data, "liquidation warnings", false)
+                    .map(OKXWsMessage::LiquidationWarnings)
             }
             OKXWsChannel::Instruments => {
                 prefer_rpi_response_fields(&mut data);
@@ -677,18 +679,31 @@ const RETRYABLE_CLIENT_ERROR_PHRASES: &[&str] = &[
 fn should_retry_okx_error(error: &OKXWsError) -> bool {
     match error {
         OKXWsError::OkxError { error_code, .. } => should_retry_error_code(error_code),
-        OKXWsError::TungsteniteError(_) => true,
+        OKXWsError::TungsteniteError(_)
+        | OKXWsError::SendFailed(_)
+        | OKXWsError::OperationTimeout { .. } => true,
         OKXWsError::ClientError(msg) => RETRYABLE_CLIENT_ERROR_PHRASES
             .iter()
             .any(|phrase| contains_ignore_ascii_case(msg, phrase)),
         OKXWsError::AuthenticationError(_)
         | OKXWsError::JsonError(_)
-        | OKXWsError::ParsingError(_) => false,
+        | OKXWsError::ParsingError(_)
+        | OKXWsError::NoActiveClient
+        | OKXWsError::HandlerUnavailable(_) => false,
     }
 }
 
-fn create_okx_timeout_error(msg: String) -> OKXWsError {
-    OKXWsError::ClientError(msg)
+fn create_okx_retry_error(error: RetryError) -> OKXWsError {
+    match error {
+        RetryError::OperationTimeout { timeout_ms } => OKXWsError::OperationTimeout { timeout_ms },
+        RetryError::InvalidConfiguration { message } => OKXWsError::ClientError(message),
+        RetryError::Canceled => {
+            OKXWsError::SendFailed("Adapter disconnecting or shutting down".to_string())
+        }
+        error @ RetryError::ElapsedBudgetExceeded { .. } => {
+            OKXWsError::SendFailed(error.to_string())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -718,6 +733,20 @@ mod tests {
             AuthTracker::new(),
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
         )
+    }
+
+    #[rstest]
+    fn test_should_retry_typed_send_and_timeout_errors() {
+        assert!(should_retry_okx_error(&OKXWsError::SendFailed(
+            "connection reset".to_string()
+        )));
+        assert!(should_retry_okx_error(&OKXWsError::OperationTimeout {
+            timeout_ms: 1_000
+        }));
+        assert!(!should_retry_okx_error(&OKXWsError::NoActiveClient));
+        assert!(!should_retry_okx_error(&OKXWsError::HandlerUnavailable(
+            "closed".to_string()
+        )));
     }
 
     #[rstest]
@@ -816,6 +845,27 @@ mod tests {
                 assert_eq!(instruments[0].rpi, Some(OKXRpiPermission::Permitted));
             }
             other => panic!("Expected Instruments, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_route_liquidation_warnings() {
+        let handler = create_handler();
+        let frame: Value = serde_json::from_str(&load_test_json("ws_liquidation_warning.json"))
+            .expect("valid fixture");
+
+        let arg: OKXWebSocketArg = serde_json::from_value(frame["arg"].clone()).expect("valid arg");
+        let msg = handler
+            .route_data_message(arg, frame["data"].clone())
+            .expect("liquidation warning message");
+
+        match msg {
+            OKXWsMessage::LiquidationWarnings(warnings) => {
+                assert_eq!(warnings.len(), 1);
+                assert_eq!(warnings[0].inst_id.as_str(), "BTC-USDT-SWAP");
+                assert_eq!(warnings[0].mgn_ratio, "0.62");
+            }
+            other => panic!("Expected LiquidationWarnings, was {other:?}"),
         }
     }
 }

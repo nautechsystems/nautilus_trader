@@ -559,8 +559,8 @@ pub fn account_type_from_capnp(value: enums_capnp::AccountType) -> AccountType {
 pub fn aggressor_side_to_capnp(value: AggressorSide) -> enums_capnp::AggressorSide {
     match value {
         AggressorSide::NoAggressor => enums_capnp::AggressorSide::NoAggressor,
-        AggressorSide::Buyer => enums_capnp::AggressorSide::Buyer,
-        AggressorSide::Seller => enums_capnp::AggressorSide::Seller,
+        AggressorSide::Buy => enums_capnp::AggressorSide::Buy,
+        AggressorSide::Sell => enums_capnp::AggressorSide::Sell,
     }
 }
 
@@ -568,8 +568,8 @@ pub fn aggressor_side_to_capnp(value: AggressorSide) -> enums_capnp::AggressorSi
 pub fn aggressor_side_from_capnp(value: enums_capnp::AggressorSide) -> AggressorSide {
     match value {
         enums_capnp::AggressorSide::NoAggressor => AggressorSide::NoAggressor,
-        enums_capnp::AggressorSide::Buyer => AggressorSide::Buyer,
-        enums_capnp::AggressorSide::Seller => AggressorSide::Seller,
+        enums_capnp::AggressorSide::Buy => AggressorSide::Buy,
+        enums_capnp::AggressorSide::Sell => AggressorSide::Sell,
     }
 }
 
@@ -4344,6 +4344,9 @@ impl<'a> ToCapnp<'a> for PositionOpened {
 
         builder.set_avg_px_open(self.avg_px_open);
 
+        self.realized_pnl
+            .write_capnp(|| builder.reborrow().init_realized_pnl());
+
         let event_id_builder = builder.reborrow().init_event_id();
         self.event_id.to_capnp(event_id_builder);
 
@@ -4395,6 +4398,13 @@ impl<'a> FromCapnp<'a> for PositionOpened {
 
         let avg_px_open = reader.get_avg_px_open();
 
+        let realized_pnl = if reader.has_realized_pnl() {
+            let realized_pnl_reader = reader.get_realized_pnl()?;
+            Some(Money::from_capnp(realized_pnl_reader)?)
+        } else {
+            None
+        };
+
         let event_id_reader = reader.get_event_id()?;
         let event_id = nautilus_core::UUID4::from_capnp(event_id_reader)?;
 
@@ -4419,6 +4429,7 @@ impl<'a> FromCapnp<'a> for PositionOpened {
             last_px,
             currency,
             avg_px_open,
+            realized_pnl,
             event_id,
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
@@ -5214,7 +5225,7 @@ mod tests {
     );
     capnp_simple_roundtrip_test!(
         trade_tick_capnp_roundtrip,
-        stub_trade_ethusdt_buyer(),
+        stub_trade_ethusdt_buy(),
         market_capnp::trade_tick::Builder,
         market_capnp::trade_tick::Reader,
         TradeTick
@@ -5528,6 +5539,20 @@ mod tests {
     }
 
     #[rstest]
+    fn position_opened_none_realized_pnl_capnp_roundtrip() {
+        let event = PositionOpened {
+            realized_pnl: None,
+            ..sample_position_opened()
+        };
+        assert_capnp_roundtrip!(
+            event,
+            position_capnp::position_opened::Builder,
+            position_capnp::position_opened::Reader,
+            PositionOpened
+        );
+    }
+
+    #[rstest]
     fn position_changed_capnp_roundtrip() {
         assert_capnp_roundtrip!(
             sample_position_changed(),
@@ -5716,6 +5741,7 @@ mod tests {
             last_px: Price::from("20000"),
             currency: Currency::USD(),
             avg_px_open: 20000.0,
+            realized_pnl: Some(Money::new(-0.5, Currency::USD())),
             event_id: uuid4(),
             ts_event: UnixNanos::from(9),
             ts_init: UnixNanos::from(10),

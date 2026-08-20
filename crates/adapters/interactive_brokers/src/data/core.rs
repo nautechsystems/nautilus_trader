@@ -70,9 +70,10 @@ use self::streams::{
 use super::{
     cache::{OptionGreeksCache, QuoteCache},
     convert::{
-        apply_bar_price_magnifier, apply_price_magnifier, bar_type_to_ib_bar_size,
-        calculate_duration, calculate_duration_segments, chrono_to_ib_datetime,
-        ib_bar_to_nautilus_bar, price_type_to_ib_realtime_what_to_show_for_security,
+        apply_bar_price_magnifier, apply_price_magnifier, bar_request_segments,
+        bar_type_to_ib_bar_size, calculate_duration, calculate_duration_segments,
+        ib_bar_to_nautilus_bar, jiff_to_ib_datetime,
+        price_type_to_ib_realtime_what_to_show_for_security,
         price_type_to_ib_what_to_show_for_security,
     },
 };
@@ -89,7 +90,7 @@ use crate::{
 /// market data to NautilusTrader.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers")
+    pyo3::pyclass(module = "nautilus_trader.adapters.interactive_brokers")
 )]
 pub struct InteractiveBrokersDataClient {
     /// Client identifier.
@@ -176,11 +177,8 @@ fn params_to_string_filters(params: Option<&Params>) -> Option<HashMap<String, S
     (!filters.is_empty()).then_some(filters)
 }
 
-fn datetime_to_unix_nanos(dt: chrono::DateTime<chrono::Utc>) -> UnixNanos {
-    UnixNanos::from(
-        dt.timestamp_nanos_opt()
-            .unwrap_or_else(|| dt.timestamp() * 1_000_000_000) as u64,
-    )
+fn datetime_to_unix_nanos(dt: jiff::Timestamp) -> UnixNanos {
+    UnixNanos::from(u64::try_from(dt.as_nanosecond()).unwrap_or_default())
 }
 
 fn request_trading_hours(use_regular_trading_hours: bool) -> ibapi::market_data::TradingHours {
@@ -191,18 +189,14 @@ fn request_trading_hours(use_regular_trading_hours: bool) -> ibapi::market_data:
     }
 }
 
-fn retreat_historical_tick_end_datetime(
-    min_ts_nanos: u64,
-) -> Option<chrono::DateTime<chrono::Utc>> {
+fn retreat_historical_tick_end_datetime(min_ts_nanos: u64) -> Option<jiff::Timestamp> {
     let new_end_nanos = min_ts_nanos.saturating_sub(1_000_000);
-    let seconds = (new_end_nanos / 1_000_000_000) as i64;
-    let nanos = (new_end_nanos % 1_000_000_000) as u32;
-    chrono::DateTime::from_timestamp(seconds, nanos)
+    jiff::Timestamp::from_nanosecond(i128::from(new_end_nanos)).ok()
 }
 
 fn should_continue_historical_tick_pagination(
-    current_start_date: Option<chrono::DateTime<chrono::Utc>>,
-    current_end_date: Option<chrono::DateTime<chrono::Utc>>,
+    current_start_date: Option<jiff::Timestamp>,
+    current_end_date: Option<jiff::Timestamp>,
     current_len: usize,
     limit: Option<usize>,
 ) -> bool {
@@ -215,7 +209,7 @@ fn should_continue_historical_tick_pagination(
 fn retreat_end_to_earliest_tick<T>(
     batch: &[T],
     ts_event: impl Fn(&T) -> UnixNanos,
-) -> Option<chrono::DateTime<chrono::Utc>> {
+) -> Option<jiff::Timestamp> {
     batch
         .iter()
         .min_by_key(|tick| ts_event(tick))
@@ -238,8 +232,8 @@ fn retain_historical_ticks_in_range<T>(
 fn extend_historical_tick_batch<T>(
     all_ticks: &mut Vec<T>,
     batch_ticks: Vec<T>,
-    current_start_date: Option<chrono::DateTime<chrono::Utc>>,
-    current_end_date: &mut Option<chrono::DateTime<chrono::Utc>>,
+    current_start_date: Option<jiff::Timestamp>,
+    current_end_date: &mut Option<jiff::Timestamp>,
     start_nanos: Option<UnixNanos>,
     end_nanos: Option<UnixNanos>,
     limit: Option<usize>,
@@ -1298,7 +1292,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let data_farm_state = Arc::clone(&self.data_farm_state);
 
         let task = get_runtime().spawn(async move {
-            let result = if bar_type.spec().timedelta().num_seconds() == 5 {
+            let result = if bar_type.spec().timedelta().as_secs() == 5 {
                 handle_realtime_bars_subscription(
                     client_clone,
                     contract,
@@ -1863,7 +1857,7 @@ impl DataClient for InteractiveBrokersDataClient {
             // Work backwards from end_date, updating end to the earliest tick received
             let mut current_end_date = cmd_end;
             if current_end_date.is_none() {
-                current_end_date = Some(chrono::Utc::now());
+                current_end_date = Some(jiff::Timestamp::now());
             }
             let current_start_date = cmd_start;
 
@@ -1877,14 +1871,14 @@ impl DataClient for InteractiveBrokersDataClient {
                     break;
                 }
 
-                let current_end_ib = current_end_date.as_ref().map(chrono_to_ib_datetime);
+                let current_end_ib = current_end_date.as_ref().map(jiff_to_ib_datetime);
 
                 // Make request for this batch
                 let mut builder = client_clone
                     .historical_ticks(&contract, number_of_ticks)
                     .trading_hours(trading_hours);
 
-                if let Some(start) = current_start_date.as_ref().map(chrono_to_ib_datetime) {
+                if let Some(start) = current_start_date.as_ref().map(jiff_to_ib_datetime) {
                     builder = builder.starting(start);
                 }
 
@@ -2052,7 +2046,7 @@ impl DataClient for InteractiveBrokersDataClient {
             // Work backwards from end_date, updating end to the earliest tick received
             let mut current_end_date = cmd_end;
             if current_end_date.is_none() {
-                current_end_date = Some(chrono::Utc::now());
+                current_end_date = Some(jiff::Timestamp::now());
             }
             let current_start_date = cmd_start;
 
@@ -2066,14 +2060,14 @@ impl DataClient for InteractiveBrokersDataClient {
                     break;
                 }
 
-                let current_end_ib = current_end_date.as_ref().map(chrono_to_ib_datetime);
+                let current_end_ib = current_end_date.as_ref().map(jiff_to_ib_datetime);
 
                 // Make request for this batch
                 let mut builder = client_clone
                     .historical_ticks(&contract, number_of_ticks)
                     .trading_hours(trading_hours);
 
-                if let Some(start) = current_start_date.as_ref().map(chrono_to_ib_datetime) {
+                if let Some(start) = current_start_date.as_ref().map(jiff_to_ib_datetime) {
                     builder = builder.starting(start);
                 }
 
@@ -2224,14 +2218,17 @@ impl DataClient for InteractiveBrokersDataClient {
         let ib_what_to_show =
             price_type_to_ib_what_to_show_for_security(cmd.bar_type.spec().price_type, is_crypto);
 
-        // Calculate segments to break down the request if needed
+        // Calculate segments to break down the request if needed.
+        // Omit the end date for continuous futures (IB error 10339).
+        let is_continuous_future = contract.security_type == SecurityType::ContinuousFuture;
         let segments = if let (Some(start), Some(end)) = (cmd.start, cmd.end) {
             calculate_duration_segments(start, end)
         } else {
-            let end_date = cmd.end.unwrap_or_else(chrono::Utc::now);
+            let end_date = cmd.end.unwrap_or_else(jiff::Timestamp::now);
             let duration = calculate_duration(cmd.start, cmd.end).unwrap_or_else(|_| 1i32.days());
             vec![(end_date, duration)]
         };
+        let segments = bar_request_segments(segments, is_continuous_future);
 
         let bar_type = cmd.bar_type;
         let data_sender = self.data_sender.clone();
@@ -2252,17 +2249,17 @@ impl DataClient for InteractiveBrokersDataClient {
             let mut all_bars = Vec::new();
 
             for (seg_end, seg_duration) in segments {
-                let end_ib = chrono_to_ib_datetime(&seg_end);
-
-                match client_clone
+                let mut request = client_clone
                     .historical_data(&contract, ib_bar_size)
-                    .ending(end_ib)
                     .duration(seg_duration)
                     .what_to_show(ib_what_to_show)
-                    .trading_hours(trading_hours)
-                    .fetch()
-                    .await
-                {
+                    .trading_hours(trading_hours);
+
+                if let Some(end) = seg_end {
+                    request = request.ending(jiff_to_ib_datetime(&end));
+                }
+
+                match request.fetch().await {
                     Ok(historical_data) => {
                         // Convert IB bars to Nautilus bars
                         for ib_bar in &historical_data.bars {
@@ -2383,25 +2380,28 @@ mod tests {
     fn test_retreat_historical_tick_end_datetime_subtracts_one_millisecond() {
         let result = retreat_historical_tick_end_datetime(1_234_567_890).unwrap();
 
-        assert_eq!(result.timestamp_nanos_opt().unwrap() as u64, 1_233_567_890);
+        assert_eq!(
+            u64::try_from(result.as_nanosecond()).unwrap(),
+            1_233_567_890
+        );
     }
 
     #[rstest]
     fn test_retreat_historical_tick_end_datetime_saturates_at_zero() {
         let result = retreat_historical_tick_end_datetime(0).unwrap();
 
-        assert_eq!(result.timestamp_nanos_opt().unwrap(), 0);
+        assert_eq!(result.as_nanosecond(), 0);
     }
 
     #[rstest]
-    #[case(None, Some(chrono::DateTime::from_timestamp(2, 0).unwrap()), 0, Some(10), true)]
-    #[case(Some(chrono::DateTime::from_timestamp(1, 0).unwrap()), Some(chrono::DateTime::from_timestamp(2, 0).unwrap()), 0, Some(10), true)]
-    #[case(Some(chrono::DateTime::from_timestamp(2, 0).unwrap()), Some(chrono::DateTime::from_timestamp(1, 0).unwrap()), 0, Some(10), false)]
-    #[case(Some(chrono::DateTime::from_timestamp(1, 0).unwrap()), Some(chrono::DateTime::from_timestamp(2, 0).unwrap()), 10, Some(10), false)]
-    #[case(Some(chrono::DateTime::from_timestamp(1, 0).unwrap()), Some(chrono::DateTime::from_timestamp(2, 0).unwrap()), 10, None, true)]
+    #[case(None, Some(jiff::Timestamp::from_second(2).unwrap()), 0, Some(10), true)]
+    #[case(Some(jiff::Timestamp::from_second(1).unwrap()), Some(jiff::Timestamp::from_second(2).unwrap()), 0, Some(10), true)]
+    #[case(Some(jiff::Timestamp::from_second(2).unwrap()), Some(jiff::Timestamp::from_second(1).unwrap()), 0, Some(10), false)]
+    #[case(Some(jiff::Timestamp::from_second(1).unwrap()), Some(jiff::Timestamp::from_second(2).unwrap()), 10, Some(10), false)]
+    #[case(Some(jiff::Timestamp::from_second(1).unwrap()), Some(jiff::Timestamp::from_second(2).unwrap()), 10, None, true)]
     fn test_should_continue_historical_tick_pagination(
-        #[case] start: Option<chrono::DateTime<chrono::Utc>>,
-        #[case] end: Option<chrono::DateTime<chrono::Utc>>,
+        #[case] start: Option<jiff::Timestamp>,
+        #[case] end: Option<jiff::Timestamp>,
         #[case] current_len: usize,
         #[case] limit: Option<usize>,
         #[case] expected: bool,
@@ -2425,7 +2425,7 @@ mod tests {
 
     #[rstest]
     fn test_datetime_to_unix_nanos() {
-        let dt = chrono::DateTime::from_timestamp(1, 2).unwrap();
+        let dt = jiff::Timestamp::new(1, 2).unwrap();
 
         assert_eq!(datetime_to_unix_nanos(dt), UnixNanos::from(1_000_000_002));
     }

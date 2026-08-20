@@ -38,7 +38,7 @@ use crate::{
 #[derive(Clone, Debug, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -160,7 +160,7 @@ impl BookLevel {
                     order.size.precision,
                 )
             })
-            .fold(0, |acc, val| acc.saturating_add(val))
+            .fold(0, QuantityRaw::saturating_add)
     }
 
     /// Adds multiple orders to this price level in FIFO order. Orders must match the level's price.

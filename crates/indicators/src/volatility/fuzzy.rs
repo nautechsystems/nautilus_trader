@@ -32,7 +32,7 @@ use crate::indicator::Indicator;
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.indicators",
+        module = "nautilus_trader.indicators",
         from_py_object,
     )
 )]
@@ -59,7 +59,7 @@ pub enum CandleBodySize {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.indicators",
+        module = "nautilus_trader.indicators",
         from_py_object,
     )
 )]
@@ -84,7 +84,7 @@ pub enum CandleDirection {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.indicators",
+        module = "nautilus_trader.indicators",
         from_py_object,
     )
 )]
@@ -113,7 +113,7 @@ pub enum CandleSize {
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.indicators",
+        module = "nautilus_trader.indicators",
         from_py_object,
     )
 )]
@@ -132,10 +132,7 @@ pub enum CandleWickSize {
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.indicators",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.indicators", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -184,7 +181,7 @@ const MAX_CAPACITY: usize = 1024;
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.indicators")
 )]
 #[cfg_attr(
     feature = "python",
@@ -252,6 +249,14 @@ impl Indicator for FuzzyCandlesticks {
         self.body_percents.clear();
         self.upper_wick_percents.clear();
         self.lower_wick_percents.clear();
+        self.value = FuzzyCandle::new(
+            CandleDirection::None,
+            CandleSize::None,
+            CandleBodySize::None,
+            CandleWickSize::None,
+            CandleWickSize::None,
+        );
+        self.vector = Vec::new();
         self.last_open = 0.0;
         self.last_high = 0.0;
         self.last_close = 0.0;
@@ -325,9 +330,8 @@ impl FuzzyCandlesticks {
 
         let total = (high - low).abs();
 
-        // Bound the rolling windows to `period`, matching the Cython
-        // `deque(maxlen=period)`. Without this the fixed-capacity deques grow to
-        // their 1024 capacity, so the means (sum / period) and standard
+        // Bound the rolling windows to `period`. Without this the fixed-capacity deques
+        // grow to their 1024 capacity, so the means (sum / period) and standard
         // deviations are computed over far more than `period` candles.
         if self.lengths.len() == self.period {
             self.lengths.pop_front();
@@ -394,24 +398,7 @@ impl FuzzyCandlesticks {
     }
 
     pub fn reset(&mut self) {
-        self.lengths.clear();
-        self.body_percents.clear();
-        self.upper_wick_percents.clear();
-        self.lower_wick_percents.clear();
-        self.value = FuzzyCandle::new(
-            CandleDirection::None,
-            CandleSize::None,
-            CandleBodySize::None,
-            CandleWickSize::None,
-            CandleWickSize::None,
-        );
-        self.vector = Vec::new();
-        self.last_open = 0.0;
-        self.last_high = 0.0;
-        self.last_close = 0.0;
-        self.last_low = 0.0;
-        self.has_inputs = false;
-        self.initialized = false;
+        Indicator::reset(self);
     }
 
     fn fuzzify_direction(open: f64, close: f64) -> CandleDirection {
@@ -631,9 +618,8 @@ mod tests {
 
     #[rstest]
     fn test_windows_bounded_to_period(mut fuzzy_candlesticks_10: FuzzyCandlesticks) {
-        // Regression: the four rolling windows must stay bounded to `period`
-        // (matching the Cython `deque(maxlen=period)`). Previously the
-        // fixed-capacity deques grew to their 1024 capacity, so the means
+        // Regression: the four rolling windows must stay bounded to `period`. Previously
+        // the fixed-capacity deques grew to their 1024 capacity, so the means
         // (sum / period) and standard deviations were computed over far more than
         // `period` candles.
         let bars = [
@@ -666,9 +652,20 @@ mod tests {
     }
 
     #[rstest]
-    fn test_reset(mut fuzzy_candlesticks_10: FuzzyCandlesticks) {
-        fuzzy_candlesticks_10.update_raw(151.6, 156.4, 151.0, 155.8);
-        fuzzy_candlesticks_10.reset();
+    #[case::inherent(FuzzyCandlesticks::reset)]
+    #[case::indicator(<FuzzyCandlesticks as Indicator>::reset)]
+    fn test_reset(
+        #[case] reset: fn(&mut FuzzyCandlesticks),
+        mut fuzzy_candlesticks_10: FuzzyCandlesticks,
+    ) {
+        for _ in 0..10 {
+            fuzzy_candlesticks_10.update_raw(151.6, 156.4, 151.0, 155.8);
+        }
+        assert!(fuzzy_candlesticks_10.initialized);
+        assert!(!fuzzy_candlesticks_10.vector.is_empty());
+
+        reset(&mut fuzzy_candlesticks_10);
+
         assert_eq!(fuzzy_candlesticks_10.lengths.len(), 0);
         assert_eq!(fuzzy_candlesticks_10.body_percents.len(), 0);
         assert_eq!(fuzzy_candlesticks_10.upper_wick_percents.len(), 0);

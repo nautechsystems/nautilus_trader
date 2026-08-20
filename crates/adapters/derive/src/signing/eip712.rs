@@ -251,10 +251,18 @@ mod tests {
 
     use alloy_primitives::{Signature, hex};
     use rstest::rstest;
+    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
+    use serde::Deserialize;
 
     use super::*;
-    use crate::signing::modules::trade::TradeModuleData;
+    use crate::{
+        common::{
+            consts::{ACTION_TYPEHASH, domain_separator_for, trade_module_address_for},
+            enums::DeriveEnvironment,
+        },
+        signing::modules::trade::TradeModuleData,
+    };
 
     const SESSION_KEY_HEX: &str =
         "0x2ae8be44db8a590d20bffbe3b6872df9b569147d3bf6801a35a28281a4816bbd";
@@ -469,5 +477,198 @@ mod tests {
         // Decoding the hex back produces 65 bytes
         let bytes = hex::decode(sig.trim_start_matches("0x")).unwrap();
         assert_eq!(bytes.len(), 65);
+    }
+
+    const ORACLE_JSON: &str =
+        include_str!("../../test_data/common/signing_trade_action_vectors.json");
+
+    #[derive(Debug, Deserialize)]
+    struct OracleFile {
+        metadata: OracleMetadata,
+        vectors: Vec<OracleVector>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct OracleMetadata {
+        source: String,
+        upstream_version: String,
+        upstream_revision: String,
+        generated_by: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct OracleVector {
+        case: String,
+        environment: String,
+        domain_separator: String,
+        action_typehash: String,
+        module_address: String,
+        subaccount_id: u64,
+        nonce: u64,
+        signature_expiry_sec: i64,
+        owner: String,
+        session_key: String,
+        signer: String,
+        trade: OracleTrade,
+        module_data: String,
+        module_data_hash: String,
+        action_hash: String,
+        typed_data_hash: String,
+        signature: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct OracleTrade {
+        asset_address: String,
+        sub_id: String,
+        limit_price: String,
+        amount: String,
+        max_fee: String,
+        recipient_id: u64,
+        is_bid: bool,
+    }
+
+    fn parse_oracle() -> OracleFile {
+        serde_json::from_str(ORACLE_JSON).expect("parse signing oracle fixture")
+    }
+
+    #[rstest]
+    fn test_oracle_fixture_records_upstream_provenance() {
+        // The values stay unpinned here so re-generating the fixture against a
+        // new upstream revision (e.g. a future V3 signer) never requires test
+        // changes; only the presence of provenance is enforced.
+        let oracle = parse_oracle();
+        let metadata = &oracle.metadata;
+        assert!(!metadata.source.is_empty(), "oracle source missing");
+        assert!(
+            !metadata.upstream_version.is_empty(),
+            "oracle upstream version missing",
+        );
+        assert!(
+            !metadata.upstream_revision.is_empty(),
+            "oracle upstream revision missing",
+        );
+        assert!(
+            !metadata.generated_by.is_empty(),
+            "oracle generator path missing",
+        );
+        assert!(!oracle.vectors.is_empty(), "oracle fixture has no vectors");
+    }
+
+    #[rstest]
+    fn test_oracle_vectors_use_production_protocol_constants() {
+        // The fixture must exercise the same constants production resolves
+        // from `common::consts`; an internally consistent fixture generated
+        // from mistyped generator constants would otherwise pass the
+        // equivalence test while diverging from live configuration.
+        let oracle = parse_oracle();
+
+        for (i, v) in oracle.vectors.iter().enumerate() {
+            let environment = match v.environment.as_str() {
+                "mainnet" => DeriveEnvironment::Mainnet,
+                "testnet" => DeriveEnvironment::Testnet,
+                other => panic!("vector {i}: unknown environment `{other}`"),
+            };
+            assert_eq!(
+                v.domain_separator,
+                domain_separator_for(environment),
+                "vector {i} ({}): domain separator does not match consts",
+                v.case,
+            );
+            assert_eq!(
+                v.action_typehash, ACTION_TYPEHASH,
+                "vector {i} ({}): action typehash does not match consts",
+                v.case,
+            );
+            assert_eq!(
+                v.module_address.to_ascii_lowercase(),
+                trade_module_address_for(environment).to_ascii_lowercase(),
+                "vector {i} ({}): trade module address does not match consts",
+                v.case,
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_signing_matches_upstream_sdk_oracle_vectors() {
+        // Byte-equivalence oracle against the official Python SDK: every
+        // encoded module payload, module-data hash, action hash, typed-data
+        // hash, and signature must match the upstream fixture exactly. The
+        // upstream signer uses RFC 6979 deterministic nonces, so signature
+        // equality is meaningful across implementations.
+        let oracle = parse_oracle();
+
+        for (i, v) in oracle.vectors.iter().enumerate() {
+            let trade = TradeModuleData {
+                asset_address: v.trade.asset_address.parse().unwrap(),
+                sub_id: U256::from_str_radix(&v.trade.sub_id, 10).unwrap(),
+                limit_price: v.trade.limit_price.parse::<Decimal>().unwrap(),
+                amount: v.trade.amount.parse::<Decimal>().unwrap(),
+                max_fee: v.trade.max_fee.parse::<Decimal>().unwrap(),
+                recipient_id: v.trade.recipient_id,
+                is_bid: v.trade.is_bid,
+            };
+
+            let signer: PrivateKeySigner = v.session_key.parse().unwrap();
+            assert_eq!(
+                signer.address(),
+                v.signer.parse::<Address>().unwrap(),
+                "vector {i} ({}): session key does not derive the fixture signer",
+                v.case,
+            );
+
+            let encoded = trade.to_abi_encoded().unwrap();
+            assert_eq!(
+                format!("0x{}", hex::encode(&encoded)),
+                v.module_data,
+                "vector {i} ({}): encoded module data diverged from upstream",
+                v.case,
+            );
+
+            let module_data_hash = keccak256(&encoded);
+            assert_eq!(
+                format!("{module_data_hash:?}"),
+                v.module_data_hash,
+                "vector {i} ({}): module-data hash diverged from upstream",
+                v.case,
+            );
+
+            let ctx = ActionContext {
+                subaccount_id: v.subaccount_id,
+                nonce: v.nonce,
+                module_address: v.module_address.parse().unwrap(),
+                signature_expiry_sec: v.signature_expiry_sec,
+                owner: v.owner.parse().unwrap(),
+                signer: v.signer.parse().unwrap(),
+            };
+            let action_typehash: B256 = v.action_typehash.parse().unwrap();
+            let action_hash = compute_action_hash(&ctx, module_data_hash, action_typehash);
+            assert_eq!(
+                format!("{action_hash:?}"),
+                v.action_hash,
+                "vector {i} ({}): action hash diverged from upstream",
+                v.case,
+            );
+
+            let domain_separator: B256 = v.domain_separator.parse().unwrap();
+            let typed_data_hash = compute_typed_data_hash(domain_separator, action_hash);
+            assert_eq!(
+                format!("{typed_data_hash:?}"),
+                v.typed_data_hash,
+                "vector {i} ({}): typed-data hash diverged from upstream",
+                v.case,
+            );
+
+            let mut action = SignedAction::new(ctx, &trade, domain_separator, action_typehash);
+            let signature = action
+                .sign(&signer)
+                .expect("oracle expiry is far future, signing must succeed");
+            assert_eq!(
+                format!("0x{}", hex::encode(signature)),
+                v.signature,
+                "vector {i} ({}): signature diverged from upstream",
+                v.case,
+            );
+        }
     }
 }

@@ -186,10 +186,19 @@ pub trait Component {
     /// # Errors
     ///
     /// Returns an error if the component fails to fault.
+    ///
+    /// # Notes
+    ///
+    /// Subscriptions are released whether or not `on_fault` succeeds, so a faulted component never
+    /// keeps message bus handlers installed. Retirement relies on this: it deregisters a `Faulted`
+    /// component without disposing it, which would otherwise leave those handlers behind.
     fn fault(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Fault)?; // -> Faulting
 
-        if let Err(e) = self.on_fault() {
+        let result = self.on_fault();
+        self.release_subscriptions();
+
+        if let Err(e) = result {
             log_error(self.component_id(), &e);
             return Err(e); // Halt state transition
         }
@@ -222,18 +231,44 @@ pub trait Component {
     /// # Errors
     ///
     /// Returns an error if the component fails to dispose.
+    ///
+    /// # Notes
+    ///
+    /// A failing `on_dispose` releases subscriptions and moves the component to `Faulted`, then
+    /// returns the error. The trader's registry entries and retained Python wrapper, if any, are
+    /// deliberately kept, so the component stays inspectable, while `Faulted` leaves it retirable.
+    /// Subscriptions are released on this path too, because a handler left installed would resolve
+    /// a component the trader can now deregister.
+    ///
+    /// `on_fault` does not run, since invoking a second user hook immediately after `on_dispose`
+    /// failed can fail again.
     fn dispose(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Dispose)?; // -> Disposing
 
-        if let Err(e) = self.on_dispose() {
+        let result = self.on_dispose();
+        self.release_subscriptions();
+
+        if let Err(e) = result {
             log_error(self.component_id(), &e);
-            return Err(e); // Halt state transition
+
+            self.transition_state(ComponentTrigger::Fault)?; // -> Faulting
+            self.transition_state(ComponentTrigger::FaultCompleted)?; // -> Faulted
+
+            return Err(e);
         }
 
         self.transition_state(ComponentTrigger::DisposeCompleted)?;
 
         Ok(())
     }
+
+    /// Releases the message bus registrations this component installed.
+    ///
+    /// Runs on disposal after `on_dispose` and on faulting after `on_fault`, so a component the
+    /// trader then deregisters leaves behind no handler which would resolve an actor that is no
+    /// longer registered. An override must suit both routes rather than assume disposal, and should
+    /// be idempotent: a component that faults from inside its own `on_dispose` releases twice.
+    fn release_subscriptions(&mut self) {}
 
     /// Actions to be performed on start.
     ///
@@ -357,6 +392,7 @@ impl ComponentState {
             (Self::Degraded, ComponentTrigger::Stop) => Self::Stopping,
             (Self::Degraded, ComponentTrigger::Fault) => Self::Faulting,
             (Self::Disposing, ComponentTrigger::DisposeCompleted) => Self::Disposed,
+            (Self::Disposing, ComponentTrigger::Fault) => Self::Faulting,
             (Self::Faulting, ComponentTrigger::FaultCompleted) => Self::Faulted,
             _ => anyhow::bail!("Invalid state trigger {self} -> {trigger}"),
         };
@@ -408,6 +444,11 @@ impl ComponentRegistry {
 
     pub fn get(&self, id: &Ustr) -> Option<Rc<UnsafeCell<dyn Component>>> {
         self.components.borrow().get(id).cloned()
+    }
+
+    /// Removes the component with `id`, returning it when it was registered.
+    pub fn remove(&self, id: &Ustr) -> Option<Rc<UnsafeCell<dyn Component>>> {
+        self.components.borrow_mut().remove(id)
     }
 
     /// Checks if a component is currently borrowed.
@@ -653,6 +694,14 @@ pub fn dispose_component(id: &Ustr) -> anyhow::Result<()> {
 /// Returns a component from the global registry by ID.
 pub fn get_component(id: &Ustr) -> Option<Rc<UnsafeCell<dyn Component>>> {
     with_component_registry(|registry| registry.get(id))
+}
+
+/// Removes the component with `id` from the global registry.
+///
+/// Only the exact ID is removed, so unrelated components sharing the thread-local registry
+/// are untouched.
+pub fn deregister_component(id: &Ustr) {
+    with_component_registry(|registry| registry.remove(id));
 }
 
 #[cfg(test)]

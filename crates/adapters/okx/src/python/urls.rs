@@ -53,17 +53,3 @@ pub fn get_okx_ws_url_private(environment: OKXEnvironment, region: Option<OKXReg
 pub fn get_okx_ws_url_business(environment: OKXEnvironment, region: Option<OKXRegion>) -> String {
     urls::get_ws_base_url_business(region.unwrap_or_default(), environment).to_string()
 }
-
-/// Derives a WebSocket URL for a given channel from a base URL.
-#[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.okx")]
-pub fn derive_okx_ws_url(base_url: &str, channel: &str) -> String {
-    urls::derive_ws_url(base_url, channel)
-}
-
-/// Checks if OKX endpoint requires authentication.
-#[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.okx")]
-pub fn okx_requires_authentication(endpoint_type: urls::OKXEndpointType) -> bool {
-    urls::requires_authentication(endpoint_type)
-}

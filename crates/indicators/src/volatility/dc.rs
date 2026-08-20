@@ -26,7 +26,7 @@ const MAX_PERIOD: usize = 1_024;
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.indicators")
 )]
 #[cfg_attr(
     feature = "python",
@@ -145,6 +145,7 @@ mod tests {
     use crate::{
         indicator::Indicator,
         stubs::{bar_ethusdt_binance_minute_bid, dc_10},
+        testing::assert_approx_equal,
         volatility::dc::DonchianChannel,
     };
 
@@ -161,7 +162,7 @@ mod tests {
     fn test_value_with_one_input(mut dc_10: DonchianChannel) {
         dc_10.update_raw(1.0, 0.9);
         assert_eq!(dc_10.upper, 1.0);
-        assert_eq!(dc_10.middle, 0.95);
+        assert_approx_equal(dc_10.middle, 0.95);
         assert_eq!(dc_10.lower, 0.9);
     }
 
@@ -171,7 +172,7 @@ mod tests {
         dc_10.update_raw(2.0, 1.8);
         dc_10.update_raw(3.0, 2.7);
         assert_eq!(dc_10.upper, 3.0);
-        assert_eq!(dc_10.middle, 1.95);
+        assert_approx_equal(dc_10.middle, 1.95);
         assert_eq!(dc_10.lower, 0.9);
     }
 
@@ -189,7 +190,7 @@ mod tests {
         }
 
         assert_eq!(dc_10.upper, 15.0);
-        assert_eq!(dc_10.middle, 10.45);
+        assert_approx_equal(dc_10.middle, 10.45);
         assert_eq!(dc_10.lower, 5.9);
     }
 

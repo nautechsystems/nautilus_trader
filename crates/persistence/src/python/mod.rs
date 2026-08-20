@@ -29,7 +29,7 @@ use nautilus_model::data::ensure_rust_extractor_registered;
 use nautilus_serialization::arrow::custom::ensure_custom_data_registered;
 use pyo3::prelude::*;
 
-/// Loaded as `nautilus_pyo3.persistence`.
+/// Exposed through `nautilus_trader.persistence`.
 ///
 /// # Errors
 ///

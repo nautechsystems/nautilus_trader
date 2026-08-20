@@ -8,6 +8,10 @@ The NautilusTrader Lighter adapter is implemented by the `nautilus-lighter` crat
 Rust data and execution clients, typed REST and WebSocket models, and an in-tree L2 transaction
 signer for the venue's Schnorr / ECgFp5 signing flow.
 
+Measured L2 signing cost, including a comparison with the official Go SDK, is recorded in
+[`crates/adapters/lighter/benches/BENCHMARKS.md`](../../crates/adapters/lighter/benches/BENCHMARKS.md).
+Absolute numbers vary by machine, so only same-machine deltas are meaningful.
+
 ## Overview
 
 The main components are:
@@ -27,33 +31,23 @@ consumed through the Rust trait surface.
 
 ## Examples
 
-Python v2 examples live in
-[`python/examples/lighter/`](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/examples/lighter/)
-and default to a dry build. Pass `--run` to connect; the execution tester also requires
-`--live-orders` to disable `dry_run`.
+Python examples live in
+[`examples/live/lighter/`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/lighter/)
+and run out of the box: settings live in module-level constants at the top of each file, and
+running a script connects and starts immediately. The default environment is testnet; edit the
+`LIGHTER_ENVIRONMENT` constant to use mainnet. The execution tester places real orders by default
+(`dry_run=False`), stated in a warning at the top of the module.
+
+From the repository root:
 
 ```bash
-cd python
-.venv/bin/python examples/lighter/data_tester.py --lighter-environment testnet
-.venv/bin/python examples/lighter/exec_tester.py --lighter-environment testnet
+.venv/bin/python examples/live/lighter/data_tester.py
+.venv/bin/python examples/live/lighter/exec_tester.py
 ```
 
-To connect to mainnet with explicit instruments:
-
-```bash
-cd python
-.venv/bin/python examples/lighter/data_tester.py \
-    --lighter-environment mainnet \
-    --instrument BTC-PERP.LIGHTER \
-    --run
-.venv/bin/python examples/lighter/exec_tester.py \
-    --lighter-environment mainnet \
-    --instrument DOGE-PERP.LIGHTER \
-    --run
-```
-
-Rust examples live under `crates/adapters/lighter/examples/`. Both testers connect when run, but
-the execution tester submits orders only after its source sets `DRY_RUN = false`:
+Rust examples live under `crates/adapters/lighter/examples/`. Both testers connect when run. The
+execution tester has `DRY_RUN = false` in its source, so the command below can submit live mainnet
+orders:
 
 ```bash
 cargo run --example lighter-data-tester --package nautilus-lighter --features examples
@@ -124,13 +118,18 @@ configuration. URL overrides are available for private gateways or local test fi
 
 Create and modify transactions carry the NautilusTrader integrator account index in
 `L2TxAttributes` to measure adapter usage. Maker and taker integrator fees are zero. The execution
-client submits the required **zero‑fee** `ApproveIntegrator` approval during startup.
+client submits the required **zero‑fee** `ApproveIntegrator` approval during startup when the API
+key is not maker‑only.
+
+Maker‑only API keys cannot submit `ApproveIntegrator`. The execution client detects these keys and
+skips automatic approval. Approval is account‑scoped, so a non‑maker‑only key on the same account
+must approve the integrator before a maker‑only key can trade through the adapter.
 
 ### Revoking the approval
 
 Use revocation as cleanup when leaving the adapter. It sends `ApproveIntegrator` with
-`approval_expiry = 0` and zero max fees. The next execution‑client startup records a new zero‑fee
-approval.
+`approval_expiry = 0` and zero max fees. The next execution‑client startup with a non‑maker‑only
+key records a new zero‑fee approval.
 
 ```bash
 export LIGHTER_API_KEY_INDEX=5
@@ -311,7 +310,9 @@ expiry, then the child uses `ImmediateOrCancel`.
 Without an explicit GTD expiry, limit‑style `GTC`, `DAY`, and `GTD` orders default to the current
 time plus 28 days; conditional `GTC`, `DAY`, and limit‑style `IOC` use the same default. Lighter
 rejects `-1` and accepts expiries from 5 minutes to 30 days after submission. The adapter enforces
-that window with a one‑second signing and transport margin.
+that window with a one‑second signing and transport margin, so an expiry of exactly 5 minutes is
+denied locally before signing; tester configurations expressed in whole minutes should use at least
+6 minutes.
 
 ### Execution instructions
 
@@ -365,7 +366,8 @@ initial_margin_fraction, margin_mode)`. The `initial_margin_fraction` is in venu
 (1e-4 fraction): `500` is 5% initial margin (20x leverage), `1000` is 10% (10x), and so on.
 
 `UpdateLeverage`, `CancelAllOrders`, modify orders with integrator attributes, and conditional
-create orders are byte-pinned against the official Lighter v1.1.2 signer.
+create orders are byte‑pinned against the signer distributed with the official `lighter-python`
+SDK version 1.1.2.
 
 ### Order querying and reconciliation
 
@@ -385,13 +387,37 @@ pages. Fill reconciliation remains repeatable across calls while suppressing fil
 from the live WebSocket stream. Historical order and fill reports bind a mapped client index only
 to its matching venue order ID so reused numeric indexes cannot merge unrelated lifecycles.
 
+Each bounded mass status captures one cutoff for its inactive orders and fills. The adapter marks
+the report set complete only when the required order, fill, and position sources succeed and every
+historical fill maps to its order. If a historical source fails, active orders remain available for
+reconciliation while historical fills follow the engine's
+[order‑only projection](../concepts/execution.md#order-only-fill-projection) rules.
+
+The `trades` endpoint retains only the most recent 3,000 trades per `account_index`, so a bounded
+lookback can request more fill history than the venue serves. Pagination walks back from the newest
+trade, and only a trade older than the lookback start proves the window was served:
+
+- Trade older than the start: the report set stays complete.
+- Cursor exhausted first: the adapter logs the uncovered span and marks the report set incomplete.
+- No retained trades: nothing can have been truncated, so the report set stays complete.
+
+An exhausted cursor cannot distinguish truncation from an account with no older trades, so a young
+account reports incomplete even though nothing is missing. Choose a lookback the venue can serve.
+The `export` endpoint serves full trade history for auditing fills the lookback cannot cover, and
+the adapter does not read it.
+
+A strategy that opens a position immediately on start can trigger a transient position-check
+discrepancy warning (`cached=0, venue=N`) when the venue's `account_all_positions` frame arrives a
+few milliseconds before the matching fill event is processed. The warning self-resolves once the
+fill applies; no reconciliation orders are generated.
+
 ## Account and position management
 
 Authenticated execution clients subscribe to these private streams:
 
 - `account_all_orders`: order status reports.
 - `account_all_trades`: fill reports.
-- `account_all_positions`: position snapshots.
+- `account_all_positions`: initial position snapshot and live updates.
 - `account_all_assets`: per-asset balance snapshots (spot balance plus perp collateral).
 - `user_stats`: perp-account margin rollup (collateral and available balance).
 
@@ -403,15 +429,24 @@ nonce refresh are mandatory. A client can be constructed without credentials, bu
 will not connect until `private_key`, `account_index`, and `api_key_index` resolve.
 
 Perpetual positions use netting mode with one position per market; spot balances use account asset
-state. Each `account_all_positions` frame is a snapshot: cached markets omitted from the frame, or
-present with a zero `position` value, flatten. An empty `positions` map flattens all cached
-positions. Unmapped or unparsable rows with a non‑zero position remain keyed by market ID so they do
-not cause false flat reports.
+state. A `subscribed/account_all_positions` frame is an authoritative snapshot: omitted markets and
+rows with a zero `position` value flatten cached positions, and an empty `positions` map flattens the
+entire cache. Cached positions for rows the adapter cannot map or parse are retained, so they do not
+cause false flat reports.
+
+For bounded reconciliation, the adapter also records which markets the current connection's
+snapshot covers. A reconnect invalidates that coverage. An absent touched market produces an
+explicit flat report only after a current snapshot covers it; an unmapped or malformed row leaves
+the mass status incomplete instead of proving flat.
+
+An `update/account_all_positions` frame is incremental. Non‑zero rows replace the cached position for
+their market, explicit zero rows flatten that market, and omitted markets remain cached. An empty
+update retains all cached positions.
 
 | Feature                 | Perpetuals | Spot | Notes                                                        |
 | ----------------------- | ---------- | ---- | ------------------------------------------------------------ |
 | Account balances        | ✓          | ✓    | Merged assets + `user_stats`, replayed from cache on query.  |
-| Position snapshots      | ✓          | -    | Perp only; `account_all_positions` stream.                   |
+| Position state          | ✓          | -    | Perp only; initial snapshot plus live updates.               |
 | Netting positions       | ✓          | -    | One Nautilus position per perpetual market.                  |
 | Cross margin            | ✓          | -    | Passed through `LighterPositionMarginMode::Cross`.           |
 | Isolated margin         | ✓          | -    | Passed through `LighterPositionMarginMode::Isolated`.        |
@@ -445,7 +480,7 @@ range up to the adapter's page cap, subject to an explicit `limit`; see
 
 Lighter account tiers set latency, rate limits, and fees. The execution client reads the tier from
 `GET /api/v1/account` and logs it, including unknown raw `account_type` values. It does not raise
-limits automatically because higher venue limits require IP registration.
+limits automatically because a local quota override does not grant a higher venue limit.
 
 | Tier     | Latency (maker / taker) | REST weighted limit | `sendTx` limit       | Fees (maker / taker)      | Notes                                   |
 | -------- | ----------------------- | ------------------- | -------------------- | ------------------------- | --------------------------------------- |
@@ -454,19 +489,36 @@ limits automatically because higher venue limits require IP registration.
 | Plus     | 200 ms / 300 ms         | 120,000 req/min     | 8,000 req/min        | 0.5 / 0.5 bps             | Raised limits, standard latency.        |
 | Builder  | -                       | 240,000 req/min     | -                    | -                         | Highest REST throughput.                |
 
-Premium figures scale with staked LIT and can change. To use a higher tier, register the caller IP
-and set the quota explicitly (see [Rate limiting](#rate-limiting)).
+Premium figures scale with staked LIT and can change. Before raising a local quota, confirm that
+Lighter applies the matching tier limit to the client's traffic, then set the quota explicitly
+(see [Rate limiting](#rate-limiting)).
 
 ## Rate limiting
 
-Lighter limits both IP and L1 addresses. Both clients default to standard‑account quotas; using
-higher [account tiers](#account-tiers) requires IP registration and explicit client quotas:
+Lighter limits both IP and L1 addresses. Each data and execution client owns a separate REST
+limiter and defaults to the standard‑account quota. Configure their combined traffic within the
+venue limit.
 
-- `rest_quota_per_min`: REST read-bucket quota in requests per minute. Unset keeps 60 req/min.
+Higher [account tiers](#account-tiers) still require explicit client quotas:
+
+- `rest_quota_per_min`: REST read‑bucket quota in requests per minute. Unset keeps 60 req/min.
   Available on both the data and execution clients.
 - `sendtx_quota_per_min`: transaction quota in requests per minute, metered in a bucket separate
   from reads. Unset keeps it at the standard 60 req/min, independent of `rest_quota_per_min`.
   Execution client only.
+
+These options change local pacing only. Public data requests remain unauthenticated, so setting a
+higher local quota does not make those requests eligible for an account‑level venue limit.
+
+### L1-address transaction limit
+
+The venue also enforces a 40 req/min limit per L1 address on transaction traffic, below the
+default `sendtx_quota_per_min` of 60. A mainnet quoting session amending on every quote drift hit
+`code=23000` (`Too Many Requests`) after roughly 40 modify transactions in a minute; see
+[Volume quota and no-fill quoting](#volume-quota-and-no-fill-quoting) for the related quota that
+modify transactions also spend. Set `sendtx_quota_per_min` to 40 or lower for transaction‑heavy
+quoting workloads. The limiter is shared across all `sendTx` traffic, so a lower quota also paces
+creates and cancels.
 
 The REST limiter counts one token per call rather than venue endpoint weights. Set
 `rest_quota_per_min` for the effective endpoint mix: a 24,000 weighted req/min premium limit yields
@@ -476,7 +528,8 @@ The REST limiter counts one token per call rather than venue endpoint weights. S
 The venue meters transactions per account across both transports in one bucket. The execution
 client enforces `sendtx_quota_per_min` with a single shared limiter across WebSocket `sendTx`
 (including order-list and cancel fanout) and the HTTP `sendTx` used for startup integrator
-approval. The public low-level HTTP `sendTxBatch` API uses the same limiter when called directly.
+approval. Low‑level raw `sendTx` and `sendTxBatch` calls use that limiter when the client is
+constructed with it; otherwise, they fall back to the raw client's REST limiter.
 
 The clients share one WebSocket message limiter per venue URL. It paces non‑transaction control
 frames at 200 messages/minute across both clients. A closed‑loop subscription gate caps
@@ -486,9 +539,9 @@ acknowledgement latency, not send rate. `sendTx` does not count against the clie
 | Scope                                | Venue limit                 | Adapter behavior                                     |
 | ------------------------------------ | --------------------------- | ---------------------------------------------------- |
 | REST, standard account               | 60 req/min                  | Default; set `rest_quota_per_min` to override.       |
-| REST, premium account                | 24,000 weighted req/min     | Logged; set `rest_quota_per_min` to use it.          |
-| REST, plus account                   | 120,000 weighted req/min    | Logged; set `rest_quota_per_min` to use it.          |
-| REST, builder account                | 240,000 weighted req/min    | Logged; set `rest_quota_per_min` to use it.          |
+| REST, premium account                | 24,000 weighted req/min     | Local override required; venue attribution applies.  |
+| REST, plus account                   | 120,000 weighted req/min    | Local override required; venue attribution applies.  |
+| REST, builder account                | 240,000 weighted req/min    | Local override required; venue attribution applies.  |
 | `sendTx` / `sendTxBatch`, standard   | 60 req/min                  | Execution orders use WebSocket `sendTx`.             |
 | `sendTx` / `sendTxBatch`, plus       | 8,000 req/min               | Set `sendtx_quota_per_min` to use it.                |
 | `sendTx` / `sendTxBatch`, premium    | 4,000-40,000 req/min        | Set `sendtx_quota_per_min` (scales with staked LIT). |
@@ -517,9 +570,9 @@ Common REST endpoint weights from the official docs:
 | WebSocket subscriptions / connection   | 500        | Venue limit.                                         |
 | WebSocket unique accounts / connection | 500        | Venue limit.                                         |
 | WebSocket connections / minute         | 255        | Venue limit.                                         |
-| WebSocket client messages / minute     | 200        | Adapter paces non‑tx control frames at this cap.     |
+| WebSocket client messages / minute     | 200        | Paces non‑tx frames; heartbeat pings bypass it.      |
 | WebSocket inflight messages            | 50         | Venue cap; subscriptions use a 35-frame closed loop. |
-| `sendTxBatch` batch size               | 15 txs     | Low‑level API limit; fanout cap is also 15.          |
+| WebSocket `sendTxBatch` batch size     | 15 txs     | Venue limit; adapter fanout is also capped at 15.    |
 | WebSocket keepalive                    | 2 minutes  | Adapter sends heartbeats every 30 seconds.           |
 | WebSocket outbound command queue       | Not capped | Paced before writes; no queue‑depth cap.             |
 
@@ -545,7 +598,10 @@ or a bounded strategy that earns enough fills to replenish its quota.
 ## Connection management
 
 The WebSocket client sends heartbeats every 30 seconds and reconnects with exponential backoff from
-250 milliseconds to 30 seconds. Private subscriptions use auth tokens with an 8‑hour maximum TTL;
+250 milliseconds to 30 seconds. It treats a connection carrying no inbound frame for 90 seconds as
+dead and reconnects, which recovers a stalled socket that the venue never closes. The venue answers
+each heartbeat with a pong, so a healthy connection refreshes that window even when no market data
+flows. Private subscriptions use auth tokens with an 8‑hour maximum TTL;
 the adapter mints 7‑hour tokens, rotates them every 6 hours, and resubscribes. A transparent
 reconnect triggers a fresh token and account resubscription after tracked subscriptions start
 replaying.
@@ -561,19 +617,22 @@ and order identity for WebSocket or reconciliation recovery.
 
 `LighterExecutionClient::connect()` waits up to 30 seconds for every account stream
 (`account_all_orders`, `account_all_trades`, `account_all_positions`, `account_all_assets`,
-`user_stats`) to deliver its first frame. Lighter has no REST source for account or position state,
-so `connect()` blocks on these streams as its only ground truth. Each attempt clears old position
-and account caches before awaiting the current session's frames. Transparent WebSocket reconnects
-do not re‑enter `connect()`: they retain cached positions until the next `account_all_positions`
-frame applies the snapshot replacement rules.
+`user_stats`) to satisfy its readiness condition. For positions, only the
+`subscribed/account_all_positions` snapshot satisfies this wait; a live update does not. The adapter
+does not use REST account payloads as a fallback, so `connect()` blocks on these streams as its ground
+truth. Each attempt clears old position and account caches before awaiting the session's frames.
+Transparent WebSocket reconnects and auth‑token rotations do not re‑enter `connect()`. Both retain
+cached positions until the next `subscribed/account_all_positions` frame applies the snapshot
+replacement rules. Live update frames merge into the retained cache without evicting omitted
+markets.
 
 ## API credentials
 
 Lighter signing requires all three credential values:
 
 - Account index: numeric Lighter account identifier.
-- API key index: numeric API key slot. Use the user-created key index assigned by Lighter, avoid
-  reserved low indexes, and do not use `255`; it is an `apikeys` query sentinel, not a signing key.
+- API key index: numeric API key slot. Lighter reserves indexes `0-3`; use a user‑created key in the
+  `4-254` range. Do not use `255`; it is an `apikeys` query sentinel, not a signing key.
 - API private key: 40-byte hex private key, with or without a `0x` prefix.
 
 Config values take precedence. A missing config field, or a blank API private key (empty or
@@ -635,14 +694,15 @@ use nautilus_lighter::{
     common::enums::LighterEnvironment,
     config::{LighterDataClientConfig, LighterExecClientConfig},
 };
+use nautilus_model::identifiers::{AccountId, TraderId};
 
 let data_config = LighterDataClientConfig::builder()
     .environment(LighterEnvironment::Testnet)
     .build();
 
 let exec_config = LighterExecClientConfig::builder()
-    .trader_id(trader_id)
-    .account_id(account_id)
+    .trader_id(TraderId::from("TRADER-001"))
+    .account_id(AccountId::from("LIGHTER-001"))
     .environment(LighterEnvironment::Testnet)
     .build();
 ```
@@ -654,14 +714,15 @@ credential fields directly to override them. Use
 
 ## Official documentation
 
-- Get started: <https://apidocs.lighter.xyz/docs/get-started>
-- Trading and signing: <https://apidocs.lighter.xyz/docs/trading>
-- API keys: <https://apidocs.lighter.xyz/docs/api-keys>
-- Rate limits: <https://apidocs.lighter.xyz/docs/rate-limits>
-- Volume quota: <https://apidocs.lighter.xyz/docs/volume-quota-program>
-- Data structures, constants, and errors: <https://apidocs.lighter.xyz/docs/data-structures-constants-and-errors>
-- REST OpenAPI: <https://raw.githubusercontent.com/elliottech/lighter-python/main/openapi.json>
-- WebSocket reference: <https://apidocs.lighter.xyz/docs/websocket-reference>
+- [Get started](https://apidocs.lighter.xyz/docs/get-started)
+- [Trading and signing](https://apidocs.lighter.xyz/docs/trading)
+- [API keys](https://apidocs.lighter.xyz/docs/api-keys)
+- [Account types](https://apidocs.lighter.xyz/docs/account-types)
+- [Rate limits](https://apidocs.lighter.xyz/docs/rate-limits)
+- [Volume quota](https://apidocs.lighter.xyz/docs/volume-quota-program)
+- [Data structures, constants, and errors](https://apidocs.lighter.xyz/docs/data-structures-constants-and-errors)
+- [REST OpenAPI](https://raw.githubusercontent.com/elliottech/lighter-python/main/openapi.json)
+- [WebSocket reference](https://apidocs.lighter.xyz/docs/websocket-reference)
 
 ## Contributing
 

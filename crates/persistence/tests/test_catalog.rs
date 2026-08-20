@@ -42,8 +42,8 @@ use nautilus_persistence::{
         session::{DataBackendSession, QueryResult},
     },
     test_data::{
-        MacroYieldCurveData, RustTestCustomData, RustTestHashMapCustomData,
-        RustTestParamsCustomData, RustTestPriceMapCustomData,
+        MacroYieldCurveData, RustTestBytesCustomData, RustTestCustomData,
+        RustTestHashMapCustomData, RustTestParamsCustomData, RustTestPriceMapCustomData,
     },
 };
 use nautilus_serialization::{arrow::ArrowSchemaProvider, ensure_custom_data_registered};
@@ -65,6 +65,7 @@ fn ensure_test_custom_data_registered() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         ensure_custom_data_registered::<MacroYieldCurveData>();
+        ensure_custom_data_registered::<RustTestBytesCustomData>();
         ensure_custom_data_registered::<RustTestCustomData>();
         ensure_custom_data_registered::<RustTestHashMapCustomData>();
         ensure_custom_data_registered::<RustTestParamsCustomData>();
@@ -201,7 +202,7 @@ fn create_trade_tick(ts_init: u64) -> TradeTick {
         ethusdt_binance_id(),
         Price::new(1987.0, 1),
         Quantity::new(0.1, 1),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::from("123456"),
         UnixNanos::from(0),
         UnixNanos::from(ts_init),
@@ -306,7 +307,7 @@ fn test_quote_tick_query() {
         .add_file::<QuoteTick>("quote_005", file_path.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
-    let ticks: Vec<Data> = query_result.collect();
+    let ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
 
     if let Data::Quote(q) = ticks[0] {
         assert_eq!("EUR/USD.SIM", q.instrument_id.to_string());
@@ -332,7 +333,7 @@ fn test_quote_tick_query_with_filter() {
         )
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
-    let ticks: Vec<Data> = query_result.collect();
+    let ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
     assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
@@ -350,7 +351,7 @@ fn test_quote_tick_multiple_query() {
         .add_file::<TradeTick>("quote_tick_2", file_path_trades.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
-    let ticks: Vec<Data> = query_result.collect();
+    let ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
 
     assert_eq!(ticks.len(), expected_length);
     assert!(is_monotonically_increasing_by_init(&ticks));
@@ -366,7 +367,7 @@ fn test_trade_tick_query() {
         .add_file::<TradeTick>("trade_001", file_path.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
-    let ticks: Vec<Data> = query_result.collect();
+    let ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
 
     if let Data::Trade(t) = ticks[0] {
         assert_eq!("EUR/USD.SIM", t.instrument_id.to_string());
@@ -388,7 +389,7 @@ fn test_bar_query() {
         .add_file::<Bar>("bar_001", file_path.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
-    let ticks: Vec<Data> = query_result.collect();
+    let ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
 
     if let Data::Bar(b) = &ticks[0] {
         assert_eq!("ADABTC.BINANCE", b.bar_type.instrument_id().to_string());
@@ -416,7 +417,7 @@ fn test_datafusion_parquet_round_trip() {
         .add_file::<QuoteTick>("test_data", file_path.as_str(), None, None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
-    let quote_ticks: Vec<Data> = query_result.collect();
+    let quote_ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
     let quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
 
     let metadata = HashMap::from([
@@ -451,7 +452,7 @@ fn test_datafusion_parquet_round_trip() {
         .add_file::<QuoteTick>("test_data", temp_file_path.to_str().unwrap(), None, None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
-    let ticks: Vec<Data> = query_result.collect();
+    let ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
     let ticks_variants: Vec<QuoteTick> = to_variant(ticks);
 
     assert_eq!(quote_ticks.len(), ticks_variants.len());
@@ -756,7 +757,7 @@ fn test_register_object_store_from_uri_local_file() {
         .add_file::<TradeTick>("trade_ticks", &file_path, None, None)
         .unwrap();
     let query_result: QueryResult = session.get_query_result();
-    let ticks: Vec<Data> = query_result.collect();
+    let ticks: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
 
     assert_eq!(ticks.len(), 100);
     assert!(is_monotonically_increasing_by_init(&ticks));
@@ -893,7 +894,7 @@ fn test_query_round_trip_non_ascii_instrument_id() {
         id,
         Price::new(1987.0, 1),
         Quantity::new(0.1, 1),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::from("123456"),
         UnixNanos::from(0),
         UnixNanos::from(1),
@@ -930,7 +931,7 @@ fn test_filter_files_non_ascii_instrument_id() {
         id,
         Price::new(1987.0, 1),
         Quantity::new(0.1, 1),
-        AggressorSide::Buyer,
+        AggressorSide::Buy,
         TradeId::from("123456"),
         UnixNanos::from(0),
         UnixNanos::from(1),
@@ -1114,25 +1115,31 @@ fn test_rust_write_order_book_depths() {
 #[rstest]
 fn test_rust_write_and_read_account_state() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
-    let account_states = vec![AccountState::new(
-        AccountId::from("SIM-001"),
-        AccountType::Margin,
-        vec![AccountBalance::new(
-            Money::from("1000.00 USD"),
-            Money::from("200.00 USD"),
-            Money::from("800.00 USD"),
-        )],
-        vec![MarginBalance::new(
-            Money::from("150.00 USD"),
-            Money::from("75.00 USD"),
-            Some(ethusdt_binance_id()),
-        )],
-        true,
-        UUID4::new(),
-        UnixNanos::from(1),
-        UnixNanos::from(2),
-        Some(Currency::USD()),
-    )];
+    let mut info = Params::new();
+    info.insert("total_wallet_balance".to_string(), json!("1000.00000001"));
+    info.insert("can_trade".to_string(), json!(true));
+    let account_states = vec![
+        AccountState::new(
+            AccountId::from("SIM-001"),
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::from("1000.00 USD"),
+                Money::from("200.00 USD"),
+                Money::from("800.00 USD"),
+            )],
+            vec![MarginBalance::new(
+                Money::from("150.00 USD"),
+                Money::from("75.00 USD"),
+                Some(ethusdt_binance_id()),
+            )],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            Some(Currency::USD()),
+        )
+        .with_info(Some(info)),
+    ];
     catalog
         .write_to_parquet(&account_states, None, None, None)
         .unwrap();
@@ -1711,7 +1718,7 @@ fn test_write_data_enum_funding_rates_round_trip() {
     let data: Vec<Data> = funding_rates
         .iter()
         .copied()
-        .map(Data::FundingRateUpdate)
+        .map(Data::FundingRate)
         .collect();
 
     catalog
@@ -3330,7 +3337,7 @@ fn test_catalog_query_multiple_instruments_table_naming() {
     );
 
     let query_result = result.unwrap();
-    let data: Vec<Data> = query_result.collect();
+    let data: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
 
     // Should get all 9 quotes (3 from each instrument)
     assert_eq!(data.len(), 9);
@@ -3389,7 +3396,7 @@ fn test_query_directory_based_registration() {
     );
 
     let query_result = result.unwrap();
-    let data: Vec<Data> = query_result.collect();
+    let data: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
 
     // Should get all 9 quotes from all 3 files in the directory
     assert_eq!(data.len(), 9, "Should read all files in directory");
@@ -3424,7 +3431,7 @@ fn test_query_directory_based_registration_preserves_equal_timestamp_order() {
         .query::<QuoteTick>(None, None, None, None, None, true)
         .unwrap();
     let instrument_ids: Vec<String> = result
-        .map(|data| match data {
+        .map(|data| match data.unwrap() {
             Data::Quote(quote) => quote.instrument_id.to_string(),
             _ => panic!("Invalid test"),
         })
@@ -3473,7 +3480,7 @@ fn test_query_file_based_registration() {
     );
 
     let query_result = result.unwrap();
-    let data: Vec<Data> = query_result.collect();
+    let data: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
 
     // Should only get 3 quotes from the first file
     assert_eq!(data.len(), 3, "Should only read the specified file");
@@ -3508,7 +3515,7 @@ fn test_query_directory_based_vs_file_based() {
         None,
         true, // directory-based
     );
-    let data_dir: Vec<Data> = result_dir.unwrap().collect();
+    let data_dir: Vec<Data> = result_dir.unwrap().collect::<Result<_, _>>().unwrap();
 
     // Query with file-based registration (all files)
     let result_file = catalog.query::<QuoteTick>(
@@ -3519,7 +3526,7 @@ fn test_query_directory_based_vs_file_based() {
         Some(all_files),
         false, // file-based
     );
-    let data_file: Vec<Data> = result_file.unwrap().collect();
+    let data_file: Vec<Data> = result_file.unwrap().collect::<Result<_, _>>().unwrap();
 
     // Both should return the same data
     assert_eq!(data_dir.len(), data_file.len());
@@ -3603,6 +3610,66 @@ fn test_rust_custom_data_roundtrip() {
         } else {
             panic!("Expected Data::Custom variant");
         }
+    }
+}
+
+#[rstest]
+fn test_rust_custom_data_binary_roundtrip() {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let instrument_id = InstrumentId::from("RUST.TEST");
+    let data_type = DataType::new(
+        "RustTestBytesCustomData",
+        None,
+        Some(instrument_id.to_string()),
+    );
+    let original_data = [
+        RustTestBytesCustomData {
+            value: Vec::new(),
+            ts_event: UnixNanos::from(1),
+            ts_init: UnixNanos::from(1),
+        },
+        RustTestBytesCustomData {
+            value: vec![0x00, 0x7F, 0xFF],
+            ts_event: UnixNanos::from(2),
+            ts_init: UnixNanos::from(2),
+        },
+    ];
+    let custom_data = original_data
+        .iter()
+        .cloned()
+        .map(|item| CustomData::new(Arc::new(item), data_type.clone()))
+        .collect();
+
+    catalog
+        .write_custom_data_batch(custom_data, None, None, Some(false))
+        .unwrap();
+
+    let identifiers = [instrument_id.to_string()];
+    let loaded = catalog
+        .query_custom_data_dynamic(
+            "RustTestBytesCustomData",
+            Some(&identifiers),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(loaded.len(), original_data.len());
+    for (expected, actual) in original_data.iter().zip(&loaded) {
+        let Data::Custom(custom) = actual else {
+            panic!("Expected custom data, was {actual:?}");
+        };
+        let actual = custom
+            .data
+            .as_any()
+            .downcast_ref::<RustTestBytesCustomData>()
+            .expect("Expected RustTestBytesCustomData");
+        assert_eq!(actual, expected);
     }
 }
 
@@ -4229,7 +4296,7 @@ fn test_query_directory_based_registration_with_cloud_uri() {
     );
 
     let query_result = result.unwrap();
-    let data: Vec<Data> = query_result.collect();
+    let data: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
 
     // Should get all 4 quotes from both files in the directory
     assert_eq!(data.len(), 4, "Should read all files in directory");
@@ -4253,7 +4320,7 @@ fn test_duplicate_table_registration() {
         .unwrap();
 
     let query_result: QueryResult = session.get_query_result();
-    let data: Vec<Data> = query_result.collect();
+    let data: Vec<Data> = query_result.collect::<Result<_, _>>().unwrap();
 
     // Should only get data once, not duplicated
     // The quotes.parquet file contains 9500 quotes

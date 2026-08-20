@@ -17,14 +17,13 @@
 Layer 2 oracle for the Lighter L2 tx signer.
 
 Loads the closed-source signer that ships with `lighter-python`, runs it against
-deterministic inputs covering the trading-critical L2 tx types, and writes a
-JSON fixture consumed by `signing/tx/encode.rs` tests.
+deterministic inputs covering the trading-critical L2 tx types, and writes a JSON
+fixture consumed by `signing/tx/encode.rs` tests.
 
-The signer's `SignedHash` is a deterministic Poseidon2 hash over the tx body
-elements. The signature itself uses a randomly sampled nonce `k`, so signature
-bytes vary between runs; the fixture is regenerated when the signer pin moves
-and the tests treat `sig` as a single valid witness rather than an equality
-target.
+The signer's `SignedHash` is a deterministic Poseidon2 hash over the tx body elements.
+The signature itself uses a randomly sampled nonce `k`, so signature bytes vary between
+runs; the fixture is regenerated when the signer pin moves and the tests treat `sig` as
+a single valid witness rather than an equality target.
 
 """
 
@@ -227,13 +226,12 @@ def derived_public_key_hex(lib: ctypes.CDLL, sk_hex: str) -> str:
     """
     Re-run the signer once to harvest the matching public-key bytes.
 
-    The closed signer does not export PubKey directly to Python, but every
-    signed tx response embeds the pubkey-derived `tx_hash`, and the signer
-    accepts the same private key in `CreateClient`. We capture the pubkey by
-    signing a throwaway tx and decoding it, but a simpler path is to just
-    bake the public key recovered from the curve-side fixtures into the
-    fixture file. To keep this script self-contained we instead compute the
-    pubkey out-of-band and the caller passes it in.
+    The closed signer does not export PubKey directly to Python, but every signed tx
+    response embeds the pubkey-derived `tx_hash`, and the signer accepts the same
+    private key in `CreateClient`. We capture the pubkey by signing a throwaway tx and
+    decoding it, but a simpler path is to just bake the public key recovered from the
+    curve-side fixtures into the fixture file. To keep this script self-contained we
+    instead compute the pubkey out-of-band and the caller passes it in.
 
     """
     raise NotImplementedError("PublicKey derivation is performed in Rust at fixture-load time")
@@ -342,9 +340,9 @@ def gen_auth_token(lib: ctypes.CDLL, deadline: int, api_key_index: int, account_
     """
     Drive the closed signer's `CreateAuthToken` for a single deadline.
 
-    `CreateAuthToken(deadline, api_key_index, account_index)` returns the
-    serialized `"{message}:{hex(sig)}"` string. The signer reuses the client
-    handle established by `CreateClient`, so the caller must run that first.
+    `CreateAuthToken(deadline, api_key_index, account_index)` returns the serialized
+    `"{message}:{hex(sig)}"` string. The signer reuses the client handle established by
+    `CreateClient`, so the caller must run that first.
 
     """
     resp = lib.CreateAuthToken(deadline, api_key_index, account_index)
@@ -367,14 +365,14 @@ def build_auth_vectors(
     """
     Generate auth-token vectors at fixed deadlines under the seeded signer.
 
-    Each entry pins the inputs that drove the closed signer's `CreateAuthToken`
-    plus the resulting token string. The Rust side recomputes the digest from
-    `message` and verifies the embedded signature under the public key derived
-    from `sk` to gate behavioural equivalence.
+    Each entry pins the inputs that drove the closed signer's `CreateAuthToken` plus the
+    resulting token string. The Rust side recomputes the digest from `message` and
+    verifies the embedded signature under the public key derived from `sk` to gate
+    behavioural equivalence.
 
     The closed signer requires a `CreateClient` call for every `(api_key_index,
-    account_index)` pair before signing; the seeded key is reused for the
-    other vectors so the script does not need to re-initialise per case.
+    account_index)` pair before signing; the seeded key is reused for the other vectors
+    so the script does not need to re-initialise per case.
 
     """
     fixed_deadlines = [

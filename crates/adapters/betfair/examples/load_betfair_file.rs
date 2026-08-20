@@ -32,7 +32,7 @@ use nautilus_model::{
     types::Currency,
 };
 
-const DATA_FILE: &str = "tests/test_data/local/betfair/1.253378068.gz";
+const DATA_FILE: &str = "test_data/local/betfair/1.253378068.gz";
 
 fn main() -> anyhow::Result<()> {
     let filepath = std::env::args().nth(1).map_or_else(
@@ -48,7 +48,7 @@ fn main() -> anyhow::Result<()> {
 
     if !filepath.exists() {
         anyhow::bail!(
-            "File not found: {}\n\nCopy Betfair .gz files to tests/test_data/local/betfair/",
+            "File not found: {}\n\nCopy Betfair .gz files to test_data/local/betfair/",
             filepath.display()
         );
     }

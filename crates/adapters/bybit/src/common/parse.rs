@@ -22,6 +22,7 @@ pub use nautilus_core::serialization::{
     deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
     deserialize_optional_decimal_str, deserialize_string_to_u8,
 };
+use serde::{Deserialize, de::Error};
 
 /// Serde helper for Bybit `ON`/`OFF` string fields that represent booleans.
 ///
@@ -76,6 +77,51 @@ pub mod bool_or_int {
             ))),
         }
     }
+}
+
+/// Deserializes an integer from either a JSON integer or base-10 integer string.
+///
+/// Bybit responses can encode the same integer field in both forms.
+pub(crate) fn deserialize_int_or_string<'de, T, D>(d: D) -> Result<T, D::Error>
+where
+    T: serde::Deserialize<'de> + std::str::FromStr,
+    T::Err: std::fmt::Display,
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum IntOrString<T> {
+        Int(T),
+        Str(String),
+    }
+
+    match IntOrString::<T>::deserialize(d)? {
+        IntOrString::Int(value) => Ok(value),
+        IntOrString::Str(value) => value.parse().map_err(|e| {
+            D::Error::custom(format!(
+                "expected {}, received {value:?}: {e}",
+                std::any::type_name::<T>()
+            ))
+        }),
+    }
+}
+
+/// Deserializes an `i32` from either a JSON integer or base-10 integer string.
+///
+/// Bybit order responses can encode `smpGroup` in both forms.
+pub(crate) fn deserialize_i32_or_string<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<i32, D::Error> {
+    deserialize_int_or_string(d)
+}
+
+/// Deserializes an `i64` from either a JSON integer or base-10 integer string.
+///
+/// Bybit position responses can encode `riskId` in both forms.
+pub(crate) fn deserialize_i64_or_string<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<i64, D::Error> {
+    deserialize_int_or_string(d)
 }
 
 /// Round-trips `Option<bool>` as `0`/`1` integers for Bybit request bodies
@@ -911,11 +957,7 @@ pub fn parse_kline_bar(
     let mut ts_event = parse_millis_timestamp(&kline.start, "kline.start")?;
 
     if timestamp_on_close {
-        let interval_ns = bar_type
-            .spec()
-            .timedelta()
-            .num_nanoseconds()
-            .context("bar specification produced non-integer interval")?;
+        let interval_ns = bar_type.spec().timedelta().as_nanos();
         let interval_ns = u64::try_from(interval_ns)
             .context("bar interval overflowed the u64 range for nanoseconds")?;
         let updated = ts_event
@@ -2117,7 +2159,7 @@ mod tests {
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.price, instrument.make_price(27450.50));
         assert_eq!(tick.size, instrument.make_qty(0.005, None));
-        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
         assert_eq!(
             tick.trade_id.to_string(),
             "a905d5c3-1ed0-4f37-83e4-9c73a2fe2f01"

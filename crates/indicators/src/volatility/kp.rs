@@ -24,7 +24,7 @@ use crate::{average::MovingAverageType, indicator::Indicator};
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators", unsendable)
+    pyo3::pyclass(module = "nautilus_trader.indicators", unsendable)
 )]
 #[cfg_attr(
     feature = "python",
@@ -142,7 +142,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::stubs::kp_10;
+    use crate::{stubs::kp_10, testing::assert_approx_equal};
 
     #[rstest]
     fn test_name_returns_expected_string(kp_10: KeltnerPosition) {
@@ -187,7 +187,7 @@ mod tests {
         }
 
         assert!(kp_10.initialized());
-        assert_eq!(kp_10.value, 0.471_631_205_673_758_94);
+        assert_approx_equal(kp_10.value, 0.471631205674);
     }
 
     #[rstest]

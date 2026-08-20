@@ -29,9 +29,10 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
+    events::OrderDeniedReason,
     identifiers::VenueOrderId,
     orders::{Order, OrderAny},
     types::Price,
@@ -50,6 +51,9 @@ use crate::{
 
 /// Zero `bytes32` used for the `metadata` field (reserved for future use).
 pub const ZERO_BYTES32: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+// Matches the official Polymarket SDK's minimum accepted GTD horizon.
+const GTD_EXPIRATION_BUFFER_SECS: u64 = 180;
 
 /// Builds signed Polymarket orders for submission to the CLOB V2 exchange.
 ///
@@ -151,6 +155,13 @@ impl PolymarketOrderBuilder {
         neg_risk: bool,
         tick_decimals: u32,
     ) -> anyhow::Result<PolymarketOrder> {
+        if side == PolymarketOrderSide::Buy && amount.trunc_with_scale(LOT_SIZE_SCALE).is_zero() {
+            anyhow::bail!(
+                "Polymarket market BUY amount {} pUSD truncates to zero at {LOT_SIZE_SCALE} decimal places",
+                amount.normalize(),
+            );
+        }
+
         let (maker_amount, taker_amount) =
             compute_market_maker_taker_amounts(price, amount, side, tick_decimals);
         self.build_and_sign(token_id, side, maker_amount, taker_amount, "0", neg_risk)
@@ -169,36 +180,44 @@ impl PolymarketOrderBuilder {
     }
 
     /// Validates a limit order before building, returning a denial reason if invalid.
-    pub fn validate_limit_order(order: &OrderAny) -> Result<(), String> {
+    pub fn validate_limit_order(order: &OrderAny) -> Result<(), OrderDeniedReason> {
         if order.is_reduce_only() {
-            return Err("Reduce-only orders not supported on Polymarket".to_string());
-        }
-
-        if order.order_type() != OrderType::Limit {
-            return Err(format!(
-                "Unsupported order type for Polymarket: {:?}",
-                order.order_type()
+            return Err(validation_failed(
+                "Reduce-only orders not supported on Polymarket",
             ));
         }
 
+        if order.order_type() != OrderType::Limit {
+            return Err(OrderDeniedReason::UnsupportedOrderType {
+                order_type: order.order_type(),
+            });
+        }
+
         if order.is_quote_quantity() {
-            return Err("Quote quantity not supported for limit orders".to_string());
+            return Err(validation_failed(
+                "Quote quantity not supported for limit orders",
+            ));
         }
 
         let price = order
             .price()
-            .ok_or_else(|| "Limit orders require a price".to_string())?;
+            .ok_or_else(|| validation_failed("Limit orders require a price"))?;
 
         let order_type = PolymarketOrderType::try_from(order.time_in_force())
-            .map_err(|_| format!("Unsupported time in force: {:?}", order.time_in_force()))?;
+            .map_err(|_| OrderDeniedReason::UnsupportedTimeInForce(order.time_in_force()))?;
 
-        let side = PolymarketOrderSide::try_from(order.order_side())
-            .map_err(|_| format!("Invalid order side: {:?}", order.order_side()))?;
+        let side = PolymarketOrderSide::try_from(order.order_side()).map_err(|_| {
+            OrderDeniedReason::InvalidOrderSide {
+                order_side: order.order_side(),
+            }
+        })?;
 
         if order.is_post_only()
             && !matches!(order.time_in_force(), TimeInForce::Gtc | TimeInForce::Gtd)
         {
-            return Err("Post-only orders require GTC or GTD time in force".to_string());
+            return Err(validation_failed(
+                "Post-only orders require GTC or GTD time in force",
+            ));
         }
 
         validate_immediate_buy_maker_amount(
@@ -206,45 +225,63 @@ impl PolymarketOrderBuilder {
             order.quantity().as_decimal(),
             side,
             order_type,
-        )?;
+        )
+        .map_err(validation_failed)?;
 
         Ok(())
     }
 
-    pub(crate) fn validate_limit_price(order: &OrderAny, tick_size: Price) -> Result<(), String> {
+    pub(crate) fn validate_limit_price(
+        order: &OrderAny,
+        tick_size: Price,
+    ) -> Result<(), OrderDeniedReason> {
         let price = order
             .price()
-            .ok_or_else(|| "Limit orders require a price".to_string())?;
+            .ok_or_else(|| validation_failed("Limit orders require a price"))?;
         let tick = tick_size.as_decimal();
-        let max_price = Decimal::ONE - tick;
         let price_decimal = price.as_decimal();
 
-        if price_decimal < tick || price_decimal > max_price {
-            return Err(format!(
-                "Limit order price {price} outside Polymarket range [{tick}, {max_price}]"
-            ));
+        validate_price(price_decimal, tick, "Limit order price", &price.to_string())
+            .map_err(validation_failed)
+    }
+
+    pub(crate) fn validate_limit_expiration(
+        order: &OrderAny,
+        ts_now: UnixNanos,
+    ) -> Result<(), OrderDeniedReason> {
+        if order.time_in_force() != TimeInForce::Gtd {
+            return Ok(());
         }
 
-        if price_decimal % tick != Decimal::ZERO {
-            return Err(format!(
-                "Limit order price {price} does not conform to Polymarket tick size {tick}"
-            ));
+        let expire_time = order
+            .expire_time()
+            .filter(|expire_time| !expire_time.is_zero())
+            .ok_or(OrderDeniedReason::MissingExpireTime)?;
+        let now_secs = ts_now.as_seconds();
+        let expire_secs = expire_time.as_seconds();
+        let minimum_expire_secs = now_secs.saturating_add(GTD_EXPIRATION_BUFFER_SECS);
+
+        if expire_secs < minimum_expire_secs {
+            return Err(validation_failed(format!(
+                "Polymarket GTD expiry must be at least {GTD_EXPIRATION_BUFFER_SECS} seconds in the future"
+            )));
         }
 
         Ok(())
     }
 
     /// Validates a market order before building, returning a denial reason if invalid.
-    pub fn validate_market_order(order: &OrderAny) -> Result<(), String> {
+    pub fn validate_market_order(order: &OrderAny) -> Result<(), OrderDeniedReason> {
         if order.is_reduce_only() {
-            return Err("Reduce-only orders not supported on Polymarket".to_string());
+            return Err(validation_failed(
+                "Reduce-only orders not supported on Polymarket",
+            ));
         }
 
         if order.order_type() != OrderType::Market {
-            return Err(format!(
-                "Expected Market order, was {:?}",
-                order.order_type()
-            ));
+            return Err(OrderDeniedReason::UnsupportedOrderType {
+                order_type: order.order_type(),
+            });
         }
 
         // BUY market orders must use quote_quantity (amount in pUSD)
@@ -252,33 +289,49 @@ impl PolymarketOrderBuilder {
         match order.order_side() {
             OrderSide::Buy => {
                 if !order.is_quote_quantity() {
-                    return Err(
-                        "Market BUY orders require quote_quantity=true (amount in pUSD)"
-                            .to_string(),
-                    );
+                    return Err(validation_failed(
+                        "Market BUY orders require quote_quantity=true (amount in pUSD)",
+                    ));
                 }
             }
             OrderSide::Sell => {
                 if order.is_quote_quantity() {
-                    return Err(
-                        "Market SELL orders require quote_quantity=false (amount in shares)"
-                            .to_string(),
-                    );
+                    return Err(validation_failed(
+                        "Market SELL orders require quote_quantity=false (amount in shares)",
+                    ));
                 }
             }
             _ => {
-                return Err(format!("Invalid order side: {:?}", order.order_side()));
+                return Err(OrderDeniedReason::InvalidOrderSide {
+                    order_side: order.order_side(),
+                });
             }
         }
 
         if PolymarketOrderType::from_market_time_in_force(order.time_in_force()).is_err() {
-            return Err(format!(
-                "Unsupported time in force for Polymarket market order: {:?}; use IOC or FOK",
-                order.time_in_force()
+            return Err(OrderDeniedReason::UnsupportedTimeInForce(
+                order.time_in_force(),
             ));
         }
 
         Ok(())
+    }
+
+    pub(crate) fn normalize_market_price(
+        price: Decimal,
+        tick_size: Price,
+    ) -> Result<Decimal, String> {
+        let tick = tick_size.as_decimal();
+        let price = price.trunc_with_scale(u32::from(tick_size.precision));
+
+        validate_price(
+            price,
+            tick,
+            "Derived market price",
+            &price.normalize().to_string(),
+        )?;
+
+        Ok(price)
     }
 
     fn build_and_sign(
@@ -324,6 +377,35 @@ impl PolymarketOrderBuilder {
             _ => self.signer_address.clone(),
         }
     }
+}
+
+fn validation_failed(detail: impl Into<String>) -> OrderDeniedReason {
+    OrderDeniedReason::ValidationFailed {
+        detail: detail.into(),
+    }
+}
+
+fn validate_price(
+    price: Decimal,
+    tick: Decimal,
+    label: &str,
+    price_display: &str,
+) -> Result<(), String> {
+    let max_price = Decimal::ONE - tick;
+
+    if price < tick || price > max_price {
+        return Err(format!(
+            "{label} {price_display} outside Polymarket range [{tick}, {max_price}]"
+        ));
+    }
+
+    if price % tick != Decimal::ZERO {
+        return Err(format!(
+            "{label} {price_display} does not conform to Polymarket tick size {tick}"
+        ));
+    }
+
+    Ok(())
 }
 
 fn to_fixed_decimal(d: Decimal) -> Decimal {
@@ -435,9 +517,9 @@ pub fn generate_salt() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::UUID4;
     use nautilus_model::{
-        enums::{OrderSide, TimeInForce},
+        enums::{OrderSide, OrderType, TimeInForce},
         identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
         orders::{LimitOrder, MarketOrder, OrderAny},
         types::{Price, Quantity},
@@ -449,6 +531,7 @@ mod tests {
     use super::*;
     use crate::{
         common::{credential::EvmPrivateKey, enums::PolymarketOrderSide},
+        execution::parse::adjust_market_buy_amount,
         signing::eip712::OrderSigner,
     };
 
@@ -508,6 +591,14 @@ mod tests {
         ))
     }
 
+    fn with_expire_time(mut order: OrderAny, expire_time: Option<UnixNanos>) -> OrderAny {
+        let OrderAny::Limit(limit) = &mut order else {
+            unreachable!("test order is limit")
+        };
+        limit.expire_time = expire_time;
+        order
+    }
+
     fn make_market(side: OrderSide, quote_quantity: bool) -> OrderAny {
         OrderAny::Market(MarketOrder::new(
             TraderId::from("TESTER-001"),
@@ -554,9 +645,11 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             err,
-            format!(
-                "Limit order price {price} outside Polymarket range [{min_price}, {max_price}]"
-            )
+            OrderDeniedReason::ValidationFailed {
+                detail: format!(
+                    "Limit order price {price} outside Polymarket range [{min_price}, {max_price}]"
+                ),
+            }
         );
     }
 
@@ -604,31 +697,133 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             error,
-            format!(
-                "Limit order price {price} does not conform to Polymarket tick size {tick_size}"
-            )
+            OrderDeniedReason::ValidationFailed {
+                detail: format!(
+                    "Limit order price {price} does not conform to Polymarket tick size {tick_size}"
+                ),
+            }
         );
+    }
+
+    #[rstest]
+    #[case::half_cent("0.5059", "0.005", dec!(0.505))]
+    #[case::quarter_cent("0.50259", "0.0025", dec!(0.5025))]
+    fn test_normalize_market_price(
+        #[case] price: &str,
+        #[case] tick_size: &str,
+        #[case] expected: Decimal,
+    ) {
+        let normalized = PolymarketOrderBuilder::normalize_market_price(
+            price.parse::<Decimal>().unwrap(),
+            Price::from(tick_size),
+        )
+        .unwrap();
+
+        assert_eq!(normalized, expected);
+    }
+
+    #[rstest]
+    #[case::below_range(
+        "0.0049",
+        "0.005",
+        "Derived market price 0.004 outside Polymarket range [0.005, 0.995]"
+    )]
+    #[case::above_range(
+        "1.0000",
+        "0.0025",
+        "Derived market price 1 outside Polymarket range [0.0025, 0.9975]"
+    )]
+    #[case::off_half_cent(
+        "0.5019",
+        "0.005",
+        "Derived market price 0.501 does not conform to Polymarket tick size 0.005"
+    )]
+    #[case::off_quarter_cent(
+        "0.50129",
+        "0.0025",
+        "Derived market price 0.5012 does not conform to Polymarket tick size 0.0025"
+    )]
+    fn test_normalize_market_price_denied(
+        #[case] price: &str,
+        #[case] tick_size: &str,
+        #[case] expected: &str,
+    ) {
+        let error = PolymarketOrderBuilder::normalize_market_price(
+            price.parse().unwrap(),
+            Price::from(tick_size),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, expected);
+    }
+
+    #[rstest]
+    #[case::below(
+        1_700_000_179_999_999_999,
+        Some("Polymarket GTD expiry must be at least 180 seconds in the future")
+    )]
+    #[case::equal(1_700_000_180_000_000_000, None)]
+    #[case::above(1_700_000_181_000_000_000, None)]
+    fn test_validate_limit_expiration_boundary(
+        #[case] expire_ns: u64,
+        #[case] expected_error: Option<&str>,
+    ) {
+        let order = with_expire_time(
+            make_limit(false, false, false, TimeInForce::Gtd),
+            Some(UnixNanos::from(expire_ns)),
+        );
+        let ts_now = UnixNanos::from(1_700_000_000_900_000_000u64);
+
+        let result = PolymarketOrderBuilder::validate_limit_expiration(&order, ts_now);
+
+        assert_eq!(
+            result.err().map(|reason| reason.to_string()),
+            expected_error.map(|detail| OrderDeniedReason::ValidationFailed {
+                detail: detail.to_string(),
+            }
+            .to_string())
+        );
+    }
+
+    #[rstest]
+    #[case::missing(None)]
+    #[case::zero(Some(UnixNanos::default()))]
+    fn test_validate_limit_expiration_requires_non_zero_expiry(
+        #[case] expire_time: Option<UnixNanos>,
+    ) {
+        let order = with_expire_time(
+            make_limit(false, false, false, TimeInForce::Gtd),
+            expire_time,
+        );
+
+        let error = PolymarketOrderBuilder::validate_limit_expiration(
+            &order,
+            UnixNanos::from(1_700_000_000_900_000_000u64),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, OrderDeniedReason::MissingExpireTime);
     }
 
     #[rstest]
     fn test_validate_limit_order_reduce_only_denied() {
         let order = make_limit(true, false, false, TimeInForce::Gtc);
         let err = PolymarketOrderBuilder::validate_limit_order(&order).unwrap_err();
-        assert!(err.contains("Reduce-only"));
+        assert!(err.to_string().contains("Reduce-only"));
     }
 
     #[rstest]
     fn test_validate_limit_order_quote_quantity_denied() {
         let order = make_limit(false, true, false, TimeInForce::Gtc);
         let err = PolymarketOrderBuilder::validate_limit_order(&order).unwrap_err();
-        assert!(err.contains("Quote quantity"));
+        assert!(err.to_string().contains("Quote quantity"));
     }
 
     #[rstest]
     fn test_validate_limit_order_post_only_ioc_denied() {
         let order = make_limit(false, false, true, TimeInForce::Ioc);
         let err = PolymarketOrderBuilder::validate_limit_order(&order).unwrap_err();
-        assert!(err.contains("Post-only"));
+        assert!(err.to_string().contains("Post-only"));
     }
 
     #[rstest]
@@ -667,7 +862,12 @@ mod tests {
             UnixNanos::default(),
         ));
         let err = PolymarketOrderBuilder::validate_limit_order(&order).unwrap_err();
-        assert!(err.contains("Invalid order side"));
+        assert_eq!(
+            err,
+            OrderDeniedReason::InvalidOrderSide {
+                order_side: OrderSide::NoOrderSide,
+            }
+        );
     }
 
     #[rstest]
@@ -680,7 +880,7 @@ mod tests {
     fn test_validate_market_order_buy_without_quote_qty_denied() {
         let order = make_market(OrderSide::Buy, false);
         let err = PolymarketOrderBuilder::validate_market_order(&order).unwrap_err();
-        assert!(err.contains("quote_quantity=true"));
+        assert!(err.to_string().contains("quote_quantity=true"));
     }
 
     #[rstest]
@@ -693,7 +893,7 @@ mod tests {
     fn test_validate_market_order_sell_with_quote_qty_denied() {
         let order = make_market(OrderSide::Sell, true);
         let err = PolymarketOrderBuilder::validate_market_order(&order).unwrap_err();
-        assert!(err.contains("quote_quantity=false"));
+        assert!(err.to_string().contains("quote_quantity=false"));
     }
 
     #[rstest]
@@ -701,7 +901,12 @@ mod tests {
         // Passing a limit order to validate_market_order should fail with type mismatch
         let limit = make_limit(false, false, false, TimeInForce::Gtc);
         let err = PolymarketOrderBuilder::validate_market_order(&limit).unwrap_err();
-        assert!(err.contains("Expected Market order"));
+        assert_eq!(
+            err,
+            OrderDeniedReason::UnsupportedOrderType {
+                order_type: OrderType::Limit,
+            }
+        );
     }
 
     fn make_test_builder() -> PolymarketOrderBuilder {
@@ -995,6 +1200,32 @@ mod tests {
         // Quote-denominated BUY: 10 pUSD spend -> 20 shares at price 0.50.
         assert_eq!(order.maker_amount, dec!(10_000_000));
         assert_eq!(order.taker_amount, dec!(20_000_000));
+    }
+
+    #[rstest]
+    fn test_build_market_buy_order_rejects_fee_adjusted_amount_below_lot_size() {
+        let builder = make_test_builder();
+        let adjusted =
+            adjust_market_buy_amount(dec!(10), dec!(0.009), dec!(0.5), dec!(0.04), 1.0, dec!(0))
+                .unwrap();
+        assert_eq!(adjusted, dec!(0.008823));
+
+        let err = builder
+            .build_market_order(
+                "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+                PolymarketOrderSide::Buy,
+                dec!(0.5),
+                adjusted,
+                false,
+                2,
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Polymarket market BUY amount 0.008823 pUSD truncates to zero at 2 decimal places",
+        );
+        assert_eq!(builder.last_timestamp_ms.load(Ordering::Relaxed), 0);
     }
 
     #[rstest]

@@ -431,13 +431,13 @@ impl ParquetDataCatalog {
                 Data::Bar(d) => {
                     bars.push(d);
                 }
-                Data::MarkPriceUpdate(p) => {
+                Data::MarkPrice(p) => {
                     mark_prices.push(p);
                 }
-                Data::IndexPriceUpdate(p) => {
+                Data::IndexPrice(p) => {
                     index_prices.push(p);
                 }
-                Data::FundingRateUpdate(p) => {
+                Data::FundingRate(p) => {
                     funding_rates.push(p);
                 }
                 Data::OptionGreeks(g) => {
@@ -1595,8 +1595,8 @@ impl ParquetDataCatalog {
     ///
     /// # Returns
     ///
-    /// Returns a [`QueryResult`] containing the query execution context and data.
-    /// Use [`QueryResult::collect()`] to retrieve the actual data records.
+    /// Returns a [`QueryResult`] containing the query execution context and data. It iterates
+    /// results, so collect it into a `Result` to surface a stream or decode failure.
     ///
     /// # Errors
     ///
@@ -1626,7 +1626,7 @@ impl ParquetDataCatalog {
     ///
     /// // Query all quote data (uses directory-based registration by default)
     /// let result = catalog.query::<QuoteTick>(None, None, None, None, None, true)?;
-    /// let quotes: Vec<Data> = result.collect();
+    /// let quotes: Vec<Data> = result.collect::<Result<_, _>>()?;
     ///
     /// // Query specific instruments within a time range
     /// let result = catalog.query::<QuoteTick>(
@@ -1855,7 +1855,7 @@ impl ParquetDataCatalog {
             files,
             optimize_file_loading,
         )?;
-        let all_data = query_result.collect();
+        let all_data = query_result.collect::<Result<Vec<_>, _>>()?;
 
         // Convert Data enum variants to specific type T using to_variant
         Ok(to_variant::<T>(all_data))
@@ -2041,7 +2041,7 @@ impl ParquetDataCatalog {
         }
 
         let query_result = self.session.get_query_result();
-        Ok(query_result.collect())
+        Ok(query_result.collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Queries all Parquet files for a specific data type and optional instrument IDs.

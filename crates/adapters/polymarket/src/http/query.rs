@@ -15,10 +15,17 @@
 
 //! HTTP query and response model types for the Polymarket CLOB API.
 
+use std::collections::{HashMap, HashSet};
+
 use ahash::{AHashMap, AHashSet};
+use alloy_primitives::Address;
 use derive_builder::Builder;
+use jiff::{Timestamp, civil::Date, tz::Offset};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{Error, IgnoredAny, MapAccess, Visitor},
+};
 
 use crate::{
     common::{
@@ -92,13 +99,115 @@ pub enum AssetType {
     Conditional,
 }
 
-/// Balance and allowance response from `GET /balance-allowance`.
+/// Strict balance and allowance response for callers that require allowance evidence from
+/// `GET /balance-allowance`.
+///
+/// The plural [`Self::allowances`] map is the sole allowance authority. The legacy singular
+/// [`Self::allowance`] field remains public for source compatibility, but non-null wire values are
+/// rejected. Internal adapter balance-only consumers do not use this type.
 #[derive(Clone, Debug, Deserialize)]
 pub struct BalanceAllowance {
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub balance: Decimal,
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    /// Legacy singular field retained for Rust source compatibility.
+    ///
+    /// Deserialization accepts only an absent or null value; use [`Self::allowances`] for evidence.
+    #[serde(default, deserialize_with = "deserialize_rejected_legacy_allowance")]
     pub allowance: Option<Decimal>,
+    #[serde(deserialize_with = "deserialize_spender_allowances")]
+    pub allowances: HashMap<String, String>,
+}
+
+fn deserialize_rejected_legacy_allowance<'de, D>(
+    deserializer: D,
+) -> Result<Option<Decimal>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match Option::<IgnoredAny>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(_) => Err(D::Error::custom(
+            "legacy singular `allowance` is not accepted; use plural `allowances` evidence",
+        )),
+    }
+}
+
+struct CanonicalSpenderKey {
+    raw: String,
+    address: Address,
+}
+
+impl<'de> Deserialize<'de> for CanonicalSpenderKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        let invalid_spender = format!("invalid spender `{raw}` in allowance evidence");
+        let address = raw
+            .parse::<Address>()
+            .map_err(|_| D::Error::custom(&invalid_spender))?;
+        let is_canonical = [format!("{address:#x}"), address.to_checksum(None)]
+            .into_iter()
+            .any(|candidate| candidate == raw);
+
+        is_canonical
+            .then_some(Self { raw, address })
+            .ok_or_else(|| D::Error::custom(invalid_spender))
+    }
+}
+
+fn deserialize_spender_allowances<'de, D>(
+    deserializer: D,
+) -> Result<HashMap<String, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct SpenderAllowancesVisitor;
+
+    impl<'de> Visitor<'de> for SpenderAllowancesVisitor {
+        type Value = HashMap<String, String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a spender-to-allowance map without duplicate spenders")
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            let mut allowances = HashMap::new();
+            let mut seen_spenders = HashSet::new();
+            while let Some(spender) = map.next_key::<CanonicalSpenderKey>()? {
+                if !seen_spenders.insert(spender.address) {
+                    return Err(A::Error::custom(format!(
+                        "duplicate spender `{}` in allowance evidence",
+                        spender.raw,
+                    )));
+                }
+                let allowance = map.next_value::<String>()?;
+                allowances.insert(spender.raw, allowance);
+            }
+            Ok(allowances)
+        }
+    }
+
+    deserializer.deserialize_map(SpenderAllowancesVisitor)
+}
+
+/// CLOB protocol version response from `GET /version`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub struct ClobVersionResponse {
+    pub version: u8,
+}
+
+/// Status returned after an order submission is processed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OrderResponseStatus {
+    Live,
+    Matched,
+    Delayed,
+    Unmatched,
 }
 
 /// Order submission response from `POST /order` and `POST /orders`.
@@ -107,8 +216,48 @@ pub struct OrderResponse {
     pub success: bool,
     #[serde(rename = "orderID")]
     pub order_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_order_response_status"
+    )]
+    pub status: Option<OrderResponseStatus>,
+    #[serde(
+        default,
+        rename = "makingAmount",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub making_amount: Option<Decimal>,
+    #[serde(
+        default,
+        rename = "takingAmount",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub taking_amount: Option<Decimal>,
+    #[serde(rename = "transactionsHashes")]
+    pub transaction_hashes: Option<Vec<String>>,
+    #[serde(rename = "tradeIDs")]
+    pub trade_ids: Option<Vec<String>>,
     #[serde(rename = "errorMsg")]
     pub error_msg: Option<String>,
+}
+
+fn deserialize_optional_order_response_status<'de, D>(
+    deserializer: D,
+) -> Result<Option<OrderResponseStatus>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match Option::<String>::deserialize(deserializer)?.as_deref() {
+        None | Some("") => Ok(None),
+        Some("live") => Ok(Some(OrderResponseStatus::Live)),
+        Some("matched") => Ok(Some(OrderResponseStatus::Matched)),
+        Some("delayed") => Ok(Some(OrderResponseStatus::Delayed)),
+        Some("unmatched") => Ok(Some(OrderResponseStatus::Unmatched)),
+        Some(value) => Err(D::Error::unknown_variant(
+            value,
+            &["live", "matched", "delayed", "unmatched"],
+        )),
+    }
 }
 
 /// Cancel response from all cancel endpoints (`DELETE /order`, `/orders`,
@@ -488,22 +637,28 @@ fn validate_date_value(value: Option<&str>, name: &str) -> Result<(), String> {
     parse_date_value(value, name).map(|_| ())
 }
 
-fn parse_date_value(
-    value: Option<&str>,
-    name: &str,
-) -> Result<Option<chrono::DateTime<chrono::FixedOffset>>, String> {
+fn parse_date_value(value: Option<&str>, name: &str) -> Result<Option<Timestamp>, String> {
     value
         .map(|value| {
-            chrono::DateTime::parse_from_rfc3339(value)
-                .or_else(|_| {
-                    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").map(|date| {
-                        date.and_hms_opt(0, 0, 0)
-                            .expect("midnight is a valid time")
-                            .and_utc()
-                            .fixed_offset()
-                    })
-                })
-                .map_err(|_| format!("{name} must be an ISO 8601 date or RFC 3339 date-time"))
+            if value.as_bytes().get(10) == Some(&b'T') {
+                return value
+                    .parse::<Timestamp>()
+                    .map_err(|_| format!("{name} must be an ISO 8601 date or RFC 3339 date-time"));
+            }
+
+            if value.len() == 10
+                && value.as_bytes().get(4) == Some(&b'-')
+                && value.as_bytes().get(7) == Some(&b'-')
+            {
+                return value
+                    .parse::<Date>()
+                    .and_then(|date| Offset::UTC.to_timestamp(date.at(0, 0, 0, 0)))
+                    .map_err(|_| format!("{name} must be an ISO 8601 date or RFC 3339 date-time"));
+            }
+
+            Err(format!(
+                "{name} must be an ISO 8601 date or RFC 3339 date-time"
+            ))
         })
         .transpose()
 }
@@ -545,19 +700,40 @@ pub struct GetSearchParams {
 #[derive(Clone, Debug, Deserialize)]
 pub struct PaginatedResponse<T> {
     pub data: Vec<T>,
-    pub next_cursor: String,
+    pub next_cursor: Option<String>,
 }
 
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use serde::de::value::{Error as ValueError, MapDeserializer};
 
     use super::*;
     use crate::{
         common::enums::{PolymarketOrderSide, PolymarketOrderType},
         http::models::{PolymarketOpenOrder, PolymarketTradeReport},
     };
+
+    const MAX_ALLOWANCE: &str =
+        "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+
+    struct OversizedSizeHint<I>(I);
+
+    impl<I> Iterator for OversizedSizeHint<I>
+    where
+        I: Iterator,
+    {
+        type Item = I::Item;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            self.0.next()
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            (usize::MAX, Some(usize::MAX))
+        }
+    }
 
     fn load<T: serde::de::DeserializeOwned>(filename: &str) -> T {
         let path = format!("test_data/{filename}");
@@ -570,7 +746,7 @@ mod tests {
         let page: PaginatedResponse<PolymarketOpenOrder> = load("http_open_orders_page.json");
 
         assert_eq!(page.data.len(), 2);
-        assert_eq!(page.next_cursor, "LTE=");
+        assert_eq!(page.next_cursor.as_deref(), Some("LTE="));
         assert_eq!(page.data[0].side, PolymarketOrderSide::Buy);
         assert_eq!(page.data[1].side, PolymarketOrderSide::Sell);
     }
@@ -580,26 +756,187 @@ mod tests {
         let page: PaginatedResponse<PolymarketTradeReport> = load("http_trades_page.json");
 
         assert_eq!(page.data.len(), 1);
-        assert_eq!(page.next_cursor, "LTE=");
+        assert_eq!(page.next_cursor.as_deref(), Some("LTE="));
         assert_eq!(page.data[0].id, "trade-0x001");
     }
 
     #[rstest]
     fn test_balance_allowance_with_allowance() {
-        // The Polymarket API returns balances and allowances as integer
-        // micro-pUSD strings (e.g. `"1000000000"` == 1000 pUSD).
         let ba: BalanceAllowance = load("http_balance_allowance_collateral.json");
 
-        assert_eq!(ba.balance, dec!(1_000_000_000));
-        assert_eq!(ba.allowance, Some(dec!(999_999_999_000_000)));
+        assert_eq!(ba.balance, dec!(37_506_152));
+        assert!(ba.allowance.is_none());
+        assert_eq!(
+            ba.allowances,
+            std::collections::HashMap::from([
+                (
+                    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+                    MAX_ALLOWANCE.to_string(),
+                ),
+                (
+                    "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                    MAX_ALLOWANCE.to_string(),
+                ),
+                (
+                    "0xcccccccccccccccccccccccccccccccccccccccc".to_string(),
+                    MAX_ALLOWANCE.to_string(),
+                ),
+            ])
+        );
     }
 
     #[rstest]
-    fn test_balance_allowance_no_allowance() {
-        let ba: BalanceAllowance = load("http_balance_allowance_no_allowance.json");
+    fn test_balance_allowance_conditional() {
+        let ba: BalanceAllowance = load("http_balance_allowance_conditional.json");
 
-        assert_eq!(ba.balance, dec!(250.500000));
+        assert_eq!(ba.balance, Decimal::ZERO);
         assert!(ba.allowance.is_none());
+        assert_eq!(ba.allowances.len(), 3);
+        assert!(ba.allowances.values().all(|value| value == MAX_ALLOWANCE));
+    }
+
+    #[rstest]
+    fn test_balance_allowance_rejects_missing_allowances() {
+        let result = serde_json::from_str::<BalanceAllowance>(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test_data/http_balance_allowance_no_allowance.json"
+        )));
+
+        assert!(result.unwrap_err().to_string().contains("missing field"));
+    }
+
+    #[rstest]
+    fn test_balance_allowance_rejects_legacy_singular_without_allowances() {
+        let result =
+            serde_json::from_str::<BalanceAllowance>(r#"{"balance":"250.5","allowance":"1000"}"#);
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("legacy singular `allowance`")
+        );
+    }
+
+    #[rstest]
+    fn test_balance_allowance_rejects_conflicting_singular_and_plural_allowances() {
+        let result = serde_json::from_str::<BalanceAllowance>(
+            r#"{
+                "balance":"250.5",
+                "allowance":"0",
+                "allowances":{
+                    "0xe111180000d2663c0091e4f400237545b87b996b":"115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                }
+            }"#,
+        );
+
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("legacy singular `allowance`")
+        );
+    }
+
+    #[rstest]
+    fn test_balance_allowance_accepts_null_legacy_marker() {
+        let result = serde_json::from_str::<BalanceAllowance>(
+            r#"{
+                "balance":"250.5",
+                "allowance":null,
+                "allowances":{
+                    "0xe111180000d2663c0091e4f400237545b87b996b":"1000"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert!(result.allowance.is_none());
+        assert_eq!(result.allowances.len(), 1);
+    }
+
+    #[rstest]
+    fn test_balance_allowance_rejects_duplicate_spender() {
+        let duplicate = serde_json::from_str::<BalanceAllowance>(
+            r#"{
+                "balance":"250.5",
+                "allowances":{
+                    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":"0",
+                    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":"115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                }
+            }"#,
+        )
+        .expect_err("duplicate spender evidence must be rejected before map construction");
+
+        assert!(duplicate.to_string().contains("duplicate spender"));
+    }
+
+    #[rstest]
+    fn test_balance_allowance_rejects_case_variant_spender_alias() {
+        let duplicate = serde_json::from_str::<BalanceAllowance>(
+            r#"{
+                "balance":"250.5",
+                "allowances":{
+                    "0xada2005600dec949baf300f4c6120000bdb6eaab":"0",
+                    "0xadA2005600Dec949baf300f4C6120000bDB6eAab":"115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                }
+            }"#,
+        )
+        .expect_err("case variants of one EVM spender must be rejected as duplicates");
+
+        assert!(duplicate.to_string().contains("duplicate spender"));
+    }
+
+    #[rstest]
+    fn test_balance_allowance_rejects_malformed_spender() {
+        let malformed = serde_json::from_str::<BalanceAllowance>(
+            r#"{
+                "balance":"250.5",
+                "allowances":{
+                    "exchange":"1000"
+                }
+            }"#,
+        )
+        .expect_err("allowance spender must be an EVM address");
+
+        assert!(malformed.to_string().contains("invalid spender"));
+    }
+
+    #[rstest]
+    #[case::missing_prefix("ada2005600dec949baf300f4c6120000bdb6eaab")]
+    #[case::uppercase_prefix("0Xada2005600dec949baf300f4c6120000bdb6eaab")]
+    #[case::invalid_checksum("0xAdA2005600Dec949baf300f4C6120000bDB6eAab")]
+    fn test_balance_allowance_rejects_noncanonical_spender(#[case] spender: &str) {
+        let payload = format!(r#"{{"balance":"250.5","allowances":{{"{spender}":"1000"}}}}"#,);
+
+        let result = serde_json::from_str::<BalanceAllowance>(&payload);
+
+        assert!(result.unwrap_err().to_string().contains("invalid spender"));
+    }
+
+    #[rstest]
+    fn test_balance_allowance_preserves_checksummed_spender() {
+        let spender = "0xadA2005600Dec949baf300f4C6120000bDB6eAab";
+        let payload = format!(r#"{{"balance":"250.5","allowances":{{"{spender}":"1000"}}}}"#,);
+
+        let balance_allowance = serde_json::from_str::<BalanceAllowance>(&payload).unwrap();
+
+        assert_eq!(
+            balance_allowance.allowances.get(spender),
+            Some(&"1000".to_string())
+        );
+    }
+
+    #[rstest]
+    fn test_spender_allowances_ignores_untrusted_size_hint() {
+        let spender = "0xada2005600dec949baf300f4c6120000bdb6eaab";
+        let entries = [(spender, "1000")];
+        let deserializer =
+            MapDeserializer::<_, ValueError>::new(OversizedSizeHint(entries.into_iter()));
+
+        let allowances = deserialize_spender_allowances(deserializer).unwrap();
+
+        assert_eq!(allowances.get(spender).map(String::as_str), Some("1000"));
     }
 
     #[rstest]
@@ -609,25 +946,81 @@ mod tests {
         assert!(resp.success);
         assert_eq!(
             resp.order_id.as_deref(),
-            Some("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12")
+            Some("0x1111111111111111111111111111111111111111111111111111111111111111")
         );
-        assert!(resp.error_msg.is_none());
+        assert_eq!(resp.status, Some(OrderResponseStatus::Delayed));
+        assert!(resp.making_amount.is_none());
+        assert!(resp.taking_amount.is_none());
+        assert!(resp.transaction_hashes.is_none());
+        assert!(resp.trade_ids.is_none());
+        assert_eq!(resp.error_msg.as_deref(), Some(""));
     }
 
     #[rstest]
     fn test_order_response_failure() {
+        // Constructed compatibility case for a legacy failure response
         let resp: OrderResponse = load("http_order_response_failed.json");
 
         assert!(!resp.success);
         assert!(resp.order_id.is_none());
+        assert!(resp.status.is_none());
+        assert!(resp.making_amount.is_none());
+        assert!(resp.taking_amount.is_none());
+        assert!(resp.transaction_hashes.is_none());
+        assert!(resp.trade_ids.is_none());
         assert_eq!(resp.error_msg.as_deref(), Some("Insufficient balance"));
     }
 
     #[rstest]
-    fn test_order_response_ignores_async_execution_fields() {
-        // After the CLOB async execution rollout, matched POST /order responses
-        // carry `tradeIDs` (and may surface `transactionsHashes`); OrderResponse
-        // models neither, so serde must ignore them rather than reject the body.
+    fn test_order_response_empty_status() {
+        // Constructed from the documented post-only response, which uses empty strings
+        let json = r#"{
+            "success":true,
+            "orderID":"",
+            "status":"",
+            "makingAmount":"",
+            "takingAmount":"",
+            "errorMsg":"post-only mode"
+        }"#;
+        let resp: OrderResponse = serde_json::from_str(json).unwrap();
+
+        assert!(resp.success);
+        assert_eq!(resp.order_id.as_deref(), Some(""));
+        assert!(resp.status.is_none());
+        assert!(resp.making_amount.is_none());
+        assert!(resp.taking_amount.is_none());
+        assert!(resp.transaction_hashes.is_none());
+        assert!(resp.trade_ids.is_none());
+        assert_eq!(resp.error_msg.as_deref(), Some("post-only mode"));
+    }
+
+    #[rstest]
+    fn test_order_response_unmatched_status() {
+        // Constructed compatibility case for a failed delayed placement
+        let json = r#"{
+            "success":false,
+            "orderID":"",
+            "status":"unmatched",
+            "makingAmount":"",
+            "takingAmount":"",
+            "errorMsg":"placement failed"
+        }"#;
+        let resp: OrderResponse = serde_json::from_str(json).unwrap();
+
+        assert!(!resp.success);
+        assert_eq!(resp.order_id.as_deref(), Some(""));
+        assert_eq!(resp.status, Some(OrderResponseStatus::Unmatched));
+        assert!(resp.making_amount.is_none());
+        assert!(resp.taking_amount.is_none());
+        assert!(resp.transaction_hashes.is_none());
+        assert!(resp.trade_ids.is_none());
+        assert_eq!(resp.error_msg.as_deref(), Some("placement failed"));
+    }
+
+    #[rstest]
+    fn test_order_response_matched_fields() {
+        // Constructed documented shape; commit 031318184d only established that these fields
+        // were ignored without breaking decoding
         let resp: OrderResponse = load("http_order_response_async_exec.json");
 
         assert!(resp.success);
@@ -635,7 +1028,72 @@ mod tests {
             resp.order_id.as_deref(),
             Some("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12")
         );
+        assert_eq!(resp.status, Some(OrderResponseStatus::Matched));
+        assert_eq!(resp.making_amount, Some(dec!(100_000_000)));
+        assert_eq!(resp.taking_amount, Some(dec!(200_000_000)));
+        assert_eq!(
+            resp.transaction_hashes.as_deref(),
+            Some(
+                &[
+                    "0xaaaa000000000000000000000000000000000000000000000000000000000000"
+                        .to_string(),
+                    "0xbbbb000000000000000000000000000000000000000000000000000000000000"
+                        .to_string(),
+                ][..]
+            )
+        );
+        assert_eq!(
+            resp.trade_ids.as_deref(),
+            Some(&["trade-0x001".to_string(), "trade-0x002".to_string()][..])
+        );
         assert!(resp.error_msg.is_none());
+    }
+
+    #[rstest]
+    fn test_order_response_trade_ids_without_transaction_hashes() {
+        // Constructed compatibility case for a matched response without transaction hashes
+        let resp: OrderResponse = load("http_order_response_trade_ids_only.json");
+
+        assert!(resp.success);
+        assert_eq!(
+            resp.order_id.as_deref(),
+            Some("0xfedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fe")
+        );
+        assert_eq!(resp.status, Some(OrderResponseStatus::Matched));
+        assert_eq!(resp.making_amount, Some(dec!(25_000_000)));
+        assert_eq!(resp.taking_amount, Some(dec!(50_000_000)));
+        assert!(resp.transaction_hashes.is_none());
+        assert_eq!(
+            resp.trade_ids.as_deref(),
+            Some(&["trade-0x101".to_string(), "trade-0x102".to_string()][..])
+        );
+        assert!(resp.error_msg.is_none());
+    }
+
+    #[rstest]
+    fn test_batch_order_response_legs() {
+        // Sanitized mainnet capture from `POST /orders`
+        let resps: Vec<OrderResponse> = load("http_batch_order_response.json");
+
+        assert_eq!(resps.len(), 2);
+
+        for (index, resp) in resps.iter().enumerate() {
+            assert!(resp.success);
+            assert_eq!(
+                resp.order_id.as_deref(),
+                Some(if index == 0 {
+                    "0x1111111111111111111111111111111111111111111111111111111111111111"
+                } else {
+                    "0x2222222222222222222222222222222222222222222222222222222222222222"
+                })
+            );
+            assert_eq!(resp.status, Some(OrderResponseStatus::Delayed));
+            assert!(resp.making_amount.is_none());
+            assert!(resp.taking_amount.is_none());
+            assert!(resp.transaction_hashes.is_none());
+            assert!(resp.trade_ids.is_none());
+            assert_eq!(resp.error_msg.as_deref(), Some(""));
+        }
     }
 
     #[rstest]

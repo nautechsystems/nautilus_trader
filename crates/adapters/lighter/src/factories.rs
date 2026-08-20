@@ -52,7 +52,7 @@ impl ClientConfig for LighterExecClientConfig {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.lighter", from_py_object,)
+    pyo3::pyclass(module = "nautilus_trader.adapters.lighter", from_py_object,)
 )]
 #[cfg_attr(
     feature = "python",
@@ -104,7 +104,7 @@ impl DataClientFactory for LighterDataClientFactory {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.lighter", from_py_object,)
+    pyo3::pyclass(module = "nautilus_trader.adapters.lighter", from_py_object,)
 )]
 #[cfg_attr(
     feature = "python",
@@ -177,10 +177,16 @@ mod tests {
 
     use super::*;
 
+    const PRIVATE_KEY_HEX: &str =
+        "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
+
     fn exec_config() -> LighterExecClientConfig {
         LighterExecClientConfig::builder()
             .trader_id(TraderId::from("TRADER-001"))
             .account_id(AccountId::from("LIGHTER-001"))
+            .account_index(12_345)
+            .api_key_index(5)
+            .private_key(PRIVATE_KEY_HEX.to_string())
             .build()
     }
 
@@ -228,14 +234,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_lighter_execution_client_factory_constructs_without_credentials() {
+    fn test_lighter_execution_client_factory_constructs() {
         let factory = LighterExecutionClientFactory::new();
         let config = exec_config();
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let client = factory
             .create("LIGHTER-TEST", &config, cache.into())
-            .expect("expected client to construct without credentials");
+            .expect("expected client to construct");
 
         assert!(!client.is_connected());
     }

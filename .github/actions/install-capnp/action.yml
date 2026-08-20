@@ -21,7 +21,7 @@ runs:
     - name: Set Cap'n Proto install prefix (Linux)
       if: runner.os == 'Linux'
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] The workspace cache path is runner-defined
         echo "CAPNP_PREFIX=$GITHUB_WORKSPACE/.cache/capnp" >> $GITHUB_ENV
         echo "$GITHUB_WORKSPACE/.cache/capnp/bin" >> $GITHUB_PATH
 
@@ -33,13 +33,14 @@ runs:
 
     - name: Get capnp version from tools.toml
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] Version comes from repository tool metadata
         echo "CAPNP_VERSION=$(bash scripts/tool-version.sh capnp)" >> $GITHUB_ENV
 
     - name: Cache Cap'n Proto (Linux)
       if: runner.os == 'Linux' && inputs.cache-enabled == 'true'
       id: cache-capnp
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      # https://github.com/actions/cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ github.workspace }}/.cache/capnp
         key: capnp-linux-${{ steps.linux-version.outputs.release }}-${{ env.CAPNP_VERSION }}-${{ runner.arch }}

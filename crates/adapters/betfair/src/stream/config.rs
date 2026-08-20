@@ -15,7 +15,9 @@
 
 //! Configuration for the Betfair stream client.
 
-use crate::common::consts::{BETFAIR_STREAM_HOST, BETFAIR_STREAM_PORT};
+use crate::common::consts::{
+    BETFAIR_STREAM_HEARTBEAT_SECS, BETFAIR_STREAM_HOST, BETFAIR_STREAM_PORT,
+};
 
 /// Configuration for the Betfair Exchange Stream API client.
 #[derive(Debug, Clone)]
@@ -24,10 +26,10 @@ pub struct BetfairStreamConfig {
     pub host: String,
     /// Stream TLS port (default: 443).
     pub port: u16,
-    /// Interval between client heartbeat messages in milliseconds (default: 5 000).
-    pub heartbeat_ms: u64,
-    /// Idle read timeout in milliseconds; triggers reconnection if no data arrives (default: 60 000).
-    pub idle_timeout_ms: u64,
+    /// Interval between client heartbeat messages in seconds (default: 5).
+    pub heartbeat_secs: u64,
+    /// Dead-peer timeout in seconds; reconnects when no bytes arrive (default: 60).
+    pub heartbeat_timeout_secs: u64,
     /// Initial reconnection back-off delay in milliseconds (default: 2 000).
     pub reconnect_delay_initial_ms: u64,
     /// Maximum reconnection back-off delay in milliseconds (default: 30 000).
@@ -42,8 +44,8 @@ impl Default for BetfairStreamConfig {
         Self {
             host: BETFAIR_STREAM_HOST.to_string(),
             port: BETFAIR_STREAM_PORT,
-            heartbeat_ms: 5_000,
-            idle_timeout_ms: 60_000,
+            heartbeat_secs: BETFAIR_STREAM_HEARTBEAT_SECS,
+            heartbeat_timeout_secs: 60,
             reconnect_delay_initial_ms: 2_000,
             reconnect_delay_max_ms: 30_000,
             use_tls: true,
@@ -62,8 +64,8 @@ mod tests {
         let config = BetfairStreamConfig::default();
         assert_eq!(config.host, BETFAIR_STREAM_HOST);
         assert_eq!(config.port, BETFAIR_STREAM_PORT);
-        assert_eq!(config.heartbeat_ms, 5_000);
-        assert_eq!(config.idle_timeout_ms, 60_000);
+        assert_eq!(config.heartbeat_secs, 5);
+        assert_eq!(config.heartbeat_timeout_secs, 60);
         assert_eq!(config.reconnect_delay_initial_ms, 2_000);
         assert_eq!(config.reconnect_delay_max_ms, 30_000);
         assert!(config.use_tls);

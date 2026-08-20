@@ -82,7 +82,7 @@ fn extract_coinbase_exec_config(
     }
 }
 
-/// Loaded as `nautilus_pyo3.coinbase`.
+/// Exposed through `nautilus_trader.adapters.coinbase`.
 ///
 /// # Errors
 ///

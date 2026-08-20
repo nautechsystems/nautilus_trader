@@ -36,7 +36,7 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -242,8 +242,8 @@ mod tests {
 
     #[rstest]
     fn test_snapshot_deserializes_legacy_float_avg_px_and_slippage() {
-        // v1 order state reaches this type through `cache/transformers.py`, which hands
-        // `from_dict` the JSON floats its Cython orders carry.
+        // Legacy payloads carry `avg_px` and `slippage` as JSON floats rather than decimal
+        // strings, so `from_dict` must keep accepting both forms.
         let order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(InstrumentId::from("EURUSD.SIM"))
             .side(OrderSide::Buy)

@@ -13,14 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    ffi::c_char,
-    ops::{Deref, DerefMut},
-};
+use std::ffi::c_char;
 
 use nautilus_core::{
     UnixNanos,
     ffi::{
+        abort_on_panic,
         cvec::CVec,
         parsing::{bytes_to_string_vec, string_vec_to_bytes},
         string::{cstr_as_str, str_to_cstr},
@@ -33,45 +31,20 @@ use crate::{
     types::{ERROR_PRICE, Price},
 };
 
-/// C compatible Foreign Function Interface (FFI) for an underlying
-/// [`SyntheticInstrument`].
-///
-/// This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function
-/// calls, enabling interaction with `SyntheticInstrument` in a C environment.
-///
-/// It implements the `Deref` trait, allowing instances of `SyntheticInstrument_API` to be
-/// dereferenced to `SyntheticInstrument`, providing access to `SyntheticInstruments`'s methods without
-/// having to manually access the underlying instance.
-#[repr(C)]
-#[derive(Debug)]
-#[allow(non_camel_case_types)]
-pub struct SyntheticInstrument_API(Box<SyntheticInstrument>);
-
-impl Deref for SyntheticInstrument_API {
-    type Target = SyntheticInstrument;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for SyntheticInstrument_API {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-/// Changes the formula of the synthetic instrument.
+/// Creates a new [`SyntheticInstrument`] from the given components and formula.
 ///
 /// # Panics
 ///
-/// Panics if the formula update operation fails (`unwrap`).
+/// Panics if the formula is invalid for the given components.
 ///
 /// # Safety
 ///
 /// This function assumes:
 /// - `components_ptr` is a valid C string pointer of a JSON format list of strings.
 /// - `formula_ptr` is a valid C string pointer.
+///
+/// Returns an owning pointer to the heap-allocated `SyntheticInstrument` which the
+/// caller must eventually pass to [`synthetic_instrument_drop`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn synthetic_instrument_new(
     symbol: Symbol,
@@ -80,7 +53,7 @@ pub unsafe extern "C" fn synthetic_instrument_new(
     formula_ptr: *const c_char,
     ts_event: u64,
     ts_init: u64,
-) -> SyntheticInstrument_API {
+) -> *mut SyntheticInstrument {
     // TODO: There is absolutely no error handling here yet
     let components = unsafe { bytes_to_string_vec(components_ptr) }
         .into_iter()
@@ -96,40 +69,52 @@ pub unsafe extern "C" fn synthetic_instrument_new(
         ts_init.into(),
     );
 
-    SyntheticInstrument_API(Box::new(synth))
+    Box::into_raw(Box::new(synth))
+}
+
+/// # Safety
+///
+/// `synth` must be a live owning pointer returned by [`synthetic_instrument_new`],
+/// and must not be used after this call.
+///
+/// # Panics
+///
+/// Panics if `synth` is null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn synthetic_instrument_drop(synth: *mut SyntheticInstrument) {
+    abort_on_panic(|| {
+        assert!(!synth.is_null(), "`synth` was NULL");
+        // SAFETY: Caller guarantees `synth` was allocated by `synthetic_instrument_new`
+        drop(unsafe { Box::from_raw(synth) }); // Memory freed here
+    });
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn synthetic_instrument_drop(synth: SyntheticInstrument_API) {
-    drop(synth); // Memory freed here
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn synthetic_instrument_id(synth: &SyntheticInstrument_API) -> InstrumentId {
+pub extern "C" fn synthetic_instrument_id(synth: &SyntheticInstrument) -> InstrumentId {
     synth.id
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn synthetic_instrument_price_precision(synth: &SyntheticInstrument_API) -> u8 {
+pub extern "C" fn synthetic_instrument_price_precision(synth: &SyntheticInstrument) -> u8 {
     synth.price_precision
 }
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn synthetic_instrument_price_increment(synth: &SyntheticInstrument_API) -> Price {
+pub extern "C" fn synthetic_instrument_price_increment(synth: &SyntheticInstrument) -> Price {
     synth.price_increment
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn synthetic_instrument_formula_to_cstr(
-    synth: &SyntheticInstrument_API,
+    synth: &SyntheticInstrument,
 ) -> *const c_char {
     str_to_cstr(&synth.formula)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn synthetic_instrument_components_to_cstr(
-    synth: &SyntheticInstrument_API,
+    synth: &SyntheticInstrument,
 ) -> *const c_char {
     let components_vec = synth
         .components
@@ -141,17 +126,17 @@ pub extern "C" fn synthetic_instrument_components_to_cstr(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn synthetic_instrument_components_count(synth: &SyntheticInstrument_API) -> usize {
+pub extern "C" fn synthetic_instrument_components_count(synth: &SyntheticInstrument) -> usize {
     synth.components.len()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn synthetic_instrument_ts_event(synth: &SyntheticInstrument_API) -> UnixNanos {
+pub extern "C" fn synthetic_instrument_ts_event(synth: &SyntheticInstrument) -> UnixNanos {
     synth.ts_event
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn synthetic_instrument_ts_init(synth: &SyntheticInstrument_API) -> UnixNanos {
+pub extern "C" fn synthetic_instrument_ts_init(synth: &SyntheticInstrument) -> UnixNanos {
     synth.ts_init
 }
 
@@ -189,7 +174,7 @@ pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
 /// Panics if changing the formula fails (i.e., `unwrap()` in `change_formula`).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn synthetic_instrument_change_formula(
-    synth: &mut SyntheticInstrument_API,
+    synth: &mut SyntheticInstrument,
     formula_ptr: *const c_char,
 ) {
     let formula = unsafe { cstr_as_str(formula_ptr) };
@@ -203,7 +188,7 @@ pub unsafe extern "C" fn synthetic_instrument_change_formula(
 /// `inputs_ptr` must describe initialized `f64` values that remain valid and immutable for the
 /// duration of this call.
 pub unsafe extern "C" fn synthetic_instrument_calculate(
-    synth: &mut SyntheticInstrument_API,
+    synth: &mut SyntheticInstrument,
     inputs_ptr: &CVec,
 ) -> Price {
     let inputs = unsafe { inputs_ptr.as_slice::<f64>() };
@@ -222,7 +207,7 @@ mod cvec_tests {
 
     #[rstest]
     fn test_synthetic_calculate_borrows_inputs() {
-        let mut synth = SyntheticInstrument_API(Box::default());
+        let mut synth = SyntheticInstrument::default();
         let mut inputs = vec![100.0, 200.0];
         let cvec = CVec {
             ptr: inputs.as_mut_ptr().cast(),

@@ -1,10 +1,10 @@
 # Data Testing Spec
 
 This section defines a rigorous test matrix for validating adapter data
-functionality using the `DataTester` actor. Both Python
-(`nautilus_trader.test_kit.strategies.tester_data`) and Rust
-(`nautilus_testkit::testers`) provide the `DataTester`. Each test case is
-identified by a prefixed ID (e.g. TC-D01) and grouped by functionality.
+functionality using the Rust `DataTester` actor. Python exposes it as a built‑in
+actor configured through `nautilus_trader.testkit.DataTesterConfig`; Rust code
+imports it from `nautilus_testkit::testers`. Each test case is identified by a
+prefixed ID (e.g. TC-D01) and grouped by functionality.
 
 **Each adapter must pass the subset of tests matching its supported data types.**
 
@@ -28,14 +28,15 @@ Before running data tests:
 
 **Python node setup**:
 
-Legacy examples still use `nautilus_trader.live.node.TradingNode`, but new Rust-backed
-PyO3 adapters should prefer `nautilus_trader.live.LiveNode`. Use `LiveNode.builder(...)`
-when you need to register adapter client factories before the node is built.
+Use `nautilus_trader.live.LiveNode`. Call `LiveNode.builder(...)` when you need to
+register adapter client factories before the node is built.
 
 ```python
 from nautilus_trader.common import Environment
-from nautilus_trader.live import LiveDataEngineConfig, LiveNode
+from nautilus_trader.config import LiveDataEngineConfig
+from nautilus_trader.live import LiveNode
 from nautilus_trader.model import TraderId
+from nautilus_trader.testkit import DataTesterConfig
 
 node = (
     LiveNode.builder("TESTER-001", TraderId("TESTER-001"), Environment.SANDBOX)
@@ -44,7 +45,12 @@ node = (
     .build()
 )
 
-node.add_actor_from_config(importable_actor_config)
+tester_config = DataTesterConfig(
+    client_id=client_id,
+    instrument_ids=[instrument_id],
+    subscribe_quotes=True,
+)
+node.add_builtin_actor("DataTester", tester_config)
 # Register remaining components, then start or run
 ```
 
@@ -157,14 +163,16 @@ DataTesterConfig::builder()
 
 Test order book subscription modes and snapshot requests.
 
-| TC     | Name                           | Description                         | Skip when             |
-| ------ | ------------------------------ | ----------------------------------- | --------------------- |
-| TC-D10 | Subscribe book deltas          | Stream `OrderBookDeltas` updates.   | No book support.      |
-| TC-D11 | Subscribe book at interval     | Periodic `OrderBook` snapshots.     | No book support.      |
-| TC-D12 | Subscribe book depth           | `OrderBookDepth10` snapshots.       | No book depth.        |
-| TC-D13 | Request book snapshot          | One‑time book snapshot request.     | No book snapshot.     |
-| TC-D14 | Managed book from deltas       | Build local book from delta stream. | No book support.      |
-| TC-D15 | Request historical book deltas | Historical book deltas request.     | No historical deltas. |
+| TC     | Name                       | Description                         | Skip when         |
+| ------ | -------------------------- | ----------------------------------- | ----------------- |
+| TC-D10 | Subscribe book deltas      | Stream `OrderBookDeltas` updates.   | No book support.  |
+| TC-D11 | Subscribe book at interval | Periodic `OrderBook` snapshots.     | No book support.  |
+| TC-D12 | Subscribe book depth       | `OrderBookDepth10` snapshots.       | No book depth.    |
+| TC-D13 | Request book snapshot      | One‑time book snapshot request.     | No book snapshot. |
+| TC-D14 | Managed book from deltas   | Build local book from delta stream. | No book support.  |
+
+Python uses `BookType.L2_MBP` for these scenarios. The Rust builder can override `book_type` when
+an adapter requires a different book representation.
 
 ### TC-D10: Subscribe book deltas
 
@@ -172,7 +180,7 @@ Test order book subscription modes and snapshot requests.
 | ------------------ | -------------------------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded.                                                  |
 | **Action**         | DataTester subscribes to order book deltas.                                            |
-| **Event sequence** | `OrderBookDeltas` events received in `on_order_book_deltas`.                           |
+| **Event sequence** | `OrderBookDeltas` events received in `on_book_deltas`.                                 |
 | **Pass criteria**  | Deltas received with valid instrument ID; at least one delta contains bid/ask updates. |
 | **Skip when**      | Adapter does not support order book data.                                              |
 
@@ -182,7 +190,6 @@ Test order book subscription modes and snapshot requests.
 DataTesterConfig(
     instrument_ids=[instrument_id],
     subscribe_book_deltas=True,
-    book_type=BookType.L2_MBP,
 )
 ```
 
@@ -203,7 +210,7 @@ DataTesterConfig::builder()
 | ------------------ | ----------------------------------------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded.                                                                 |
 | **Action**         | DataTester subscribes to periodic order book snapshots.                                               |
-| **Event sequence** | `OrderBook` events received in `on_order_book` at configured interval.                                |
+| **Event sequence** | `OrderBook` events received in `on_book` at configured interval.                                      |
 | **Pass criteria**  | Book snapshots received with bid/ask levels; updates arrive at approximately the configured interval. |
 | **Skip when**      | Adapter does not support order book data.                                                             |
 
@@ -213,7 +220,6 @@ DataTesterConfig::builder()
 DataTesterConfig(
     instrument_ids=[instrument_id],
     subscribe_book_at_interval=True,
-    book_type=BookType.L2_MBP,
     book_depth=10,
     book_interval_ms=1000,
 )
@@ -238,7 +244,7 @@ DataTesterConfig::builder()
 | ------------------ | ------------------------------------------------------------------------------------ |
 | **Prerequisite**   | Adapter connected, instrument loaded.                                                |
 | **Action**         | DataTester subscribes to `OrderBookDepth10` snapshots.                               |
-| **Event sequence** | `OrderBookDepth10` events received in `on_order_book_depth`.                         |
+| **Event sequence** | `OrderBookDepth10` events received in `on_book_depth`.                               |
 | **Pass criteria**  | Depth snapshots received with up to 10 bid/ask levels; prices are correctly ordered. |
 | **Skip when**      | Adapter does not support book depth subscriptions.                                   |
 
@@ -248,12 +254,21 @@ DataTesterConfig::builder()
 DataTesterConfig(
     instrument_ids=[instrument_id],
     subscribe_book_depth=True,
-    book_type=BookType.L2_MBP,
     book_depth=10,
 )
 ```
 
-**Rust config:** Not yet supported. Book depth subscription is TODO in the Rust `DataTester`.
+**Rust config:**
+
+```rust
+DataTesterConfig::builder()
+    .client_id(client_id)
+    .instrument_ids(vec![instrument_id])
+    .subscribe_book_depth(true)
+    .book_type(BookType::L2_MBP)
+    .book_depth(10)
+    .build()?
+```
 
 ### TC-D13: Request book snapshot
 
@@ -308,7 +323,6 @@ DataTesterConfig(
     instrument_ids=[instrument_id],
     subscribe_book_deltas=True,
     manage_book=True,
-    book_type=BookType.L2_MBP,
     book_levels_to_print=10,
 )
 ```
@@ -325,26 +339,9 @@ DataTesterConfig::builder()
     .build()?
 ```
 
-### TC-D15: Request historical book deltas
-
-| Field              | Value                                                    |
-| ------------------ | -------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, instrument loaded.                    |
-| **Action**         | DataTester requests historical order book deltas.        |
-| **Event sequence** | Historical deltas received via callback.                 |
-| **Pass criteria**  | Deltas received with valid timestamps and book actions.  |
-| **Skip when**      | Adapter does not support historical book delta requests. |
-
-**Python config:**
-
-```python
-DataTesterConfig(
-    instrument_ids=[instrument_id],
-    request_book_deltas=True,
-)
-```
-
-**Rust config:** Not yet supported. Historical book delta requests are TODO in the Rust `DataTester`.
+`DataTesterConfig` exposes `request_book_deltas`, but `DataTester` does not issue that historical
+request. Test an adapter's historical book delta support through a custom actor until the tester
+implements the request path.
 
 ---
 
@@ -363,7 +360,7 @@ Test quote tick subscriptions and historical requests.
 | ------------------ | --------------------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded.                                             |
 | **Action**         | DataTester subscribes to quotes on start.                                         |
-| **Event sequence** | `QuoteTick` events received in `on_quote_tick`.                                   |
+| **Event sequence** | `QuoteTick` events received in `on_quote`.                                        |
 | **Pass criteria**  | At least one `QuoteTick` received with valid bid/ask prices and sizes; bid < ask. |
 | **Skip when**      | Never.                                                                            |
 
@@ -392,7 +389,7 @@ DataTesterConfig::builder()
 | ------------------ | ----------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded.                             |
 | **Action**         | DataTester requests historical quote ticks.                       |
-| **Event sequence** | Historical quotes received via `on_historical_data` callback.     |
+| **Event sequence** | Historical quote batches received via `on_historical_quotes`.     |
 | **Pass criteria**  | Quotes received with valid timestamps, bid/ask prices, and sizes. |
 | **Skip when**      | Adapter does not support historical quote requests.               |
 
@@ -402,7 +399,6 @@ DataTesterConfig::builder()
 DataTesterConfig(
     instrument_ids=[instrument_id],
     request_quotes=True,
-    requests_start_delta=pd.Timedelta(hours=1),
 )
 ```
 
@@ -423,7 +419,7 @@ Test trade tick subscriptions and historical requests.
 | ------------------ | ----------------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded.                                         |
 | **Action**         | DataTester subscribes to trades on start.                                     |
-| **Event sequence** | `TradeTick` events received in `on_trade_tick`.                               |
+| **Event sequence** | `TradeTick` events received in `on_trade`.                                    |
 | **Pass criteria**  | At least one `TradeTick` received with valid price, size, and aggressor side. |
 | **Skip when**      | Never.                                                                        |
 
@@ -452,7 +448,7 @@ DataTesterConfig::builder()
 | ------------------ | -------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded.                                |
 | **Action**         | DataTester requests historical trade ticks.                          |
-| **Event sequence** | Historical trades received via `on_historical_data` callback.        |
+| **Event sequence** | Historical trade batches received via `on_historical_trades`.        |
 | **Pass criteria**  | Trades received with valid timestamps, prices, sizes, and trade IDs. |
 | **Skip when**      | Adapter does not support historical trade requests.                  |
 
@@ -462,7 +458,6 @@ DataTesterConfig::builder()
 DataTesterConfig(
     instrument_ids=[instrument_id],
     request_trades=True,
-    requests_start_delta=pd.Timedelta(hours=1),
 )
 ```
 
@@ -535,7 +530,6 @@ DataTesterConfig(
     instrument_ids=[instrument_id],
     bar_types=[BarType.from_str("BTCUSDT-PERP.VENUE-1-MINUTE-LAST-EXTERNAL")],
     request_bars=True,
-    requests_start_delta=pd.Timedelta(hours=1),
 )
 ```
 
@@ -872,76 +866,120 @@ DataTesterConfig::builder()
 
 ### TC-D71: Custom subscribe params
 
-| Field              | Value                                                                          |
-| ------------------ | ------------------------------------------------------------------------------ |
-| **Prerequisite**   | Adapter connected, adapter accepts additional subscription parameters.         |
-| **Action**         | Subscribe with `subscribe_params` dict containing adapter‑specific parameters. |
-| **Event sequence** | Subscription established with custom parameters applied.                       |
-| **Pass criteria**  | Data flows with adapter‑specific parameters in effect.                         |
-| **Skip when**      | N/A (adapter‑specific).                                                        |
+| Field              | Value                                                                  |
+| ------------------ | ---------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, adapter accepts additional subscription parameters. |
+| **Action**         | Subscribe with adapter‑specific `subscribe_params`.                    |
+| **Event sequence** | Subscription established with custom parameters applied.               |
+| **Pass criteria**  | Data flows with adapter‑specific parameters in effect.                 |
+| **Skip when**      | N/A (adapter‑specific).                                                |
+
+**Rust config:**
+
+```rust
+use nautilus_core::Params;
+use serde_json::json;
+
+let mut subscribe_params = Params::new();
+subscribe_params.insert("key".to_string(), json!("value"));
+
+DataTesterConfig::builder()
+    .client_id(client_id)
+    .instrument_ids(vec![instrument_id])
+    .subscribe_quotes(true)
+    .subscribe_params(subscribe_params)
+    .build()?
+```
 
 **Considerations:**
 
-- The `subscribe_params` dict is opaque to the DataTester and passed through to the adapter.
+- `subscribe_params` is opaque to the DataTester and passed through to the adapter.
+- The Python `DataTesterConfig` constructor does not expose this Rust‑only field.
 - Consult the adapter's guide for supported parameters.
 
 ### TC-D72: Custom request params
 
-| Field              | Value                                                                           |
-| ------------------ | ------------------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, adapter accepts additional request parameters.               |
-| **Action**         | Request data with `request_params` dict containing adapter‑specific parameters. |
-| **Event sequence** | Request fulfilled with custom parameters applied.                               |
-| **Pass criteria**  | Historical data received with adapter‑specific parameters in effect.            |
-| **Skip when**      | N/A (adapter‑specific).                                                         |
+| Field              | Value                                                                |
+| ------------------ | -------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, adapter accepts additional request parameters.    |
+| **Action**         | Request data with adapter‑specific `request_params`.                 |
+| **Event sequence** | Request fulfilled with custom parameters applied.                    |
+| **Pass criteria**  | Historical data received with adapter‑specific parameters in effect. |
+| **Skip when**      | N/A (adapter‑specific).                                              |
+
+**Rust config:**
+
+```rust
+use nautilus_core::Params;
+use serde_json::json;
+
+let mut request_params = Params::new();
+request_params.insert("key".to_string(), json!("value"));
+
+DataTesterConfig::builder()
+    .client_id(client_id)
+    .instrument_ids(vec![instrument_id])
+    .request_quotes(true)
+    .request_params(request_params)
+    .build()?
+```
 
 **Considerations:**
 
-- The `request_params` dict is opaque to the DataTester and passed through to the adapter.
+- `request_params` is opaque to the DataTester and passed through to the adapter.
+- The Python `DataTesterConfig` constructor does not expose this Rust‑only field.
 - Consult the adapter's guide for supported parameters.
 
 ---
 
 ## DataTester configuration reference
 
-Quick reference for all `DataTesterConfig` parameters. Defaults shown are for the Python config.
-Note: the Rust `DataTesterConfig` builder defaults `manage_book` to `true`, while Python defaults it to `False`.
+The Python constructor accepts the parameters below. Defaults are resolved values after
+construction. Historical quote, trade, and bar requests use a one‑hour lookback; funding rate
+requests use seven days. The lookback is not configurable through `DataTesterConfig`.
 
-| Parameter                     | Type               | Default    | Affects groups |
-| ----------------------------- | ------------------ | ---------- | -------------- |
-| `instrument_ids`              | list[InstrumentId] | *required* | All            |
-| `client_id`                   | ClientId?          | None       | All            |
-| `bar_types`                   | list[BarType]?     | None       | 5              |
-| `subscribe_book_deltas`       | bool               | False      | 2              |
-| `subscribe_book_depth`        | bool               | False      | 2              |
-| `subscribe_book_at_interval`  | bool               | False      | 2              |
-| `subscribe_quotes`            | bool               | False      | 3              |
-| `subscribe_trades`            | bool               | False      | 4              |
-| `subscribe_mark_prices`       | bool               | False      | 6              |
-| `subscribe_index_prices`      | bool               | False      | 6              |
-| `subscribe_funding_rates`     | bool               | False      | 6              |
-| `subscribe_bars`              | bool               | False      | 5              |
-| `subscribe_instrument`        | bool               | False      | 1              |
-| `subscribe_instrument_status` | bool               | False      | 7              |
-| `subscribe_instrument_close`  | bool               | False      | 7              |
-| `subscribe_option_greeks`     | bool               | False      | 8              |
-| `subscribe_params`            | dict?              | None       | 9              |
-| `can_unsubscribe`             | bool               | True       | 9              |
-| `request_instruments`         | bool               | False      | 1              |
-| `request_book_snapshot`       | bool               | False      | 2              |
-| `request_book_deltas`         | bool               | False      | 2              |
-| `request_quotes`              | bool               | False      | 3              |
-| `request_trades`              | bool               | False      | 4              |
-| `request_bars`                | bool               | False      | 5              |
-| `request_funding_rates`       | bool               | False      | 6              |
-| `request_params`              | dict?              | None       | 9              |
-| `requests_start_delta`        | Timedelta?         | 1 hour     | 3, 4, 5        |
-| `book_type`                   | BookType           | L2_MBP     | 2              |
-| `book_depth`                  | PositiveInt?       | None       | 2              |
-| `book_interval_ms`            | PositiveInt        | 1000       | 2              |
-| `book_levels_to_print`        | PositiveInt        | 10         | 2              |
-| `manage_book`                 | bool               | False      | 2              |
-| `use_pyo3_book`               | bool               | False      | 2              |
-| `log_data`                    | bool               | True       | All            |
+| Parameter                     | Type                 | Default | Affects groups  |
+| ----------------------------- | -------------------- | ------- | --------------- |
+| `actor_id`                    | `ActorId?`           | `None`  | All             |
+| `client_id`                   | `ClientId?`          | `None`  | All             |
+| `instrument_ids`              | `list[InstrumentId]` | `[]`    | All             |
+| `bar_types`                   | `list[BarType]?`     | `None`  | 5               |
+| `subscribe_book_deltas`       | `bool`               | `False` | 2               |
+| `subscribe_book_depth`        | `bool`               | `False` | 2               |
+| `subscribe_book_at_interval`  | `bool`               | `False` | 2               |
+| `subscribe_quotes`            | `bool`               | `False` | 3               |
+| `subscribe_trades`            | `bool`               | `False` | 4               |
+| `subscribe_mark_prices`       | `bool`               | `False` | 6               |
+| `subscribe_index_prices`      | `bool`               | `False` | 6               |
+| `subscribe_funding_rates`     | `bool`               | `False` | 6               |
+| `subscribe_bars`              | `bool`               | `False` | 5               |
+| `subscribe_instrument`        | `bool`               | `False` | 1               |
+| `subscribe_instrument_status` | `bool`               | `False` | 7               |
+| `subscribe_instrument_close`  | `bool`               | `False` | 7               |
+| `subscribe_option_greeks`     | `bool`               | `False` | 8               |
+| `can_unsubscribe`             | `bool`               | `True`  | 9               |
+| `request_instruments`         | `bool`               | `False` | 1               |
+| `request_book_snapshot`       | `bool`               | `False` | 2               |
+| `request_book_deltas`         | `bool`               | `False` | Not implemented |
+| `request_quotes`              | `bool`               | `False` | 3               |
+| `request_trades`              | `bool`               | `False` | 4               |
+| `request_bars`                | `bool`               | `False` | 5               |
+| `request_funding_rates`       | `bool`               | `False` | 6               |
+| `book_depth`                  | `PositiveInt?`       | `None`  | 2               |
+| `book_interval_ms`            | `PositiveInt`        | `1000`  | 2               |
+| `book_levels_to_print`        | `PositiveInt`        | `10`    | 2               |
+| `manage_book`                 | `bool`               | `True`  | 2               |
+| `log_data`                    | `bool`               | `True`  | All             |
+| `stats_interval_secs`         | `int`                | `5`     | All             |
+| `log_events`                  | `bool`               | `True`  | All             |
+| `log_commands`                | `bool`               | `True`  | All             |
+
+The Rust builder also exposes these parameters:
+
+| Parameter          | Type       | Default  | Affects groups |
+| ------------------ | ---------- | -------- | -------------- |
+| `book_type`        | `BookType` | `L2_MBP` | 2              |
+| `subscribe_params` | `Params?`  | `None`   | 9              |
+| `request_params`   | `Params?`  | `None`   | 9              |
 
 ---

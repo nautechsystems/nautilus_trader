@@ -29,7 +29,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures::{Sink, Stream};
+use futures_util::{Sink, Stream};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::{
     WebSocketStream,
@@ -63,7 +63,7 @@ impl From<tungstenite::Message> for Message {
 impl TryFrom<Message> for tungstenite::Message {
     type Error = TransportError;
 
-    /// Convert a neutral [`Message`] into a tungstenite [`tungstenite::Message`].
+    /// Converts a neutral [`Message`] into a tungstenite [`tungstenite::Message`].
     ///
     /// Validates the `Text` payload as UTF-8 because tungstenite refuses to
     /// transmit a Text frame whose body is not valid UTF-8. Other variants
@@ -144,20 +144,20 @@ pub struct TungsteniteTransport<S> {
 }
 
 impl<S> TungsteniteTransport<S> {
-    /// Wrap an established tungstenite WebSocket stream.
+    /// Wraps an established Tungstenite WebSocket stream.
     #[inline]
     #[must_use]
     pub const fn new(inner: WebSocketStream<S>) -> Self {
         Self { inner }
     }
 
-    /// Consume the adapter and return the underlying stream.
+    /// Consumes the adapter and returns the underlying stream.
     #[inline]
     pub fn into_inner(self) -> WebSocketStream<S> {
         self.inner
     }
 
-    /// Borrow the underlying stream.
+    /// Borrows the underlying stream.
     #[inline]
     pub const fn get_ref(&self) -> &WebSocketStream<S> {
         &self.inner

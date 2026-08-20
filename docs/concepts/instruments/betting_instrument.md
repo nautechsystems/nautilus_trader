@@ -48,8 +48,7 @@ Examples include Betfair match-odds selections and handicap market selections.
 | `ts_event`           | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`            | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python builds the instrument ID and raw symbol from the venue, market, selection,
-and handicap fields. Rust receives them as `instrument_id` and `raw_symbol`.*
+*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
 
 ## Behavior
 
@@ -61,7 +60,7 @@ and handicap fields. Rust receives them as `instrument_id` and `raw_symbol`.*
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
@@ -71,12 +70,12 @@ use nautilus_model::{
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
-let event_open = Utc.with_ymd_and_hms(2022, 2, 7, 23, 30, 0).unwrap();
-let market_start = Utc.with_ymd_and_hms(2022, 2, 7, 23, 30, 0).unwrap();
+let event_open: Timestamp = "2022-02-07T23:30:00Z".parse().unwrap();
+let market_start: Timestamp = "2022-02-07T23:30:00Z".parse().unwrap();
 
 let selection = BettingInstrument::builder()
-    .instrument_id(InstrumentId::from("1-123456789.BETFAIR"))
-    .raw_symbol(Symbol::from("1-123456789"))
+    .instrument_id(InstrumentId::from("1-123456789-50214.BETFAIR"))
+    .raw_symbol(Symbol::from("1-123456789-50214"))
     .event_type_id(6423)
     .event_type_name(Ustr::from("American Football"))
     .competition_id(12_282_733)
@@ -84,12 +83,12 @@ let selection = BettingInstrument::builder()
     .event_id(29_678_534)
     .event_name(Ustr::from("NFL"))
     .event_country_code(Ustr::from("GB"))
-    .event_open_date(UnixNanos::from(event_open.timestamp_nanos_opt().unwrap() as u64))
+    .event_open_date(UnixNanos::from(event_open))
     .betting_type(Ustr::from("ODDS"))
     .market_id(Ustr::from("1-123456789"))
     .market_name(Ustr::from("AFC Conference Winner"))
     .market_type(Ustr::from("SPECIAL"))
-    .market_start_time(UnixNanos::from(market_start.timestamp_nanos_opt().unwrap() as u64))
+    .market_start_time(UnixNanos::from(market_start))
     .selection_id(50214)
     .selection_name(Ustr::from("Kansas City Chiefs"))
     .selection_handicap(0.0)
@@ -163,7 +162,6 @@ selection = BettingInstrument(
 Representative adapters that create or consume `BettingInstrument` instruments include:
 
 - [Betfair](../../integrations/betfair.md) for sports betting markets.
-- [Betfair v2](../../integrations/betfair_v2.md) for sports betting markets.
 
 ## Related guides
 

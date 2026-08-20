@@ -40,6 +40,7 @@ Examples include `EUR/USD.SIM`, `BTCUSDT.BINANCE`, and `ETH/USD.KRAKEN`.
 ## Behavior
 
 - `CurrencyPair` has instrument class `Spot`.
+- Its asset class is `Cryptocurrency` when either currency has crypto type; otherwise, it is `FX`.
 - It has no expiration, strike price, option kind, or derivative underlying field.
 - It is never inverse. The settlement currency and cost currency are the quote currency.
 - Use this type for both fiat FX pairs and crypto spot pairs.
@@ -130,7 +131,7 @@ Representative adapters that create or consume `CurrencyPair` instruments includ
 - [Kraken](../../integrations/kraken.md) for spot markets.
 - [OKX](../../integrations/okx.md) for spot markets.
 - [Tardis](../../integrations/tardis.md) for spot metadata.
-- [Interactive Brokers](../../integrations/ib.md) for FX cash contracts.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for FX cash contracts.
 - [Hyperliquid](../../integrations/hyperliquid.md) for spot assets.
 
 ## Related guides

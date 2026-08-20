@@ -15,51 +15,24 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{
-        Bar, Data, DataFFI, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth10,
+        QuoteTick, TradeTick,
     },
-    python::data::{DATA_FFI_CVEC_CAPSULE_NAME, DataFfiCVec},
+    python::data::data_to_pyobject,
 };
 use nautilus_serialization::arrow::{ArrowSchemaProvider, custom::CustomDataDecoder};
-use pyo3::{IntoPyObjectExt, prelude::*, types::PyCapsule};
+use pyo3::{IntoPyObjectExt, prelude::*};
 
-use crate::backend::session::{DataBackendSession, DataQueryResult};
+use crate::backend::session::{DataBackendSession, DataQueryResult, QueryError};
 
 /// Wrapper to pass a raw pointer across the GIL release boundary.
 struct SendPtr<T>(*mut T);
 
 // SAFETY: Access is serialized by the calling `PyRefMut`
 unsafe impl<T> Send for SendPtr<T> {}
-
-/// Converts a `Data` variant into a Python object via PyO3.
-#[allow(
-    clippy::match_wildcard_for_single_variants,
-    reason = "Data::Defi appears through nautilus-model feature unification"
-)]
-fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
-    match item {
-        Data::Quote(quote) => Py::new(py, quote).map(pyo3::Py::into_any),
-        Data::Trade(trade) => Py::new(py, trade).map(pyo3::Py::into_any),
-        Data::Bar(bar) => Py::new(py, bar).map(pyo3::Py::into_any),
-        Data::Delta(delta) => Py::new(py, delta).map(pyo3::Py::into_any),
-        Data::Deltas(deltas) => Py::new(py, (*deltas).clone()).map(pyo3::Py::into_any),
-        Data::Depth10(depth) => Py::new(py, *depth).map(pyo3::Py::into_any),
-        Data::IndexPriceUpdate(price) => Py::new(py, price).map(pyo3::Py::into_any),
-        Data::MarkPriceUpdate(price) => Py::new(py, price).map(pyo3::Py::into_any),
-        Data::FundingRateUpdate(funding_rate) => Py::new(py, funding_rate).map(pyo3::Py::into_any),
-        Data::OptionGreeks(greeks) => Py::new(py, greeks).map(pyo3::Py::into_any),
-        Data::InstrumentStatus(status) => Py::new(py, status).map(pyo3::Py::into_any),
-        Data::InstrumentClose(close) => Py::new(py, close).map(pyo3::Py::into_any),
-        Data::Custom(custom) => Py::new(py, custom).map(pyo3::Py::into_any),
-        #[cfg(feature = "defi")]
-        Data::Defi(_) => Err(to_pyruntime_err("Unsupported Data::Defi variant")),
-        #[allow(unreachable_patterns)]
-        _ => Err(to_pyruntime_err("Unsupported Data variant")),
-    }
-}
 
 #[repr(C)]
 #[pyclass(frozen, eq, eq_int, from_py_object)]
@@ -236,8 +209,9 @@ impl DataBackendSession {
 impl DataQueryResult {
     /// Collects the remaining query records as native Python objects.
     ///
-    /// This provides a PyO3-native alternative to the capsule iterator for callers that need to
-    /// inspect the decoded records in Python.
+    /// # Errors
+    ///
+    /// Returns an error if a query stream fails or a record batch cannot be decoded.
     #[pyo3(name = "to_list")]
     fn py_to_list(mut slf: PyRefMut<'_, Self>) -> PyResult<Vec<Py<PyAny>>> {
         let py = slf.py();
@@ -247,21 +221,24 @@ impl DataQueryResult {
         // duration of this method call. As with `__next__`, release the GIL while waiting for
         // decoder workers that may need to acquire it for custom data.
         let data = unsafe {
-            py.detach(move || {
+            py.detach(move || -> Result<Vec<_>, QueryError> {
                 let p = ptr;
                 let result = &mut *p.0;
                 let mut data = Vec::new();
 
                 for chunk in result.by_ref() {
+                    let chunk = chunk?;
+
                     if chunk.is_empty() {
                         break;
                     }
                     data.extend(chunk);
                 }
 
-                data
+                Ok(data)
             })
-        };
+        }
+        .map_err(to_pyruntime_err)?;
 
         data.into_iter()
             .map(|item| data_to_pyobject(py, item))
@@ -275,9 +252,9 @@ impl DataQueryResult {
 
     /// Each iteration returns a chunk of values read from the parquet file.
     ///
-    /// For built-in types, returns a `PyCapsule` containing a `CVec` of `DataFFI` (C layout)
-    /// consumed by Cython `capsule_to_list`. For custom data types (which are not
-    /// FFI-safe), returns a Python list of PyO3 objects directly.
+    /// # Errors
+    ///
+    /// Returns an error if a query stream fails or a record batch cannot be decoded.
     fn __next__(mut slf: PyRefMut<'_, Self>) -> PyResult<Option<Py<PyAny>>> {
         let py = slf.py();
         let ptr = SendPtr(&raw mut *slf);
@@ -299,43 +276,14 @@ impl DataQueryResult {
         };
 
         match acc {
-            Some(acc) if !acc.is_empty() => {
-                let has_non_ffi = acc.iter().any(|d| {
-                    matches!(
-                        d,
-                        Data::Custom(_)
-                            | Data::FundingRateUpdate(_)
-                            | Data::OptionGreeks(_)
-                            | Data::InstrumentStatus(_)
-                    )
-                });
-
-                if has_non_ffi {
-                    // Non-FFI data: convert directly to Python objects.
-                    let objects: Vec<Py<PyAny>> = acc
-                        .into_iter()
-                        .map(|item| data_to_pyobject(py, item))
-                        .collect::<PyResult<_>>()?;
-                    Ok(Some(objects.into_py_any(py)?))
-                } else {
-                    // Built-in types: FFI capsule path
-                    let ffi_data: Vec<DataFFI> = acc
-                        .into_iter()
-                        .map(DataFFI::try_from)
-                        .collect::<Result<Vec<_>, _>>()
-                        .map_err(to_pyruntime_err)?;
-                    let cvec: DataFfiCVec = ffi_data.into();
-                    match PyCapsule::new_with_value_and_destructor::<DataFfiCVec, _>(
-                        py,
-                        cvec,
-                        DATA_FFI_CVEC_CAPSULE_NAME,
-                        |_, _| {},
-                    ) {
-                        Ok(capsule) => Ok(Some(capsule.into_py_any_unwrap(py))),
-                        Err(e) => Err(to_pyruntime_err(e)),
-                    }
-                }
+            Some(Ok(acc)) if !acc.is_empty() => {
+                let objects: Vec<Py<PyAny>> = acc
+                    .into_iter()
+                    .map(|item| data_to_pyobject(py, item))
+                    .collect::<PyResult<_>>()?;
+                Ok(Some(objects.into_py_any(py)?))
             }
+            Some(Err(e)) => Err(to_pyruntime_err(e)),
             _ => Ok(None),
         }
     }

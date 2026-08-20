@@ -26,7 +26,7 @@ use databento::dbn::{
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{BarType, Data},
+    data::{BarType, Data, OrderBookDelta},
     enums::{
         AggressorSide, AssetClass, BookAction, InstrumentClass, MarketStatusAction, OptionKind,
         OrderSide,
@@ -88,8 +88,8 @@ fn test_parse_order_side(#[case] input: c_char, #[case] expected: OrderSide) {
 }
 
 #[rstest]
-#[case('A' as c_char, AggressorSide::Seller)]
-#[case('B' as c_char, AggressorSide::Buyer)]
+#[case('A' as c_char, AggressorSide::Sell)]
+#[case('B' as c_char, AggressorSide::Buy)]
 #[case('X' as c_char, AggressorSide::NoAggressor)]
 fn test_parse_aggressor_side(#[case] input: c_char, #[case] expected: AggressorSide) {
     assert_eq!(parse_aggressor_side(input), expected);
@@ -609,6 +609,142 @@ fn mbo_msg_with_action(action: c_char, flags: dbn::FlagSet) -> dbn::MboMsg {
     }
 }
 
+fn push_mbo_record(
+    buffer: &mut MboDeltaBuffer,
+    output: &mut Vec<OrderBookDelta>,
+    msg: &dbn::MboMsg,
+    instrument_id: InstrumentId,
+) {
+    let (delta, trade) = decode_mbo_msg(msg, instrument_id, 2, Some(0.into()), false).unwrap();
+    assert!(trade.is_none());
+    buffer.push(msg, instrument_id, delta);
+    while let Some(delta) = buffer.pop_ready() {
+        output.push(delta);
+    }
+}
+
+#[rstest]
+fn test_mbo_delta_buffer_preserves_interleaved_record_order() {
+    let instrument_a = InstrumentId::from("A.GLBX");
+    let instrument_b = InstrumentId::from("B.GLBX");
+    let mut a1 = mbo_msg_with_action('A' as c_char, dbn::FlagSet::empty());
+    a1.order_id = 1;
+    let mut b1 = mbo_msg_with_action('A' as c_char, dbn::FlagSet::empty());
+    b1.order_id = 2;
+    let mut a2 = mbo_msg_with_action('C' as c_char, dbn::FlagSet::empty());
+    a2.order_id = 3;
+    let boundary_a = mbo_msg_with_action('N' as c_char, dbn::FlagSet::empty().set_last());
+    let boundary_b = mbo_msg_with_action('N' as c_char, dbn::FlagSet::empty().set_last());
+    let mut buffer = MboDeltaBuffer::default();
+    let mut output = Vec::new();
+
+    for (msg, instrument_id) in [
+        (&a1, instrument_a),
+        (&b1, instrument_b),
+        (&a2, instrument_a),
+        (&boundary_a, instrument_a),
+        (&boundary_b, instrument_b),
+    ] {
+        push_mbo_record(&mut buffer, &mut output, msg, instrument_id);
+    }
+
+    assert_eq!(output.len(), 3);
+    assert_eq!(output[0].instrument_id, instrument_a);
+    assert_eq!(output[0].order.order_id, 1);
+    assert_eq!(output[0].flags, 0);
+    assert_eq!(output[1].instrument_id, instrument_b);
+    assert_eq!(output[1].order.order_id, 2);
+    assert_eq!(output[1].flags, dbn::flags::LAST);
+    assert_eq!(output[2].instrument_id, instrument_a);
+    assert_eq!(output[2].order.order_id, 3);
+    assert_eq!(output[2].flags, dbn::flags::LAST);
+}
+
+#[rstest]
+fn test_mbo_delta_buffer_preserves_snapshot_flag_at_standalone_boundary() {
+    let instrument_id = InstrumentId::from("A.GLBX");
+    let mut snapshot = mbo_msg_with_action('A' as c_char, dbn::FlagSet::empty().set_snapshot());
+    snapshot.hd.ts_event = 10;
+    let mut boundary = mbo_msg_with_action('N' as c_char, dbn::FlagSet::empty().set_last());
+    boundary.hd.ts_event = 10;
+    let mut buffer = MboDeltaBuffer::default();
+    let mut output = Vec::new();
+
+    push_mbo_record(&mut buffer, &mut output, &snapshot, instrument_id);
+    push_mbo_record(&mut buffer, &mut output, &boundary, instrument_id);
+
+    assert_eq!(output.len(), 1);
+    assert_eq!(output[0].flags, dbn::flags::SNAPSHOT | dbn::flags::LAST);
+    assert_eq!(output[0].sequence, 0);
+}
+
+#[rstest]
+fn test_mbo_delta_buffer_applies_boundary_with_distinct_record_timestamp() {
+    let instrument_id = InstrumentId::from("A.GLBX");
+    let mut delta_msg = mbo_msg_with_action('A' as c_char, dbn::FlagSet::empty());
+    delta_msg.ts_recv = 10;
+    let mut boundary = mbo_msg_with_action('N' as c_char, dbn::FlagSet::empty().set_last());
+    boundary.ts_recv = 11;
+    let mut buffer = MboDeltaBuffer::default();
+    let mut output = Vec::new();
+
+    push_mbo_record(&mut buffer, &mut output, &delta_msg, instrument_id);
+    push_mbo_record(&mut buffer, &mut output, &boundary, instrument_id);
+
+    assert_eq!(output.len(), 1);
+    assert_eq!(output[0].flags, dbn::flags::LAST);
+}
+
+#[rstest]
+fn test_mbo_delta_buffer_ignores_empty_event_boundary() {
+    let instrument_id = InstrumentId::from("A.GLBX");
+    let boundary = mbo_msg_with_action('N' as c_char, dbn::FlagSet::empty().set_last());
+    let mut buffer = MboDeltaBuffer::default();
+    let mut output = Vec::new();
+
+    push_mbo_record(&mut buffer, &mut output, &boundary, instrument_id);
+
+    assert!(output.is_empty());
+    assert!(buffer.pop_ready().is_none());
+}
+
+#[rstest]
+fn test_mbo_delta_buffer_releases_incomplete_event_at_end() {
+    let instrument_id = InstrumentId::from("A.GLBX");
+    let mut msg = mbo_msg_with_action('A' as c_char, dbn::FlagSet::empty());
+    msg.hd.ts_event = 10;
+    let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), false).unwrap();
+    let mut buffer = MboDeltaBuffer::default();
+    buffer.push(&msg, instrument_id, delta);
+
+    assert!(trade.is_none());
+    assert!(buffer.pop_ready().is_none());
+
+    buffer.finish();
+    let output = buffer.pop_ready().unwrap();
+
+    assert_eq!(output.instrument_id, instrument_id);
+    assert_eq!(output.flags, 0);
+    assert!(buffer.pop_ready().is_none());
+}
+
+#[rstest]
+#[case::incremental(dbn::FlagSet::empty(), 1_000_000)]
+#[case::snapshot(dbn::FlagSet::empty().set_snapshot(), 0)]
+fn test_decode_mbo_msg_snapshot_does_not_advance_sequence(
+    #[case] flags: dbn::FlagSet,
+    #[case] expected_sequence: u64,
+) {
+    let msg = mbo_msg_with_action('A' as c_char, flags);
+    let instrument_id = InstrumentId::from("ESM4.GLBX");
+    let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), false).unwrap();
+    let delta = delta.unwrap();
+
+    assert!(trade.is_none());
+    assert_eq!(delta.flags, flags.raw());
+    assert_eq!(delta.sequence, expected_sequence);
+}
+
 #[rstest]
 #[case('F' as c_char, true)] // Fill: attribution only - book impact arrives as explicit C/M
 #[case('F' as c_char, false)]
@@ -910,7 +1046,7 @@ fn test_decode_trade_msg() {
     assert_eq!(trade.instrument_id, instrument_id);
     assert_eq!(trade.price, Price::from("3720.25"));
     assert_eq!(trade.size, quantity_from_str("5"));
-    assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+    assert_eq!(trade.aggressor_side, AggressorSide::Sell);
     assert_eq!(trade.trade_id.to_string(), "1170380");
     assert_eq!(trade.ts_event, msg.ts_recv);
     assert_eq!(trade.ts_event, 1_609_160_400_099_150_057);
@@ -941,7 +1077,7 @@ fn test_decode_tbbo_msg() {
     assert_eq!(trade.instrument_id, instrument_id);
     assert_eq!(trade.price, Price::from("3720.25"));
     assert_eq!(trade.size, quantity_from_str("5"));
-    assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+    assert_eq!(trade.aggressor_side, AggressorSide::Sell);
     assert_eq!(trade.trade_id.to_string(), "1170380");
     assert_eq!(trade.ts_event, msg.ts_recv);
     assert_eq!(trade.ts_event, 1_609_160_400_099_150_057);

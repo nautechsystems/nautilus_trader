@@ -41,7 +41,6 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 //! - `streaming`: Enables `persistence` dependency for catalog-based data streaming.
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
@@ -110,6 +109,10 @@
 #![allow(
     clippy::single_match_else,
     reason = "two-arm matches are consistent with surrounding command and event dispatch"
+)]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
 )]
 #![cfg_attr(
     test,

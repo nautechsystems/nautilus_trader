@@ -206,6 +206,46 @@ impl DataActor for CustomDataRecorder {
     }
 }
 
+struct RecurringTimerShutdownActor {
+    core: DataActorCore,
+    fired: Rc<Cell<u32>>,
+}
+
+impl RecurringTimerShutdownActor {
+    fn new(fired: Rc<Cell<u32>>) -> Self {
+        let config = DataActorConfig {
+            actor_id: Some(ActorId::from("RECURRING-TIMER-SHUTDOWN")),
+            ..Default::default()
+        };
+        Self {
+            core: DataActorCore::new(config),
+            fired,
+        }
+    }
+}
+
+nautilus_actor!(RecurringTimerShutdownActor);
+
+impl Debug for RecurringTimerShutdownActor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(RecurringTimerShutdownActor))
+            .finish()
+    }
+}
+
+impl DataActor for RecurringTimerShutdownActor {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.clock()
+            .set_timer_ns("recurring", 1_000_000_000, None, None, None, None, None)
+    }
+
+    fn on_time_event(&mut self, _event: &TimeEvent) -> anyhow::Result<()> {
+        self.fired.set(self.fired.get() + 1);
+        self.shutdown_system(Some("stop recurring timer test".to_string()));
+        Ok(())
+    }
+}
+
 struct EmptyExecAlgorithm {
     core: ExecutionAlgorithmCore,
 }
@@ -1256,6 +1296,21 @@ fn test_run_with_empty_data(crypto_perpetual_ethusdt: CryptoPerpetual) {
 }
 
 #[rstest]
+fn test_run_with_empty_data_does_not_advance_recurring_timer() {
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    let fired = Rc::new(Cell::new(0));
+    engine
+        .add_actor(RecurringTimerShutdownActor::new(Rc::clone(&fired)))
+        .unwrap();
+
+    let start = UnixNanos::from(10_000_000_000u64);
+    engine.run(Some(start), None, None, false).unwrap();
+
+    assert_eq!(fired.get(), 0);
+    assert_eq!(engine.kernel().clock.borrow().timestamp_ns(), start);
+}
+
+#[rstest]
 fn test_add_data_rejects_empty(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let mut engine = create_engine();
     engine
@@ -1547,13 +1602,13 @@ fn test_run_processes_scheduled_funding_settlement(crypto_perpetual_ethusdt: Cry
     let data = vec![
         quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
         quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
-        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             Price::from("1000.00"),
             UnixNanos::from(2_500_000_000),
             UnixNanos::from(2_500_000_000),
         )),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.001".parse().unwrap(),
             Some(480),
@@ -1687,13 +1742,13 @@ fn test_run_settles_distinct_funding_boundaries() {
     let data = vec![
         quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
         quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
-        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             Price::from("1000.00"),
             UnixNanos::from(2_500_000_000),
             UnixNanos::from(2_500_000_000),
         )),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.001".parse().unwrap(),
             Some(480),
@@ -1701,7 +1756,7 @@ fn test_run_settles_distinct_funding_boundaries() {
             UnixNanos::from(3_000_000_000),
             UnixNanos::from(3_000_000_000),
         )),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.002".parse().unwrap(),
             Some(480),
@@ -1736,13 +1791,13 @@ fn test_run_retries_funding_after_same_timestamp_mark_price() {
     let data = vec![
         quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 1_000_000_000),
         quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 2_000_000_000),
-        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             Price::from("0.0"),
             UnixNanos::from(2_500_000_000),
             UnixNanos::from(2_500_000_000),
         )),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.001".parse().unwrap(),
             Some(480),
@@ -1750,7 +1805,7 @@ fn test_run_retries_funding_after_same_timestamp_mark_price() {
             boundary,
             boundary,
         )),
-        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             Price::from("10000.0"),
             boundary,
@@ -1781,13 +1836,13 @@ fn test_run_stops_on_unpriced_funding_boundary() {
     let data = vec![
         quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 1_000_000_000),
         quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 2_000_000_000),
-        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             Price::from("0.0"),
             UnixNanos::from(2_500_000_000),
             UnixNanos::from(2_500_000_000),
         )),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.001".parse().unwrap(),
             Some(480),
@@ -1820,13 +1875,13 @@ fn test_end_stops_on_unpriced_funding_boundary() {
     let data = vec![
         quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 1_000_000_000),
         quote_with_size(instrument_id, "10000.0", "10001.0", "100000", 2_000_000_000),
-        Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             Price::from("0.0"),
             UnixNanos::from(2_500_000_000),
             UnixNanos::from(2_500_000_000),
         )),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.001".parse().unwrap(),
             Some(480),
@@ -1862,7 +1917,7 @@ fn test_run_rejects_late_funding_boundary() {
     engine.add_instrument(&instrument).unwrap();
     let data = vec![
         quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.001".parse().unwrap(),
             Some(480),
@@ -1893,7 +1948,7 @@ fn test_run_rejects_late_interval_funding_boundary() {
     let replay_ts = UnixNanos::from(61_000_000_000);
     let data = vec![
         quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
-        Data::FundingRateUpdate(FundingRateUpdate::new(
+        Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             "0.001".parse().unwrap(),
             Some(1),
@@ -1920,7 +1975,7 @@ fn test_reset_cancels_funding_timer() {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
     let instrument_id = instrument.id();
     engine.add_instrument(&instrument).unwrap();
-    let data = vec![Data::FundingRateUpdate(FundingRateUpdate::new(
+    let data = vec![Data::FundingRate(FundingRateUpdate::new(
         instrument_id,
         "0.001".parse().unwrap(),
         Some(480),
@@ -3093,6 +3148,39 @@ fn test_streaming_mode_processes_data_in_batches(crypto_perpetual_ethusdt: Crypt
 
     let result2 = engine.get_result();
     assert_eq!(result2.iterations, 5); // Total across both batches
+}
+
+#[rstest]
+fn test_streaming_windows_retain_first_item_past_end() {
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    let first = stub_custom_data(1, 1, None, None);
+    let data_type = first.data_type.clone();
+    let received = Rc::new(RefCell::new(Vec::new()));
+    engine
+        .add_actor(CustomDataRecorder::new(data_type, Rc::clone(&received)))
+        .unwrap();
+    engine
+        .add_data(
+            vec![
+                Data::Custom(first),
+                Data::Custom(stub_custom_data(2, 2, None, None)),
+                Data::Custom(stub_custom_data(3, 3, None, None)),
+            ],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+
+    engine
+        .run(None, Some(UnixNanos::from(2)), None, true)
+        .unwrap();
+    assert_eq!(*received.borrow(), vec![1, 2]);
+
+    engine
+        .run(None, Some(UnixNanos::from(3)), None, true)
+        .unwrap();
+    assert_eq!(*received.borrow(), vec![1, 2, 3]);
 }
 
 #[rstest]

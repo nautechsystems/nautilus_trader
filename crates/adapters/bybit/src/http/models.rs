@@ -34,8 +34,8 @@ use crate::common::{
         SpotPriceFilter,
     },
     parse::{
-        bool_or_int, deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
-        deserialize_string_to_u8, masked_secret, on_off_bool,
+        bool_or_int, deserialize_decimal_or_zero, deserialize_i32_or_string,
+        deserialize_optional_decimal_or_zero, deserialize_string_to_u8, masked_secret, on_off_bool,
     },
 };
 
@@ -43,7 +43,7 @@ use crate::common::{
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -98,7 +98,7 @@ impl BybitOrderCursorList {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -248,7 +248,7 @@ pub type BybitTickersOptionResponse = BybitListResponse<BybitTickerOption>;
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -719,7 +719,7 @@ pub type BybitInstrumentOptionResponse = BybitCursorListResponse<BybitInstrument
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -850,9 +850,9 @@ pub struct BybitAccountInfo {
     // for accounts that predate the disconnection-protection feature.
     #[serde(default, with = "on_off_bool")]
     pub dcp_status: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_i32_or_string")]
     pub time_window: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_i32_or_string")]
     pub smp_group: i32,
 }
 
@@ -869,7 +869,7 @@ pub type BybitAccountInfoResponse = BybitResponse<BybitAccountInfo>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -885,6 +885,7 @@ pub struct BybitOrder {
     pub qty: String,
     pub side: BybitOrderSide,
     pub is_leverage: String,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub position_idx: i32,
     pub order_status: BybitOrderStatus,
     pub cancel_type: BybitCancelType,
@@ -910,6 +911,7 @@ pub struct BybitOrder {
     pub reduce_only: bool,
     pub close_on_trigger: bool,
     pub smp_type: BybitSmpType,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub smp_group: i32,
     pub smp_order_id: Ustr,
     pub tpsl_mode: Option<BybitTpSlMode>,
@@ -1273,6 +1275,7 @@ pub type BybitTradeHistoryResponse = BybitCursorListResponse<BybitExecution>;
 #[serde(rename_all = "camelCase")]
 pub struct BybitPosition {
     pub position_idx: BybitPositionIdx,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub risk_id: i32,
     pub risk_limit_value: String,
     pub symbol: Ustr,
@@ -1280,9 +1283,12 @@ pub struct BybitPosition {
     pub size: String,
     pub avg_price: String,
     pub position_value: String,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub trade_mode: i32,
     pub position_status: BybitPositionStatus,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub auto_add_margin: i32,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub adl_rank_indicator: i32,
     pub leverage: String,
     pub position_balance: String,
@@ -1429,7 +1435,7 @@ pub type BybitRepayResponse = BybitResponse<BybitRepayResult>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1486,7 +1492,7 @@ pub struct BybitApiKeyPermissions {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1969,6 +1975,19 @@ mod tests {
     }
 
     #[rstest]
+    fn deserialize_account_info_accepts_string_time_window_and_smp_group() {
+        let mut json: serde_json::Value =
+            serde_json::from_str(&load_test_json("http_get_account_info.json")).unwrap();
+        json["result"]["timeWindow"] = serde_json::Value::String("10".to_string());
+        json["result"]["smpGroup"] = serde_json::Value::String("1234".to_string());
+
+        let response: BybitAccountInfoResponse = serde_json::from_value(json).unwrap();
+
+        assert_eq!(response.result.time_window, 10);
+        assert_eq!(response.result.smp_group, 1234);
+    }
+
+    #[rstest]
     fn deserialize_order_response_maps_enums() {
         let json = load_test_json("http_get_orders_history.json");
         let response: BybitOrderHistoryResponse = serde_json::from_str(&json).unwrap();
@@ -1980,6 +1999,51 @@ mod tests {
         assert_eq!(order.tpsl_mode, Some(BybitTpSlMode::Full));
         assert_eq!(order.order_type, BybitOrderType::Limit);
         assert_eq!(order.smp_type, BybitSmpType::None);
+        assert_eq!(order.smp_group, 0);
+    }
+
+    #[rstest]
+    fn deserialize_order_response_accepts_string_smp_group() {
+        let mut json: serde_json::Value =
+            serde_json::from_str(&load_test_json("http_get_orders_history.json")).unwrap();
+        json["result"]["list"][0]["smpGroup"] = serde_json::Value::String("123456789".to_string());
+
+        let response: BybitOrderHistoryResponse = serde_json::from_value(json).unwrap();
+
+        assert_eq!(response.result.list[0].smp_group, 123_456_789);
+    }
+
+    #[rstest]
+    fn deserialize_order_response_accepts_string_position_idx() {
+        let mut json: serde_json::Value =
+            serde_json::from_str(&load_test_json("http_get_orders_history.json")).unwrap();
+        json["result"]["list"][0]["positionIdx"] = serde_json::Value::String("1".to_string());
+
+        let response: BybitOrderHistoryResponse = serde_json::from_value(json).unwrap();
+
+        assert_eq!(response.result.list[0].position_idx, 1);
+    }
+
+    #[rstest]
+    #[case::malformed(
+        "invalid",
+        "expected i32, received \"invalid\": invalid digit found in string"
+    )]
+    #[case::out_of_range(
+        "2147483648",
+        "expected i32, received \"2147483648\": number too large to fit in target type"
+    )]
+    fn deserialize_order_response_rejects_invalid_string_smp_group(
+        #[case] value: &str,
+        #[case] expected: &str,
+    ) {
+        let mut json: serde_json::Value =
+            serde_json::from_str(&load_test_json("http_get_orders_history.json")).unwrap();
+        json["result"]["list"][0]["smpGroup"] = serde_json::Value::String(value.to_string());
+
+        let result: Result<BybitOrderHistoryResponse, _> = serde_json::from_value(json);
+
+        assert_eq!(result.unwrap_err().to_string(), expected);
     }
 
     #[rstest]
@@ -2252,6 +2316,25 @@ mod tests {
             .expect("Failed to parse position list with integer openTime");
 
         assert_eq!(response.result.list[0].open_time, expected);
+    }
+
+    #[rstest]
+    fn deserialize_position_response_accepts_string_integer_fields() {
+        let mut json: serde_json::Value =
+            serde_json::from_str(&load_test_json("http_get_positions.json")).unwrap();
+        let position = &mut json["result"]["list"][0];
+        position["riskId"] = serde_json::Value::String("1234".to_string());
+        position["tradeMode"] = serde_json::Value::String("1".to_string());
+        position["autoAddMargin"] = serde_json::Value::String("2".to_string());
+        position["adlRankIndicator"] = serde_json::Value::String("35".to_string());
+
+        let response: BybitPositionListResponse = serde_json::from_value(json).unwrap();
+
+        let position = &response.result.list[0];
+        assert_eq!(position.risk_id, 1234);
+        assert_eq!(position.trade_mode, 1);
+        assert_eq!(position.auto_add_margin, 2);
+        assert_eq!(position.adl_rank_indicator, 35);
     }
 
     #[rstest]

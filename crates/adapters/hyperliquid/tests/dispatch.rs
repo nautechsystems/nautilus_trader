@@ -33,10 +33,13 @@ use std::sync::Arc;
 use nautilus_common::messages::ExecutionEvent;
 use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_hyperliquid::websocket::dispatch::{
-    DispatchOutcome, OrderIdentity, WsDispatchState, dispatch_order_event, dispatch_order_fill,
+    DispatchOutcome, WsDispatchState, dispatch_order_event, dispatch_order_fill,
     promote_replacement_from_query,
 };
-use nautilus_live::ExecutionEventEmitter;
+use nautilus_live::{
+    ExecutionEventEmitter,
+    execution::context::{OrderContext, OrderIdentity},
+};
 use nautilus_model::{
     enums::{
         AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
@@ -83,14 +86,23 @@ fn account_id() -> AccountId {
     AccountId::from("HYPERLIQUID-001")
 }
 
-fn identity(order_type: OrderType) -> OrderIdentity {
-    OrderIdentity {
-        strategy_id: StrategyId::from("S-001"),
-        instrument_id: InstrumentId::from(INSTRUMENT_ID),
-        order_side: OrderSide::Buy,
-        order_type,
+fn context(client_order_id: ClientOrderId, order_type: OrderType) -> OrderContext {
+    OrderContext {
+        identity: OrderIdentity {
+            client_order_id,
+            strategy_id: StrategyId::from("S-001"),
+            instrument_id: InstrumentId::from(INSTRUMENT_ID),
+            order_side: OrderSide::Buy,
+            order_type,
+        },
         quantity: Quantity::from("0.00020"),
         price: Some(Price::from("56730.0")),
+        trigger_price: None,
+        trigger_type: None,
+        time_in_force: TimeInForce::Gtc,
+        is_post_only: false,
+        is_reduce_only: false,
+        is_quote_quantity: false,
     }
 }
 
@@ -180,7 +192,7 @@ fn test_dispatch_accepted_tracked_emits_order_accepted() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-001");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
 
     let report = make_status_report(
         Some("O-001"),
@@ -225,7 +237,7 @@ fn test_dispatch_canceled_tracked_synthesizes_accepted_then_canceled() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-002");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
 
     let report = make_status_report(
         Some("O-002"),
@@ -240,7 +252,7 @@ fn test_dispatch_canceled_tracked_synthesizes_accepted_then_canceled() {
     let events = drain_events(&mut rx);
     assert_event_types(&events, &["Accepted", "Canceled"]);
     // Terminal cleanup retains the filled-orders marker.
-    assert!(state.lookup_identity(&cid).is_none());
+    assert!(state.lookup_context(&cid).is_none());
     assert!(state.filled_orders.contains(&cid));
 }
 
@@ -249,7 +261,7 @@ fn test_dispatch_expired_tracked_synthesizes_accepted_then_expired() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-003");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
 
     let report = make_status_report(
         Some("O-003"),
@@ -270,7 +282,7 @@ fn test_dispatch_rejected_tracked_emits_rejected_and_cleans_up() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-004");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
 
     let mut report = make_status_report(
         Some("O-004"),
@@ -284,7 +296,7 @@ fn test_dispatch_rejected_tracked_emits_rejected_and_cleans_up() {
 
     let events = drain_events(&mut rx);
     assert_event_types(&events, &["Rejected"]);
-    assert!(state.lookup_identity(&cid).is_none());
+    assert!(state.lookup_context(&cid).is_none());
     assert!(state.filled_orders.contains(&cid));
 }
 
@@ -293,7 +305,7 @@ fn test_dispatch_post_only_rejection_sets_due_post_only() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-POST-REJECT");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
 
     let report = make_status_report(
         Some("O-POST-REJECT"),
@@ -324,7 +336,7 @@ fn test_dispatch_passive_ioc_rejection_preserves_venue_reason() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-IOC-REJECT");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
 
     let report = make_status_report(
         Some("O-IOC-REJECT"),
@@ -361,7 +373,7 @@ fn test_dispatch_triggered_per_order_type(
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-005");
-    state.register_identity(cid, identity(order_type));
+    state.register_context(context(cid, order_type));
 
     let mut report = make_status_report(
         Some("O-005"),
@@ -383,7 +395,7 @@ fn test_dispatch_fill_tracked_synthesizes_accepted_then_filled() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-007");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
 
     let fill = make_fill_report(Some("O-007"), "v-700", "trade-1", "0.00020", "56730.0");
     let outcome = dispatch_order_fill(&fill, &state, &emitter, UnixNanos::default());
@@ -404,8 +416,8 @@ fn test_dispatch_fill_tracked_synthesizes_accepted_then_filled() {
         panic!("expected OrderEventAny::Filled at index 1");
     }
 
-    // Terminal fill cleans identity and records filled marker.
-    assert!(state.lookup_identity(&cid).is_none());
+    // Terminal fill cleans context and records filled marker.
+    assert!(state.lookup_context(&cid).is_none());
     assert!(state.filled_orders.contains(&cid));
 }
 
@@ -414,7 +426,7 @@ fn test_dispatch_fill_tracked_partial_then_terminal() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-008");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
 
     let partial = make_fill_report(Some("O-008"), "v-800", "t-p1", "0.00010", "56730.0");
     let remainder = make_fill_report(Some("O-008"), "v-800", "t-p2", "0.00010", "56730.0");
@@ -425,7 +437,7 @@ fn test_dispatch_fill_tracked_partial_then_terminal() {
     let events = drain_events(&mut rx);
     assert_event_types(&events, &["Accepted", "Filled", "Filled"]);
     assert!(state.filled_orders.contains(&cid));
-    assert!(state.lookup_identity(&cid).is_none());
+    assert!(state.lookup_context(&cid).is_none());
 }
 
 #[rstest]
@@ -434,13 +446,10 @@ fn test_dispatch_fill_duplicate_trade_id_is_skipped() {
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-009");
     // Two submissions with same quantity 0.00040 so the first fill is non-terminal.
-    state.register_identity(
-        cid,
-        OrderIdentity {
-            quantity: Quantity::from("0.00040"),
-            ..identity(OrderType::Limit)
-        },
-    );
+    state.register_context(OrderContext {
+        quantity: Quantity::from("0.00040"),
+        ..context(cid, OrderType::Limit)
+    });
 
     let fill = make_fill_report(Some("O-009"), "v-900", "trade-dup", "0.00010", "56730.0");
 
@@ -470,7 +479,7 @@ fn test_dispatch_stale_replay_after_terminal_is_skipped() {
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-010");
     state.insert_filled(cid);
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
 
     let report = make_status_report(
         Some("O-010"),
@@ -488,7 +497,7 @@ fn test_dispatch_stale_replay_after_terminal_is_skipped() {
 fn test_dispatch_fill_for_order_in_filled_orders_is_skipped() {
     // A late fill arriving for an order whose cid is already recorded in
     // `filled_orders` (e.g. the terminal canceled/expired/rejected path ran
-    // first) must be suppressed rather than emitted: the identity has been
+    // first) must be suppressed rather than emitted: the context has been
     // cleaned up and the engine has already observed the terminal event.
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
@@ -516,7 +525,7 @@ fn test_cancel_replace_emits_updated_not_canceled() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-CR-001");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
 
     // Prime state as if the first ACCEPTED had already flowed through.
     state.insert_accepted(cid);
@@ -552,7 +561,7 @@ fn test_cancel_replace_emits_updated_not_canceled() {
         Some(VenueOrderId::new("375273716474")),
     );
     // Identity is still tracked (the order was not terminal).
-    assert!(state.lookup_identity(&cid).is_some());
+    assert!(state.lookup_context(&cid).is_some());
     // No stale `filled_orders` marker was written for the order.
     assert!(!state.filled_orders.contains(&cid));
 
@@ -569,8 +578,8 @@ fn test_cancel_replace_emits_updated_not_canceled() {
 }
 
 /// GH-3827: an `ACCEPTED(new_voi)` that omits `price` must fall back to the
-/// cached `OrderIdentity::price` so the emitted `OrderUpdated` still carries
-/// an accurate price. If neither the report nor the identity carries a price
+/// cached `OrderContext::price` so the emitted `OrderUpdated` still carries
+/// an accurate price. If neither the report nor the context carries a price
 /// the dispatch skips the leg rather than emitting an `OrderUpdated` with
 /// `None`.
 #[rstest]
@@ -580,7 +589,7 @@ fn test_cancel_replace_emits_updated_not_canceled() {
     Some("Updated"),
     Some(Price::from("53893.0"))
 )]
-#[case::identity_fallback(
+#[case::context_fallback(
     None,
     Some(Price::from("56730.0")),
     Some("Updated"),
@@ -589,20 +598,17 @@ fn test_cancel_replace_emits_updated_not_canceled() {
 #[case::both_missing_is_skipped(None, None, None, None)]
 fn test_cancel_replace_price_sources(
     #[case] report_price: Option<&str>,
-    #[case] identity_price: Option<Price>,
+    #[case] context_price: Option<Price>,
     #[case] expected_event: Option<&str>,
     #[case] expected_updated_price: Option<Price>,
 ) {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-CR-002");
-    state.register_identity(
-        cid,
-        OrderIdentity {
-            price: identity_price,
-            ..identity(OrderType::Limit)
-        },
-    );
+    state.register_context(OrderContext {
+        price: context_price,
+        ..context(cid, OrderType::Limit)
+    });
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("5000"));
 
@@ -650,7 +656,7 @@ fn test_cancel_replace_recovers_after_timed_out_modify() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-CR-003");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("2222"));
 
@@ -685,7 +691,7 @@ fn test_cancel_before_accept_is_suppressed() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-CR-004");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("1000"));
 
@@ -693,7 +699,7 @@ fn test_cancel_before_accept_is_suppressed() {
     state.mark_pending_modify(
         cid,
         VenueOrderId::new("1000"),
-        identity(OrderType::Limit).quantity,
+        context(cid, OrderType::Limit).quantity,
     );
 
     let canceled_old = make_status_report(
@@ -720,7 +726,7 @@ fn test_cancel_before_accept_is_suppressed() {
     assert_event_types(&events, &["Updated"]);
     // Pending marker cleared on the replacement ACCEPTED; tracked state alive.
     assert!(state.pending_modify(&cid).is_none());
-    assert!(state.lookup_identity(&cid).is_some());
+    assert!(state.lookup_context(&cid).is_some());
     assert_eq!(
         state.cached_venue_order_id(&cid),
         Some(VenueOrderId::new("2000"))
@@ -734,7 +740,7 @@ fn test_cancel_after_failed_modify_still_emits_canceled() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-CR-005");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("9999"));
     // Intentionally no `mark_pending_modify`: the failed modify leaves no
@@ -752,7 +758,7 @@ fn test_cancel_after_failed_modify_still_emits_canceled() {
     let events = drain_events(&mut rx);
     assert_event_types(&events, &["Canceled"]);
     assert!(state.filled_orders.contains(&cid));
-    assert!(state.lookup_identity(&cid).is_none());
+    assert!(state.lookup_context(&cid).is_none());
 }
 
 #[rstest]
@@ -760,7 +766,7 @@ fn test_partial_fill_status_emits_nothing_from_status_path() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-011");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
     state.insert_accepted(cid);
 
     let report = make_status_report(
@@ -780,7 +786,7 @@ fn test_filled_status_marker_is_noop_without_fill() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-012");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("v-1200"));
 
@@ -802,7 +808,7 @@ fn test_filled_status_marker_is_noop_without_fill() {
     // would be classified as a stale replay and dropped before it can
     // emit OrderFilled.
     assert!(!state.filled_orders.contains(&cid));
-    assert!(state.lookup_identity(&cid).is_some());
+    assert!(state.lookup_context(&cid).is_some());
 }
 
 #[rstest]
@@ -810,7 +816,7 @@ fn test_filled_status_marker_then_fill_emits_filled() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-012a");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("v-1210"));
 
@@ -831,7 +837,7 @@ fn test_filled_status_marker_then_fill_emits_filled() {
     let events = drain_events(&mut rx);
     assert_event_types(&events, &["Filled"]);
     assert!(state.filled_orders.contains(&cid));
-    assert!(state.lookup_identity(&cid).is_none());
+    assert!(state.lookup_context(&cid).is_none());
 }
 
 #[rstest]
@@ -839,7 +845,7 @@ fn test_accepted_dedup_skips_second_accepted() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-013");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
 
     let first = make_status_report(
         Some("O-013"),
@@ -889,13 +895,13 @@ fn test_fill_during_pending_modify_promotes_when_accepted_dropped() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-FR-001");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("9000"));
     state.mark_pending_modify(
         cid,
         VenueOrderId::new("9000"),
-        identity(OrderType::Limit).quantity,
+        context(cid, OrderType::Limit).quantity,
     );
 
     // Partial fill on the replacement leg; the ACCEPTED is never delivered
@@ -941,7 +947,7 @@ fn test_query_promotes_inflight_modify_replacement_when_accepted_dropped() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-QR-001");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("9200"));
     // Target absolute total (0.00050) differs from the venue's remaining-only
@@ -987,13 +993,13 @@ fn test_query_does_not_promote_when_venue_order_id_unchanged() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-QR-002");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("9300"));
     state.mark_pending_modify(
         cid,
         VenueOrderId::new("9300"),
-        identity(OrderType::Limit).quantity,
+        context(cid, OrderType::Limit).quantity,
     );
 
     let report = make_status_report(
@@ -1022,13 +1028,13 @@ fn test_cancel_replace_fill_promotes_then_late_accepted_is_noop() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-FR-002");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("9100"));
     state.mark_pending_modify(
         cid,
         VenueOrderId::new("9100"),
-        identity(OrderType::Limit).quantity,
+        context(cid, OrderType::Limit).quantity,
     );
 
     // Fill arrives first and promotes the binding
@@ -1056,7 +1062,7 @@ fn test_cancel_replace_fill_promotes_then_late_accepted_is_noop() {
 
     assert_eq!(state.buffered_fill_count(&cid), 0);
     assert!(state.pending_modify(&cid).is_none());
-    // Fill quantity matched identity quantity, so the order is terminal.
+    // Fill quantity matched context quantity, so the order is terminal.
     assert!(state.filled_orders.contains(&cid));
 
     // The late replacement ACCEPTED produces no further events
@@ -1080,15 +1086,12 @@ fn test_cancel_replace_promotes_on_first_fill_then_subsequent() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-FR-MULTI");
-    // Two partial fills of 0.00010 each sum to the identity quantity, so the
+    // Two partial fills of 0.00010 each sum to the context quantity, so the
     // second fill takes the order terminal.
-    state.register_identity(
-        cid,
-        OrderIdentity {
-            quantity: Quantity::from("0.00020"),
-            ..identity(OrderType::Limit)
-        },
-    );
+    state.register_context(OrderContext {
+        quantity: Quantity::from("0.00020"),
+        ..context(cid, OrderType::Limit)
+    });
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("MULTI-OLD"));
     state.mark_pending_modify(
@@ -1136,7 +1139,7 @@ fn test_cancel_replace_promotes_on_first_fill_then_subsequent() {
 
     assert_eq!(state.buffered_fill_count(&cid), 0);
     assert!(state.pending_modify(&cid).is_none());
-    // Cumulative fill matched identity quantity, so the order went terminal.
+    // Cumulative fill matched context quantity, so the order went terminal.
     assert!(state.filled_orders.contains(&cid));
 }
 
@@ -1148,13 +1151,13 @@ fn test_fill_on_cached_voi_passes_through_during_pending_modify() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-FR-003");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("9200"));
     state.mark_pending_modify(
         cid,
         VenueOrderId::new("9200"),
-        identity(OrderType::Limit).quantity,
+        context(cid, OrderType::Limit).quantity,
     );
 
     let fill = make_fill_report(Some("O-FR-003"), "9200", "T-FR-3", "0.00020", "56730.0");
@@ -1177,7 +1180,7 @@ fn test_stale_old_leg_fill_after_cancel_replace_falls_through() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-FR-STALE");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
     state.insert_accepted(cid);
     // Cancel-replace already promoted: cached_voi advanced to the new leg
     // and the pending-modify marker was cleared on the ACCEPTED.
@@ -1211,7 +1214,7 @@ fn test_stale_old_leg_fill_after_cancel_replace_falls_through() {
     }
 }
 
-/// GH-4270: a price-less identity has no resting price to carry on
+/// GH-4270: a price-less context has no resting price to carry on
 /// `OrderUpdated`, so a divergent-voi fill cannot promote and falls back to
 /// buffering until the replacement `ACCEPTED` arrives. Resting orders always
 /// carry a price, so this is a defensive fallback.
@@ -1220,19 +1223,16 @@ fn test_fill_during_pending_modify_without_price_buffers() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-FR-NOPRICE");
-    state.register_identity(
-        cid,
-        OrderIdentity {
-            price: None,
-            ..identity(OrderType::Limit)
-        },
-    );
+    state.register_context(OrderContext {
+        price: None,
+        ..context(cid, OrderType::Limit)
+    });
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("NP-OLD"));
     state.mark_pending_modify(
         cid,
         VenueOrderId::new("NP-OLD"),
-        identity(OrderType::Limit).quantity,
+        context(cid, OrderType::Limit).quantity,
     );
 
     let fill = make_fill_report(
@@ -1257,7 +1257,7 @@ fn test_fill_during_pending_modify_without_price_buffers() {
 }
 
 /// GH-3972: terminal cleanup must drop buffered fills so an order whose
-/// identity has been removed cannot strand a buffered entry.
+/// context has been removed cannot strand a buffered entry.
 #[rstest]
 fn test_buffered_fills_cleared_on_cleanup_terminal() {
     let state = Arc::new(WsDispatchState::new());
@@ -1280,7 +1280,7 @@ fn test_chained_cancel_replace_emits_two_updates_no_spurious_cancel() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-CHAIN-001");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
 
     // Order accepted at V0
     state.insert_accepted(cid);
@@ -1355,7 +1355,7 @@ fn test_chained_cancel_replace_emits_two_updates_no_spurious_cancel() {
         state.cached_venue_order_id(&cid),
         Some(VenueOrderId::new("9002")),
     );
-    assert!(state.lookup_identity(&cid).is_some());
+    assert!(state.lookup_context(&cid).is_some());
     assert!(!state.filled_orders.contains(&cid));
 }
 
@@ -1366,7 +1366,7 @@ fn test_user_cancel_after_modify_chain_drains_emits_canceled() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("O-CHAIN-002");
-    state.register_identity(cid, identity(OrderType::Limit));
+    state.register_context(context(cid, OrderType::Limit));
     state.insert_accepted(cid);
     state.record_venue_order_id(cid, VenueOrderId::new("8000"));
 

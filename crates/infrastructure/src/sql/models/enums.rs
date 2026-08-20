@@ -163,8 +163,8 @@ impl sqlx::Encode<'_, sqlx::Postgres> for AggressorSideModel {
     ) -> Result<IsNull, BoxDynError> {
         let aggressor_side_str = match self.0 {
             AggressorSide::NoAggressor => "NO_AGGRESSOR",
-            AggressorSide::Buyer => "BUYER",
-            AggressorSide::Seller => "SELLER",
+            AggressorSide::Buy => "BUY",
+            AggressorSide::Sell => "SELL",
         };
         <&str as sqlx::Encode<sqlx::Postgres>>::encode(aggressor_side_str, buf)
     }
@@ -241,7 +241,7 @@ impl sqlx::Encode<'_, sqlx::Postgres> for BarAggregationModel {
             BarAggregation::Value => "VALUE",
             BarAggregation::ValueImbalance => "VALUE_IMBALANCE",
             BarAggregation::ValueRuns => "VALUE_RUNS",
-            BarAggregation::Millisecond => "TIME",
+            BarAggregation::Millisecond => "MILLISECOND",
             BarAggregation::Second => "SECOND",
             BarAggregation::Minute => "MINUTE",
             BarAggregation::Hour => "HOUR",
@@ -308,5 +308,133 @@ impl sqlx::Type<sqlx::Postgres> for PriceTypeModel {
 
     fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
         *ty == Self::type_info() || <&str as Type<sqlx::Postgres>>::compatible(ty)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::enums::{AccountType, BookAction, InstrumentClass, OrderStatus};
+    use regex::Regex;
+    use rstest::rstest;
+    use strum::IntoEnumIterator;
+
+    use super::*;
+
+    // Reads the shipped schema rather than a copy of it, so a type declared here can never
+    // drift from the Rust enum it mirrors.
+    fn types_sql() -> String {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql/types.sql");
+        std::fs::read_to_string(path).expect("failed to read types.sql")
+    }
+
+    fn sql_enum_labels(type_name: &str) -> Vec<String> {
+        let sql = types_sql();
+        let declaration = Regex::new(&format!(
+            r"(?s)CREATE\s+TYPE\s+{type_name}\s+AS\s+ENUM\s*\((.*?)\);"
+        ))
+        .expect("invalid declaration pattern")
+        .captures(&sql)
+        .unwrap_or_else(|| panic!("no CREATE TYPE found for {type_name}"))[1]
+            .to_string();
+
+        Regex::new("'([A-Z_0-9]+)'")
+            .expect("invalid label pattern")
+            .captures_iter(&declaration)
+            .map(|label| label[1].to_string())
+            .collect()
+    }
+
+    fn rust_enum_labels<T: IntoEnumIterator + AsRef<str>>() -> Vec<String> {
+        T::iter().map(|value| value.as_ref().to_string()).collect()
+    }
+
+    // The single source of truth for coverage, so a type declared in types.sql without an entry
+    // here fails `every_declared_sql_enum_type_is_guarded`.
+    fn guarded_sql_enum_types() -> Vec<(&'static str, Vec<String>)> {
+        vec![
+            ("ACCOUNT_TYPE", rust_enum_labels::<AccountType>()),
+            (
+                "AGGREGATION_SOURCE",
+                rust_enum_labels::<AggregationSource>(),
+            ),
+            ("AGGRESSOR_SIDE", rust_enum_labels::<AggressorSide>()),
+            ("ASSET_CLASS", rust_enum_labels::<AssetClass>()),
+            ("BAR_AGGREGATION", rust_enum_labels::<BarAggregation>()),
+            ("BOOK_ACTION", rust_enum_labels::<BookAction>()),
+            ("CURRENCY_TYPE", rust_enum_labels::<CurrencyType>()),
+            ("INSTRUMENT_CLASS", rust_enum_labels::<InstrumentClass>()),
+            ("ORDER_STATUS", rust_enum_labels::<OrderStatus>()),
+            ("PRICE_TYPE", rust_enum_labels::<PriceType>()),
+            (
+                "TRAILING_OFFSET_TYPE",
+                rust_enum_labels::<TrailingOffsetType>(),
+            ),
+        ]
+    }
+
+    #[rstest]
+    fn sql_enum_type_matches_rust_enum() {
+        for (type_name, expected) in guarded_sql_enum_types() {
+            assert_eq!(sql_enum_labels(type_name), expected, "{type_name}");
+        }
+    }
+
+    #[rstest]
+    fn every_declared_sql_enum_type_is_guarded() {
+        let mut declared: Vec<String> = Regex::new(r"CREATE\s+TYPE\s+(\w+)\s+AS\s+ENUM")
+            .expect("invalid type name pattern")
+            .captures_iter(&types_sql())
+            .map(|name| name[1].to_string())
+            .collect();
+        let mut guarded: Vec<String> = guarded_sql_enum_types()
+            .into_iter()
+            .map(|(type_name, _)| type_name.to_string())
+            .collect();
+        declared.sort();
+        guarded.sort();
+
+        assert_eq!(declared, guarded);
+    }
+
+    #[rstest]
+    #[case(AggressorSide::NoAggressor, "NO_AGGRESSOR")]
+    #[case(AggressorSide::Buy, "BUY")]
+    #[case(AggressorSide::Sell, "SELL")]
+    fn aggressor_side_model_encodes_postgres_labels(
+        #[case] value: AggressorSide,
+        #[case] expected: &str,
+    ) {
+        let mut buf = sqlx::postgres::PgArgumentBuffer::default();
+        let _ = sqlx::Encode::<sqlx::Postgres>::encode(AggressorSideModel(value), &mut buf);
+        assert_eq!(&buf[..], expected.as_bytes());
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Millisecond, "MILLISECOND")]
+    #[case(BarAggregation::Second, "SECOND")]
+    #[case(BarAggregation::Month, "MONTH")]
+    #[case(BarAggregation::Year, "YEAR")]
+    #[case(BarAggregation::Renko, "RENKO")]
+    fn bar_aggregation_model_encodes_postgres_labels(
+        #[case] value: BarAggregation,
+        #[case] expected: &str,
+    ) {
+        let mut buf = sqlx::postgres::PgArgumentBuffer::default();
+        let _ = sqlx::Encode::<sqlx::Postgres>::encode(BarAggregationModel(value), &mut buf);
+        assert_eq!(&buf[..], expected.as_bytes());
+        assert_eq!(BarAggregation::from_str(expected), Ok(value));
+    }
+
+    #[rstest]
+    #[case(PriceType::Bid, "BID")]
+    #[case(PriceType::Ask, "ASK")]
+    #[case(PriceType::Mid, "MID")]
+    #[case(PriceType::Last, "LAST")]
+    #[case(PriceType::Mark, "MARK")]
+    fn price_type_model_encodes_postgres_labels(#[case] value: PriceType, #[case] expected: &str) {
+        let mut buf = sqlx::postgres::PgArgumentBuffer::default();
+        let _ = sqlx::Encode::<sqlx::Postgres>::encode(PriceTypeModel(value), &mut buf);
+        assert_eq!(&buf[..], expected.as_bytes());
+        assert_eq!(PriceType::from_str(expected), Ok(value));
     }
 }

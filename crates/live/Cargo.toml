@@ -42,7 +42,6 @@ extension-module = [
   "pyo3/extension-module",
   "streaming",
 ]
-ffi = ["nautilus-common/ffi", "nautilus-core/ffi", "nautilus-model/ffi"]
 python = [
   "node",
   "nautilus-common/python",
@@ -77,15 +76,7 @@ ignored = [
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
-features = [
-  "defi",
-  "examples",
-  "ffi",
-  "node",
-  "plugin",
-  "simulation",
-  "streaming",
-]
+features = ["defi", "examples", "node", "plugin", "simulation", "streaming"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
@@ -139,6 +130,12 @@ ustr = { workspace = true }
 [[bench]]
 name = "runner"
 harness = false
+
+# Run with `cargo bench -p nautilus-live --bench queue_monitor`
+[[bench]]
+name = "queue_monitor"
+harness = false
+required-features = ["node"]
 
 [[test]]
 name = "manager"

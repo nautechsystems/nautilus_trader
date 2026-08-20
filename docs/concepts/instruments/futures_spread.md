@@ -21,8 +21,8 @@ Examples include listed futures calendar spreads and exchange-supported spread m
 | `currency`        | `Currency`         | `Currency`         | Required         | Quote and settlement currency.            |
 | `price_precision` | `u8`               | `int`              | Required         | Decimal places allowed for prices.        |
 | `price_increment` | `Price`            | `Price`            | Required         | Smallest valid price step.                |
-| `size_precision`  | `u8`               | `int`              | `0`              | Futures spreads trade in whole contracts. |
-| `size_increment`  | `Quantity`         | `Quantity`         | `1`              | Minimum contract size step.               |
+| `size_precision`  | `u8`               | `int`              | Fixed `0`        | Futures spreads trade in whole contracts. |
+| `size_increment`  | `Quantity`         | `Quantity`         | Fixed `1`        | Minimum contract size step.               |
 | `multiplier`      | `Quantity`         | `Quantity`         | Required         | Strategy multiplier.                      |
 | `lot_size`        | `Quantity`         | `Quantity`         | Required         | Rounded lot or contract lot size.         |
 | `margin_init`     | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                      |
@@ -50,7 +50,7 @@ Examples include listed futures calendar spreads and exchange-supported spread m
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::AssetClass,
@@ -60,8 +60,8 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-let activation = Utc.with_ymd_and_hms(2022, 6, 21, 13, 30, 0).unwrap();
-let expiration = Utc.with_ymd_and_hms(2024, 6, 21, 13, 30, 0).unwrap();
+let activation: Timestamp = "2022-06-21T13:30:00Z".parse().unwrap();
+let expiration: Timestamp = "2024-06-21T13:30:00Z".parse().unwrap();
 
 let es_spread = FuturesSpread::builder()
     .instrument_id(InstrumentId::from("ESM4-ESU4.GLBX"))
@@ -70,8 +70,8 @@ let es_spread = FuturesSpread::builder()
     .exchange(Ustr::from("XCME"))
     .underlying(Ustr::from("ES"))
     .strategy_type(Ustr::from("EQ"))
-    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
-    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .activation_ns(UnixNanos::from(activation))
+    .expiration_ns(UnixNanos::from(expiration))
     .currency(Currency::from("USD"))
     .price_precision(2)
     .price_increment(Price::from("0.01"))
@@ -118,7 +118,7 @@ es_spread = FuturesSpread(
 Representative adapters that create or consume `FuturesSpread` instruments include:
 
 - [Databento](../../integrations/databento.md) for listed futures spread markets.
-- [Interactive Brokers](../../integrations/ib.md) for exchange-defined futures strategies.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for exchange‑defined futures strategies.
 
 ## Related guides
 

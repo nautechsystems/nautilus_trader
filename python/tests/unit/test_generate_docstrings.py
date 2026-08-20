@@ -221,6 +221,26 @@ impl HttpClient {
     assert "/// Panics if the runtime is unavailable." not in updated
 
 
+def test_process_crate_only_reports_traversal_when_verbose(tmp_path, capsys):
+    # Act
+    updates = generate_docstrings.process_crate("core", tmp_path)
+    normal_output = capsys.readouterr()
+    verbose_updates = generate_docstrings.process_crate("core", tmp_path, verbose=True)
+    verbose_output = capsys.readouterr()
+
+    # Assert
+    assert updates == 0
+    assert normal_output.out == ""
+    assert normal_output.err == ""
+    assert verbose_updates == 0
+    assert verbose_output.out == (
+        "Processing crate: core\n"
+        "  Collected 0 source doc comments\n"
+        "  No python/ directory, skipping\n"
+    )
+    assert verbose_output.err == ""
+
+
 def test_collect_source_docs_attaches_doc_across_commented_attribute(tmp_path):
     # Arrange: the struct follows the commented attribute directly, so treating
     # the attribute as multi-line would swallow the struct and lose the doc

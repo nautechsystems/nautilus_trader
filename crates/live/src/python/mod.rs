@@ -27,20 +27,23 @@ pyo3_stub_gen::reexport_module_members!(
     "PortfolioConfig"
 );
 
-/// Loaded as `nautilus_pyo3.live`.
+/// Exposed through `nautilus_trader.live`.
 ///
 /// # Errors
 ///
 /// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn live(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<crate::node::LiveNode>()?;
-    m.add_class::<node::LiveNodeBuilderPy>()?;
+    m.add_class::<node::PyLiveNode>()?;
+    m.add_class::<node::PyLiveNodeHandle>()?;
+    m.add_class::<node::PyLiveNodeBuilder>()?;
+    m.add_class::<node::NodeState>()?;
     m.add_class::<crate::config::LiveNodeConfig>()?;
     m.add_class::<crate::config::LiveDataEngineConfig>()?;
     m.add_class::<crate::config::LiveRiskEngineConfig>()?;
     m.add_class::<crate::config::LiveExecEngineConfig>()?;
     m.add_class::<crate::config::PluginConfig>()?;
+    m.add_class::<crate::config::QueueMonitorConfig>()?;
     m.add_class::<crate::config::RoutingConfig>()?;
     m.add_class::<crate::config::InstrumentProviderConfig>()?;
     m.add_class::<crate::config::LiveDataClientConfig>()?;

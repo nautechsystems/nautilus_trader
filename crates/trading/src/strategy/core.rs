@@ -26,9 +26,11 @@ use nautilus_common::{
     clock::Clock,
     factories::OrderFactory,
 };
+use nautilus_core::correctness::{CorrectnessResult, CorrectnessResultExt, FAILED};
 use nautilus_execution::order_manager::manager::OrderManager;
 use nautilus_model::identifiers::{
-    ActorId, ClientOrderId, StrategyId, TraderId, normalize_order_id_tag,
+    ActorId, ClientOrderId, StrategyId, TraderId, UNASSIGNED_ORDER_ID_TAG, check_order_id_tag,
+    normalize_order_id_tag,
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use ustr::Ustr;
@@ -139,19 +141,30 @@ pub trait StrategyNative {
 }
 
 impl StrategyCore {
-    /// Creates a new [`StrategyCore`] instance.
-    #[must_use]
-    pub fn new(config: StrategyConfig) -> Self {
+    /// Creates a new [`StrategyCore`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configured order ID tag contains the '-' strategy ID separator,
+    /// or if composing it into the strategy ID does not produce a valid [`StrategyId`].
+    pub fn new_checked(config: StrategyConfig) -> CorrectnessResult<Self> {
+        if let Some(order_id_tag) = config.order_id_tag.as_deref() {
+            check_order_id_tag(order_id_tag)?;
+        }
+
         let configured_strategy_id = config.strategy_id;
         let configured_order_id_tag = normalize_order_id_tag(config.order_id_tag.as_deref());
         let strategy_id = configured_strategy_id
-            .map(|id| strategy_id_with_order_id_tag(id, configured_order_id_tag));
+            .map(|id| strategy_id_with_order_id_tag(id, configured_order_id_tag))
+            .transpose()?;
         let order_id_tag = strategy_id
             .map(|id| id.get_tag().to_string())
             .or_else(|| configured_order_id_tag.map(str::to_string));
 
         let actor_config = DataActorConfig {
-            actor_id: strategy_id.map(|id| ActorId::from(id.inner().as_str())),
+            actor_id: Some(strategy_id.map_or_else(unassigned_strategy_actor_id, |id| {
+                ActorId::from(id.inner().as_str())
+            })),
             log_events: config.log_events,
             log_commands: config.log_commands,
         };
@@ -161,7 +174,7 @@ impl StrategyCore {
             .unwrap_or_default();
         let market_exit_timer_name = Ustr::from(&format!("MARKET_EXIT_CHECK:{strategy_id_str}"));
 
-        Self {
+        Ok(Self {
             actor: DataActorCore::new(actor_config),
             config,
             strategy_id,
@@ -175,7 +188,18 @@ impl StrategyCore {
             market_exit_attempts: 0,
             market_exit_timer_name,
             market_exit_tag: Ustr::from("MARKET_EXIT"),
-        }
+        })
+    }
+
+    /// Creates a new [`StrategyCore`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the configured order ID tag contains the '-' strategy ID separator,
+    /// or if composing it into the strategy ID does not produce a valid [`StrategyId`].
+    #[must_use]
+    pub fn new(config: StrategyConfig) -> Self {
+        Self::new_checked(config).expect_display(FAILED)
     }
 
     /// Returns the strategy configuration.
@@ -185,21 +209,39 @@ impl StrategyCore {
     }
 
     /// Changes the strategy ID before registration.
-    pub fn change_id(&mut self, strategy_id: StrategyId) {
-        let strategy_id = strategy_id_with_order_id_tag(strategy_id, self.order_id_tag());
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if composing the current order ID tag into `strategy_id` does not
+    /// produce a valid [`StrategyId`].
+    pub fn change_id(&mut self, strategy_id: StrategyId) -> anyhow::Result<()> {
+        let strategy_id = strategy_id_with_order_id_tag(strategy_id, self.order_id_tag())?;
         self.set_runtime_strategy_id(strategy_id);
+        Ok(())
     }
 
     /// Changes the order ID tag before registration.
-    pub fn change_order_id_tag(&mut self, order_id_tag: &str) {
-        self.order_id_tag = normalize_order_id_tag(Some(order_id_tag)).map(str::to_string);
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `order_id_tag` contains the '-' strategy ID separator, or if
+    /// composing it into the current strategy ID does not produce a valid [`StrategyId`].
+    pub fn change_order_id_tag(&mut self, order_id_tag: &str) -> anyhow::Result<()> {
+        check_order_id_tag(order_id_tag)?;
+
+        let normalized_order_id_tag =
+            normalize_order_id_tag(Some(order_id_tag)).map(str::to_string);
 
         if let Some(strategy_id) = self.strategy_id
-            && let Some(order_id_tag) = self.order_id_tag()
+            && let Some(order_id_tag) = normalized_order_id_tag.as_deref()
         {
-            let strategy_id = strategy_id_with_order_id_tag(strategy_id, Some(order_id_tag));
+            let strategy_id = strategy_id_with_order_id_tag(strategy_id, Some(order_id_tag))?;
             self.set_runtime_strategy_id(strategy_id);
+        } else {
+            self.order_id_tag = normalized_order_id_tag;
         }
+
+        Ok(())
     }
 
     fn set_runtime_strategy_id(&mut self, strategy_id: StrategyId) {
@@ -229,7 +271,8 @@ impl StrategyCore {
     ///
     /// # Errors
     ///
-    /// Returns an error if registration with the actor core fails.
+    /// Returns an error if the configured order ID tag contains the '-' strategy ID separator,
+    /// or if registration with the actor core fails.
     pub fn register(
         &mut self,
         trader_id: TraderId,
@@ -237,6 +280,11 @@ impl StrategyCore {
         cache: Rc<RefCell<Cache>>,
         portfolio: Rc<RefCell<Portfolio>>,
     ) -> anyhow::Result<()> {
+        // Guards a config built without `StrategyConfig::validate`, such as a struct literal
+        if let Some(order_id_tag) = self.config.order_id_tag.as_deref() {
+            check_order_id_tag(order_id_tag)?;
+        }
+
         let strategy_id = StrategyId::from(self.actor.actor_id.inner().as_str());
 
         self.actor
@@ -341,18 +389,29 @@ impl StrategyNative for StrategyCore {
     }
 }
 
+/// Returns the component identity for a strategy without a configured ID.
+///
+/// Registration replaces this with the class-derived ID and the assigned order ID tag. The
+/// unassigned tag keeps the identity convertible to a [`StrategyId`] until then.
+fn unassigned_strategy_actor_id() -> ActorId {
+    ActorId::from(format!(
+        "{}-{UNASSIGNED_ORDER_ID_TAG}",
+        stringify!(Strategy)
+    ))
+}
+
 fn strategy_id_with_order_id_tag(
     strategy_id: StrategyId,
     order_id_tag: Option<&str>,
-) -> StrategyId {
+) -> CorrectnessResult<StrategyId> {
     let Some(order_id_tag) = normalize_order_id_tag(order_id_tag) else {
-        return strategy_id;
+        return Ok(strategy_id);
     };
 
     if strategy_id.get_tag() == order_id_tag {
-        strategy_id
+        Ok(strategy_id)
     } else {
-        StrategyId::from(format!("{strategy_id}-{order_id_tag}"))
+        StrategyId::new_checked(format!("{strategy_id}-{order_id_tag}"))
     }
 }
 
@@ -400,6 +459,19 @@ mod tests {
     }
 
     #[rstest]
+    fn test_strategy_core_new_without_configured_id_uses_the_unassigned_actor_id() {
+        let core = StrategyCore::new(StrategyConfig::default());
+
+        assert_eq!(core.actor_id(), ActorId::from("Strategy-None"));
+        assert_eq!(core.strategy_id(), None);
+        assert_eq!(core.order_id_tag(), None);
+        assert_eq!(
+            StrategyId::from(core.actor_id().inner().as_str()),
+            StrategyId::from("Strategy-None")
+        );
+    }
+
+    #[rstest]
     fn test_strategy_core_new_applies_explicit_order_id_tag_to_strategy_id() {
         let config = StrategyConfig {
             strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
@@ -443,7 +515,8 @@ mod tests {
         };
         let mut core = StrategyCore::new(config);
 
-        core.change_id(StrategyId::from("ExampleStrategy-XNAS"));
+        core.change_id(StrategyId::from("ExampleStrategy-XNAS"))
+            .unwrap();
 
         assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS-T01"));
         assert_eq!(
@@ -461,7 +534,7 @@ mod tests {
         };
         let mut core = StrategyCore::new(config);
 
-        core.change_order_id_tag("T01");
+        core.change_order_id_tag("T01").unwrap();
 
         assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS-T01"));
         assert_eq!(
@@ -479,7 +552,7 @@ mod tests {
         };
         let mut core = StrategyCore::new(config);
 
-        core.change_order_id_tag("T01");
+        core.change_order_id_tag("T01").unwrap();
 
         assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS-T01"));
         assert_eq!(
@@ -487,6 +560,209 @@ mod tests {
             Some(StrategyId::from("ExampleStrategy-XNAS-T01"))
         );
         assert_eq!(core.order_id_tag(), Some("T01"));
+    }
+
+    #[rstest]
+    fn test_strategy_core_new_checked_rejects_order_id_tag_with_separator() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("HyphenTagStrategy-A-B")),
+            order_id_tag: Some("A-B".to_string()),
+            ..Default::default()
+        };
+
+        let error = StrategyCore::new_checked(config).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "`order_id_tag` cannot contain the '-' strategy ID separator, was 'A-B'"
+        );
+    }
+
+    #[rstest]
+    #[case(Some("001".to_string()))]
+    #[case(Some("None".to_string()))]
+    #[case(Some(String::new()))]
+    #[case(None)]
+    fn test_strategy_core_new_checked_accepts_usable_order_id_tag(
+        #[case] order_id_tag: Option<String>,
+    ) {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            order_id_tag,
+            ..Default::default()
+        };
+
+        assert!(StrategyCore::new_checked(config).is_ok());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`order_id_tag` cannot contain the '-' strategy ID separator")]
+    fn test_strategy_core_new_panics_on_order_id_tag_with_separator() {
+        let config = StrategyConfig {
+            order_id_tag: Some("A-B".to_string()),
+            ..Default::default()
+        };
+
+        let _ = StrategyCore::new(config);
+    }
+
+    #[rstest]
+    fn test_strategy_core_change_order_id_tag_rejects_separator() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            ..Default::default()
+        };
+        let mut core = StrategyCore::new(config);
+
+        let error = core.change_order_id_tag("A-B").unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "`order_id_tag` cannot contain the '-' strategy ID separator, was 'A-B'"
+        );
+        assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS"));
+        assert_eq!(
+            core.strategy_id(),
+            Some(StrategyId::from("ExampleStrategy-XNAS"))
+        );
+        assert_eq!(core.order_id_tag(), Some("XNAS"));
+    }
+
+    #[rstest]
+    fn test_strategy_core_new_checked_rejects_non_ascii_order_id_tag() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            order_id_tag: Some("T01€".to_string()),
+            ..Default::default()
+        };
+
+        let error = StrategyCore::new_checked(config).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "invalid string for 'value' contained a non-ASCII char, was 'ExampleStrategy-XNAS-T01€'"
+        );
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "invalid string for 'value' contained a non-ASCII char, was 'ExampleStrategy-XNAS-T01€'"
+    )]
+    fn test_strategy_core_new_panics_on_non_ascii_order_id_tag() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            order_id_tag: Some("T01€".to_string()),
+            ..Default::default()
+        };
+
+        let _ = StrategyCore::new(config);
+    }
+
+    #[rstest]
+    fn test_strategy_core_change_order_id_tag_rejects_non_ascii() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            ..Default::default()
+        };
+        let mut core = StrategyCore::new(config);
+
+        let error = core.change_order_id_tag("T01€").unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "invalid string for 'value' contained a non-ASCII char, was 'ExampleStrategy-XNAS-T01€'"
+        );
+        assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS"));
+        assert_eq!(
+            core.strategy_id(),
+            Some(StrategyId::from("ExampleStrategy-XNAS"))
+        );
+        assert_eq!(core.order_id_tag(), Some("XNAS"));
+    }
+
+    #[rstest]
+    fn test_strategy_core_change_id_rejects_non_ascii_order_id_tag() {
+        let config = StrategyConfig {
+            order_id_tag: Some("T01€".to_string()),
+            ..Default::default()
+        };
+        let mut core = StrategyCore::new(config);
+
+        let error = core
+            .change_id(StrategyId::from("ExampleStrategy-XNAS"))
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "invalid string for 'value' contained a non-ASCII char, was 'ExampleStrategy-XNAS-T01€'"
+        );
+        assert_eq!(core.actor_id(), ActorId::from("Strategy-None"));
+        assert_eq!(core.strategy_id(), None);
+        assert_eq!(core.order_id_tag(), Some("T01€"));
+    }
+
+    #[rstest]
+    fn test_strategy_core_change_order_id_tag_without_strategy_id_stores_tag() {
+        let mut core = StrategyCore::new(StrategyConfig::default());
+
+        core.change_order_id_tag("T01").unwrap();
+
+        assert_eq!(core.actor_id(), ActorId::from("Strategy-None"));
+        assert_eq!(core.strategy_id(), None);
+        assert_eq!(core.order_id_tag(), Some("T01"));
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("None")]
+    fn test_strategy_core_change_order_id_tag_clears_unset_sentinel(#[case] order_id_tag: &str) {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("ExampleStrategy-XNAS")),
+            ..Default::default()
+        };
+        let mut core = StrategyCore::new(config);
+
+        core.change_order_id_tag(order_id_tag).unwrap();
+
+        assert_eq!(core.actor_id(), ActorId::from("ExampleStrategy-XNAS"));
+        assert_eq!(
+            core.strategy_id(),
+            Some(StrategyId::from("ExampleStrategy-XNAS"))
+        );
+        assert_eq!(core.order_id_tag(), None);
+    }
+
+    #[rstest]
+    fn test_strategy_core_register_rejects_configured_order_id_tag_with_separator() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("HyphenTagStrategy-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        let mut core = StrategyCore::new(config);
+        core.config.order_id_tag = Some("A-B".to_string());
+
+        let trader_id = TraderId::from("TRADER-001");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let portfolio = Rc::new(RefCell::new(Portfolio::new(
+            clock.clone(),
+            cache.clone(),
+            None,
+        )));
+
+        let error = core
+            .register(trader_id, clock, cache, portfolio)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "`order_id_tag` cannot contain the '-' strategy ID separator, was 'A-B'"
+        );
+        assert!(core.order_factory.is_none());
+        assert!(core.order_manager.is_none());
+        assert!(core.portfolio.is_none());
+        assert_eq!(core.trader_id(), None);
     }
 
     #[rstest]
@@ -884,8 +1160,8 @@ mod tests {
 
         let is_initialized = portfolio.is_initialized();
         let balances_locked = portfolio.balances_locked(&venue);
-        let margins_init = portfolio.margins_init(&venue);
-        let margins_maint = portfolio.margins_maint(&venue);
+        let initial_margins = portfolio.instrument_initial_margins(&venue);
+        let maintenance_margins = portfolio.instrument_maintenance_margins(&venue);
         let unrealized_pnls = portfolio.unrealized_pnls(&venue, None);
         let realized_pnls = portfolio.realized_pnls(&venue, None);
         let net_exposures = portfolio.net_exposures(&venue, None);
@@ -896,7 +1172,7 @@ mod tests {
         let mark_values = portfolio.mark_values(&venue, None);
         let equity = portfolio.equity(&venue, None);
         let net_exposure = portfolio.net_exposure(&instrument_id, None);
-        let is_flat = portfolio.is_flat(&instrument_id);
+        let is_flat = portfolio.is_net_flat(&instrument_id);
         let net_position = portfolio.net_position(&instrument_id);
         let missing_prices = portfolio.missing_price_instruments(&venue);
         let snapshots = portfolio.snapshots(&account_id);
@@ -905,15 +1181,15 @@ mod tests {
 
         assert!(!is_initialized);
         assert!(balances_locked.is_empty());
-        assert!(margins_init.is_empty());
-        assert!(margins_maint.is_empty());
-        assert!(unrealized_pnls.is_empty());
-        assert!(realized_pnls.is_empty());
+        assert!(initial_margins.is_empty());
+        assert!(maintenance_margins.is_empty());
+        assert!(unrealized_pnls.is_some_and(|values| values.is_empty()));
+        assert!(realized_pnls.is_some_and(|values| values.is_empty()));
         assert_eq!(net_exposures, None);
         assert_eq!(unrealized_pnl, None);
         assert_eq!(realized_pnl, None);
         assert_eq!(total_pnl, None);
-        assert!(total_pnls.is_empty());
+        assert!(total_pnls.is_some_and(|values| values.is_empty()));
         assert!(mark_values.is_empty());
         assert!(equity.is_empty());
         assert_eq!(net_exposure, None);

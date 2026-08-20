@@ -37,11 +37,13 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    UnixNanos,
+    Params, UnixNanos,
     env::get_or_env_var,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, execution::failure::CommandFailure,
+};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{OmsType, OrderSide, OrderType, TimeInForce},
@@ -811,9 +813,10 @@ impl ExecutionClient for BybitExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
+            .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
     }
 
@@ -1701,26 +1704,26 @@ impl ExecutionClient for BybitExecutionClient {
 
                 if let Err(e) = result {
                     match classify_modify_http_failure(&e) {
-                        BybitCommandFailureKind::StructuredVenueRejection => {
+                        CommandFailure::VenueRejected(reason) => {
                             let ts_event = clock.get_time_ns();
                             emitter.emit_order_modify_rejected_event(
                                 strategy_id,
                                 instrument_id,
                                 client_order_id,
                                 venue_order_id,
-                                &format!("modify-order-error: {e}"),
+                                &format!("modify-order-error: {reason}"),
                                 ts_event,
                             );
-                            anyhow::bail!("modify order rejected: {e}");
+                            anyhow::bail!("modify order rejected: {reason}");
                         }
-                        BybitCommandFailureKind::LocalValidation => {
+                        CommandFailure::NotSent(reason) => {
                             log::warn!(
-                                "HTTP modify command failed local validation for {client_order_id}: {e}"
+                                "HTTP modify command failed local validation for {client_order_id}: {reason}"
                             );
                         }
-                        BybitCommandFailureKind::Ambiguous => {
+                        CommandFailure::Ambiguous(reason) => {
                             log::warn!(
-                                "Ambiguous HTTP modify failure for {client_order_id}, awaiting reconciliation: {e}"
+                                "Ambiguous HTTP modify failure for {client_order_id}, awaiting reconciliation: {reason}"
                             );
                         }
                     }
@@ -1815,26 +1818,26 @@ impl ExecutionClient for BybitExecutionClient {
 
                 if let Err(e) = result {
                     match classify_cancel_http_failure(&e) {
-                        BybitCommandFailureKind::StructuredVenueRejection => {
+                        CommandFailure::VenueRejected(reason) => {
                             let ts_event = clock.get_time_ns();
                             emitter.emit_order_cancel_rejected_event(
                                 strategy_id,
                                 instrument_id,
                                 client_order_id,
                                 venue_order_id,
-                                &format!("cancel-order-error: {e}"),
+                                &format!("cancel-order-error: {reason}"),
                                 ts_event,
                             );
-                            anyhow::bail!("cancel order rejected: {e}");
+                            anyhow::bail!("cancel order rejected: {reason}");
                         }
-                        BybitCommandFailureKind::LocalValidation => {
+                        CommandFailure::NotSent(reason) => {
                             log::warn!(
-                                "HTTP cancel command failed local validation for {client_order_id}: {e}"
+                                "HTTP cancel command failed local validation for {client_order_id}: {reason}"
                             );
                         }
-                        BybitCommandFailureKind::Ambiguous => {
+                        CommandFailure::Ambiguous(reason) => {
                             log::warn!(
-                                "Ambiguous HTTP cancel failure for {client_order_id}, awaiting reconciliation: {e}"
+                                "Ambiguous HTTP cancel failure for {client_order_id}, awaiting reconciliation: {reason}"
                             );
                         }
                     }
@@ -1949,25 +1952,25 @@ impl ExecutionClient for BybitExecutionClient {
                         .await
                     {
                         match classify_cancel_http_failure(&e) {
-                            BybitCommandFailureKind::StructuredVenueRejection => {
+                            CommandFailure::VenueRejected(reason) => {
                                 let ts_event = clock.get_time_ns();
                                 emitter.emit_order_cancel_rejected_event(
                                     strategy_id,
                                     instrument_id,
                                     client_order_id,
                                     venue_order_id,
-                                    &format!("cancel-order-error: {e}"),
+                                    &format!("cancel-order-error: {reason}"),
                                     ts_event,
                                 );
                             }
-                            BybitCommandFailureKind::LocalValidation => {
+                            CommandFailure::NotSent(reason) => {
                                 log::warn!(
-                                    "HTTP batch cancel command failed local validation for {client_order_id}: {e}"
+                                    "HTTP batch cancel command failed local validation for {client_order_id}: {reason}"
                                 );
                             }
-                            BybitCommandFailureKind::Ambiguous => {
+                            CommandFailure::Ambiguous(reason) => {
                                 log::warn!(
-                                    "Ambiguous HTTP batch cancel failure for {client_order_id}, awaiting reconciliation: {e}"
+                                    "Ambiguous HTTP batch cancel failure for {client_order_id}, awaiting reconciliation: {reason}"
                                 );
                             }
                         }
@@ -2031,36 +2034,31 @@ impl ExecutionClient for BybitExecutionClient {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BybitCommandFailureKind {
-    StructuredVenueRejection,
-    LocalValidation,
-    Ambiguous,
-}
-
-fn classify_cancel_http_failure(error: &anyhow::Error) -> BybitCommandFailureKind {
+fn classify_cancel_http_failure(error: &anyhow::Error) -> CommandFailure {
     if error
         .chain()
         .any(|cause| cause.downcast_ref::<BybitCancelOrderError>().is_some())
     {
-        return BybitCommandFailureKind::Ambiguous;
+        return CommandFailure::ambiguous(error.to_string());
     }
 
     classify_http_failure(error)
 }
 
-fn classify_modify_http_failure(error: &anyhow::Error) -> BybitCommandFailureKind {
+fn classify_modify_http_failure(error: &anyhow::Error) -> CommandFailure {
     if error
         .chain()
         .any(|cause| cause.downcast_ref::<BybitModifyOrderError>().is_some())
     {
-        return BybitCommandFailureKind::Ambiguous;
+        return CommandFailure::ambiguous(error.to_string());
     }
 
     classify_http_failure(error)
 }
 
-fn classify_http_failure(error: &anyhow::Error) -> BybitCommandFailureKind {
+fn classify_http_failure(error: &anyhow::Error) -> CommandFailure {
+    let reason = error.to_string();
+
     for cause in error.chain() {
         let Some(http_error) = cause.downcast_ref::<BybitHttpError>() else {
             continue;
@@ -2070,20 +2068,20 @@ fn classify_http_failure(error: &anyhow::Error) -> BybitCommandFailureKind {
             BybitHttpError::BybitError { error_code, .. }
                 if is_bybit_ambiguous_order_error_code(i64::from(*error_code)) =>
             {
-                BybitCommandFailureKind::Ambiguous
+                CommandFailure::Ambiguous(reason)
             }
-            BybitHttpError::BybitError { .. } => BybitCommandFailureKind::StructuredVenueRejection,
+            BybitHttpError::BybitError { .. } => CommandFailure::VenueRejected(reason),
             BybitHttpError::MissingCredentials
             | BybitHttpError::ValidationError(_)
-            | BybitHttpError::BuildError(_) => BybitCommandFailureKind::LocalValidation,
+            | BybitHttpError::BuildError(_) => CommandFailure::NotSent(reason),
             BybitHttpError::JsonError(_)
             | BybitHttpError::Canceled(_)
             | BybitHttpError::NetworkError(_)
-            | BybitHttpError::UnexpectedStatus { .. } => BybitCommandFailureKind::Ambiguous,
+            | BybitHttpError::UnexpectedStatus { .. } => CommandFailure::Ambiguous(reason),
         };
     }
 
-    BybitCommandFailureKind::LocalValidation
+    CommandFailure::NotSent(reason)
 }
 
 fn log_cancel_ws_failure(client_order_id: ClientOrderId, error: &BybitWsError) {
@@ -2303,7 +2301,7 @@ mod tests {
         });
         assert_eq!(
             classify_cancel_http_failure(&venue_reject),
-            BybitCommandFailureKind::StructuredVenueRejection,
+            CommandFailure::VenueRejected(venue_reject.to_string()),
         );
 
         let rate_limit = anyhow::Error::from(BybitHttpError::BybitError {
@@ -2312,7 +2310,7 @@ mod tests {
         });
         assert_eq!(
             classify_cancel_http_failure(&rate_limit),
-            BybitCommandFailureKind::Ambiguous,
+            CommandFailure::Ambiguous(rate_limit.to_string()),
         );
 
         let post_lookup = anyhow::Error::from(BybitCancelOrderError::PostCancelLookup {
@@ -2320,7 +2318,7 @@ mod tests {
         });
         assert_eq!(
             classify_cancel_http_failure(&post_lookup),
-            BybitCommandFailureKind::Ambiguous,
+            CommandFailure::Ambiguous(post_lookup.to_string()),
         );
 
         let transport = anyhow::Error::from(BybitHttpError::NetworkError(
@@ -2328,7 +2326,7 @@ mod tests {
         ));
         assert_eq!(
             classify_cancel_http_failure(&transport),
-            BybitCommandFailureKind::Ambiguous,
+            CommandFailure::Ambiguous(transport.to_string()),
         );
     }
 
@@ -2340,7 +2338,7 @@ mod tests {
         });
         assert_eq!(
             classify_modify_http_failure(&venue_reject),
-            BybitCommandFailureKind::StructuredVenueRejection,
+            CommandFailure::VenueRejected(venue_reject.to_string()),
         );
 
         let server_error = anyhow::Error::from(BybitHttpError::BybitError {
@@ -2349,7 +2347,7 @@ mod tests {
         });
         assert_eq!(
             classify_modify_http_failure(&server_error),
-            BybitCommandFailureKind::Ambiguous,
+            CommandFailure::Ambiguous(server_error.to_string()),
         );
 
         let post_lookup = anyhow::Error::from(BybitModifyOrderError::PostModifyLookup {
@@ -2357,7 +2355,7 @@ mod tests {
         });
         assert_eq!(
             classify_modify_http_failure(&post_lookup),
-            BybitCommandFailureKind::Ambiguous,
+            CommandFailure::Ambiguous(post_lookup.to_string()),
         );
 
         let status = anyhow::Error::from(BybitHttpError::UnexpectedStatus {
@@ -2366,7 +2364,7 @@ mod tests {
         });
         assert_eq!(
             classify_modify_http_failure(&status),
-            BybitCommandFailureKind::Ambiguous,
+            CommandFailure::Ambiguous(status.to_string()),
         );
     }
 

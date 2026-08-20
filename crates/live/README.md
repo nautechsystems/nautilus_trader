@@ -28,7 +28,6 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 - `streaming`: Enables `persistence` dependency for streaming configuration.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `streaming`).
 - `defi`: Enables DeFi (Decentralized Finance) support.

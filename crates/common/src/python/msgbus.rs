@@ -17,10 +17,13 @@
 //! [`PyMessageBus`] wrapper that routes Python events through the Rust
 //! thread-local [`MessageBus`] via the Any-based dispatch path.
 
-use std::{any::Any, fmt::Debug, rc::Rc};
+use std::{any::Any, fmt::Debug, rc::Rc, sync::LazyLock};
 
 use ahash::AHashMap;
-use nautilus_core::{UUID4, python::to_pyruntime_err};
+use nautilus_core::{
+    UUID4,
+    python::{to_pyruntime_err, to_pyvalue_err},
+};
 use nautilus_model::identifiers::TraderId;
 use pyo3::{Py, Python, prelude::*, types::PyBytes};
 use ustr::Ustr;
@@ -28,15 +31,88 @@ use ustr::Ustr;
 use crate::{
     enums::SerializationEncoding,
     msgbus::{
-        self as msgbus_api, BusMessage, MessageBus, MessageBusConfig,
+        self as msgbus_api, BusMessage, MessageBus, MessageBusBackingFactory, MessageBusConfig,
         core::Subscription,
         get_message_bus,
         matching::is_matching,
         mstr::{Endpoint, MStr, Pattern, Topic},
         typed_handler::{Handler, ShareableMessageHandler, TypedHandler},
     },
-    python::config_error_to_pyvalue_err,
+    python::{
+        config_error_to_pyvalue_err,
+        factory::{FactoryExtractor, FactoryRegistry},
+    },
 };
+
+/// Function type for extracting a Python object into a boxed message bus backing factory.
+pub type MessageBusFactoryExtractor = FactoryExtractor<dyn MessageBusBackingFactory>;
+
+/// Registry for Python message bus backing factory extractors.
+#[derive(Debug)]
+pub struct MessageBusFactoryRegistry {
+    inner: FactoryRegistry<dyn MessageBusBackingFactory>,
+}
+
+impl MessageBusFactoryRegistry {
+    /// Creates an empty registry.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            inner: FactoryRegistry::new("message bus factory"),
+        }
+    }
+
+    // panics-doc-ok (transitive via FactoryRegistry mutex locking)
+    /// Registers an extractor for a Python factory type name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a different extractor is already registered for the type name.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
+    pub fn register(
+        &self,
+        type_name: String,
+        extractor: MessageBusFactoryExtractor,
+    ) -> anyhow::Result<()> {
+        self.inner.register(type_name, extractor)
+    }
+
+    // panics-doc-ok (transitive via FactoryRegistry mutex locking)
+    /// Extracts a Python object into a boxed message bus backing factory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no extractor is registered for the Python type or extraction fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
+    pub fn extract(
+        &self,
+        py: Python<'_>,
+        factory: Py<PyAny>,
+    ) -> PyResult<Box<dyn MessageBusBackingFactory>> {
+        self.inner.extract(py, factory)
+    }
+}
+
+impl Default for MessageBusFactoryRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+static GLOBAL_MSGBUS_FACTORY_REGISTRY: LazyLock<MessageBusFactoryRegistry> =
+    LazyLock::new(MessageBusFactoryRegistry::new);
+
+/// Returns the global Python message bus backing factory registry.
+#[must_use]
+pub fn get_global_msgbus_factory_registry() -> &'static MessageBusFactoryRegistry {
+    &GLOBAL_MSGBUS_FACTORY_REGISTRY
+}
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -273,14 +349,10 @@ fn make_handler(py: Python<'_>, callable: Py<PyAny>) -> PyResult<ShareableMessag
 
 /// Python message bus backed by the Rust thread-local [`MessageBus`].
 ///
-/// Provides the same API as the legacy Cython `MessageBus` while routing all
-/// messages through the single Rust bus. Python custom events travel through
-/// the Any-based dispatch path via [`PyMessage`] wrappers.
-#[pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.common",
-    name = "MessageBus",
-    unsendable
-)]
+/// Publish, subscribe, and request/response calls from Python route through the
+/// single Rust bus. Python custom events travel through the Any-based dispatch
+/// path via [`PyMessage`] wrappers.
+#[pyclass(module = "nautilus_trader.common", name = "MessageBus", unsendable)]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")]
 pub struct PyMessageBus {
     trader_id: TraderId,
@@ -448,60 +520,48 @@ impl PyMessageBus {
     /// Returns subscriptions matching the given topic pattern.
     #[pyo3(name = "subscriptions")]
     #[pyo3(signature = (pattern=None))]
-    fn py_subscriptions(&self, pattern: Option<&str>) -> Vec<String> {
+    fn py_subscriptions(&self, pattern: Option<&str>) -> PyResult<Vec<String>> {
+        let filter = pattern.map(parse_pattern).transpose()?;
+
         let bus = get_message_bus();
         let bus_ref = bus.borrow();
         let subs: Vec<&Subscription> = bus_ref.subscriptions();
 
-        match pattern {
-            Some(p) => {
-                let filter = MStr::<Pattern>::pattern(p);
-                subs.into_iter()
-                    .filter(|s| is_matching(s.pattern.as_bytes(), filter.as_bytes()))
-                    .map(|s| {
-                        format!(
-                            "Subscription(topic={}, handler={})",
-                            s.pattern, s.handler_id
-                        )
-                    })
-                    .collect()
-            }
-            None => subs
-                .into_iter()
-                .map(|s| {
-                    format!(
-                        "Subscription(topic={}, handler={})",
-                        s.pattern, s.handler_id
-                    )
-                })
-                .collect(),
-        }
+        Ok(subs
+            .into_iter()
+            .filter(|s| filter.is_none_or(|f| is_matching(s.pattern.as_bytes(), f.as_bytes())))
+            .map(|s| {
+                format!(
+                    "Subscription(topic={}, handler={})",
+                    s.pattern, s.handler_id
+                )
+            })
+            .collect())
     }
 
     /// Returns whether there are subscribers for the given topic pattern.
     #[pyo3(name = "has_subscribers")]
     #[pyo3(signature = (pattern=None))]
-    fn py_has_subscribers(&self, pattern: Option<&str>) -> bool {
+    fn py_has_subscribers(&self, pattern: Option<&str>) -> PyResult<bool> {
+        let filter = pattern.map(parse_pattern).transpose()?;
+
         let bus = get_message_bus();
         let bus_ref = bus.borrow();
 
-        match pattern {
-            Some(p) => {
-                let filter = MStr::<Pattern>::pattern(p);
-                bus_ref
-                    .subscriptions()
-                    .iter()
-                    .any(|s| is_matching(s.pattern.as_bytes(), filter.as_bytes()))
-            }
+        Ok(match filter {
+            Some(filter) => bus_ref
+                .subscriptions()
+                .iter()
+                .any(|s| is_matching(s.pattern.as_bytes(), filter.as_bytes())),
             None => !bus_ref.subscriptions().is_empty(),
-        }
+        })
     }
 
     /// Returns whether the given topic and handler is subscribed.
     #[pyo3(name = "is_subscribed")]
     fn py_is_subscribed(&self, py: Python<'_>, topic: &str, handler: Py<PyAny>) -> PyResult<bool> {
+        let pattern = parse_pattern(topic)?;
         let handler = make_handler(py, handler)?;
-        let pattern = MStr::<Pattern>::pattern(topic);
         let sub = Subscription::new(pattern, handler, None);
         Ok(get_message_bus().borrow().subscriptions.contains(&sub))
     }
@@ -532,8 +592,8 @@ impl PyMessageBus {
     /// Registers a handler at the given endpoint address.
     #[pyo3(name = "register")]
     fn py_register(&self, py: Python<'_>, endpoint: &str, handler: Py<PyAny>) -> PyResult<()> {
+        let endpoint = parse_endpoint(endpoint)?;
         let handler = make_handler(py, handler)?;
-        let endpoint = MStr::<Endpoint>::from(endpoint);
         msgbus_api::register_any(endpoint, handler);
         Ok(())
     }
@@ -542,24 +602,27 @@ impl PyMessageBus {
     #[pyo3(name = "deregister")]
     #[pyo3(signature = (endpoint, handler=None))]
     #[expect(clippy::needless_pass_by_value)]
-    fn py_deregister(&self, endpoint: &str, handler: Option<Py<PyAny>>) {
+    fn py_deregister(&self, endpoint: &str, handler: Option<Py<PyAny>>) -> PyResult<()> {
         let _ = handler;
-        let endpoint = MStr::<Endpoint>::from(endpoint);
+        let endpoint = parse_endpoint(endpoint)?;
         msgbus_api::deregister_any(endpoint);
+        Ok(())
     }
 
     /// Sends a message to the given endpoint address.
     #[pyo3(name = "send")]
-    fn py_send(&mut self, endpoint: &str, msg: Py<PyAny>) {
-        let endpoint = MStr::<Endpoint>::from(endpoint);
+    fn py_send(&mut self, endpoint: &str, msg: Py<PyAny>) -> PyResult<()> {
+        let endpoint = parse_endpoint(endpoint)?;
         let py_msg = PyMessage(msg);
         msgbus_api::send_any(endpoint, &py_msg);
         self.sent_count += 1;
+        Ok(())
     }
 
     /// Sends a request to the given endpoint with correlation tracking.
     #[pyo3(name = "request")]
     fn py_request(&mut self, py: Python<'_>, endpoint: &str, request: Py<PyAny>) -> PyResult<()> {
+        let endpoint = parse_endpoint(endpoint)?;
         let request_ref = request.bind(py);
 
         let request_id: UUID4 = request_ref.getattr("id")?.extract()?;
@@ -576,7 +639,6 @@ impl PyMessageBus {
             self.correlation_index.insert(request_id, callback.unbind());
         }
 
-        let endpoint = MStr::<Endpoint>::from(endpoint);
         let py_msg = PyMessage(request);
         msgbus_api::send_any(endpoint, &py_msg);
         self.req_count += 1;
@@ -610,8 +672,8 @@ impl PyMessageBus {
         handler: Py<PyAny>,
         priority: u32,
     ) -> PyResult<()> {
+        let pattern = parse_pattern(topic)?;
         let handler = make_handler(py, handler)?;
-        let pattern = MStr::<Pattern>::pattern(topic);
         msgbus_api::subscribe_any(pattern, handler, Some(priority));
         Ok(())
     }
@@ -619,8 +681,8 @@ impl PyMessageBus {
     /// Unsubscribes the given handler from the given topic.
     #[pyo3(name = "unsubscribe")]
     fn py_unsubscribe(&self, py: Python<'_>, topic: &str, handler: Py<PyAny>) -> PyResult<()> {
+        let pattern = parse_pattern(topic)?;
         let handler = make_handler(py, handler)?;
-        let pattern = MStr::<Pattern>::pattern(topic);
         msgbus_api::unsubscribe_any(pattern, &handler);
         Ok(())
     }
@@ -726,6 +788,14 @@ impl PyMessageBus {
     }
 }
 
+fn parse_endpoint(endpoint: &str) -> PyResult<MStr<Endpoint>> {
+    MStr::<Endpoint>::endpoint(endpoint).map_err(to_pyvalue_err)
+}
+
+fn parse_pattern(pattern: &str) -> PyResult<MStr<Pattern>> {
+    MStr::<Pattern>::pattern_checked(pattern).map_err(to_pyvalue_err)
+}
+
 #[cfg(test)]
 mod tests {
     use std::any::Any;
@@ -734,6 +804,15 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_message_bus_factory_registry_compatibility_constructors() {
+        let registry = MessageBusFactoryRegistry::new();
+        let default_registry = MessageBusFactoryRegistry::default();
+
+        assert_eq!(format!("{registry:?}"), format!("{default_registry:?}"));
+        assert!(format!("{registry:?}").contains("message bus factory"));
+    }
 
     #[rstest]
     fn message_bus_config_py_new_maps_validate_error_to_value_error() {

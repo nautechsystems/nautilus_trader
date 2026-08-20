@@ -53,14 +53,14 @@ def test_live_node_builder_accepts_tardis_data_factory() -> None:
     assert node.environment == Environment.SANDBOX
 
 
-def test_tardis_data_tester_builds_offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured = capture_data_tester_main(monkeypatch, tardis_data_tester, [])
+def test_tardis_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = capture_data_tester_main(monkeypatch, tardis_data_tester)
     kwargs = captured["data_tester_kwargs"]
 
     assert isinstance(kwargs, dict)
     assert kwargs["subscribe_funding_rates"] is True
     assert "exec_client_args" not in captured
-    assert "run_called" not in captured
+    assert captured["run_called"] is True
 
 
 def test_tardis_instrument_mini_info_rejects_invalid_exchange() -> None:

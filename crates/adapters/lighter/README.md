@@ -89,6 +89,9 @@ gated by independent layers:
 Round-trip testing against Lighter itself remains the final correctness
 gate for what the sequencer accepts.
 
+Measured signing cost, including a comparison with the official Go SDK, is
+recorded in [`benches/BENCHMARKS.md`](benches/BENCHMARKS.md).
+
 ## Fuzzing
 
 Coverage-guided fuzz targets for the L2 signer live in [`fuzz/`](fuzz/README.md). They require the

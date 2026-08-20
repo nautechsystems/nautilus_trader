@@ -31,17 +31,17 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            BarsResponse, BookResponse, ForwardPricesResponse, InstrumentResponse,
-            InstrumentsResponse, RequestBars, RequestBookSnapshot, RequestForwardPrices,
-            RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentStatus,
-            SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
-            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentStatus,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            BarsResponse, BookResponse, CustomDataResponse, ForwardPricesResponse,
+            InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
+            RequestCustomData, RequestForwardPrices, RequestInstrument, RequestInstruments,
+            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+            SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse,
+            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
+            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -51,7 +51,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, ForwardPrice, OrderBookDeltas_API},
+    data::{CustomData, Data, DataType, ForwardPrice},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -68,7 +68,7 @@ use crate::{
         parse::{bar_spec_to_resolution, parse_instrument_kind_currency},
     },
     config::DeribitDataClientConfig,
-    data_types::register_deribit_custom_data,
+    data_types::{DeribitBookSummary, register_deribit_custom_data},
     http::{
         client::DeribitHttpClient,
         models::{DeribitCurrency, DeribitProductType},
@@ -99,6 +99,8 @@ pub struct DeribitDataClient {
 }
 
 impl DeribitDataClient {
+    const BOOK_SUMMARY_TYPE_NAME: &'static str = "DeribitBookSummary";
+
     /// Creates a new [`DeribitDataClient`] instance.
     ///
     /// # Errors
@@ -237,7 +239,7 @@ impl DeribitDataClient {
                 }
             }
             NautilusWsMessage::Deltas(deltas) => {
-                Self::send_data(sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+                Self::send_data(sender, Data::Deltas(Box::new(deltas)));
             }
             NautilusWsMessage::Instrument(instrument) => {
                 let instrument_any = *instrument;
@@ -384,6 +386,47 @@ impl DeribitDataClient {
             .as_ref()
             .and_then(|params| params.get_bool("subscribe_combo_legs"))
             .unwrap_or(false)
+    }
+
+    fn book_summary_metadata_currency(data_type: &DataType) -> anyhow::Result<String> {
+        data_type
+            .metadata()
+            .and_then(|m| m.get("currency"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_ascii_uppercase)
+            .ok_or_else(|| {
+                anyhow::anyhow!("DeribitBookSummary requests require metadata['currency']")
+            })
+    }
+
+    fn book_summary_metadata_kind(data_type: &DataType) -> Option<String> {
+        data_type
+            .metadata()
+            .and_then(|m| m.get("kind"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_ascii_lowercase)
+    }
+
+    fn book_summary_data_type(currency: &str, kind: Option<&str>) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert(
+            "currency".to_string(),
+            serde_json::Value::String(currency.to_string()),
+        );
+        let kind = kind.unwrap_or("option");
+        metadata.insert(
+            "kind".to_string(),
+            serde_json::Value::String(kind.to_string()),
+        );
+        DataType::new(
+            Self::BOOK_SUMMARY_TYPE_NAME,
+            Some(metadata),
+            Some(format!("{currency}:{kind}")),
+        )
     }
 
     fn combo_leg_trade_ids(
@@ -1910,6 +1953,96 @@ impl DataClient for DeribitDataClient {
                 }
                 Err(e) => {
                     log::error!("Book snapshot request failed for {instrument_id}: {e:?}");
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_data(&self, request: RequestCustomData) -> anyhow::Result<()> {
+        if request.data_type.type_name() != Self::BOOK_SUMMARY_TYPE_NAME {
+            log::warn!(
+                "Unsupported custom data request: {}",
+                request.data_type.type_name()
+            );
+            return Ok(());
+        }
+
+        let currency = Self::book_summary_metadata_currency(&request.data_type)?;
+        let kind = Self::book_summary_metadata_kind(&request.data_type);
+        let kind_str = kind.as_deref().unwrap_or("option").to_string();
+        let data_type = Self::book_summary_data_type(&currency, Some(&kind_str));
+        let http_client = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let request_id = request.request_id;
+        let client_id = request.client_id;
+        let params = request.params;
+        let clock = self.clock;
+        let venue = *DERIBIT_VENUE;
+        let start = request.start;
+        let end = request.end;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
+
+        get_runtime().spawn(async move {
+            log::debug!(
+                "Requesting Deribit book summaries for currency={currency} kind={kind_str}"
+            );
+
+            match http_client
+                .request_book_summaries_kind(&currency, Some(&kind_str))
+                .await
+            {
+                Ok(summaries) => {
+                    let ts = clock.get_time_ns();
+                    let data: Vec<CustomData> = summaries
+                        .into_iter()
+                        .map(|raw| {
+                            CustomData::new(
+                                Arc::new(DeribitBookSummary::from_raw(raw, ts)),
+                                data_type.clone(),
+                            )
+                        })
+                        .collect();
+
+                    let response = DataResponse::Data(CustomDataResponse::new(
+                        request_id,
+                        client_id,
+                        Some(venue),
+                        data_type,
+                        data,
+                        start_nanos,
+                        end_nanos,
+                        ts,
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send book summary response: {e}");
+                    }
+                }
+                Err(e) => {
+                    // Empty response keeps request correlation closed for strategy waiters.
+                    log::error!(
+                        "Book summary request failed for currency={currency} kind={kind_str}: {e:?}"
+                    );
+                    let ts = clock.get_time_ns();
+                    let response = DataResponse::Data(CustomDataResponse::new(
+                        request_id,
+                        client_id,
+                        Some(venue),
+                        data_type,
+                        Vec::<CustomData>::new(),
+                        start_nanos,
+                        end_nanos,
+                        ts,
+                        params,
+                    ));
+
+                    if let Err(send_err) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send empty book summary response: {send_err}");
+                    }
                 }
             }
         });

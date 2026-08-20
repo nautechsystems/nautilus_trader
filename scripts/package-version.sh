@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Resolve pyproject.toml relative to this script's location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYPROJECT_FILE="${SCRIPT_DIR}/../pyproject.toml"
+PYPROJECT_FILE="${SCRIPT_DIR}/../python/pyproject.toml"
 
 # Check that pyproject.toml exists
 if [[ ! -f "$PYPROJECT_FILE" ]]; then

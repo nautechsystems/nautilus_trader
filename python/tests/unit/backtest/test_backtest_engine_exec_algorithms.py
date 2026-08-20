@@ -25,6 +25,8 @@ from nautilus_trader.common import DataActorConfig
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import ActorId
 from nautilus_trader.model import ClientOrderId
+from nautilus_trader.model import CustomData
+from nautilus_trader.model import DataType
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import MarketOrder
@@ -38,6 +40,9 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.trading import ExecutionAlgorithm
 from nautilus_trader.trading import ExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableExecAlgorithmConfig
+
+
+DATA_PUBLISHING_REGISTRATION_ERROR = "ExecutionAlgorithm must be registered before publishing data"
 
 
 class RequiredConfigBacktestExecAlgorithmConfig(DataActorConfig):
@@ -87,6 +92,23 @@ class FirstDefaultExecutionAlgorithm(ExecutionAlgorithm):
 
 class SecondDefaultExecutionAlgorithm(ExecutionAlgorithm):
     pass
+
+
+def _custom_data():
+    class Payload:
+        ts_event = 3
+        ts_init = 4
+
+    return CustomData(DataType("Payload"), Payload())
+
+
+def _data_publishing_registration_cases():
+    custom_data = _custom_data()
+
+    return [
+        ("publish_data", (custom_data.data_type, custom_data)),
+        ("publish_signal", ("risk", "value")),
+    ]
 
 
 class NonForwardingExecutionAlgorithm(ExecutionAlgorithm):
@@ -188,9 +210,17 @@ class InternalActorIdExecutionAlgorithm(ExecutionAlgorithm):
         ("modify_order", ["self", "order", "quantity", "price", "trigger_price", "client_id"]),
         ("modify_order_in_place", ["self", "order", "quantity", "price", "trigger_price"]),
         ("cancel_order", ["self", "order", "client_id"]),
+        ("publish_data", ["self", "data_type", "data"]),
+        ("publish_signal", ["self", "name", "value", "ts_event"]),
         ("subscribe_signal", ["self", "name", "priority"]),
+        ("subscribe_queue_state", ["self", "priority"]),
+        ("subscribe_socket_state", ["self", "priority"]),
         ("unsubscribe_signal", ["self", "name"]),
+        ("unsubscribe_queue_state", ["self"]),
+        ("unsubscribe_socket_state", ["self"]),
         ("on_signal", ["self", "signal"]),
+        ("on_queue_state", ["self", "event"]),
+        ("on_socket_state", ["self", "event"]),
         ("to_importable_config", ["self"]),
         ("is_ready", ["self"]),
         ("is_running", ["self"]),
@@ -211,6 +241,13 @@ def test_execution_algorithm_authoring_surface_parameters(method_name, parameter
     method = getattr(ExecutionAlgorithm, method_name)
 
     assert list(inspect.signature(method).parameters) == parameter_names
+
+
+@pytest.mark.parametrize("method_name", ["subscribe_queue_state", "subscribe_socket_state"])
+def test_execution_algorithm_state_subscription_priority_defaults_to_none(method_name):
+    signature = inspect.signature(getattr(ExecutionAlgorithm, method_name))
+
+    assert signature.parameters["priority"].default is None
 
 
 @pytest.mark.parametrize(
@@ -256,6 +293,75 @@ def test_execution_algorithm_pre_registration_surface():
             create_market_order(),
             "VALIDATION_FAILED: invalid Python execution schedule",
         )
+
+
+@pytest.mark.parametrize(
+    ("method_name", "args"),
+    [
+        ("subscribe_signal", ("risk",)),
+        ("subscribe_queue_state", ()),
+        ("subscribe_socket_state", ()),
+        ("unsubscribe_signal", ("risk",)),
+        ("unsubscribe_queue_state", ()),
+        ("unsubscribe_socket_state", ()),
+    ],
+)
+def test_execution_algorithm_subscriptions_require_registration(method_name, args):
+    exec_algorithm = ExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-PRE-REGISTRATION")),
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        getattr(exec_algorithm, method_name)(*args)
+
+    assert (
+        str(exc_info.value) == "ExecutionAlgorithm must be registered before managing subscriptions"
+    )
+
+
+@pytest.mark.parametrize(
+    ("method_name", "args"),
+    _data_publishing_registration_cases(),
+)
+def test_execution_algorithm_data_publishing_requires_registration(method_name, args):
+    exec_algorithm = ExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-PRE-REGISTRATION")),
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        getattr(exec_algorithm, method_name)(*args)
+
+    assert str(exc_info.value) == DATA_PUBLISHING_REGISTRATION_ERROR
+
+
+def test_execution_algorithm_registration_precedes_publish_signal_conversion():
+    class InvalidSignalValue:
+        def __str__(self):
+            raise ValueError("invalid signal value")
+
+    exec_algorithm = ExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-PRE-REGISTRATION")),
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        exec_algorithm.publish_signal("risk", InvalidSignalValue())
+
+    assert str(exc_info.value) == DATA_PUBLISHING_REGISTRATION_ERROR
+
+
+def test_execution_algorithm_data_publishing_succeeds_when_registered():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    exec_algorithm = ExecutionAlgorithm(
+        ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-PUBLISH")),
+    )
+    custom_data = _custom_data()
+    engine.add_exec_algorithm(exec_algorithm)
+
+    try:
+        assert exec_algorithm.publish_data(custom_data.data_type, custom_data) is None
+        assert exec_algorithm.publish_signal("risk", "value") is None
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.parametrize(

@@ -6,7 +6,7 @@ permissions: # Principle of least privilege
 
 on:
   push:
-    branches: [master, nightly, test-docker]
+    branches: [master, nightly]
   workflow_dispatch:
 
 env:
@@ -17,137 +17,9 @@ env:
   SPDX_PREDICATE_TYPE: https://spdx.dev/Document/v2.3
 
 jobs:
-  # Test builds only - no publishing
-  test-docker-build:
-    name: test-build-${{ matrix.platform }}
-    if: github.ref == 'refs/heads/test-docker'
-    runs-on: ${{ matrix.runner }}
-    permissions:
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux/amd64
-            runner: ubuntu-22.04
-          - platform: linux/arm64
-            runner: ubuntu-22.04-arm
-    env:
-      BUILD_MODE: release
-    steps:
-      # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
-        with:
-          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
-          # Docker Buildx still pulls its Moby BuildKit image from Docker Hub.
-          allowed-endpoints: >-
-            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
-            ${{ vars.CI_ALLOWED_ENDPOINTS }}
-            registry-1.docker.io:443
-            auth.docker.io:443
-            production.cloudflare.docker.com:443
-            public.ecr.aws:443
-            ghcr.io:443
-            deb.debian.org:443
-            security.debian.org:443
-            static.rust-lang.org:443
-            pypi.org:443
-            files.pythonhosted.org:443
-            crates.io:443
-            static.crates.io:443
-
-      - name: Checkout repository
-        # https://github.com/actions/checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          persist-credentials: false
-          fetch-depth: 1
-
-      - name: Free disk space (Ubuntu)
-        run: >-
-          bash scripts/ci/free-disk-space.sh
-          --large-packages --docker-images --tool-cache --swap-storage
-
-      - name: Verify Docker toolchain pins
-        run: bash scripts/ci/check-docker-toolchain-pins.bash
-
-      - name: Pull local registry with retry
-        run: bash scripts/ci/docker-pull-retry.sh public.ecr.aws/docker/library/registry:2
-
-      - name: Start local registry
-        run: docker run -d -p 5000:5000 --name registry public.ecr.aws/docker/library/registry:2
-
-      - name: Pull BuildKit with retry
-        run: bash scripts/ci/docker-pull-retry.sh moby/buildkit:buildx-stable-1
-
-      - name: Set up Docker Buildx
-        # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
-        with:
-          driver-opts: network=host
-
-      - name: Preload Dockerfile images with retry
-        run: >-
-          bash scripts/ci/preload-buildx-base-image-retry.sh
-          "${{ matrix.platform }}" --from-dockerfile .docker/nautilus_trader.dockerfile
-
-      - name: Login to GHCR
-        # https://github.com/docker/login-action
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Generate platform slug
-        id: platform-slug
-        run: |
-          echo "slug=$(echo '${{ matrix.platform }}' | sed 's/\//-/g')" >> "$GITHUB_OUTPUT"
-
-      - name: Build nautilus_trader (push to local registry)
-        id: build-nautilus-trader-test
-        # https://github.com/docker/build-push-action
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
-        with:
-          context: .
-          file: .docker/nautilus_trader.dockerfile
-          platforms: ${{ matrix.platform }}
-          pull: false
-          push: true
-          tags: localhost:5000/nautilus_trader:test-${{ steps.platform-slug.outputs.slug }}
-          cache-from: type=gha,scope=nautilus_trader-test-${{ steps.platform-slug.outputs.slug }}
-          # yamllint disable-line rule:line-length
-          cache-to: type=gha,mode=max,ignore-error=true,scope=nautilus_trader-test-${{ steps.platform-slug.outputs.slug }}
-
-      - name: Export nautilus_trader digest
-        id: nautilus-trader-test-digest
-        run: |
-          digest="${{ steps.build-nautilus-trader-test.outputs.digest }}"
-          echo "hex=${digest#sha256:}" >> "$GITHUB_OUTPUT"
-
-      - name: Build jupyterlab (push to local registry)
-        # https://github.com/docker/build-push-action
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
-        with:
-          context: .
-          file: .docker/jupyterlab.dockerfile
-          platforms: ${{ matrix.platform }}
-          pull: false
-          push: true
-          tags: localhost:5000/jupyterlab:test-${{ steps.platform-slug.outputs.slug }}
-          cache-from: type=gha,scope=jupyterlab-test-${{ steps.platform-slug.outputs.slug }}
-          cache-to: type=gha,mode=max,ignore-error=true,scope=jupyterlab-test-${{ steps.platform-slug.outputs.slug }}
-          build-args: |
-            BASE_IMAGE_REPOSITORY=localhost:5000/nautilus_trader
-            BASE_IMAGE_DIGEST=${{ steps.nautilus-trader-test-digest.outputs.hex }}
-
-  # -----------------------------------------------------------------------------------------------
-  # Production builds with multi-platform support
-  # -----------------------------------------------------------------------------------------------
-
   build-docker-images-nautilus-trader:
     name: build-docker-images (nautilus_trader-${{ matrix.platform }})
-    if: github.ref != 'refs/heads/test-docker'
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/nightly'
     runs-on: ${{ matrix.runner }}
     permissions:
       packages: write
@@ -156,14 +28,14 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-22.04
+            runner: [self-hosted, Linux, X64, self-hosted-linux-x86]
           - platform: linux/arm64
-            runner: ubuntu-22.04-arm
+            runner: depot-ubuntu-22.04-arm-8
     env:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           # Docker Buildx still pulls its Moby BuildKit image from Docker Hub.
@@ -185,15 +57,23 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           fetch-depth: 1
 
       - name: Free disk space (Ubuntu)
+        if: >-
+          !startsWith(runner.name, 'nautilus-ci-runner-')
         run: >-
           bash scripts/ci/free-disk-space.sh
-          --large-packages --docker-images --tool-cache --swap-storage
+          --large-packages --docker-images --tool-cache
+
+      # Fat LTO runs the final cdylib link in one rustc process, beyond Cargo's job cap,
+      # so ARM builds need explicit swap headroom.
+      - name: Add swap space (Linux ARM)
+        if: matrix.platform == 'linux/arm64'
+        run: bash scripts/ci/configure-linux-swap.bash
 
       - name: Verify Docker toolchain pins
         run: bash scripts/ci/check-docker-toolchain-pins.bash
@@ -203,7 +83,7 @@ jobs:
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Preload Dockerfile images with retry
         run: >-
@@ -212,7 +92,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -231,7 +111,7 @@ jobs:
       - name: Prepare Docker metadata
         id: meta
         # https://github.com/docker/metadata-action
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/nautilus_trader
           tags: |
@@ -241,7 +121,7 @@ jobs:
       - name: Build and push by digest
         id: build
         # https://github.com/docker/build-push-action
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: .docker/nautilus_trader.dockerfile
@@ -254,16 +134,17 @@ jobs:
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/nautilus_trader,push-by-digest=true, name-canonical=true,push=true
 
       - name: Export digest
-        run: |
-          mkdir -p /tmp/digests/nautilus_trader
+        run: | # zizmor: ignore[template-injection] Digest comes from the pinned build action
+          mkdir -p "$RUNNER_TEMP/digests/nautilus_trader"
           digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/nautilus_trader/${digest#sha256:}"
+          touch "$RUNNER_TEMP/digests/nautilus_trader/${digest#sha256:}"
 
       - name: Upload digest
+        # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-nautilus_trader-${{ strategy.job-index }}
-          path: /tmp/digests/nautilus_trader/*
+          path: ${{ runner.temp }}/digests/nautilus_trader/*
           if-no-files-found: error
           retention-days: 1
 
@@ -280,7 +161,7 @@ jobs:
       digest_hex: ${{ steps.push.outputs.digest_hex }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           # Docker Buildx still pulls its Moby BuildKit image from Docker Hub.
@@ -293,11 +174,13 @@ jobs:
       - name: Checkout repository
         # Required so local ./.github/actions composites resolve at runtime;
         # merge jobs only download digests otherwise.
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        # https://github.com/actions/checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
       - name: Download digests
+        # https://github.com/actions/download-artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: /tmp/digests/nautilus_trader
@@ -306,11 +189,11 @@ jobs:
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -324,7 +207,7 @@ jobs:
       - name: Prepare Docker metadata
         id: meta
         # https://github.com/docker/metadata-action
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/nautilus_trader
           tags: |
@@ -346,17 +229,18 @@ jobs:
           echo "digest_hex=${DIGEST#sha256:}" >> "$GITHUB_OUTPUT"
 
       - name: Inspect image
-        run: |
+        run: | # zizmor: ignore[template-injection] Digest comes from the preceding trusted step
           docker buildx imagetools inspect \
             "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
 
       - name: Install cosign
+        # https://github.com/sigstore/cosign-installer
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.0.6
 
       - name: Sign image with cosign
-        run: >-
+        run: >- # zizmor: ignore[template-injection] Digest comes from the preceding trusted step
           bash ./scripts/ci/cosign-sign-retry.bash
           "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
 
@@ -384,7 +268,7 @@ jobs:
 
   build-docker-images-jupyterlab:
     name: build-docker-images (jupyterlab-${{ matrix.platform }})
-    if: github.ref != 'refs/heads/test-docker'
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/nightly'
     runs-on: ${{ matrix.runner }}
     permissions:
       packages: write
@@ -394,14 +278,14 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-22.04
+            runner: [self-hosted, Linux, X64, self-hosted-linux-x86]
           - platform: linux/arm64
             runner: ubuntu-22.04-arm
     env:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -422,15 +306,17 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           fetch-depth: 1
 
       - name: Free disk space (Ubuntu)
+        if: >-
+          !startsWith(runner.name, 'nautilus-ci-runner-')
         run: >-
           bash scripts/ci/free-disk-space.sh
-          --large-packages --docker-images --tool-cache --swap-storage
+          --large-packages --docker-images --tool-cache
 
       - name: Verify Docker toolchain pins
         run: bash scripts/ci/check-docker-toolchain-pins.bash
@@ -440,7 +326,7 @@ jobs:
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Preload JupyterLab base images with retry
         env:
@@ -458,7 +344,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -476,7 +362,7 @@ jobs:
 
       - name: Determine image tag
         id: image-tag
-        run: |
+        run: | # zizmor: ignore[template-injection] Branch comes from GITHUB_REF on trusted pushes
           if [ "${{ steps.branch-name.outputs.current_branch }}" = "master" ]; then
             echo "tag=latest" >> "$GITHUB_OUTPUT"
           else
@@ -486,7 +372,7 @@ jobs:
       - name: Prepare Docker metadata
         id: meta
         # https://github.com/docker/metadata-action
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/jupyterlab
           tags: |
@@ -496,7 +382,7 @@ jobs:
       - name: Build and push by digest
         id: build
         # https://github.com/docker/build-push-action
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: .docker/jupyterlab.dockerfile
@@ -512,16 +398,17 @@ jobs:
             BASE_IMAGE_DIGEST=${{ needs.merge-nautilus-trader.outputs.digest_hex }}
 
       - name: Export digest
-        run: |
-          mkdir -p /tmp/digests/jupyterlab
+        run: | # zizmor: ignore[template-injection] Digest comes from the pinned build action
+          mkdir -p "$RUNNER_TEMP/digests/jupyterlab"
           digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/jupyterlab/${digest#sha256:}"
+          touch "$RUNNER_TEMP/digests/jupyterlab/${digest#sha256:}"
 
       - name: Upload digest
+        # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-jupyterlab-${{ strategy.job-index }}
-          path: /tmp/digests/jupyterlab/*
+          path: ${{ runner.temp }}/digests/jupyterlab/*
           if-no-files-found: error
           retention-days: 1
 
@@ -535,7 +422,7 @@ jobs:
     needs: build-docker-images-jupyterlab
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -547,11 +434,13 @@ jobs:
       - name: Checkout repository
         # Required so local ./.github/actions composites resolve at runtime;
         # merge jobs only download digests otherwise.
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        # https://github.com/actions/checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
       - name: Download digests
+        # https://github.com/actions/download-artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: /tmp/digests/jupyterlab
@@ -560,11 +449,11 @@ jobs:
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -578,7 +467,7 @@ jobs:
       - name: Prepare Docker metadata
         id: meta
         # https://github.com/docker/metadata-action
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/jupyterlab
           tags: |
@@ -599,17 +488,18 @@ jobs:
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Inspect image
-        run: |
+        run: | # zizmor: ignore[template-injection] Digest comes from the preceding trusted step
           docker buildx imagetools inspect \
             "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
 
       - name: Install cosign
+        # https://github.com/sigstore/cosign-installer
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.0.6
 
       - name: Sign image with cosign
-        run: >-
+        run: >- # zizmor: ignore[template-injection] Digest comes from the preceding trusted step
           bash ./scripts/ci/cosign-sign-retry.bash
           "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
 

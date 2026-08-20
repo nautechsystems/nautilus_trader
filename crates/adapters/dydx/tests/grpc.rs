@@ -17,7 +17,7 @@
 
 use std::collections::HashMap;
 
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nautilus_dydx::{
     grpc::{
         ChainId, DEFAULT_RUST_CLIENT_METADATA, OrderBuilder, OrderGoodUntil, OrderMarketParams,
@@ -77,7 +77,7 @@ fn test_order_good_until_block() {
 
 #[rstest]
 fn test_order_good_until_time() {
-    let future_time = Utc::now() + Duration::hours(1);
+    let future_time = Timestamp::now() + SignedDuration::from_hours(1);
     let until = OrderGoodUntil::Time(future_time);
     match until {
         OrderGoodUntil::Time(time) => assert_eq!(time, future_time),
@@ -261,7 +261,7 @@ fn test_order_builder_long_term_flags() {
         DEFAULT_RUST_CLIENT_METADATA,
     );
 
-    let until_time = Utc::now() + Duration::hours(1);
+    let until_time = Timestamp::now() + SignedDuration::from_hours(1);
     let order = builder
         .long_term()
         .limit(Side::Buy, dec!(50000), dec!(0.01))
@@ -560,7 +560,8 @@ fn test_cancel_order_short_term_message_construction() {
 fn test_cancel_order_long_term_message_construction() {
     let client_id = 100u32;
     let clob_pair_id = 1u32;
-    let cancel_good_til = (Utc::now() + Duration::days(90)).timestamp() as u32;
+    let cancel_good_til =
+        (Timestamp::now() + SignedDuration::from_hours(90 * 24)).as_second() as u32;
 
     let msg = MsgCancelOrder {
         order_id: Some(OrderId {
@@ -585,7 +586,7 @@ fn test_cancel_order_long_term_message_construction() {
         GoodTilOneof::GoodTilBlockTime(ts) => {
             assert_eq!(ts, cancel_good_til);
             // Should be roughly 90 days from now
-            let now = Utc::now().timestamp() as u32;
+            let now = Timestamp::now().as_second() as u32;
             let eighty_nine_days = 89 * 24 * 3600;
             assert!(ts > now + eighty_nine_days);
         }
@@ -597,7 +598,8 @@ fn test_cancel_order_long_term_message_construction() {
 fn test_cancel_order_conditional_message_construction() {
     let client_id = 200u32;
     let clob_pair_id = 0u32;
-    let cancel_good_til = (Utc::now() + Duration::days(90)).timestamp() as u32;
+    let cancel_good_til =
+        (Timestamp::now() + SignedDuration::from_hours(90 * 24)).as_second() as u32;
 
     let msg = MsgCancelOrder {
         order_id: Some(OrderId {
@@ -750,7 +752,7 @@ fn test_take_profit_market_buy_order() {
         DEFAULT_RUST_CLIENT_METADATA,
     );
 
-    let until_time = Utc::now() + Duration::hours(1);
+    let until_time = Timestamp::now() + SignedDuration::from_hours(1);
     let order = builder
         .take_profit_market(Side::Buy, dec!(48000), dec!(0.01))
         .until(OrderGoodUntil::Time(until_time))
@@ -776,7 +778,7 @@ fn test_take_profit_market_sell_order() {
         DEFAULT_RUST_CLIENT_METADATA,
     );
 
-    let until_time = Utc::now() + Duration::hours(1);
+    let until_time = Timestamp::now() + SignedDuration::from_hours(1);
     let order = builder
         .take_profit_market(Side::Sell, dec!(52000), dec!(0.01))
         .until(OrderGoodUntil::Time(until_time))
@@ -802,7 +804,7 @@ fn test_take_profit_limit_buy_order() {
         DEFAULT_RUST_CLIENT_METADATA,
     );
 
-    let until_time = Utc::now() + Duration::hours(1);
+    let until_time = Timestamp::now() + SignedDuration::from_hours(1);
     let order = builder
         .take_profit_limit(Side::Buy, dec!(47500), dec!(48000), dec!(0.01))
         .until(OrderGoodUntil::Time(until_time))
@@ -829,7 +831,7 @@ fn test_take_profit_limit_sell_order() {
         DEFAULT_RUST_CLIENT_METADATA,
     );
 
-    let until_time = Utc::now() + Duration::hours(1);
+    let until_time = Timestamp::now() + SignedDuration::from_hours(1);
     let order = builder
         .take_profit_limit(Side::Sell, dec!(52500), dec!(52000), dec!(0.01))
         .until(OrderGoodUntil::Time(until_time))
@@ -850,7 +852,7 @@ fn test_take_profit_market_quantization() {
     let btc_market = sample_btc_market_params();
     let eth_market = sample_eth_market_params();
 
-    let until_time = Utc::now() + Duration::hours(1);
+    let until_time = Timestamp::now() + SignedDuration::from_hours(1);
 
     let btc_order = OrderBuilder::new(
         btc_market,

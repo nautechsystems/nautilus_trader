@@ -95,25 +95,16 @@ def test_sandbox_config_exposes_fee_model_property() -> None:
     assert isinstance(config.fee_model, ProbabilityPriceFeeModel)
 
 
-@pytest.mark.parametrize(
-    ("extra_args", "expected_dry_run", "expected_limit_sells"),
-    [
-        ([], True, False),
-        (["--live-orders", "--limit-sells"], False, True),
-    ],
-)
-def test_sandbox_exec_tester_uses_simulated_exec_and_gates_live_orders(
+def test_sandbox_exec_tester_uses_simulated_exec_and_runs(
     monkeypatch: pytest.MonkeyPatch,
-    extra_args: list[str],
-    expected_dry_run: bool,
-    expected_limit_sells: bool,
 ) -> None:
-    captured = capture_exec_tester_main(monkeypatch, sandbox_exec_tester, extra_args)
+    captured = capture_exec_tester_main(monkeypatch, sandbox_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
 
     assert isinstance(kwargs, dict)
-    assert kwargs["dry_run"] is expected_dry_run
-    assert kwargs["enable_limit_sells"] is expected_limit_sells
+    assert kwargs["dry_run"] is False
+    assert kwargs["enable_limit_buys"] is True
+    assert kwargs["enable_limit_sells"] is True
     assert "simulated_exec_client_args" in captured
     assert "exec_client_args" not in captured
-    assert "run_called" not in captured
+    assert captured["run_called"] is True

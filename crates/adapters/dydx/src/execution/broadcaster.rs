@@ -41,7 +41,7 @@ use std::sync::{
 use cosmrs::Any;
 use nautilus_network::{
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
-    retry::{RetryConfig, RetryManager},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 
 use super::{tx_manager::TransactionManager, types::PreparedTransaction};
@@ -243,7 +243,8 @@ impl TxBroadcaster {
             }
         };
 
-        let create_error = |msg: String| -> DydxError { DydxError::Nautilus(anyhow::anyhow!(msg)) };
+        let create_error =
+            |error: RetryError| DydxError::Nautilus(anyhow::anyhow!(error.to_string()));
 
         // Permit is held throughout retry loop, released when _permit drops
         let result = self

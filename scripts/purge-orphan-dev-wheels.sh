@@ -30,8 +30,7 @@ PREFIX="${CLOUDFLARE_R2_PREFIX:-simple/nautilus-trader}"
 PREFIX="${PREFIX%/}"
 APPLY=false
 case "${1:-}" in
-  "")
-    ;;
+  "") ;;
   "--apply")
     APPLY=true
     ;;
@@ -73,11 +72,6 @@ if [[ "$APPLY" == true ]]; then
     fi
   done
 
-  if compgen -G "${REPO_ROOT}/dist/nautilus_trader-*.whl" > /dev/null; then
-    echo "ERROR: local dist wheels exist under ${REPO_ROOT}/dist" >&2
-    echo "Move them before regenerating the R2 index, or they can enter index.html without upload." >&2
-    exit 1
-  fi
 fi
 
 ORPHANS=(
@@ -107,16 +101,13 @@ if ! bucket_listing="$("${AWS[@]}" s3 ls "$bucket_uri" --endpoint-url="${CLOUDFL
   exit 1
 fi
 
-declare -A existing_names=()
-while IFS= read -r name; do
-  [[ -n "$name" ]] && existing_names["$name"]=1
-done < <(printf '%s\n' "$bucket_listing" | awk '{print $4}')
+existing_names="$(printf '%s\n' "$bucket_listing" | awk 'NF >= 4 { print $4 }')"
 
 echo "Confirming presence of orphans before delete..."
 present_count=0
 missing_count=0
 for f in "${ORPHANS[@]}"; do
-  if [[ -n "${existing_names[$f]:-}" ]]; then
+  if grep -Fxq "$f" <<< "$existing_names"; then
     echo "  present: ${f}"
     present_count=$((present_count + 1))
   else
@@ -132,18 +123,20 @@ if [[ "$APPLY" != true ]]; then
   exit 0
 fi
 
-echo "Deleting ${present_count} present orphan wheels..."
+INDEX_DIR="$(mktemp -d)"
+trap 'rm -rf "$INDEX_DIR"' EXIT
+export PUBLISH_WHEELS_MANIFEST="${INDEX_DIR}/manifest.tsv"
+export PUBLISH_WHEELS_DELETE_MANIFEST="${INDEX_DIR}/delete.txt"
+export PUBLISH_WHEELS_INDEX_FILE="${INDEX_DIR}/index.html"
+: > "$PUBLISH_WHEELS_MANIFEST"
+: > "$PUBLISH_WHEELS_DELETE_MANIFEST"
 for f in "${ORPHANS[@]}"; do
-  if [[ -n "${existing_names[$f]:-}" ]]; then
-    echo "  rm s3://${BUCKET}/${PREFIX}/${f}"
-    "${AWS[@]}" s3 rm "s3://${BUCKET}/${PREFIX}/${f}" --endpoint-url="${CLOUDFLARE_R2_URL}"
-  else
-    echo "  skip missing: ${f}"
+  if grep -Fxq "$f" <<< "$existing_names"; then
+    printf '%s\n' "$f" >> "$PUBLISH_WHEELS_DELETE_MANIFEST"
   fi
 done
 
-echo ""
-echo "Regenerating index.html via existing CI scripts..."
+echo "Preparing and uploading an index without the orphan wheels..."
 cd "${REPO_ROOT}"
 export CLOUDFLARE_R2_BUCKET_NAME="${BUCKET}"
 export CLOUDFLARE_R2_PREFIX="${PREFIX}"
@@ -152,6 +145,17 @@ export CLOUDFLARE_R2_REGION="${CLOUDFLARE_R2_REGION:-auto}"
 # Re-export AWS_* and CLOUDFLARE_R2_URL for the sub-scripts.
 env -u PYTHONHOME bash ./scripts/ci/publish-wheels-generate-index.sh
 env -u PYTHONHOME bash ./scripts/ci/publish-wheels-r2-upload-index.sh
+
+echo ""
+echo "Deleting ${present_count} present orphan wheels..."
+for f in "${ORPHANS[@]}"; do
+  if grep -Fxq "$f" <<< "$existing_names"; then
+    echo "  rm s3://${BUCKET}/${PREFIX}/${f}"
+    "${AWS[@]}" s3 rm "s3://${BUCKET}/${PREFIX}/${f}" --endpoint-url="${CLOUDFLARE_R2_URL}"
+  else
+    echo "  skip missing: ${f}"
+  fi
+done
 
 echo ""
 echo "Verifying final state..."

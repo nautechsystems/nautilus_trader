@@ -58,10 +58,6 @@
     reason = "match and if-let early returns are consistent with surrounding trading flow code"
 )]
 #![allow(
-    clippy::redundant_closure_for_method_calls,
-    reason = "matches the Rust 1.94 ICE workaround in the workspace lint table"
-)]
-#![allow(
     clippy::cast_lossless,
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
@@ -85,6 +81,13 @@
     clippy::match_wildcard_for_single_variants,
     reason = "wildcard arms guard against future enum variants in trading dispatch"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
+// pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
+// macro expansion; an item-level `allow` cannot reach the expansion
+#![allow(clippy::clone_on_copy)]
 #![cfg_attr(
     test,
     allow(

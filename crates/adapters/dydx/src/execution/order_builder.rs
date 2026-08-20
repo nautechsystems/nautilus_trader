@@ -28,8 +28,8 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use chrono::{DateTime, Duration, Utc};
 use cosmrs::Any;
+use jiff::{SignedDuration, Timestamp};
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
@@ -351,9 +351,9 @@ impl OrderMessageBuilder {
                 GoodTilOneof::GoodTilBlock(block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME),
             ),
             OrderLifetime::LongTerm | OrderLifetime::Conditional => {
-                let cancel_good_til = (Utc::now()
-                    + Duration::days(GTC_CONDITIONAL_ORDER_EXPIRATION_DAYS))
-                .timestamp() as u32;
+                let cancel_good_til = (Timestamp::now()
+                    + SignedDuration::from_hours(24 * GTC_CONDITIONAL_ORDER_EXPIRATION_DAYS))
+                .as_second() as u32;
                 (
                     lifetime.order_flags(),
                     GoodTilOneof::GoodTilBlockTime(cancel_good_til),
@@ -397,9 +397,9 @@ impl OrderMessageBuilder {
         let good_til_oneof = if order_flags == ORDER_FLAG_SHORT_TERM {
             GoodTilOneof::GoodTilBlock(block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME)
         } else {
-            let cancel_good_til = (Utc::now()
-                + Duration::days(GTC_CONDITIONAL_ORDER_EXPIRATION_DAYS))
-            .timestamp() as u32;
+            let cancel_good_til = (Timestamp::now()
+                + SignedDuration::from_hours(24 * GTC_CONDITIONAL_ORDER_EXPIRATION_DAYS))
+            .as_second() as u32;
             GoodTilOneof::GoodTilBlockTime(cancel_good_til)
         };
 
@@ -888,7 +888,7 @@ impl OrderMessageBuilder {
     /// falling back to the default block time (500ms) when insufficient samples.
     fn calculate_block_offset(&self, expire_time: Option<i64>) -> u32 {
         if let Some(expire_ts) = expire_time {
-            let now = Utc::now().timestamp();
+            let now = Timestamp::now().as_second();
             let seconds = expire_ts - now;
             self.seconds_to_blocks(seconds)
         } else {
@@ -912,15 +912,13 @@ impl OrderMessageBuilder {
     }
 
     /// Calculates expire datetime for long-term orders.
-    fn calculate_expire_datetime(
-        &self,
-        expire_time: Option<i64>,
-    ) -> Result<DateTime<Utc>, DydxError> {
+    fn calculate_expire_datetime(&self, expire_time: Option<i64>) -> Result<Timestamp, DydxError> {
         if let Some(expire_ts) = expire_time {
-            DateTime::from_timestamp(expire_ts, 0)
-                .ok_or_else(|| DydxError::Parse(format!("Invalid expire timestamp: {expire_ts}")))
+            Timestamp::from_second(expire_ts)
+                .map_err(|_| DydxError::Parse(format!("Invalid expire timestamp: {expire_ts}")))
         } else {
-            Ok(Utc::now() + Duration::days(GTC_CONDITIONAL_ORDER_EXPIRATION_DAYS))
+            Ok(Timestamp::now()
+                + SignedDuration::from_hours(24 * GTC_CONDITIONAL_ORDER_EXPIRATION_DAYS))
         }
     }
 }
@@ -990,7 +988,7 @@ mod tests {
     #[rstest]
     fn test_order_lifetime_with_short_expiry() {
         // Order expiring in 5 seconds should be short-term (within 10s window)
-        let expire_time = Some(Utc::now().timestamp() + 5);
+        let expire_time = Some(Timestamp::now().as_second() + 5);
         let lifetime = OrderLifetime::from_time_in_force(
             TimeInForce::Gtd,
             expire_time,
@@ -1003,7 +1001,7 @@ mod tests {
     #[rstest]
     fn test_order_lifetime_with_long_expiry() {
         // Order expiring in 60 seconds should be long-term (beyond 10s window)
-        let expire_time = Some(Utc::now().timestamp() + 60);
+        let expire_time = Some(Timestamp::now().as_second() + 60);
         let lifetime = OrderLifetime::from_time_in_force(
             TimeInForce::Gtd,
             expire_time,

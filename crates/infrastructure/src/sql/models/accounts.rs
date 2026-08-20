@@ -37,11 +37,15 @@ impl<'r> FromRow<'r, PgRow> for AccountEventModel {
             .map(|res| res.map(Currency::from))?;
         let balances: serde_json::Value = row.try_get("balances")?;
         let margins: serde_json::Value = row.try_get("margins")?;
+        let balances =
+            serde_json::from_value(balances).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+        let margins =
+            serde_json::from_value(margins).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
         let account_event = AccountState::new(
             account_id,
             account_type,
-            serde_json::from_value(balances).unwrap(),
-            serde_json::from_value(margins).unwrap(),
+            balances,
+            margins,
             is_reported,
             event_id,
             ts_event,

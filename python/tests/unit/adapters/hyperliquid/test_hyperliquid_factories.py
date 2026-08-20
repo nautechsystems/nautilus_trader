@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import inspect
+
 import pytest
 from unit.adapters.example_modules import capture_data_tester_main
 from unit.adapters.example_modules import capture_exec_tester_main
@@ -24,6 +26,9 @@ from nautilus_trader.adapters.hyperliquid import HyperliquidEnvironment
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecFactoryConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientFactory
+from nautilus_trader.adapters.hyperliquid import HyperliquidHttpClient
+from nautilus_trader.adapters.hyperliquid import HyperliquidWebSocketClient
+from nautilus_trader.adapters.hyperliquid import hyperliquid_resolve_execution_account_address
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveRiskEngineConfig
@@ -40,6 +45,97 @@ hyperliquid_exec_tester = load_example_module("hyperliquid", "exec_tester")
 def test_hyperliquid_factories_expose_python_names() -> None:
     assert HyperliquidDataClientFactory().name() == HYPERLIQUID
     assert HyperliquidExecutionClientFactory().name() == HYPERLIQUID
+
+
+def test_resolve_execution_account_address_prefers_explicit_account() -> None:
+    account_address = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+    resolved = hyperliquid_resolve_execution_account_address(
+        vault_address=" 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ",
+        account_address=f" {account_address} ",
+        environment=HyperliquidEnvironment.MAINNET,
+    )
+
+    assert resolved == account_address
+
+
+def test_resolve_execution_account_address_uses_vault_fallback() -> None:
+    vault_address = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+    resolved = hyperliquid_resolve_execution_account_address(
+        vault_address=f" {vault_address} ",
+        environment=HyperliquidEnvironment.MAINNET,
+    )
+
+    assert resolved == vault_address
+
+
+def test_resolve_execution_account_address_rejects_invalid_vault() -> None:
+    with pytest.raises(ValueError, match="Vault address must be 20 bytes of valid hex"):
+        hyperliquid_resolve_execution_account_address(
+            vault_address="0xinvalid",
+            environment=HyperliquidEnvironment.MAINNET,
+        )
+
+
+@pytest.mark.asyncio
+async def test_websocket_trading_binding_signatures_and_empty_cancel() -> None:
+    client = HyperliquidWebSocketClient(
+        url="ws://127.0.0.1:9/ws",
+        environment=HyperliquidEnvironment.MAINNET,
+    )
+    signer = HyperliquidHttpClient(
+        private_key=SMOKE_PRIVATE_KEY,
+        environment=HyperliquidEnvironment.MAINNET,
+        timeout_secs=1,
+    )
+    client.set_post_timeout(timeout_secs=1)
+
+    result = await client.cancel_orders(signer=signer, cancels=[])
+    signatures = {
+        name: list(inspect.signature(getattr(client, name)).parameters)
+        for name in (
+            "submit_order",
+            "submit_orders",
+            "cancel_order",
+            "cancel_orders",
+            "modify_order",
+        )
+    }
+
+    assert result == []
+    assert signatures == {
+        "submit_order": [
+            "signer",
+            "instrument_id",
+            "client_order_id",
+            "order_side",
+            "order_type",
+            "quantity",
+            "time_in_force",
+            "price",
+            "trigger_price",
+            "post_only",
+            "reduce_only",
+        ],
+        "submit_orders": ["signer", "orders"],
+        "cancel_order": ["signer", "instrument_id", "client_order_id", "venue_order_id"],
+        "cancel_orders": ["signer", "cancels"],
+        "modify_order": [
+            "signer",
+            "instrument_id",
+            "venue_order_id",
+            "order_side",
+            "order_type",
+            "price",
+            "quantity",
+            "trigger_price",
+            "reduce_only",
+            "post_only",
+            "time_in_force",
+            "client_order_id",
+        ],
+    }
 
 
 def test_live_node_builder_accepts_hyperliquid_data_factory() -> None:
@@ -90,32 +186,21 @@ def test_live_node_builder_accepts_hyperliquid_exec_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
-def test_hyperliquid_data_tester_builds_offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured = capture_data_tester_main(monkeypatch, hyperliquid_data_tester, [])
+def test_hyperliquid_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = capture_data_tester_main(monkeypatch, hyperliquid_data_tester)
     kwargs = captured["data_tester_kwargs"]
 
     assert isinstance(kwargs, dict)
     assert kwargs["subscribe_funding_rates"] is True
-    assert "run_called" not in captured
+    assert captured["run_called"] is True
 
 
-@pytest.mark.parametrize(
-    ("extra_args", "expected_dry_run", "expected_limit_sells"),
-    [
-        ([], True, False),
-        (["--live-orders", "--limit-sells"], False, True),
-    ],
-)
-def test_hyperliquid_exec_tester_gates_live_orders(
-    monkeypatch: pytest.MonkeyPatch,
-    extra_args: list[str],
-    expected_dry_run: bool,
-    expected_limit_sells: bool,
-) -> None:
-    captured = capture_exec_tester_main(monkeypatch, hyperliquid_exec_tester, extra_args)
+def test_hyperliquid_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = capture_exec_tester_main(monkeypatch, hyperliquid_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
 
     assert isinstance(kwargs, dict)
-    assert kwargs["dry_run"] is expected_dry_run
-    assert kwargs["enable_limit_sells"] is expected_limit_sells
-    assert "run_called" not in captured
+    assert kwargs["dry_run"] is False
+    assert kwargs["enable_limit_buys"] is True
+    assert kwargs["enable_limit_sells"] is True
+    assert captured["run_called"] is True

@@ -44,7 +44,7 @@ use crate::{
 #[derive(Clone, Copy, Debug, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 pub struct BookPrice {
     pub value: Price,
@@ -313,7 +313,7 @@ impl BookLadder {
 
                 debug_assert_eq!(
                     self.cache.len(),
-                    self.levels.values().map(|level| level.len()).sum::<usize>(),
+                    self.levels.values().map(BookLevel::len).sum::<usize>(),
                     "Cache size should equal total orders across all levels"
                 );
                 return;
@@ -340,7 +340,7 @@ impl BookLadder {
         // Validate cache consistency after update
         debug_assert_eq!(
             self.cache.len(),
-            self.levels.values().map(|level| level.len()).sum::<usize>(),
+            self.levels.values().map(BookLevel::len).sum::<usize>(),
             "Cache size should equal total orders across all levels"
         );
     }
@@ -382,7 +382,7 @@ impl BookLadder {
         // Validate cache consistency after removal
         debug_assert_eq!(
             self.cache.len(),
-            self.levels.values().map(|level| level.len()).sum::<usize>(),
+            self.levels.values().map(BookLevel::len).sum::<usize>(),
             "Cache size should equal total orders across all levels"
         );
     }
@@ -397,7 +397,7 @@ impl BookLadder {
 
             debug_assert_eq!(
                 self.cache.len(),
-                self.levels.values().map(|level| level.len()).sum::<usize>(),
+                self.levels.values().map(BookLevel::len).sum::<usize>(),
                 "Cache size should equal total orders across all levels"
             );
 
@@ -442,7 +442,7 @@ impl BookLadder {
         );
         debug_assert_eq!(
             self.cache.len(),
-            self.levels.values().map(|l| l.len()).sum::<usize>(),
+            self.levels.values().map(BookLevel::len).sum::<usize>(),
             "Cache size should equal total orders across all levels"
         );
     }
@@ -534,7 +534,10 @@ mod tests {
     use crate::{
         data::order::BookOrder,
         enums::{BookType, OrderSide, OrderSideSpecified, RecordFlag},
-        orderbook::ladder::{BookLadder, BookPrice},
+        orderbook::{
+            ladder::{BookLadder, BookPrice},
+            level::BookLevel,
+        },
         types::{Price, Quantity},
     };
 
@@ -1564,7 +1567,7 @@ mod tests {
             "Cache should have exactly 1 entry for L1"
         );
 
-        let total_orders: usize = ladder.levels.values().map(|l| l.len()).sum();
+        let total_orders: usize = ladder.levels.values().map(BookLevel::len).sum();
         assert_eq!(
             ladder.cache.len(),
             total_orders,

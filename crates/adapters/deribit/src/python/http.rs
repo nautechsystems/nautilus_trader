@@ -17,10 +17,11 @@
 
 use std::collections::HashSet;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::{
     UnixNanos,
     python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{BarType, forward::ForwardPrice},
@@ -31,6 +32,7 @@ use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
 use crate::{
     common::{consts::DERIBIT_VENUE, enums::DeribitEnvironment},
+    data_types::DeribitBookSummary,
     http::{
         client::DeribitHttpClient,
         error::DeribitHttpError,
@@ -267,8 +269,8 @@ impl DeribitHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -311,8 +313,8 @@ impl DeribitHttpClient {
         &self,
         py: Python<'py>,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -496,6 +498,54 @@ impl DeribitHttpClient {
                     .map(|report| report.into_py_any(py))
                     .collect();
                 let pylist = PyList::new(py, py_reports?)?.into_any().unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
+    /// Requests book summaries for a currency via `public/get_book_summary_by_currency`.
+    ///
+    /// Defaults to product kind `option`.
+    /// Entries include mark/IV, bid-ask, volumes, and `underlying_price` (forward) when present.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    #[pyo3(name = "request_book_summaries")]
+    #[pyo3(signature = (currency, kind=None))]
+    fn py_request_book_summaries<'py>(
+        &self,
+        py: Python<'py>,
+        currency: String,
+        kind: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let currency = currency.trim().to_ascii_uppercase();
+            if currency.is_empty() {
+                return Err(to_pyvalue_err(
+                    "request_book_summaries requires a non-empty currency",
+                ));
+            }
+            let kind = kind
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map_or_else(|| "option".to_string(), str::to_ascii_lowercase);
+            let summaries = client
+                .request_book_summaries_kind(&currency, Some(kind.as_str()))
+                .await
+                .map_err(to_pyvalue_err)?;
+            // Stamp observed time after the HTTP round-trip completes.
+            let ts = get_atomic_clock_realtime().get_time_ns();
+
+            Python::attach(|py| {
+                let py_items: PyResult<Vec<_>> = summaries
+                    .into_iter()
+                    .map(|raw| Py::new(py, DeribitBookSummary::from_raw(raw, ts)))
+                    .collect();
+                let pylist = PyList::new(py, py_items?)?.into_any().unbind();
                 Ok(pylist)
             })
         })

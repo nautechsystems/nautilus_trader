@@ -29,7 +29,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, nanos::UnixNanos,
@@ -47,7 +47,7 @@ use nautilus_model::{
 use nautilus_network::{
     http::{HttpClient, Method, USER_AGENT},
     ratelimiter::quota::Quota,
-    retry::{RetryConfig, RetryManager},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use rust_decimal::Decimal;
 use serde::{Serialize, de::DeserializeOwned};
@@ -148,7 +148,7 @@ const BYBIT_NO_CONVERT_REPAY_ROUTE_KEY: &str = "bybit:/v5/account/no-convert-rep
 /// returning venue-specific response types. It does not parse to Nautilus domain types.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -550,11 +550,12 @@ impl BybitRawHttpClient {
             }
         };
 
-        let create_error = |msg: String| -> BybitHttpError {
-            if msg == "canceled" {
-                BybitHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
-            } else {
-                BybitHttpError::NetworkError(msg)
+        let create_error = |error: RetryError| -> BybitHttpError {
+            match error {
+                RetryError::Canceled => {
+                    BybitHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
+                }
+                error => BybitHttpError::NetworkError(error.to_string()),
             }
         };
 
@@ -1525,7 +1526,7 @@ impl BybitRawHttpClient {
 /// Provides a HTTP client for connecting to the [Bybit](https://bybit.com) REST API.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -3824,22 +3825,22 @@ impl BybitHttpClient {
         &self,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FundingRateUpdate>> {
         let instrument = self.instrument_from_cache_by_id(instrument_id)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
 
-        let start_ms = start.map(|dt| dt.timestamp_millis());
+        let start_ms = start.map(|dt| dt.as_millisecond());
         let mut seen_timestamps: AHashSet<i64> = AHashSet::new();
 
         let mut raw_funding_rates = Vec::new();
 
         // Bybit requires endTime when startTime is provided
         let mut current_end_ms = match (start, end) {
-            (Some(_), None) => Some(Utc::now().timestamp_millis()),
-            _ => end.map(|dt| dt.timestamp_millis()),
+            (Some(_), None) => Some(Timestamp::now().as_millisecond()),
+            _ => end.map(|dt| dt.as_millisecond()),
         };
 
         loop {
@@ -4000,8 +4001,8 @@ impl BybitHttpClient {
         &self,
         product_type: BybitProductType,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
         timestamp_on_close: bool,
     ) -> anyhow::Result<Vec<Bar>> {
@@ -4015,7 +4016,7 @@ impl BybitHttpClient {
             bar_type.spec().step.get() as u64,
         )?;
 
-        let start_ms = start.map(|dt| dt.timestamp_millis());
+        let start_ms = start.map(|dt| dt.as_millisecond());
         let mut seen_timestamps: AHashSet<i64> = AHashSet::new();
         let current_time_ms = get_atomic_clock_realtime().get_time_ms() as i64;
 
@@ -4030,7 +4031,7 @@ impl BybitHttpClient {
         //   After reverse + flatten: [T=1000..1999, T=2000..2999] ✓ chronological
         let mut pages: Vec<Vec<Bar>> = Vec::new();
         let mut total_bars = 0usize;
-        let mut current_end = end.map(|dt| dt.timestamp_millis());
+        let mut current_end = end.map(|dt| dt.as_millisecond());
         let mut page_count = 0;
 
         loop {
@@ -4222,6 +4223,11 @@ impl BybitHttpClient {
     ///
     /// Orders for instruments not currently loaded in cache will be skipped.
     ///
+    /// When `open_only` is true the realtime endpoint is queried for currently
+    /// open orders and again for recently closed orders, so terminal reports
+    /// are included. The closed pass fetches the most recent page only and is
+    /// not constrained by `start` or `end`.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -4235,8 +4241,8 @@ impl BybitHttpClient {
         product_type: BybitProductType,
         instrument_id: Option<InstrumentId>,
         open_only: bool,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         // Extract symbol parameter from instrument_id if provided
@@ -4290,63 +4296,76 @@ impl BybitHttpClient {
                         vec![None, Some(BybitOrderFilter::StopOrder)]
                     };
 
-                for order_filter in order_filters {
-                    let mut cursor: Option<String> = None;
+                let open_only_modes = [None, Some(BybitOpenOnly::ClosedRecent)];
 
-                    loop {
-                        let remaining = if let Some(limit) = remaining_limit {
-                            (limit as usize).saturating_sub(all_orders.len())
-                        } else {
-                            usize::MAX
-                        };
+                for oo in open_only_modes {
+                    for order_filter in &order_filters {
+                        let mut cursor: Option<String> = None;
 
-                        if remaining == 0 {
-                            break;
-                        }
+                        loop {
+                            let remaining = if let Some(limit) = remaining_limit {
+                                (limit as usize).saturating_sub(all_orders.len())
+                            } else {
+                                usize::MAX
+                            };
 
-                        // Max 50 per Bybit API
-                        let page_limit = std::cmp::min(remaining, 50);
-
-                        let mut p = BybitOpenOrdersParamsBuilder::default();
-                        p.category(product_type);
-
-                        if let Some(symbol) = symbol_param.clone() {
-                            p.symbol(symbol);
-                        }
-
-                        if let Some(coin) = settle_coin.clone() {
-                            p.settle_coin(coin);
-                        }
-
-                        if let Some(of) = order_filter {
-                            p.order_filter(of);
-                        }
-                        p.limit(page_limit as u32);
-
-                        if let Some(c) = cursor {
-                            p.cursor(c);
-                        }
-                        let params = p.build().build_anyhow()?;
-                        let response: BybitOpenOrdersResponse = self
-                            .inner
-                            .send_request(
-                                Method::GET,
-                                BYBIT_ORDER_REALTIME,
-                                Some(&params),
-                                None,
-                                true,
-                            )
-                            .await?;
-
-                        for order in response.result.list {
-                            if seen_ids.insert(order.order_id) {
-                                all_orders.push(order);
+                            if remaining == 0 {
+                                break;
                             }
-                        }
 
-                        cursor = response.result.next_page_cursor;
-                        if cursor.as_ref().is_none_or(|c| c.is_empty()) {
-                            break;
+                            // Max 50 per Bybit API
+                            let page_limit = std::cmp::min(remaining, 50);
+
+                            let mut p = BybitOpenOrdersParamsBuilder::default();
+                            p.category(product_type);
+
+                            if let Some(symbol) = symbol_param.clone() {
+                                p.symbol(symbol);
+                            }
+
+                            if let Some(coin) = settle_coin.clone() {
+                                p.settle_coin(coin);
+                            }
+
+                            if let Some(of) = order_filter {
+                                p.order_filter(*of);
+                            }
+
+                            if let Some(oo) = oo {
+                                p.open_only(oo);
+                            }
+                            p.limit(page_limit as u32);
+
+                            if let Some(c) = cursor {
+                                p.cursor(c);
+                            }
+                            let params = p.build().build_anyhow()?;
+                            let response: BybitOpenOrdersResponse = self
+                                .inner
+                                .send_request(
+                                    Method::GET,
+                                    BYBIT_ORDER_REALTIME,
+                                    Some(&params),
+                                    None,
+                                    true,
+                                )
+                                .await?;
+
+                            for order in response.result.list {
+                                if seen_ids.insert(order.order_id) {
+                                    all_orders.push(order);
+                                }
+                            }
+
+                            // The closed pass only needs the most recent page
+                            if oo.is_some() {
+                                break;
+                            }
+
+                            cursor = response.result.next_page_cursor;
+                            if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                                break;
+                            }
                         }
                     }
                 }
@@ -4471,11 +4490,11 @@ impl BybitHttpClient {
                         }
 
                         if let Some(start) = start {
-                            history_params.start_time(start.timestamp_millis());
+                            history_params.start_time(start.as_millisecond());
                         }
 
                         if let Some(end) = end {
-                            history_params.end_time(end.timestamp_millis());
+                            history_params.end_time(end.as_millisecond());
                         }
                         history_params.limit(page_limit as u32);
 

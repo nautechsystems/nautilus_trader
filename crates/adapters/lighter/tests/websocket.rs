@@ -25,7 +25,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -61,7 +61,7 @@ use nautilus_model::{
     instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
-use nautilus_network::websocket::TransportBackend;
+use nautilus_network::{SocketState, SocketStateSink, websocket::TransportBackend};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
@@ -322,12 +322,16 @@ struct ClientHarness {
 
 impl ClientHarness {
     async fn build(addr: SocketAddr) -> Self {
+        Self::build_with_state_sink(addr, None).await
+    }
+
+    async fn build_with_state_sink(addr: SocketAddr, state_sink: Option<SocketStateSink>) -> Self {
         let registry = Arc::new(MarketRegistry::new());
         let perp = perp_instrument(PERP_MARKET_INDEX, PERP_VENUE_SYMBOL, &registry);
         let second = perp_instrument(SECOND_MARKET_INDEX, SECOND_VENUE_SYMBOL, &registry);
         let spot = spot_instrument(SPOT_MARKET_INDEX, SPOT_VENUE_SYMBOL, &registry);
 
-        let mut client = LighterWebSocketClient::new(
+        let client = LighterWebSocketClient::new(
             Some(format!("ws://{addr}/stream")),
             LighterEnvironment::Testnet,
             Arc::clone(&registry),
@@ -335,6 +339,10 @@ impl ClientHarness {
             5,
             None,
         );
+        let mut client = match state_sink {
+            Some(sink) => client.with_state_sink(sink),
+            None => client,
+        };
         client.cache_instruments(vec![
             (PERP_MARKET_INDEX, perp),
             (SECOND_MARKET_INDEX, second),
@@ -487,6 +495,49 @@ async fn test_websocket_connection_lifecycle() {
         Duration::from_secs(2),
     )
     .await;
+}
+
+#[tokio::test]
+async fn test_state_sink_reports_connection_loss_and_recovery() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&observed);
+    let sink = SocketStateSink::new(move |state| recorded.lock().unwrap().push(state));
+
+    let harness = ClientHarness::build_with_state_sink(addr, Some(sink)).await;
+    assert_eq!(*observed.lock().unwrap(), vec![SocketState::Connected]);
+
+    // The server acks this subscribe and then closes, so the client observes a
+    // connection loss rather than a graceful disconnect.
+    state
+        .drop_after_next_subscribe
+        .store(true, Ordering::Relaxed);
+    harness
+        .client
+        .subscribe_book(harness.instrument(PERP_MARKET_INDEX))
+        .await
+        .expect("subscribe_book");
+    await_subscribe_count(&state, 1).await;
+
+    wait_until_async(
+        || {
+            let observed = observed.clone();
+            async move { observed.lock().unwrap().len() >= 3 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(
+        *observed.lock().unwrap(),
+        vec![
+            SocketState::Connected,
+            SocketState::Disconnected,
+            SocketState::Connected,
+        ]
+    );
 }
 
 #[tokio::test]

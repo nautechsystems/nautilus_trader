@@ -14,42 +14,59 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Example: Subscribe to option greeks for BTC CALL options on OKX.
+Subscribe to option Greeks for individual BTC call options on OKX.
 
-Discovers BTC CALL options from the instrument cache, filters for a subset,
-and subscribes to exchange-provided greeks (delta, gamma, vega, theta, IV).
+Connects to the OKX live environment, loads BTC-USD options, selects call contracts from
+the instrument cache, and logs every Greeks update. Subscriptions exercise the default,
+Black-Scholes, and combined convention shapes. No orders are placed.
 
-Subscriptions are split three ways to exercise every param shape:
-- no params (adapter emits both Black-Scholes and price-adjusted)
-- single convention via ``params["greeks_convention"] = "BLACK_SCHOLES"``
-- list of conventions via ``params["greeks_convention"] = [...]``
 """
+
+from __future__ import annotations
 
 from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig
-from nautilus_trader.adapters.okx import OKXLiveDataClientFactory
-from nautilus_trader.common.actor import Actor
-from nautilus_trader.config import ActorConfig
-from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import OKXEnvironment
-from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
-from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.adapters.okx import OKXDataClientFactory
+from nautilus_trader.adapters.okx import OKXEnvironment
+from nautilus_trader.adapters.okx import OKXInstrumentType
+from nautilus_trader.common import DataActor
+from nautilus_trader.common import Environment
+from nautilus_trader.config import DataActorConfig
+from nautilus_trader.config import ImportableActorConfig
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import ActorId
+from nautilus_trader.model import ClientId
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OptionGreeks
+from nautilus_trader.model import TraderId
 
 
-class OptionGreeksTesterConfig(ActorConfig, frozen=True):
-    underlying: str = "BTC"
-    max_subscriptions: int = 10
+OKX_ENVIRONMENT = OKXEnvironment.LIVE
+TRADER_ID = TraderId.from_str("GREEKS-001")
+UNDERLYING = "BTC"
+INSTRUMENT_FAMILIES = ["BTC-USD"]
+MAX_SUBSCRIPTIONS = 10
 
 
-class OptionGreeksTester(Actor):
+class OptionGreeksTesterConfig(DataActorConfig):
+    def __init__(
+        self,
+        underlying: str = "BTC",
+        max_subscriptions: int = 10,
+        actor_id: ActorId | str | None = None,
+        log_events: bool = True,
+        log_commands: bool = True,
+    ) -> None:
+        self.actor_id = ActorId.from_str(actor_id) if isinstance(actor_id, str) else actor_id
+        self.log_events = log_events
+        self.log_commands = log_commands
+        self.underlying = underlying
+        self.max_subscriptions = max_subscriptions
+
+
+class OptionGreeksTester(DataActor):
     """
-    Subscribe to option greeks for BTC CALL options on OKX, exercising the three
-    supported shapes for ``params["greeks_convention"]``.
+    Subscribe to option Greeks for call options on OKX.
     """
 
     def __init__(self, config: OptionGreeksTesterConfig) -> None:
@@ -59,59 +76,50 @@ class OptionGreeksTester(Actor):
         self._max_subscriptions = config.max_subscriptions
 
     def on_start(self) -> None:
-        instruments = self.cache.instruments()
-
         call_options = []
 
-        for inst in instruments:
-            symbol = str(inst.id.symbol)
-            if not symbol.startswith(f"{self._underlying}-"):
-                continue
-            # OKX option symbols: BASE-QUOTE-DATE-STRIKE-C/P
-            if symbol.endswith("-C"):
-                call_options.append(inst)
+        for instrument in self.cache.instruments():
+            symbol = str(instrument.id.symbol)
+            if symbol.startswith(f"{self._underlying}-") and symbol.endswith("-C"):
+                call_options.append(instrument)
 
         if not call_options:
-            self.log.warning(f"No {self._underlying} CALL options found in cache")
+            self.log.warning(f"No {self._underlying} call options found in cache")
             return
 
-        self.log.info(f"Found {len(call_options)} {self._underlying} CALL options")
-
-        call_options.sort(key=lambda i: str(i.id.symbol))
+        call_options.sort(key=lambda instrument: str(instrument.id.symbol))
         to_subscribe = call_options[: self._max_subscriptions]
-
-        client_id = ClientId(OKX)
+        client_id = ClientId.from_str(OKX)
         third = len(to_subscribe) // 3
-        default_slice = to_subscribe[:third]
-        single_slice = to_subscribe[third : 2 * third]
-        list_slice = to_subscribe[2 * third :]
 
-        for inst in default_slice:
-            self.log.info(f"Subscribing to greeks (no params, both conventions): {inst.id}")
-            self.subscribe_option_greeks(inst.id, client_id=client_id)
-            self._subscribed_ids.append(inst.id)
+        for instrument in to_subscribe[:third]:
+            self.log.info(f"Subscribing to Greeks with both conventions: {instrument.id}")
+            self.subscribe_option_greeks(instrument.id, client_id=client_id)
+            self._subscribed_ids.append(instrument.id)
 
-        for inst in single_slice:
-            self.log.info(f"Subscribing to greeks (single BS): {inst.id}")
+        for instrument in to_subscribe[third : 2 * third]:
+            self.log.info(f"Subscribing to Black-Scholes Greeks: {instrument.id}")
             self.subscribe_option_greeks(
-                inst.id,
+                instrument.id,
                 client_id=client_id,
                 params={"greeks_convention": "BLACK_SCHOLES"},
             )
-            self._subscribed_ids.append(inst.id)
+            self._subscribed_ids.append(instrument.id)
 
-        for inst in list_slice:
-            self.log.info(f"Subscribing to greeks (list form): {inst.id}")
+        for instrument in to_subscribe[2 * third :]:
+            self.log.info(
+                f"Subscribing to both Greeks conventions using list form: {instrument.id}",
+            )
             self.subscribe_option_greeks(
-                inst.id,
+                instrument.id,
                 client_id=client_id,
                 params={"greeks_convention": ["BLACK_SCHOLES", "PRICE_ADJUSTED"]},
             )
-            self._subscribed_ids.append(inst.id)
+            self._subscribed_ids.append(instrument.id)
 
-        self.log.info(f"Subscribed to {len(self._subscribed_ids)} option greeks streams")
+        self.log.info(f"Subscribed to {len(self._subscribed_ids)} option Greeks streams")
 
-    def on_option_greeks(self, greeks) -> None:
+    def on_option_greeks(self, greeks: OptionGreeks) -> None:
         self.log.info(
             f"GREEKS {greeks.instrument_id}: "
             f"convention={greeks.convention} "
@@ -122,40 +130,46 @@ class OptionGreeksTester(Actor):
         )
 
     def on_stop(self) -> None:
-        client_id = ClientId(OKX)
+        client_id = ClientId.from_str(OKX)
+
         for instrument_id in self._subscribed_ids:
             self.unsubscribe_option_greeks(instrument_id, client_id=client_id)
-        self.log.info("Unsubscribed from all option greeks")
+
+        self.log.info("Unsubscribed from all option Greeks")
 
 
-config_node = TradingNodeConfig(
-    trader_id=TraderId("GREEKS-001"),
-    logging=LoggingConfig(
-        log_level="INFO",
-        use_pyo3=True,
-    ),
-    data_clients={
-        OKX: OKXDataClientConfig(
-            environment=OKXEnvironment.DEMO,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            instrument_types=(OKXInstrumentType.OPTION,),
-            instrument_families=("BTC-USD",),
+def main() -> None:
+    node = (
+        LiveNode.builder(
+            "OKX-OPTION-GREEKS-001",
+            TRADER_ID,
+            Environment.LIVE,
+        )
+        .add_data_client(
+            None,
+            OKXDataClientFactory(),
+            OKXDataClientConfig(
+                instrument_types=[OKXInstrumentType.OPTION],
+                instrument_families=INSTRUMENT_FAMILIES,
+                environment=OKX_ENVIRONMENT,
+            ),
+        )
+        .build()
+    )
+    node.add_actor_from_config(
+        ImportableActorConfig(
+            actor_path="okx_option_greeks:OptionGreeksTester",
+            config_path="okx_option_greeks:OptionGreeksTesterConfig",
+            config={
+                "actor_id": "OKX-OPTION-GREEKS-001",
+                "underlying": UNDERLYING,
+                "max_subscriptions": MAX_SUBSCRIPTIONS,
+            },
         ),
-    },
-    timeout_connection=30.0,
-    timeout_reconciliation=10.0,
-    timeout_portfolio=10.0,
-    timeout_disconnection=10.0,
-    timeout_post_stop=2.0,
-)
+    )
 
-node = TradingNode(config=config_node)
-node.trader.add_actor(OptionGreeksTester(OptionGreeksTesterConfig()))
-
-node.add_data_client_factory(OKX, OKXLiveDataClientFactory)
-node.build()
-
-try:
     node.run()
-finally:
-    node.dispose()
+
+
+if __name__ == "__main__":
+    main()

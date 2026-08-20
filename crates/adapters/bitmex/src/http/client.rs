@@ -31,8 +31,8 @@ use std::{
     },
 };
 
-use chrono::{DateTime, Timelike, Utc};
 use dashmap::DashMap;
+use jiff::{Timestamp, tz::Offset};
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, UnixNanos,
@@ -58,7 +58,7 @@ use nautilus_model::{
 use nautilus_network::{
     http::{HttpClient, Method, StatusCode, USER_AGENT},
     ratelimiter::quota::Quota,
-    retry::{RetryConfig, RetryManager},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -367,7 +367,7 @@ impl BitmexRawHttpClient {
             .as_ref()
             .ok_or(BitmexHttpError::MissingCredentials)?;
 
-        let expires = Utc::now().timestamp() + (self.recv_window_ms / 1000) as i64;
+        let expires = Timestamp::now().as_second() + (self.recv_window_ms / 1000) as i64;
         let body_str = body.and_then(|b| std::str::from_utf8(b).ok()).unwrap_or("");
 
         let full_path = if endpoint.starts_with("/api/v1") {
@@ -497,11 +497,12 @@ impl BitmexRawHttpClient {
             }
         };
 
-        let create_error = |msg: String| -> BitmexHttpError {
-            if msg == "canceled" {
-                BitmexHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
-            } else {
-                BitmexHttpError::NetworkError(msg)
+        let create_error = |error: RetryError| -> BitmexHttpError {
+            match error {
+                RetryError::Canceled => {
+                    BitmexHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
+                }
+                error => BitmexHttpError::NetworkError(error.to_string()),
             }
         };
 
@@ -880,7 +881,7 @@ impl BitmexRawHttpClient {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.bitmex", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1561,11 +1562,11 @@ impl BitmexHttpClient {
         let account_id = account_id_from_margins(&margins)?.unwrap_or(fallback_account_id);
 
         let ts_init =
-            UnixNanos::from(chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default() as u64);
+            UnixNanos::from(u64::try_from(Timestamp::now().as_nanosecond()).unwrap_or_default());
 
         let mut balances = Vec::with_capacity(margins.len());
         let mut margins_vec = Vec::new();
-        let mut latest_timestamp: Option<chrono::DateTime<chrono::Utc>> = None;
+        let mut latest_timestamp: Option<Timestamp> = None;
 
         for margin in margins {
             if let Some(ts) = margin.timestamp {
@@ -1598,7 +1599,7 @@ impl BitmexHttpClient {
                 withdrawable_margin: margin.withdrawable_margin,
                 maker_fee_discount: None,
                 taker_fee_discount: None,
-                timestamp: margin.timestamp.unwrap_or_else(chrono::Utc::now),
+                timestamp: margin.timestamp.unwrap_or_else(Timestamp::now),
                 foreign_margin_balance: None,
                 foreign_requirement: None,
             };
@@ -1635,7 +1636,7 @@ impl BitmexHttpClient {
 
         // Use server timestamp if available, otherwise fall back to local time
         let ts_event = latest_timestamp.map_or(ts_init, |ts| {
-            UnixNanos::from(ts.timestamp_nanos_opt().unwrap_or_default() as u64)
+            UnixNanos::from(u64::try_from(ts.as_nanosecond()).unwrap_or_default())
         });
 
         Ok(AccountState::new(
@@ -2144,8 +2145,8 @@ impl BitmexHttpClient {
         &self,
         instrument_id: Option<InstrumentId>,
         open_only: bool,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         if let (Some(start), Some(end)) = (start, end) {
@@ -2244,8 +2245,8 @@ impl BitmexHttpClient {
     pub async fn request_trades(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         let mut params = GetTradeParamsBuilder::default();
@@ -2323,8 +2324,8 @@ impl BitmexHttpClient {
     pub async fn request_bars(
         &self,
         mut bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
         partial: bool,
     ) -> anyhow::Result<Vec<Bar>> {
@@ -2471,8 +2472,8 @@ impl BitmexHttpClient {
     pub async fn request_funding_rates(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FundingRateUpdate>> {
         if let (Some(start), Some(end)) = (start, end) {
@@ -2573,8 +2574,8 @@ impl BitmexHttpClient {
     pub async fn request_fill_reports(
         &self,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FillReport>> {
         if let (Some(start), Some(end)) = (start, end) {
@@ -2845,8 +2846,10 @@ fn parse_funding_rate_update(
     };
 
     let interval = raw.funding_interval.map(|interval| {
-        let minutes = interval.hour() * 60 + interval.minute();
-        minutes as u16
+        let interval = Offset::UTC.to_datetime(interval);
+        let hours = u16::try_from(interval.hour()).expect("civil hour is non-negative");
+        let minutes = u16::try_from(interval.minute()).expect("civil minute is non-negative");
+        hours * 60 + minutes
     });
     let ts_event = UnixNanos::from(raw.timestamp);
 
@@ -3125,7 +3128,7 @@ mod tests {
         let expires_custom: i64 = headers_custom.get("api-expires").unwrap().parse().unwrap();
 
         // Verify both are valid future timestamps
-        let now = Utc::now().timestamp();
+        let now = Timestamp::now().as_second();
         assert!(expires_default > now);
         assert!(expires_custom > now);
 

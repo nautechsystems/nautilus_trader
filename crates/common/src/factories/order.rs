@@ -2844,5 +2844,7 @@ pub mod tests {
         );
         assert_eq!(orders[0].order_list_id(), Some(order_list.id));
         assert_eq!(orders[1].order_list_id(), Some(order_list.id));
+        assert_eq!(orders[0].init_event().order_list_id, Some(order_list.id));
+        assert_eq!(orders[1].init_event().order_list_id, Some(order_list.id));
     }
 }

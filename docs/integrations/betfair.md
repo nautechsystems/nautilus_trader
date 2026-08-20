@@ -1,221 +1,284 @@
 # Betfair
 
-Founded in 2000, Betfair operates the world's largest online betting exchange,
-with its headquarters in London and satellite offices across the globe.
+Founded in 2000, Betfair operates the world's largest online betting exchange. This integration
+supports instrument discovery, live market data, account state, order management, and execution
+updates through the Betfair Betting, Accounts, and Exchange Streaming APIs.
 
-NautilusTrader provides an adapter for integrating with the Betfair REST API and
-Exchange Streaming API.
+The adapter is implemented in Rust and exposed to Python at `nautilus_trader.adapters.betfair`, so
+data and execution have the same behavior from either language.
+
+## Overview
+
+The adapter includes several components, which can be used separately or together:
+
+- `BetfairHttpClient`: Low‑level Betting and Accounts API connectivity.
+- `BetfairStreamClient`: Low‑level Exchange Streaming API connectivity for the market and order streams.
+- `BetfairRaceStreamClient`: Low‑level connectivity for the race and cricket data streams.
+- `BetfairInstrumentProvider`: Loads Betfair markets and converts them into Nautilus instruments.
+- `BetfairDataClient`: Market data feed manager.
+- `BetfairExecutionClient`: Account management and bet execution gateway.
+- `BetfairDataClientFactory`: Factory for Betfair data clients.
+- `BetfairExecutionClientFactory`: Factory for Betfair execution clients.
+
+:::note
+Most users will define a configuration for a live trading node, and won't need to work directly with
+these lower-level components. The Python examples show a complete `LiveNode.builder(...)`
+configuration for data and execution clients.
+:::
 
 ## Installation
 
-Install NautilusTrader with Betfair support:
-
-```bash
-uv pip install "nautilus_trader[betfair]"
-```
-
-To build from source with Betfair extras:
-
-```bash
-uv sync --all-extras
-```
+Install NautilusTrader using the [installation guide](../getting_started/installation.md). The
+Betfair adapter is included in the Python package; no adapter‑specific extra is required.
 
 ## Examples
 
-You can find live example scripts in the [examples/live/betfair](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/betfair/) directory.
+- [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/betfair/)
+- [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/betfair/examples/)
+- [Book imbalance backtest tutorial](../tutorials/backtest_book_imbalance_betfair.md)
 
 ## Betfair documentation
 
-Betfair provides documentation for developers:
+- [Betfair Developer Program](https://developer.betfair.com/)
+- [Exchange API Guide](https://developer.betfair.com/exchange-api/)
+- [Application keys](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/pages/2687105/Application+Keys)
+- [Interactive login](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/pages/2687772/Interactive+Login+-+API+Endpoint)
 
-- [Betfair Developer Portal](https://developer.betfair.com/): Main entry point for API access and documentation.
-- [Exchange API Guide](https://developer.betfair.com/exchange-api/): Overview of the Betting, Accounts, and Streaming APIs.
+## Credentials
 
-## Application keys
+Betfair requires an application key to authenticate API requests. After registering and funding your
+account, obtain your key with the
+[API-NG Developer AppKeys Tool](https://apps.betfair.com/visualisers/api-ng-account-operations/).
+Betfair assigns two keys per account: a **Live** key, which requires a one‑time activation fee, and
+a **Delayed** key for development and testing.
 
-Betfair requires an Application Key to authenticate API requests. After registering and funding your account,
-obtain your key using the [API-NG Developer AppKeys Tool](https://apps.betfair.com/visualisers/api-ng-account-operations/).
-
-Two App Keys are assigned per account: a **Live** key (requires a one-time activation fee) and a
-**Delayed** key for development and testing.
-
-:::info
-See the [Application Keys](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/pages/2687105/Application+Keys) documentation for detailed setup instructions.
-:::
-
-## API credentials
-
-Supply your Betfair credentials via environment variables or client configuration:
+Supply the account credentials through configuration or environment variables:
 
 ```bash
 export BETFAIR_USERNAME=<your_username>
 export BETFAIR_PASSWORD=<your_password>
 export BETFAIR_APP_KEY=<your_app_key>
-export BETFAIR_CERTS_DIR=<path_to_certificate_dir>
 ```
 
-:::tip
-We recommend using environment variables to manage your credentials.
-:::
+The adapter uses Betfair's interactive login endpoint. It does not use client certificates.
 
-:::note
-Current Rust note: Rust currently reads `BETFAIR_USERNAME`, `BETFAIR_PASSWORD`, and
-`BETFAIR_APP_KEY`. It does not yet read `BETFAIR_CERTS_DIR`.
-:::
+## Timestamp policy
 
-## SSL Certificates
+The adapter keeps venue event time separate from local initialization time:
 
-Betfair recommends [non-interactive (bot) login](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/pages/2687915/Non-Interactive+bot+login)
-with SSL certificates for automated trading systems. The `certs_dir` configuration is optional,
-but certificates are recommended for production deployments.
+- `ts_event` records when Betfair says the event occurred.
+- `ts_init` records when the live adapter received the containing stream message.
 
-### Generating certificates
+Each live stream callback reads the real‑time atomic clock once, before decoding the message. Every
+output decoded from that message shares the same `ts_init`.
 
-Create a 2048-bit RSA certificate using OpenSSL:
+| Input                  | `ts_event` source                                                                                                                                                                                                     | `ts_init` source                                                              |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Market change (`mcm`)  | Message publish time (`pt`).                                                                                                                                                                                          | Local receipt time.                                                           |
+| Race change (`rcm`)    | Runner or race feed time (`ft`), falling back to the message publish time (`pt`) when `ft` is absent.                                                                                                                 | Local receipt time.                                                           |
+| Cricket change (`ccm`) | Message publish time (`pt`).                                                                                                                                                                                          | Local receipt time.                                                           |
+| Order change (`ocm`)   | The relevant order lifecycle time. Acceptance uses `pd`; fills use `md`, falling back to `pt`; status and cancel events use the latest of `md`, `cd`, or `ld`, falling back to `pt`. OCM‑level custom data uses `pt`. | Local receipt time.                                                           |
+| Historical data loader | The same feed‑time rules as live data.                                                                                                                                                                                | Message publish time (`pt`), because recorded data has no local receipt time. |
 
-```bash
-# Generate private key and certificate signing request
-openssl genrsa -out client-2048.key 2048
-openssl req -new -key client-2048.key -out client-2048.csr
-
-# Self-sign the certificate (valid for 365 days)
-openssl x509 -req -days 365 -in client-2048.csr -signkey client-2048.key -out client-2048.crt
-```
-
-### Uploading to Betfair
-
-Before using the certificate, attach it to your Betfair account:
-
-1. Navigate to [My Betfair Account Security](https://myaccount.betfair.com/accountdetails/mysecurity?showAPI=1).
-2. Scroll to **Automated Betting Program Access** and click **Edit**.
-3. Upload your `client-2048.crt` file.
-
-### Directory structure
-
-Place your certificate files in a directory and set `BETFAIR_CERTS_DIR` to that path:
-
-```
-/path/to/certs/
-├── client-2048.crt
-└── client-2048.key
-```
-
-:::info
-SSL certificates are used for the Exchange Streaming API connection. The REST API uses
-username/password authentication with your Application Key.
-:::
-
-:::warning
-Enabling 2-Step Authentication on the Betfair website does not affect API access.
-Certificate-based login remains functional regardless of 2FA settings.
-:::
-
-## Overview
-
-The Betfair adapter provides three primary components:
-
-- `BetfairInstrumentProvider`: loads Betfair markets and converts them into Nautilus instruments.
-- `BetfairDataClient`: streams real-time market data from the Exchange Streaming API.
-- `BetfairExecutionClient`: submits orders (bets) and tracks execution status via the REST API.
-
-## Implementation status
-
-NautilusTrader currently ships a stable Python Betfair adapter and an in-progress Rust parity path.
-
-This page remains the stable guide. It now calls out the main Rust differences inline. Use the
-[Betfair v2 transition guide](betfair_v2.md) for the current Rust-first behavior in
-`crates/adapters/betfair` and for the planned cutover path.
+When an OCM arrives during post‑reconnect reconciliation, the adapter buffers the message together
+with its captured `ts_init`. Draining the buffer preserves the original receipt time instead of using
+the later replay time.
 
 ## Orders capability
 
-Betfair operates as a betting exchange with unique characteristics compared to traditional financial exchanges:
+Betfair is a betting exchange, so several concepts from traditional financial venues do not apply.
 
 ### Order types
 
-| Order Type             | Supported | Notes                                                                                           |
-| ---------------------- | --------- | ----------------------------------------------------------------------------------------------- |
-| `MARKET`               | ✓*        | Python maps regular market orders to aggressive `LIMIT`; Rust supports BSP `AT_THE_CLOSE` only. |
-| `LIMIT`                | ✓         | Orders placed at specific odds.                                                                 |
-| `STOP_MARKET`          | -         | *Not supported*.                                                                                |
-| `STOP_LIMIT`           | -         | *Not supported*.                                                                                |
-| `MARKET_IF_TOUCHED`    | -         | *Not supported*.                                                                                |
-| `LIMIT_IF_TOUCHED`     | -         | *Not supported*.                                                                                |
-| `TRAILING_STOP_MARKET` | -         | *Not supported*.                                                                                |
+| Order Type             | Supported | Notes                                                             |
+| ---------------------- | --------- | ----------------------------------------------------------------- |
+| `MARKET`               | ✓*        | Supports `AT_THE_CLOSE`, which maps to Betfair `MARKET_ON_CLOSE`. |
+| `LIMIT`                | ✓         | Supports regular limit orders and BSP on‑close limit orders.      |
+| `STOP_MARKET`          | -         | Not supported.                                                    |
+| `STOP_LIMIT`           | -         | Not supported.                                                    |
+| `MARKET_IF_TOUCHED`    | -         | Not supported.                                                    |
+| `LIMIT_IF_TOUCHED`     | -         | Not supported.                                                    |
+| `TRAILING_STOP_MARKET` | -         | Not supported.                                                    |
+
+Submitting a `MARKET` order with any time in force other than `AT_THE_CLOSE` is rejected, because
+Betfair has no immediate market order.
+
+:::warning
+BSP on‑close instructions carry a **liability**, not a stake. For `MARKET_ON_CLOSE` and
+`LIMIT_ON_CLOSE` orders, the adapter sends the order quantity as the Betfair liability. Size a BSP
+order by the amount you are prepared to lose, not by the stake you want matched.
+:::
+
+### Time in force
+
+| Time in force  | Supported | Notes                                                        |
+| -------------- | --------- | ------------------------------------------------------------ |
+| `GTC`          | ✓         | Maps to Betfair `PERSIST`.                                   |
+| `DAY`          | ✓         | Maps to Betfair `LAPSE`.                                     |
+| `FOK`          | ✓         | Maps to Betfair `FILL_OR_KILL`.                              |
+| `IOC`          | ✓         | Maps to `FILL_OR_KILL` with `min_fill_size=0`.               |
+| `AT_THE_CLOSE` | ✓         | Used for Betfair BSP `LIMIT_ON_CLOSE` and `MARKET_ON_CLOSE`. |
+| `GTD`          | -         | Not supported; the expiry is ignored and maps to `LAPSE`.    |
+
+A `LIMIT` order in `AT_THE_OPEN` mode also routes to `LIMIT_ON_CLOSE`, because Betfair has no
+at‑the‑open instruction.
 
 ### Execution instructions
 
-| Instruction   | Supported | Notes                               |
-| ------------- | --------- | ----------------------------------- |
-| `post_only`   | -         | Not applicable to betting exchange. |
-| `reduce_only` | -         | Not applicable to betting exchange. |
-
-### Time in force options
-
-| Time in force | Supported | Notes                                      |
-| ------------- | --------- | ------------------------------------------ |
-| `GTC`         | ✓         | Maps to Betfair `PERSIST` persistence.     |
-| `GTD`         | -         | *Not supported*.                           |
-| `DAY`         | ✓         | Maps to Betfair `LAPSE` persistence.       |
-| `FOK`         | ✓         | Maps to Betfair `FILL_OR_KILL`.            |
-| `IOC`         | ✓         | Maps to `FILL_OR_KILL` with partial fills. |
-
-:::note
-Betfair uses a persistence model rather than traditional time-in-force. The adapter maps `FOK` to
-Betfair's `FILL_OR_KILL`, while `IOC` uses `FILL_OR_KILL` with `min_fill_size=0` to allow partial fills.
-
-The current adapters also support BSP on-close order flows. Rust only accepts `MARKET` orders in
-`AT_THE_CLOSE` mode. Rust also maps `LIMIT` orders in `AT_THE_CLOSE` or `AT_THE_OPEN` mode to
-Betfair `LIMIT_ON_CLOSE` instructions.
-:::
+| Instruction   | Supported | Notes                                 |
+| ------------- | --------- | ------------------------------------- |
+| `post_only`   | -         | Not applicable to a betting exchange. |
+| `reduce_only` | -         | Not applicable to a betting exchange. |
 
 ### Advanced order features
 
-| Feature            | Supported | Notes                                    |
-| ------------------ | --------- | ---------------------------------------- |
-| Order Modification | ✓         | Limited to non‑exposure changing fields. |
-| Bracket/OCO Orders | -         | *Not supported*.                         |
-| Iceberg Orders     | -         | *Not supported*.                         |
+| Feature            | Supported | Notes                             |
+| ------------------ | --------- | --------------------------------- |
+| Order Modification | ✓         | Price and size change separately. |
+| Bracket/OCO Orders | -         | Not supported.                    |
+| Iceberg Orders     | -         | Not supported.                    |
 
 ### Batch operations
 
-| Operation    | Supported | Notes                                                |
-| ------------ | --------- | ---------------------------------------------------- |
-| Batch Submit | ✓         | Supports `SubmitOrderList` in Python and Rust.       |
-| Batch Modify | -         | *Not supported*.                                     |
-| Batch Cancel | ✓         | Supports batched cancel requests in Python and Rust. |
+| Operation    | Supported | Notes                                    |
+| ------------ | --------- | ---------------------------------------- |
+| Batch Submit | ✓         | Implemented through `SubmitOrderList`.   |
+| Batch Modify | -         | Not supported.                           |
+| Batch Cancel | ✓         | Implemented through `BatchCancelOrders`. |
 
 ### Position management
 
-| Feature          | Supported | Notes                               |
-| ---------------- | --------- | ----------------------------------- |
-| Query positions  | -         | Betting exchange model differs.     |
-| Position mode    | -         | Not applicable to betting exchange. |
-| Leverage control | -         | No leverage in betting exchange.    |
-| Margin mode      | -         | No margin in betting exchange.      |
+| Feature          | Supported | Notes                                          |
+| ---------------- | --------- | ---------------------------------------------- |
+| Query positions  | -         | Exposure is tracked per bet, not per position. |
+| Position mode    | -         | Not applicable to a betting exchange.          |
+| Leverage control | -         | No leverage on a betting exchange.             |
+| Margin mode      | -         | No margin on a betting exchange.               |
+
+Set `position_check_interval_secs=None` on `LiveExecEngineConfig`, because Betfair reports no
+venue-side positions to check against.
 
 ### Order querying
 
-| Feature              | Supported | Notes                                |
-| -------------------- | --------- | ------------------------------------ |
-| Query open orders    | ✓         | List all active bets.                |
-| Query order history  | ✓         | Historical betting data.             |
-| Order status updates | ✓         | Real‑time bet state changes.         |
-| Trade history        | ✓         | Bet matching and settlement reports. |
+| Feature               | Supported | Notes                                              |
+| --------------------- | --------- | -------------------------------------------------- |
+| Query open orders     | ✓         | Built from `listCurrentOrders`.                    |
+| Order status updates  | ✓         | Real‑time bet state changes from the order stream. |
+| Fill reports          | ✓         | Matched sizes and prices from `listCurrentOrders`. |
+| Cleared order history | -         | The adapter does not request settlement history.   |
 
-### Contingent orders
+## Execution control flow
 
-| Feature            | Supported | Notes                      |
-| ------------------ | --------- | -------------------------- |
-| Order lists        | -         | *Not supported*.           |
-| OCO orders         | -         | *Not supported*.           |
-| Bracket orders     | -         | *Not supported*.           |
-| Conditional orders | -         | Basic bet conditions only. |
+Startup:
+
+1. Connect the HTTP client and fetch initial account funds.
+2. Seed OCM state from cached orders.
+3. Connect the Betfair execution stream and subscribe to order updates.
+4. Generate startup mass status from `listCurrentOrders`.
+5. Reconcile order and fill reports into the execution engine.
+
+On every stream reconnect, the adapter repeats the order‑and‑fill mass‑status fetch over a recent
+window. It halts new‑order submissions after transport loss or a server `connectionClosed` status
+until the latest recovery generation dispatches its mass status.
+
+For the full transition sequence, see
+[post‑reconnect reconciliation](#post-reconnect-reconciliation).
+
+Reconciliation behavior:
+
+- `stream_market_ids_filter` filters live OCM updates.
+- Reconciliation uses `reconcile_market_ids` only when `reconcile_market_ids_only=True` and
+  `reconcile_market_ids` is set.
+- In every other case, including `reconcile_market_ids_only=True` with no `reconcile_market_ids`,
+  the adapter falls back to `stream_market_ids_filter` for reconciliation scope.
+- `ignore_external_orders=True` skips OCM updates with no `rfo`.
+
+## Session management and reconnection
+
+Betfair expires session tokens, so the adapter renews them rather than waiting for a failure. It
+handles renewal and recovery through four mechanisms:
+
+| Mechanism            | Trigger                                     | Action                                                                                               |
+| -------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Periodic keep‑alive  | Every 10 hours (36,000 seconds).            | Renew the session token and update retained stream authentication without reconnecting.              |
+| Keep‑alive fallback  | Keep‑alive returns `LoginFailed`.           | Re‑login, update all active stream authentication, then request replacement stream transports.       |
+| Stream reconnect     | `Connection` message after initial connect. | Try keep‑alive. `LoginFailed` triggers full re‑login; other failures retain the existing session.    |
+| HTTP report recovery | A report query returns a session error.     | Try keep‑alive and retry once; any keep‑alive failure falls back to full re‑login before that retry. |
+
+The periodic keep‑alive tasks and data stream reconnect handler log and skip transient keep‑alive
+errors such as network timeouts and 5xx responses. The execution reconnect handler also preserves
+the existing session token, but continues report reconciliation. At the periodic or handler‑level
+keep‑alive step, only `LoginFailed` triggers full re‑login. HTTP report recovery differs: after a
+session error, any keep‑alive failure falls back to full re‑login before the report‑level retry.
+
+Both the data and execution clients use the same session‑renewal policy. Each spawns:
+
+- A **keep‑alive task** that periodically attempts renewal. An ordinary successful keep‑alive
+  updates retained authentication without replacing the transport.
+- A **reconnect handler** that listens for `Connection` messages after a stream reconnect and
+  attempts to refresh the session.
+
+After a full re‑login, the adapter updates authentication for every affected active stream before it
+requests any reconnect. Each replacement connection sends the latest authentication before retained
+subscriptions or traffic buffered during the reconnect. Market and order streams also
+retain their subscription IDs and `clk`/`initialClk` resume values.
+
+The data client applies the same update to active market, race, and cricket streams. A periodic
+keep‑alive fallback requests replacement transports immediately after updating authentication. An
+HTTP report recovery requests an execution stream replacement after the query finishes. When full
+re‑login occurs inside the execution stream reconnect handler, that handler first fetches and
+dispatches mass status, then requests a replacement execution stream. The replacement stream's
+`Connection` message starts another handler iteration; a successful keep‑alive updates retained
+authentication without requesting another replacement. This ordering prevents a reconnect loop.
+
+## Post-reconnect reconciliation
+
+After the initial handshake, a Betfair execution transport loss immediately halts new‑order
+submissions. This applies to automatic network reconnects and replacements requested after a full
+re‑login. The adapter assumes the cache may have diverged while the previous transport was
+unavailable. In particular, fills can complete and roll off the unmatched book before the
+post‑reconnect stream image arrives. The adapter therefore fetches and dispatches a mass status over
+a recent window before allowing new submissions.
+
+| Step | Trigger                                               | Action                                                                                                                                                  |
+| ---- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Transport loss or a server `connectionClosed` status. | Advances the reconciliation generation and halts new submissions immediately.                                                                           |
+| 2    | Replacement `Connection` message.                     | Advances the generation again, raises `pending_resync`, and queues that generation.                                                                     |
+| 3    | Reconnect task receives the generation.               | Attempts a session refresh, publishes authentication after a successful refresh, requests `getAccountFunds`, then queries orders and fills in sequence. |
+| 4    | Both `listCurrentOrders` queries succeed.             | Builds and dispatches `ExecutionReport::MassStatus` through the execution event channel.                                                                |
+| 5    | Recovery task finishes.                               | Requests a replacement after full re‑login. Clears the halt if mass status was dispatched and the generation is current.                                |
+
+The account‑state refresh is best effort: a request or parse failure is logged but does not prevent
+mass‑status dispatch or reopening the gate. A keep‑alive failure other than `LoginFailed` continues
+with the retained session because the report queries retain their own retry and session‑recovery
+logic. A failed full re‑login or either report query leaves the gate halted until a later reconnect
+succeeds or the client disconnects. This fail‑closed behavior also covers the interval where the
+replacement socket is active but Betfair has not sent its `Connection` message.
+
+Mass‑status dispatch is the completion boundary for the handled generation. The gate does not wait
+for a separate acknowledgement that the execution engine has applied the report to its cache.
+
+While the execution stream is unavailable or reconciliation is in progress:
+
+- `submit_order` and `submit_order_list` emit `OrderDenied` with reason
+  `STREAM_RECONCILING: execution stream unavailable or recovering, retry after recovery`.
+- `cancel_order`, `batch_cancel_orders`, and `modify_order` pass through unchanged.
+- `pending_resync` buffers OCMs received after the replacement `Connection` message. Connectivity
+  polling and command or report entry points invoke `process_pending_resync` on the engine thread,
+  which synchronizes OCM state from the cache and drains the buffer.
+
+If the client disconnects while a reconciliation is still in flight, `clear_resync_state` clears
+the active halt so a subsequent connect/submit cycle starts clean.
+
+The lookback window for the mass-status fetch is `stream_gap_recovery_lookback_mins`
+(default `10`). It should comfortably exceed the longest expected reconnect duration so
+a fill that completed mid-gap is still captured.
 
 ## Tick scheme and pricing
 
 Betfair uses a tiered tick scheme with varying increments across price ranges:
 
-| Price Range      | Tick Size |
+| Price range      | Tick size |
 | ---------------- | --------- |
 | 1.01 - 2.00      | 0.01      |
 | 2.00 - 3.00      | 0.02      |
@@ -228,84 +291,81 @@ Betfair uses a tiered tick scheme with varying increments across price ranges:
 | 50.00 - 100.00   | 5.00      |
 | 100.00 - 1000.00 | 10.00     |
 
-The minimum price is 1.01 and the maximum is 1000.00.
+Minimum price is 1.01, maximum is 1000.00.
 
 ## Order modification
 
-Order modification on Betfair has specific constraints:
+- Price and size cannot change atomically; these require separate operations.
+- Price modification uses `ReplaceOrders` (cancel + new order at new price).
+- Size reduction uses `CancelOrders` with a `size_reduction` parameter.
+- Size increase is not supported; submit a new order instead.
 
-- **Price and size cannot be changed atomically** - these require separate operations.
-- **Price modification** uses `ReplaceOrders` (cancel + new order at new price).
-- **Size reduction** uses `CancelOrders` with a `size_reduction` parameter.
-- **Size increase** is not supported - submit a new order instead.
-
-:::warning
-A replace operation generates both a cancel event for the original order and an accepted event
-for the replacement order. The adapter tracks pending replacements to suppress synthetic cancel events.
-:::
+A replace operation generates both a cancel event for the original order and an accepted
+event for the replacement. The adapter tracks pending replacements to suppress synthetic
+cancel events.
 
 ## Order stream fill handling
 
 The execution client processes order updates from the Betfair Exchange Streaming API.
 Two configuration options control how updates are filtered:
 
-- **`stream_market_ids_filter`**: Filters at the market level (early exit, silent skip).
-- **`ignore_external_orders`**: Filters at the order level. Python also uses it to control the
-  log level for full-image cache checks. Rust currently only skips OCM updates with no `rfo`.
-
-The flowchart below matches the stable Python execution path.
-
-Python keeps `stream_market_ids_filter` separate from reconciliation scope (`reconcile_market_ids_only`).
-Rust currently falls back to `stream_market_ids_filter` during reconciliation when
-`reconcile_market_ids_only=False` and no explicit `reconcile_market_ids` are configured.
+- `stream_market_ids_filter`: filters at the market level (early exit, silent skip).
+- `ignore_external_orders`: filters at the order level (skips OCM updates with no `rfo`).
 
 ```mermaid
 flowchart TD
-    A[Stream update arrives] --> B{Market in<br/>stream_market_ids_filter?}
-    B -->|No filter set| C{Instrument loaded?}
-    B -->|Yes| C
-    B -->|No| D[Skip silently]
-    C -->|No| E[Warning: Instrument not loaded]
-    C -->|Yes| F{Known order?<br/>rfo or cache}
-    F -->|Yes| G[Process order update]
-    F -->|No| H{ignore_external_orders?}
-    H -->|True| I[Debug log, skip]
-    H -->|False| J[Warning log, skip]
+    A[OCM update arrives] --> B{stream_market_ids_filter set<br/>and market not listed?}
+    B -->|Yes| C[Skip whole market, silently]
+    B -->|No| D{ignore_external_orders set<br/>and order has no rfo?}
+    D -->|Yes| E[Skip order, silently]
+    D -->|No| F[Process applicable order status,<br/>fill, or void changes]
 ```
 
-Python also applies `stream_market_ids_filter` during full-image reconciliation in
-`check_cache_against_order_image`. Rust currently reconciles through `generate_mass_status()` and
-does not yet perform the same full-image cache check.
+After both filters pass, the adapter emits only the outputs that apply to the update. Market‑level
+filtering exits before any per‑runner work, and neither filter logs a warning.
 
-When `ignore_external_orders=True`, the Python adapter skips orders and fills not found in cache:
-
-| Scenario                       | Description                                      |
-| ------------------------------ | ------------------------------------------------ |
-| Unknown order in stream update | No venue‑to‑client order ID mapping exists.      |
-| Unknown order in full image    | Order not found in cache during image sync.      |
-| Unknown fill in full image     | Fill does not match any known order during sync. |
-
-:::info
-For multi-node setups sharing a Betfair account, set both `stream_market_ids_filter` (your markets only)
-and `ignore_external_orders=True` to avoid warnings about orders managed by other nodes.
+:::warning
+If you set `stream_market_ids_filter`, ensure it includes every market you trade. Orders placed on
+markets excluded from the filter miss live fill and cancel updates from the stream.
 :::
 
 ### Fill handling
 
 The adapter handles several edge cases when processing fills from the stream:
 
-- **Incremental fills**: Betfair reports cumulative matched sizes. The adapter calculates incremental
-  fills by tracking the last known filled quantity per order.
-- **Overfill protection**: Fills that would exceed the order quantity are rejected.
-- **Deduplication**: A cache of published trade IDs prevents duplicate fill events from late messages
-  or stream reconnection replays.
-- **Race conditions**: When stream fills arrive before the HTTP order response, the adapter caches
-  the venue order ID immediately to ensure correct order matching.
-- **Network error recovery**: When an HTTP order submission fails with a network error (timeout,
-  connection reset), the order may still have been placed on the venue. The adapter leaves the
-  order in SUBMITTED status and retains the customer order reference so the stream can confirm
-  the order when it reconnects. API errors (where Betfair explicitly rejected) still reject
-  immediately.
+- **Incremental fills**: Betfair reports cumulative matched sizes. The adapter calculates
+  incremental fills by tracking the last known filled quantity per order.
+- **Overfill protection**: fills that would exceed the order quantity are rejected.
+- **Race conditions**: when stream fills arrive before the HTTP order response, the adapter
+  caches the venue order ID immediately to ensure correct order matching.
+- **Ambiguous submission recovery**: a network failure, timeout, HTTP 5xx response, or Betfair
+  `TIMEOUT` report can leave the placement outcome unknown. The adapter leaves the order in
+  `SUBMITTED` status and retains the customer order reference because the venue may have accepted
+  it. A matching OCM can confirm the order on the active stream or after a reconnect. Other
+  non‑ambiguous errors and explicit Betfair failure reports reject immediately.
+- **Gap-window fills**: a fill that completes and rolls off the unmatched book during a
+  stream disconnect is recovered by the post-reconnect mass-status reconciliation; see
+  [Post-reconnect reconciliation](#post-reconnect-reconciliation).
+
+### Voided fills
+
+Betfair can void matched bets after reporting them, for example after an integrity ruling or a VAR
+decision. The order stream carries the running total in `sv` (size voided). Voids caused by runner
+removal settle instead of streaming, so they do not reach this path.
+
+The adapter allocates each `sv` increase to locally applied fill lots newest-first and emits one
+cumulative [`OrderFillVoided`](../concepts/events/order_fill_voided.md) per affected `trade_id`. A
+first-seen snapshot seeds its cumulative void state without reversing exposure Nautilus never
+applied, so a reconnect does not double-correct. Any `sv` increase also triggers an account refresh.
+
+An `EXECUTION_COMPLETE` update with no locally applied fill lots takes the terminal path instead: one
+correction under a synthetic `VOID-{bet_id}` trade ID that carries the order to `VOIDED`. That status
+resolves only when `sv` is positive and both cancelled and lapsed quantities are zero, so a mixed
+update carrying `sc` or `sl` alongside `sv` emits no correction. Betfair voids never set
+`is_reopened`, so `VOIDED` is final.
+
+The adapter also publishes the [`BetfairOrderVoided`](#custom-data-types) custom data type carrying
+the venue's raw void detail.
 
 ## Rate limiting
 
@@ -314,13 +374,17 @@ reconciliation do not throttle order placement:
 
 | Bucket  | Default | Endpoints                                       | Configurable                     |
 | ------- | ------- | ----------------------------------------------- | -------------------------------- |
-| General | 5/s     | Account state, reconciliation, keep‑alive.      |                                  |
+| General | 5/s     | Account state, reconciliation, keep‑alive.      | `request_rate_per_second`.       |
 | Orders  | 20/s    | `placeOrders`, `replaceOrders`, `cancelOrders`. | `order_request_rate_per_second`. |
 
-Order status and fill report queries retry once on `TOO_MANY_REQUESTS` errors
-after a 1-second delay; order operations reject with the error message.
+Each Betting API call uses the general HTTP retry budget, with up to three retries by default. After
+that call returns a session or rate‑limit error, the order status and fill report paths make one
+additional report‑level attempt. A session error first tries keep‑alive and falls back to full
+re‑login after any keep‑alive failure. Full re‑login updates execution stream authentication and
+requests a replacement after the query finishes. A `TOO_MANY_REQUESTS` error waits 5 seconds before
+the report‑level retry.
 
-Betfair's actual API limits are more nuanced:
+Betfair's own API limits are more nuanced than a single request rate:
 
 | Category                 | Limit                | Notes                                                                                      |
 | ------------------------ | -------------------- | ------------------------------------------------------------------------------------------ |
@@ -328,292 +392,157 @@ Betfair's actual API limits are more nuanced:
 | Order projection queries | 3 concurrent         | `listMarketBook` (with `OrderProjection`), `listCurrentOrders`, `listMarketProfitAndLoss`. |
 | Best practice            | 5 requests/s         | Recommended for `listMarketBook` per market.                                               |
 
-:::info
-For details on rate limits, see [Why am I receiving the TOO_MANY_REQUESTS error?](https://support.developer.betfair.com/hc/en-us/articles/360000406111)
-and [Market Data Request Limits](https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Market+Data+Request+Limits).
+See [Why am I receiving the TOO_MANY_REQUESTS error?](https://support.developer.betfair.com/hc/en-us/articles/360000406111)
+for how Betfair applies these limits.
+
+## Market version price protection
+
+Betfair carries a `version` on the market definition. It changes when the market itself is
+redefined, for example when a runner is removed or the market status changes. It does not track
+ordinary price updates or matched volume. Attaching that version to an order asks Betfair to lapse
+the bet rather than match it into a market that has since been redefined.
+
+:::warning
+`use_market_version` provides no protection today. The adapter reads the market version from the
+instrument's `info` dictionary, but it constructs every Betfair instrument with `info` unset, so no
+version is ever attached to a `placeOrders` or `replaceOrders` request. Setting
+`use_market_version=True` currently changes nothing; do not rely on it for price protection.
 :::
 
 ## Custom data types
 
-The Betfair adapter provides several custom data types that flow through the market stream.
-All custom data is delivered automatically when subscribed to markets - no explicit subscription is required,
-though strategies can register handlers for specific data types.
+The adapter emits custom data through the market, order, race, and cricket streams. Market custom
+data flows automatically when subscribed to markets.
 
-### BetfairTicker
+| Type                       | Stream  | Metadata key    | Description                                        |
+| -------------------------- | ------- | --------------- | -------------------------------------------------- |
+| `BetfairTicker`            | Market  | `instrument_id` | Last traded price, traded volume, BSP indicators.  |
+| `BetfairStartingPrice`     | Market  | `instrument_id` | Realized BSP after market close.                   |
+| `BetfairBspBookDelta`      | Market  | `instrument_id` | BSP projected book updates.                        |
+| `BetfairSequenceCompleted` | Market  |                 | Marks end of a market change sequence.             |
+| `BetfairOrderVoided`       | Order   | `instrument_id` | Voided order details (size voided, price, side).   |
+| `BetfairRaceRunnerData`    | Race    | `selection_id`  | Live GPS tracking per runner (TPD).                |
+| `BetfairRaceProgress`      | Race    | `race_id`       | Sectional times, running order, jump data.         |
+| `BetfairCricketMatch`      | Cricket | `event_id`      | Fixture, team, match statistic, and incident data. |
 
-Real-time ticker data for a betting selection.
-
-| Field                 | Type  | Description                     |
-| --------------------- | ----- | ------------------------------- |
-| `instrument_id`       | str   | Nautilus instrument identifier. |
-| `last_traded_price`   | float | Last matched price (odds).      |
-| `traded_volume`       | float | Total matched volume.           |
-| `starting_price_near` | float | Near‑side BSP indicator.        |
-| `starting_price_far`  | float | Far‑side BSP indicator.         |
-
-### BetfairStartingPrice
-
-The realized Betfair Starting Price (BSP) after market close.
-
-| Field           | Type  | Description                     |
-| --------------- | ----- | ------------------------------- |
-| `instrument_id` | str   | Nautilus instrument identifier. |
-| `bsp`           | float | Final starting price (odds).    |
-
-### BetfairRaceRunnerData
-
-Live GPS tracking data for individual horses (Total Performance Data).
-Available for supported UK and Irish races.
-
-| Field              | Type  | Description                             |
-| ------------------ | ----- | --------------------------------------- |
-| `race_id`          | str   | Betfair race identifier.                |
-| `market_id`        | str   | Betfair market identifier.              |
-| `selection_id`     | int   | Betfair selection (runner) identifier.  |
-| `latitude`         | float | GPS latitude.                           |
-| `longitude`        | float | GPS longitude.                          |
-| `speed`            | float | Current speed in m/s (Doppler‑derived). |
-| `progress`         | float | Distance to finish line in meters.      |
-| `stride_frequency` | float | Stride frequency in Hz.                 |
-
-### BetfairRaceProgress
-
-Race summary data with sectional times and running order.
-
-| Field            | Type       | Description                                   |
-| ---------------- | ---------- | --------------------------------------------- |
-| `race_id`        | str        | Betfair race identifier.                      |
-| `market_id`      | str        | Betfair market identifier.                    |
-| `gate_name`      | str        | Timing gate (e.g., "1f", "2f", "Finish").     |
-| `sectional_time` | float      | Time for this section in seconds.             |
-| `running_time`   | float      | Total time since race start in seconds.       |
-| `speed`          | float      | Lead horse speed in m/s.                      |
-| `progress`       | float      | Lead horse distance to finish in meters.      |
-| `order`          | list[int]  | Selection IDs in current race position order. |
-| `jumps`          | list[dict] | Jump obstacle data for National Hunt races.   |
-
-### Subscribing to custom data
-
-Custom data flows automatically through the Betfair market stream when you subscribe to markets.
-To receive custom data in your strategy or actor, register a handler with the Betfair client ID:
+Subscribe by type name from an actor or strategy. Every type in the table above carries its metadata
+key on the published topic, so the subscription must supply that key and the value it is scoped to.
+`BetfairSequenceCompleted` is the exception: it publishes without metadata, so it is subscribed by
+type name alone.
 
 ```python
-from nautilus_trader.adapters.betfair.constants import BETFAIR_CLIENT_ID
-from nautilus_trader.adapters.betfair.data_types import BetfairRaceRunnerData
-from nautilus_trader.adapters.betfair.data_types import BetfairRaceProgress
-from nautilus_trader.adapters.betfair.data_types import BetfairTicker
-from nautilus_trader.model.data import DataType
+from nautilus_trader.model import DataType
 
+# One runner's GPS data
+self.subscribe_data(DataType("BetfairRaceRunnerData", metadata={"selection_id": 49411491}))
 
-class MyStrategy(Strategy):
-    def on_start(self):
-        # Subscribe to ticker data
-        self.subscribe_data(DataType(BetfairTicker), client_id=BETFAIR_CLIENT_ID)
+# One race's progress
+self.subscribe_data(DataType("BetfairRaceProgress", metadata={"race_id": "35278018.1617"}))
 
-        # Subscribe to ALL race runner data (wildcard)
-        self.subscribe_data(DataType(BetfairRaceRunnerData), client_id=BETFAIR_CLIENT_ID)
-
-        # Or subscribe to a specific runner by selection_id
-        self.subscribe_data(
-            DataType(BetfairRaceRunnerData, metadata={"selection_id": 49411491}),
-            client_id=BETFAIR_CLIENT_ID,
-        )
-
-        # Subscribe to ALL race progress updates (wildcard)
-        self.subscribe_data(DataType(BetfairRaceProgress), client_id=BETFAIR_CLIENT_ID)
-
-        # Or subscribe to a specific race by race_id
-        self.subscribe_data(
-            DataType(BetfairRaceProgress, metadata={"race_id": "35278018.1617"}),
-            client_id=BETFAIR_CLIENT_ID,
-        )
-
-    def on_data(self, data):
-        if isinstance(data, BetfairRaceRunnerData):
-            self.log.info(
-                f"Runner {data.selection_id}: speed={data.speed} m/s, "
-                f"progress={data.progress}m to finish"
-            )
-        elif isinstance(data, BetfairRaceProgress):
-            self.log.info(f"Race order: {data.order}")
-        elif isinstance(data, BetfairTicker):
-            self.log.info(f"LTP: {data.last_traded_price}")
+# Sequence markers carry no metadata
+self.subscribe_data(DataType("BetfairSequenceCompleted"))
 ```
 
-:::info
-Subscribing with `DataType(BetfairRaceRunnerData)` (no metadata) receives data for
-**all** runners. Adding `metadata={"selection_id": <id>}` filters to a specific runner.
-Similarly, `DataType(BetfairRaceProgress)` receives progress for all races, while
-`metadata={"race_id": <id>}` filters to a specific race.
+Race data requires Total Performance Data (TPD) coverage and a Betfair API key with TPD
+access. Enable with `subscribe_race_data=True`. Not every race has GPS tracking. Cricket data
+requires `subscribe_cricket_data=True`.
 
-Race data (RCM messages) requires Total Performance Data (TPD) coverage and a Betfair
-API key with TPD access. Not all races have GPS tracking enabled.
-:::
+## Historical data
 
-### Loading race data from files
+`BetfairDataLoader` converts recorded Betfair stream files into instruments, order book deltas,
+trade ticks, and instrument status and close events, along with the market, race, and cricket custom
+data types above. Files hold newline-delimited JSON, either plain or compressed with gzip (`.gz`) or
+bzip2 (`.bz2`). The loader parses `mcm`, `rcm`, and `ccm` messages and skips the rest, so it produces
+no `BetfairOrderVoided` because that type comes from the order stream. Use `load_instruments` when
+only the instrument definitions are needed, because it skips all other parsing.
 
-For backtesting with recorded race data, use the file parser:
-
-```python
-from nautilus_trader.adapters.betfair.parsing.core import parse_betfair_rcm_file
-
-for data in parse_betfair_rcm_file("path/to/rcm_data.json"):
-    if isinstance(data, BetfairRaceRunnerData):
-        print(f"Runner {data.selection_id} at {data.latitude}, {data.longitude}")
-```
-
-## Configuration
-
-### Data client configuration options
-
-| Option                    | Default  | Description                                                                      |
-| ------------------------- | -------- | -------------------------------------------------------------------------------- |
-| `account_currency`        | Required | Betfair account currency for data and price feeds.                               |
-| `username`                | `None`   | Betfair account username; taken from environment when omitted.                   |
-| `password`                | `None`   | Betfair account password; taken from environment when omitted.                   |
-| `app_key`                 | `None`   | Betfair application key used for API authentication.                             |
-| `certs_dir`               | `None`   | Directory containing Betfair SSL certificates for login.                         |
-| `instrument_config`       | `None`   | Optional `BetfairInstrumentProviderConfig` to scope available markets.           |
-| `subscription_delay_secs` | `3`      | Delay (seconds) before initial market subscription request is sent.              |
-| `keep_alive_secs`         | `36,000` | Keep‑alive interval (seconds) for the Betfair session.                           |
-| `subscribe_race_data`     | `False`  | When `True`, subscribe to Race Change Messages (RCM) for live GPS tracking data. |
-| `stream_conflate_ms`      | `None`   | Explicit stream conflation interval in milliseconds (`0` disables conflation).   |
-| `stream_heartbeat_ms`     | `5,000`  | Stream heartbeat interval in milliseconds (500-5000). `None` to omit.            |
-| `proxy_url`               | `None`   | Optional proxy URL for HTTP requests.                                            |
-
-:::warning
-When `stream_conflate_ms` is `None`, Betfair applies its default conflation behavior (typically enabled).
-Set `stream_conflate_ms=0` explicitly to guarantee no conflation and receive every price update.
-:::
-
-:::note
-Current Rust differences:
-
-- Rust does not yet expose `certs_dir`.
-- Rust does not use `instrument_config`; it scopes instruments with direct filter fields on `BetfairDataConfig`.
-- Rust uses a fixed 36,000 second keep-alive interval.
-- Rust currently requires `stream_heartbeat_ms`; it does not accept `None` to omit the heartbeat.
-
-:::
-
-### Execution client configuration options
-
-| Option                          | Default  | Description                                                                                     |
-| ------------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
-| `account_currency`              | Required | Betfair account currency for order placement and balances.                                      |
-| `username`                      | `None`   | Betfair account username; taken from environment when omitted.                                  |
-| `password`                      | `None`   | Betfair account password; taken from environment when omitted.                                  |
-| `app_key`                       | `None`   | Betfair application key used for API authentication.                                            |
-| `certs_dir`                     | `None`   | Directory containing Betfair SSL certificates for login.                                        |
-| `instrument_config`             | `None`   | Optional `BetfairInstrumentProviderConfig` to scope reconciliation.                             |
-| `calculate_account_state`       | `True`   | Calculate account state locally from events when `True`.                                        |
-| `request_account_state_secs`    | `300`    | Interval (seconds) to poll Betfair for account state (`0` disables).                            |
-| `reconcile_market_ids_only`     | `False`  | When `True`, reconciliation only covers `instrument_config.market_ids` (no effect if unset).    |
-| `reconcile_market_ids`          | `None`   | Rust only. Explicit market IDs to use for reconciliation when `reconcile_market_ids_only=True`. |
-| `stream_market_ids_filter`      | `None`   | List of market IDs to process from stream; others are silently skipped.                         |
-| `ignore_external_orders`        | `False`  | When `True`, ignore stream orders missing from the local cache.                                 |
-| `use_market_version`            | `False`  | When `True`, attach the latest market version to order requests for price protection.           |
-| `order_request_rate_per_second` | `20`     | Rate limit (requests/second) for order endpoints, separate from general API endpoints.          |
-| `stream_heartbeat_ms`           | `5,000`  | Order stream heartbeat interval in milliseconds (500-5000). `None` to omit.                     |
-| `proxy_url`                     | `None`   | Optional proxy URL for HTTP requests.                                                           |
-
-:::warning
-If you set `stream_market_ids_filter`, ensure it includes all markets you trade. Orders placed on
-markets excluded from this filter will miss live fill and cancel updates from the stream.
-:::
-
-:::note
-Current Rust differences:
-
-- Rust does not yet expose `certs_dir` or `instrument_config`.
-- Rust uses `calculate_account_state` as the gate for periodic account-state polling.
-- Rust uses `reconcile_market_ids` when `reconcile_market_ids_only=True`.
-- If `reconcile_market_ids_only=False`, Rust currently falls back to `stream_market_ids_filter`
-  for startup reconciliation when `reconcile_market_ids` is unset.
-- Rust currently applies `ignore_external_orders` only to OCM updates with no `rfo`.
-- Rust currently requires `stream_heartbeat_ms`; it does not accept `None` to omit the heartbeat.
-
-:::
-
-## Session management
-
-Betfair sessions typically expire every 12-24 hours. The adapter automatically handles session
-reconnection when `NO_SESSION` or `INVALID_SESSION_INFORMATION` errors occur:
-
-- The HTTP client reconnects and obtains a new session token.
-- The streaming client re-authenticates and resubscribes to markets.
-- The keep-alive mechanism proactively extends sessions. Python exposes `keep_alive_secs`. Rust
-  currently uses a fixed 10-hour interval.
-
-:::info
-Session errors during account state polling or keep-alive trigger automatic reconnection.
-No manual intervention is required for normal session expiry.
-:::
-
-## Market version price protection
-
-Betfair markets have a `version` number that increments whenever the market book changes
-(e.g., a new price level appears, a bet is matched). The adapter can attach this version
-to `placeOrders` and `replaceOrders` requests, providing price protection against stale orders.
-
-When `use_market_version=True`, each order request includes the market version last seen
-by the adapter. If the market has advanced beyond that version by the time Betfair processes
-the order, Betfair **lapses** the bet rather than matching it against a changed book.
-
-```python
-from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
-
-exec_config = BetfairExecClientConfig(
-    account_currency="GBP",
-    use_market_version=True,
-)
-```
-
-The adapter reads the market version from the instrument's `info` dictionary, which
-the Exchange Streaming API's `MarketDefinition` updates populate. This means:
-
-- The version reflects the most recent stream update, not the HTTP API snapshot.
-- There is inherent latency between a market change and the adapter receiving the updated version.
-- Orders submitted before the first stream `MarketDefinition` is received will not include a version.
-
-:::warning
-Market version protection is conservative. In fast-moving markets, the version may advance
-between your order signal and submission, causing the bet to lapse even though the price
-is still acceptable. Consider this trade-off between protection and fill rate.
-:::
+Trade ticks are derived from cumulative traded volumes, so the loader keeps that state across lines
+within a file. Call `reset` before loading an unrelated file to clear cached volumes and instruments.
+See the
+[Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/betfair/examples/)
+for loading a file and running it through a backtest.
 
 ## Multi-node deployment
 
-When multiple trading nodes share a single Betfair account across different markets, configure
-each node to avoid interference:
+When multiple trading nodes share a single Betfair account across different markets:
 
 1. Set `stream_market_ids_filter` to include only that node's markets.
-2. Set `ignore_external_orders=True` to suppress warnings about orders from other nodes.
-3. Set `reconcile_market_ids_only=True` to limit reconciliation scope.
+2. Set `reconcile_market_ids_only=True` with `reconcile_market_ids` to limit reconciliation scope.
+3. Set `ignore_external_orders=True` to drop bets placed outside NautilusTrader.
 
-This prevents warning spam and ensures each node processes only its own orders and fills.
+Market isolation between nodes comes from `stream_market_ids_filter` and the reconciliation scope,
+not from `ignore_external_orders`. Every bet this adapter submits carries a customer order
+reference, so another node's bets pass that filter; only bets with no reference, such as those
+placed on the Betfair site, are dropped. Without the market filters, each node reconciles and
+reports the whole account.
 
-Here is a minimal example showing how to configure a live `TradingNode` with Betfair clients:
+## Configuration
 
-```python
-from nautilus_trader.adapters.betfair import BETFAIR
-from nautilus_trader.adapters.betfair import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair import BetfairLiveExecClientFactory
-from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.live.node import TradingNode
+### Data client configuration
 
-# Configure Betfair data and execution clients (using AUD account currency)
-config = TradingNodeConfig(
-    data_clients={BETFAIR: {"account_currency": "AUD"}},
-    exec_clients={BETFAIR: {"account_currency": "AUD"}},
-)
+| Option                              | Default  | Notes                                       |
+| ----------------------------------- | -------- | ------------------------------------------- |
+| `account_currency`                  | `GBP`    | Betfair account currency.                   |
+| `username`                          | `None`   | Falls back to `BETFAIR_USERNAME`.           |
+| `password`                          | `None`   | Falls back to `BETFAIR_PASSWORD`.           |
+| `app_key`                           | `None`   | Falls back to `BETFAIR_APP_KEY`.            |
+| `proxy_url`                         | `None`   | Optional proxy URL for HTTP requests.       |
+| `request_rate_per_second`           | `5`      | General HTTP rate limit.                    |
+| `default_min_notional`              | `None`   | Optional minimum notional override.         |
+| `event_type_ids`                    | `None`   | Optional navigation filter.                 |
+| `event_type_names`                  | `None`   | Optional navigation filter.                 |
+| `event_ids`                         | `None`   | Optional navigation filter.                 |
+| `country_codes`                     | `None`   | Optional navigation filter.                 |
+| `market_types`                      | `None`   | Optional navigation filter.                 |
+| `market_ids`                        | `None`   | Optional navigation filter.                 |
+| `min_market_start_time`             | `None`   | Optional navigation filter.                 |
+| `max_market_start_time`             | `None`   | Optional navigation filter.                 |
+| `stream_host`                       | `None`   | Optional stream host override.              |
+| `stream_port`                       | `None`   | Optional stream port override.              |
+| `stream_heartbeat_secs`             | `5`      | Interval between stream heartbeats.         |
+| `stream_heartbeat_timeout_secs`     | `60`     | Dead‑peer timeout before reconnect.         |
+| `stream_reconnect_delay_initial_ms` | `2,000`  | Initial reconnect delay.                    |
+| `stream_reconnect_delay_max_ms`     | `30,000` | Maximum reconnect delay.                    |
+| `stream_use_tls`                    | `True`   | Use TLS for the stream connection.          |
+| `stream_conflate_ms`                | `None`   | Explicit conflation setting.                |
+| `subscription_delay_secs`           | `3`      | Delay before the first market subscription. |
+| `subscribe_race_data`               | `False`  | Subscribe to RCM updates.                   |
+| `subscribe_cricket_data`            | `False`  | Subscribe to cricket CCM updates.           |
 
-# Build the TradingNode with Betfair adapter factories
-node = TradingNode(config)
-node.add_data_client_factory(BETFAIR, BetfairLiveDataClientFactory)
-node.add_exec_client_factory(BETFAIR, BetfairLiveExecClientFactory)
-node.build()
-```
+:::warning
+When `stream_conflate_ms` is `None`, the adapter omits `conflateMs` from the subscription and leaves
+the conflation rate to Betfair. Set `stream_conflate_ms=0` to request no conflation explicitly and
+receive every price update.
+:::
+
+### Execution client configuration
+
+| Option                              | Default       | Notes                                                              |
+| ----------------------------------- | ------------- | ------------------------------------------------------------------ |
+| `trader_id`                         | `TRADER-001`  | Trader ID for the client core.                                     |
+| `account_id`                        | `BETFAIR-001` | Account ID for the client core.                                    |
+| `account_currency`                  | `GBP`         | Betfair account currency.                                          |
+| `username`                          | `None`        | Falls back to `BETFAIR_USERNAME`.                                  |
+| `password`                          | `None`        | Falls back to `BETFAIR_PASSWORD`.                                  |
+| `app_key`                           | `None`        | Falls back to `BETFAIR_APP_KEY`.                                   |
+| `proxy_url`                         | `None`        | Optional proxy URL for HTTP requests.                              |
+| `request_rate_per_second`           | `5`           | General HTTP rate limit.                                           |
+| `order_request_rate_per_second`     | `20`          | Order endpoint rate limit.                                         |
+| `stream_host`                       | `None`        | Optional stream host override.                                     |
+| `stream_port`                       | `None`        | Optional stream port override.                                     |
+| `stream_heartbeat_secs`             | `5`           | Interval between stream heartbeats.                                |
+| `stream_heartbeat_timeout_secs`     | `60`          | Dead‑peer timeout before reconnect.                                |
+| `stream_reconnect_delay_initial_ms` | `2,000`       | Initial reconnect delay.                                           |
+| `stream_reconnect_delay_max_ms`     | `30,000`      | Maximum reconnect delay.                                           |
+| `stream_use_tls`                    | `True`        | Use TLS for the stream connection.                                 |
+| `stream_market_ids_filter`          | `None`        | Optional live OCM market filter.                                   |
+| `ignore_external_orders`            | `False`       | Only skips OCM updates with no `rfo`.                              |
+| `calculate_account_state`           | `True`        | Enables periodic account state polling.                            |
+| `request_account_state_secs`        | `300`         | Poll interval for account funds (`0` disables).                    |
+| `reconcile_market_ids_only`         | `False`       | When `True`, use `reconcile_market_ids`.                           |
+| `reconcile_market_ids`              | `None`        | Explicit startup reconciliation market IDs.                        |
+| `use_market_version`                | `False`       | Attach market version to orders; currently has no effect.          |
+| `stream_gap_recovery_lookback_mins` | `10`          | Lookback window for the post‑reconnect mass‑status reconciliation. |
 
 ## Contributing
 

@@ -92,8 +92,8 @@ pub fn parse_futures_ws_trade_tick(
         .context("Failed to construct trade Quantity")?;
 
     let aggressor = match trade.side {
-        KrakenOrderSide::Buy => AggressorSide::Buyer,
-        KrakenOrderSide::Sell => AggressorSide::Seller,
+        KrakenOrderSide::Buy => AggressorSide::Buy,
+        KrakenOrderSide::Sell => AggressorSide::Sell,
     };
 
     let trade_id = trade
@@ -508,7 +508,7 @@ mod tests {
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.price, Price::from("34969.5"));
         assert_eq!(tick.size, Quantity::from("15000.0"));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
     }
 
     #[rstest]

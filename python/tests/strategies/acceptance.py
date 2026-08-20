@@ -521,7 +521,7 @@ class _EMACrossTrailingWorkflow(Strategy):
         self._update_indicators(bar)
         if not self._indicators_ready():
             return
-        if not self.portfolio.is_flat(self._instrument_id):
+        if not self.portfolio.is_net_flat(self._instrument_id):
             return
         if self.entry is not None and not self.entry.is_closed():
             return

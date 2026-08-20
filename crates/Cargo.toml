@@ -12,7 +12,6 @@ keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
-publish = false # First crates.io publish is manual before Trusted Publishing
 
 [lints]
 workspace = true

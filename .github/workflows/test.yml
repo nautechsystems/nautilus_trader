@@ -1,0 +1,277 @@
+name: test
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  push:
+    branches:
+      - test
+
+concurrency:
+  group: ${{ format('{0}-{1}', github.workflow, github.sha) }}
+  cancel-in-progress: false
+
+jobs:
+  test-scripts:
+    name: script tests
+    runs-on: [self-hosted, Linux, X64, build]
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install ripgrep
+        run: |
+          sudo apt-get update -o Acquire::Retries=5
+          sudo apt-get install -y ripgrep -o Acquire::Retries=5
+
+      - name: Check GitHub Action pins
+        run: make check-github-action-pins
+
+      - name: Check Docker toolchain pins
+        run: make check-docker-toolchain-pins
+
+      - name: Get Rust toolchain version
+        run: echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
+
+      - name: Set up Rust toolchain
+        # https://github.com/actions-rust-lang/setup-rust-toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          toolchain: ${{ env.TOOLCHAIN }}
+          cache: false
+          override: true
+
+      - name: Check jiff features
+        run: make check-jiff-features
+
+      - name: Run script tests
+        run: make test-scripts
+
+  pre-commit:
+    name: pre-commit
+    needs: test-scripts
+    runs-on: [self-hosted, Linux, X64, build]
+    env:
+      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/test-pre-commit
+      CARGO_CI_PROFILE: nextest
+      CHANGED_BASE_SHA: ${{ github.event.before }}
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          # Full history so changed-file scripts can resolve CHANGED_BASE_SHA.
+          fetch-depth: 0
+
+      - name: Verify immutable CI inputs (post-checkout)
+        run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.14"
+          free-disk-space: "true"
+          build-type: "pre-commit"
+          rust-cache-enabled: "false"
+
+      - name: Get lychee version
+        run: |
+          version="$(bash scripts/cargo-tool-version.sh lychee)"
+          echo "LYCHEE_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Install lychee
+        # https://github.com/taiki-e/install-action
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: lychee@${{ env.LYCHEE_VERSION }}
+        env:
+          # Ubuntu 22.04 glibc is older than Lychee's GNU binary requires
+          CARGO_BUILD_TARGET: x86_64-unknown-linux-musl
+
+      - name: Get cargo-machete version
+        run: |
+          version="$(bash scripts/cargo-tool-version.sh cargo-machete)"
+          echo "CARGO_MACHETE_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Install cargo-machete
+        # https://github.com/taiki-e/install-action
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-machete@${{ env.CARGO_MACHETE_VERSION }}
+
+      - name: Run pre-commit
+        run: prek run --all-files
+
+      - name: Verify capnp schemas are up-to-date
+        run: make check-capnp-schemas
+
+  python-tests-linux-x86:
+    name: python (Linux x86_64, Python 3.14)
+    needs:
+      - pre-commit
+      - test-scripts
+    runs-on: [self-hosted, Linux, X64, build]
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_CI_PROFILE: nextest
+      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/test-python-py3.14
+      MATURIN_PROFILE: release
+      RUST_BACKTRACE: 1
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Verify immutable CI inputs (post-checkout)
+        run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.14"
+          free-disk-space: "true"
+          rust-cache-enabled: "false"
+
+      - name: Verify immutable CI inputs (pre-wheel build)
+        run: bash scripts/ci/verify-ci-inputs.sh pre-wheel-build
+
+      - name: Build wheel
+        working-directory: python
+        run: |
+          MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
+          uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
+            maturin build --profile "$MATURIN_PROFILE" --out ../dist
+
+      - name: Run Python tests
+        working-directory: python
+        run: bash ../scripts/ci/test-wheel.bash
+
+  rust-tests-linux-x86:
+    name: rust (Linux x86_64, Python 3.14)
+    needs:
+      - pre-commit
+      - test-scripts
+    runs-on: [self-hosted, Linux, X64, build]
+    env:
+      CARGO_CI_PROFILE: nextest
+      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/test-rust-linux-x86-py3.14
+      RUST_BACKTRACE: 1
+    # yamllint disable rule:line-length
+    services:
+      redis:
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: nautilus
+        ports:
+          - 5432:5432
+        options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries
+          5
+    # yamllint enable rule:line-length
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Verify immutable CI inputs (post-checkout)
+        run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.14"
+          free-disk-space: "true"
+          rust-cache-enabled: "false"
+
+      - name: Install Nautilus CLI
+        env:
+          NAUTILUS_CLI_FORCE_SOURCE: "1"
+        run: bash scripts/ci/install-nautilus-cli.sh
+
+      - name: Init postgres schema
+        run: nautilus database init --schema ${{ github.workspace }}/schema/sql
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USERNAME: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DATABASE: nautilus
+
+      - name: Cached test data
+        uses: ./.github/actions/common-test-data
+
+      - name: Report disk space before Rust tests
+        run: bash scripts/ci/report-disk-space.bash "before Rust tests"
+
+      # Keep these commands and features aligned with rust-tests-linux-x86 in build.yml
+      - name: Run Rust doctests
+        run: >-
+          make cargo-test-doc
+          EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"
+
+      - name: Report disk space after Rust doctests
+        if: always()
+        run: bash scripts/ci/report-disk-space.bash "after Rust doctests"
+
+      - name: Run Rust tests
+        run: >-
+          make cargo-test NEXTEST_PROFILE=ci
+          EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"
+
+      - name: Report disk space after Rust tests
+        if: always()
+        run: bash scripts/ci/report-disk-space.bash "after Rust tests"

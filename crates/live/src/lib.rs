@@ -40,7 +40,6 @@
 //!
 //! - `node` (default): Enables the full live node, builder, config, and execution manager.
 //! - `plugin` (default): Keeps compatibility stubs for plug-in config validation.
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `fuzz`: Provides shared libFuzzer integration for adapter fuzz binaries.
 //! - `streaming`: Enables `persistence` dependency for streaming configuration (requires `node`).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `node` and `streaming`).
@@ -96,10 +95,6 @@
     reason = "match can be clearer than if-let-else for some reconciliation state transitions"
 )]
 #![allow(
-    clippy::redundant_closure_for_method_calls,
-    reason = "matches the Rust 1.94 ICE workaround in the workspace lint table"
-)]
-#![allow(
     clippy::too_many_lines,
     reason = "live node lifecycle and reconciliation flows exceed the default threshold by design"
 )]
@@ -107,6 +102,13 @@
     clippy::unsafe_derive_deserialize,
     reason = "config types deserialize plain field values; unsafe in unrelated impls is sound"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
+// pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
+// macro expansion; an item-level `allow` cannot reach the expansion
+#![allow(clippy::clone_on_copy)]
 
 pub mod execution;
 pub mod runner;

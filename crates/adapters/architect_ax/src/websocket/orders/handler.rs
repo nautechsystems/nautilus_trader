@@ -301,7 +301,7 @@ impl AxOrdersWsFeedHandler {
         };
 
         let payload = serde_json::to_string(msg).map_err(|e| e.to_string())?;
-        log::trace!("Sending: {payload}");
+        log::trace!("Sending WebSocket payload ({} bytes)", payload.len());
 
         inner
             .send_text(payload, None)

@@ -1122,4 +1122,55 @@ proptest! {
             events,
         );
     }
+
+    #[rstest]
+    fn prop_inferred_fill_price_and_liquidity_matches_emitted_fill(
+        order_qty in 10u64..=1_000u64,
+        fill_qty in 1u64..=9u64,
+        avg_px_units in 1u64..=100_000u64,
+    ) {
+        let inst = instrument();
+        let account_id = AccountId::from("SIM-001");
+        let voi = VenueOrderId::from("V-001");
+
+        let mut order = build_market_order(&inst, order_qty);
+        submit_accept(&mut order, account_id, voi);
+
+        let mut report = status_report_for(
+            order.client_order_id(),
+            voi,
+            inst.id(),
+            Quantity::from(order_qty),
+            Quantity::from(fill_qty),
+            OrderStatus::PartiallyFilled,
+        );
+        report.avg_px = Some(Decimal::from(avg_px_units) / dec!(10000));
+
+        let resolved = inferred_fill_price_and_liquidity(&order, &report, &inst);
+        prop_assert!(resolved.is_some());
+        let (last_px, liquidity_side) = resolved.unwrap();
+
+        // A market order is always taker liquidity, and the price carries instrument precision
+        prop_assert_eq!(liquidity_side, LiquiditySide::Taker);
+        prop_assert_eq!(last_px.precision, inst.price_precision());
+
+        let event = create_inferred_fill_for_qty(
+            &order,
+            &report,
+            &account_id,
+            &inst,
+            Quantity::from(fill_qty),
+            UnixNanos::default(),
+            None,
+        );
+        prop_assert!(event.is_some());
+        match event.unwrap() {
+            OrderEventAny::Filled(filled) => {
+                prop_assert_eq!(filled.last_px, last_px);
+                prop_assert_eq!(filled.liquidity_side, liquidity_side);
+            }
+            other => prop_assert!(false, "expected Filled, was {:?}", other),
+        }
+    }
+
 }

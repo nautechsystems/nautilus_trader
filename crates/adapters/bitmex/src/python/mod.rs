@@ -21,7 +21,6 @@ pub mod enums;
 pub mod factories;
 pub mod http;
 pub mod submitter;
-pub mod urls;
 pub mod websocket;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
@@ -87,7 +86,7 @@ fn extract_bitmex_exec_config(
     }
 }
 
-/// Loaded as `nautilus_pyo3.bitmex`.
+/// Exposed through `nautilus_trader.adapters.bitmex`.
 ///
 /// # Errors
 ///
@@ -97,8 +96,6 @@ pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(BITMEX), BITMEX)?;
     m.add(stringify!(BITMEX_CLIENT_ID), *BITMEX_CLIENT_ID)?;
     m.add(stringify!(BITMEX_VENUE), *BITMEX_VENUE)?;
-    m.add("BITMEX_HTTP_URL", crate::common::consts::BITMEX_HTTP_URL)?;
-    m.add("BITMEX_WS_URL", crate::common::consts::BITMEX_WS_URL)?;
     m.add_class::<crate::common::enums::BitmexEnvironment>()?;
     m.add_class::<crate::http::client::BitmexHttpClient>()?;
     m.add_class::<crate::broadcast::canceller::CancelBroadcaster>()?;
@@ -109,8 +106,6 @@ pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BitmexExecFactoryConfig>()?;
     m.add_class::<BitmexDataClientFactory>()?;
     m.add_class::<BitmexExecutionClientFactory>()?;
-    m.add_function(wrap_pyfunction!(urls::get_bitmex_http_base_url, m)?)?;
-    m.add_function(wrap_pyfunction!(urls::get_bitmex_ws_url, m)?)?;
 
     let registry = get_global_pyo3_registry();
 

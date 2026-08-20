@@ -15,19 +15,23 @@
 
 use std::time::Duration;
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use dashmap::DashMap;
 use nautilus_common::{
     live::get_runtime,
     msgbus::{self, TypedHandler},
 };
-use nautilus_core::AtomicSet;
+use nautilus_core::{AtomicMap, AtomicSet};
 use nautilus_model::events::PositionEvent;
 
 use super::{
     PolymarketDataClient,
     dispatch::{WsMessageContext, handle_ws_message},
-    runtime::{retire_expired_local_instruments, seed_token_meta_from_live_instruments},
+    instruments::refresh_expired_market_closure,
+    runtime::{
+        retire_closed_condition_state, retire_expired_local_instruments,
+        seed_token_meta_from_live_instruments,
+    },
 };
 use crate::{
     data_types::register_polymarket_custom_data,
@@ -69,6 +73,7 @@ impl PolymarketDataClient {
 
         seed_token_meta_from_live_instruments(
             self.clock.get_time_ns(),
+            &self.closed_condition_ids,
             &self.instruments,
             &self.token_meta,
         );
@@ -86,6 +91,7 @@ impl PolymarketDataClient {
             active_quote_subs: self.active_quote_subs.clone(),
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
+            closed_condition_ids: self.closed_condition_ids.clone(),
             resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
             pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
@@ -93,8 +99,9 @@ impl PolymarketDataClient {
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
             rtds_feed: self.rtds_feed.clone(),
             subscribe_new_markets: self.config.subscribe_new_markets,
-            drop_quotes_missing_side: self.config.drop_quotes_missing_side,
             new_market_filter: self.config.new_market_filter.clone(),
+            drop_quotes_missing_side: self.config.drop_quotes_missing_side,
+            compute_effective_deltas: self.config.compute_effective_deltas,
             cancellation_token: cancellation.clone(),
         };
 
@@ -146,6 +153,9 @@ impl PolymarketDataClient {
         let ws_open_tokens = self.ws_open_tokens.clone();
         let ws_sub_mutex = self.ws_sub_mutex.clone();
         let ws = self.ws_client.handle();
+        let closure_client = gamma_client.clone();
+        let closure_sender = self.data_sender.clone();
+        let closed_condition_ids = self.closed_condition_ids.clone();
 
         let ctx = WsMessageContext {
             clock: self.clock,
@@ -160,6 +170,7 @@ impl PolymarketDataClient {
             active_quote_subs: self.active_quote_subs.clone(),
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
+            closed_condition_ids: self.closed_condition_ids.clone(),
             resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
             pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
@@ -167,8 +178,9 @@ impl PolymarketDataClient {
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
             rtds_feed: self.rtds_feed.clone(),
             subscribe_new_markets: self.config.subscribe_new_markets,
-            drop_quotes_missing_side: self.config.drop_quotes_missing_side,
             new_market_filter: self.config.new_market_filter.clone(),
+            drop_quotes_missing_side: self.config.drop_quotes_missing_side,
+            compute_effective_deltas: self.config.compute_effective_deltas,
             cancellation_token: cancellation.clone(),
         };
 
@@ -185,12 +197,81 @@ impl PolymarketDataClient {
         let handle = get_runtime().spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut retired_condition_ids: AHashSet<String> = AHashSet::new();
 
             loop {
                 tokio::select! {
                     () = cancellation.cancelled() => break,
                     _ = interval.tick() => {
                         let now_ns = clock.get_time_ns();
+
+                        // Runs on every tick so retirement never trails closure by more than one
+                        // cycle. Without an expired instrument reported open, no request is sent.
+                        let refresh_result = tokio::select! {
+                            result = refresh_expired_market_closure(
+                                &closure_client,
+                                &instruments,
+                                &closure_sender,
+                                now_ns,
+                                &closed_condition_ids,
+                                &ws_sub_mutex,
+                                Some(&cancellation),
+                            ) => result,
+                            () = cancellation.cancelled() => break,
+                        };
+
+                        if let Err(e) = refresh_result {
+                            log::warn!("Failed to refresh Polymarket market closure state: {e}");
+                        }
+
+                        if cancellation.is_cancelled() {
+                            break;
+                        }
+
+                        // A set-wide sweep never converges and grows for the process lifetime
+                        let pending_retirement = {
+                            let terminal_conditions = closed_condition_ids
+                                .lock()
+                                .expect("closed_condition_ids mutex poisoned");
+
+                            terminal_conditions
+                                .difference(&retired_condition_ids)
+                                .cloned()
+                                .collect::<Vec<_>>()
+                        };
+
+                        for condition_id in pending_retirement {
+                            let converged = retire_closed_condition_state(
+                                &condition_id,
+                                std::iter::empty(),
+                                &closed_condition_ids,
+                                &instruments,
+                                &token_meta,
+                                &order_books,
+                                &last_quotes,
+                                &active_quote_subs,
+                                &active_delta_subs,
+                                &active_trade_subs,
+                                &watchlist,
+                                &pending_snapshot_after_tick_change,
+                                &pending_auto_loads,
+                                &ws_open_tokens,
+                                &ws_sub_mutex,
+                                &ws,
+                                Some(&cancellation),
+                            )
+                            .await;
+
+                            if cancellation.is_cancelled() {
+                                break;
+                            }
+
+                            // Watchlisted or recreated state survives a pass, so retry until clear
+                            if converged {
+                                retired_condition_ids.insert(condition_id);
+                            }
+                        }
+
                         retire_expired_local_instruments(
                             now_ns,
                             &instruments,
@@ -315,10 +396,15 @@ impl PolymarketDataClient {
             handle.abort();
         }
 
-        self.instruments.store(AHashMap::new());
-        self.token_meta.clear();
-        self.order_books.clear();
-        self.last_quotes.clear();
+        let old_closed_condition_ids = self.closed_condition_ids.clone();
+        let _generation_guard = old_closed_condition_ids
+            .lock()
+            .expect("closed_condition_ids mutex poisoned");
+
+        self.instruments = std::sync::Arc::new(AtomicMap::new());
+        self.token_meta = std::sync::Arc::new(DashMap::new());
+        self.order_books = std::sync::Arc::new(DashMap::new());
+        self.last_quotes = std::sync::Arc::new(DashMap::new());
 
         self.active_quote_subs = std::sync::Arc::new(AtomicSet::new());
         self.active_delta_subs = std::sync::Arc::new(AtomicSet::new());
@@ -326,20 +412,18 @@ impl PolymarketDataClient {
         self.pending_snapshot_after_tick_change = std::sync::Arc::new(AtomicSet::new());
         self.new_market_inflight_keys = std::sync::Arc::new(DashMap::new());
         self.ws_open_tokens = std::sync::Arc::new(AtomicSet::new());
-        self.rtds_feed = crate::rtds::PolymarketRtdsFeed::new_with_proxy(
+        self.rtds_feed = crate::rtds::PolymarketRtdsFeed::new_with_proxy_and_socket_control(
             self.config.rtds_url(),
             self.config.transport_backend,
             self.clock,
             self.data_sender.clone(),
             self.proxy_url.clone(),
+            self.rtds_socket_control.clone(),
         );
 
-        self.pending_auto_loads
-            .lock()
-            .expect("pending_auto_loads mutex poisoned")
-            .clear();
-        self.auto_load_scheduled
-            .store(false, std::sync::atomic::Ordering::Release);
+        self.pending_auto_loads = std::sync::Arc::new(std::sync::Mutex::new(AHashSet::new()));
+        self.closed_condition_ids = std::sync::Arc::new(std::sync::Mutex::new(AHashSet::new()));
+        self.auto_load_scheduled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         self.cancellation_token = tokio_util::sync::CancellationToken::new();
     }
@@ -427,7 +511,10 @@ mod tests {
         live::runner::{replace_data_event_sender, replace_exec_event_sender},
         messages::{
             DataEvent, ExecutionEvent,
-            data::{SubscribeCustomData, UnsubscribeCustomData},
+            data::{
+                SubscribeBookDeltas, SubscribeCustomData, UnsubscribeBookDeltas,
+                UnsubscribeCustomData,
+            },
         },
         testing::wait_until_async,
     };
@@ -454,7 +541,10 @@ mod tests {
     use crate::{
         common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE, WS_DEFAULT_SUBSCRIPTIONS},
         config::PolymarketDataClientConfig,
-        data::{instruments::cache_instrument, runtime::retire_local_instrument_state},
+        data::{
+            instruments::{apply_live_instrument, cache_instrument_unchecked},
+            runtime::retire_local_instrument_state,
+        },
         http::{
             clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
             gamma::PolymarketGammaHttpClient,
@@ -604,7 +694,7 @@ mod tests {
         binary.info = Some(info);
 
         let inst = InstrumentAny::BinaryOption(binary);
-        cache_instrument(&client.instruments, &client.token_meta, &inst);
+        cache_instrument_unchecked(&client.instruments, &client.token_meta, &inst);
         inst
     }
 
@@ -664,6 +754,22 @@ mod tests {
             .lock()
             .expect("pending_auto_loads mutex poisoned")
             .insert(instrument_id);
+        client.order_books.insert(
+            instrument_id,
+            OrderBook::new(instrument_id, BookType::L2_MBP),
+        );
+        client.last_quotes.insert(
+            instrument_id,
+            QuoteTick::new(
+                instrument_id,
+                Price::from("0.49"),
+                Price::from("0.51"),
+                Quantity::from("10"),
+                Quantity::from("8"),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ),
+        );
         client.auto_load_scheduled.store(true, Ordering::Release);
 
         client
@@ -677,6 +783,8 @@ mod tests {
         assert!(client.active_delta_subs.is_empty());
         assert!(client.active_trade_subs.is_empty());
         assert!(client.ws_open_tokens.is_empty());
+        assert!(client.order_books.is_empty());
+        assert!(client.last_quotes.is_empty());
         assert!(client.new_market_inflight_keys.is_empty());
         assert!(client.pending_snapshot_after_tick_change.is_empty());
         assert!(
@@ -687,6 +795,112 @@ mod tests {
                 .is_empty()
         );
         assert!(!client.auto_load_scheduled.load(Ordering::Acquire));
+    }
+
+    #[rstest]
+    #[case::disabled(false)]
+    #[case::enabled(true)]
+    fn book_delta_subscription_gates_and_cleans_local_book_state(#[case] enabled: bool) {
+        let mut client = make_client_for_reset_test();
+        client.config.compute_effective_deltas = enabled;
+        client.cancellation_token.cancel();
+        let instrument_id = InstrumentId::from("0xCOND-0xTOKEN.POLYMARKET");
+        let subscribe = || {
+            SubscribeBookDeltas::new(
+                instrument_id,
+                BookType::L2_MBP,
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                true,
+                None,
+                None,
+            )
+        };
+        let unsubscribe = || {
+            UnsubscribeBookDeltas::new(
+                instrument_id,
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )
+        };
+
+        client
+            .subscribe_book_deltas(subscribe())
+            .expect("subscribe book deltas");
+
+        assert!(client.active_delta_subs.contains(&instrument_id));
+        assert!(
+            client
+                .pending_auto_loads
+                .lock()
+                .expect("pending_auto_loads mutex poisoned")
+                .contains(&instrument_id)
+        );
+        assert_eq!(client.order_books.contains_key(&instrument_id), enabled);
+
+        if let Some(mut book) = client.order_books.get_mut(&instrument_id) {
+            book.update_count = 7;
+        }
+
+        client.active_quote_subs.insert(instrument_id);
+        client.last_quotes.insert(
+            instrument_id,
+            QuoteTick::new(
+                instrument_id,
+                Price::from("0.49"),
+                Price::from("0.51"),
+                Quantity::from("10"),
+                Quantity::from("8"),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ),
+        );
+        client
+            .unsubscribe_book_deltas(&unsubscribe())
+            .expect("unsubscribe book deltas");
+
+        assert!(!client.active_delta_subs.contains(&instrument_id));
+        assert!(!client.order_books.contains_key(&instrument_id));
+        assert!(client.last_quotes.contains_key(&instrument_id));
+        assert!(
+            client
+                .pending_auto_loads
+                .lock()
+                .expect("pending_auto_loads mutex poisoned")
+                .contains(&instrument_id)
+        );
+
+        client
+            .subscribe_book_deltas(subscribe())
+            .expect("resubscribe book deltas");
+
+        assert_eq!(client.order_books.contains_key(&instrument_id), enabled);
+        if let Some(book) = client.order_books.get(&instrument_id) {
+            assert_eq!(book.update_count, 0);
+        }
+
+        client.active_quote_subs.remove(&instrument_id);
+        client
+            .unsubscribe_book_deltas(&unsubscribe())
+            .expect("final unsubscribe book deltas");
+
+        assert!(!client.active_delta_subs.contains(&instrument_id));
+        assert!(!client.order_books.contains_key(&instrument_id));
+        assert!(!client.last_quotes.contains_key(&instrument_id));
+        assert!(
+            client
+                .pending_auto_loads
+                .lock()
+                .expect("pending_auto_loads mutex poisoned")
+                .is_empty()
+        );
     }
 
     #[rstest]
@@ -984,6 +1198,123 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn resolve_poll_task_retires_each_terminal_condition_once() {
+        let mut client = make_client_for_reset_test();
+        client.config.resolve_poll_enabled = false;
+        client.config.resolve_poll_interval_secs = 1;
+
+        // Unexpired, so only the terminal sweep can retire it
+        let expiration_ns = UnixNanos::from(u64::MAX);
+        let inst = seed_instrument(
+            &client,
+            "0xCOND-ONCE-0xTOKEN_ONCE",
+            "0xCOND-ONCE",
+            expiration_ns,
+        );
+        let instrument_id = inst.id();
+        client.active_quote_subs.insert(instrument_id);
+        client
+            .closed_condition_ids
+            .lock()
+            .unwrap()
+            .insert("0xCOND-ONCE".to_string());
+
+        client.spawn_resolve_poll_task();
+
+        wait_until_async(
+            || async { !client.instruments.load().contains_key(&instrument_id) },
+            tokio::time::Duration::from_secs(5),
+        )
+        .await;
+
+        assert!(!client.active_quote_subs.contains(&instrument_id));
+
+        // The live boundary refuses re-application, so no production path recreates this
+        let republished = apply_live_instrument(
+            &client.closed_condition_ids,
+            &client.instruments,
+            &client.token_meta,
+            &inst,
+            |_| {},
+        );
+        assert!(!republished);
+
+        // Retirement is one-shot: a later sweep must not walk the whole terminal set again
+        cache_instrument_unchecked(&client.instruments, &client.token_meta, &inst);
+        tokio::time::sleep(tokio::time::Duration::from_millis(2500)).await;
+
+        client.cancellation_token.cancel();
+        client
+            .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
+            .await;
+
+        assert!(client.instruments.load().contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resolve_poll_task_reretires_watchlisted_terminal_condition_until_settled() {
+        let mut client = make_client_for_reset_test();
+        client.config.resolve_poll_enabled = false;
+        client.config.resolve_poll_interval_secs = 1;
+
+        let expiration_ns = UnixNanos::from(u64::MAX);
+        let inst = seed_instrument(
+            &client,
+            "0xCOND-WATCH-0xTOKEN_WATCH",
+            "0xCOND-WATCH",
+            expiration_ns,
+        );
+        let instrument_id = inst.id();
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &inst,
+            PositionId::new("P-WATCH"),
+        );
+        client.active_quote_subs.insert(instrument_id);
+        client
+            .closed_condition_ids
+            .lock()
+            .unwrap()
+            .insert("0xCOND-WATCH".to_string());
+
+        client.spawn_resolve_poll_task();
+
+        // Live subscription retires, but settlement metadata is kept
+        wait_until_async(
+            || async { !client.active_quote_subs.contains(&instrument_id) },
+            tokio::time::Duration::from_secs(5),
+        )
+        .await;
+
+        assert!(client.instruments.load().contains_key(&instrument_id));
+
+        // Settlement drops the watch entry, so the next cycle must revisit the condition
+        client
+            .resolve_poll_watchlist
+            .remove(&"0xCOND-WATCH".to_string());
+
+        wait_until_async(
+            || async { !client.instruments.load().contains_key(&instrument_id) },
+            tokio::time::Duration::from_secs(5),
+        )
+        .await;
+
+        client.cancellation_token.cancel();
+        client
+            .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
+            .await;
+
+        assert!(!client.instruments.load().contains_key(&instrument_id));
+        assert!(
+            !client
+                .token_meta
+                .contains_key(&Ustr::from("0xCOND-WATCH-0xTOKEN_WATCH"))
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn resolve_poll_task_bulk_retirement_keeps_only_watchlist_required_state() {
         let mut client = make_client_for_reset_test();
         client.config.resolve_poll_enabled = false;
@@ -1116,6 +1447,43 @@ mod tests {
                 "message-handler startup #{startup} must not re-seed token_meta for retained expired instruments",
             );
         }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn spawn_message_handler_does_not_reseed_terminal_condition_routing() {
+        let mut client = make_client_for_reset_test();
+        let expiration_ns = UnixNanos::from(
+            client
+                .clock
+                .get_time_ns()
+                .as_u64()
+                .saturating_add(1_000_000_000),
+        );
+        let inst = seed_instrument(
+            &client,
+            "0xCOND-TERMINAL-0xTOKEN_TERMINAL",
+            "0xCOND-TERMINAL",
+            expiration_ns,
+        );
+        let token_id = Ustr::from(inst.raw_symbol().as_str());
+
+        client
+            .closed_condition_ids
+            .lock()
+            .unwrap()
+            .insert("0xCOND-TERMINAL".to_string());
+        client.token_meta.clear();
+
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<PolymarketWsMessage>();
+        drop(tx);
+        client.spawn_message_handler(rx);
+        client
+            .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
+            .await;
+
+        assert!(client.instruments.load().contains_key(&inst.id()));
+        assert!(!client.token_meta.contains_key(&token_id));
     }
 
     // Matches EXPIRED_ENGINE_SWEEP_INTERVAL_NS in crates/adapters/sandbox/src/execution.rs.

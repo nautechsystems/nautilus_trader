@@ -28,10 +28,6 @@ __all__ = [
     "TieredNotionalOptionFeeModel",
     "TwoTierFillModel",
     "VolumeSensitiveFillModel",
-    "calculate_reconciliation_price",
-    "create_inferred_reconciliation_trade_id",
-    "create_position_reconciliation_venue_order_id",
-    "process_mass_status_for_reconciliation",
 ]
 
 @typing.final
@@ -41,13 +37,28 @@ class BestPriceFillModel:
     ) -> None: ...
 
 @typing.final
-class CappedOptionFeeModel:
-    def __init__(
-        self,
+class CappedOptionFeeModel(FeeModel):
+    def __new__(
+        cls,
         maker_rate: decimal.Decimal | None = None,
         taker_rate: decimal.Decimal | None = None,
         cap_rate: decimal.Decimal | None = None,
-    ) -> None: ...
+    ) -> typing.Self: ...
+    def get_commission(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+    ) -> model.Money: ...
+    def get_commission_with_context(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+        underlying_px: model.Price | None = None,
+    ) -> model.Money: ...
 
 @typing.final
 class CompetitionAwareFillModel:
@@ -120,7 +131,7 @@ class ExecutionEngineConfig:
     ) -> ExecutionEngineConfig: ...
 
 class FeeModel:
-    def __init__(self) -> None: ...
+    def __new__(cls, *_args: typing.Any, **_kwargs: typing.Any) -> typing.Self: ...
     def get_commission(
         self,
         _order: typing.Any,
@@ -134,7 +145,7 @@ class FeeModel:
         fill_quantity: model.Quantity,
         fill_px: model.Price,
         instrument: typing.Any,
-        _underlying_px: model.Price | None = ...,
+        _underlying_px: model.Price | None = None,
     ) -> model.Money: ...
 
 class FillModel:
@@ -151,13 +162,20 @@ class FillModel:
     ) -> model.OrderBook | None: ...
 
 @typing.final
-class FixedFeeModel:
-    def __init__(
-        self,
+class FixedFeeModel(FeeModel):
+    def __new__(
+        cls,
         commission: model.Money,
         charge_commission_once: bool | None = None,
         change_commission_once: bool | None = None,
-    ) -> None: ...
+    ) -> typing.Self: ...
+    def get_commission(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+    ) -> model.Money: ...
 
 @typing.final
 class LimitOrderPartialFillModel:
@@ -166,8 +184,15 @@ class LimitOrderPartialFillModel:
     ) -> None: ...
 
 @typing.final
-class MakerTakerFeeModel:
-    def __init__(self) -> None: ...
+class MakerTakerFeeModel(FeeModel):
+    def __new__(cls) -> typing.Self: ...
+    def get_commission(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+    ) -> model.Money: ...
 
 @typing.final
 class MarketHoursFillModel:
@@ -188,8 +213,15 @@ class OrderEmulatorConfig:
     def debug(self) -> bool: ...
 
 @typing.final
-class PerContractFeeModel:
-    def __init__(self, commission: model.Money) -> None: ...
+class PerContractFeeModel(FeeModel):
+    def __new__(cls, commission: model.Money) -> typing.Self: ...
+    def get_commission(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+    ) -> model.Money: ...
 
 @typing.final
 class ProbabilisticFillModel:
@@ -198,8 +230,15 @@ class ProbabilisticFillModel:
     ) -> None: ...
 
 @typing.final
-class ProbabilityPriceFeeModel:
-    def __init__(self) -> None: ...
+class ProbabilityPriceFeeModel(FeeModel):
+    def __new__(cls) -> typing.Self: ...
+    def get_commission(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+    ) -> model.Money: ...
 
 @typing.final
 class SizeAwareFillModel:
@@ -224,10 +263,17 @@ class ThreeTierFillModel:
     ) -> None: ...
 
 @typing.final
-class TieredNotionalOptionFeeModel:
-    def __init__(
-        self, maker_rate: decimal.Decimal | None = None, taker_rate: decimal.Decimal | None = None
-    ) -> None: ...
+class TieredNotionalOptionFeeModel(FeeModel):
+    def __new__(
+        cls, maker_rate: decimal.Decimal | None = None, taker_rate: decimal.Decimal | None = None
+    ) -> typing.Self: ...
+    def get_commission(
+        self,
+        order: typing.Any,
+        fill_quantity: model.Quantity,
+        fill_px: model.Price,
+        instrument: typing.Any,
+    ) -> model.Money: ...
 
 @typing.final
 class TwoTierFillModel:
@@ -240,37 +286,3 @@ class VolumeSensitiveFillModel:
     def __init__(
         self, prob_fill_on_limit: float, prob_slippage: float, random_seed: int | None = ...
     ) -> None: ...
-
-def calculate_reconciliation_price(
-    current_position_qty: decimal.Decimal,
-    current_position_avg_px: decimal.Decimal | None,
-    target_position_qty: decimal.Decimal,
-    target_position_avg_px: decimal.Decimal | None = ...,
-) -> decimal.Decimal | None: ...
-def create_inferred_reconciliation_trade_id(
-    account_id: model.AccountId,
-    instrument_id: model.InstrumentId,
-    client_order_id: model.ClientOrderId,
-    venue_order_id: model.VenueOrderId | None,
-    order_side: model.OrderSide,
-    order_type: model.OrderType,
-    filled_qty: model.Quantity,
-    last_qty: model.Quantity,
-    last_px: model.Price,
-    position_id: model.PositionId,
-    ts_last: int,
-) -> model.TradeId: ...
-def create_position_reconciliation_venue_order_id(
-    account_id: model.AccountId,
-    instrument_id: model.InstrumentId,
-    order_side: model.OrderSide,
-    order_type: model.OrderType,
-    quantity: model.Quantity,
-    price: model.Price | None = None,
-    venue_position_id: model.PositionId | None = None,
-    ts_last: int = 0,
-    tag: str | None = None,
-) -> model.VenueOrderId: ...
-def process_mass_status_for_reconciliation(
-    mass_status: typing.Any, instrument: typing.Any, tolerance: str | None = None
-) -> tuple: ...

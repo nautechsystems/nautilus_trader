@@ -27,7 +27,7 @@ use crate::{
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators", unsendable)
+    pyo3::pyclass(module = "nautilus_trader.indicators", unsendable)
 )]
 #[cfg_attr(
     feature = "python",
@@ -147,7 +147,10 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::stubs::{bar_ethusdt_binance_minute_bid, pressure_10};
+    use crate::{
+        stubs::{bar_ethusdt_binance_minute_bid, pressure_10},
+        testing::assert_approx_equal,
+    };
 
     #[rstest]
     fn test_name_returns_expected_string(pressure_10: Pressure) {
@@ -226,8 +229,8 @@ mod tests {
     #[rstest]
     fn test_handle_bar(mut pressure_10: Pressure, bar_ethusdt_binance_minute_bid: Bar) {
         pressure_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(pressure_10.value, -0.018_181_818_181_818_132);
-        assert_eq!(pressure_10.value_cumulative, -0.018_181_818_181_818_132);
+        assert_approx_equal(pressure_10.value, -0.0181818181818);
+        assert_approx_equal(pressure_10.value_cumulative, -0.0181818181818);
         assert!(pressure_10.has_inputs);
         assert!(!pressure_10.initialized);
     }

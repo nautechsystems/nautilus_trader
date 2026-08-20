@@ -45,33 +45,40 @@ use ustr::Ustr;
 /// that applies to all symbols for that channel.
 pub(crate) static CHANNEL_LEVEL_MARKER: LazyLock<Ustr> = LazyLock::new(|| Ustr::from(""));
 
-/// Generic subscription state tracker for WebSocket connections.
+/// Tracks subscription intent and acknowledgment state for WebSocket connections.
 ///
-/// Maintains three separate states for subscriptions:
-/// - **Confirmed**: Successfully subscribed and actively streaming data.
-/// - **Pending Subscribe**: Subscription requested but not yet confirmed by server.
-/// - **Pending Unsubscribe**: Unsubscription requested but not yet confirmed by server.
+/// # State management
 ///
-/// # Reference Counting
+/// The tracker maintains three separate states:
 ///
-/// The tracker maintains reference counts for each topic. When multiple components
-/// subscribe to the same topic, only the first subscription sends a message to the
-/// server. Similarly, only the last unsubscription sends an unsubscribe message.
+/// - **Confirmed**: Subscriptions acknowledged by the server and expected to stream data.
+/// - **Pending subscribe**: Subscribe requests awaiting server acknowledgment.
+/// - **Pending unsubscribe**: Unsubscribe requests awaiting server acknowledgment.
 ///
-/// # Thread Safety
+/// Late subscribe acknowledgments do not revive a pending unsubscribe, and stale unsubscribe
+/// acknowledgments do not remove a later resubscription.
 ///
-/// All operations are thread-safe and can be called concurrently from multiple tasks.
+/// # Reference counting
+///
+/// Reference counts remain independent of acknowledgment state. The first consumer tells the
+/// caller to send a subscribe request, while removing the last tells it to send an unsubscribe
+/// request. The tracker records these transitions but does not send protocol messages.
+///
+/// # Topic format
+///
+/// Topics use `channel{delimiter}symbol`, with delimiters such as `.` or `:`. A topic without the
+/// delimiter represents a channel‑level subscription.
+///
+/// # Thread safety
+///
+/// Clones share all state. Operations are thread‑safe and can run concurrently from multiple
+/// tasks.
 #[derive(Clone, Debug)]
 pub struct SubscriptionState {
-    /// Confirmed active subscriptions.
     confirmed: Arc<DashMap<Ustr, AHashSet<Ustr>>>,
-    /// Pending subscribe requests awaiting server confirmation.
     pending_subscribe: Arc<DashMap<Ustr, AHashSet<Ustr>>>,
-    /// Pending unsubscribe requests awaiting server confirmation.
     pending_unsubscribe: Arc<DashMap<Ustr, AHashSet<Ustr>>>,
-    /// Reference counts for topics to prevent duplicate messages.
     reference_counts: Arc<DashMap<Ustr, NonZeroUsize>>,
-    /// Topic delimiter character (e.g., '.' or ':').
     delimiter: char,
 }
 
@@ -147,9 +154,8 @@ impl SubscriptionState {
 
     /// Marks a topic as pending subscription.
     ///
-    /// This should be called after sending a subscribe request to the server.
-    /// Idempotent: if topic is already confirmed, this is a no-op.
-    /// If topic is pending unsubscription, removes it.
+    /// Call this after sending a subscribe request. This operation is idempotent for a confirmed
+    /// topic and cancels any pending unsubscription for the same topic.
     pub fn mark_subscribe(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
@@ -169,7 +175,7 @@ impl SubscriptionState {
     /// Returns `true` if the topic was newly marked as pending (should send subscribe).
     /// Returns `false` if the topic was already confirmed or pending (skip sending).
     ///
-    /// This provides atomic check-and-set semantics for concurrent subscribe calls.
+    /// The check and state transition are atomic across concurrent subscribe calls.
     pub fn try_mark_subscribe(&self, topic: &str) -> bool {
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
@@ -195,9 +201,8 @@ impl SubscriptionState {
 
     /// Marks a topic as pending unsubscription.
     ///
-    /// This removes the topic from both confirmed and `pending_subscribe`,
-    /// then adds it to `pending_unsubscribe`. This handles the case where
-    /// a user unsubscribes before the initial subscription is confirmed.
+    /// Removes the topic from confirmed and `pending_subscribe` state before adding it to
+    /// `pending_unsubscribe`. This also handles unsubscription before initial confirmation.
     pub fn mark_unsubscribe(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic, self.delimiter);
         track_topic(&self.pending_unsubscribe, channel, symbol);
@@ -207,9 +212,8 @@ impl SubscriptionState {
 
     /// Confirms a subscription by moving it from pending to confirmed.
     ///
-    /// This should be called when the server acknowledges a subscribe request.
-    /// Ignores the confirmation if the topic is pending unsubscription (handles
-    /// late confirmations after user has already unsubscribed).
+    /// Call this when the server acknowledges a subscribe request. A late confirmation cannot
+    /// restore a topic that is pending unsubscription.
     pub fn confirm_subscribe(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
@@ -224,14 +228,9 @@ impl SubscriptionState {
 
     /// Confirms an unsubscription by removing it from pending and confirmed state.
     ///
-    /// This should be called when the server acknowledges an unsubscribe request.
-    /// Removes the topic from `pending_unsubscribe` and confirmed.
-    /// Does NOT clear `pending_subscribe` to support immediate re-subscribe patterns
-    /// (e.g., user calls `subscribe()` before unsubscribe ack arrives).
-    ///
-    /// **Stale ACK handling**: Ignores unsubscribe ACKs if the topic is no longer
-    /// in `pending_unsubscribe` (meaning user has already re-subscribed). This prevents
-    /// stale ACKs from removing topics that were re-confirmed after the re-subscribe.
+    /// Call this when the server acknowledges an unsubscribe request. A stale acknowledgment is
+    /// ignored if the topic is no longer pending unsubscription. `pending_subscribe` remains intact
+    /// so an immediate resubscription survives a late unsubscribe acknowledgment.
     pub fn confirm_unsubscribe(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
@@ -248,8 +247,8 @@ impl SubscriptionState {
 
     /// Marks a subscription as failed, moving it from confirmed back to pending.
     ///
-    /// This is useful when a subscription fails but should be retried on reconnect.
-    /// Ignores the failure if the topic is pending unsubscription (user cancelled it).
+    /// This keeps failed subscriptions available for retry after reconnect. A topic pending
+    /// unsubscription is unchanged because its subscription was cancelled.
     pub fn mark_failure(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
@@ -274,12 +273,10 @@ impl SubscriptionState {
         self.topics_from_map(&self.pending_unsubscribe)
     }
 
-    /// Returns all topics that should be active (confirmed + `pending_subscribe`).
+    /// Returns all topics that should be active after reconnect recovery.
     ///
-    /// This is the key method for reconnection: it returns all topics that should
-    /// be resubscribed after a connection is re-established.
-    ///
-    /// Note: Does NOT include `pending_unsubscribe` topics, as those are being removed.
+    /// The result includes confirmed and pending subscribe topics, but excludes pending
+    /// unsubscribe topics.
     #[must_use]
     pub fn all_topics(&self) -> Vec<String> {
         let mut topics = Vec::new();
@@ -288,7 +285,7 @@ impl SubscriptionState {
         topics
     }
 
-    /// Helper to convert a map to topic strings.
+    // Converts a subscription map to sorted topic strings
     fn topics_from_map(&self, map: &DashMap<Ustr, AHashSet<Ustr>>) -> Vec<String> {
         let mut topics = Vec::new();
         let marker = *CHANNEL_LEVEL_MARKER;
@@ -398,7 +395,7 @@ impl SubscriptionState {
 
     /// Clears all subscription state.
     ///
-    /// This is useful when reconnecting or resetting the client.
+    /// This resets confirmed, pending, and reference‑count state.
     pub fn clear(&self) {
         self.confirmed.clear();
         self.pending_subscribe.clear();
@@ -1354,18 +1351,22 @@ mod tests {
             handle.await.unwrap();
         }
 
-        // Verify state is consistent (no panics, all maps accessible)
-        let all = state.all_topics();
-        let confirmed_count = state.len();
+        let actual = state.all_topics().into_iter().collect::<AHashSet<_>>();
+        let expected = (0..50)
+            .flat_map(|i| {
+                let topic2 = format!("channel.SYMBOL{}", i + 100);
+                (i % 3 != 0)
+                    .then(|| format!("channel.SYMBOL{i}"))
+                    .into_iter()
+                    .chain(std::iter::once(topic2))
+            })
+            .collect::<AHashSet<_>>();
 
-        // We have 50 topic2s (always confirmed) + topic1s (50 - number unsubscribed)
-        // About 17 topic1s get unsubscribed (i % 3 == 0), leaving ~33 topic1s + 50 topic2s = ~83
-        assert!(confirmed_count > 50); // At least all topic2s
-        assert!(confirmed_count <= 100); // At most all topic1s + topic2s
-        assert_eq!(
-            all.len(),
-            confirmed_count + state.pending_subscribe_topics().len()
-        );
+        assert_eq!(actual, expected);
+        assert_eq!(state.len(), 83);
+        assert!(state.pending_subscribe_topics().is_empty());
+        assert!(state.pending_unsubscribe_topics().is_empty());
+        assert_eq!(state.reference_counts.len(), 100);
     }
 
     #[rstest]
@@ -1615,6 +1616,13 @@ mod tests {
             Clear,
         }
 
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum ModelState {
+            Confirmed,
+            PendingSubscribe,
+            PendingUnsubscribe,
+        }
+
         // Strategy for generating valid topics
         fn topic_strategy() -> impl Strategy<Value = String> {
             prop_oneof![
@@ -1660,6 +1668,76 @@ mod tests {
             }
         }
 
+        fn apply_model_operation(model: &mut AHashMap<String, ModelState>, op: &Operation) {
+            match op {
+                Operation::MarkSubscribe(topic) => {
+                    if model.get(topic) != Some(&ModelState::Confirmed) {
+                        model.insert(topic.clone(), ModelState::PendingSubscribe);
+                    }
+                }
+                Operation::ConfirmSubscribe(topic) => {
+                    if model.get(topic) != Some(&ModelState::PendingUnsubscribe) {
+                        model.insert(topic.clone(), ModelState::Confirmed);
+                    }
+                }
+                Operation::MarkUnsubscribe(topic) => {
+                    model.insert(topic.clone(), ModelState::PendingUnsubscribe);
+                }
+                Operation::ConfirmUnsubscribe(topic) => {
+                    if model.get(topic) == Some(&ModelState::PendingUnsubscribe) {
+                        model.remove(topic);
+                    }
+                }
+                Operation::MarkFailure(topic) => {
+                    if model.get(topic) != Some(&ModelState::PendingUnsubscribe) {
+                        model.insert(topic.clone(), ModelState::PendingSubscribe);
+                    }
+                }
+                Operation::AddReference(_) | Operation::RemoveReference(_) => {}
+                Operation::Clear => model.clear(),
+            }
+        }
+
+        fn assert_state_matches_model(
+            state: &SubscriptionState,
+            model: &AHashMap<String, ModelState>,
+        ) {
+            let topics_for = |expected_state| {
+                model
+                    .iter()
+                    .filter(|&(_topic, state)| *state == expected_state)
+                    .map(|(topic, _state)| topic.clone())
+                    .collect::<AHashSet<_>>()
+            };
+            let confirmed = state
+                .topics_from_map(&state.confirmed)
+                .into_iter()
+                .collect::<AHashSet<_>>();
+            let pending_subscribe = state
+                .pending_subscribe_topics()
+                .into_iter()
+                .collect::<AHashSet<_>>();
+            let pending_unsubscribe = state
+                .pending_unsubscribe_topics()
+                .into_iter()
+                .collect::<AHashSet<_>>();
+            let expected_confirmed = topics_for(ModelState::Confirmed);
+            let expected_pending_subscribe = topics_for(ModelState::PendingSubscribe);
+            let expected_pending_unsubscribe = topics_for(ModelState::PendingUnsubscribe);
+            let expected_all = expected_confirmed
+                .union(&expected_pending_subscribe)
+                .cloned()
+                .collect::<AHashSet<_>>();
+            let all = state.all_topics().into_iter().collect::<AHashSet<_>>();
+
+            assert_eq!(confirmed, expected_confirmed);
+            assert_eq!(pending_subscribe, expected_pending_subscribe);
+            assert_eq!(pending_unsubscribe, expected_pending_unsubscribe);
+            assert_eq!(all, expected_all);
+            assert_eq!(state.len(), confirmed.len());
+            assert_eq!(state.is_empty(), model.is_empty());
+        }
+
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(500))]
 
@@ -1669,17 +1747,18 @@ mod tests {
                 operations in prop::collection::vec(operation_strategy(), 1..50)
             ) {
                 let state = SubscriptionState::new('.');
+                let mut model = AHashMap::new();
 
-                // Apply all operations
                 for (i, op) in operations.iter().enumerate() {
                     apply_operation(&state, op);
+                    apply_model_operation(&mut model, op);
 
-                    // Check invariants after each operation
                     check_invariants(&state, &format!("After op {i}: {op:?}"));
+                    assert_state_matches_model(&state, &model);
                 }
 
-                // Final invariant check
                 check_invariants(&state, "Final state");
+                assert_state_matches_model(&state, &model);
             }
 
             /// Reference-count operations match an independent count model.

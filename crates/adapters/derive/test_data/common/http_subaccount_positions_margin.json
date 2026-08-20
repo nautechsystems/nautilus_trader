@@ -1,0 +1,58 @@
+{
+  "collaterals": [
+    {
+      "amount": "1000",
+      "asset_name": "USDC",
+      "asset_type": "erc20",
+      "cumulative_interest": "0",
+      "currency": "USDC",
+      "initial_margin": "1000",
+      "maintenance_margin": "1000",
+      "mark_price": "1",
+      "mark_value": "1000",
+      "pending_interest": "0"
+    }
+  ],
+  "collaterals_initial_margin": "1000",
+  "collaterals_maintenance_margin": "1000",
+  "collaterals_value": "1000",
+  "currency": "USDC",
+  "initial_margin": "650",
+  "is_under_liquidation": false,
+  "label": null,
+  "maintenance_margin": "825",
+  "margin_type": "PM",
+  "open_orders": [],
+  "open_orders_margin": "0",
+  "positions": [
+    {
+      "amount": "0.75",
+      "average_price": "3500",
+      "creation_timestamp": 1751600000000,
+      "cumulative_funding": "0.5",
+      "delta": "0.75",
+      "gamma": "0",
+      "index_price": "3505",
+      "initial_margin": "350",
+      "instrument_name": "ETH-PERP",
+      "instrument_type": "perp",
+      "leverage": "5",
+      "liquidation_price": "4200",
+      "maintenance_margin": "175",
+      "mark_price": "3504",
+      "mark_value": "2628",
+      "net_settlements": "0",
+      "open_orders_margin": "0",
+      "pending_funding": "0.1",
+      "realized_pnl": "12",
+      "theta": "0",
+      "unrealized_pnl": "3",
+      "vega": "0"
+    }
+  ],
+  "positions_initial_margin": "350",
+  "positions_maintenance_margin": "175",
+  "positions_value": "2628",
+  "subaccount_id": 42,
+  "subaccount_value": "1000"
+}

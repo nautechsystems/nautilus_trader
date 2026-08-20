@@ -27,7 +27,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use chrono::{Duration, TimeDelta};
+use jiff::SignedDuration;
 use nautilus_common::{
     clock::{Clock, TestClock},
     timer::{TimeEvent, TimeEventCallback},
@@ -623,8 +623,8 @@ impl BarAggregator for TickImbalanceBarAggregator {
             .apply_update(trade.price, trade.size, trade.ts_init);
 
         let delta = match trade.aggressor_side {
-            AggressorSide::Buyer => 1,
-            AggressorSide::Seller => -1,
+            AggressorSide::Buy => 1,
+            AggressorSide::Sell => -1,
             AggressorSide::NoAggressor => 0,
         };
 
@@ -712,8 +712,8 @@ impl BarAggregator for TickRunsBarAggregator {
         }
 
         let side = match trade.aggressor_side {
-            AggressorSide::Buyer => Some(AggressorSide::Buyer),
-            AggressorSide::Seller => Some(AggressorSide::Seller),
+            AggressorSide::Buy => Some(AggressorSide::Buy),
+            AggressorSide::Sell => Some(AggressorSide::Sell),
             AggressorSide::NoAggressor => None,
         };
 
@@ -936,8 +936,8 @@ impl BarAggregator for VolumeImbalanceBarAggregator {
         }
 
         let side = match trade.aggressor_side {
-            AggressorSide::Buyer => 1,
-            AggressorSide::Seller => -1,
+            AggressorSide::Buy => 1,
+            AggressorSide::Sell => -1,
             AggressorSide::NoAggressor => {
                 self.core
                     .apply_update(trade.price, trade.size, trade.ts_init);
@@ -1041,8 +1041,8 @@ impl BarAggregator for VolumeRunsBarAggregator {
         }
 
         let side = match trade.aggressor_side {
-            AggressorSide::Buyer => Some(AggressorSide::Buyer),
-            AggressorSide::Seller => Some(AggressorSide::Seller),
+            AggressorSide::Buy => Some(AggressorSide::Buy),
+            AggressorSide::Sell => Some(AggressorSide::Sell),
             AggressorSide::NoAggressor => None,
         };
 
@@ -1324,8 +1324,8 @@ impl BarAggregator for ValueImbalanceBarAggregator {
         }
 
         let (side_sign, side_is_buy) = match trade.aggressor_side {
-            AggressorSide::Buyer => (Decimal::ONE, true),
-            AggressorSide::Seller => (Decimal::NEGATIVE_ONE, false),
+            AggressorSide::Buy => (Decimal::ONE, true),
+            AggressorSide::Sell => (Decimal::NEGATIVE_ONE, false),
             AggressorSide::NoAggressor => {
                 self.core
                     .apply_update(trade.price, trade.size, trade.ts_init);
@@ -1492,8 +1492,8 @@ impl BarAggregator for ValueRunsBarAggregator {
         }
 
         let side = match trade.aggressor_side {
-            AggressorSide::Buyer => Some(AggressorSide::Buyer),
-            AggressorSide::Seller => Some(AggressorSide::Seller),
+            AggressorSide::Buy => Some(AggressorSide::Buy),
+            AggressorSide::Sell => Some(AggressorSide::Sell),
             AggressorSide::NoAggressor => None,
         };
 
@@ -1767,7 +1767,7 @@ pub struct TimeBarAggregator {
     next_close_ns: UnixNanos,
     first_close_ns: UnixNanos,
     bar_build_delay: u64,
-    time_bars_origin_offset: Option<TimeDelta>,
+    time_bars_origin_offset: Option<SignedDuration>,
     skip_first_non_full_bar: bool,
     pub historical_mode: bool,
     historical_events: Vec<TimeEvent>,
@@ -1806,7 +1806,7 @@ impl TimeBarAggregator {
         build_with_no_updates: bool,
         timestamp_on_close: bool,
         interval_type: BarIntervalType,
-        time_bars_origin_offset: Option<TimeDelta>,
+        time_bars_origin_offset: Option<SignedDuration>,
         bar_build_delay: u64,
         skip_first_non_full_bar: bool,
     ) -> Self {
@@ -1845,7 +1845,6 @@ impl TimeBarAggregator {
 
     /// Starts the time bar aggregator, scheduling periodic bar builds on the clock.
     ///
-    /// This matches the Cython `start_timer()` method exactly.
     /// Creates a callback to `build_bar` using a weak reference to the aggregator.
     ///
     /// # Panics
@@ -1879,7 +1878,7 @@ impl TimeBarAggregator {
         let now = self.clock.borrow().utc_now();
         let mut start_time =
             get_time_bar_start(now, &self.bar_type(), self.time_bars_origin_offset);
-        start_time += TimeDelta::microseconds(self.bar_build_delay as i64);
+        start_time += SignedDuration::from_micros(self.bar_build_delay as i64);
 
         // Closing a partial bar at the transition from historical to backtest data
         let fire_immediately = start_time == now;
@@ -1905,7 +1904,7 @@ impl TimeBarAggregator {
             if fire_immediately {
                 self.next_close_ns = start_time_ns;
             } else {
-                let interval_duration = Duration::nanoseconds(self.interval_ns.as_i64());
+                let interval_duration = SignedDuration::from_nanos(self.interval_ns.as_i64());
                 self.next_close_ns = UnixNanos::from(start_time + interval_duration);
             }
 
@@ -1931,8 +1930,8 @@ impl TimeBarAggregator {
                 .expect(FAILED);
 
             self.next_close_ns = UnixNanos::from(alert_time);
-            // Mirror Cython: stored_open = close_time - step, so when fire_immediately the
-            // current (partial) bar started `step` periods before start_time.
+            // With fire_immediately the current (partial) bar started `step` periods before
+            // start_time, so stored_open resolves to close_time - step.
             self.stored_open_ns = if fire_immediately {
                 if spec.aggregation == BarAggregation::Month {
                     subtract_n_months_nanos(start_time_ns, step).expect(FAILED)
@@ -2220,7 +2219,7 @@ impl VegaProvider for MapVegaProvider {
     }
 }
 
-/// Rounder that uses a fixed tick size; mirrors negative prices for tick alignment (Cython parity).
+/// Rounder that uses a fixed tick size; mirrors negative prices for tick alignment.
 #[derive(Debug)]
 pub struct FixedTickSchemeRounder {
     scheme: FixedTickScheme,
@@ -2268,7 +2267,7 @@ impl SpreadPriceRounder for FixedTickSchemeRounder {
     }
 }
 
-/// Spread quote aggregator: builds synthetic quotes from leg quotes (Cython parity).
+/// Spread quote aggregator: builds synthetic quotes from leg quotes.
 ///
 /// Quote-driven mode (`update_interval_seconds == None`): emits when all legs have quotes.
 /// Timer-driven mode: emits on timer fire when `_has_update` is true.
@@ -2502,7 +2501,7 @@ impl SpreadQuoteAggregator {
         }
     }
 
-    /// Handles an incoming leg quote (Cython `handle_quote_tick`).
+    /// Handles an incoming leg quote.
     pub fn handle_quote_tick(&mut self, tick: QuoteTick) {
         let ts_init = tick.ts_init;
 
@@ -2540,7 +2539,7 @@ impl SpreadQuoteAggregator {
     /// deferred until the next call when time advances. The deferred event is only flushed
     /// when all legs have quotes and time has moved past the deferred timestamp. This
     /// prevents building a spread quote with stale leg data when multiple legs update at
-    /// the same timestamp (Cython parity).
+    /// the same timestamp.
     fn process_historical_events(&mut self, ts_init: UnixNanos) {
         if self.clock.borrow().timestamp_ns() == UnixNanos::default() {
             let mut clock_borrow = self.clock.borrow_mut();
@@ -2580,7 +2579,7 @@ impl SpreadQuoteAggregator {
         }
     }
 
-    /// Builds and sends one spread quote (Cython `_build_and_send_quote`).
+    /// Builds and sends one spread quote.
     fn build_and_send_quote(&mut self, ts_event: UnixNanos) {
         if !self.has_update {
             return;
@@ -3381,8 +3380,7 @@ mod tests {
 
     #[rstest]
     fn test_bar_builder_spread_below_zero_representable(equity_aapl: Equity) {
-        // Cython documents that backward-spread offsets pushing prices below zero
-        // remain representable in PriceRaw; verify the same on the Rust side.
+        // Backward-spread offsets that push prices below zero must stay representable in PriceRaw
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_type = BarType::new(
             instrument.id(),
@@ -3445,7 +3443,7 @@ mod tests {
 
     #[rstest]
     fn test_bar_builder_build_clamps_low_to_close(equity_aapl: Equity) {
-        // Rust BarBuilder mirrors Cython: on `build`, if `close < low` the low is pulled down to close.
+        // On `build`, if `close < low` the low is pulled down to close.
         // Reaching this branch requires bypassing `update`'s low tracking (e.g. via bar updates where
         // a later bar's close is below the accumulated low). We simulate by direct field assignment.
         let instrument = InstrumentAny::Equity(equity_aapl);
@@ -3645,7 +3643,7 @@ mod tests {
             instrument_id,
             price: Price::from(price),
             size: Quantity::from(size),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ts_event: UnixNanos::from(ts),
             ts_init: UnixNanos::from(ts),
             ..TradeTick::default()
@@ -3920,7 +3918,7 @@ mod tests {
         );
 
         let sell = TradeTick {
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ..TradeTick::default()
         };
 
@@ -3950,7 +3948,7 @@ mod tests {
 
         let buy = TradeTick::default();
         let sell = TradeTick {
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ..buy
         };
 
@@ -3986,7 +3984,7 @@ mod tests {
             ..TradeTick::default()
         };
         let sell = TradeTick {
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             size: Quantity::from(1),
             ..buy
         };
@@ -4160,14 +4158,14 @@ mod tests {
         let first = TradeTick {
             price: Price::from("100.00"),
             size: Quantity::from(1),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ts_init: UnixNanos::from(1_000),
             ..TradeTick::default()
         };
         let stale = TradeTick {
             price: Price::from("200.00"),
             size: Quantity::from(2),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ts_init: UnixNanos::from(500),
             ..TradeTick::default()
         };
@@ -4270,7 +4268,7 @@ mod tests {
             ..TradeTick::default()
         };
         let sell = TradeTick {
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ..buy
         };
 
@@ -4667,7 +4665,7 @@ mod tests {
         let sell = TradeTick {
             price: Price::from("5.0"),
             size: Quantity::from(2), // value 10, should emit another bar
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             instrument_id: instrument.id(),
             ..buy
         };
@@ -4740,7 +4738,7 @@ mod tests {
         let sell = TradeTick {
             price: Price::from("10.0"),
             size: Quantity::from(10),
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ..buy
         }; // value 100
 
@@ -5884,11 +5882,11 @@ mod tests {
         );
 
         let buy = TradeTick {
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         let sell = TradeTick {
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ..TradeTick::default()
         };
 
@@ -5919,7 +5917,7 @@ mod tests {
         );
 
         let buy = TradeTick {
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         let no_aggressor = TradeTick {
@@ -5954,11 +5952,11 @@ mod tests {
         );
 
         let buy = TradeTick {
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         let sell = TradeTick {
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ..TradeTick::default()
         };
 
@@ -5991,7 +5989,7 @@ mod tests {
 
         let large_trade = TradeTick {
             size: Quantity::from(25),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
 
@@ -6023,7 +6021,7 @@ mod tests {
 
         let buy = TradeTick {
             size: Quantity::from(5),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         let no_aggressor = TradeTick {
@@ -6060,7 +6058,7 @@ mod tests {
 
         let large_trade = TradeTick {
             size: Quantity::from(25),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
 
@@ -6091,7 +6089,7 @@ mod tests {
         let large_trade = TradeTick {
             price: Price::from("5.00"),
             size: Quantity::from(25),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
 
@@ -6124,7 +6122,7 @@ mod tests {
         let first = TradeTick {
             price: Price::from("10.00"),
             size: Quantity::from(15),
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ts_event: UnixNanos::from(1_000),
             ts_init: UnixNanos::from(1_000),
             ..TradeTick::default()
@@ -6135,7 +6133,7 @@ mod tests {
         let second = TradeTick {
             price: Price::from("10.00"),
             size: Quantity::from(5),
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             ts_event: UnixNanos::from(2_000),
             ts_init: UnixNanos::from(2_000),
             ..TradeTick::default()
@@ -6202,7 +6200,7 @@ mod tests {
         let trade = TradeTick {
             price: Price::from("1000.00"),
             size: Quantity::from(3),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             instrument_id: instrument.id(),
             ..TradeTick::default()
         };
@@ -6238,7 +6236,7 @@ mod tests {
         let sell_tick = TradeTick {
             price: Price::from("10.00"),
             size: Quantity::from(5),
-            aggressor_side: AggressorSide::Seller,
+            aggressor_side: AggressorSide::Sell,
             instrument_id: instrument.id(),
             ..TradeTick::default()
         };
@@ -6248,7 +6246,7 @@ mod tests {
         let buy_tick = TradeTick {
             price: Price::from("1000.00"),
             size: Quantity::from(1),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             instrument_id: instrument.id(),
             ts_init: UnixNanos::from(1),
             ts_event: UnixNanos::from(1),
@@ -6284,7 +6282,7 @@ mod tests {
         let trade = TradeTick {
             price: Price::from("1000.00"),
             size: Quantity::from(3),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             instrument_id: instrument.id(),
             ..TradeTick::default()
         };
@@ -6321,7 +6319,7 @@ mod tests {
             instrument_id,
             price: Price::from("1"),
             size: Quantity::from("9007199253.999999999"),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         aggregator.handle_trade(below_step);
@@ -6338,7 +6336,7 @@ mod tests {
             instrument_id,
             price: Price::from("1"),
             size: Quantity::from("0.000000001"),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ts_event: UnixNanos::from(1),
             ts_init: UnixNanos::from(1),
             ..TradeTick::default()
@@ -6374,7 +6372,7 @@ mod tests {
             instrument_id,
             price: Price::from("1"),
             size: input,
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         aggregator.handle_trade(trade);
@@ -6416,7 +6414,7 @@ mod tests {
             instrument_id,
             price: Price::from("1"),
             size: Quantity::from("9007199253.999999999"),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         aggregator.handle_trade(below_step);
@@ -6433,7 +6431,7 @@ mod tests {
             instrument_id,
             price: Price::from("1"),
             size: Quantity::from("0.000000001"),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ts_event: UnixNanos::from(1),
             ts_init: UnixNanos::from(1),
             ..TradeTick::default()
@@ -6469,7 +6467,7 @@ mod tests {
             instrument_id,
             price: Price::from("1"),
             size: input,
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         aggregator.handle_trade(trade);
@@ -6516,7 +6514,7 @@ mod tests {
             instrument_id,
             price: Price::from("0.00"),
             size: Quantity::from(4),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ts_event: UnixNanos::from(1),
             ts_init: UnixNanos::from(1),
             ..TradeTick::default()
@@ -6553,7 +6551,7 @@ mod tests {
             instrument_id,
             price: Price::from("0.00"),
             size: Quantity::from(4),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ts_event: UnixNanos::from(1),
             ts_init: UnixNanos::from(1),
             ..TradeTick::default()
@@ -6586,7 +6584,7 @@ mod tests {
             instrument_id,
             price: Price::from("3.00"),
             size: input,
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         aggregator.handle_trade(trade);
@@ -6626,7 +6624,7 @@ mod tests {
             instrument_id,
             price: Price::from("3.00"),
             size: input,
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
         aggregator.handle_trade(trade);
@@ -6674,7 +6672,7 @@ mod tests {
 
         let trade = TradeTick {
             size: Quantity::from(step * 2),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
 
@@ -6714,7 +6712,7 @@ mod tests {
 
             let trade = TradeTick {
                 size: Quantity::from(total_volume),
-                aggressor_side: AggressorSide::Buyer,
+                aggressor_side: AggressorSide::Buy,
                 ..TradeTick::default()
             };
 
@@ -6755,7 +6753,7 @@ mod tests {
 
         let trade = TradeTick {
             size: Quantity::from(step * 2),
-            aggressor_side: AggressorSide::Buyer,
+            aggressor_side: AggressorSide::Buy,
             ..TradeTick::default()
         };
 
@@ -6794,7 +6792,7 @@ mod tests {
 
             let trade = TradeTick {
                 size: Quantity::from(total_volume),
-                aggressor_side: AggressorSide::Buyer,
+                aggressor_side: AggressorSide::Buy,
                 ..TradeTick::default()
             };
 
@@ -6809,7 +6807,7 @@ mod tests {
         assert_ne!(results[0], results[1]);
     }
 
-    /// Historical time-bar: event at `ts_init` is deferred until after the update (Cython parity).
+    /// Historical time-bar: event at `ts_init` is deferred until after the update.
     #[rstest]
     fn test_time_bar_historical_defers_event_at_ts_init_until_after_update(equity_aapl: Equity) {
         let instrument = InstrumentAny::Equity(equity_aapl);
@@ -7789,10 +7787,9 @@ mod tests {
     fn test_time_bar_skip_first_non_full_bar_skips_when_build_delay_shifts_start(
         equity_aapl: Equity,
     ) {
-        // Cython parity: when bar_build_delay > 0 pushes start_time past a
-        // boundary (even if `now` is on a boundary), first_close_ns is set and
-        // the first bar is skipped. The previous Rust `now > start_time` guard
-        // incorrectly kept this first bar.
+        // When bar_build_delay > 0 pushes start_time past a boundary (even if `now` is on a
+        // boundary), first_close_ns is set and the first bar is skipped. A `now > start_time`
+        // guard would incorrectly keep this first bar.
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
@@ -7870,9 +7867,8 @@ mod tests {
         #[case] expected_stored_open_ns: u64,
     ) {
         // When the clock is exactly on a month/year boundary, fire_immediately=true.
-        // stored_open_ns must resolve to one step before start_time (mirrors Cython
-        // close_time - step arithmetic) so the first bar's open timestamp marks
-        // the true start of the in-progress interval.
+        // stored_open_ns must resolve to one step before start_time (close_time - step)
+        // so the first bar's open timestamp marks the true start of the in-progress interval.
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_spec = BarSpecification::new(1, aggregation, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
@@ -8902,7 +8898,7 @@ mod property_tests {
                 },
             );
 
-            let side = if buyer { AggressorSide::Buyer } else { AggressorSide::Seller };
+            let side = if buyer { AggressorSide::Buy } else { AggressorSide::Sell };
             let mut total_input: u64 = 0;
 
             for (i, size) in sizes.iter().enumerate() {
@@ -8957,7 +8953,7 @@ mod property_tests {
                 },
             );
 
-            let side = if buyer { AggressorSide::Buyer } else { AggressorSide::Seller };
+            let side = if buyer { AggressorSide::Buy } else { AggressorSide::Sell };
             let mut total_input: u64 = 0;
 
             for (i, size) in sizes.iter().enumerate() {

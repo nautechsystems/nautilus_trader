@@ -21,7 +21,7 @@
 
 use std::hint::black_box;
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_lighter::signing::{
     field::Fp,
     hash::{RATE, WIDTH, hash_no_pad, hash_to_quintic_extension, hash_two_to_quintic, permute},
@@ -63,8 +63,9 @@ fn bench_hash_no_pad(c: &mut Criterion) {
 
     for &len in &[1usize, RATE, 2 * RATE, 3 * RATE] {
         let input = make_inputs(len);
+        group.throughput(Throughput::Elements(len as u64));
         group.bench_function(format!("len={len}"), |b| {
-            b.iter(|| hash_no_pad(black_box(&input)));
+            b.iter(|| black_box(hash_no_pad(black_box(&input))));
         });
     }
     group.finish();

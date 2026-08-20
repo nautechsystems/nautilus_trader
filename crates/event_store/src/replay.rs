@@ -616,6 +616,122 @@ impl CacheReplayError {
     }
 }
 
+#[derive(Default)]
+struct CacheReplayContext {
+    allow_deferred_orderless_flips: bool,
+    pending_orderless_flips: Vec<PendingOrderlessFlip>,
+}
+
+struct PendingOrderlessFlip {
+    source_seq: u64,
+    source_position_id: PositionId,
+    oms_type: OmsType,
+    opening_fill: OrderFilled,
+}
+
+impl CacheReplayContext {
+    fn for_snapshot_tail() -> Self {
+        Self {
+            allow_deferred_orderless_flips: true,
+            pending_orderless_flips: Vec::new(),
+        }
+    }
+
+    fn contains_flip_source(&self, fill: &OrderFilled) -> bool {
+        self.pending_orderless_flips.iter().any(|pending| {
+            pending.opening_fill.client_order_id == fill.client_order_id
+                && pending.opening_fill.trade_id == fill.trade_id
+                && pending.opening_fill.causation_id == Some(fill.event_id)
+        })
+    }
+
+    fn push_orderless_flip(
+        &mut self,
+        source_seq: u64,
+        source_position_id: PositionId,
+        oms_type: OmsType,
+        opening_fill: OrderFilled,
+    ) {
+        self.pending_orderless_flips.push(PendingOrderlessFlip {
+            source_seq,
+            source_position_id,
+            oms_type,
+            opening_fill,
+        });
+    }
+
+    fn take_opening_fill(
+        &mut self,
+        entry: &EventStoreEntry,
+        opened: &PositionOpened,
+    ) -> Result<Option<(OrderFilled, OmsType)>, CacheReplayError> {
+        let matching: Vec<usize> = self
+            .pending_orderless_flips
+            .iter()
+            .enumerate()
+            .filter_map(|(index, pending)| {
+                let fill = &pending.opening_fill;
+                (fill.trader_id == opened.trader_id
+                    && fill.strategy_id == opened.strategy_id
+                    && fill.instrument_id == opened.instrument_id
+                    && fill.account_id == opened.account_id
+                    && fill.client_order_id == opened.opening_order_id
+                    && fill.order_side == opened.entry
+                    && fill.last_qty == opened.last_qty
+                    && fill.last_px == opened.last_px
+                    && fill.currency == opened.currency)
+                    .then_some(index)
+            })
+            .collect();
+
+        if matching.len() > 1 {
+            return Err(apply_error(
+                entry,
+                format!(
+                    "ambiguous orderless flip recovery for position {}: {} pending fills match",
+                    opened.position_id,
+                    matching.len(),
+                ),
+            ));
+        }
+
+        let Some(index) = matching.first().copied() else {
+            return Ok(None);
+        };
+        let pending = self.pending_orderless_flips.remove(index);
+        let mut fill = pending.opening_fill;
+        let oms_type = if pending.source_position_id == opened.position_id {
+            pending.oms_type
+        } else {
+            // A virtual HEDGING flip is the only live orderless path which opens a
+            // replacement ID. This recovers the OMS metadata even during a full
+            // event-store replay where no cache snapshot supplied it.
+            OmsType::Hedging
+        };
+        fill.position_id = Some(opened.position_id);
+        // The live opening fragment is not stored separately. The PositionOpened event ID is
+        // stable and identifies the recovered opening transition, while causation still points
+        // to the original unsplit venue fill.
+        fill.event_id = opened.event_id;
+        Ok(Some((fill, oms_type)))
+    }
+
+    fn ensure_complete(&self) -> Result<(), CacheReplayError> {
+        let Some(pending) = self.pending_orderless_flips.first() else {
+            return Ok(());
+        };
+
+        Err(CacheReplayError::Apply {
+            seq: pending.source_seq,
+            payload_type: PAYLOAD_TYPE_ORDER_FILLED.to_string(),
+            message: format!(
+                "orderless flip fill {} has no matching PositionOpened event",
+                pending.opening_fill.trade_id,
+            ),
+        })
+    }
+}
+
 /// Replays the cache snapshot tail after the caller restores the cache-owned snapshot blob.
 ///
 /// The restore hook runs before the tail iterator is consumed. When `anchor` is `Some`,
@@ -647,6 +763,7 @@ where
 
     let mut applied_entries = 0;
     let mut ignored_entries = 0;
+    let mut context = CacheReplayContext::for_snapshot_tail();
 
     for entry in scan {
         let entry = entry?;
@@ -658,12 +775,14 @@ where
             });
         }
 
-        if apply_cache_replay_entry(cache, &entry)? {
+        if apply_cache_replay_entry_with_context(cache, &entry, &mut context)? {
             applied_entries += 1;
         } else {
             ignored_entries += 1;
         }
     }
+
+    context.ensure_complete()?;
 
     Ok(CacheReplayReport {
         plan,
@@ -1124,6 +1243,17 @@ pub fn apply_cache_replay_entry(
     cache: &mut Cache,
     entry: &EventStoreEntry,
 ) -> Result<bool, CacheReplayError> {
+    let mut context = CacheReplayContext::default();
+    let applied = apply_cache_replay_entry_with_context(cache, entry, &mut context)?;
+    context.ensure_complete()?;
+    Ok(applied)
+}
+
+fn apply_cache_replay_entry_with_context(
+    cache: &mut Cache,
+    entry: &EventStoreEntry,
+    context: &mut CacheReplayContext,
+) -> Result<bool, CacheReplayError> {
     if apply_complete_cache_payload_entry(cache, entry)? {
         return Ok(true);
     }
@@ -1180,29 +1310,18 @@ pub fn apply_cache_replay_entry(
         PAYLOAD_TYPE_ORDER_UPDATED => {
             apply_order_event(cache, entry, OrderEventAny::Updated)?;
         }
-        PAYLOAD_TYPE_ORDER_FILLED => {
-            let fill = decode_payload::<OrderFilled>(entry)?;
-            // The fill side panics deep inside Position/Order application; the hash
-            // proves the bytes match what was written, not that the producer wrote a
-            // semantically valid fill, so guard before the model invariants fire.
-            if matches!(fill.order_side, OrderSide::NoOrderSide) {
-                return Err(apply_error(
-                    entry,
-                    "OrderFilled.order_side must be Buy or Sell, was NoOrderSide",
-                ));
-            }
-            let event = OrderEventAny::Filled(fill.clone());
-            apply_result(entry, cache.update_order(&event))?;
-            if !apply_fill_to_position(cache, entry, &fill)? {
-                return Ok(false);
-            }
-        }
+        PAYLOAD_TYPE_ORDER_FILLED => return apply_order_filled(cache, entry, context),
         PAYLOAD_TYPE_ORDER_FILL_VOIDED => {
             let fill_voided = decode_payload::<OrderFillVoided>(entry)?;
             apply_fill_void_to_order_and_positions(cache, entry, &fill_voided)?;
         }
         PAYLOAD_TYPE_POSITION_OPENED => {
             let opened = decode_payload::<PositionOpened>(entry)?;
+            if let Some(applied) =
+                apply_pending_orderless_flip_opened(cache, entry, &opened, context)?
+            {
+                return Ok(applied);
+            }
             return apply_position_opened(cache, entry, &opened);
         }
         PAYLOAD_TYPE_POSITION_CHANGED => {
@@ -1295,6 +1414,116 @@ where
     Ok(wrap(decode_payload(entry)?))
 }
 
+fn apply_order_filled(
+    cache: &mut Cache,
+    entry: &EventStoreEntry,
+    context: &mut CacheReplayContext,
+) -> Result<bool, CacheReplayError> {
+    let fill = decode_payload::<OrderFilled>(entry)?;
+    // The fill side panics deep inside Position/Order application; the hash
+    // proves the bytes match what was written, not that the producer wrote a
+    // semantically valid fill, so guard before the model invariants fire.
+    if matches!(fill.order_side, OrderSide::NoOrderSide) {
+        return Err(apply_error(
+            entry,
+            "OrderFilled.order_side must be Buy or Sell, was NoOrderSide",
+        ));
+    }
+    let event = OrderEventAny::Filled(fill.clone());
+    let orderless_leg_fill = is_orderless_leg_fill(cache, &fill);
+    if !orderless_leg_fill {
+        apply_result(entry, cache.update_order(&event))?;
+    }
+
+    let flip_applied =
+        orderless_leg_fill && apply_orderless_flip_fill(cache, entry, &fill, context)?;
+
+    if flip_applied {
+        return Ok(true);
+    }
+
+    apply_fill_to_position(cache, entry, &fill, orderless_leg_fill)
+}
+
+fn apply_orderless_flip_fill(
+    cache: &mut Cache,
+    entry: &EventStoreEntry,
+    fill: &OrderFilled,
+    context: &mut CacheReplayContext,
+) -> Result<bool, CacheReplayError> {
+    if context.contains_flip_source(fill) {
+        return Ok(true);
+    }
+
+    let Some(position_id) = fill.position_id else {
+        return Ok(false);
+    };
+    let Some(mut position) = cache.position_owned(&position_id) else {
+        return Ok(false);
+    };
+
+    if position.is_closed()
+        || !position.is_opposite_side(fill.order_side)
+        || fill.last_qty.raw <= position.quantity.raw
+    {
+        return Ok(false);
+    }
+
+    if position.side != PositionSide::Flat && position.trade_ids().contains(&fill.trade_id) {
+        return Ok(true);
+    }
+
+    if !context.allow_deferred_orderless_flips {
+        return Err(apply_error(
+            entry,
+            "orderless position flip requires snapshot-tail replay context to match the following PositionOpened event",
+        ));
+    }
+
+    let oms_type = cache.oms_type(&position_id).unwrap_or(OmsType::Unspecified);
+    let (closing_fill, opening_fill) = fill
+        .split_for_position_flip(position.quantity, None, fill.event_id)
+        .map_err(|e| apply_error(entry, e))?;
+    position.apply(&closing_fill);
+    apply_result(entry, cache.update_position(&position))?;
+    context.push_orderless_flip(entry.seq, position_id, oms_type, opening_fill);
+    Ok(true)
+}
+
+fn apply_pending_orderless_flip_opened(
+    cache: &mut Cache,
+    entry: &EventStoreEntry,
+    opened: &PositionOpened,
+    context: &mut CacheReplayContext,
+) -> Result<Option<bool>, CacheReplayError> {
+    let Some((opening_fill, oms_type)) = context.take_opening_fill(entry, opened)? else {
+        return Ok(None);
+    };
+    let instrument = cache
+        .instrument(&opening_fill.instrument_id)
+        .cloned()
+        .ok_or_else(|| {
+            apply_error(
+                entry,
+                format!(
+                    "instrument {} not found for orderless flip position {}",
+                    opening_fill.instrument_id, opened.position_id,
+                ),
+            )
+        })?;
+    let prior = cache.position_owned(&opened.position_id);
+    let mut position = Position::new(&instrument, opening_fill);
+    if let Some(prior) = prior {
+        let current_replay = position.replay_events.clone();
+        position.replay_events = prior.replay_events;
+        position.replay_events.extend(current_replay);
+        position.fill_voids = prior.fill_voids;
+    }
+    apply_result(entry, cache.add_position_without_order(&position, oms_type))?;
+
+    apply_position_opened(cache, entry, opened).map(Some)
+}
+
 // Returns `Ok(true)` when the position side applied (no position association, or an
 // idempotent replay no-op) and `Ok(false)` when the instrument needed to open the
 // position is missing, so the report's ignored count surfaces the divergence.
@@ -1302,6 +1531,7 @@ fn apply_fill_to_position(
     cache: &mut Cache,
     entry: &EventStoreEntry,
     fill: &OrderFilled,
+    orderless_leg_fill: bool,
 ) -> Result<bool, CacheReplayError> {
     let Some(position_id) = fill.position_id else {
         return Ok(true);
@@ -1330,8 +1560,32 @@ fn apply_fill_to_position(
     };
 
     let position = Position::new(&instrument, fill.clone());
-    apply_result(entry, cache.add_position(&position, OmsType::Unspecified))?;
+
+    if orderless_leg_fill {
+        apply_result(
+            entry,
+            cache.add_position_without_order(&position, OmsType::Unspecified),
+        )?;
+    } else {
+        apply_result(entry, cache.add_position(&position, OmsType::Unspecified))?;
+    }
     Ok(true)
+}
+
+fn is_orderless_leg_fill(cache: &Cache, fill: &OrderFilled) -> bool {
+    if !fill.client_order_id.as_str().contains("-LEG-")
+        && !fill.venue_order_id.as_str().contains("-LEG-")
+    {
+        return false;
+    }
+
+    let is_non_spread_instrument = cache
+        .instrument(&fill.instrument_id)
+        .is_none_or(|instrument| !instrument.is_spread());
+
+    is_non_spread_instrument
+        && !cache.order_exists(&fill.client_order_id)
+        && cache.client_order_id(&fill.venue_order_id).is_none()
 }
 
 fn apply_fill_void_to_order_and_positions(
@@ -1595,6 +1849,7 @@ fn apply_position_opened(
     position.avg_px_open = opened.avg_px_open;
     position.avg_px_close = None;
     position.realized_return = 0.0;
+    position.realized_pnl = opened.realized_pnl;
 
     apply_result(entry, cache.update_position(&position))?;
     Ok(true)
@@ -1909,7 +2164,7 @@ mod tests {
             instrument_id,
             Price::from("1.0001"),
             Quantity::from("100"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::from("T-1"),
             UnixNanos::from(ts_init),
             UnixNanos::from(ts_init),
@@ -2208,9 +2463,23 @@ mod tests {
             &[PAYLOAD_TYPE_ORDER_ACCEPTED, PAYLOAD_TYPE_ORDER_UPDATED],
         ),
         cache_mutation(
+            // Replay restores the current generation only; superseded reverse aliases are
+            // re-registered by live mass-status reconciliation.
+            "index_venue_order_id",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
             "add_order",
             CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
             &[PAYLOAD_TYPE_ORDER_INITIALIZED],
+        ),
+        cache_mutation(
+            // Cache databases persist the resolved client index, but current EventStore
+            // command payloads do not carry the client selected by runtime routing.
+            "claim_order_clients",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
         ),
         cache_mutation(
             "add_order_list",
@@ -2229,6 +2498,11 @@ mod tests {
         ),
         cache_mutation(
             "add_position",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ORDER_FILLED],
+        ),
+        cache_mutation(
+            "add_position_without_order",
             CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
             &[PAYLOAD_TYPE_ORDER_FILLED],
         ),
@@ -3158,7 +3432,7 @@ mod tests {
             instrument_id,
             Price::from("1.00005"),
             Quantity::from("50000"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::from("T-DATA-001"),
             UnixNanos::from(12),
             UnixNanos::from(13),
@@ -3447,6 +3721,307 @@ mod tests {
     }
 
     #[rstest]
+    fn orderless_leg_fill_replay_creates_position_without_order_mapping() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let client_order_id = ClientOrderId::from("SPREAD-LEG-AUDUSD");
+        let position_id = PositionId::from("P-ORDERLESS-LEG");
+        let filled = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-AUDUSD"))
+            .position_id(position_id)
+            .commission(Money::from("1 USD"))
+            .build();
+        let reader = reader_with_entries(
+            "run-orderless-leg-fill-replay",
+            &[append_order_event(
+                1,
+                &OrderEventAny::Filled(filled.clone()),
+            )],
+        );
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument).expect("add instrument");
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).expect("replay");
+        let position = cache
+            .position_owned(&position_id)
+            .expect("orderless leg position replayed");
+
+        assert_eq!(report.applied_entries, 1);
+        assert_eq!(report.ignored_entries, 0);
+        assert!(cache.order_owned(&client_order_id).is_none());
+        assert_eq!(cache.position_id(&client_order_id), None);
+        assert_eq!(position.event_count(), 1);
+        assert_eq!(position.last_event(), Some(filled.clone()));
+        assert_eq!(position.trade_ids(), vec![filled.trade_id]);
+        assert_eq!(position.commissions(), vec![Money::from("1 USD")]);
+        assert!(cache.check_integrity());
+    }
+
+    #[rstest]
+    fn orderless_netting_reopen_replay_does_not_treat_closed_position_as_flip() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let client_order_id = ClientOrderId::from("SPREAD-LEG-AUDUSD");
+        let position_id = PositionId::from("P-ORDERLESS-NETTING");
+        let opening_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-1"))
+            .trade_id(TradeId::from("T-SPREAD-LEG-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(1))
+            .position_id(position_id)
+            .build();
+        let closing_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-2"))
+            .trade_id(TradeId::from("T-SPREAD-LEG-2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(1))
+            .position_id(position_id)
+            .build();
+        let mut closed_position = Position::new(&instrument, opening_fill);
+        closed_position.apply(&closing_fill);
+        assert!(closed_position.is_closed());
+
+        let reopening_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-3"))
+            .trade_id(TradeId::from("T-SPREAD-LEG-3"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(1))
+            .position_id(position_id)
+            .build();
+        let mut reopened_position = closed_position.clone();
+        reopened_position.apply(&reopening_fill);
+        let reopened = PositionOpened::create(
+            &reopened_position,
+            &reopening_fill,
+            UUID4::new(),
+            reopening_fill.ts_init,
+        );
+        let reader = reader_with_entries(
+            "run-orderless-netting-reopen-replay",
+            &[
+                append_order_event(1, &OrderEventAny::Filled(reopening_fill.clone())),
+                append_position_event(2, &PositionEvent::PositionOpened(reopened)),
+            ],
+        );
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument).expect("add instrument");
+        cache
+            .add_position_without_order(&closed_position, OmsType::Netting)
+            .expect("seed closed orderless position");
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).expect("replay");
+        let position = cache
+            .position_owned(&position_id)
+            .expect("netting position reopened");
+
+        assert_eq!(report.applied_entries, 2);
+        assert_eq!(report.ignored_entries, 0);
+        assert!(position.is_open());
+        assert_eq!(position.side, PositionSide::Short);
+        assert_eq!(position.entry, OrderSide::Sell);
+        assert_eq!(position.quantity, Quantity::from(1));
+        assert_eq!(position.opening_order_id, client_order_id);
+        assert_eq!(position.closing_order_id, None);
+        assert_eq!(position.event_count(), 1);
+        assert_eq!(position.trade_ids(), vec![reopening_fill.trade_id]);
+        assert_eq!(position.last_event(), Some(reopening_fill));
+        assert_eq!(cache.oms_type(&position_id), Some(OmsType::Netting));
+        assert!(cache.orders_for_position(&position_id).is_empty());
+        assert_eq!(cache.position_id(&client_order_id), None);
+        assert!(cache.check_integrity());
+    }
+
+    #[rstest]
+    fn orderless_hedging_flip_replay_recreates_replacement_position() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let client_order_id = ClientOrderId::from("SPREAD-LEG-AUDUSD");
+        let first_position_id = PositionId::from("P-ORDERLESS-LEG-1");
+        let replacement_position_id = PositionId::from("P-ORDERLESS-LEG-2");
+        let opening_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-1"))
+            .trade_id(TradeId::from("T-SPREAD-LEG-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(1))
+            .last_px(Price::from("1.00000"))
+            .position_id(first_position_id)
+            .commission(Money::from("1 USD"))
+            .build();
+        let first_position = Position::new(&instrument, opening_fill.clone());
+        let first_opened = PositionOpened::create(
+            &first_position,
+            &opening_fill,
+            UUID4::new(),
+            opening_fill.ts_init,
+        );
+
+        let flip_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-2"))
+            .trade_id(TradeId::from("T-SPREAD-LEG-2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(2))
+            .last_px(Price::from("1.10000"))
+            .position_id(first_position_id)
+            .commission(Money::from("2 USD"))
+            .build();
+        let mut closing_fragment = flip_fill.clone();
+        closing_fragment.last_qty = Quantity::from(1);
+        closing_fragment.commission = Some(Money::from("1 USD"));
+        let mut closed_position = first_position;
+        closed_position.apply(&closing_fragment);
+        let first_closed = PositionClosed::create(
+            &closed_position,
+            &closing_fragment,
+            UUID4::new(),
+            flip_fill.ts_init,
+        );
+
+        let mut opening_fragment = flip_fill.clone();
+        opening_fragment.last_qty = Quantity::from(1);
+        opening_fragment.position_id = Some(replacement_position_id);
+        opening_fragment.commission = Some(Money::from("1 USD"));
+        opening_fragment.event_id = UUID4::new();
+        opening_fragment.causation_id = Some(flip_fill.event_id);
+        let mut replacement_position = Position::new(&instrument, opening_fragment.clone());
+        let replacement_opened = PositionOpened::create(
+            &replacement_position,
+            &opening_fragment,
+            UUID4::new(),
+            opening_fragment.ts_init,
+        );
+
+        let subsequent_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-3"))
+            .trade_id(TradeId::from("T-SPREAD-LEG-3"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(1))
+            .last_px(Price::from("1.20000"))
+            .position_id(replacement_position_id)
+            .commission(Money::from("1 USD"))
+            .build();
+        replacement_position.apply(&subsequent_fill);
+        let replacement_changed = PositionChanged::create(
+            &replacement_position,
+            &subsequent_fill,
+            UUID4::new(),
+            subsequent_fill.ts_init,
+        );
+        let reader = reader_with_entries(
+            "run-orderless-hedging-flip-replay",
+            &[
+                append_order_event(1, &OrderEventAny::Filled(opening_fill)),
+                append_position_event(2, &PositionEvent::PositionOpened(first_opened)),
+                append_order_event(3, &OrderEventAny::Filled(flip_fill.clone())),
+                append_position_event(4, &PositionEvent::PositionClosed(first_closed)),
+                append_position_event(5, &PositionEvent::PositionOpened(replacement_opened)),
+                append_order_event(6, &OrderEventAny::Filled(subsequent_fill.clone())),
+                append_position_event(7, &PositionEvent::PositionChanged(replacement_changed)),
+            ],
+        );
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument).expect("add instrument");
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).expect("replay");
+
+        assert_eq!(report.applied_entries, 7);
+        assert_eq!(report.ignored_entries, 0);
+        let closed = cache
+            .position_owned(&first_position_id)
+            .expect("closed predecessor replayed");
+        assert!(closed.is_closed());
+        assert_eq!(closed.event_count(), 2);
+        let closing_fragments = closed.fill_fragments(client_order_id, flip_fill.trade_id);
+        assert_eq!(closing_fragments.len(), 1);
+        assert_eq!(closing_fragments[0].last_qty, Quantity::from(1));
+        assert_eq!(closing_fragments[0].commission, Some(Money::from("1 USD")));
+        assert_eq!(closing_fragments[0].event_id, flip_fill.event_id);
+
+        let replacement = cache
+            .position_owned(&replacement_position_id)
+            .expect("open replacement replayed");
+        assert!(replacement.is_open());
+        assert_eq!(replacement.side, PositionSide::Short);
+        assert_eq!(replacement.quantity, Quantity::from(2));
+        assert_eq!(replacement.event_count(), 2);
+        assert_eq!(
+            cache.oms_type(&replacement_position_id),
+            Some(OmsType::Hedging)
+        );
+        assert!(replacement.trade_ids().contains(&flip_fill.trade_id));
+        assert!(replacement.trade_ids().contains(&subsequent_fill.trade_id));
+        let opening_fragments = replacement.fill_fragments(client_order_id, flip_fill.trade_id);
+        assert_eq!(opening_fragments.len(), 1);
+        assert_eq!(opening_fragments[0].last_qty, Quantity::from(1));
+        assert_eq!(opening_fragments[0].commission, Some(Money::from("1 USD")));
+        assert_eq!(opening_fragments[0].causation_id, Some(flip_fill.event_id));
+
+        assert!(cache.orders_for_position(&first_position_id).is_empty());
+        assert!(
+            cache
+                .orders_for_position(&replacement_position_id)
+                .is_empty()
+        );
+        assert_eq!(cache.position_id(&client_order_id), None);
+        assert!(cache.check_integrity());
+    }
+
+    #[rstest]
+    fn single_entry_orderless_flip_is_rejected_before_mutating_position() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let position_id = PositionId::from("P-ORDERLESS-SINGLE-ENTRY");
+        let opening_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("SPREAD-LEG-SINGLE"))
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-SINGLE-1"))
+            .trade_id(TradeId::from("T-SPREAD-LEG-SINGLE-1"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(1))
+            .position_id(position_id)
+            .build();
+        let original = Position::new(&instrument, opening_fill.clone());
+        let flip_fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(opening_fill.client_order_id)
+            .venue_order_id(VenueOrderId::from("V-SPREAD-LEG-SINGLE-2"))
+            .trade_id(TradeId::from("T-SPREAD-LEG-SINGLE-2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(2))
+            .position_id(position_id)
+            .build();
+        let entry = append_order_event(1, &OrderEventAny::Filled(flip_fill)).entry;
+        let mut cache = Cache::default();
+        cache
+            .add_instrument(instrument)
+            .expect("add replay instrument");
+        cache
+            .add_position_without_order(&original, OmsType::Hedging)
+            .expect("seed orderless position");
+
+        let error = apply_cache_replay_entry(&mut cache, &entry)
+            .expect_err("single-entry API cannot defer the opening fragment");
+        let after = cache
+            .position_owned(&position_id)
+            .expect("position retained");
+
+        assert!(error.to_string().contains("snapshot-tail replay context"));
+        assert_eq!(after.side, original.side);
+        assert_eq!(after.quantity, original.quantity);
+        assert_eq!(after.event_count(), original.event_count());
+        assert_eq!(after.trade_ids(), original.trade_ids());
+    }
+
+    #[rstest]
     fn order_fill_replay_without_instrument_counts_fill_as_ignored() {
         // The position side cannot open without the instrument; the fill must count
         // as ignored rather than claim a full apply.
@@ -3730,6 +4305,50 @@ mod tests {
     }
 
     #[rstest]
+    fn position_opened_replay_replaces_realized_pnl() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let position_id = PositionId::from("P-001");
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(position_id)
+            .commission(Money::from("1 USD"))
+            .build();
+        let position = Position::new(&instrument, fill.clone());
+        let mut opened =
+            PositionOpened::create(&position, &fill, UUID4::new(), UnixNanos::from(10));
+        assert_eq!(opened.realized_pnl, Some(Money::from("-1 USD")));
+
+        let mut stale_position = position;
+        stale_position.realized_pnl = Some(Money::from("9 USD"));
+        let mut cache = Cache::default();
+        cache
+            .add_position(&stale_position, OmsType::Unspecified)
+            .expect("seed stale position");
+        let entry = append_position_event(1, &PositionEvent::PositionOpened(opened.clone())).entry;
+
+        assert!(apply_cache_replay_entry(&mut cache, &entry).expect("apply opened"));
+        assert_eq!(
+            cache
+                .position_owned(&position_id)
+                .expect("position after opened")
+                .realized_pnl,
+            Some(Money::from("-1 USD")),
+        );
+
+        opened.realized_pnl = None;
+        let entry = append_position_event(2, &PositionEvent::PositionOpened(opened)).entry;
+
+        assert!(apply_cache_replay_entry(&mut cache, &entry).expect("apply opened without PnL"));
+        assert_eq!(
+            cache
+                .position_owned(&position_id)
+                .expect("position after opened without PnL")
+                .realized_pnl,
+            None,
+        );
+    }
+
+    #[rstest]
     fn position_adjustment_replay_updates_existing_position() {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let position_id = PositionId::from("P-001");
@@ -3829,7 +4448,7 @@ mod tests {
             .add_position(&position, OmsType::Unspecified)
             .expect("seed position");
 
-        let applied = apply_fill_to_position(&mut cache, &entry, &fill).expect("apply fill");
+        let applied = apply_fill_to_position(&mut cache, &entry, &fill, false).expect("apply fill");
         let position = cache
             .position_owned(&position_id)
             .expect("position updated");
@@ -3880,7 +4499,7 @@ mod tests {
             .add_position(&position, OmsType::Unspecified)
             .expect("seed position");
 
-        let applied = apply_fill_to_position(&mut cache, &entry, &dup_fill).expect("apply");
+        let applied = apply_fill_to_position(&mut cache, &entry, &dup_fill, false).expect("apply");
         let position = cache
             .position_owned(&position_id)
             .expect("position updated");
@@ -3906,7 +4525,7 @@ mod tests {
         let entry = append_order_event(1, &OrderEventAny::Filled(fill.clone())).entry;
         let mut cache = Cache::default();
 
-        let applied = apply_fill_to_position(&mut cache, &entry, &fill).expect("apply");
+        let applied = apply_fill_to_position(&mut cache, &entry, &fill, false).expect("apply");
 
         assert!(
             !applied,

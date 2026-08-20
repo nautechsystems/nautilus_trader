@@ -33,7 +33,7 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::get,
 };
-use chrono::{TimeZone, Utc};
+use jiff::{Timestamp, civil::Date, tz::Offset};
 use nautilus_bitmex::{
     common::{
         consts::BITMEX_CLIENT_ID,
@@ -72,6 +72,16 @@ use nautilus_network::http::HttpClient;
 use nautilus_testkit::events::drain_data_events;
 use rstest::rstest;
 use serde_json::{Value, json};
+
+fn utc_timestamp(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
+    Offset::UTC
+        .to_timestamp(
+            Date::new(year, month, day)
+                .unwrap()
+                .at(hour, minute, second, 0),
+        )
+        .unwrap()
+}
 
 #[derive(Debug, Clone, Copy)]
 enum RequiredInstrumentCachePath {
@@ -683,8 +693,8 @@ async fn test_request_funding_rates() {
     .unwrap();
 
     let instrument_id = InstrumentId::from_str("XBTUSD.BITMEX").unwrap();
-    let start = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
-    let end = Utc.with_ymd_and_hms(2025, 1, 1, 8, 0, 0).unwrap();
+    let start = utc_timestamp(2025, 1, 1, 0, 0, 0);
+    let end = utc_timestamp(2025, 1, 1, 8, 0, 0);
     let rates = client
         .request_funding_rates(instrument_id, Some(start), Some(end), Some(3))
         .await

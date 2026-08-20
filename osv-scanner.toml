@@ -12,10 +12,6 @@ id = "RUSTSEC-2024-0436"
 reason = "paste crate is unmaintained but a transitive dependency via alloy"
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2025-0134"
-reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a security vulnerability)"
-
-[[IgnoredVulns]]
 id = "RUSTSEC-2024-0388"
 reason = "derivative crate is unmaintained, transitive dependency with no available fix"
 
@@ -53,15 +49,15 @@ reason = "bincode unmaintained, transitive via hypersync-client (not a security 
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0194"
-reason = "quick-xml DoS via object_store 0.13.2; no fixed object_store release"
+reason = "quick-xml DoS via DataFusion-aligned object_store 0.13.2"
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0195"
-reason = "quick-xml NsReader DoS via object_store 0.13.2; no fixed object_store release"
+reason = "quick-xml NsReader DoS via DataFusion-aligned object_store 0.13.2"
 
 [[IgnoredVulns]]
-id = "GHSA-6w46-j5rx-g56g"
-reason = "pytest tmpdir local tampering (fixed in 9.0.3); dev/test-only dependency intentionally pinned to 7.x, not a runtime risk"
+id = "RUSTSEC-2026-0235"
+reason = "rkyv validation bug in unused optional rust_decimal dependency; no 0.7 fix"
 
 [[IgnoredVulns]]
 id = "GHSA-2f9f-gq7v-9h6m"

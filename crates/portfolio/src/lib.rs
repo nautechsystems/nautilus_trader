@@ -72,6 +72,13 @@
     clippy::too_many_lines,
     reason = "portfolio calculation and event update flows exceed the default threshold by design"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
+// pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
+// macro expansion; an item-level `allow` cannot reach the expansion
+#![allow(clippy::clone_on_copy)]
 
 pub mod config;
 pub mod manager;

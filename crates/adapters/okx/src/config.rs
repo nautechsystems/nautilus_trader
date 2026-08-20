@@ -35,7 +35,7 @@ use crate::common::{
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.okx", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.okx", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -109,6 +109,7 @@ pub struct OKXDataClientConfig {
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(OKXDataClientConfig {
     instrument_types: Vec<OKXInstrumentType>,
+    instrument_families: Option<Vec<String>>,
     environment: OKXEnvironment,
     region: OKXRegion,
     base_url_http: Option<String>,
@@ -189,7 +190,7 @@ impl OKXDataClientConfig {
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.okx", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.okx", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -233,9 +234,6 @@ pub struct OKXExecClientConfig {
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
-    /// Enables consumption of the fills WebSocket channel when true.
-    #[builder(default)]
-    pub use_fills_channel: bool,
     /// Whether to subscribe to spread order updates from the separate spread channel.
     #[builder(default)]
     pub load_spreads: bool,
@@ -399,10 +397,16 @@ book_snapshot_timeout_secs = 4
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.instrument_types, expected.instrument_types);
         assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
-        assert_eq!(config.use_fills_channel, expected.use_fills_channel);
         assert_eq!(config.load_spreads, expected.load_spreads);
         assert_eq!(config.use_mm_mass_cancel, expected.use_mm_mass_cancel);
         assert_eq!(config.transport_backend, expected.transport_backend);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_rejects_removed_fills_channel_key() {
+        // use_fills_channel was removed: strict decoding must reject stale configs
+        let result: Result<OKXExecClientConfig, _> = toml::from_str("use_fills_channel = true\n");
+        assert!(result.is_err());
     }
 
     #[rstest]

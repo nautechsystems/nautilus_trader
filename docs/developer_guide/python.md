@@ -41,11 +41,11 @@ def get_instrument(self, id: InstrumentId) -> Instrument | None:
 def get_instrument(self, id: InstrumentId) -> Optional[Instrument]:
 ```
 
-**Generic types**: Use `TypeVar` for reusable components:
+**Generic types**: Use Python 3.12 type parameter syntax for reusable functions and classes:
 
 ```python
-T = TypeVar("T")
-class ThrottledEnqueuer(Generic[T]):
+def first[T](values: list[T]) -> T:
+    return values[0]
 ```
 
 ### Docstrings
@@ -90,9 +90,9 @@ method based on what the call site communicates, not whether the value can chang
   Using a method signals the cost to the caller.
   Examples: `events()`, `adjustments()`, `client_order_ids()`, `trade_ids()`.
 
-## Python v2 live callback routing
+## Python live callback routing
 
-Python v2 live nodes keep one runtime invariant: Tokio worker threads do not run
+Python live nodes keep one runtime invariant: Tokio worker threads do not run
 Python code during live trading.
 
 `LiveNode::py_run` releases the GIL while the Rust async runtime runs. Worker-side
@@ -102,7 +102,7 @@ channel. The runner drains that channel during startup buffering and the main
 select loop, then executes callbacks on the live event loop thread.
 
 This path is a boundary for unavoidable user Python callback work. It is not a
-place to move adapter, provider, data, or execution logic into Python. Python v2
+place to move adapter, provider, data, or execution logic into Python. Python
 adapter modules configure Rust adapters and register factories; Rust owns adapter
 operations. If worker-side Rust work needs a Python callback, route it through a
 specific event type that belongs in the live runner.
@@ -111,33 +111,24 @@ When adding Python-aware live code:
 
 - Prefer an existing runner event channel.
 - Keep callback bodies short because they run synchronously on the live event loop.
-- Do not call `Python::attach` from Tokio worker tasks in Python v2 live trading.
+- Do not call `Python::attach` from Tokio worker tasks in Python live trading.
 - Do not add adapter business logic in Python to fit callback routing.
-
-Legacy Cython `LiveClock` callbacks are a separate FFI path. They use capsule-style
-callback arguments for v1 compatibility and can be created without a live runner sender.
-Keep that ABI distinct until time event dispatch can be unified across v1 and v2.
 
 ### Test naming
 
-Descriptive names explaining the scenario:
+Use descriptive names that explain the scenario. Keep tests as annotated pytest free functions:
 
 ```python
-def test_currency_with_negative_precision_raises_overflow_error(self):
-def test_sma_with_no_inputs_returns_zero_count(self):
-def test_sma_with_single_input_returns_expected_value(self):
+def test_write_and_query_option_greeks_round_trip() -> None: ...
+
+
+def test_catalog_loaded_greeks_reach_on_option_greeks() -> None: ...
+
+
+def test_backend_session_rejects_zero_chunk_size() -> None: ...
 ```
 
 ### Ruff
 
-[ruff](https://astral.sh/ruff) is used to lint the codebase. Ruff rules can be found in the top-level `pyproject.toml`, with ignore justifications typically commented.
-
-## Cython (legacy)
-
-:::note
-This section covers Cython conventions for `.pyx` and `.pxd` files.
-:::
-
-For `.pyx` and `.pxd` files, make sure all functions and methods returning `void` or a primitive C type (such as `bint`, `int`, `double`) include the `except *` keyword in the signature. Without it, Python exceptions are silently ignored.
-
-For more information, see the [Cython docs](https://cython.readthedocs.io/en/latest/index.html).
+[Ruff](https://astral.sh/ruff) is used to lint the codebase. Its rules are configured in
+`python/pyproject.toml`, with ignore justifications typically commented.

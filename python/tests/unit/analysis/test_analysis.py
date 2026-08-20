@@ -231,6 +231,33 @@ def test_portfolio_analyzer_adds_native_position():
     assert analyzer.get_performance_stats_general() == {"Long Ratio": 1.0}
 
 
+def test_long_ratio_calculates_from_native_positions():
+    instrument = TestInstrumentProvider.audusd_sim()
+    position = Position(instrument=instrument, fill=make_position_fill(instrument))
+
+    assert LongRatio().calculate_from_positions([position]) == 1.0
+    assert LongRatio().calculate_from_positions([]) is None
+
+
+class DuckTypedPosition:
+    """
+    The attribute shape the removed getattr-based extraction accepted.
+    """
+
+    entry = 1  # `OrderSide.BUY`
+
+
+def test_long_ratio_rejects_non_position_objects():
+    with pytest.raises(TypeError, match="Position"):
+        LongRatio().calculate_from_positions([DuckTypedPosition()])
+
+
+@pytest.mark.parametrize("cls", EXPOSED_STATISTICS)
+def test_statistic_calculate_from_positions_rejects_non_position_objects(cls):
+    with pytest.raises(TypeError, match="Position"):
+        cls().calculate_from_positions([DuckTypedPosition()])
+
+
 def test_undefined_cagr_and_calmar_ratio_return_nan():
     nanos_per_day = 86_400_000_000_000
     returns = {

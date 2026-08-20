@@ -17,7 +17,7 @@
 
 use ahash::AHashMap;
 use anyhow::Context;
-use chrono::{Duration, TimeZone, Timelike, Utc};
+use jiff::{Span, Timestamp, tz::Offset};
 use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
     data::{
@@ -52,25 +52,17 @@ use crate::{common::parse::build_public_trade_id, http::models::DeribitPosition}
 
 fn next_8_utc(from_ns: UnixNanos) -> anyhow::Result<UnixNanos> {
     let from_secs = from_ns.as_u64() / 1_000_000_000;
-    let dt = Utc
-        .timestamp_opt(from_secs as i64, 0)
-        .single()
-        .context("failed to convert timestamp to UTC datetime")?;
-    let next_8 = if dt.hour() < 8 {
-        dt.date_naive()
-            .and_hms_opt(8, 0, 0)
-            .context("failed to construct 08:00 UTC time")?
-            .and_utc()
+    let timestamp = Timestamp::from_second(i64::try_from(from_secs)?)?;
+    let dt = Offset::UTC.to_datetime(timestamp);
+    let date = if dt.hour() < 8 {
+        dt.date()
     } else {
-        (dt.date_naive() + Duration::days(1))
-            .and_hms_opt(8, 0, 0)
-            .context("failed to construct next-day 08:00 UTC time")?
-            .and_utc()
+        dt.date().checked_add(Span::new().days(1))?
     };
-    let nanos = next_8
-        .timestamp_nanos_opt()
-        .context("GTD expiry timestamp out of nanosecond range")?;
-    Ok(UnixNanos::from(nanos as u64))
+    let next_8 = Offset::UTC.to_timestamp(date.at(8, 0, 0, 0))?;
+    let nanos = u64::try_from(next_8.as_nanosecond())
+        .context("GTD expiry timestamp out of UnixNanos range")?;
+    Ok(UnixNanos::from(nanos))
 }
 
 /// Parses a Deribit trade message into a Nautilus `TradeTick`.
@@ -91,8 +83,8 @@ pub fn parse_trade_msg(
     let size = Quantity::from_decimal_dp(msg.amount.abs(), size_precision)?;
 
     let aggressor_side = match msg.direction.as_str() {
-        "buy" => AggressorSide::Buyer,
-        "sell" => AggressorSide::Seller,
+        "buy" => AggressorSide::Buy,
+        "sell" => AggressorSide::Sell,
         _ => AggressorSide::NoAggressor,
     };
 
@@ -695,11 +687,7 @@ pub fn parse_chart_msg(
 
     // Adjust timestamp to close time if configured
     if timestamp_on_close {
-        let interval_ns = bar_type
-            .spec()
-            .timedelta()
-            .num_nanoseconds()
-            .context("bar specification produced non-integer interval")?;
+        let interval_ns = bar_type.spec().timedelta().as_nanos();
         let interval_ns = u64::try_from(interval_ns)
             .context("bar interval overflowed the u64 range for nanoseconds")?;
         let updated = ts_event
@@ -1344,7 +1332,7 @@ mod tests {
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.price, instrument.make_price(92294.5));
         assert_eq!(tick.size, instrument.make_qty(10.0, None));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(tick.trade_id.to_string(), "403691824");
         assert_eq!(tick.ts_event, UnixNanos::new(1_765_531_356_452_000_000));
     }
@@ -1363,7 +1351,7 @@ mod tests {
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.price, instrument.make_price(92288.5));
         assert_eq!(tick.size, instrument.make_qty(750.0, None));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(tick.trade_id.to_string(), "403691825");
     }
 
@@ -1471,7 +1459,7 @@ mod tests {
         // so a regression in price/size precision is caught here too.
         assert_eq!(tick.price, Price::from("0.0639"));
         assert_eq!(tick.size, Quantity::from("0.1"));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(tick.trade_id.to_string(), "244365193");
     }
 

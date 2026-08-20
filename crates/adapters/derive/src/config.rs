@@ -28,7 +28,7 @@ use crate::common::{enums::DeriveEnvironment, urls};
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.derive", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.derive", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -121,7 +121,7 @@ impl DeriveDataClientConfig {
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.derive", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.derive", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -194,6 +194,13 @@ pub struct DeriveExecClientConfig {
     /// of 1 when unset; raise it for Market Maker accounts with higher
     /// negotiated limits. See <https://docs.derive.xyz/reference/rate-limits>.
     pub max_matching_requests_per_second: Option<u32>,
+    /// Maximum per-instrument matching requests per second for instrument-
+    /// scoped order writes sent over the WebSocket. Defaults to the Trader-tier
+    /// limit of 1 when unset; raise it for Market Maker accounts with higher
+    /// negotiated per-instrument limits. This allowance is independent of
+    /// `max_matching_requests_per_second`, which never inflates it. See
+    /// <https://docs.derive.xyz/reference/rate-limits>.
+    pub max_per_instrument_matching_requests_per_second: Option<u32>,
 }
 
 #[cfg(feature = "python")]
@@ -215,6 +222,7 @@ nautilus_core::impl_pyo3_config_getters!(DeriveExecClientConfig {
     signature_expiry_secs: u64,
     market_order_slippage_bps: u32,
     max_matching_requests_per_second: Option<u32>,
+    max_per_instrument_matching_requests_per_second: Option<u32>,
     transport_backend: TransportBackend,
 });
 
@@ -251,6 +259,10 @@ impl Debug for DeriveExecClientConfig {
             .field(
                 "max_matching_requests_per_second",
                 &self.max_matching_requests_per_second,
+            )
+            .field(
+                "max_per_instrument_matching_requests_per_second",
+                &self.max_per_instrument_matching_requests_per_second,
             )
             .finish()
     }
@@ -355,6 +367,11 @@ mod tests {
         assert_eq!(config.http_timeout_secs, 10);
         assert_eq!(config.max_retries, 3);
         assert!(config.max_matching_requests_per_second.is_none());
+        assert!(
+            config
+                .max_per_instrument_matching_requests_per_second
+                .is_none()
+        );
         assert!(!config.has_credentials());
     }
 

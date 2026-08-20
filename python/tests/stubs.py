@@ -60,7 +60,7 @@ class TestDataProviderPyo3:
             instrument_id=instrument_id or InstrumentId.from_str("ETHUSDT.BINANCE"),
             price=Price.from_str(str(price)),
             size=Quantity.from_str(str(size)),
-            aggressor_side=AggressorSide.BUYER,
+            aggressor_side=AggressorSide.BUY,
             trade_id=TradeId("1"),
             ts_init=ts_init,
             ts_event=ts_event,

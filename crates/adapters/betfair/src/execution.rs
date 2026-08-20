@@ -15,28 +15,39 @@
 
 //! Live execution client for the Betfair adapter.
 //!
-//! # Stream reconnect lifecycle
+//! # Submission gate
 //!
-//! On every reconnect (second `Connection` message), the OCM handler raises
-//! both `pending_resync` (drains buffered OCMs on the next command) and
-//! `is_reconciling` (halts exposure-increasing commands). The reconnect
-//! background task then refreshes the session, fetches account state, and
-//! pulls a `list_current_orders` mass status to recover any fills that
-//! completed and rolled off the unmatched book during the gap. Once the
-//! mass status is dispatched the halt clears.
+//! The client halts new-order submissions whenever the execution stream is unavailable or
+//! recovering. `submit_order` and `submit_order_list` emit `OrderDenied` with
+//! `STREAM_RECONCILING`, while cancel and modify commands remain available. Transport availability
+//! alone does not reopen the gate: an active replacement socket remains halted until Betfair sends
+//! a `Connection` message and the matching recovery task dispatches mass status.
 //!
-//! While `is_reconciling` is set, `submit_order` and `submit_order_list`
-//! emit `OrderDenied` with `STREAM_RECONCILING`; cancels and modifies
-//! pass through unchanged. The halt is fail-open: a transient reconnect
-//! failure clears the flag rather than locking trading indefinitely,
-//! consistent with the rest of Nautilus.
+//! # Reconnect recovery
+//!
+//! A transport loss or server `connectionClosed` status advances the reconciliation generation
+//! immediately. Each replacement `Connection` message advances it again and raises
+//! `pending_resync`; subsequent OCMs remain buffered until `process_pending_resync` runs on the
+//! engine thread. Connectivity polling and command or report entry points invoke it to synchronize
+//! OCM state from the cache and drain the buffer.
+//!
+//! The recovery task attempts to refresh the session, requests account state on a best-effort basis,
+//! and builds a mass status from `list_current_orders`. The mass status recovers fills that
+//! completed and rolled off the unmatched book during the gap.
+//!
+//! After dispatching mass status, the task clears only the generation it handled; it does not wait
+//! for a separate cache-application acknowledgement. A newer transport loss or replacement
+//! connection therefore keeps submissions halted when an older task finishes. A failed full
+//! re-login or mass-status request leaves the gate closed until a later reconnect succeeds or the
+//! client disconnects. A keep-alive failure other than explicit `LoginFailed` continues recovery
+//! with the retained session; the gate still reopens only after mass status is dispatched.
 
 use std::{
     fmt,
     future::Future,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
@@ -53,14 +64,12 @@ use nautilus_common::{
         DataEvent, ExecutionReport,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateFillReportsBuilder, GenerateOrderStatusReports,
-            GenerateOrderStatusReportsBuilder, ModifyOrder, QueryOrder, SubmitOrder,
-            SubmitOrderList,
+            GenerateOrderStatusReports, ModifyOrder, QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UUID4, UnixNanos,
+    MUTEX_POISONED, Params, UUID4, UnixNanos,
     datetime::NANOSECONDS_IN_SECOND,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -81,7 +90,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, MarginBalance},
 };
-use nautilus_network::socket::TcpMessageHandler;
+use nautilus_network::{SocketState, SocketStateSink, socket::TcpMessageHandler};
 use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 use ustr::Ustr;
@@ -146,7 +155,7 @@ pub struct BetfairExecutionClient {
     currency: Currency,
     ocm_state: Arc<Mutex<OcmState>>,
     pending_resync: Arc<AtomicBool>,
-    is_reconciling: Arc<AtomicBool>,
+    reconciliation_gate: Arc<ReconciliationGate>,
     replay_buffer: Arc<Mutex<Vec<ReceivedOcm>>>,
     pending_tasks: TaskHandles,
     keep_alive_handle: Option<JoinHandle<()>>,
@@ -187,7 +196,7 @@ impl BetfairExecutionClient {
             currency,
             ocm_state: Arc::new(Mutex::new(OcmState::default())),
             pending_resync: Arc::new(AtomicBool::new(false)),
-            is_reconciling: Arc::new(AtomicBool::new(false)),
+            reconciliation_gate: Arc::new(ReconciliationGate::default()),
             replay_buffer: Arc::new(Mutex::new(Vec::new())),
             pending_tasks: TaskHandles::default(),
             keep_alive_handle: None,
@@ -197,10 +206,19 @@ impl BetfairExecutionClient {
         }
     }
 
-    /// Returns true while post-reconnect reconciliation is in flight.
+    /// Returns true while new-order submissions are halted for stream recovery.
     #[must_use]
     pub fn is_reconciling(&self) -> bool {
-        self.is_reconciling.load(Ordering::Acquire)
+        self.reconciliation_gate.is_halted()
+    }
+
+    fn submissions_halted(&self) -> bool {
+        !self.core.is_connected()
+            || self.reconciliation_gate.is_halted()
+            || self
+                .stream_client
+                .as_ref()
+                .is_none_or(|client| !client.is_active())
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -387,8 +405,7 @@ impl BetfairExecutionClient {
         buf.clear();
         self.pending_resync.store(false, Ordering::Release);
 
-        // An aborted reconnect must not leave submits permanently halted
-        self.is_reconciling.store(false, Ordering::Release);
+        self.reconciliation_gate.clear();
     }
 
     fn abort_pending_tasks(&self) {
@@ -419,9 +436,9 @@ impl BetfairExecutionClient {
         data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
         market_ids_filter: Option<ahash::AHashSet<String>>,
         ignore_external_orders: bool,
-        reconnect_tx: tokio::sync::mpsc::UnboundedSender<()>,
+        reconnect_tx: tokio::sync::mpsc::UnboundedSender<u64>,
         pending_resync: Arc<AtomicBool>,
-        is_reconciling: Arc<AtomicBool>,
+        reconciliation_gate: Arc<ReconciliationGate>,
         replay_buffer: Arc<Mutex<Vec<ReceivedOcm>>>,
         account_refresh_tx: tokio::sync::mpsc::UnboundedSender<()>,
         clock: &'static AtomicTime,
@@ -472,17 +489,24 @@ impl BetfairExecutionClient {
                     );
                 }
                 StreamMessage::Connection(_) => {
-                    if has_initial_connection.swap(true, Ordering::SeqCst) {
-                        log::info!("Betfair execution stream reconnected");
-                        pending_resync.store(true, Ordering::Release);
-                        is_reconciling.store(true, Ordering::Release);
-                        let _ = reconnect_tx.send(());
-                    } else {
+                    let initial = !has_initial_connection.swap(true, Ordering::SeqCst)
+                        && !reconciliation_gate.is_halted();
+
+                    if initial {
                         log::debug!("Betfair execution stream connected");
+                    } else {
+                        log::info!("Betfair execution stream reconnected");
+                        let generation = reconciliation_gate.halt();
+                        pending_resync.store(true, Ordering::Release);
+
+                        if reconnect_tx.send(generation).is_err() {
+                            log::warn!("Failed to schedule Betfair reconnect reconciliation");
+                        }
                     }
                 }
                 StreamMessage::Status(status) => {
                     if status.connection_closed {
+                        reconciliation_gate.halt();
                         log::warn!(
                             "Betfair execution stream closed: {:?} - {:?}",
                             status.error_code,
@@ -1069,9 +1093,10 @@ impl ExecutionClient for BetfairExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
+            .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
     }
 
@@ -1163,17 +1188,25 @@ impl ExecutionClient for BetfairExecutionClient {
             self.config.ignore_external_orders,
             reconnect_tx,
             Arc::clone(&self.pending_resync),
-            Arc::clone(&self.is_reconciling),
+            Arc::clone(&self.reconciliation_gate),
             Arc::clone(&self.replay_buffer),
             account_refresh_tx,
             self.clock,
         );
 
-        let stream_client = BetfairStreamClient::connect(
+        let transport_gate = Arc::clone(&self.reconciliation_gate);
+        let state_sink = SocketStateSink::new(move |state| {
+            if state == SocketState::Disconnected {
+                transport_gate.halt();
+            }
+        });
+
+        let stream_client = BetfairStreamClient::connect_with_state_sink(
             &self.credential,
             session_token,
             handler,
             self.stream_config.clone(),
+            state_sink,
         )
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -1198,24 +1231,34 @@ impl ExecutionClient for BetfairExecutionClient {
             loop {
                 tokio::time::sleep(interval).await;
 
-                match keep_alive_client.keep_alive().await {
-                    Ok(()) => {}
+                let (_, session_replaced) = match keep_alive_client.keep_alive_with_token().await {
+                    Ok(token) => (token, false),
                     Err(ref e) if e.is_login_failed() => {
                         log::warn!("Betfair execution session expired, attempting re-login: {e}");
-                        if let Err(e) = keep_alive_client.reconnect().await {
-                            log::warn!("Betfair execution re-login failed: {e}");
-                            continue;
+
+                        match keep_alive_client.reconnect_with_token().await {
+                            Ok(token) => (token, true),
+                            Err(e) => {
+                                log::warn!("Betfair execution re-login failed: {e}");
+                                continue;
+                            }
                         }
                     }
                     Err(e) => {
                         log::warn!("Betfair execution keep-alive failed (transient): {e}");
                         continue;
                     }
-                }
-
-                if let Some(token) = keep_alive_client.session_token().await {
-                    keep_alive_stream.update_auth(&keep_alive_app_key, token);
-                }
+                };
+                apply_stream_session_refresh(
+                    keep_alive_client.as_ref(),
+                    Some(&keep_alive_stream),
+                    &keep_alive_app_key,
+                    SessionRefresh {
+                        refreshed: true,
+                        replaced: session_replaced,
+                    },
+                )
+                .await;
                 log::debug!("Betfair execution session keep-alive sent");
             }
         }));
@@ -1278,35 +1321,46 @@ impl ExecutionClient for BetfairExecutionClient {
         let reconnect_market_ids = self.reconcile_market_ids();
         let reconnect_lookback_mins = self.config.stream_gap_recovery_lookback_mins;
         let reconnect_ocm_state = Arc::clone(&self.ocm_state);
-        let reconnect_is_reconciling = Arc::clone(&self.is_reconciling);
+        let reconnect_gate = Arc::clone(&self.reconciliation_gate);
 
         self.reconnect_handle = Some(get_runtime().spawn(async move {
-            while reconnect_rx.recv().await.is_some() {
+            while let Some(generation) = reconnect_rx.recv().await {
                 log::info!("Handling execution stream reconnection");
 
-                // Re-assert so a queued reconnect doesn't run with the halt cleared
-                // by the previous iteration.
-                reconnect_is_reconciling.store(true, Ordering::Release);
+                let mut session_refresh = SessionRefresh::default();
 
-                // Inner async block so early returns still hit the clear below.
-                let () = async {
-                    match reconnect_http.keep_alive().await {
-                        Ok(()) => {}
+                let reconciled = async {
+                    match reconnect_http.keep_alive_with_token().await {
+                        Ok(_) => session_refresh.refreshed = true,
                         Err(ref e) if e.is_login_failed() => {
                             log::warn!("Session expired on reconnect, attempting re-login: {e}",);
-                            if let Err(e) = reconnect_http.reconnect().await {
-                                log::warn!("Re-login failed on reconnect: {e}");
-                                return;
+
+                            match reconnect_http.reconnect_with_token().await {
+                                Ok(_) => {
+                                    session_refresh.refreshed = true;
+                                    session_refresh.replaced = true;
+                                }
+                                Err(e) => {
+                                    log::warn!("Re-login failed on reconnect: {e}");
+                                    return false;
+                                }
                             }
                         }
                         Err(e) => {
-                            log::warn!("Keep-alive failed on reconnect (transient): {e}");
-                            return;
+                            log::warn!(
+                                "Keep-alive failed on reconnect; continuing recovery with the \
+                                 retained session: {e}",
+                            );
                         }
                     }
 
-                    if let Some(token) = reconnect_http.session_token().await {
-                        reconnect_stream.update_auth(&reconnect_app_key, token);
+                    let stream_session = StreamSession {
+                        client: Some(&reconnect_stream),
+                        app_key: &reconnect_app_key,
+                    };
+
+                    if session_refresh.refreshed {
+                        stream_session.publish(&reconnect_http).await;
                     }
 
                     match reconnect_http
@@ -1346,6 +1400,8 @@ impl ExecutionClient for BetfairExecutionClient {
                         reconnect_market_ids.clone(),
                         reconnect_lookback_mins,
                         &reconnect_ocm_state,
+                        stream_session,
+                        &mut session_refresh,
                     )
                     .await
                     {
@@ -1363,16 +1419,27 @@ impl ExecutionClient for BetfairExecutionClient {
                                 "Post-reconnect reconciliation submitted: \
                                  orders={order_count}, fills={fill_count}",
                             );
+                            true
                         }
                         Err(e) => {
                             log::warn!("Post-reconnect reconciliation failed: {e}");
+                            false
                         }
                     }
                 }
                 .await;
 
-                // Fail-open: a failed iteration must not deny submits indefinitely.
-                reconnect_is_reconciling.store(false, Ordering::Release);
+                apply_stream_session_refresh(
+                    reconnect_http.as_ref(),
+                    Some(&reconnect_stream),
+                    &reconnect_app_key,
+                    session_refresh,
+                )
+                .await;
+
+                if reconciled && !reconnect_gate.try_resume(generation) {
+                    log::info!("A newer execution stream reconnect remains unreconciled");
+                }
             }
         }));
 
@@ -1413,8 +1480,15 @@ impl ExecutionClient for BetfairExecutionClient {
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
         let instrument_id = cmd.instrument_id;
+        let stream_client = self.stream_client.as_ref().map(Arc::clone);
+        let app_key = self.credential.app_key().to_string();
 
         self.spawn_task("query_order", async move {
+            let mut session_refresh = SessionRefresh::default();
+            let stream_session = StreamSession {
+                client: stream_client.as_ref(),
+                app_key: &app_key,
+            };
             let mut candidates: Vec<CurrentOrderSummary> = Vec::new();
             let mut seen_bet_ids: AHashSet<String> = AHashSet::new();
 
@@ -1423,7 +1497,15 @@ impl ExecutionClient for BetfairExecutionClient {
             // live replacement even when the cached bet_id is stale.
             let rfo = make_customer_order_ref(client_order_id.as_str());
             let rfo_params = list_current_orders_filter_ref(rfo.clone());
-            match list_current_orders_with_retry(&http_client, &rfo_params).await {
+
+            match list_current_orders_with_retry(
+                &http_client,
+                &rfo_params,
+                stream_session,
+                &mut session_refresh,
+            )
+            .await
+            {
                 Ok(r) => extend_unique(&mut candidates, &mut seen_bet_ids, r.current_orders),
                 Err(e) => log::warn!("Betfair query_order ref lookup failed: {e}"),
             }
@@ -1432,7 +1514,15 @@ impl ExecutionClient for BetfairExecutionClient {
                 let rfo_legacy = make_customer_order_ref_legacy(client_order_id.as_str());
                 if rfo_legacy != rfo {
                     let legacy_params = list_current_orders_filter_ref(rfo_legacy);
-                    match list_current_orders_with_retry(&http_client, &legacy_params).await {
+
+                    match list_current_orders_with_retry(
+                        &http_client,
+                        &legacy_params,
+                        stream_session,
+                        &mut session_refresh,
+                    )
+                    .await
+                    {
                         Ok(r) => {
                             extend_unique(&mut candidates, &mut seen_bet_ids, r.current_orders);
                         }
@@ -1446,50 +1536,65 @@ impl ExecutionClient for BetfairExecutionClient {
             // ref-based results came back as foreign-market collisions only.
             if let Some(ref bet_id) = venue_order_id {
                 let params = list_current_orders_filter_bet_id(bet_id.to_string());
-                match list_current_orders_with_retry(&http_client, &params).await {
+
+                match list_current_orders_with_retry(
+                    &http_client,
+                    &params,
+                    stream_session,
+                    &mut session_refresh,
+                )
+                .await
+                {
                     Ok(r) => extend_unique(&mut candidates, &mut seen_bet_ids, r.current_orders),
                     Err(e) => log::warn!("Betfair query_order bet_id lookup failed: {e}"),
                 }
             }
 
-            if candidates.is_empty() {
+            let order = if candidates.is_empty() {
                 log::warn!(
                     "Betfair query_order found no order for client_order_id={client_order_id}, venue_order_id={venue_order_id:?}",
                 );
-                return Ok(());
-            }
-
-            let Some(order) = select_order_for_query(
-                &candidates,
-                instrument_id,
-                client_order_id,
-                venue_order_id,
-            ) else {
-                return Ok(());
+                None
+            } else {
+                select_order_for_query(
+                    &candidates,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                )
             };
 
-            let ts_init = clock.get_time_ns();
-            let mut report = match parse_current_order_report(order, account_id, ts_init) {
-                Ok(r) => r,
-                Err(e) => {
-                    log::warn!("Failed to parse order report for {}: {e}", order.bet_id);
-                    return Ok(());
+            if let Some(order) = order {
+                let ts_init = clock.get_time_ns();
+                match parse_current_order_report(order, account_id, ts_init) {
+                    Ok(mut report) => {
+                        if report.client_order_id.is_none()
+                            && let Some(rfo) = order.customer_order_ref.as_deref()
+                            && let Ok(state) = ocm_state.lock()
+                            && let Some(full_id) = state.resolve_client_order_id(Some(rfo))
+                        {
+                            report.client_order_id = Some(full_id);
+                        }
+
+                        if report.client_order_id.is_none() {
+                            report.client_order_id = Some(client_order_id);
+                        }
+
+                        emitter.send_order_status_report(report);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to parse order report for {}: {e}", order.bet_id);
+                    }
                 }
-            };
-
-            if report.client_order_id.is_none()
-                && let Some(rfo) = order.customer_order_ref.as_deref()
-                && let Ok(state) = ocm_state.lock()
-                && let Some(full_id) = state.resolve_client_order_id(Some(rfo))
-            {
-                report.client_order_id = Some(full_id);
             }
 
-            if report.client_order_id.is_none() {
-                report.client_order_id = Some(client_order_id);
-            }
-
-            emitter.send_order_status_report(report);
+            apply_stream_session_refresh(
+                http_client.as_ref(),
+                stream_client.as_ref(),
+                &app_key,
+                session_refresh,
+            )
+            .await;
             Ok(())
         });
 
@@ -1512,23 +1617,53 @@ impl ExecutionClient for BetfairExecutionClient {
             UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
         });
 
-        let order_cmd = GenerateOrderStatusReportsBuilder::default()
-            .ts_init(ts_now)
-            .open_only(false)
-            .start(start)
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let date_range = start.map(|start| TimeRange {
+            from: Some(start.to_rfc3339()),
+            to: None,
+        });
+        let market_ids = self.reconcile_market_ids();
+        let mut order_refresh = SessionRefresh::default();
+        let mut fill_refresh = SessionRefresh::default();
+        let stream_session = StreamSession {
+            client: self.stream_client.as_ref(),
+            app_key: self.credential.app_key(),
+        };
+        let (order_reports, fill_reports) = tokio::join!(
+            fetch_order_status_reports_http(
+                &self.http_client,
+                self.core.account_id,
+                self.clock.get_time_ns(),
+                market_ids.clone(),
+                false,
+                &self.ocm_state,
+                stream_session,
+                &mut order_refresh,
+            ),
+            fetch_fill_reports_http(
+                &self.http_client,
+                self.core.account_id,
+                self.currency,
+                self.clock.get_time_ns(),
+                market_ids,
+                date_range,
+                &self.ocm_state,
+                stream_session,
+                &mut fill_refresh,
+            ),
+        );
 
-        let fill_cmd = GenerateFillReportsBuilder::default()
-            .ts_init(ts_now)
-            .start(start)
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let mut session_refresh = order_refresh;
+        session_refresh.merge(&fill_refresh);
+        apply_stream_session_refresh(
+            self.http_client.as_ref(),
+            self.stream_client.as_ref(),
+            self.credential.app_key(),
+            session_refresh,
+        )
+        .await;
 
-        let (order_reports, fill_reports) = tokio::try_join!(
-            self.generate_order_status_reports(&order_cmd),
-            self.generate_fill_reports(fill_cmd),
-        )?;
+        let order_reports = order_reports?;
+        let fill_reports = fill_reports?;
 
         log::info!("Received {} OrderStatusReports", order_reports.len());
         log::info!("Received {} FillReports", fill_reports.len());
@@ -1553,15 +1688,31 @@ impl ExecutionClient for BetfairExecutionClient {
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         self.process_pending_resync();
 
-        let reports = fetch_order_status_reports_via_http(
+        let mut session_refresh = SessionRefresh::default();
+        let stream_session = StreamSession {
+            client: self.stream_client.as_ref(),
+            app_key: self.credential.app_key(),
+        };
+        let result = fetch_order_status_reports_http(
             &self.http_client,
             self.core.account_id,
             self.clock.get_time_ns(),
             self.reconcile_market_ids(),
             cmd.open_only,
             &self.ocm_state,
+            stream_session,
+            &mut session_refresh,
         )
-        .await?;
+        .await;
+
+        apply_stream_session_refresh(
+            self.http_client.as_ref(),
+            self.stream_client.as_ref(),
+            self.credential.app_key(),
+            session_refresh,
+        )
+        .await;
+        let reports = result?;
 
         log::debug!("Generated {} order status reports", reports.len());
         Ok(reports)
@@ -1589,7 +1740,12 @@ impl ExecutionClient for BetfairExecutionClient {
             (None, None) => None,
         };
 
-        let reports = fetch_fill_reports_via_http(
+        let mut session_refresh = SessionRefresh::default();
+        let stream_session = StreamSession {
+            client: self.stream_client.as_ref(),
+            app_key: self.credential.app_key(),
+        };
+        let result = fetch_fill_reports_http(
             &self.http_client,
             self.core.account_id,
             self.currency,
@@ -1597,8 +1753,19 @@ impl ExecutionClient for BetfairExecutionClient {
             self.reconcile_market_ids(),
             date_range,
             &self.ocm_state,
+            stream_session,
+            &mut session_refresh,
         )
-        .await?;
+        .await;
+
+        apply_stream_session_refresh(
+            self.http_client.as_ref(),
+            self.stream_client.as_ref(),
+            self.credential.app_key(),
+            session_refresh,
+        )
+        .await;
+        let reports = result?;
 
         log::debug!("Generated {} fill reports", reports.len());
         Ok(reports)
@@ -1609,9 +1776,9 @@ impl ExecutionClient for BetfairExecutionClient {
 
         let order = self.core.get_order(&cmd.client_order_id)?;
 
-        if self.is_reconciling.load(Ordering::Acquire) {
+        if self.submissions_halted() {
             log::warn!(
-                "Halting submit for {} during post-reconnect reconciliation",
+                "Halting submit for {} while the execution stream is unavailable or reconciling",
                 order.client_order_id(),
             );
             self.emitter
@@ -2480,9 +2647,10 @@ impl ExecutionClient for BetfairExecutionClient {
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         self.process_pending_resync();
 
-        if self.is_reconciling.load(Ordering::Acquire) {
+        if self.submissions_halted() {
             log::warn!(
-                "Halting submit_order_list ({} orders) during post-reconnect reconciliation",
+                "Halting submit_order_list ({} orders) while the execution stream is \
+                 unavailable or reconciling",
                 cmd.order_list.client_order_ids.len(),
             );
 
@@ -2751,6 +2919,77 @@ impl ExecutionClient for BetfairExecutionClient {
     }
 }
 
+// Even states admit submissions; each halt advances to a distinct odd generation.
+// Generation exhaustion stays halted until lifecycle cleanup wraps the gate to zero.
+#[derive(Debug, Default)]
+struct ReconciliationGate {
+    state: AtomicU64,
+}
+
+impl ReconciliationGate {
+    fn is_halted(&self) -> bool {
+        self.state.load(Ordering::Acquire) & 1 == 1
+    }
+
+    fn halt(&self) -> u64 {
+        let mut current = self.state.load(Ordering::Acquire);
+
+        loop {
+            let next = if current == u64::MAX {
+                current
+            } else if current & 1 == 0 {
+                current + 1
+            } else {
+                current.saturating_add(2)
+            };
+
+            if next == current {
+                return current;
+            }
+
+            match self.state.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return next,
+                Err(actual) => current = actual,
+            }
+        }
+    }
+
+    fn try_resume(&self, generation: u64) -> bool {
+        generation != u64::MAX
+            && generation & 1 == 1
+            && self
+                .state
+                .compare_exchange(
+                    generation,
+                    generation + 1,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_ok()
+    }
+
+    fn clear(&self) {
+        let mut current = self.state.load(Ordering::Acquire);
+
+        while current & 1 == 1 {
+            match self.state.compare_exchange_weak(
+                current,
+                current.wrapping_add(1),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return,
+                Err(actual) => current = actual,
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 struct ReceivedOcm {
     message: OCM,
@@ -2781,13 +3020,19 @@ struct UnmatchedOrderContext<'a> {
 
 /// Paginates `list_current_orders` into `OrderStatusReport`s without touching
 /// the engine cache, so it is callable from any tokio task.
-async fn fetch_order_status_reports_via_http(
+#[expect(
+    clippy::too_many_arguments,
+    reason = "report context and stream session state remain explicit at the HTTP boundary"
+)]
+async fn fetch_order_status_reports_http(
     http_client: &Arc<BetfairHttpClient>,
     account_id: AccountId,
     ts_init: UnixNanos,
     market_ids: Option<Vec<String>>,
     open_only: bool,
     ocm_state: &Arc<Mutex<OcmState>>,
+    stream_session: StreamSession<'_>,
+    session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<Vec<OrderStatusReport>> {
     let order_projection = if open_only {
         Some(OrderProjection::Executable)
@@ -2816,7 +3061,9 @@ async fn fetch_order_status_reports_via_http(
             record_count: None,
         };
 
-        let response = list_current_orders_with_retry(http_client, &params).await?;
+        let response =
+            list_current_orders_with_retry(http_client, &params, stream_session, session_refresh)
+                .await?;
         let page_size = response.current_orders.len() as u32;
 
         for order in &response.current_orders {
@@ -2846,7 +3093,11 @@ async fn fetch_order_status_reports_via_http(
 
 /// Paginates `list_current_orders` into `FillReport`s without touching the
 /// engine cache, so it is callable from any tokio task.
-async fn fetch_fill_reports_via_http(
+#[expect(
+    clippy::too_many_arguments,
+    reason = "report context and session refresh state remain explicit at the HTTP boundary"
+)]
+async fn fetch_fill_reports_http(
     http_client: &Arc<BetfairHttpClient>,
     account_id: AccountId,
     currency: Currency,
@@ -2854,6 +3105,8 @@ async fn fetch_fill_reports_via_http(
     market_ids: Option<Vec<String>>,
     date_range: Option<TimeRange>,
     ocm_state: &Arc<Mutex<OcmState>>,
+    stream_session: StreamSession<'_>,
+    session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<Vec<FillReport>> {
     let mut orders = Vec::new();
     let mut from_record: u32 = 0;
@@ -2876,7 +3129,9 @@ async fn fetch_fill_reports_via_http(
             record_count: None,
         };
 
-        let response = list_current_orders_with_retry(http_client, &params).await?;
+        let response =
+            list_current_orders_with_retry(http_client, &params, stream_session, session_refresh)
+                .await?;
         let page_size = response.current_orders.len() as u32;
 
         orders.extend(response.current_orders);
@@ -2987,6 +3242,8 @@ async fn fetch_post_reconnect_mass_status(
     market_ids: Option<Vec<String>>,
     lookback_mins: u64,
     ocm_state: &Arc<Mutex<OcmState>>,
+    stream_session: StreamSession<'_>,
+    session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<ExecutionMassStatus> {
     let ts_now = clock.get_time_ns();
     let lookback_ns = lookback_mins
@@ -2999,25 +3256,30 @@ async fn fetch_post_reconnect_mass_status(
         to: None,
     };
 
-    let (order_reports, fill_reports) = tokio::try_join!(
-        fetch_order_status_reports_via_http(
-            http_client,
-            account_id,
-            ts_now,
-            market_ids.clone(),
-            false,
-            ocm_state,
-        ),
-        fetch_fill_reports_via_http(
-            http_client,
-            account_id,
-            currency,
-            ts_now,
-            market_ids,
-            Some(date_range),
-            ocm_state,
-        ),
-    )?;
+    let order_reports = fetch_order_status_reports_http(
+        http_client,
+        account_id,
+        ts_now,
+        market_ids.clone(),
+        false,
+        ocm_state,
+        stream_session,
+        session_refresh,
+    )
+    .await?;
+
+    let fill_reports = fetch_fill_reports_http(
+        http_client,
+        account_id,
+        currency,
+        ts_now,
+        market_ids,
+        Some(date_range),
+        ocm_state,
+        stream_session,
+        session_refresh,
+    )
+    .await?;
 
     let mut mass_status =
         ExecutionMassStatus::new(client_id, account_id, *BETFAIR_VENUE, ts_now, None);
@@ -3123,6 +3385,8 @@ fn select_order_for_query(
 async fn list_current_orders_with_retry(
     http_client: &Arc<BetfairHttpClient>,
     params: &ListCurrentOrdersParams,
+    stream_session: StreamSession<'_>,
+    session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<CurrentOrderSummaryReport> {
     const RATE_LIMIT_RETRY_DELAY_SECS: u64 = 5;
 
@@ -3141,8 +3405,15 @@ async fn list_current_orders_with_retry(
             } else {
                 log::warn!("Session error, refreshing session");
 
-                if http_client.keep_alive().await.is_err() {
-                    let _ = http_client.reconnect().await;
+                let refreshed = match http_client.keep_alive_with_token().await {
+                    Ok(_) => Some(false),
+                    Err(_) => http_client.reconnect_with_token().await.ok().map(|_| true),
+                };
+
+                if let Some(session_replaced) = refreshed {
+                    session_refresh.refreshed = true;
+                    session_refresh.replaced |= session_replaced;
+                    stream_session.publish(http_client).await;
                 }
             }
             http_client
@@ -3152,6 +3423,62 @@ async fn list_current_orders_with_retry(
         }
         Err(e) => Err(anyhow::anyhow!("{e}")),
     }
+}
+
+#[derive(Default)]
+struct SessionRefresh {
+    refreshed: bool,
+    replaced: bool,
+}
+
+impl SessionRefresh {
+    fn merge(&mut self, other: &Self) {
+        self.refreshed |= other.refreshed;
+        self.replaced |= other.replaced;
+    }
+}
+
+#[derive(Clone, Copy)]
+struct StreamSession<'a> {
+    client: Option<&'a Arc<BetfairStreamClient>>,
+    app_key: &'a str,
+}
+
+impl StreamSession<'_> {
+    async fn publish(self, http_client: &BetfairHttpClient) {
+        let Some(client) = self.client else {
+            return;
+        };
+
+        let _ = http_client
+            .with_session_token(|token| {
+                client.update_auth(self.app_key, token.to_string());
+            })
+            .await;
+    }
+}
+
+async fn apply_stream_session_refresh(
+    http_client: &BetfairHttpClient,
+    stream_client: Option<&Arc<BetfairStreamClient>>,
+    app_key: &str,
+    session_refresh: SessionRefresh,
+) {
+    if !session_refresh.refreshed {
+        return;
+    }
+    let Some(stream_client) = stream_client else {
+        return;
+    };
+
+    let _ = http_client
+        .with_session_token(|token| {
+            stream_client.update_auth(app_key, token.to_string());
+            if session_refresh.replaced {
+                let _ = stream_client.request_reconnect();
+            }
+        })
+        .await;
 }
 
 // Claims and emits the HTTP place acceptance while holding the `OcmState` lock. The OCM
@@ -3305,7 +3632,13 @@ fn instruction_fallback(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
+    use std::{cell::RefCell, rc::Rc, time::Duration};
+
+    use nautilus_common::{
+        cache::Cache,
+        live::runner::{replace_data_event_sender, replace_exec_event_sender},
+        messages::{ExecutionEvent, ExecutionReport},
+    };
     use nautilus_model::{
         identifiers::{StrategyId, TraderId},
         types::Quantity,
@@ -3314,7 +3647,13 @@ mod tests {
     use rust_decimal::Decimal;
 
     use super::*;
-    use crate::common::testing::{load_test_json, parse_jsonrpc};
+    use crate::{
+        common::{
+            consts::METHOD_GET_ACCOUNT_DETAILS,
+            testing::{load_test_json, parse_jsonrpc},
+        },
+        http::models::AccountDetailsResponse,
+    };
 
     #[rstest]
     #[case(
@@ -3555,7 +3894,7 @@ mod tests {
             false,
             reconnect_tx,
             Arc::new(AtomicBool::new(pending_resync)),
-            Arc::new(AtomicBool::new(false)),
+            Arc::new(ReconciliationGate::default()),
             Arc::clone(&replay_buffer),
             account_refresh_tx,
             clock,
@@ -4171,6 +4510,118 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
+    #[ignore = "requires authorized live Betfair mainnet access"]
+    async fn live_execution_reconnect_reconciles_before_resuming() {
+        let credential = BetfairCredential::from_env()
+            .expect("BETFAIR_USERNAME, BETFAIR_PASSWORD, and BETFAIR_APP_KEY must be set");
+        let http_client = BetfairHttpClient::new(
+            credential.clone(),
+            None,
+            None,
+            None,
+            None,
+            Some(5),
+            Some(20),
+        )
+        .expect("live HTTP client");
+        http_client.connect().await.expect("Betfair login");
+
+        let account_details: AccountDetailsResponse = http_client
+            .send_accounts(METHOD_GET_ACCOUNT_DETAILS, serde_json::json!({}))
+            .await
+            .expect("account details");
+        let currency_code = account_details
+            .currency_code
+            .expect("account details must include currencyCode");
+        let currency = currency_code
+            .as_str()
+            .parse::<Currency>()
+            .expect("registered account currency");
+
+        let config = BetfairExecConfig {
+            account_currency: currency_code.to_string(),
+            calculate_account_state: false,
+            ignore_external_orders: true,
+            ..Default::default()
+        };
+        let stream_config = config.stream_config();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let core = ExecutionClientCore::new(
+            config.trader_id,
+            ClientId::from("BETFAIR-LIVE-SMOKE"),
+            *BETFAIR_VENUE,
+            OmsType::Netting,
+            config.account_id,
+            AccountType::Betting,
+            None,
+            cache,
+        );
+
+        let (exec_tx, mut exec_rx) = tokio::sync::mpsc::unbounded_channel();
+        replace_exec_event_sender(exec_tx);
+        let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(data_tx);
+
+        let mut client = BetfairExecutionClient::new(
+            core,
+            http_client,
+            credential,
+            stream_config,
+            config,
+            currency,
+        );
+        client.start().expect("execution client start");
+        client.connect().await.expect("execution client connect");
+
+        while exec_rx.try_recv().is_ok() {}
+
+        let stream_client = Arc::clone(
+            client
+                .stream_client
+                .as_ref()
+                .expect("execution stream after connect"),
+        );
+        assert!(
+            stream_client.request_reconnect(),
+            "live smoke must start a stream transport replacement",
+        );
+
+        let (order_count, fill_count) = tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                if let Some(ExecutionEvent::Report(ExecutionReport::MassStatus(status))) =
+                    exec_rx.recv().await
+                {
+                    let fill_count: usize = status.fill_reports().values().map(Vec::len).sum();
+                    break (status.order_reports().len(), fill_count);
+                }
+            }
+        })
+        .await
+        .expect("post-reconnect mass status within 30 seconds");
+
+        nautilus_common::testing::wait_until_async(
+            || {
+                let halted = client.is_reconciling();
+                async move { !halted }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        assert!(stream_client.is_active());
+        assert!(!client.is_reconciling());
+        eprintln!(
+            "Betfair read-only reconnect smoke completed: orders={order_count}, fills={fill_count}",
+        );
+
+        client
+            .disconnect()
+            .await
+            .expect("execution client disconnect");
+    }
+
+    #[rstest]
     fn test_reconnect_signal_not_sent_on_initial_connection() {
         let has_initial_connection = Arc::new(AtomicBool::new(false));
         let (reconnect_tx, mut reconnect_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
@@ -4215,29 +4666,85 @@ mod tests {
     }
 
     #[rstest]
-    fn test_reconnect_sets_is_reconciling_flag() {
-        // Mirrors the production handler: a second Connection raises both flags.
-        let has_initial_connection = Arc::new(AtomicBool::new(false));
+    fn test_reconnect_sets_reconciliation_gate() {
         let pending_resync = Arc::new(AtomicBool::new(false));
-        let is_reconciling = Arc::new(AtomicBool::new(false));
-
-        let has_initial = Arc::clone(&has_initial_connection);
-        let pending = Arc::clone(&pending_resync);
-        let reconciling = Arc::clone(&is_reconciling);
-        let handler = move |_data: &[u8]| {
-            if has_initial.swap(true, Ordering::SeqCst) {
-                pending.store(true, Ordering::Release);
-                reconciling.store(true, Ordering::Release);
-            }
-        };
+        let reconciliation_gate = Arc::new(ReconciliationGate::default());
+        let (reconnect_tx, mut reconnect_rx) = tokio::sync::mpsc::unbounded_channel();
+        let handler = ocm_reconnect_handler(
+            reconnect_tx,
+            Arc::clone(&pending_resync),
+            Arc::clone(&reconciliation_gate),
+        );
 
         handler(br#"{"op":"connection","connectionId":"first"}"#);
+        assert!(reconnect_rx.try_recv().is_err());
         assert!(!pending_resync.load(Ordering::Acquire));
-        assert!(!is_reconciling.load(Ordering::Acquire));
+        assert!(!reconciliation_gate.is_halted());
 
         handler(br#"{"op":"connection","connectionId":"second"}"#);
+        assert_eq!(reconnect_rx.try_recv().unwrap(), 1);
         assert!(pending_resync.load(Ordering::Acquire));
-        assert!(is_reconciling.load(Ordering::Acquire));
+        assert!(reconciliation_gate.is_halted());
+    }
+
+    #[rstest]
+    fn test_first_connection_after_transport_loss_schedules_reconciliation() {
+        let pending_resync = Arc::new(AtomicBool::new(false));
+        let reconciliation_gate = Arc::new(ReconciliationGate::default());
+        let (reconnect_tx, mut reconnect_rx) = tokio::sync::mpsc::unbounded_channel();
+        let handler = ocm_reconnect_handler(
+            reconnect_tx,
+            Arc::clone(&pending_resync),
+            Arc::clone(&reconciliation_gate),
+        );
+
+        assert_eq!(reconciliation_gate.halt(), 1);
+        handler(br#"{"op":"connection","connectionId":"replacement"}"#);
+
+        assert_eq!(reconnect_rx.try_recv().unwrap(), 3);
+        assert!(pending_resync.load(Ordering::Acquire));
+        assert!(reconciliation_gate.is_halted());
+    }
+
+    fn ocm_reconnect_handler(
+        reconnect_tx: tokio::sync::mpsc::UnboundedSender<u64>,
+        pending_resync: Arc<AtomicBool>,
+        reconciliation_gate: Arc<ReconciliationGate>,
+    ) -> TcpMessageHandler {
+        let account_id = AccountId::from("BETFAIR-001");
+        let (emitter, _execution_rx) = emitter_with_receiver(account_id);
+        let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (account_refresh_tx, _account_refresh_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        BetfairExecutionClient::create_ocm_handler(
+            emitter,
+            account_id,
+            Currency::GBP(),
+            Arc::new(Mutex::new(OcmState::default())),
+            data_tx,
+            None,
+            false,
+            reconnect_tx,
+            pending_resync,
+            reconciliation_gate,
+            Arc::new(Mutex::new(Vec::new())),
+            account_refresh_tx,
+            get_atomic_clock_realtime(),
+        )
+    }
+
+    #[rstest]
+    fn test_reconciliation_gate_rejects_stale_completion() {
+        let gate = ReconciliationGate::default();
+
+        let stale = gate.halt();
+        let current = gate.halt();
+
+        assert!(gate.is_halted());
+        assert!(!gate.try_resume(stale));
+        assert!(gate.is_halted());
+        assert!(gate.try_resume(current));
+        assert!(!gate.is_halted());
     }
 
     #[rstest]

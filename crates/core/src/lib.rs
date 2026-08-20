@@ -63,15 +63,14 @@
     reason = "match can be clearer than let-else for some patterns"
 )]
 #![allow(
-    clippy::redundant_closure_for_method_calls,
-    reason = "causes clippy ICE on Rust 1.94; matches the workaround in workspace Cargo.toml"
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
 )]
 
 pub mod collections;
 pub mod consts;
 pub mod correctness;
 pub mod datetime;
-pub mod drop;
 pub mod env;
 pub mod hex;
 pub mod math;
@@ -103,7 +102,6 @@ compile_error!("Unsupported platform: Nautilus supports only Linux, macOS, Windo
 pub use crate::params::from_pydict;
 pub use crate::{
     collections::{AtomicMap, AtomicSet},
-    drop::CleanDrop,
     nanos::UnixNanos,
     params::Params,
     shared::{SharedCell, WeakCell},

@@ -439,6 +439,8 @@ mod tests {
     };
     use nautilus_core::UnixNanos;
     use nautilus_execution::engine::SnapshotAnchorer;
+    #[cfg(feature = "live")]
+    use nautilus_model::identifiers::ComponentId;
     use nautilus_model::{
         accounts::AccountAny,
         data::{
@@ -447,7 +449,7 @@ mod tests {
         },
         events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
         identifiers::{
-            AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+            AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
             TraderId, VenueOrderId,
         },
         instruments::{InstrumentAny, SyntheticInstrument},
@@ -986,10 +988,7 @@ mod tests {
             Ok(None)
         }
 
-        fn load_actor(
-            &self,
-            _component_id: &ComponentId,
-        ) -> anyhow::Result<AHashMap<String, Bytes>> {
+        fn load_actor(&self, _actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>> {
             Ok(AHashMap::new())
         }
 
@@ -1113,7 +1112,7 @@ mod tests {
             Ok(())
         }
 
-        fn delete_actor(&self, _component_id: &ComponentId) -> anyhow::Result<()> {
+        fn delete_actor(&self, _actor_id: &ActorId) -> anyhow::Result<()> {
             Ok(())
         }
 
@@ -1155,7 +1154,7 @@ mod tests {
 
         fn update_actor(
             &self,
-            _component_id: &ComponentId,
+            _actor_id: &ActorId,
             _state: &AHashMap<String, Bytes>,
         ) -> anyhow::Result<()> {
             Ok(())

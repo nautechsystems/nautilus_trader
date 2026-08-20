@@ -843,8 +843,8 @@ pub fn parse_trade_tick(
 ) -> anyhow::Result<TradeTick> {
     // Parse aggressor side from direction
     let aggressor_side = match trade.direction.as_str() {
-        "buy" => AggressorSide::Buyer,
-        "sell" => AggressorSide::Seller,
+        "buy" => AggressorSide::Buy,
+        "sell" => AggressorSide::Sell,
         other => anyhow::bail!("Invalid trade direction: {other}"),
     };
     let price = Price::from_decimal_dp(trade.price, price_precision)?;
@@ -1383,7 +1383,7 @@ mod tests {
         assert_eq!(trade.instrument_id, instrument_id);
         assert_eq!(trade.price, Price::from("2968.3"));
         assert_eq!(trade.size, Quantity::from("1"));
-        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.aggressor_side, AggressorSide::Sell);
         assert_eq!(trade.trade_id, TradeId::new("ETH-284830839"));
         // timestamp 1766332040636 ms -> ns
         assert_eq!(
@@ -1411,7 +1411,7 @@ mod tests {
         assert_eq!(trade.instrument_id, instrument_id);
         assert_eq!(trade.price, Price::from("2968.3"));
         assert_eq!(trade.size, Quantity::from("106"));
-        assert_eq!(trade.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(trade.aggressor_side, AggressorSide::Buy);
         assert_eq!(trade.trade_id, TradeId::new("ETH-284830854"));
     }
 

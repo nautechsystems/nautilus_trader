@@ -103,7 +103,6 @@ CACHE_NONE_CASES = [
 ]
 
 CACHE_LIST_CASES = [
-    ("actor_ids", ()),
     ("bar_types", (AggregationSource.EXTERNAL,)),
     ("bar_types", (AggregationSource.EXTERNAL, INSTRUMENT_ID, PriceType.MID)),
     ("client_order_ids", ()),

@@ -15,7 +15,7 @@
 
 //! Pure builder functions that convert Nautilus execution commands into Kraken WS param structs.
 
-use chrono::{DateTime, Utc};
+use jiff::tz::Offset;
 use nautilus_common::messages::execution::{CancelOrder, ModifyOrder, SubmitOrder};
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
@@ -155,15 +155,11 @@ pub fn build_add_order_params(
 /// WebSocket v2 `expire_time` field.
 ///
 /// `UnixNanos` is a `u64` whose maximum value (`~1.8e19` ns) corresponds to
-/// year 2554, well within both `i64::MAX` seconds and `chrono`'s representable
-/// range, so the conversion cannot fail for any in-range input.
+/// year 2554, within Jiff's representable range.
 pub(crate) fn format_expire_time(ts: UnixNanos) -> String {
-    let raw = ts.as_u64();
-    let secs = (raw / 1_000_000_000) as i64;
-    let nanos = (raw % 1_000_000_000) as u32;
-    DateTime::<Utc>::from_timestamp(secs, nanos)
-        .expect("Invariant: UnixNanos always fits a valid DateTime<Utc>")
-        .to_rfc3339()
+    ts.to_datetime_utc()
+        .display_with_offset(Offset::UTC)
+        .to_string()
 }
 
 /// Builds WebSocket `amend_order` parameters from a Nautilus modify command.
@@ -269,7 +265,7 @@ mod tests {
 
     #[rstest]
     fn test_format_expire_time_max_unix_nanos_handled() {
-        // u64::MAX nanos ≈ year 2554; chrono accepts it. Documents that the
+        // u64::MAX nanos is approximately year 2554 and is representable. Documents that the
         // function never panics for any in-range UnixNanos value.
         let ts = UnixNanos::from(u64::MAX);
         let formatted = format_expire_time(ts);

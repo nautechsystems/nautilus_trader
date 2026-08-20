@@ -483,7 +483,7 @@ mod tests {
             .ancestors()
             .nth(3)
             .unwrap()
-            .join("tests/test_data/local/betfair")
+            .join("test_data/local/betfair")
     }
 
     fn test_data_dir() -> PathBuf {
@@ -711,7 +711,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore] // Requires user-fetched data in tests/test_data/local/betfair/
+    #[ignore] // Requires user-fetched data in test_data/local/betfair/
     fn test_load_match_odds_file() {
         let filepath = local_data_dir().join("1.253378068.gz");
         if !filepath.exists() {
@@ -772,7 +772,7 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore] // Requires user-fetched data in tests/test_data/local/betfair/
+    #[ignore] // Requires user-fetched data in test_data/local/betfair/
     fn test_load_racing_win_file() {
         let filepath = local_data_dir().join("1.245077076.gz");
         if !filepath.exists() {

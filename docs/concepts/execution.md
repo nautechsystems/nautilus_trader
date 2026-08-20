@@ -124,55 +124,85 @@ resolves these states.
 
 ## Order denied reasons
 
-A local denial (`OrderDenied`) carries a standardized `CATEGORY_CONDITION` reason code followed by
-`key=value` context, for example `QUANTITY_EXCEEDS_MAXIMUM: effective_quantity=15, max_quantity=10`.
-The table covers local denials emitted by execution algorithms, execution clients, the risk engine,
-and the execution engine. These codes are the source of truth for locally denied orders; venue
-rejections (`OrderRejected`) pass through the venue's own text unchanged.
+A local denial (`OrderDenied`) carries a standardized `CATEGORY_CONDITION` reason code and may
+include a diagnostic suffix. Only the leading code is canonical. Messages use these forms:
+
+- `CODE` when the denial needs no diagnostic suffix.
+- `CODE: value` for one typed value or a free‑text diagnostic.
+- `CODE: key=value, key=value` when multiple typed values need disambiguation.
+- `CODE: value; free text` when one typed value precedes a free‑text diagnostic.
+
+The table covers local denials emitted by execution algorithms and clients as well as the risk and
+execution engines. These codes are the source of truth for locally denied orders; venue rejections
+(`OrderRejected`) instead carry the venue‑provided meaning. Adapters remove protocol wrappers and
+bound untrusted venue text before emission without replacing it with a standardized local denial
+code.
+
+Price and quantity checks can also emit these code‑led reasons on `OrderModifyRejected`:
+
+- `PRICE_PRECISION_EXCEEDS_MAXIMUM`
+- `PRICE_NOT_POSITIVE`
+- `QUANTITY_PRECISION_EXCEEDS_MAXIMUM`
+- `QUANTITY_EXCEEDS_MAXIMUM`
+- `QUANTITY_BELOW_MINIMUM`
+
+For price reasons, `field` is `PRICE` or `TRIGGER_PRICE` and names the rejected command field.
+Other modification rejection reasons remain free‑form; `OrderDeniedCode` does not classify them.
+
+`OrderRejected.due_post_only` is `true` only when venue evidence proves that a post‑only order would
+cross or immediately match. Other venue rejections leave it `false`.
 
 <!-- Generated from the `OrderDeniedReason` enum (crates/model). Regenerate with: cargo test -p nautilus-model regenerate_order_denied_reasons_doc -- --ignored -->
 <!-- BEGIN GENERATED: order-denied-reasons -->
 
-| Code                                  | Description                                                                     |
-| ------------------------------------- | ------------------------------------------------------------------------------- |
-| `CLIENT_VENUE_MISMATCH`               | The execution client does not handle the order venue.                           |
-| `CUM_MARGIN_EXCEEDS_FREE_BALANCE`     | The cumulative initial margin exceeds the account free balance.                 |
-| `CUM_NOTIONAL_EXCEEDS_FREE_BALANCE`   | The cumulative order notional exceeds the account free balance.                 |
-| `EXPIRE_TIME_IN_PAST`                 | The order's expire time is in the past.                                         |
-| `INSTRUMENT_NOT_FOUND`                | The instrument was not found in the cache.                                      |
-| `INVALID_CLIENT_ORDER_ID`             | The client order ID is invalid for the venue.                                   |
-| `INVALID_MAX_NOTIONAL_PER_ORDER`      | The configured maximum notional per order is invalid.                           |
-| `INVALID_ORDER_SIDE`                  | The order side is invalid for this operation.                                   |
-| `INVALID_POSITION_ID`                 | The supplied position ID is invalid for the order submission.                   |
-| `MARGIN_EXCEEDS_FREE_BALANCE`         | The order initial margin exceeds the account free balance.                      |
-| `MISSING_EXPIRE_TIME`                 | A GTD order is missing its expire time.                                         |
-| `MISSING_TRAILING_OFFSET`             | The order is missing a required trailing offset.                                |
-| `MISSING_TRAILING_OFFSET_TYPE`        | The order is missing a required trailing offset type.                           |
-| `MISSING_TRIGGER_TYPE`                | The order is missing a required trigger type.                                   |
-| `NOTIONAL_BELOW_MINIMUM`              | The order notional is below the instrument minimum.                             |
-| `NOTIONAL_EXCEEDS_FREE_BALANCE`       | The order notional exceeds the account free balance.                            |
-| `NOTIONAL_EXCEEDS_MAXIMUM`            | The order notional exceeds the instrument maximum.                              |
-| `NOTIONAL_EXCEEDS_MAX_PER_ORDER`      | The order notional exceeds the configured maximum per order.                    |
-| `NO_EXECUTION_CLIENT`                 | No execution client was found for the routed command.                           |
-| `ORDER_LIST_DENIED`                   | The order was denied because its order list failed risk checks.                 |
-| `ORDER_LIST_INCOMPLETE`               | The order list is missing orders in the cache.                                  |
-| `POSITION_NOT_FOUND`                  | The position for a reduce‑only order was not found.                             |
-| `QUANTITY_BELOW_MINIMUM`              | The effective order quantity is below the instrument minimum.                   |
-| `QUANTITY_CONVERSION_FAILED`          | The order quantity could not be converted for risk checks.                      |
-| `QUANTITY_EXCEEDS_MAXIMUM`            | The effective order quantity exceeds the instrument maximum.                    |
-| `RATE_LIMIT_EXCEEDED`                 | The order submission rate limit was exceeded.                                   |
-| `REDUCE_ONLY_WOULD_INCREASE_POSITION` | A reduce‑only order would increase the position.                                |
-| `STREAM_RECONCILING`                  | A post‑reconnect stream reconciliation is in progress; retry once it completes. |
-| `SUBMIT_FAILED`                       | Submitting the order to the execution client failed.                            |
-| `TRADING_HALTED`                      | Trading is halted; new orders are denied.                                       |
-| `TRADING_STATE_REDUCING`              | Trading is reducing; the order would increase exposure.                         |
-| `TRAILING_STOP_CALC_FAILED`           | The trailing stop trigger price could not be calculated.                        |
-| `UNSUPPORTED_ORDER_LIST`              | The venue does not support the requested order list.                            |
-| `UNSUPPORTED_ORDER_TYPE`              | The order type is not supported.                                                |
-| `UNSUPPORTED_TIME_IN_FORCE`           | The order's time in force is not supported.                                     |
-| `UNSUPPORTED_TP_SL`                   | The venue does not support the requested take‑profit/stop‑loss parameters.      |
-| `UNSUPPORTED_TRAILING_OFFSET_TYPE`    | The order's trailing offset type is not supported.                              |
-| `VALIDATION_FAILED`                   | The order failed validation before submission.                                  |
+| Code                                             | Description                                                                |
+| ------------------------------------------------ | -------------------------------------------------------------------------- |
+| `PRICE_PRECISION_EXCEEDS_MAXIMUM`                | The price precision exceeds the instrument maximum.                        |
+| `PRICE_NOT_POSITIVE`                             | The price is not positive.                                                 |
+| `QUANTITY_PRECISION_EXCEEDS_MAXIMUM`             | The quantity precision exceeds the instrument maximum.                     |
+| `QUANTITY_CONVERSION_FAILED`                     | The order quantity could not be converted for risk checks.                 |
+| `QUANTITY_EXCEEDS_MAXIMUM`                       | The effective order quantity exceeds the instrument maximum.               |
+| `QUANTITY_BELOW_MINIMUM`                         | The effective order quantity is below the instrument minimum.              |
+| `INVALID_MAX_NOTIONAL_PER_ORDER`                 | The configured maximum notional per order is invalid.                      |
+| `INVALID_ORDER_SIDE`                             | The order side is invalid for this operation.                              |
+| `MISSING_EXPIRE_TIME`                            | A GTD order is missing its expire time.                                    |
+| `EXPIRE_TIME_IN_PAST`                            | The order's expire time is in the past.                                    |
+| `MISSING_TRAILING_OFFSET_TYPE`                   | The order is missing a required trailing offset type.                      |
+| `UNSUPPORTED_TRAILING_OFFSET_TYPE`               | The order's trailing offset type is not supported.                         |
+| `MISSING_TRIGGER_TYPE`                           | The order is missing a required trigger type.                              |
+| `MISSING_TRAILING_OFFSET`                        | The order is missing a required trailing offset.                           |
+| `INSTRUMENT_NOT_FOUND`                           | The instrument was not found in the cache.                                 |
+| `POSITION_NOT_FOUND`                             | The position for a reduce‑only order was not found.                        |
+| `MARKET_PRICE_UNAVAILABLE`                       | No market price is available for the order risk check.                     |
+| `TRAILING_STOP_CALCULATION_FAILED`               | The trailing stop trigger price could not be calculated.                   |
+| `NOTIONAL_CALCULATION_FAILED`                    | The order notional value could not be calculated.                          |
+| `NOTIONAL_BELOW_MINIMUM`                         | The order notional is below the instrument minimum.                        |
+| `NOTIONAL_EXCEEDS_MAXIMUM`                       | The order notional exceeds the instrument maximum.                         |
+| `NOTIONAL_EXCEEDS_MAX_PER_ORDER`                 | The order notional exceeds the configured maximum per order.               |
+| `NOTIONAL_EXCEEDS_FREE_BALANCE`                  | The order notional exceeds the account free balance.                       |
+| `INITIAL_MARGIN_CALCULATION_FAILED`              | The order initial margin could not be calculated.                          |
+| `INITIAL_MARGIN_EXCEEDS_FREE_BALANCE`            | The order initial margin exceeds the account free balance.                 |
+| `BETTING_BALANCE_LOCKED_CALCULATION_FAILED`      | The balance to lock for the betting order could not be calculated.         |
+| `CUMULATIVE_NOTIONAL_EXCEEDS_FREE_BALANCE`       | The cumulative order notional exceeds the account free balance.            |
+| `CUMULATIVE_INITIAL_MARGIN_CALCULATION_FAILED`   | The cumulative initial margin could not be calculated.                     |
+| `CUMULATIVE_INITIAL_MARGIN_EXCEEDS_FREE_BALANCE` | The cumulative initial margin exceeds the account free balance.            |
+| `REDUCE_ONLY_WOULD_INCREASE_POSITION`            | A reduce‑only order would increase the position.                           |
+| `ORDER_LIST_INCOMPLETE`                          | The order list is missing orders in the cache.                             |
+| `ORDER_LIST_DENIED`                              | The order was denied because its order list failed risk checks.            |
+| `TRADING_HALTED`                                 | Trading is halted; new orders are denied.                                  |
+| `TRADING_STATE_REDUCING`                         | Trading is reducing; the order would increase exposure.                    |
+| `RATE_LIMIT_EXCEEDED`                            | The order submission rate limit was exceeded.                              |
+| `STREAM_RECONCILING`                             | The execution stream is unavailable or recovering; retry after recovery.   |
+| `NO_EXECUTION_CLIENT`                            | No execution client was found for the routed command.                      |
+| `CLIENT_VENUE_MISMATCH`                          | The execution client does not handle the order venue.                      |
+| `SUBMIT_FAILED`                                  | Submitting the order to the execution client failed.                       |
+| `INVALID_CLIENT_ORDER_ID`                        | The client order ID is invalid for the venue.                              |
+| `INVALID_POSITION_ID`                            | The supplied position ID is invalid for the order submission.              |
+| `UNSUPPORTED_ORDER_LIST`                         | The venue does not support the requested order list.                       |
+| `UNSUPPORTED_ORDER_TYPE`                         | The order type is not supported.                                           |
+| `UNSUPPORTED_TIME_IN_FORCE`                      | The order's time in force is not supported.                                |
+| `UNSUPPORTED_TP_SL`                              | The venue does not support the requested take‑profit/stop‑loss parameters. |
+| `VALIDATION_FAILED`                              | The order failed validation before submission.                             |
 
 <!-- END GENERATED: order-denied-reasons -->
 
@@ -286,7 +316,7 @@ The `TradingState` enum has three variants:
   exposure are accepted.
 
 See the
-[`RiskEngineConfig` API reference](/docs/python-api-latest/config.html#nautilus_trader.risk.config.RiskEngineConfig)
+[`RiskEngineConfig` API reference](/docs/python-api-latest/config.html#nautilus_trader.risk.RiskEngineConfig)
 for configuration details.
 
 ## Execution algorithms
@@ -302,7 +332,7 @@ the full quantity at once. To register the native algorithm with an initialized 
 
 ```python
 from nautilus_trader.model import ExecAlgorithmId
-from nautilus_trader.trading import ExecutionAlgorithmConfig
+from nautilus_trader.config import ExecutionAlgorithmConfig
 
 engine.add_native_exec_algorithm(
     "TwapAlgorithm",
@@ -330,7 +360,7 @@ To define a Python execution algorithm, subclass `ExecutionAlgorithm` and implem
 ```python
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.trading import ExecutionAlgorithm
-from nautilus_trader.trading import ExecutionAlgorithmConfig
+from nautilus_trader.config import ExecutionAlgorithmConfig
 
 
 class MyExecutionAlgorithm(ExecutionAlgorithm):
@@ -488,7 +518,7 @@ a restart therefore produces the same `trade_id` and is deduplicated.
 For live trading, enable overfill tolerance in the `LiveExecEngineConfig`:
 
 ```python
-from nautilus_trader.live import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecEngineConfig
 
 config = LiveExecEngineConfig(
     allow_overfills=True,
@@ -551,14 +581,15 @@ Each venue publishes the conditions under which it acts:
 | Polymarket       | `FAILED` trade status after an on‑chain revert or reorg. | [User channel](https://docs.polymarket.com/developers/CLOB/websocket/user-channel).                                                              |
 
 Nautilus adapters emit `OrderFillVoided` where the venue publishes the void on a stream the adapter
-consumes: [Betfair](../integrations/betfair_v2.md#voided-fills) from the order change message `sv`
+consumes: [Betfair](../integrations/betfair.md#voided-fills) from the order change message `sv`
 field, and
 [Polymarket](../integrations/polymarket.md#trades) from the user channel trade status.
 
 ## Reconciliation reports
 
 The execution engine consumes four reconciliation report variants from live adapters. Each variant
-has a different role when its matching order is absent from the cache.
+has a different normal role when its matching order is absent from the cache. Explicitly bounded
+history can instead use [order‑only fill projection](#order-only-fill-projection).
 
 | Variant                | Purpose                  | Missing‑order action                                 |
 | ---------------------- | ------------------------ | ---------------------------------------------------- |
@@ -577,6 +608,17 @@ Adapters choose the variant that matches the venue event:
   Hyperliquid liquidations follow this pattern.
 - Use `OrderWithFills` when one venue event contains both an order status and its fills. Binance
   Futures uses this for exchange-generated ADL, liquidation, and settlement orders.
+
+### Order-only fill projection
+
+During startup reconciliation, a bounded historical report can prove an order's status and filled
+quantity without proving that its fill belongs in the current position lifecycle. The engine then
+projects the `OrderFilled` event onto the order only. The order reaches the exact reported state,
+while the fill does not create or change a position and does not update portfolio economics.
+
+This projection applies only to reconciliation recovery. Raw reports remain available, and an
+authoritative position report can reconcile the current venue position separately. See
+[Bounded history safety](reconciliation.md#bounded-history-safety) for the required evidence.
 
 ### External order creation
 

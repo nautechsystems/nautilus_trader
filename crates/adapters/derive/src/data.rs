@@ -55,7 +55,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Bar, Data, ForwardPrice, OrderBookDeltas_API, QuoteTick},
+    data::{Bar, Data, ForwardPrice, QuoteTick},
     enums::{AggregationSource, BookType, PriceType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -87,8 +87,8 @@ use crate::{
         bar_spec_to_derive_period, orderbook_channel, parse_candle_record, parse_funding_rate,
         parse_funding_rate_history_record, parse_index_price, parse_mark_price,
         parse_option_greeks, parse_orderbook_deltas, parse_orderbook_depth10, parse_public_ws_data,
-        parse_ticker_quote, parse_ticker_quote_from_rest, parse_trade_tick, ticker_channel,
-        trades_channel,
+        parse_ticker_quote, parse_ticker_quote_from_rest, parse_trade_tick,
+        parse_trade_tick_from_rest, ticker_channel, ticker_ts_event, trades_channel,
     },
 };
 
@@ -332,7 +332,7 @@ impl DeriveDataClient {
                         ts_init,
                     ) {
                         Ok(deltas) => {
-                            Self::send_data(ctx, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+                            Self::send_data(ctx, Data::Deltas(Box::new(deltas)));
                         }
                         Err(e) => log::warn!("Failed to parse Derive orderbook deltas: {e}"),
                     }
@@ -413,7 +413,7 @@ impl DeriveDataClient {
 
                 if ctx.active_mark_subs.contains(&instrument_id) {
                     match parse_mark_price(&msg, price_precision, ts_init) {
-                        Ok(Some(update)) => Self::send_data(ctx, Data::MarkPriceUpdate(update)),
+                        Ok(Some(update)) => Self::send_data(ctx, Data::MarkPrice(update)),
                         Ok(None) => {}
                         Err(e) => log::warn!("Failed to parse Derive mark price: {e}"),
                     }
@@ -421,7 +421,7 @@ impl DeriveDataClient {
 
                 if ctx.active_index_subs.contains(&instrument_id) {
                     match parse_index_price(&msg, price_precision, ts_init) {
-                        Ok(Some(update)) => Self::send_data(ctx, Data::IndexPriceUpdate(update)),
+                        Ok(Some(update)) => Self::send_data(ctx, Data::IndexPrice(update)),
                         Ok(None) => {}
                         Err(e) => log::warn!("Failed to parse Derive index price: {e}"),
                     }
@@ -1102,9 +1102,9 @@ impl DataClient for DeriveDataClient {
         let limit = request.limit.map(NonZeroUsize::get);
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
-        let from_timestamp = start.map(|dt| dt.timestamp_millis());
+        let from_timestamp = start.map(|dt| dt.as_millisecond());
         let to_timestamp = Some(match end {
-            Some(dt) => dt.timestamp_millis(),
+            Some(dt) => dt.as_millisecond(),
             None => i64::try_from(clock.get_time_ms())
                 .context("Derive current time exceeds i64 milliseconds")?,
         });
@@ -1140,7 +1140,12 @@ impl DataClient for DeriveDataClient {
                 let ts_init = clock.get_time_ns();
 
                 for trade in &result.trades {
-                    match parse_trade_tick(trade, price_precision, size_precision, ts_init) {
+                    match parse_trade_tick_from_rest(
+                        trade,
+                        price_precision,
+                        size_precision,
+                        ts_init,
+                    ) {
                         Ok(tick) if seen_trade_ids.insert(tick.trade_id) => trades.push(tick),
                         Ok(_) => {}
                         Err(e) => log::warn!(
@@ -1212,8 +1217,8 @@ impl DataClient for DeriveDataClient {
         let limit = request.limit.map(NonZeroUsize::get);
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
-        let start_ms = start.map(|dt| dt.timestamp_millis());
-        let end_ms = end.map(|dt| dt.timestamp_millis());
+        let start_ms = start.map(|dt| dt.as_millisecond());
+        let end_ms = end.map(|dt| dt.as_millisecond());
 
         self.spawn_task("request_funding_rates", async move {
             let result = match http_client
@@ -1309,9 +1314,9 @@ impl DataClient for DeriveDataClient {
         // and start to one window of `limit` buckets (or 1000) before end.
         let request_time = clock.get_time_ns();
         let now_secs = (request_time.as_u64() / NANOSECONDS_IN_SECOND) as i64;
-        let end_ts = end.map_or(now_secs, |dt| dt.timestamp());
+        let end_ts = end.map_or(now_secs, |dt| dt.as_second());
         let default_span = i64::from(period) * limit.unwrap_or(DERIVE_CANDLES_DEFAULT_LIMIT) as i64;
-        let start_ts = start.map_or(end_ts - default_span, |dt| dt.timestamp());
+        let start_ts = start.map_or(end_ts - default_span, |dt| dt.as_second());
 
         self.spawn_task("request_bars", async move {
             // Venue caps each call at 5000 candles; walk backwards by shrinking
@@ -1480,16 +1485,21 @@ impl DataClient for DeriveDataClient {
             // bootstrap when the REST ticker is unavailable or non-option.
             let forwards: Vec<ForwardPrice> = match http_client.get_ticker(&venue_symbol).await {
                 Ok(ticker) => match ticker.option_pricing.as_ref() {
-                    Some(pricing) => {
-                        let ts_event = clock.get_time_ns();
-                        vec![ForwardPrice::new(
+                    Some(pricing) => match ticker_ts_event(ticker.timestamp) {
+                        Ok(ts_event) => vec![ForwardPrice::new(
                             instrument_id,
                             pricing.forward_price,
                             Some(underlying.to_string()),
                             ts_event,
-                            ts_event,
-                        )]
-                    }
+                            clock.get_time_ns(),
+                        )],
+                        Err(e) => {
+                            log::warn!(
+                                "Derive ticker for {instrument_id} has an invalid timestamp: {e:?}; emitting empty forward prices",
+                            );
+                            Vec::new()
+                        }
+                    },
                     None => {
                         log::warn!(
                             "Derive ticker for {instrument_id} has no option_pricing; emitting empty forward prices",
@@ -3205,7 +3215,7 @@ mod tests {
         );
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::MarkPriceUpdate(mark)) => {
+            DataEvent::Data(Data::MarkPrice(mark)) => {
                 assert_eq!(mark.instrument_id, instrument_id);
                 assert_eq!(mark.value, Price::from("3500.50"));
             }
@@ -3228,7 +3238,7 @@ mod tests {
         );
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::IndexPriceUpdate(index)) => {
+            DataEvent::Data(Data::IndexPrice(index)) => {
                 assert_eq!(index.instrument_id, instrument_id);
                 assert_eq!(index.value, Price::from("3500.00"));
             }
@@ -3350,13 +3360,13 @@ mod tests {
                 DataEvent::Data(Data::Quote(q)) => {
                     assert!(quote.replace(q).is_none(), "duplicate Quote emission");
                 }
-                DataEvent::Data(Data::MarkPriceUpdate(m)) => {
+                DataEvent::Data(Data::MarkPrice(m)) => {
                     assert!(
                         mark.replace(m).is_none(),
                         "duplicate MarkPriceUpdate emission"
                     );
                 }
-                DataEvent::Data(Data::IndexPriceUpdate(i)) => {
+                DataEvent::Data(Data::IndexPrice(i)) => {
                     assert!(
                         index.replace(i).is_none(),
                         "duplicate IndexPriceUpdate emission"

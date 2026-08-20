@@ -116,7 +116,7 @@ fn create_catalog_with_quotes_and_trades(
                 instrument_id,
                 Price::from(format!("{:.2}", 1000.0 + i as f64 * 0.5).as_str()),
                 Quantity::from("0.500"),
-                AggressorSide::Buyer,
+                AggressorSide::Buy,
                 TradeId::from(format!("T{i}").as_str()),
                 UnixNanos::from(ts),
                 UnixNanos::from(ts),

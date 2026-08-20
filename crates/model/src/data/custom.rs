@@ -261,7 +261,7 @@ pub fn reconstruct_python_custom_data(
     data_class
         .bind(py)
         .call_method1("from_json", (payload,))
-        .map(|obj| obj.unbind())
+        .map(Bound::unbind)
 }
 
 /// Converts a cloneable PyO3-backed custom data value into a Python object.
@@ -376,11 +376,7 @@ pub fn ensure_custom_data_json_registered<T: CustomDataTrait + Sized>() -> anyho
 /// Custom data is always Rust-defined (optionally with PyO3 bindings).
 #[cfg_attr(
     feature = "python",
-    pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.model",
-        name = "CustomData",
-        from_py_object
-    )
+    pyclass(module = "nautilus_trader.model", name = "CustomData", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

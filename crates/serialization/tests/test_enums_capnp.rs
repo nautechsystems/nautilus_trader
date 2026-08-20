@@ -54,8 +54,8 @@ fn test_account_type_roundtrip(#[case] value: AccountType) {
 
 #[rstest]
 #[case(AggressorSide::NoAggressor)]
-#[case(AggressorSide::Buyer)]
-#[case(AggressorSide::Seller)]
+#[case(AggressorSide::Buy)]
+#[case(AggressorSide::Sell)]
 fn test_aggressor_side_roundtrip(#[case] value: AggressorSide) {
     let capnp_value = aggressor_side_to_capnp(value);
     let decoded = aggressor_side_from_capnp(capnp_value);

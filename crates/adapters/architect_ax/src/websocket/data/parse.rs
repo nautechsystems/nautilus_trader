@@ -727,7 +727,7 @@ mod tests {
 
         assert_eq!(tick.price.as_f64(), 50000.50);
         assert_eq!(tick.size.as_f64(), 100.0);
-        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
     }
 
     #[rstest]
@@ -840,7 +840,7 @@ mod tests {
         assert_eq!(tick.instrument_id.symbol.as_str(), "EURUSD-PERP");
         assert_eq!(tick.price.as_f64(), 1.1719);
         assert_eq!(tick.size.as_f64(), 400.0);
-        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
         assert_eq!(
             tick.trade_id.to_string(),
             "1766193240334589144-38b4fe5a94a253d0"

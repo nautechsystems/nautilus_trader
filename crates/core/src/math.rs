@@ -404,7 +404,8 @@ mod tests {
     }
 
     #[rstest]
-    #[expect(
+    // `allow` not `expect`: nightly clippy does not fire `float_cmp` inside `assert_eq!`
+    #[allow(
         clippy::float_cmp,
         reason = "boundary inputs must return the exact boundary ys value"
     )]

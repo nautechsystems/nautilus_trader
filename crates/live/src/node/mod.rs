@@ -83,29 +83,33 @@ use anyhow::Context;
 use indexmap::IndexSet;
 use nautilus_common::{
     actor::{Actor, DataActor, DataActorNative},
-    cache::database::CacheDatabaseAdapter,
+    cache::database::{CacheDatabaseAdapter, CacheDatabaseFactory},
     clients::ExecutionClient,
     component::Component,
     enums::{Environment, LogColor},
     live::dst,
     log_info,
     messages::{
-        DataEvent, ExecutionEvent, ExecutionReport,
+        DataEvent, ExecutionEvent, ExecutionReport, SystemCommand, SystemEvent,
         data::DataCommand,
         execution::{GenerateOrderStatusReports, GeneratePositionStatusReports, TradingCommand},
+        system::{QueueStateChanged, SocketStateChange, SocketStateChanged},
     },
     msgbus::{self, BusMessage, MessagingSwitchboard},
-    runner::{TimeEventMessage, TradingCommandMessage},
+    runner::{SystemChannel, TimeEventMessage, TradingCommandMessage},
 };
 use nautilus_core::{
     UUID4,
     datetime::{NANOSECONDS_IN_MILLISECOND, mins_to_secs, secs_to_nanos_unchecked},
 };
+use nautilus_execution::engine::ExecutionEngine;
+#[cfg(test)]
+use nautilus_model::reports::OrderStatusReport;
 use nautilus_model::{
     events::OrderEventAny,
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     orders::Order,
-    reports::{OrderStatusReport, PositionStatusReport},
+    reports::PositionStatusReport,
 };
 #[cfg(feature = "python")]
 use nautilus_system::trader::Trader;
@@ -121,7 +125,8 @@ use crate::{
         client::LiveExecutionClient,
         manager::{
             ExecutionManager, ExecutionManagerConfig, OpenOrderReportCheck, PositionReportCheck,
-            TargetedOrderQuery, TargetedOrderReportResult, request_targeted_order_reports,
+            SourcedOrderStatusReport, TargetedOrderQuery, TargetedOrderReportResult,
+            request_targeted_order_reports,
         },
     },
     runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
@@ -134,29 +139,30 @@ pub mod config;
 pub mod plugin;
 
 mod metrics;
+mod queue;
 mod state;
 
 use builder::ExternalMessageBusIngress;
 pub use builder::LiveNodeBuilder;
 use config::{LiveNodeConfig, PluginConfig, validate_live_environment};
 pub use metrics::{RunnerChannelMetricsSnapshot, RunnerMetricsDelta, RunnerMetricsSnapshot};
-use metrics::{RunnerChannelQueueDepths, RunnerMetricChannel, RunnerMetrics};
+use metrics::{RunnerChannelQueueDepths, RunnerMetrics};
+use queue::{QueueMonitor, QueueStateTransition};
 use state::{EngineConnectionStatus, RunningTransition};
-pub use state::{LiveNodeHandle, NodeState};
+pub use state::{LiveNodeHandle, NodeRunMode, NodeState};
+
+/// Dispatches the run loop performs before yielding to the executor.
+///
+/// A saturated channel keeps every select branch ready, so the loop would otherwise never return
+/// `Pending`. Under a host event loop that starves the adapter I/O tasks feeding those channels,
+/// which shows up as lapsed heartbeats and reconnects rather than as backpressure.
+const DISPATCHES_PER_YIELD: usize = 64;
 
 /// High-level abstraction for a live Nautilus system node.
 ///
 /// Provides a simplified interface for running live systems
 /// with automatic client management and lifecycle handling.
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", unsendable)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
-)]
 pub struct LiveNode {
     kernel: NautilusKernel,
     runner: Option<AsyncRunner>,
@@ -164,6 +170,7 @@ pub struct LiveNode {
     handle: LiveNodeHandle,
     exec_manager: ExecutionManager,
     exec_clients: Vec<LiveExecutionClient>,
+    cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
     external_msgbus: Option<ExternalMessageBusIngress>,
     shutdown_deadline: Option<dst::time::Instant>,
     #[cfg(feature = "plugin")]
@@ -181,6 +188,7 @@ impl LiveNode {
         config: LiveNodeConfig,
         exec_manager: ExecutionManager,
         exec_clients: Vec<LiveExecutionClient>,
+        cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
         external_msgbus: Option<ExternalMessageBusIngress>,
     ) -> Self {
         Self {
@@ -190,6 +198,7 @@ impl LiveNode {
             handle: LiveNodeHandle::new(),
             exec_manager,
             exec_clients,
+            cache_database_factory,
             external_msgbus,
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
@@ -262,6 +271,7 @@ impl LiveNode {
             handle: LiveNodeHandle::new(),
             exec_manager,
             exec_clients: Vec::new(),
+            cache_database_factory: None,
             external_msgbus: None,
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
@@ -318,10 +328,9 @@ impl LiveNode {
     /// Starts the live node without entering a select loop.
     ///
     /// Connects clients, runs reconciliation, and starts the trader, but does
-    /// not consume the runner or drive channel receivers. Channel traffic that
-    /// arrives after startup is not serviced until the caller provides a loop.
-    ///
-    /// For a self-contained entry point that owns the event loop, use [`run`](Self::run).
+    /// not consume the runner or drive channel receivers, so channel traffic arriving after
+    /// startup is never serviced. This is a building block for tests and embedding, not a
+    /// lifecycle: use [`run`](Self::run) or [`run_with_mode`](Self::run_with_mode) to run a node.
     ///
     /// # Errors
     ///
@@ -329,6 +338,12 @@ impl LiveNode {
     pub async fn start(&mut self) -> anyhow::Result<()> {
         if self.state().is_running() {
             anyhow::bail!("Already running");
+        }
+
+        if self.external_msgbus.is_some() {
+            log::warn!(
+                "External message bus ingress is configured but LiveNode::start() does not service it; use LiveNode::run()"
+            );
         }
 
         self.prepare_cache().await?;
@@ -368,9 +383,16 @@ impl LiveNode {
                 .await;
         }
 
-        if let Some(runner) = self.runner.as_mut() {
-            runner.flush_pending_data();
-        }
+        let (startup_system_events, startup_system_commands) =
+            if let Some(runner) = self.runner.as_mut() {
+                runner.flush_pending_data();
+                (
+                    runner.drain_pending_system_events(),
+                    runner.drain_pending_system_commands(),
+                )
+            } else {
+                (Vec::new(), Vec::new())
+            };
 
         if let Err(e) = self.connect_exec_clients(connection_deadline).await {
             return self
@@ -428,35 +450,14 @@ impl LiveNode {
             return self.abort_after_trader_start_failure(e).await;
         }
 
+        self.process_system_events(startup_system_events);
+        self.process_system_commands(startup_system_commands);
+
         if !self.finish_startup_trader(None).await? {
             return Ok(());
         }
 
         Ok(())
-    }
-
-    /// Processes the live-node channel traffic queued when this method is called.
-    ///
-    /// This provides a non-blocking integration for host loops after [`start`](Self::start).
-    /// Events that arrive while polling remain queued for the next call.
-    /// Use [`run`](Self::run) when the node should also own maintenance, external
-    /// ingress, signal handling, and automatic shutdown.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the node is not running or its runner is unavailable.
-    pub fn poll(&mut self) -> anyhow::Result<usize> {
-        if !self.state().is_running() {
-            anyhow::bail!("LiveNode is not running");
-        }
-
-        let Some(mut runner) = self.runner.take() else {
-            anyhow::bail!("LiveNode runner is unavailable");
-        };
-
-        let processed = runner.poll_pending(|event| self.process_runner_event(event));
-        self.runner = Some(runner);
-        Ok(processed)
     }
 
     /// Stop the live node.
@@ -555,14 +556,61 @@ impl LiveNode {
 
     fn process_runner_event(&mut self, event: PendingRunnerEvent) {
         match event {
-            PendingRunnerEvent::Time(message) => {
+            PendingRunnerEvent::TimeEvent(message) => {
                 let _ = AsyncRunner::handle_time_event(message);
             }
+            PendingRunnerEvent::SystemEvent(event) => self.process_system_event(event),
+            PendingRunnerEvent::SystemCommand(command) => self.process_system_command(command),
             PendingRunnerEvent::ExecEvent(event) => self.process_exec_event(event),
             PendingRunnerEvent::ExecCommand(command) => self.process_exec_command(command),
             PendingRunnerEvent::DataEvent(event) => AsyncRunner::handle_data_event(event),
             PendingRunnerEvent::DataCommand(command) => AsyncRunner::handle_data_command(command),
         }
+    }
+
+    fn process_system_events(&self, events: Vec<SystemEvent>) {
+        for event in events {
+            self.process_system_event(event);
+        }
+    }
+
+    fn process_system_commands(&self, commands: Vec<SystemCommand>) {
+        for command in commands {
+            self.process_system_command(command);
+        }
+    }
+
+    fn process_system_command(&self, command: SystemCommand) {
+        match command {
+            SystemCommand::ReconnectSocket(command) => {
+                self.kernel.process_socket_reconnect(command);
+            }
+        }
+    }
+
+    fn process_system_event(&self, event: SystemEvent) {
+        match event {
+            SystemEvent::SocketState(change) => self.publish_socket_state_change(change),
+        }
+    }
+
+    fn publish_socket_state_change(&self, change: SocketStateChange) {
+        let timestamp = self.kernel.generate_timestamp_ns();
+        let event = SocketStateChanged::new(
+            self.config.trader_id,
+            change.client_id,
+            change.venue,
+            change.endpoint,
+            change.state,
+            UUID4::new(),
+            timestamp,
+            timestamp,
+        );
+
+        msgbus::publish_any(
+            MessagingSwitchboard::socket_state_changed_topic(),
+            event.as_any(),
+        );
     }
 
     /// Awaits engine clients to connect with timeout.
@@ -690,6 +738,10 @@ impl LiveNode {
     async fn perform_startup_reconciliation(&mut self) -> anyhow::Result<()> {
         if !self.config.exec_engine.reconciliation {
             log::info!("Startup reconciliation disabled");
+            self.kernel
+                .portfolio
+                .borrow_mut()
+                .initialize_wallet_orders()?;
             return Ok(());
         }
 
@@ -752,6 +804,15 @@ impl LiveNode {
                         .reconcile_execution_mass_status(mass_status, exec_engine_rc)
                         .await;
 
+                    anyhow::ensure!(
+                        self.kernel
+                            .exec_engine
+                            .borrow()
+                            .get_client(&client_id)
+                            .is_some(),
+                        "Execution client {client_id} disappeared during startup reconciliation",
+                    );
+
                     if result.events.is_empty() {
                         log_info!(
                             "Reconciliation for {} succeeded",
@@ -770,8 +831,14 @@ impl LiveNode {
                     // Register external orders with execution clients for tracking
                     if !result.external_orders.is_empty() {
                         let exec_engine = self.kernel.exec_engine.borrow();
+                        let source_client = exec_engine.get_client(&client_id).ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Execution client {client_id} disappeared during startup reconciliation"
+                            )
+                        })?;
+
                         for external in result.external_orders {
-                            exec_engine.register_external_order(
+                            source_client.register_external_order(
                                 external.client_order_id,
                                 external.venue_order_id,
                                 external.instrument_id,
@@ -795,6 +862,10 @@ impl LiveNode {
 
         self.kernel.portfolio.borrow_mut().initialize_orders();
         self.kernel.portfolio.borrow_mut().initialize_positions();
+        self.kernel
+            .portfolio
+            .borrow_mut()
+            .initialize_wallet_orders()?;
 
         let elapsed_secs = start.elapsed().as_secs_f64();
         log_info!(
@@ -828,6 +899,19 @@ impl LiveNode {
     ///
     /// Returns an error if the node fails to start or encounters a runtime error.
     pub async fn run(&mut self) -> anyhow::Result<()> {
+        self.run_with_mode(NodeRunMode::Owned).await
+    }
+
+    /// Run the live node under the given mode.
+    ///
+    /// [`NodeRunMode::Hosted`] leaves signal handling to the host application. Every other
+    /// responsibility, including maintenance, reconciliation, external ingress, and the shutdown
+    /// sequence, is identical across modes so that hosted and owned nodes cannot diverge.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the node fails to start or encounters a runtime error.
+    pub async fn run_with_mode(&mut self, mode: NodeRunMode) -> anyhow::Result<()> {
         if self.state().is_running() {
             anyhow::bail!("Already running");
         }
@@ -845,6 +929,8 @@ impl LiveNode {
 
         let AsyncRunnerChannels {
             mut time_evt_rx,
+            mut system_evt_rx,
+            mut system_cmd_rx,
             mut exec_evt_rx,
             mut exec_cmd_rx,
             mut data_evt_rx,
@@ -882,10 +968,12 @@ impl LiveNode {
                     .await;
                 Self::drain_channels(
                     &mut time_evt_rx,
-                    &mut data_evt_rx,
-                    &mut data_cmd_rx,
+                    &mut system_evt_rx,
+                    &mut system_cmd_rx,
                     &mut exec_evt_rx,
                     &mut exec_cmd_rx,
+                    &mut data_evt_rx,
+                    &mut data_cmd_rx,
                 );
                 log::info!("Event loop stopped");
 
@@ -901,6 +989,8 @@ impl LiveNode {
 
         let stop_handle = self.handle.clone();
         let mut pending = PendingEvents::default();
+        let mut startup_system_events = Vec::new();
+        let mut startup_system_commands = Vec::new();
         let connection_deadline = dst::time::Instant::now() + self.config.timeout_connection;
 
         // Startup phase 1: Connect data clients and drain instrument events into cache.
@@ -909,10 +999,12 @@ impl LiveNode {
             self.connect_data_phase(connection_deadline),
             &mut pending,
             &mut time_evt_rx,
-            &mut data_evt_rx,
-            &mut data_cmd_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
         )
         .await;
 
@@ -920,20 +1012,24 @@ impl LiveNode {
             flush_all_pending(
                 &mut pending,
                 &mut time_evt_rx,
-                &mut data_evt_rx,
-                &mut data_cmd_rx,
+                &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
             );
             let result = self
                 .abort_startup_with_error("Data client connection timed out", e)
                 .await;
             Self::drain_channels(
                 &mut time_evt_rx,
-                &mut data_evt_rx,
-                &mut data_cmd_rx,
+                &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
             );
             log::info!("Event loop stopped");
             return result;
@@ -943,6 +1039,8 @@ impl LiveNode {
         // select loop did not capture before the connect future resolved, then
         // drain everything into cache.
         flush_pending_data(&mut pending, &mut data_evt_rx, &mut data_cmd_rx);
+        startup_system_events.extend(pending.take_system_events());
+        startup_system_commands.extend(pending.take_system_commands());
         debug_assert!(
             pending.data_evts.is_empty() && pending.data_cmds.is_empty(),
             "data must be drained into cache before exec clients connect",
@@ -953,10 +1051,12 @@ impl LiveNode {
             self.connect_exec_phase(connection_deadline),
             &mut pending,
             &mut time_evt_rx,
-            &mut data_evt_rx,
-            &mut data_cmd_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
         )
         .await;
 
@@ -964,11 +1064,15 @@ impl LiveNode {
         flush_all_pending(
             &mut pending,
             &mut time_evt_rx,
-            &mut data_evt_rx,
-            &mut data_cmd_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
         );
+        startup_system_events.extend(pending.take_system_events());
+        startup_system_commands.extend(pending.take_system_commands());
         debug_assert!(
             pending.is_empty(),
             "all startup events must be processed before reconciliation",
@@ -982,10 +1086,12 @@ impl LiveNode {
                     .await;
                 Self::drain_channels(
                     &mut time_evt_rx,
-                    &mut data_evt_rx,
-                    &mut data_cmd_rx,
+                    &mut system_evt_rx,
+                    &mut system_cmd_rx,
                     &mut exec_evt_rx,
                     &mut exec_cmd_rx,
+                    &mut data_evt_rx,
+                    &mut data_cmd_rx,
                 );
                 log::info!("Event loop stopped");
                 return result;
@@ -1001,10 +1107,12 @@ impl LiveNode {
                 .await;
             Self::drain_channels(
                 &mut time_evt_rx,
-                &mut data_evt_rx,
-                &mut data_cmd_rx,
+                &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
             );
             log::info!("Event loop stopped");
             return result;
@@ -1017,10 +1125,12 @@ impl LiveNode {
             self.abort_startup(reason).await?;
             Self::drain_channels(
                 &mut time_evt_rx,
-                &mut data_evt_rx,
-                &mut data_cmd_rx,
+                &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
             );
             log::info!("Event loop stopped");
             return Ok(());
@@ -1033,10 +1143,12 @@ impl LiveNode {
             let result = self.abort_startup("Startup reconciliation failed").await;
             Self::drain_channels(
                 &mut time_evt_rx,
-                &mut data_evt_rx,
-                &mut data_cmd_rx,
+                &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
             );
             log::info!("Event loop stopped");
 
@@ -1053,10 +1165,12 @@ impl LiveNode {
             let result = self.abort_startup(reason).await;
             Self::drain_channels(
                 &mut time_evt_rx,
-                &mut data_evt_rx,
-                &mut data_cmd_rx,
+                &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
             );
             log::info!("Event loop stopped");
             return result;
@@ -1066,10 +1180,12 @@ impl LiveNode {
             let result = self.abort_after_trader_start_failure(e).await;
             Self::drain_channels(
                 &mut time_evt_rx,
-                &mut data_evt_rx,
-                &mut data_cmd_rx,
+                &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
             );
             log::info!("Event loop stopped");
             return result;
@@ -1079,18 +1195,25 @@ impl LiveNode {
             let result = self.abort_after_trader_start_failure(e).await;
             Self::drain_channels(
                 &mut time_evt_rx,
-                &mut data_evt_rx,
-                &mut data_cmd_rx,
+                &mut system_evt_rx,
+                &mut system_cmd_rx,
                 &mut exec_evt_rx,
                 &mut exec_cmd_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
             );
             log::info!("Event loop stopped");
             return result;
         }
 
+        self.process_system_events(startup_system_events);
+        self.process_system_commands(startup_system_commands);
+
         let finish_result = {
             let mut receivers = RunnerReceivers {
                 time_evt: &mut time_evt_rx,
+                system_evt: &mut system_evt_rx,
+                system_cmd: &mut system_cmd_rx,
                 data_evt: &mut data_evt_rx,
                 data_cmd: &mut data_cmd_rx,
                 exec_evt: &mut exec_evt_rx,
@@ -1232,8 +1355,26 @@ impl LiveNode {
         let mut open_order_report_task: Option<OpenOrderReportTask> = None;
         let mut targeted_order_report_task: Option<TargetedOrderReportTask> = None;
         let mut position_report_task: Option<PositionReportTask> = None;
-        let ctrl_c = dst::signal::ctrl_c();
-        let terminate = dst::signal::terminate();
+
+        // A hosted node never installs signal handlers, so these futures stay pending and their
+        // listeners are never registered. Both arms resolve to the same type as the real listeners.
+        let owns_signals = mode.owns_signals();
+
+        let ctrl_c = async move {
+            if owns_signals {
+                dst::signal::ctrl_c().await
+            } else {
+                std::future::pending::<std::io::Result<()>>().await
+            }
+        };
+
+        let terminate = async move {
+            if owns_signals {
+                dst::signal::terminate().await
+            } else {
+                std::future::pending::<std::io::Result<()>>().await
+            }
+        };
 
         tokio::pin!(ctrl_c);
         tokio::pin!(terminate);
@@ -1241,6 +1382,13 @@ impl LiveNode {
         let metrics = self.handle.metrics.clone();
         let metrics_start = dst::time::Instant::now();
         metrics.reset();
+
+        let mut queue_monitor = self
+            .config
+            .queue_monitor
+            .as_ref()
+            .map(|config| QueueMonitor::new(config, metrics.snapshot()));
+        let mut dispatches_since_yield = 0usize;
 
         loop {
             let shutdown_deadline = self.shutdown_deadline;
@@ -1294,11 +1442,17 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(result) => {
+                            let client_refs = self
+                                .exec_clients
+                                .iter()
+                                .map(|client| client as &dyn ExecutionClient)
+                                .collect::<Vec<_>>();
                             let reconciliation = self.exec_manager.reconcile_open_order_reports(
                                 &result.check,
                                 result.reports,
                                 &result.queried_clients,
                                 &result.failed_clients,
+                                &client_refs,
                             );
                             self.process_reconciliation_events(&reconciliation.events);
                             if !reconciliation.targeted_queries.is_empty() {
@@ -1335,7 +1489,14 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(result) => {
-                            let events = self.exec_manager.reconcile_targeted_order_reports(result);
+                            let client_refs = self
+                                .exec_clients
+                                .iter()
+                                .map(|client| client as &dyn ExecutionClient)
+                                .collect::<Vec<_>>();
+                            let events = self
+                                .exec_manager
+                                .reconcile_targeted_order_reports(result, &client_refs);
                             self.process_reconciliation_events(&events);
                         }
                         ReportTaskOutcome::TimedOut => {
@@ -1393,6 +1554,11 @@ impl LiveNode {
                         ),
                         metrics_start.elapsed(),
                     );
+
+                    if let Some(queue_monitor) = queue_monitor.as_mut() {
+                        let transitions = queue_monitor.evaluate(metrics.snapshot());
+                        self.publish_queue_state_transitions(&transitions);
+                    }
 
                     let mut now = dst::time::Instant::now();
 
@@ -1467,11 +1633,25 @@ impl LiveNode {
                     if dispatched {
                         record_runner_dispatch(
                             &metrics,
-                            RunnerMetricChannel::TimeEvents,
+                            SystemChannel::TimeEvents,
                             dispatch_start,
                             metrics_start,
                         );
                     }
+                }
+                Some(event) = system_evt_rx.recv() => {
+                    if is_shutting_down {
+                        log::debug!("Residual system event: {event:?}");
+                        residual_events += 1;
+                    }
+                    self.process_system_event(event);
+                }
+                Some(command) = system_cmd_rx.recv() => {
+                    if is_shutting_down {
+                        log::debug!("Residual system command: {command:?}");
+                        residual_events += 1;
+                    }
+                    self.process_system_command(command);
                 }
                 Some(evt) = exec_evt_rx.recv() => {
                     let dispatch_start = dst::time::Instant::now();
@@ -1484,7 +1664,7 @@ impl LiveNode {
                     self.process_exec_event(evt);
                     record_runner_dispatch(
                         &metrics,
-                        RunnerMetricChannel::ExecEvents,
+                        SystemChannel::ExecEvents,
                         dispatch_start,
                         metrics_start,
                     );
@@ -1500,7 +1680,7 @@ impl LiveNode {
                     self.process_exec_command(cmd);
                     record_runner_dispatch(
                         &metrics,
-                        RunnerMetricChannel::ExecCommands,
+                        SystemChannel::ExecCommands,
                         dispatch_start,
                         metrics_start,
                     );
@@ -1539,7 +1719,7 @@ impl LiveNode {
                     AsyncRunner::handle_data_event(evt);
                     record_runner_dispatch(
                         &metrics,
-                        RunnerMetricChannel::DataEvents,
+                        SystemChannel::DataEvents,
                         dispatch_start,
                         metrics_start,
                     );
@@ -1554,11 +1734,17 @@ impl LiveNode {
                     AsyncRunner::handle_data_command(cmd);
                     record_runner_dispatch(
                         &metrics,
-                        RunnerMetricChannel::DataCommands,
+                        SystemChannel::DataCommands,
                         dispatch_start,
                         metrics_start,
                     );
                 }
+            }
+
+            dispatches_since_yield += 1;
+            if dispatches_since_yield >= DISPATCHES_PER_YIELD {
+                dispatches_since_yield = 0;
+                tokio::task::yield_now().await;
             }
         }
 
@@ -1579,10 +1765,12 @@ impl LiveNode {
         // Handle events that arrived during finalize_stop
         Self::drain_channels(
             &mut time_evt_rx,
-            &mut data_evt_rx,
-            &mut data_cmd_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
         );
 
         log::info!("Event loop stopped");
@@ -1590,11 +1778,34 @@ impl LiveNode {
         stop_result
     }
 
+    fn publish_queue_state_transitions(&self, transitions: &[QueueStateTransition]) {
+        let topic = MessagingSwitchboard::queue_state_changed_topic();
+
+        for transition in transitions {
+            let timestamp = self.kernel.generate_timestamp_ns();
+            let event = QueueStateChanged::new(
+                self.config.trader_id,
+                transition.channel,
+                transition.condition,
+                transition.state,
+                transition.queue_depth,
+                transition.mean_dispatch_ns,
+                UUID4::new(),
+                timestamp,
+                timestamp,
+            );
+
+            msgbus::publish_any(topic, event.as_any());
+        }
+    }
+
     #[expect(
         clippy::await_holding_refcell_ref,
         reason = "cache loading is serialized before the single-threaded live node starts"
     )]
-    async fn prepare_cache(&self) -> anyhow::Result<()> {
+    async fn prepare_cache(&mut self) -> anyhow::Result<()> {
+        self.install_cache_database().await?;
+
         let cache = self.kernel.cache();
         if !cache.borrow().has_backing() {
             return Ok(());
@@ -1622,6 +1833,35 @@ impl LiveNode {
         Ok(())
     }
 
+    /// Returns whether a cache database backing is configured but not yet installed.
+    #[must_use]
+    pub const fn has_pending_cache_database(&self) -> bool {
+        self.cache_database_factory.is_some()
+    }
+
+    /// Constructs the configured cache database backing and installs it on the kernel cache.
+    ///
+    /// Construction is deferred to startup so the adapter is built inside the async runtime rather
+    /// than by blocking the synchronous builder, and so the connection opens only when the node runs.
+    async fn install_cache_database(&mut self) -> anyhow::Result<()> {
+        let Some(factory) = self.cache_database_factory.as_ref() else {
+            return Ok(());
+        };
+
+        let config = self.config.cache.clone().unwrap_or_default();
+
+        // Cleared only after a successful install, so a failed startup can be retried rather than
+        // silently starting without the backing the caller asked for.
+        let database = factory
+            .create(self.config.trader_id, self.kernel.instance_id, config)
+            .await
+            .context("failed to create cache database backing")?;
+        self.kernel.cache().borrow_mut().set_database(database);
+        self.cache_database_factory = None;
+
+        Ok(())
+    }
+
     fn take_external_ingress_receiver(
         &mut self,
     ) -> anyhow::Result<Option<tokio::sync::mpsc::Receiver<BusMessage>>> {
@@ -1636,7 +1876,10 @@ impl LiveNode {
 
     fn republish_external_msgbus_message(message: &BusMessage) {
         if let Err(e) = msgbus::republish_external_message(message) {
-            log::error!("Failed to republish external message bus message: {e}");
+            log::error!(
+                "Failed to republish external message bus topic '{}': {e:#}",
+                message.topic
+            );
         }
     }
 
@@ -1868,10 +2111,12 @@ impl LiveNode {
         if let Some(receivers) = receivers {
             Self::drain_channels(
                 receivers.time_evt,
-                receivers.data_evt,
-                receivers.data_cmd,
+                receivers.system_evt,
+                receivers.system_cmd,
                 receivers.exec_evt,
                 receivers.exec_cmd,
+                receivers.data_evt,
+                receivers.data_cmd,
             );
         } else {
             let drained_events = self.drain_runner_pending();
@@ -1916,6 +2161,14 @@ impl LiveNode {
                 () = dst::time::sleep_until(deadline) => break,
                 Some(message) = receivers.time_evt.recv() => {
                     let _ = AsyncRunner::handle_time_event(message);
+                    processed += 1;
+                }
+                Some(event) = receivers.system_evt.recv() => {
+                    self.process_system_event(event);
+                    processed += 1;
+                }
+                Some(command) = receivers.system_cmd.recv() => {
+                    self.process_system_command(command);
                     processed += 1;
                 }
                 Some(event) = receivers.exec_evt.recv() => {
@@ -2023,10 +2276,12 @@ impl LiveNode {
 
     fn drain_channels(
         time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
-        data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-        data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
+        system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
+        system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
         exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
         exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
+        data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+        data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
     ) {
         let mut drained = 0;
 
@@ -2035,8 +2290,11 @@ impl LiveNode {
             drained += 1;
         }
 
-        while let Ok(cmd) = data_cmd_rx.try_recv() {
-            AsyncRunner::handle_data_command(cmd);
+        while system_evt_rx.try_recv().is_ok() {
+            drained += 1;
+        }
+
+        while system_cmd_rx.try_recv().is_ok() {
             drained += 1;
         }
 
@@ -2045,13 +2303,18 @@ impl LiveNode {
             drained += 1;
         }
 
-        while let Ok(cmd) = exec_cmd_rx.try_recv() {
-            AsyncRunner::handle_trading_command(cmd);
+        while let Ok(cmd) = data_cmd_rx.try_recv() {
+            AsyncRunner::handle_data_command(cmd);
             drained += 1;
         }
 
         while let Ok(evt) = exec_evt_rx.try_recv() {
             AsyncRunner::handle_exec_event(evt);
+            drained += 1;
+        }
+
+        while let Ok(cmd) = exec_cmd_rx.try_recv() {
+            AsyncRunner::handle_trading_command(cmd);
             drained += 1;
         }
 
@@ -2220,7 +2483,7 @@ impl LiveNode {
     ) -> anyhow::Result<()> {
         if self.state() != NodeState::Idle {
             anyhow::bail!(
-                "Cannot set cache database while node is running, set it before calling start()"
+                "Cannot set cache database while node is running, set it before running the node"
             );
         }
 
@@ -2258,7 +2521,7 @@ impl LiveNode {
     {
         if self.state() != NodeState::Idle {
             anyhow::bail!(
-                "Cannot add actor while node is running, add actors before calling start()"
+                "Cannot add actor while node is running, add actors before running the node"
             );
         }
 
@@ -2283,7 +2546,7 @@ impl LiveNode {
     {
         if self.state() != NodeState::Idle {
             anyhow::bail!(
-                "Cannot add actor while node is running, add actors before calling start()"
+                "Cannot add actor while node is running, add actors before running the node"
             );
         }
 
@@ -2303,13 +2566,18 @@ impl LiveNode {
     /// Returns an error if:
     /// - The node is currently running.
     /// - A strategy with the same ID is already registered.
+    /// - The strategy configures one or more external order claims and the request repeats
+    ///   an instrument, or either tier already contains a requested claim.
+    /// - The strategy configures one or more external order claims or an OMS type override,
+    ///   and the execution engine is already borrowed. A strategy configuring neither does
+    ///   not take the borrow and cannot fail this way.
     pub fn add_strategy<T>(&mut self, mut strategy: T) -> anyhow::Result<()>
     where
         T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
     {
         if self.state() != NodeState::Idle {
             anyhow::bail!(
-                "Cannot add strategy while node is running, add strategies before calling start()"
+                "Cannot add strategy while node is running, add strategies before running the node"
             );
         }
 
@@ -2320,30 +2588,85 @@ impl LiveNode {
             .borrow()
             .prepare_strategy_for_registration(&mut strategy)?;
         let oms_type = StrategyNative::strategy_core(&strategy).config.oms_type;
-        if let Some(claims) = strategy
-            .external_order_claims()
-            .filter(|claims| !claims.is_empty())
-        {
-            self.register_external_order_claims(strategy_id, &claims)?;
-        }
+        let claims = strategy.external_order_claims().unwrap_or_default();
+
+        // The engine borrow is only needed for claims or an OMS override; a
+        // strategy requiring neither must not fail on an unavailable borrow.
+        let mut exec_engine = if claims.is_empty() && oms_type.is_none() {
+            None
+        } else {
+            Some(self.kernel.exec_engine.try_borrow_mut().map_err(|e| {
+                anyhow::anyhow!("Cannot register external order claims or OMS type: {e}")
+            })?)
+        };
+        let instrument_ids = match &exec_engine {
+            Some(exec_engine) => Self::preflight_external_order_claims(
+                &self.exec_manager,
+                exec_engine,
+                strategy_id,
+                &claims,
+            )?,
+            None => HashSet::new(),
+        };
 
         self.kernel.trader.borrow_mut().add_strategy(strategy)?;
 
-        if let Some(oms_type) = oms_type {
-            self.kernel
-                .exec_engine
-                .borrow_mut()
-                .register_oms_type(strategy_id, oms_type);
+        // No fallible operation may follow the trader addition: the commits
+        // below are infallible against the preflighted request.
+        if let Some(exec_engine) = &mut exec_engine {
+            exec_engine.commit_external_order_claims(strategy_id, &instrument_ids);
+            self.exec_manager
+                .register_external_order_claims(strategy_id, &instrument_ids);
+
+            if let Some(oms_type) = oms_type {
+                exec_engine.register_oms_type(strategy_id, oms_type);
+            }
         }
 
         Ok(())
     }
 
-    pub(crate) fn register_external_order_claims(
+    /// Registers external order claims on both live execution tiers.
+    ///
+    /// The operation is synchronous and atomic across the reconciliation manager and execution
+    /// engine. It can be called while the node is idle, after manual [`start`](Self::start)
+    /// returns, or after the node stops. It cannot be called while [`run`](Self::run) or
+    /// [`run_with_mode`](Self::run_with_mode) owns the node.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error without changing either tier if the execution engine is already borrowed,
+    /// the request repeats an instrument, or either tier already contains any requested claim.
+    pub fn register_external_order_claims(
         &mut self,
         strategy_id: StrategyId,
         claims: &[InstrumentId],
     ) -> anyhow::Result<()> {
+        let mut exec_engine = self
+            .kernel
+            .exec_engine
+            .try_borrow_mut()
+            .map_err(|e| anyhow::anyhow!("Cannot register external order claims: {e}"))?;
+        let instrument_ids = Self::preflight_external_order_claims(
+            &self.exec_manager,
+            &exec_engine,
+            strategy_id,
+            claims,
+        )?;
+
+        exec_engine.commit_external_order_claims(strategy_id, &instrument_ids);
+        self.exec_manager
+            .register_external_order_claims(strategy_id, &instrument_ids);
+
+        Ok(())
+    }
+
+    fn preflight_external_order_claims(
+        exec_manager: &ExecutionManager,
+        exec_engine: &ExecutionEngine,
+        strategy_id: StrategyId,
+        claims: &[InstrumentId],
+    ) -> anyhow::Result<HashSet<InstrumentId>> {
         let mut instrument_ids = HashSet::new();
 
         for instrument_id in claims {
@@ -2354,33 +2677,59 @@ impl LiveNode {
             }
         }
 
-        {
-            let exec_engine = self.kernel.exec_engine.borrow();
+        for instrument_id in &instrument_ids {
+            if let Some(existing) = exec_manager.get_external_order_claim(instrument_id) {
+                anyhow::bail!(
+                    "External order claim for {instrument_id} already exists for {existing}"
+                );
+            }
 
-            for instrument_id in &instrument_ids {
-                if let Some(existing) = self.exec_manager.get_external_order_claim(instrument_id) {
-                    anyhow::bail!(
-                        "External order claim for {instrument_id} already exists for {existing}"
-                    );
-                }
-
-                if let Some(existing) = exec_engine.get_external_order_claim(instrument_id) {
-                    anyhow::bail!(
-                        "External order claim for {instrument_id} already exists for {existing}"
-                    );
-                }
+            if let Some(existing) = exec_engine.get_external_order_claim(instrument_id) {
+                anyhow::bail!(
+                    "External order claim for {instrument_id} already exists for {existing}"
+                );
             }
         }
 
-        for instrument_id in &instrument_ids {
-            self.exec_manager
-                .claim_external_orders(*instrument_id, strategy_id)?;
+        Ok(instrument_ids)
+    }
+
+    /// Deregisters all external order claims owned by `strategy_id` from both execution tiers.
+    ///
+    /// Remove the strategy through the trader or controller first, then call this method before
+    /// registering a successor. The operation is synchronous and can be called while the node is
+    /// idle, after manual [`start`](Self::start) returns, or after the node stops. It cannot be
+    /// called while [`run`](Self::run) or [`run_with_mode`](Self::run_with_mode) owns the node.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error without changing either tier if the execution engine is already borrowed
+    /// or the two tiers do not contain identical claim sets for the strategy.
+    pub fn deregister_external_order_claims(
+        &mut self,
+        strategy_id: StrategyId,
+    ) -> anyhow::Result<()> {
+        let mut exec_engine = self
+            .kernel
+            .exec_engine
+            .try_borrow_mut()
+            .map_err(|e| anyhow::anyhow!("Cannot deregister external order claims: {e}"))?;
+        let manager_instruments = self
+            .exec_manager
+            .get_external_order_claims_for_strategy(strategy_id);
+        let engine_instruments = exec_engine.get_external_order_claims_for_strategy(strategy_id);
+
+        if manager_instruments != engine_instruments {
+            anyhow::bail!(
+                "External order claims for {strategy_id} differ between the execution manager and engine"
+            );
         }
 
-        self.kernel
-            .exec_engine
-            .borrow_mut()
-            .register_external_order_claims(strategy_id, &instrument_ids)
+        exec_engine.deregister_external_order_claims(strategy_id);
+        self.exec_manager
+            .deregister_external_order_claims(strategy_id);
+
+        Ok(())
     }
 
     /// Adds an execution algorithm to the trader.
@@ -2399,7 +2748,7 @@ impl LiveNode {
     {
         if self.state() != NodeState::Idle {
             anyhow::bail!(
-                "Cannot add exec algorithm while node is running, add exec algorithms before calling start()"
+                "Cannot add exec algorithm while node is running, add exec algorithms before running the node"
             );
         }
 
@@ -2616,7 +2965,7 @@ impl LiveNode {
 
 fn record_runner_dispatch(
     metrics: &RunnerMetrics,
-    channel: RunnerMetricChannel,
+    channel: SystemChannel,
     dispatch_start: dst::time::Instant,
     metrics_start: dst::time::Instant,
 ) {
@@ -2675,7 +3024,11 @@ async fn request_open_order_reports(
 
         match client.generate_order_status_reports(&command).await {
             Ok(reports) => {
-                all_reports.extend(reports);
+                all_reports.extend(
+                    reports
+                        .into_iter()
+                        .map(|report| SourcedOrderStatusReport { client_id, report }),
+                );
             }
             Err(e) => {
                 failed_clients.insert(client_id);
@@ -2768,7 +3121,7 @@ struct OpenOrderReportTask {
 
 struct OpenOrderReportResult {
     check: OpenOrderReportCheck,
-    reports: Vec<OrderStatusReport>,
+    reports: Vec<SourcedOrderStatusReport>,
     queried_clients: IndexSet<ClientId>,
     failed_clients: IndexSet<ClientId>,
 }
@@ -2782,7 +3135,7 @@ struct TargetedOrderReportTask {
 }
 
 struct OpenOrderReportQueryResult {
-    reports: Vec<OrderStatusReport>,
+    reports: Vec<SourcedOrderStatusReport>,
     queried_clients: IndexSet<ClientId>,
     failed_clients: IndexSet<ClientId>,
 }
@@ -2808,10 +3161,12 @@ struct PositionReportQueryResult {
 
 struct RunnerReceivers<'a> {
     time_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
-    data_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-    data_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
+    system_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
+    system_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
     exec_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     exec_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
+    data_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    data_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
 }
 
 /// Flushes data events and commands from both `pending` and the channel receivers
@@ -2849,17 +3204,31 @@ fn flush_pending_data(
 /// Unlike [`flush_pending_data`] this is a single pass, not a drain-until-quiet
 /// loop. Sufficient for phase 2 where the goal is to capture items the biased
 /// select did not poll before the connect future resolved.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "all runner receivers are drained together"
+)]
 fn flush_all_pending(
     pending: &mut PendingEvents,
     time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
-    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
+    system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
+    system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
     exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
+    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
 ) {
     // Flush channel receivers into pending
     while let Ok(handler) = time_evt_rx.try_recv() {
         let _ = AsyncRunner::handle_time_event(handler);
+    }
+
+    while let Ok(event) = system_evt_rx.try_recv() {
+        pending.system_events.push(event);
+    }
+
+    while let Ok(command) = system_cmd_rx.try_recv() {
+        pending.system_commands.push(command);
     }
 
     while let Ok(evt) = data_evt_rx.try_recv() {
@@ -2910,14 +3279,20 @@ fn flush_all_pending(
 ///
 /// Time events are handled immediately. Account events are forwarded directly.
 /// All other events are buffered in `pending` for later processing.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "startup buffering owns one future plus the pending state and all runner receivers"
+)]
 async fn drive_with_event_buffering<F: std::future::Future>(
     future: F,
     pending: &mut PendingEvents,
     time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
-    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
+    system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
+    system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
     exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
+    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
 ) -> F::Output {
     tokio::pin!(future);
 
@@ -2930,6 +3305,12 @@ async fn drive_with_event_buffering<F: std::future::Future>(
             }
             Some(handler) = time_evt_rx.recv() => {
                 let _ = AsyncRunner::handle_time_event(handler);
+            }
+            Some(event) = system_evt_rx.recv() => {
+                pending.system_events.push(event);
+            }
+            Some(command) = system_cmd_rx.recv() => {
+                pending.system_commands.push(command);
             }
             Some(evt) = exec_evt_rx.recv() => {
                 // Account events are safe to process immediately. Report and
@@ -2977,20 +3358,24 @@ async fn drive_with_event_buffering<F: std::future::Future>(
 
 #[derive(Default)]
 struct PendingEvents {
-    data_cmds: Vec<DataCommand>,
+    system_events: Vec<SystemEvent>,
+    system_commands: Vec<SystemCommand>,
     data_evts: Vec<DataEvent>,
-    exec_cmds: Vec<TradingCommandMessage>,
+    data_cmds: Vec<DataCommand>,
     exec_reports: Vec<ExecutionReport>,
     order_evts: Vec<OrderEventAny>,
+    exec_cmds: Vec<TradingCommandMessage>,
 }
 
 impl PendingEvents {
     fn is_empty(&self) -> bool {
-        self.data_evts.is_empty()
+        self.system_events.is_empty()
+            && self.system_commands.is_empty()
+            && self.data_evts.is_empty()
             && self.data_cmds.is_empty()
-            && self.exec_cmds.is_empty()
             && self.exec_reports.is_empty()
             && self.order_evts.is_empty()
+            && self.exec_cmds.is_empty()
     }
 
     /// Drains only data events and commands into the cache.
@@ -3023,19 +3408,19 @@ impl PendingEvents {
     fn drain(&mut self) {
         let total = self.data_evts.len()
             + self.data_cmds.len()
-            + self.exec_cmds.len()
             + self.exec_reports.len()
-            + self.order_evts.len();
+            + self.order_evts.len()
+            + self.exec_cmds.len();
 
         if total > 0 {
             log::debug!(
                 "Processing {total} events/commands queued during startup \
-                 (data_evts={}, data_cmds={}, exec_cmds={}, exec_reports={}, order_evts={})",
+                 (data_evts={}, data_cmds={}, exec_reports={}, order_evts={}, exec_cmds={})",
                 self.data_evts.len(),
                 self.data_cmds.len(),
-                self.exec_cmds.len(),
                 self.exec_reports.len(),
-                self.order_evts.len()
+                self.order_evts.len(),
+                self.exec_cmds.len()
             );
         }
 
@@ -3051,13 +3436,21 @@ impl PendingEvents {
             AsyncRunner::handle_exec_event(ExecutionEvent::Report(report));
         }
 
-        for cmd in self.exec_cmds.drain(..) {
-            AsyncRunner::handle_trading_command(cmd);
-        }
-
         for evt in self.order_evts.drain(..) {
             AsyncRunner::handle_exec_event(ExecutionEvent::Order(evt));
         }
+
+        for cmd in self.exec_cmds.drain(..) {
+            AsyncRunner::handle_trading_command(cmd);
+        }
+    }
+
+    fn take_system_events(&mut self) -> Vec<SystemEvent> {
+        std::mem::take(&mut self.system_events)
+    }
+
+    fn take_system_commands(&mut self) -> Vec<SystemCommand> {
+        std::mem::take(&mut self.system_commands)
     }
 }
 
@@ -3096,23 +3489,30 @@ mod tests {
 
     use bytes::Bytes;
     use indexmap::IndexMap;
+    use log::{Level, LevelFilter, Log, Metadata, Record};
     #[cfg(feature = "python")]
     use nautilus_common::runner::{
         SyncDataCommandSender, SyncTradingCommandSender, replace_data_cmd_sender,
         replace_exec_cmd_sender,
     };
     use nautilus_common::{
-        actor::DataActor,
+        actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
         cache::Cache,
         clock::{Clock, TestClock},
         enums::SerializationEncoding,
-        live::runner::{get_data_event_sender, get_exec_event_sender},
-        messages::execution::{QueryAccount, SubmitOrder, TradingCommand},
+        live::runner::{get_data_event_sender, get_exec_event_sender, get_system_event_sender},
+        messages::{
+            execution::{QueryAccount, SubmitOrder, TradingCommand},
+            system::{
+                QueueCondition, QueueState, ReconnectSocket, SocketState, SocketStateChanged,
+            },
+        },
         msgbus::{
             self, BusMessage, BusPayloadType, MessageBusBacking, MessageBusBackingFactory,
             MessageBusConfig, MessageBusExternalEgress, MessageBusExternalIngress,
-            MessagingSwitchboard, TypedHandler, TypedIntoHandler,
+            MessagingSwitchboard, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
         },
+        nautilus_actor,
         testing::wait_until_async,
     };
     use nautilus_core::{UUID4, UnixNanos};
@@ -3131,8 +3531,8 @@ mod tests {
             order::spec::{OrderAcceptedSpec, OrderPendingUpdateSpec, OrderUpdatedSpec},
         },
         identifiers::{
-            AccountId, ActorId, ClientId, ComponentId, InstrumentId, PositionId, StrategyId,
-            TradeId, TraderId, VenueOrderId,
+            AccountId, ActorId, ClientId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
+            Venue, VenueOrderId,
         },
         instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -3150,8 +3550,66 @@ mod tests {
     };
     use rstest::*;
     use rust_decimal_macros::dec;
+    use ustr::Ustr;
 
     use super::*;
+
+    struct ExternalIngressLogCapture {
+        messages: Mutex<Vec<String>>,
+    }
+
+    static EXTERNAL_INGRESS_LOG_CAPTURE: ExternalIngressLogCapture = ExternalIngressLogCapture {
+        messages: Mutex::new(Vec::new()),
+    };
+
+    #[derive(Debug)]
+    struct StartupSocketActor {
+        core: DataActorCore,
+        received: Rc<RefCell<Vec<SocketStateChanged>>>,
+    }
+
+    impl StartupSocketActor {
+        fn new(received: Rc<RefCell<Vec<SocketStateChanged>>>) -> Self {
+            Self {
+                core: DataActorCore::new(DataActorConfig {
+                    actor_id: Some(ActorId::from("SOCKET-STARTUP-ACTOR")),
+                    ..Default::default()
+                }),
+                received,
+            }
+        }
+    }
+
+    impl DataActor for StartupSocketActor {
+        fn on_start(&mut self) -> anyhow::Result<()> {
+            self.subscribe_socket_state(None);
+            Ok(())
+        }
+
+        fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
+            self.received.borrow_mut().push(event.clone());
+            Ok(())
+        }
+    }
+
+    nautilus_actor!(StartupSocketActor);
+
+    impl Log for ExternalIngressLogCapture {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            metadata.level() == Level::Error && metadata.target() == "nautilus_live::node"
+        }
+
+        fn log(&self, record: &Record<'_>) {
+            if self.enabled(record.metadata()) {
+                self.messages
+                    .lock()
+                    .unwrap()
+                    .push(record.args().to_string());
+            }
+        }
+
+        fn flush(&self) {}
+    }
 
     #[rstest]
     fn test_render_client_statuses() {
@@ -3177,6 +3635,271 @@ mod tests {
 ╰─────────┴───────────┴───────────╯";
 
         assert_eq!(output, expected);
+    }
+
+    #[rstest]
+    fn test_republish_external_msgbus_message_logs_topic_and_error_chain() {
+        log::set_logger(&EXTERNAL_INGRESS_LOG_CAPTURE).expect("test logger already installed");
+        log::set_max_level(LevelFilter::Error);
+        EXTERNAL_INGRESS_LOG_CAPTURE
+            .messages
+            .lock()
+            .unwrap()
+            .clear();
+        let message = BusMessage::with_str_topic(
+            "data.quotes.AUDUSD.SIM*",
+            BusPayloadType::Custom(Ustr::from("UnregisteredCustomData")),
+            Bytes::new(),
+            SerializationEncoding::Json,
+        );
+
+        LiveNode::republish_external_msgbus_message(&message);
+
+        assert_eq!(
+            *EXTERNAL_INGRESS_LOG_CAPTURE.messages.lock().unwrap(),
+            vec![
+                "Failed to republish external message bus topic 'data.quotes.AUDUSD.SIM*': invalid \
+                 external message topic: Topic `value` contained invalid characters, was \
+                 data.quotes.AUDUSD.SIM*"
+                    .to_string()
+            ],
+        );
+    }
+
+    #[rstest]
+    fn test_publish_queue_state_transitions_reaches_typed_subscriber() {
+        let config = LiveNodeConfig {
+            trader_id: TraderId::from("QUEUE-001"),
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let node = LiveNode::build("QueuePublicationNode".to_string(), Some(config)).unwrap();
+        let received = Rc::new(RefCell::new(Vec::<QueueStateChanged>::new()));
+
+        let handler = ShareableMessageHandler::from_typed({
+            let received = received.clone();
+            move |event: &QueueStateChanged| received.borrow_mut().push(event.clone())
+        });
+
+        msgbus::subscribe_any(
+            MessagingSwitchboard::queue_state_changed_topic().into(),
+            handler,
+            None,
+        );
+        let transitions = [
+            QueueStateTransition {
+                channel: SystemChannel::DataEvents,
+                condition: QueueCondition::Backlogged,
+                state: QueueState::Triggered,
+                queue_depth: 17,
+                mean_dispatch_ns: 23,
+            },
+            QueueStateTransition {
+                channel: SystemChannel::DataEvents,
+                condition: QueueCondition::Slow,
+                state: QueueState::Triggered,
+                queue_depth: 17,
+                mean_dispatch_ns: 23,
+            },
+        ];
+
+        node.publish_queue_state_transitions(&transitions);
+
+        let events = received.borrow();
+        assert_eq!(events.len(), 2);
+
+        for (event, transition) in events.iter().zip(transitions) {
+            assert_eq!(event.trader_id, TraderId::from("QUEUE-001"));
+            assert_eq!(event.channel, transition.channel);
+            assert_eq!(event.condition, transition.condition);
+            assert_eq!(event.state, transition.state);
+            assert_eq!(event.queue_depth, transition.queue_depth);
+            assert_eq!(event.mean_dispatch_ns, transition.mean_dispatch_ns);
+            assert_ne!(event.event_id, UUID4::default());
+            assert_ne!(event.ts_event, UnixNanos::default());
+            assert_eq!(event.ts_init, event.ts_event);
+        }
+        assert_ne!(events[0].event_id, events[1].event_id);
+        drop(events);
+        msgbus::get_message_bus().borrow_mut().dispose();
+    }
+
+    #[rstest]
+    fn test_process_socket_state_change_reaches_typed_subscriber() {
+        let config = LiveNodeConfig {
+            trader_id: TraderId::from("SOCKET-001"),
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let node = LiveNode::build("SocketPublicationNode".to_string(), Some(config)).unwrap();
+        let received = Rc::new(RefCell::new(Vec::<SocketStateChanged>::new()));
+        let handler = ShareableMessageHandler::from_typed({
+            let received = received.clone();
+            move |event: &SocketStateChanged| received.borrow_mut().push(event.clone())
+        });
+        msgbus::subscribe_any(
+            MessagingSwitchboard::socket_state_changed_topic().into(),
+            handler,
+            None,
+        );
+        let change = SocketStateChange::new(
+            ClientId::from("BINANCE"),
+            Some(Venue::from("BINANCE")),
+            Ustr::from("binance-futures-market-streams"),
+            SocketState::Disconnected,
+        );
+
+        node.process_system_event(SystemEvent::SocketState(change));
+
+        let events = received.borrow();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].trader_id, TraderId::from("SOCKET-001"));
+        assert_eq!(events[0].client_id, ClientId::from("BINANCE"));
+        assert_eq!(events[0].venue, Some(Venue::from("BINANCE")));
+        assert_eq!(
+            events[0].endpoint,
+            Ustr::from("binance-futures-market-streams")
+        );
+        assert_eq!(events[0].state, SocketState::Disconnected);
+        assert_ne!(events[0].event_id, UUID4::default());
+        assert_ne!(events[0].ts_event, UnixNanos::default());
+        assert_eq!(events[0].ts_init, events[0].ts_event);
+        drop(events);
+        msgbus::get_message_bus().borrow_mut().dispose();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_publishes_socket_change_after_actor_subscribes() {
+        let config = LiveNodeConfig {
+            trader_id: TraderId::from("SOCKET-STARTUP-001"),
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            timeout_connection: Duration::ZERO,
+            timeout_reconciliation: Duration::ZERO,
+            timeout_portfolio: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            timeout_shutdown: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("SocketStartupNode".to_string(), Some(config)).unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        node.add_actor(StartupSocketActor::new(Rc::clone(&received)))
+            .unwrap();
+        node.runner.as_ref().unwrap().bind_senders();
+        let change = SocketStateChange::new(
+            ClientId::from("BINANCE"),
+            Some(Venue::from("BINANCE")),
+            Ustr::from("binance-futures-market-streams"),
+            SocketState::Connected,
+        );
+        get_system_event_sender()
+            .send(SystemEvent::SocketState(change))
+            .unwrap();
+
+        node.start().await.unwrap();
+
+        {
+            let events = received.borrow();
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].trader_id, TraderId::from("SOCKET-STARTUP-001"));
+            assert_eq!(events[0].client_id, change.client_id);
+            assert_eq!(events[0].venue, change.venue);
+            assert_eq!(events[0].endpoint, change.endpoint);
+            assert_eq!(events[0].state, change.state);
+            assert_ne!(events[0].event_id, UUID4::default());
+            assert_ne!(events[0].ts_event, UnixNanos::default());
+            assert_eq!(events[0].ts_init, events[0].ts_event);
+        }
+
+        node.stop().await.unwrap();
+        node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_run_publishes_queue_state_after_dispatch_sample() {
+        let config = LiveNodeConfig {
+            trader_id: TraderId::from("QUEUE-RUN-001"),
+            queue_monitor: Some(crate::config::QueueMonitorConfig {
+                queue_depth_trigger: usize::MAX,
+                queue_depth_clear: 0,
+                mean_dispatch_ns_trigger: 1,
+                mean_dispatch_ns_clear: 0,
+            }),
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("QueueMonitorRunNode".to_string(), Some(config)).unwrap();
+        let handle = node.handle();
+        let received = Rc::new(RefCell::new(Vec::<QueueStateChanged>::new()));
+
+        let handler = ShareableMessageHandler::from_typed({
+            let received = received.clone();
+            let stop_handle = handle.clone();
+
+            move |event: &QueueStateChanged| {
+                received.borrow_mut().push(event.clone());
+                stop_handle.stop();
+            }
+        });
+
+        msgbus::subscribe_any(
+            MessagingSwitchboard::queue_state_changed_topic().into(),
+            handler,
+            None,
+        );
+        let drive_handle = handle.clone();
+
+        let result = tokio::time::timeout(Duration::from_secs(5), async {
+            let run = node.run();
+            tokio::pin!(run);
+
+            let drive = async move {
+                wait_until_async(
+                    || async { drive_handle.is_running() },
+                    Duration::from_secs(2),
+                )
+                .await;
+                get_data_event_sender().send(stub_data_event()).unwrap();
+            };
+
+            let (run_result, ()) = tokio::join!(run, drive);
+            run_result
+        })
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "queue state event should arrive before timeout"
+        );
+        assert!(result.unwrap().is_ok(), "run() should succeed");
+        let events = received.borrow();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].trader_id, TraderId::from("QUEUE-RUN-001"));
+        assert_eq!(events[0].channel, SystemChannel::DataEvents);
+        assert_eq!(events[0].condition, QueueCondition::Slow);
+        assert_eq!(events[0].state, QueueState::Triggered);
+        assert_eq!(events[0].queue_depth, 0);
+        assert!(events[0].mean_dispatch_ns > 0);
+        assert_ne!(events[0].event_id, UUID4::default());
+        assert_ne!(events[0].ts_event, UnixNanos::default());
+        assert_eq!(events[0].ts_init, events[0].ts_event);
+        drop(events);
+        msgbus::get_message_bus().borrow_mut().dispose();
     }
 
     #[rstest]
@@ -4025,6 +4748,286 @@ mod tests {
     }
 
     #[rstest]
+    fn test_register_external_order_claims_after_build_reaches_both_tiers() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+
+        node.register_external_order_claims(strategy_id, &[instrument_id])
+            .unwrap();
+
+        assert_eq!(
+            node.exec_manager.get_external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_register_external_order_claims_while_running_reaches_both_tiers() {
+        let mut node = live_node_with_replay_store(false);
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+
+        node.start().await.unwrap();
+        assert_eq!(node.state(), NodeState::Running);
+
+        node.register_external_order_claims(strategy_id, &[instrument_id])
+            .unwrap();
+
+        assert_eq!(
+            node.exec_manager.get_external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+    }
+
+    #[rstest]
+    fn test_register_external_order_claims_conflicting_batch_leaves_new_claims_absent() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let existing_instrument = InstrumentId::from("AUDUSD.SIM");
+        let new_instruments = [
+            InstrumentId::from("EURUSD.SIM"),
+            InstrumentId::from("GBPUSD.SIM"),
+        ];
+        let existing_strategy_id = StrategyId::from("CLAIMS-001");
+        let new_strategy_id = StrategyId::from("CLAIMS-002");
+        node.register_external_order_claims(existing_strategy_id, &[existing_instrument])
+            .unwrap();
+
+        let result = node.register_external_order_claims(
+            new_strategy_id,
+            &[new_instruments[0], existing_instrument, new_instruments[1]],
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            node.exec_manager
+                .get_external_order_claim(&existing_instrument),
+            Some(existing_strategy_id)
+        );
+
+        for instrument_id in new_instruments {
+            assert_eq!(
+                node.exec_manager.get_external_order_claim(&instrument_id),
+                None
+            );
+            assert_eq!(
+                node.kernel
+                    .exec_engine
+                    .borrow()
+                    .get_external_order_claim(&instrument_id),
+                None
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_register_external_order_claims_one_tier_conflict_changes_neither_tier() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let conflicting_instrument = InstrumentId::from("AUDUSD.SIM");
+        let new_instrument = InstrumentId::from("EURUSD.SIM");
+        let existing_strategy_id = StrategyId::from("CLAIMS-001");
+        let new_strategy_id = StrategyId::from("CLAIMS-002");
+        node.exec_manager
+            .claim_external_orders(conflicting_instrument, existing_strategy_id)
+            .unwrap();
+
+        let result = node.register_external_order_claims(
+            new_strategy_id,
+            &[new_instrument, conflicting_instrument],
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            node.exec_manager
+                .get_external_order_claim(&conflicting_instrument),
+            Some(existing_strategy_id)
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&conflicting_instrument),
+            None
+        );
+        assert_eq!(
+            node.exec_manager.get_external_order_claim(&new_instrument),
+            None
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&new_instrument),
+            None
+        );
+    }
+
+    #[rstest]
+    fn test_register_external_order_claims_engine_only_conflict_changes_neither_tier() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let conflicting_instrument = InstrumentId::from("AUDUSD.SIM");
+        let new_instrument = InstrumentId::from("EURUSD.SIM");
+        let existing_strategy_id = StrategyId::from("CLAIMS-001");
+        let new_strategy_id = StrategyId::from("CLAIMS-002");
+
+        // Seed the conflict on the engine tier only, mirroring the manager-only case.
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_external_order_claims(
+                existing_strategy_id,
+                &HashSet::from([conflicting_instrument]),
+            )
+            .unwrap();
+
+        let result = node.register_external_order_claims(
+            new_strategy_id,
+            &[new_instrument, conflicting_instrument],
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&conflicting_instrument),
+            Some(existing_strategy_id)
+        );
+        assert_eq!(
+            node.exec_manager
+                .get_external_order_claim(&conflicting_instrument),
+            None
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&new_instrument),
+            None
+        );
+        assert_eq!(
+            node.exec_manager.get_external_order_claim(&new_instrument),
+            None
+        );
+    }
+
+    #[rstest]
+    fn test_deregister_external_order_claims_allows_successor_to_claim() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let instruments = [
+            InstrumentId::from("AUDUSD.SIM"),
+            InstrumentId::from("EURUSD.SIM"),
+        ];
+        let first_strategy_id = StrategyId::from("CLAIMS-001");
+        let successor_strategy_id = StrategyId::from("CLAIMS-002");
+        node.register_external_order_claims(first_strategy_id, &instruments)
+            .unwrap();
+
+        node.deregister_external_order_claims(first_strategy_id)
+            .unwrap();
+        node.register_external_order_claims(successor_strategy_id, &instruments)
+            .unwrap();
+
+        for instrument_id in instruments {
+            assert_eq!(
+                node.exec_manager.get_external_order_claim(&instrument_id),
+                Some(successor_strategy_id)
+            );
+            assert_eq!(
+                node.kernel
+                    .exec_engine
+                    .borrow()
+                    .get_external_order_claim(&instrument_id),
+                Some(successor_strategy_id)
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_deregister_external_order_claims_divergence_changes_neither_tier() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let manager_instrument = InstrumentId::from("AUDUSD.SIM");
+        let engine_instrument = InstrumentId::from("EURUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+        node.exec_manager
+            .claim_external_orders(manager_instrument, strategy_id)
+            .unwrap();
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_external_order_claims(strategy_id, &HashSet::from([engine_instrument]))
+            .unwrap();
+
+        let result = node.deregister_external_order_claims(strategy_id);
+
+        assert!(result.is_err());
+        assert_eq!(
+            node.exec_manager
+                .get_external_order_claim(&manager_instrument),
+            Some(strategy_id)
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&engine_instrument),
+            Some(strategy_id)
+        );
+    }
+
+    #[rstest]
+    fn test_deregister_external_order_claims_without_claims_is_idempotent() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let strategy_id = StrategyId::from("CLAIMS-001");
+
+        node.deregister_external_order_claims(strategy_id).unwrap();
+        node.deregister_external_order_claims(strategy_id).unwrap();
+    }
+
+    #[rstest]
     fn test_add_strategy_rejects_duplicate_external_order_claim_without_overwriting() {
         let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
@@ -4105,6 +5108,72 @@ mod tests {
             let exec_engine = node.kernel().exec_engine.borrow();
             assert_eq!(exec_engine.get_external_order_claim(&instrument_id), None);
         }
+    }
+
+    #[rstest]
+    fn test_add_strategy_failure_does_not_register_external_order_claims() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .unwrap();
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+        let mut strategy = TestStrategy::new(StrategyConfig {
+            strategy_id: Some(strategy_id),
+            external_order_claims: Some(vec![instrument_id]),
+            ..Default::default()
+        });
+
+        strategy
+            .core
+            .register(
+                node.trader_id(),
+                node.kernel.clock(),
+                node.kernel.cache.clone(),
+                node.kernel.portfolio.clone(),
+            )
+            .unwrap();
+
+        let result = node.add_strategy(strategy);
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("already registered with trader")
+        );
+        assert_eq!(
+            node.exec_manager.get_external_order_claim(&instrument_id),
+            None
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&instrument_id),
+            None
+        );
+    }
+
+    #[rstest]
+    fn test_add_strategy_without_claims_or_oms_type_does_not_require_engine_borrow() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let exec_engine = node.kernel.exec_engine.clone();
+        let _engine_borrow = exec_engine.borrow_mut();
+
+        node.add_strategy(TestStrategy::new(StrategyConfig {
+            strategy_id: Some(StrategyId::from("NOCLAIMS-001")),
+            ..Default::default()
+        }))
+        .unwrap();
     }
 
     #[rstest]
@@ -4513,87 +5582,6 @@ mod tests {
     }
 
     #[rstest]
-    #[tokio::test]
-    async fn test_poll_processes_post_start_data_and_exec_events_without_waiting() {
-        let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            timeout_connection: Duration::ZERO,
-            timeout_reconciliation: Duration::ZERO,
-            timeout_portfolio: Duration::ZERO,
-            timeout_disconnection: Duration::ZERO,
-            delay_post_stop: Duration::ZERO,
-            timeout_shutdown: Duration::ZERO,
-            ..Default::default()
-        };
-        let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        let instrument_id = instrument.id();
-        let order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(instrument_id)
-            .quantity(Quantity::from("1"))
-            .build();
-        let client_order_id = order.client_order_id();
-        let submitted = TestOrderEventStubs::submitted(&order, AccountId::from("POLL-001"));
-
-        node.kernel
-            .cache()
-            .borrow_mut()
-            .add_order(order, None, None, false)
-            .unwrap();
-
-        node.start().await.unwrap();
-        get_data_event_sender()
-            .send(DataEvent::Instrument(instrument))
-            .unwrap();
-        get_exec_event_sender()
-            .send(ExecutionEvent::Order(submitted))
-            .unwrap();
-
-        assert!(
-            node.kernel
-                .cache()
-                .borrow()
-                .instrument(&instrument_id)
-                .is_none()
-        );
-        assert_eq!(
-            node.kernel
-                .cache()
-                .borrow()
-                .order(&client_order_id)
-                .unwrap()
-                .status(),
-            OrderStatus::Initialized
-        );
-
-        assert_eq!(node.poll().unwrap(), 2);
-
-        assert!(
-            node.kernel
-                .cache()
-                .borrow()
-                .instrument(&instrument_id)
-                .is_some()
-        );
-        assert_eq!(
-            node.kernel
-                .cache()
-                .borrow()
-                .order(&client_order_id)
-                .unwrap()
-                .status(),
-            OrderStatus::Submitted
-        );
-        assert_eq!(node.poll().unwrap(), 0);
-
-        node.stop().await.unwrap();
-        node.dispose();
-    }
-
-    #[rstest]
     #[tokio::test(start_paused = true)]
     async fn test_stop_processes_residual_exec_event_during_grace_period() {
         let config = LiveNodeConfig {
@@ -4661,7 +5649,7 @@ mod tests {
         let strategy_save =
             IndexMap::from([("strategy-save".to_string(), b"strategy-saved".to_vec())]);
         let (database, control) = TestCacheDatabaseControl::create();
-        control.set_actor_state(ComponentId::from(actor_id.as_str()), &actor_load);
+        control.set_actor_state(actor_id, &actor_load);
         control.set_strategy_state(strategy_id, &strategy_load);
         let config = LiveNodeConfig {
             load_state: true,
@@ -4715,10 +5703,7 @@ mod tests {
                 "database.close",
             ]
         );
-        assert_eq!(
-            control.actor_state(&ComponentId::from(actor_id.as_str())),
-            Some(actor_save)
-        );
+        assert_eq!(control.actor_state(&actor_id), Some(actor_save));
         assert_eq!(control.strategy_state(&strategy_id), Some(strategy_save));
         assert_eq!(node.state(), NodeState::Stopped);
     }
@@ -4997,11 +5982,13 @@ mod tests {
     fn test_record_runner_dispatch_updates_selected_channel() {
         let metrics = RunnerMetrics::default();
         let dispatch_start = dst::time::Instant::now();
-        let metrics_start = dispatch_start - Duration::from_micros(1);
+        let metrics_start = dispatch_start
+            .checked_sub(Duration::from_micros(1))
+            .expect("test instant should support a one-microsecond lookback");
 
         record_runner_dispatch(
             &metrics,
-            RunnerMetricChannel::DataCommands,
+            SystemChannel::DataCommands,
             dispatch_start,
             metrics_start,
         );
@@ -5015,6 +6002,10 @@ mod tests {
         assert_eq!(
             snapshot.data_commands.last_dispatch_at_ns,
             snapshot.elapsed_ns
+        );
+        assert_eq!(
+            snapshot.data_commands.dispatch_busy_ns,
+            snapshot.dispatch_busy_ns
         );
         assert!(snapshot.dispatch_busy_ns < snapshot.elapsed_ns);
     }
@@ -5666,6 +6657,15 @@ mod tests {
         )))
     }
 
+    fn stub_system_command() -> SystemCommand {
+        SystemCommand::ReconnectSocket(ReconnectSocket::new(
+            TraderId::from("TRADER-001"),
+            ClientId::from("POLYMARKET"),
+            Ustr::from("polymarket-market-streams"),
+            UnixNanos::default(),
+        ))
+    }
+
     #[rstest]
     fn test_flush_pending_data_drains_events_and_commands() {
         let (evt_tx, mut evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -5711,6 +6711,35 @@ mod tests {
         assert!(pending.data_cmds.is_empty());
         assert!(evt_rx.try_recv().is_err());
         assert!(cmd_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_pending_system_events_stay_separate_from_data() {
+        let mut pending = PendingEvents::default();
+        let change = SocketStateChange::new(
+            ClientId::from("BINANCE"),
+            Some(Venue::from("BINANCE")),
+            ustr::Ustr::from("binance-futures-market-streams"),
+            SocketState::Connected,
+        );
+
+        pending.system_events.push(SystemEvent::SocketState(change));
+        let system_events = pending.take_system_events();
+
+        assert_eq!(system_events, vec![SystemEvent::SocketState(change)]);
+        assert!(pending.is_empty());
+    }
+
+    #[rstest]
+    fn test_pending_system_commands_stay_separate_from_data() {
+        let mut pending = PendingEvents::default();
+        let command = stub_system_command();
+
+        pending.system_commands.push(command);
+        let system_commands = pending.take_system_commands();
+
+        assert_eq!(system_commands, vec![command]);
+        assert!(pending.is_empty());
     }
 
     fn stub_time_event_handler() -> TimeEventMessage {
@@ -5782,6 +6811,10 @@ mod tests {
     #[rstest]
     fn test_flush_all_pending_drains_buffered_channels() {
         let (time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
+        let (system_evt_tx, mut system_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (system_cmd_tx, mut system_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
         let (data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
@@ -5797,6 +6830,16 @@ mod tests {
 
         // Pre-load all channel types
         time_tx.send(stub_time_event_handler()).unwrap();
+        let change = SocketStateChange::new(
+            ClientId::from("BINANCE"),
+            Some(Venue::from("BINANCE")),
+            Ustr::from("binance-futures-market-streams"),
+            SocketState::Connected,
+        );
+        system_evt_tx
+            .send(SystemEvent::SocketState(change))
+            .unwrap();
+        system_cmd_tx.send(stub_system_command()).unwrap();
         data_evt_tx.send(stub_data_event()).unwrap();
         data_cmd_tx.send(stub_data_command()).unwrap();
         exec_evt_tx.send(stub_exec_event()).unwrap();
@@ -5805,18 +6848,26 @@ mod tests {
         flush_all_pending(
             &mut pending,
             &mut time_rx,
-            &mut data_evt_rx,
-            &mut data_cmd_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
         );
 
+        let system_events = pending.take_system_events();
+        let system_commands = pending.take_system_commands();
+        assert_eq!(system_events, vec![SystemEvent::SocketState(change)]);
+        assert_eq!(system_commands, vec![stub_system_command()]);
         assert!(pending.data_evts.is_empty());
         assert!(pending.data_cmds.is_empty());
         assert!(pending.exec_reports.is_empty());
         assert!(pending.exec_cmds.is_empty());
         assert!(pending.order_evts.is_empty());
         assert!(time_rx.try_recv().is_err());
+        assert!(system_evt_rx.try_recv().is_err());
+        assert!(system_cmd_rx.try_recv().is_err());
         assert!(data_evt_rx.try_recv().is_err());
         assert!(data_cmd_rx.try_recv().is_err());
         assert!(exec_evt_rx.try_recv().is_err());
@@ -5853,6 +6904,10 @@ mod tests {
     #[rstest]
     fn test_flush_all_pending_routes_order_event_to_order_evts() {
         let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
+        let (_system_evt_tx, mut system_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (_system_cmd_tx, mut system_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
         let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
@@ -5868,10 +6923,12 @@ mod tests {
         flush_all_pending(
             &mut pending,
             &mut time_rx,
-            &mut data_evt_rx,
-            &mut data_cmd_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
         );
 
         // Both order and report events are drained by pending.drain()
@@ -5883,6 +6940,10 @@ mod tests {
     #[rstest]
     fn test_flush_all_pending_routes_account_event_immediately() {
         let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
+        let (_system_evt_tx, mut system_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (_system_cmd_tx, mut system_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
         let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
@@ -5897,10 +6958,12 @@ mod tests {
         flush_all_pending(
             &mut pending,
             &mut time_rx,
-            &mut data_evt_rx,
-            &mut data_cmd_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
         );
 
         // Account events are forwarded immediately, never buffered in pending
@@ -6052,6 +7115,10 @@ mod tests {
     #[rstest]
     fn test_flush_all_pending_buffers_submitted_batch_as_individual_events() {
         let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
+        let (_system_evt_tx, mut system_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (_system_cmd_tx, mut system_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
         let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
@@ -6066,10 +7133,12 @@ mod tests {
         flush_all_pending(
             &mut pending,
             &mut time_rx,
-            &mut data_evt_rx,
-            &mut data_cmd_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
         );
 
         // Batch should be unpacked into individual Submitted events then drained
@@ -6080,6 +7149,10 @@ mod tests {
     #[rstest]
     fn test_flush_all_pending_buffers_canceled_batch_as_individual_events() {
         let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
+        let (_system_evt_tx, mut system_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (_system_cmd_tx, mut system_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
         let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
@@ -6094,10 +7167,12 @@ mod tests {
         flush_all_pending(
             &mut pending,
             &mut time_rx,
-            &mut data_evt_rx,
-            &mut data_cmd_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
         );
 
         // Batch should be unpacked into individual Canceled events then drained

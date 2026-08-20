@@ -85,7 +85,7 @@ pub static COINBASE_WS_SUBSCRIPTION_KEYS: LazyLock<[Ustr; 1]> =
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.coinbase", from_py_object)
 )]
 pub struct CoinbaseWebSocketClient {
     url: String,
@@ -220,14 +220,15 @@ impl CoinbaseWebSocketClient {
             headers: vec![],
             // Coinbase uses TCP control-frame pings for transport keep-alive;
             // application-layer liveness comes from the heartbeats channel.
-            heartbeat: Some(WS_HEARTBEAT_SECS),
-            heartbeat_msg: None,
-            reconnect_timeout_ms: Some(RECONNECT_TIMEOUT.as_millis() as u64),
+            heartbeat_interval_secs: Some(WS_HEARTBEAT_SECS),
+            heartbeat_payload: None,
+            connect_timeout_ms: Some(RECONNECT_TIMEOUT.as_millis() as u64),
             reconnect_delay_initial_ms: Some(RECONNECT_BASE_BACKOFF.as_millis() as u64),
             reconnect_delay_max_ms: Some(RECONNECT_MAX_BACKOFF.as_millis() as u64),
             reconnect_backoff_factor: Some(RECONNECT_BACKOFF_FACTOR),
             reconnect_jitter_ms: Some(RECONNECT_JITTER_MS),
             reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
@@ -241,7 +242,6 @@ impl CoinbaseWebSocketClient {
         let client = WebSocketClient::connect(
             cfg,
             Some(message_handler),
-            None,
             None,
             keyed_quotas,
             Some(*COINBASE_WS_CONNECTION_QUOTA),

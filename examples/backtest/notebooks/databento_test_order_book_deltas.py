@@ -69,7 +69,6 @@ order_book_deltas = databento_data(
     "mbo",
     "orderbooks",
     catalog_folder,
-    as_legacy_cython=True,
     load_databento_files_if_exist=True,
 )
 

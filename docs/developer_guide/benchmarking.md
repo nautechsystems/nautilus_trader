@@ -1,31 +1,26 @@
 # Benchmarking
 
-This document is the practitioner reference for writing and running
-NautilusTrader benchmarks. It covers tooling specifics, directory layout,
-example code, local execution, and flamegraph profiling.
+Use this guide to write, run, and profile NautilusTrader benchmarks. It contains benchmark layout,
+examples, local commands, and the measurement procedure for published results.
 
-For policy (what we benchmark, when, with what rigor, how it ties into CI),
-see [`/BENCHMARKING.md`](../../BENCHMARKING.md) at the repository root.
+For benchmark scope, evidence requirements, and CI policy, see
+[`/BENCHMARKING.md`](../../BENCHMARKING.md) at the repository root.
 
 ---
 
 ## Tooling overview
 
-NautilusTrader uses two complementary Rust benchmarking frameworks:
+Select a tool based on the work and result:
 
-| Framework                                                    | What it measures                          | When to prefer it                                    |
-| ------------------------------------------------------------ | ----------------------------------------- | ---------------------------------------------------- |
-| [**Criterion**](https://docs.rs/criterion/latest/criterion/) | Wall‑clock time with confidence bands     | Anything ≥ 100 ns; absolute measurement; comparison. |
-| [**iai**](https://docs.rs/iai/latest/iai/)                   | Retired CPU instructions (via Cachegrind) | Sub‑100 ns functions; CI regression detection.       |
+| Tool                                                      | What it measures                          | Use it for                                           |
+| --------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------- |
+| [Criterion](https://docs.rs/criterion/latest/criterion/)  | Wall‑clock time with confidence intervals | Operations above roughly 100 ns and elapsed time     |
+| [iai](https://docs.rs/iai/latest/iai/)                    | Retired CPU instructions under Cachegrind | Small, deterministic operations and change detection |
+| [flamegraph](https://github.com/flamegraph-rs/flamegraph) | Sampled call‑stack profile                | Locating work inside a representative slow path      |
 
-Most hot code paths benefit from both. Criterion gives the user-visible
-number; iai gives a noise-free regression signal.
-
-:::note
-iai is deterministic (immune to system noise) but results are
-machine-specific. Use it for regression detection within CI, not for
-cross-machine comparisons.
-:::
+Criterion reports user‑visible elapsed time. iai produces stable counts for the same binary,
+toolchain, and inputs without requiring host noise controls. Compare iai results only under the
+same code generation assumptions, and use Criterion when elapsed time is the required result.
 
 ---
 
@@ -55,8 +50,8 @@ path = "benches/foo_iai.rs"
 harness = false
 ```
 
-To opt into the nightly CI performance workflow, add the crate to the
-`cargo-ci-benches` recipe in the workspace `Makefile`.
+To opt into the nightly CI performance workflow, register the benchmark and add its crate to
+`CI_BENCH_CRATES` in the workspace `Makefile` when the list does not already include it.
 
 ---
 
@@ -107,9 +102,8 @@ criterion_main!(benches);
 
 ## Writing iai benchmarks
 
-`iai` requires functions that take no parameters. Keep them small so the
-instruction count is meaningful and so changes outside the function don't
-leak into the measurement.
+`iai` requires functions that take no parameters. Use it for small, pure operations so the measured
+instruction count stays focused on the intended work.
 
 ```rust
 use std::hint::black_box;
@@ -123,9 +117,8 @@ fn bench_add() -> i64 {
 iai::main!(bench_add);
 ```
 
-Setup that varies between runs (allocations, randomness, system calls)
-will inflate instruction counts in misleading ways. iai is best for pure,
-allocation-free functions.
+Allocations, randomness, and system calls add their own instructions to the result. Keep variable
+setup outside the measured function and compare counts produced by the same toolchain and target.
 
 ---
 
@@ -139,20 +132,89 @@ allocation-free functions.
 | One core benchmark name pattern    | `cargo bench -p nautilus-execution --bench matching_core -- iterate`  |
 | One engine benchmark name pattern  | `cargo bench -p nautilus-execution --bench matching_engine -- submit` |
 | Quick smoke run (low sample count) | `cargo bench ... -- --quick`                                          |
-| All CI-tracked benches             | `make cargo-ci-benches`                                               |
+| All nightly registered benches     | `make cargo-ci-benches`                                               |
 
 Criterion writes HTML reports to `target/criterion/`. Open
 `target/criterion/report/index.html`. The report includes per-bench violin
 plots, confidence intervals, and comparisons against the previous run's
 saved baseline.
 
+### Canonical backtest workloads
+
+The canonical backtest cases use the first 10,000 rows of the checked‑in
+`test_data/btc-perp-20211231-20220201_1m.csv` file. A shared fixture drives replay‑only, scheduled
+market‑order, passive limit‑order, and bar‑EMA scenarios. The correctness test and both timed paths
+use the same fixture loader and exact result fingerprints.
+
+Run the semantic check first:
+
+```bash
+CARGO_BUILD_JOBS=16 cargo test --locked -p nautilus-backtest \
+    --test canonical_backtest_workloads
+```
+
+Then run Criterion in test mode to confirm that every affected benchmark case executes without
+collecting samples:
+
+```bash
+CARGO_BUILD_JOBS=16 cargo bench --locked -p nautilus-backtest \
+    --bench engine -- canonical --test
+```
+
+The `run_preloaded` cases load the CSV and build the engine outside the returned `iter_custom`
+duration. The `load_build_run` cases include CSV loading, engine setup, data registration, and
+`BacktestEngine::run`. Both exclude result projection and fingerprint verification from the
+reported duration, while still checking the result after every measured iteration.
+
+See [`crates/backtest/benches/BENCHMARKS.md`](../../crates/backtest/benches/BENCHMARKS.md) for the
+published baseline, measurement record, and current profile target.
+
+---
+
+## Measure Criterion for publication
+
+Use the `bench-lto` profile for Criterion results that will be reported or published. The profile
+inherits from `release`, preserves full debug symbols, enables fat LTO, and uses one code generation
+unit. The default `bench` profile keeps full debug symbols without LTO and is better suited to local
+iteration.
+
+1. Quiesce the machine. On Linux, set the CPU governor to `performance` when you administer the
+   host and can restore its prior state:
+
+   ```bash
+   sudo cpupower frequency-set -g performance
+   ```
+
+1. On Linux, disable ASLR for the benchmark process and run the selected benchmark with
+   `bench-lto`:
+
+   ```bash
+   setarch "$(uname -m)" -R cargo bench --profile bench-lto -p <crate> --bench <name>
+   ```
+
+1. Run multiple full sessions and report whether each case uses its best or median result.
+
+1. Record the CPU model, kernel or operating system, Rust toolchain, and build profile with the
+   results:
+
+   ```text
+   Hardware: <CPU model>, <kernel or operating system>
+   Toolchain: <rustc version>
+   Profile: bench-lto (release + lto = "fat" + codegen-units = 1, debug = full)
+   ```
+
+For deeper analysis, control hyper‑threading and dynamic frequency scaling in firmware. Published
+results must record those controls when they differ from the normal host state.
+
+iai runs under Cachegrind's virtual CPU model, so host quiescence, frequency scaling, and ASLR do
+not affect its instruction counts. Run iai without the Criterion noise controls.
+
 ---
 
 ## Generating a flamegraph
 
-`cargo-flamegraph` produces a sampled call-stack profile for one bench.
-Useful when a bench shows a regression but it's not obvious which inner
-call is responsible.
+`cargo-flamegraph` produces a sampled call-stack profile for one bench. Use it
+when a benchmark regresses and the responsible inner call is unclear.
 
 1. Install once per machine:
 
@@ -213,7 +275,7 @@ use `panic = "abort"` and are built via `[profile.release]`).
 
 ## Templates
 
-Ready-to-copy starter files live in [`docs/dev_templates/`](../dev_templates/):
+Starter files live in [`docs/dev_templates/`](../dev_templates/):
 
 - **Criterion**: [`criterion_template.rs`](../dev_templates/criterion_template.rs)
 - **iai**: [`iai_template.rs`](../dev_templates/iai_template.rs)

@@ -2808,6 +2808,7 @@ mod tests {
             last_px: Price::from("100.00"),
             currency: Currency::USDT(),
             avg_px_open: 100.0,
+            realized_pnl: Some(Money::new(-0.1, Currency::USDT())),
             event_id: UUID4::new(),
             ts_event: UnixNanos::from(70),
             ts_init: UnixNanos::from(71),

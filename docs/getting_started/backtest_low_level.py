@@ -16,43 +16,47 @@
 # %%
 from decimal import Decimal
 
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
-from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP
-from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAPConfig
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import ExecutionAlgorithmConfig
+from nautilus_trader.config import LoggerConfig
+from nautilus_trader.config import StrategyConfig
+from nautilus_trader.indicators import ExponentialMovingAverage
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
+from nautilus_trader.model import Currency
+from nautilus_trader.model import ExecAlgorithmId
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import OrderSide
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import Venue
-from nautilus_trader.model.currencies import ETH
-from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
-from nautilus_trader.test_kit.providers import TestDataProvider
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.testkit.providers import TestDataProvider
+from nautilus_trader.testkit.providers import TestInstrumentProvider
+from nautilus_trader.trading import Strategy
+
 
 # %% [markdown]
 # ## Load data
 #
 # Load bundled test data (ETHUSDT trades from Binance), initialize the matching
-# instrument, and wrangle the raw CSV into Nautilus `TradeTick` objects.
+# instrument, and build Nautilus `TradeTick` objects from the CSV.
 
 # %%
-# Load stub test data
-provider = TestDataProvider()
-trades_df = provider.read_csv_ticks("binance/ethusdt-trades.csv")
-
 # Initialize the instrument which matches the data
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
-# Process into Nautilus objects
-wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-ticks = wrangler.process(trades_df)
+# Build Nautilus trade ticks from the bundled Binance CSV
+ticks = TestDataProvider.trades_from_binance_csv(
+    ETHUSDT_BINANCE,
+    "binance/ethusdt-trades.csv",
+)
 
 # %% [markdown]
-# See the [Data](../concepts/data.md) concept guide for details on the data processing pipeline.
+# See the [Data](../concepts/data/) concept guide for details on the data processing pipeline.
 
 # %% [markdown]
 # ## Initialize the engine
@@ -62,7 +66,10 @@ ticks = wrangler.process(trades_df)
 
 # %%
 # Configure backtest engine
-config = BacktestEngineConfig(trader_id=TraderId("BACKTESTER-001"))
+config = BacktestEngineConfig(
+    trader_id=TraderId("BACKTESTER-001"),
+    logging=LoggerConfig(stdout_level=LogLevel.ERROR),
+)
 
 # Build the backtest engine
 engine = BacktestEngine(config=config)
@@ -81,7 +88,10 @@ engine.add_venue(
     oms_type=OmsType.NETTING,
     account_type=AccountType.CASH,  # Spot CASH account (not for perpetuals or futures)
     base_currency=None,  # Multi-currency account
-    starting_balances=[Money(1_000_000.0, USDT), Money(10.0, ETH)],
+    starting_balances=[
+        Money(1_000_000.0, Currency.from_str("USDT")),
+        Money(10.0, Currency.from_str("ETH")),
+    ],
 )
 
 # %% [markdown]
@@ -105,10 +115,106 @@ engine.add_data(ticks)
 # %% [markdown]
 # ## Add strategies
 #
-# Configure and add an EMA cross strategy with TWAP execution parameters.
+# The strategy extends `Strategy` and trades an EMA crossover on 250-tick bars,
+# which the engine aggregates internally from the trade ticks. Entries are
+# submitted with an `exec_algorithm_id` so the engine routes them to the TWAP
+# execution algorithm for slicing.
+
 
 # %%
-# Configure your strategy
+class EMACrossTWAPConfig(StrategyConfig):
+    _CUSTOM_FIELDS = (
+        "instrument_id",
+        "bar_type",
+        "trade_size",
+        "fast_ema_period",
+        "slow_ema_period",
+        "twap_horizon_secs",
+        "twap_interval_secs",
+    )
+
+    def __new__(cls, *args, **kwargs):
+        for field in cls._CUSTOM_FIELDS:
+            kwargs.pop(field, None)
+        return super().__new__(cls, *args, **kwargs)
+
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        bar_type: BarType,
+        trade_size: Decimal,
+        fast_ema_period: int = 10,
+        slow_ema_period: int = 20,
+        twap_horizon_secs: float = 10.0,
+        twap_interval_secs: float = 2.5,
+        **_kwargs,
+    ) -> None:
+        super().__init__()
+        self.instrument_id = instrument_id
+        self.bar_type = bar_type
+        self.trade_size = trade_size
+        self.fast_ema_period = fast_ema_period
+        self.slow_ema_period = slow_ema_period
+        self.twap_horizon_secs = twap_horizon_secs
+        self.twap_interval_secs = twap_interval_secs
+
+
+class EMACrossTWAP(Strategy):
+    def __init__(self, config: EMACrossTWAPConfig):
+        super().__init__(config)
+        self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
+        self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
+        self.exec_algorithm_id = ExecAlgorithmId("TWAP")
+        self.exec_algorithm_params = {
+            "horizon_secs": str(config.twap_horizon_secs),
+            "interval_secs": str(config.twap_interval_secs),
+        }
+
+    def on_start(self):
+        self.register_indicator_for_bars(self.config.bar_type, self.fast_ema)
+        self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
+        self.subscribe_bars(self.config.bar_type)
+
+    def on_bar(self, bar: Bar):
+        if not self.indicators_initialized():
+            return
+
+        if self.fast_ema.value >= self.slow_ema.value:
+            if self.portfolio.is_net_flat(self.config.instrument_id):
+                self.buy()
+            elif self.portfolio.is_net_short(self.config.instrument_id):
+                self.close_all_positions(self.config.instrument_id)
+                self.buy()
+        elif self.fast_ema.value < self.slow_ema.value:
+            if self.portfolio.is_net_flat(self.config.instrument_id):
+                self.sell()
+            elif self.portfolio.is_net_long(self.config.instrument_id):
+                self.close_all_positions(self.config.instrument_id)
+                self.sell()
+
+    def buy(self):
+        self.submit_twap_order(OrderSide.BUY)
+
+    def sell(self):
+        self.submit_twap_order(OrderSide.SELL)
+
+    def submit_twap_order(self, side: OrderSide):
+        instrument = self.cache.instrument(self.config.instrument_id)
+        order = self.order_factory.market(
+            self.config.instrument_id,
+            side,
+            instrument.make_qty(self.config.trade_size),
+            exec_algorithm_id=self.exec_algorithm_id,
+            exec_algorithm_params=self.exec_algorithm_params,
+        )
+        self.submit_order(order)
+
+    def on_stop(self):
+        self.close_all_positions(self.config.instrument_id)
+
+
+# %%
+# Configure and add the strategy
 strategy_config = EMACrossTWAPConfig(
     instrument_id=ETHUSDT_BINANCE.id,
     bar_type=BarType.from_str("ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL"),
@@ -119,22 +225,24 @@ strategy_config = EMACrossTWAPConfig(
     twap_interval_secs=2.5,
 )
 
-# Instantiate and add your strategy
 strategy = EMACrossTWAP(config=strategy_config)
 engine.add_strategy(strategy=strategy)
 
 # %% [markdown]
-# The strategy config references TWAP parameters, but the execution algorithm
+# The strategy config carries the TWAP parameters, but the execution algorithm
 # itself is a separate component.
 #
 # ## Add execution algorithms
 #
-# Add a TWAP execution algorithm to the engine.
+# Register the built-in TWAP execution algorithm under the `TWAP` identifier the
+# strategy references.
 
 # %%
-# Instantiate and add your execution algorithm
-exec_algorithm = TWAPExecAlgorithm()  # Using defaults
-engine.add_exec_algorithm(exec_algorithm)
+# Add the native TWAP execution algorithm
+engine.add_native_exec_algorithm(
+    "TwapAlgorithm",
+    ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("TWAP")),
+)
 
 # %% [markdown]
 # ## Run the backtest
@@ -155,13 +263,13 @@ engine.run()
 # custom statistics.
 
 # %%
-engine.trader.generate_account_report(BINANCE)
+engine.generate_account_report(BINANCE)
 
 # %%
-engine.trader.generate_order_fills_report()
+engine.generate_order_fills_report()
 
 # %%
-engine.trader.generate_positions_report()
+engine.generate_positions_report()
 
 # %% [markdown]
 # ## Repeated runs
@@ -178,7 +286,7 @@ engine.reset()
 # %% [markdown]
 # Remove and add individual components (actors, strategies, execution algorithms) as required.
 #
-# See the [Trader](../api_reference/trading.md) API reference for a description of all methods available to achieve this.
+# See the [BacktestEngine](../api_reference/backtest.md) API reference for the add and clear methods.
 #
 
 # %%

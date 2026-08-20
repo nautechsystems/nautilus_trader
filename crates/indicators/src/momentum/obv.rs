@@ -26,7 +26,7 @@ const MAX_PERIOD: usize = 1_024;
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.indicators")
 )]
 #[cfg_attr(
     feature = "python",
@@ -108,10 +108,10 @@ impl OnBalanceVolume {
         };
 
         if self.period == 0 {
-            // Unbounded cumulative OBV (matches the Cython `deque(maxlen=None)` reference).
+            // Unbounded cumulative OBV
             self.value += delta;
         } else {
-            // Rolling sum over the last `period` deltas (Cython `deque(maxlen=period)`).
+            // Rolling sum over the last `period` deltas
             if self.obv.len() == self.period {
                 let _ = self.obv.pop_front();
             }

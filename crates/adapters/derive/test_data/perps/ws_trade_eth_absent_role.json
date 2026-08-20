@@ -1,0 +1,10 @@
+{
+  "direction": "sell",
+  "index_price": "3500",
+  "instrument_name": "ETH-PERP",
+  "mark_price": "3500.1",
+  "timestamp": 1700000000001,
+  "trade_amount": "1",
+  "trade_id": "perp-trade-1",
+  "trade_price": "3500"
+}

@@ -39,6 +39,7 @@ use super::{
 };
 use crate::{
     common::{
+        consts::BINANCE_WS_HEARTBEAT_SECS,
         enums::{BinanceEnvironment, BinanceProductType},
         symbol::format_instrument_id,
         urls::get_futures_user_stream_url,
@@ -93,7 +94,7 @@ pub(crate) async fn build_and_connect_user_stream(
         Some(params.api_key.clone()),
         Some(params.api_secret.clone()),
         Some(private_url),
-        Some(20),
+        Some(BINANCE_WS_HEARTBEAT_SECS),
         params.transport_backend,
     )
     .context("failed to construct Binance Futures private WebSocket client")?
@@ -277,7 +278,7 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
     let open_ok = match open_orders_result {
         Ok(orders) => {
             for order in orders {
-                let symbol_ustr = ustr::Ustr::from(order.symbol.as_str());
+                let symbol_ustr = order.symbol;
                 let (instrument_id, price_precision, size_precision) =
                     resolve_precision(&instruments, &symbol_ustr, product_type);
 
@@ -312,7 +313,7 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
     let algo_ok = match algo_orders_result {
         Ok(algo_orders) => {
             for algo_order in algo_orders {
-                let symbol_ustr = ustr::Ustr::from(algo_order.symbol.as_str());
+                let symbol_ustr = algo_order.symbol;
                 let (instrument_id, price_precision, size_precision) =
                     resolve_precision(&instruments, &symbol_ustr, product_type);
 

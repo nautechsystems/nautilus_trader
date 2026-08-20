@@ -42,6 +42,33 @@ const CALLBACK_CLOSED: usize = 1 << (usize::BITS - 1);
 const CALLBACK_LEASES: usize = CALLBACK_CLOSED - 1;
 static NEXT_TIME_EVENT_CALLBACK_ID: AtomicU64 = AtomicU64::new(1);
 
+/// A monitored message channel feeding the runner event loop.
+///
+/// Each variant identifies an engine-facing channel tracked by the queue monitor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.common",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.common")
+)]
+pub enum SystemChannel {
+    TimeEvents,
+    ExecEvents,
+    ExecCommands,
+    DataEvents,
+    DataCommands,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct TimeEventCallbackId(NonZeroU64);
 

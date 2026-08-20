@@ -3,6 +3,8 @@
 [default.extend-identifiers]
 # Rust crate names
 writeable = "writeable"
+# GitHub usernames
+NoiceHax = "NoiceHax"
 
 [default.extend-words]
 # Industry standard abbreviations and technical terms

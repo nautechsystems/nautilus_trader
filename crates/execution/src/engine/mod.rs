@@ -38,7 +38,7 @@ use futures::future::join_all;
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     cache::{Cache, PositionRef},
-    clients::ExecutionClient,
+    clients::{ExecutionClient, SocketReconnectLookup},
     clock::Clock,
     enums::LogColor,
     generators::position_id::PositionIdGenerator,
@@ -63,13 +63,13 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UUID4, UnixNanos, WeakCell,
-    datetime::{mins_to_nanos, mins_to_secs, secs_to_nanos},
+    datetime::{checked_mins_to_nanos, mins_to_secs, secs_to_nanos},
 };
 use nautilus_model::{
     accounts::Account,
     enums::{
-        ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
-        TrailingOffsetType,
+        AccountType, ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TrailingOffsetType,
     },
     events::{
         OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny, OrderFillVoided,
@@ -90,6 +90,7 @@ use nautilus_model::{
 use position::CorrectedPosition;
 pub use position::{PositionStateSnapshot, SnapshotAnchorer};
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use crate::{
     client::ExecutionClientAdapter,
@@ -346,6 +347,18 @@ impl ExecutionEngine {
         self.external_order_claims.get(instrument_id).copied()
     }
 
+    /// Returns the instruments with external order claims owned by `strategy_id`.
+    #[must_use]
+    pub fn get_external_order_claims_for_strategy(
+        &self,
+        strategy_id: StrategyId,
+    ) -> HashSet<InstrumentId> {
+        self.external_order_claims
+            .iter()
+            .filter_map(|(instrument_id, owner)| (*owner == strategy_id).then_some(*instrument_id))
+            .collect()
+    }
+
     /// Registers a new execution client.
     ///
     /// # Errors
@@ -409,6 +422,26 @@ impl ExecutionEngine {
         self.clients.get(client_id).map(|a| a.client.as_ref())
     }
 
+    /// Resolves a reconnectable socket endpoint owned by a registered execution client.
+    #[must_use]
+    pub fn socket_reconnect_lookup(
+        &self,
+        client_id: &ClientId,
+        endpoint: Ustr,
+    ) -> SocketReconnectLookup {
+        let Some(client) = self.get_client(client_id) else {
+            return SocketReconnectLookup::ClientNotFound;
+        };
+        let Some(registry) = client.socket_reconnect_registry() else {
+            return SocketReconnectLookup::Unsupported;
+        };
+
+        registry.get(endpoint).map_or(
+            SocketReconnectLookup::EndpointNotFound,
+            SocketReconnectLookup::Handle,
+        )
+    }
+
     #[must_use]
     /// Returns a mutable reference to the execution client adapter registered with the given ID.
     pub fn get_client_adapter_mut(
@@ -448,10 +481,14 @@ impl ExecutionEngine {
         ts_init: UnixNanos,
     ) {
         let venue = instrument_id.venue;
+        // Prefer the cached origin over venue routing so tracking lands on the
+        // client whose stream materialized the order.
         let client_id = self
-            .routing_map
-            .get(&venue)
+            .cache
+            .borrow()
+            .client_id(&client_order_id)
             .copied()
+            .or_else(|| self.routing_map.get(&venue).copied())
             .or(self.default_client_id);
 
         if let Some(client_id) = client_id
@@ -604,6 +641,41 @@ impl ExecutionEngine {
         Ok(())
     }
 
+    /// Commits external order claims for `strategy_id` without validation.
+    ///
+    /// The caller must have preflighted every instrument against
+    /// [`Self::get_external_order_claim`]: an existing claim is overwritten
+    /// without error. Coordinated live-node callers should use
+    /// `LiveNode::register_external_order_claims`, which preflights both the
+    /// execution engine and the reconciliation manager before committing;
+    /// ordinary callers should use
+    /// [`Self::register_external_order_claims`] instead.
+    pub fn commit_external_order_claims(
+        &mut self,
+        strategy_id: StrategyId,
+        instrument_ids: &HashSet<InstrumentId>,
+    ) {
+        self.external_order_claims.extend(
+            instrument_ids
+                .iter()
+                .map(|instrument_id| (*instrument_id, strategy_id)),
+        );
+
+        if !instrument_ids.is_empty() {
+            log::info!("Registered external order claims for {strategy_id}: {instrument_ids:?}");
+        }
+    }
+
+    /// Deregisters all external order claims owned by `strategy_id`.
+    ///
+    /// Coordinated live-node callers should use
+    /// `LiveNode::deregister_external_order_claims` so the execution engine and
+    /// reconciliation manager remain consistent.
+    pub fn deregister_external_order_claims(&mut self, strategy_id: StrategyId) {
+        self.external_order_claims
+            .retain(|_, owner| *owner != strategy_id);
+    }
+
     /// # Errors
     ///
     /// Returns an error if no client is registered with the given ID.
@@ -736,10 +808,6 @@ impl ExecutionEngine {
     }
 
     /// Starts the purge timers if configured.
-    #[expect(
-        clippy::missing_panics_doc,
-        reason = "timer registration is not expected to fail"
-    )]
     pub fn start_purge_timers(&mut self) {
         if let Some(interval_mins) = self
             .config
@@ -751,22 +819,29 @@ impl ExecutionEngine {
                 .timer_names()
                 .contains(&TIMER_PURGE_CLOSED_ORDERS)
         {
-            let interval_ns = mins_to_nanos(u64::from(interval_mins));
-            let buffer_mins = self.config.purge_closed_orders_buffer_mins.unwrap_or(0);
-            let buffer_secs = mins_to_secs(u64::from(buffer_mins));
-            let cache = self.cache.clone();
-            let clock = self.clock.clone();
+            'purge_closed_orders: {
+                let Some(interval_ns) = checked_mins_to_nanos(u64::from(interval_mins)) else {
+                    log::error!(
+                        "Invalid purge_closed_orders_interval_mins {interval_mins}: minutes to nanoseconds conversion overflow"
+                    );
+                    break 'purge_closed_orders;
+                };
+                let buffer_mins = self.config.purge_closed_orders_buffer_mins.unwrap_or(0);
+                let buffer_secs = mins_to_secs(u64::from(buffer_mins));
+                let cache = self.cache.clone();
+                let clock = self.clock.clone();
 
-            let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
-                let ts_now = clock.borrow().timestamp_ns();
-                cache.borrow_mut().purge_closed_orders(ts_now, buffer_secs);
-            });
-            let callback = TimeEventCallback::from(callback_fn);
+                let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
+                    let ts_now = clock.borrow().timestamp_ns();
+                    cache.borrow_mut().purge_closed_orders(ts_now, buffer_secs);
+                });
+                let callback = TimeEventCallback::from(callback_fn);
 
-            log::info!("Starting purge closed orders timer at {interval_mins} minute intervals");
-            self.clock
-                .borrow_mut()
-                .set_timer_ns(
+                log::info!(
+                    "Starting purge closed orders timer at {interval_mins} minute intervals"
+                );
+
+                if let Err(e) = self.clock.borrow_mut().set_timer_ns(
                     TIMER_PURGE_CLOSED_ORDERS,
                     interval_ns,
                     None,
@@ -774,8 +849,10 @@ impl ExecutionEngine {
                     Some(callback),
                     None,
                     None,
-                )
-                .expect("Failed to set purge closed orders timer");
+                ) {
+                    log::error!("Failed to set {TIMER_PURGE_CLOSED_ORDERS} timer: {e}");
+                }
+            }
         }
 
         if let Some(interval_mins) = self
@@ -788,24 +865,31 @@ impl ExecutionEngine {
                 .timer_names()
                 .contains(&TIMER_PURGE_CLOSED_POSITIONS)
         {
-            let interval_ns = mins_to_nanos(u64::from(interval_mins));
-            let buffer_mins = self.config.purge_closed_positions_buffer_mins.unwrap_or(0);
-            let buffer_secs = mins_to_secs(u64::from(buffer_mins));
-            let cache = self.cache.clone();
-            let clock = self.clock.clone();
+            'purge_closed_positions: {
+                let Some(interval_ns) = checked_mins_to_nanos(u64::from(interval_mins)) else {
+                    log::error!(
+                        "Invalid purge_closed_positions_interval_mins {interval_mins}: minutes to nanoseconds conversion overflow"
+                    );
+                    break 'purge_closed_positions;
+                };
+                let buffer_mins = self.config.purge_closed_positions_buffer_mins.unwrap_or(0);
+                let buffer_secs = mins_to_secs(u64::from(buffer_mins));
+                let cache = self.cache.clone();
+                let clock = self.clock.clone();
 
-            let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
-                let ts_now = clock.borrow().timestamp_ns();
-                cache
-                    .borrow_mut()
-                    .purge_closed_positions(ts_now, buffer_secs);
-            });
-            let callback = TimeEventCallback::from(callback_fn);
+                let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
+                    let ts_now = clock.borrow().timestamp_ns();
+                    cache
+                        .borrow_mut()
+                        .purge_closed_positions(ts_now, buffer_secs);
+                });
+                let callback = TimeEventCallback::from(callback_fn);
 
-            log::info!("Starting purge closed positions timer at {interval_mins} minute intervals");
-            self.clock
-                .borrow_mut()
-                .set_timer_ns(
+                log::info!(
+                    "Starting purge closed positions timer at {interval_mins} minute intervals"
+                );
+
+                if let Err(e) = self.clock.borrow_mut().set_timer_ns(
                     TIMER_PURGE_CLOSED_POSITIONS,
                     interval_ns,
                     None,
@@ -813,8 +897,10 @@ impl ExecutionEngine {
                     Some(callback),
                     None,
                     None,
-                )
-                .expect("Failed to set purge closed positions timer");
+                ) {
+                    log::error!("Failed to set {TIMER_PURGE_CLOSED_POSITIONS} timer: {e}");
+                }
+            }
         }
 
         if let Some(interval_mins) = self
@@ -827,24 +913,31 @@ impl ExecutionEngine {
                 .timer_names()
                 .contains(&TIMER_PURGE_ACCOUNT_EVENTS)
         {
-            let interval_ns = mins_to_nanos(u64::from(interval_mins));
-            let lookback_mins = self.config.purge_account_events_lookback_mins.unwrap_or(0);
-            let lookback_secs = mins_to_secs(u64::from(lookback_mins));
-            let cache = self.cache.clone();
-            let clock = self.clock.clone();
+            'purge_account_events: {
+                let Some(interval_ns) = checked_mins_to_nanos(u64::from(interval_mins)) else {
+                    log::error!(
+                        "Invalid purge_account_events_interval_mins {interval_mins}: minutes to nanoseconds conversion overflow"
+                    );
+                    break 'purge_account_events;
+                };
+                let lookback_mins = self.config.purge_account_events_lookback_mins.unwrap_or(0);
+                let lookback_secs = mins_to_secs(u64::from(lookback_mins));
+                let cache = self.cache.clone();
+                let clock = self.clock.clone();
 
-            let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
-                let ts_now = clock.borrow().timestamp_ns();
-                cache
-                    .borrow_mut()
-                    .purge_account_events(ts_now, lookback_secs);
-            });
-            let callback = TimeEventCallback::from(callback_fn);
+                let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
+                    let ts_now = clock.borrow().timestamp_ns();
+                    cache
+                        .borrow_mut()
+                        .purge_account_events(ts_now, lookback_secs);
+                });
+                let callback = TimeEventCallback::from(callback_fn);
 
-            log::info!("Starting purge account events timer at {interval_mins} minute intervals");
-            self.clock
-                .borrow_mut()
-                .set_timer_ns(
+                log::info!(
+                    "Starting purge account events timer at {interval_mins} minute intervals"
+                );
+
+                if let Err(e) = self.clock.borrow_mut().set_timer_ns(
                     TIMER_PURGE_ACCOUNT_EVENTS,
                     interval_ns,
                     None,
@@ -852,8 +945,10 @@ impl ExecutionEngine {
                     Some(callback),
                     None,
                     None,
-                )
-                .expect("Failed to set purge account events timer");
+                ) {
+                    log::error!("Failed to set {TIMER_PURGE_ACCOUNT_EVENTS} timer: {e}");
+                }
+            }
         }
     }
 
@@ -1173,6 +1268,7 @@ impl ExecutionEngine {
             strategy_id,
             ts_now,
             Some(report.order_status),
+            self.source_client_id_for_account(report.account_id, &report.instrument_id),
         )
     }
 
@@ -1263,6 +1359,7 @@ impl ExecutionEngine {
             strategy_id,
             ts_now,
             None,
+            self.source_client_id_for_account(report.account_id, &report.instrument_id),
         )
     }
 
@@ -1292,6 +1389,7 @@ impl ExecutionEngine {
         strategy_id: StrategyId,
         ts_now: UnixNanos,
         order_status: Option<OrderStatus>,
+        source_client_id: Option<ClientId>,
     ) -> Option<OrderAny> {
         let initialized = OrderEventAny::Initialized(initialized);
         let order = match OrderAny::from_events(vec![initialized.clone()]) {
@@ -1309,7 +1407,7 @@ impl ExecutionEngine {
                 return None;
             }
 
-            if let Err(e) = cache.add_order(order.clone(), None, None, false) {
+            if let Err(e) = cache.add_order(order.clone(), None, source_client_id, false) {
                 log::error!("Failed to add external order to cache: {e}");
                 return None;
             }
@@ -1335,6 +1433,28 @@ impl ExecutionEngine {
         );
 
         Some(order)
+    }
+
+    /// Resolves the execution client origin for a live-stream report by matching
+    /// the report account against registered clients. A unique match stamps the
+    /// materialized order's client origin; no match or an ambiguous match keeps
+    /// the order origin-free.
+    fn source_client_id_for_account(
+        &self,
+        account_id: AccountId,
+        instrument_id: &InstrumentId,
+    ) -> Option<ClientId> {
+        let mut matches = self
+            .clients
+            .values()
+            .filter(|adapter| {
+                adapter.account_id == account_id && adapter.handles_order_venue(instrument_id.venue)
+            })
+            .map(|adapter| adapter.client_id);
+
+        let first = matches.next()?;
+
+        matches.next().is_none().then_some(first)
     }
 
     /// Reconciles a fill report received at runtime.
@@ -2010,8 +2130,7 @@ impl ExecutionEngine {
         let (order, added_to_cache) = match cached_order {
             Some(order) => (order, false),
             None => {
-                let Some(order) =
-                    self.add_order_from_init(&cmd.order_init, cmd.position_id, cmd.client_id, &cmd)
+                let Some(order) = self.add_order_from_init(&cmd.order_init, cmd.position_id, &cmd)
                 else {
                     return;
                 };
@@ -2064,6 +2183,25 @@ impl ExecutionEngine {
             }
         }
 
+        let client_id = client.client_id();
+        let claim_result = self
+            .cache
+            .borrow_mut()
+            .claim_order_clients(&[(client_order_id, client_id)]);
+
+        if let Err(e) = claim_result {
+            self.deny_order(
+                &order,
+                &OrderDeniedReason::ValidationFailed {
+                    detail: format!(
+                        "Failed to claim execution client {client_id} for {client_order_id}: {e}"
+                    ),
+                }
+                .to_string(),
+            );
+            return;
+        }
+
         if self.config.manage_own_order_books && should_handle_own_book_order(&order) {
             let mut own_book = self.get_or_init_own_order_book(&order.instrument_id());
             own_book.add(order.to_own_book_order());
@@ -2105,9 +2243,7 @@ impl ExecutionEngine {
                 continue;
             };
 
-            let Some(order) =
-                self.add_order_from_init(order_init, cmd.position_id, cmd.client_id, &cmd)
-            else {
+            let Some(order) = self.add_order_from_init(order_init, cmd.position_id, &cmd) else {
                 continue;
             };
 
@@ -2204,6 +2340,27 @@ impl ExecutionEngine {
             }
         }
 
+        let client_id = client.client_id();
+        let claims = orders
+            .iter()
+            .map(|order| (order.client_order_id(), client_id))
+            .collect::<Vec<_>>();
+        let claim_result = self.cache.borrow_mut().claim_order_clients(&claims);
+        if let Err(e) = claim_result {
+            let reason = OrderDeniedReason::ValidationFailed {
+                detail: format!(
+                    "Failed to claim execution client {client_id} for order list {}: {e}",
+                    cmd.order_list.id,
+                ),
+            }
+            .to_string();
+
+            for order in &orders {
+                self.deny_order(order, &reason);
+            }
+            return;
+        }
+
         if self.config.manage_own_order_books {
             for order in &orders {
                 if should_handle_own_book_order(order) {
@@ -2232,7 +2389,6 @@ impl ExecutionEngine {
         &self,
         order_init: &OrderInitialized,
         position_id: Option<PositionId>,
-        client_id: Option<ClientId>,
         context: &dyn Display,
     ) -> Option<OrderAny> {
         let client_order_id = order_init.client_order_id;
@@ -2248,10 +2404,10 @@ impl ExecutionEngine {
             }
         };
 
-        if let Err(e) =
-            self.cache
-                .borrow_mut()
-                .add_order(order.clone(), position_id, client_id, true)
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), position_id, None, true)
         {
             log::error!(
                 "Cannot add reconstructed order to cache for {client_order_id}: {e}, {context}"
@@ -2735,11 +2891,51 @@ impl ExecutionEngine {
         }
 
         match oms_type {
-            OmsType::Hedging => fill
-                .position_id
+            OmsType::Hedging => self
+                .orderless_hedging_leg_position_id(fill)
+                .or(fill.position_id)
                 .unwrap_or_else(|| self.pos_id_generator.generate(fill.strategy_id, false)),
             OmsType::Netting => self.determine_netting_position_id(fill),
             _ => self.determine_netting_position_id(fill),
+        }
+    }
+
+    fn orderless_hedging_leg_position_id(&self, fill: &OrderFilled) -> Option<PositionId> {
+        if !self.is_leg_fill(fill) {
+            return None;
+        }
+
+        let cache = self.cache.borrow();
+        if cache.order_exists(&fill.client_order_id()) {
+            return None;
+        }
+
+        let matching_positions: Vec<PositionId> = cache
+            .positions_open(
+                Some(&fill.instrument_id.venue),
+                Some(&fill.instrument_id),
+                Some(&fill.strategy_id),
+                Some(&fill.account_id),
+                None,
+            )
+            .iter()
+            .filter(|position| position.opening_order_id == fill.client_order_id)
+            .map(|position| position.id)
+            .collect();
+
+        match matching_positions.as_slice() {
+            [position_id] => Some(*position_id),
+            [] => None,
+            _ => {
+                log::warn!(
+                    "Cannot uniquely correlate HEDGING leg fill {} to an orderless position: \
+                     found {} positions with opening_order_id={}",
+                    fill.trade_id,
+                    matching_positions.len(),
+                    fill.client_order_id,
+                );
+                None
+            }
         }
     }
 
@@ -3149,6 +3345,12 @@ impl ExecutionEngine {
     }
 
     fn send_order_update_to_portfolio(&self, event: &OrderEventAny) {
+        let is_wallet = event.account_id().is_some_and(|account_id| {
+            self.cache
+                .borrow()
+                .account(&account_id)
+                .is_some_and(|account| account.account_type() == AccountType::Wallet)
+        });
         let send_to_portfolio = match event {
             OrderEventAny::Filled(fill) => self
                 .cache
@@ -3160,6 +3362,13 @@ impl ExecutionEngine {
             | OrderEventAny::Expired(_)
             | OrderEventAny::Rejected(_)
             | OrderEventAny::Updated(_) => true,
+            OrderEventAny::Submitted(_)
+            | OrderEventAny::Triggered(_)
+            | OrderEventAny::PendingUpdate(_)
+            | OrderEventAny::PendingCancel(_)
+            | OrderEventAny::ModifyRejected(_)
+            | OrderEventAny::CancelRejected(_)
+            | OrderEventAny::FillVoided(_) => is_wallet,
             _ => false,
         };
 
@@ -3719,7 +3928,15 @@ impl ExecutionEngine {
             position.replay_events.extend(current_replay);
             position.fill_voids = prior.fill_voids;
         }
-        self.cache.borrow_mut().add_position(&position, oms_type)?;
+        let is_orderless_leg = self.is_leg_fill(&fill)
+            && !self.cache.borrow().order_exists(&position.opening_order_id);
+        if is_orderless_leg {
+            self.cache
+                .borrow_mut()
+                .add_position_without_order(&position, oms_type)?;
+        } else {
+            self.cache.borrow_mut().add_position(&position, oms_type)?;
+        }
 
         if self.config.snapshot_positions {
             self.create_position_state_snapshot(&position, true);
@@ -3854,82 +4071,11 @@ impl ExecutionEngine {
         oms_type: OmsType,
     ) -> Vec<PositionEvent> {
         let mut position_events = Vec::new();
-        let difference = match position.side {
-            PositionSide::Long => Quantity::from_raw(
-                fill.last_qty.raw - position.quantity.raw,
-                position.size_precision,
-            ),
-            PositionSide::Short => Quantity::from_raw(
-                position.quantity.raw.abs_diff(fill.last_qty.raw), // Equivalent to Python's abs(position.quantity - fill.last_qty)
-                position.size_precision,
-            ),
-            _ => fill.last_qty,
-        };
 
-        // Split commission between two positions
-        let fill_percent = position.quantity.as_decimal() / fill.last_qty.as_decimal();
-        let (commission1, commission2) = if let Some(commission) = fill.commission {
-            let commission_currency = commission.currency;
-            let commission1 =
-                Money::from_decimal(commission.as_decimal() * fill_percent, commission_currency)
-                    .expect("Invalid split commission");
-            let commission2 = commission - commission1;
-            (Some(commission1), Some(commission2))
-        } else {
+        if fill.commission.is_none() {
             log::warn!(
                 "Commission is not available for position flip, splitting with no commission"
             );
-            (None, None)
-        };
-
-        let mut fill_split1: Option<OrderFilled> = None;
-
-        if position.is_open() {
-            let mut split = OrderFilled::new(
-                fill.trader_id,
-                fill.strategy_id,
-                fill.instrument_id,
-                fill.client_order_id,
-                fill.venue_order_id,
-                fill.account_id,
-                fill.trade_id,
-                fill.order_side,
-                fill.order_type,
-                position.quantity,
-                fill.last_px,
-                fill.currency,
-                fill.liquidity_side,
-                fill.event_id,
-                fill.ts_event,
-                fill.ts_init,
-                fill.reconciliation,
-                fill.position_id,
-                commission1,
-                fill.info.clone(),
-            );
-            split.causation_id = fill.causation_id;
-            fill_split1 = Some(split);
-
-            if let Some(position_event) =
-                self.update_position(position, fill_split1.as_ref().unwrap())
-            {
-                position_events.push(position_event);
-            }
-
-            // Snapshot closed position before reusing ID (NETTING mode)
-            if oms_type == OmsType::Netting
-                && let Err(e) = self.snapshot_position(position)
-            {
-                log::warn!("Failed to snapshot position during flip: {e:?}");
-            }
-        }
-
-        // Guard against flipping a position with a zero fill size
-        if difference.raw == 0 {
-            log::warn!(
-                "Zero fill size during position flip calculation, this could be caused by a mismatch between instrument `size_precision` and a quantity `size_precision`"
-            );
-            return position_events;
         }
 
         let position_id_flip = if oms_type == OmsType::Hedging
@@ -3943,29 +4089,20 @@ impl ExecutionEngine {
             fill.position_id
         };
 
-        let mut fill_split2 = OrderFilled::new(
-            fill.trader_id,
-            fill.strategy_id,
-            fill.instrument_id,
-            fill.client_order_id,
-            fill.venue_order_id,
-            fill.account_id,
-            fill.trade_id,
-            fill.order_side,
-            fill.order_type,
-            difference,
-            fill.last_px,
-            fill.currency,
-            fill.liquidity_side,
-            UUID4::new(),
-            fill.ts_event,
-            fill.ts_init,
-            fill.reconciliation,
-            position_id_flip,
-            commission2,
-            fill.info.clone(),
-        );
-        fill_split2.causation_id = Some(fill.event_id);
+        let (fill_split1, fill_split2) = fill
+            .split_for_position_flip(position.quantity, position_id_flip, UUID4::new())
+            .expect("Invalid position flip split");
+
+        if let Some(position_event) = self.update_position(position, &fill_split1) {
+            position_events.push(position_event);
+        }
+
+        // Snapshot closed position before reusing ID (NETTING mode)
+        if oms_type == OmsType::Netting
+            && let Err(e) = self.snapshot_position(position)
+        {
+            log::warn!("Failed to snapshot position during flip: {e:?}");
+        }
 
         if oms_type == OmsType::Hedging
             && let Some(position_id) = fill.position_id
@@ -4204,6 +4341,7 @@ mod tests {
             instrument.id(),
             order.strategy_id(),
             UnixNanos::default(),
+            None,
             None,
         );
 

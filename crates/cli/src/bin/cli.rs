@@ -20,13 +20,14 @@ use std::process::ExitCode;
 use clap::FromArgMatches;
 use mimalloc::MiMalloc;
 use nautilus_cli::opt::NautilusCli;
-use nautilus_common::logging::ensure_logging_initialized;
+use nautilus_common::logging::{ensure_logging_initialized, headers::register_allocator_mimalloc};
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    register_allocator_mimalloc();
     dotenvy::dotenv().ok();
     ensure_logging_initialized();
 

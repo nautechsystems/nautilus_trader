@@ -140,7 +140,7 @@ fn test_trade_tick_roundtrip() {
         instrument_id: InstrumentId::from("ETHUSDT.BINANCE"),
         price: Price::from("2500.75"),
         size: Quantity::from("1.5"),
-        aggressor_side: AggressorSide::Buyer,
+        aggressor_side: AggressorSide::Buy,
         trade_id: TradeId::from("12345"),
         ts_event: 1234567890.into(),
         ts_init: 1234567891.into(),
@@ -172,8 +172,8 @@ fn test_trade_tick_roundtrip() {
 
 #[rstest]
 #[case(AggressorSide::NoAggressor)]
-#[case(AggressorSide::Buyer)]
-#[case(AggressorSide::Seller)]
+#[case(AggressorSide::Buy)]
+#[case(AggressorSide::Sell)]
 fn test_trade_tick_all_aggressor_sides(#[case] aggressor_side: AggressorSide) {
     let trade = TradeTick {
         instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),

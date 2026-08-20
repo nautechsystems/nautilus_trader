@@ -29,8 +29,8 @@ use crate::{
             BybitWsOrderRequestOp,
         },
         parse::{
-            deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
-            deserialize_optional_decimal_str,
+            deserialize_decimal_or_zero, deserialize_i32_or_string, deserialize_i64_or_string,
+            deserialize_optional_decimal_or_zero, deserialize_optional_decimal_str,
         },
     },
     websocket::enums::BybitWsOperation,
@@ -777,6 +777,7 @@ pub struct BybitWsAccountOrder {
     pub cum_exec_value: String,
     pub avg_price: String,
     pub block_trade_id: Ustr,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub position_idx: i32,
     pub cum_exec_fee: String,
     pub created_time: String,
@@ -792,6 +793,7 @@ pub struct BybitWsAccountOrder {
     pub close_on_trigger: bool,
     pub place_type: Ustr,
     pub smp_type: BybitSmpType,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub smp_group: i32,
     pub smp_order_id: Ustr,
     pub fee_currency: Ustr,
@@ -971,9 +973,12 @@ pub struct BybitWsAccountPosition {
     pub symbol: Ustr,
     pub side: BybitPositionSide,
     pub size: String,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub position_idx: i32,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub trade_mode: i32,
     pub position_value: String,
+    #[serde(deserialize_with = "deserialize_i64_or_string")]
     pub risk_id: i64,
     pub risk_limit_value: String,
     #[serde(deserialize_with = "deserialize_optional_decimal_str")]
@@ -981,6 +986,7 @@ pub struct BybitWsAccountPosition {
     pub mark_price: String,
     pub leverage: String,
     pub position_balance: String,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub auto_add_margin: i32,
     #[serde(rename = "positionIM")]
     pub position_im: String,
@@ -1001,6 +1007,7 @@ pub struct BybitWsAccountPosition {
     pub cur_realised_pnl: String,
     pub cum_realised_pnl: String,
     pub position_status: BybitPositionStatus,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub adl_rank_indicator: i32,
     pub created_time: String,
     pub updated_time: String,
@@ -1328,6 +1335,50 @@ mod tests {
         assert_eq!(order.tpsl_mode, Some(BybitTpSlMode::Full));
         assert_eq!(order.create_type, Some(BybitCreateType::CreateByUser));
         assert_eq!(order.side, BybitOrderSide::Buy);
+        assert_eq!(order.smp_group, 0);
+    }
+
+    #[rstest]
+    fn deserialize_account_order_frame_accepts_string_smp_group() {
+        let mut json: Value =
+            serde_json::from_str(&load_test_json("ws_account_order.json")).unwrap();
+        json["data"][0]["smpGroup"] = Value::String("123456789".to_string());
+
+        let frame: BybitWsAccountOrderMsg = serde_json::from_value(json).unwrap();
+
+        assert_eq!(frame.data[0].smp_group, 123_456_789);
+    }
+
+    #[rstest]
+    fn deserialize_account_order_frame_accepts_string_position_idx() {
+        let mut json: Value =
+            serde_json::from_str(&load_test_json("ws_account_order.json")).unwrap();
+        json["data"][0]["positionIdx"] = Value::String("1".to_string());
+
+        let frame: BybitWsAccountOrderMsg = serde_json::from_value(json).unwrap();
+
+        assert_eq!(frame.data[0].position_idx, 1);
+    }
+
+    #[rstest]
+    fn deserialize_account_position_frame_accepts_string_integer_fields() {
+        let mut json: Value =
+            serde_json::from_str(&load_test_json("ws_account_position.json")).unwrap();
+        let position = &mut json["data"][0];
+        position["positionIdx"] = Value::String("2".to_string());
+        position["tradeMode"] = Value::String("1".to_string());
+        position["autoAddMargin"] = Value::String("3".to_string());
+        position["riskId"] = Value::String("1234".to_string());
+        position["adlRankIndicator"] = Value::String("35".to_string());
+
+        let frame: BybitWsAccountPositionMsg = serde_json::from_value(json).unwrap();
+
+        let position = &frame.data[0];
+        assert_eq!(position.position_idx, 2);
+        assert_eq!(position.trade_mode, 1);
+        assert_eq!(position.auto_add_margin, 3);
+        assert_eq!(position.risk_id, 1234);
+        assert_eq!(position.adl_rank_indicator, 35);
     }
 
     #[rstest]

@@ -29,9 +29,12 @@ use anyhow::Context;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
-    live::{runner::get_data_event_sender, runtime::get_runtime},
+    live::{
+        runner::{get_data_event_sender, try_get_system_event_sender},
+        runtime::get_runtime,
+    },
     messages::{
-        DataEvent,
+        DataEvent, SystemEvent,
         data::{
             BarsResponse, BookResponse, CustomDataResponse, DataResponse, FundingRatesResponse,
             InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
@@ -43,6 +46,7 @@ use nautilus_common::{
             UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
             subscribe::SubscribeInstrumentStatus, unsubscribe::UnsubscribeInstrumentStatus,
         },
+        system::{SocketState as SystemSocketState, SocketStateChange},
     },
 };
 use nautilus_core::{
@@ -52,10 +56,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{
-        BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas,
-        OrderBookDeltas_API, QuoteTick,
-    },
+    data::{BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick},
     enums::{
         AggregationSource, BookAction, BookType, MarketStatusAction, OrderSide, PriceType,
         RecordFlag,
@@ -64,6 +65,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
+use nautilus_network::{SocketState, SocketStateSink};
 use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -72,7 +74,7 @@ use ustr::Ustr;
 use crate::{
     common::{
         bar::{binance_bar_data_type, parse_binance_bar_type},
-        consts::{BINANCE_BOOK_DEPTHS, BINANCE_VENUE},
+        consts::{BINANCE_BOOK_DEPTHS, BINANCE_VENUE, BINANCE_WS_HEARTBEAT_SECS},
         enums::{BinanceEnvironment, BinanceProductType},
         parse::{
             bar_spec_to_binance_interval, parse_millis, parse_millis_or_init,
@@ -110,6 +112,8 @@ const MAX_SNAPSHOT_RETRIES: u32 = 5;
 const MAX_BUFFERED_DEPTH_UPDATES: usize = 10_000;
 const SNAPSHOT_RETRY_BACKOFF_BASE_MS: u64 = 250;
 const SNAPSHOT_RETRY_BACKOFF_CAP_MS: u64 = 3_000;
+const MARKET_STREAMS_ENDPOINT: &str = "binance-futures-market-streams";
+const PUBLIC_STREAMS_ENDPOINT: &str = "binance-futures-public-streams";
 
 #[derive(Debug, Clone)]
 struct BufferedDepthUpdate {
@@ -188,6 +192,7 @@ impl BinanceFuturesDataClient {
 
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
+        let system_sender = try_get_system_event_sender();
 
         let http_client = BinanceFuturesHttpClient::new(
             product_type,
@@ -218,10 +223,20 @@ impl BinanceFuturesDataClient {
             config.api_key.clone(),
             config.api_secret.clone(),
             market_url,
-            Some(20), // Heartbeat interval
+            Some(BINANCE_WS_HEARTBEAT_SECS),
             config.transport_backend,
         )?
         .with_proxy(config.proxy_url.clone());
+
+        let ws_client = if let Some(sender) = system_sender.as_ref() {
+            ws_client.with_state_sink(Self::socket_state_sink(
+                client_id,
+                MARKET_STREAMS_ENDPOINT,
+                sender.clone(),
+            ))
+        } else {
+            ws_client
+        };
 
         let public_url = config.base_url_ws.clone().map_or_else(
             || get_ws_public_base_url(product_type, config.environment).to_string(),
@@ -235,16 +250,27 @@ impl BinanceFuturesDataClient {
                 }
             },
         );
+
         let ws_public_client = BinanceFuturesWebSocketClient::new(
             product_type,
             config.environment,
             None,
             None,
             Some(public_url),
-            Some(20),
+            Some(BINANCE_WS_HEARTBEAT_SECS),
             config.transport_backend,
         )?
         .with_proxy(config.proxy_url.clone());
+
+        let ws_public_client = if let Some(sender) = system_sender {
+            ws_public_client.with_state_sink(Self::socket_state_sink(
+                client_id,
+                PUBLIC_STREAMS_ENDPOINT,
+                sender,
+            ))
+        } else {
+            ws_public_client
+        };
 
         Ok(Self {
             clock,
@@ -271,6 +297,24 @@ impl BinanceFuturesDataClient {
             force_order_all_market_stream_active: Arc::new(AtomicBool::new(false)),
             force_order_ws_lock: Arc::new(tokio::sync::Mutex::new(())),
             book_epoch: Arc::new(RwLock::new(0)),
+        })
+    }
+
+    fn socket_state_sink(
+        client_id: ClientId,
+        endpoint: &'static str,
+        system_sender: tokio::sync::mpsc::UnboundedSender<SystemEvent>,
+    ) -> SocketStateSink {
+        let endpoint = Ustr::from(endpoint);
+        SocketStateSink::new(move |state| {
+            let state = match state {
+                SocketState::Connected => SystemSocketState::Connected,
+                SocketState::Disconnected => SystemSocketState::Disconnected,
+            };
+            let change = SocketStateChange::new(client_id, Some(*BINANCE_VENUE), endpoint, state);
+            if let Err(e) = system_sender.send(SystemEvent::SocketState(change)) {
+                log::error!("Failed to emit socket state change: {e}");
+            }
         })
     }
 
@@ -618,10 +662,7 @@ impl BinanceFuturesDataClient {
                                 }
                             }
 
-                            Self::send_data(
-                                data_sender,
-                                Data::Deltas(OrderBookDeltas_API::new(deltas)),
-                            );
+                            Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
                         }
                         Err(e) => log::warn!("Failed to parse depth update: {e}"),
                     }
@@ -631,8 +672,8 @@ impl BinanceFuturesDataClient {
                 if let Some(instrument) = cache.get(&mark_msg.symbol) {
                     match parse_mark_price(mark_msg, instrument, ts_init) {
                         Ok((mark_update, index_update, funding_update, custom_update)) => {
-                            Self::send_data(data_sender, Data::MarkPriceUpdate(mark_update));
-                            Self::send_data(data_sender, Data::IndexPriceUpdate(index_update));
+                            Self::send_data(data_sender, Data::MarkPrice(mark_update));
+                            Self::send_data(data_sender, Data::IndexPrice(index_update));
                             if let Err(e) = data_sender.send(DataEvent::FundingRate(funding_update))
                             {
                                 log::error!("Failed to emit funding rate: {e}");
@@ -838,7 +879,7 @@ impl BinanceFuturesDataClient {
         Self::send_data(data_sender, Data::Quote(quote));
         if l1_book_subscriptions.contains_key(&quote.instrument_id) {
             let deltas = quote_to_l1_deltas(quote, sequence);
-            Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+            Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
         }
     }
 
@@ -1077,16 +1118,16 @@ impl BinanceFuturesDataClient {
                     replay_ready.push(update);
                 }
 
-                if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(
-                    OrderBookDeltas_API::new(snapshot_deltas),
-                ))) {
+                if let Err(e) =
+                    sender.send(DataEvent::Data(Data::Deltas(Box::new(snapshot_deltas))))
+                {
                     log::error!("Failed to send snapshot: {e}");
                 }
 
                 for update in replay_ready {
-                    if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(
-                        OrderBookDeltas_API::new(update.deltas),
-                    ))) {
+                    if let Err(e) =
+                        sender.send(DataEvent::Data(Data::Deltas(Box::new(update.deltas))))
+                    {
                         log::error!("Failed to send replayed deltas: {e}");
                     }
                 }
@@ -1162,9 +1203,9 @@ impl BinanceFuturesDataClient {
                         last_final_update_id = update.final_update_id;
                         replayed += 1;
 
-                        if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(
-                            OrderBookDeltas_API::new(update.deltas),
-                        ))) {
+                        if let Err(e) =
+                            sender.send(DataEvent::Data(Data::Deltas(Box::new(update.deltas))))
+                        {
                             log::error!("Failed to send replayed deltas: {e}");
                         }
                     }
@@ -2668,8 +2709,8 @@ impl DataClient for BinanceFuturesDataClient {
         let limit = request.limit.map(|n| n.get() as u32);
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
-        let start_ms = request.start.map(|dt| dt.timestamp_millis());
-        let end_ms = request.end.map(|dt| dt.timestamp_millis());
+        let start_ms = request.start.map(|dt| dt.as_millisecond());
+        let end_ms = request.end.map(|dt| dt.as_millisecond());
 
         get_runtime().spawn(async move {
             let response = if data_type_name == "BinanceFuturesOpenInterest" {

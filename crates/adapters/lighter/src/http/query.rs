@@ -22,6 +22,19 @@ use crate::common::enums::{
     LighterCandleResolution, LighterFundingResolution, LighterOrderBookFilter, LighterTradeType,
 };
 
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LighterTxLookup {
+    Hash,
+    SequenceIndex,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
+pub struct LighterTxQuery {
+    pub by: LighterTxLookup,
+    pub value: String,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Builder, PartialEq, Eq)]
 #[builder(setter(strip_option), default)]
 pub struct LighterOrderBooksQuery {

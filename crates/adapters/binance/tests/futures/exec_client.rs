@@ -1890,6 +1890,152 @@ async fn test_submit_algo_order_in_hedge_mode_omits_reduce_only() {
     assert!(!query.contains_key("reduceOnly"));
 }
 
+/// Binance retires a whole hedge leg with `closePosition=true` submitted on the
+/// side that closes that leg: `SELL`+`positionSide=LONG` for the long leg and
+/// `BUY`+`positionSide=SHORT` for the short leg. `positionSide` must therefore
+/// follow close intent, which `close_position` expresses on its own - the wire
+/// `reduceOnly` field is forbidden alongside `positionSide`, and the internal
+/// `reduce_only` flag cannot be combined with `close_position` at all.
+#[rstest]
+#[case::close_long_leg(OrderSide::Sell, "LONG")]
+#[case::close_short_leg(OrderSide::Buy, "SHORT")]
+#[tokio::test]
+async fn test_submit_close_position_in_hedge_mode_emits_closing_position_side(
+    #[case] order_side: OrderSide,
+    #[case] expected_position_side: &'static str,
+) {
+    let (addr, captured_query) =
+        start_exec_test_server_with_algo_capture_and_hedge_mode(true).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("hedge-close-position-test-001");
+    let order_any = add_stop_market_order_to_cache(&cache, client_order_id, order_side, false);
+
+    client
+        .submit_order(submit_order_command_with_params(
+            &order_any,
+            Some(close_position_params()),
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let captured_query = captured_query.clone();
+
+            async move { captured_query.lock().unwrap().is_some() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let query = captured_query.lock().unwrap().clone().unwrap();
+    assert_eq!(query.get("closePosition").map(String::as_str), Some("true"));
+    assert_eq!(
+        query.get("positionSide").map(String::as_str),
+        Some(expected_position_side),
+    );
+    assert!(!query.contains_key("reduceOnly"));
+    assert!(!query.contains_key("quantity"));
+}
+
+/// `close_position` already carries close intent, so pairing it with the internal
+/// `reduce_only` flag is refused locally before anything reaches the venue. This
+/// is the second half of the hedge-mode full-exit trap: the flag that would
+/// otherwise select the closing `positionSide` is exactly the flag that is
+/// rejected here.
+#[rstest]
+#[case::hedge(true)]
+#[case::one_way(false)]
+#[tokio::test]
+async fn test_submit_close_position_with_reduce_only_is_denied_locally(#[case] hedge_mode: bool) {
+    let (addr, _captured_query) =
+        start_exec_test_server_with_algo_capture_and_hedge_mode(hedge_mode).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("hedge-close-position-reduce-only-001");
+    let order_any = add_stop_market_order_to_cache(&cache, client_order_id, OrderSide::Sell, true);
+
+    let error = client
+        .submit_order(submit_order_command_with_params(
+            &order_any,
+            Some(close_position_params()),
+        ))
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "`close_position` cannot be combined with `reduce_only` on Binance",
+    );
+}
+
+/// An explicit-quantity hedge-mode exit is close-only purely by virtue of its
+/// `positionSide`, and that side is selected by the internal `reduce_only` flag.
+/// Leaving the flag unset to avoid the forbidden wire field therefore emits the
+/// *opening* leg and adds exposure instead of removing it.
+#[rstest]
+#[case::sell_opens_short_without_reduce_only(OrderSide::Sell, false, "SHORT")]
+#[case::sell_closes_long_with_reduce_only(OrderSide::Sell, true, "LONG")]
+#[case::buy_opens_long_without_reduce_only(OrderSide::Buy, false, "LONG")]
+#[case::buy_closes_short_with_reduce_only(OrderSide::Buy, true, "SHORT")]
+#[tokio::test]
+async fn test_submit_partial_exit_position_side_follows_reduce_only(
+    #[case] order_side: OrderSide,
+    #[case] reduce_only: bool,
+    #[case] expected_position_side: &'static str,
+) {
+    let (addr, captured_query) =
+        start_exec_test_server_with_algo_capture_and_hedge_mode(true).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("hedge-partial-exit-test-001");
+    let order_any =
+        add_stop_market_order_to_cache(&cache, client_order_id, order_side, reduce_only);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let captured_query = captured_query.clone();
+
+            async move { captured_query.lock().unwrap().is_some() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let query = captured_query.lock().unwrap().clone().unwrap();
+    assert_eq!(
+        query.get("positionSide").map(String::as_str),
+        Some(expected_position_side),
+    );
+    assert_eq!(query.get("quantity").map(String::as_str), Some("0.001"));
+    assert!(!query.contains_key("reduceOnly"));
+    assert!(!query.contains_key("closePosition"));
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_submit_usdm_gtd_algo_uses_http_when_ws_trading_is_active() {
@@ -4275,6 +4421,54 @@ fn add_triggered_stop_market_order_to_cache(
     order_any
 }
 
+fn add_stop_market_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    order_side: OrderSide,
+    reduce_only: bool,
+) -> OrderAny {
+    let order = StopMarketOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        order_side,
+        Quantity::from("0.001"),
+        Price::from("45000.00"),
+        TriggerType::MarkPrice,
+        TimeInForce::Gtc,
+        None,
+        reduce_only,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    let order_any = OrderAny::StopMarket(order);
+    cache
+        .borrow_mut()
+        .add_order(order_any.clone(), None, None, false)
+        .unwrap();
+    order_any
+}
+
+fn close_position_params() -> Params {
+    let mut params = Params::new();
+    params.insert("close_position".to_string(), json!(true));
+    params
+}
+
 fn algo_order_query_params() -> Params {
     let mut params = Params::new();
     params.insert(
@@ -4396,6 +4590,10 @@ fn add_linked_conditional_orders_to_cache(cache: &Rc<RefCell<Cache>>) -> Vec<Ord
 }
 
 fn submit_order_command(order: &OrderAny) -> SubmitOrder {
+    submit_order_command_with_params(order, None)
+}
+
+fn submit_order_command_with_params(order: &OrderAny, params: Option<Params>) -> SubmitOrder {
     SubmitOrder::new(
         test_trader_id(),
         Some(*BINANCE_CLIENT_ID),
@@ -4405,7 +4603,7 @@ fn submit_order_command(order: &OrderAny) -> SubmitOrder {
         order.init_event().clone(),
         None,
         None,
-        None,
+        params,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,

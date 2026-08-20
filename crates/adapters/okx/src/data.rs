@@ -52,7 +52,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas_API},
+    data::{Data, FundingRateUpdate, InstrumentStatus},
     enums::{BookType, GreeksConvention, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -664,7 +664,7 @@ impl OKXDataClient {
                 let ts_init = clock.get_time_ns();
 
                 for okx_inst in okx_instruments {
-                    let inst_key = Ustr::from(&okx_inst.inst_id);
+                    let inst_key = okx_inst.inst_id;
                     let (margin_init, margin_maint, maker_fee, taker_fee) =
                         instruments_by_symbol.get(&inst_key).map_or(
                             (None, None, None, None),
@@ -727,6 +727,7 @@ impl OKXDataClient {
             | OKXWsMessage::OrderResponse { .. }
             | OKXWsMessage::Account(_)
             | OKXWsMessage::Positions(_)
+            | OKXWsMessage::LiquidationWarnings(_)
             | OKXWsMessage::SendFailed { .. } => {
                 log::debug!("Ignoring execution message on data client");
             }
@@ -836,7 +837,7 @@ fn dispatch_parsed_data(
             }
         }
         NautilusWsMessage::Deltas(deltas) => {
-            let data = Data::Deltas(OrderBookDeltas_API::new(deltas));
+            let data = Data::Deltas(Box::new(deltas));
             if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                 log::error!("Failed to emit data event: {e}");
             }

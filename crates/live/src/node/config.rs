@@ -54,6 +54,7 @@ use nautilus_trading::ImportableControllerConfig;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+pub use super::queue::QueueMonitorConfig;
 use crate::execution::manager::ExecutionManagerConfig;
 
 /// The default rate limit string used for order submission and modification.
@@ -73,7 +74,7 @@ pub(crate) fn validate_live_environment(environment: Environment) -> anyhow::Res
 /// Configuration for live data engines.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -173,7 +174,7 @@ impl From<LiveDataEngineConfig> for DataEngineConfig {
 /// Configuration for live risk engines.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -376,7 +377,7 @@ pub(crate) fn duration_from_secs_f64(field: &str, value: f64) -> ConfigResult<Du
 /// Configuration for live execution engines.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -602,7 +603,7 @@ impl From<&LiveExecEngineConfig> for ExecutionManagerConfig {
 /// Configuration for live client message routing.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -621,7 +622,7 @@ pub struct RoutingConfig {
 /// Configuration for instrument providers.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -654,7 +655,7 @@ impl Default for InstrumentProviderConfig {
 /// Configuration for live data clients.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -677,7 +678,7 @@ pub struct LiveDataClientConfig {
 /// Configuration for live execution clients.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -697,7 +698,7 @@ pub struct LiveExecClientConfig {
 /// Configuration for one Rust-native plug-in instance loaded by a live node.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -729,7 +730,7 @@ impl Default for PluginConfig {
 /// Configuration for live Nautilus system nodes.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.live", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -792,6 +793,8 @@ pub struct LiveNodeConfig {
     pub emulator: Option<OrderEmulatorConfig>,
     /// The configuration for streaming to feather files.
     pub streaming: Option<StreamingConfig>,
+    /// The optional runner queue pressure monitor configuration.
+    pub queue_monitor: Option<QueueMonitorConfig>,
     /// The event-store configuration.
     ///
     /// When set, the live node boots a kernel-managed event-store run for audit and replay.
@@ -858,6 +861,10 @@ impl LiveNodeConfig {
         collector.collect(self.data_engine.validate_runtime_support());
         collector.collect(self.risk_engine.validate_runtime_support());
         collector.collect(self.exec_engine.validate_runtime_support());
+
+        if let Some(queue_monitor) = &self.queue_monitor {
+            collector.collect(queue_monitor.validate());
+        }
         collector.collect(self.validate_plugin_configs());
 
         collector.into_result()
@@ -1010,6 +1017,18 @@ impl LiveExecEngineConfig {
             (
                 "LiveExecEngineConfig.purge_account_events_interval_mins",
                 self.purge_account_events_interval_mins,
+            ),
+            (
+                "LiveExecEngineConfig.purge_closed_orders_buffer_mins",
+                self.purge_closed_orders_buffer_mins,
+            ),
+            (
+                "LiveExecEngineConfig.purge_closed_positions_buffer_mins",
+                self.purge_closed_positions_buffer_mins,
+            ),
+            (
+                "LiveExecEngineConfig.purge_account_events_lookback_mins",
+                self.purge_account_events_lookback_mins,
             ),
         ] {
             if let Some(mins) = value {
@@ -1165,6 +1184,69 @@ mod tests {
         assert!(config.data_clients.is_empty());
         assert!(config.exec_clients.is_empty());
         assert!(config.plugins.is_empty());
+        assert!(config.queue_monitor.is_none());
+    }
+
+    #[rstest]
+    fn test_live_node_queue_monitor_config_serde_roundtrip() {
+        let config: LiveNodeConfig = toml::from_str(
+            "
+[queue_monitor]
+queue_depth_trigger = 100
+queue_depth_clear = 60
+mean_dispatch_ns_trigger = 1000
+mean_dispatch_ns_clear = 700
+",
+        )
+        .unwrap();
+
+        let expected = Some(
+            QueueMonitorConfig::builder()
+                .queue_depth_trigger(100)
+                .queue_depth_clear(60)
+                .mean_dispatch_ns_trigger(1_000)
+                .mean_dispatch_ns_clear(700)
+                .build(),
+        );
+        let json = serde_json::to_string(&config).unwrap();
+        let restored: LiveNodeConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(config.queue_monitor, expected);
+        assert_eq!(restored.queue_monitor, expected);
+    }
+
+    #[rstest]
+    #[case(
+        QueueMonitorConfig {
+            queue_depth_trigger: 10,
+            queue_depth_clear: 10,
+            mean_dispatch_ns_trigger: 100,
+            mean_dispatch_ns_clear: 50,
+        },
+        "invalid LiveNodeConfig.queue_monitor.queue_depth: clear threshold 10 must be lower than trigger threshold 10"
+    )]
+    #[case(
+        QueueMonitorConfig {
+            queue_depth_trigger: 10,
+            queue_depth_clear: 5,
+            mean_dispatch_ns_trigger: 50,
+            mean_dispatch_ns_clear: 50,
+        },
+        "invalid LiveNodeConfig.queue_monitor.mean_dispatch_ns: clear threshold 50 must be lower than trigger threshold 50"
+    )]
+    fn test_live_node_queue_monitor_config_validates_hysteresis(
+        #[case] queue_monitor: QueueMonitorConfig,
+        #[case] expected: &str,
+    ) {
+        let config = LiveNodeConfig {
+            queue_monitor: Some(queue_monitor),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            config.validate_runtime_support().unwrap_err().to_string(),
+            expected
+        );
     }
 
     #[rstest]
@@ -1568,6 +1650,52 @@ mod tests {
     }
 
     #[rstest]
+    #[case(0)]
+    #[case(307_445_734)]
+    fn test_validate_runtime_support_accepts_purge_retention_boundaries(#[case] mins: u32) {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                purge_closed_orders_buffer_mins: Some(mins),
+                purge_closed_positions_buffer_mins: Some(mins),
+                purge_account_events_lookback_mins: Some(mins),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert!(config.validate_runtime_support().is_ok());
+    }
+
+    #[rstest]
+    fn test_validate_runtime_support_rejects_overflowing_purge_retention_minutes() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                purge_closed_orders_buffer_mins: Some(307_445_735),
+                purge_closed_positions_buffer_mins: Some(307_445_735),
+                purge_account_events_lookback_mins: Some(307_445_735),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let error = config.validate_runtime_support().unwrap_err();
+        let ConfigError::Multiple { errors } = error else {
+            panic!("Expected multiple config errors, received {error:?}");
+        };
+        assert_eq!(errors.len(), 3);
+
+        for field in [
+            "LiveExecEngineConfig.purge_closed_orders_buffer_mins",
+            "LiveExecEngineConfig.purge_closed_positions_buffer_mins",
+            "LiveExecEngineConfig.purge_account_events_lookback_mins",
+        ] {
+            assert!(errors.iter().any(
+                |e| matches!(e, ConfigError::Range { field: error_field, .. } if error_field == field)
+            ));
+        }
+    }
+
+    #[rstest]
     fn test_validate_runtime_support_rejects_invalid_rate_limit() {
         let config = LiveNodeConfig {
             risk_engine: LiveRiskEngineConfig {
@@ -1905,7 +2033,8 @@ mod tests {
     }
 
     #[rstest]
-    #[expect(
+    // `allow` not `expect`: nightly clippy does not fire `float_cmp` inside `assert_eq!`
+    #[allow(
         clippy::float_cmp,
         reason = "asserts the exact configured default with no arithmetic involved"
     )]

@@ -652,3 +652,135 @@ CREATE TABLE IF NOT EXISTS "pool_tick" (
     FOREIGN KEY (chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index)
         REFERENCES pool_snapshot(chain_id, pool_identifier, block, transaction_index, log_index) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS "execution_transaction" (
+    id BIGSERIAL PRIMARY KEY,
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    wallet_address TEXT,
+    nonce BIGINT NOT NULL,
+    transaction_hash TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    status TEXT NOT NULL,
+    client_order_id TEXT,
+    UNIQUE (chain_id, transaction_hash)
+);
+ALTER TABLE "execution_transaction" ADD COLUMN IF NOT EXISTS client_order_id TEXT;
+ALTER TABLE "execution_transaction" ADD COLUMN IF NOT EXISTS wallet_address TEXT;
+ALTER TABLE "execution_transaction" ALTER COLUMN wallet_address DROP NOT NULL;
+
+CREATE TABLE IF NOT EXISTS "execution_schema_version" (
+    component TEXT PRIMARY KEY,
+    version SMALLINT NOT NULL CHECK (version > 0)
+);
+
+CREATE TABLE IF NOT EXISTS "execution_intent" (
+    id BIGSERIAL PRIMARY KEY,
+    schema_version SMALLINT NOT NULL CHECK (schema_version = 2),
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE RESTRICT,
+    wallet_address TEXT NOT NULL,
+    nonce BIGINT CHECK (nonce IS NULL OR nonce >= 0),
+    purpose TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN (
+        'prepared', 'signed', 'broadcast', 'included', 'finalized',
+        'reverted', 'replaced', 'dropped', 'reorged', 'recoverable'
+    )),
+    client_order_id TEXT,
+    trader_id TEXT,
+    strategy_id TEXT,
+    account_id TEXT,
+    instrument_id TEXT,
+    pool_address TEXT,
+    transaction_to TEXT NOT NULL,
+    transaction_input TEXT NOT NULL,
+    transaction_value TEXT NOT NULL,
+    amount_in TEXT,
+    created_block BIGINT NOT NULL CHECK (created_block >= 0),
+    acknowledgement_emitted BOOLEAN NOT NULL DEFAULT FALSE,
+    fill_emitted BOOLEAN NOT NULL DEFAULT FALSE,
+    terminal_emitted BOOLEAN NOT NULL DEFAULT FALSE,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT execution_intent_active_check CHECK (
+        NOT active
+        OR status NOT IN ('finalized', 'reverted', 'recoverable')
+        OR (
+            status IN ('finalized', 'reverted')
+            AND NOT (fill_emitted OR terminal_emitted)
+        )
+    ),
+    CHECK (NOT (fill_emitted AND terminal_emitted)),
+    CHECK (
+        purpose <> 'swap'
+        OR (
+            client_order_id IS NOT NULL
+            AND trader_id IS NOT NULL
+            AND strategy_id IS NOT NULL
+            AND account_id IS NOT NULL
+            AND instrument_id IS NOT NULL
+            AND pool_address IS NOT NULL
+            AND amount_in IS NOT NULL
+        )
+    ),
+    UNIQUE (id, chain_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS execution_intent_active_signer_key
+    ON "execution_intent" (chain_id, wallet_address) WHERE active;
+CREATE UNIQUE INDEX IF NOT EXISTS execution_intent_active_nonce_key
+    ON "execution_intent" (chain_id, wallet_address, nonce) WHERE active AND nonce IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS execution_intent_client_order_key
+    ON "execution_intent" (chain_id, wallet_address, client_order_id)
+    WHERE client_order_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS "execution_transaction_hash" (
+    id BIGSERIAL PRIMARY KEY,
+    intent_id BIGINT NOT NULL,
+    chain_id INTEGER NOT NULL,
+    transaction_hash TEXT NOT NULL,
+    raw_transaction BYTEA,
+    status TEXT NOT NULL CHECK (status IN (
+        'signed', 'broadcast', 'included', 'finalized', 'reverted',
+        'replaced', 'dropped', 'reorged'
+    )),
+    block_number BIGINT CHECK (block_number IS NULL OR block_number >= 0),
+    block_hash TEXT,
+    receipt_success BOOLEAN,
+    gas_used BIGINT CHECK (gas_used IS NULL OR gas_used >= 0),
+    effective_gas_price TEXT,
+    current BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (intent_id, chain_id)
+        REFERENCES execution_intent(id, chain_id) ON DELETE RESTRICT,
+    UNIQUE (chain_id, transaction_hash),
+    UNIQUE (intent_id, transaction_hash)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS execution_transaction_hash_current_key
+    ON "execution_transaction_hash" (intent_id) WHERE current;
+
+CREATE TABLE IF NOT EXISTS "execution_transaction_transition" (
+    id BIGSERIAL PRIMARY KEY,
+    intent_id BIGINT NOT NULL REFERENCES execution_intent(id) ON DELETE RESTRICT,
+    transaction_hash_id BIGINT REFERENCES execution_transaction_hash(id) ON DELETE RESTRICT,
+    transition_key TEXT NOT NULL,
+    from_status TEXT,
+    to_status TEXT NOT NULL CHECK (to_status IN (
+        'prepared', 'signed', 'broadcast', 'included', 'finalized',
+        'reverted', 'replaced', 'dropped', 'reorged', 'recoverable'
+    )),
+    block_number BIGINT CHECK (block_number IS NULL OR block_number >= 0),
+    block_hash TEXT,
+    observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (intent_id, transition_key)
+);
+
+CREATE OR REPLACE FUNCTION execution_transition_append_only()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'Execution transitions are append-only';
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS execution_transition_append_only ON "execution_transaction_transition";
+CREATE TRIGGER execution_transition_append_only
+    BEFORE UPDATE OR DELETE ON "execution_transaction_transition"
+    FOR EACH STATEMENT EXECUTE FUNCTION execution_transition_append_only();

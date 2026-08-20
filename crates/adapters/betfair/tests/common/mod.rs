@@ -51,6 +51,7 @@ use serde_json::Value;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::TcpListener,
+    sync::Semaphore,
 };
 
 pub(crate) fn data_path() -> PathBuf {
@@ -74,12 +75,19 @@ pub(crate) fn plain_stream_config(port: u16) -> BetfairStreamConfig {
     BetfairStreamConfig {
         host: "127.0.0.1".to_string(),
         port,
-        heartbeat_ms: 5_000,
-        idle_timeout_ms: 60_000,
+        heartbeat_secs: 5,
+        heartbeat_timeout_secs: 60,
         reconnect_delay_initial_ms: 200,
         reconnect_delay_max_ms: 1_000,
         use_tls: false,
     }
+}
+
+#[derive(Clone)]
+pub(crate) struct BettingResponseGate {
+    pub method: String,
+    pub waiters: Arc<AtomicUsize>,
+    pub semaphore: Arc<Semaphore>,
 }
 
 #[derive(Clone, Default)]
@@ -103,9 +111,11 @@ pub(crate) struct MockState {
     pub betting_request_params: Arc<Mutex<Vec<(String, Value)>>>,
     /// Per-method response delay; lets tests widen reconciliation windows.
     pub betting_response_delays: Arc<Mutex<HashMap<String, Duration>>>,
+    pub betting_response_gate: Arc<Mutex<Option<BettingResponseGate>>>,
     pub accounts_overrides: Arc<Mutex<HashMap<String, Value>>>,
     pub login_response_override: Arc<Mutex<Option<String>>>,
     pub keep_alive_response_override: Arc<Mutex<Option<String>>>,
+    pub keep_alive_status_override: Arc<Mutex<Option<u16>>>,
 }
 
 async fn handle_login(State(state): State<MockState>) -> impl IntoResponse {
@@ -122,7 +132,7 @@ async fn handle_login(State(state): State<MockState>) -> impl IntoResponse {
     )
 }
 
-async fn handle_keep_alive(State(state): State<MockState>) -> impl IntoResponse {
+async fn handle_keep_alive(State(state): State<MockState>) -> Response {
     state.keep_alive_count.fetch_add(1, Ordering::Relaxed);
     let body = state
         .keep_alive_response_override
@@ -130,10 +140,18 @@ async fn handle_keep_alive(State(state): State<MockState>) -> impl IntoResponse 
         .unwrap()
         .clone()
         .unwrap_or_else(|| load_fixture("rest/login_success.json"));
+    let status = state
+        .keep_alive_status_override
+        .lock()
+        .unwrap()
+        .map(|status| StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
+        .unwrap_or(StatusCode::OK);
     (
+        status,
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         body,
     )
+        .into_response()
 }
 
 async fn handle_navigation() -> impl IntoResponse {
@@ -149,6 +167,7 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
     let request: Value = serde_json::from_slice(&body).unwrap_or_default();
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
     let id = request.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
+    let params = request.get("params").cloned().unwrap_or(Value::Null);
 
     if !method.is_empty() {
         state
@@ -156,12 +175,23 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
             .lock()
             .unwrap()
             .push(method.to_string());
-        let params = request.get("params").cloned().unwrap_or(Value::Null);
         state
             .betting_request_params
             .lock()
             .unwrap()
             .push((method.to_string(), params));
+    }
+
+    let response_gate = state.betting_response_gate.lock().unwrap().clone();
+    if let Some(gate) = response_gate
+        && gate.method == method
+    {
+        gate.waiters.fetch_add(1, Ordering::Relaxed);
+        gate.semaphore
+            .acquire()
+            .await
+            .expect("betting response gate must remain open")
+            .forget();
     }
 
     let delay = state

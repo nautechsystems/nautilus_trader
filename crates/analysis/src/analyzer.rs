@@ -51,10 +51,7 @@ pub type Statistic = Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync>;
 /// and customizable statistics.
 #[repr(C)]
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
-)]
+#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.analysis"))]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.analysis")
@@ -244,6 +241,7 @@ impl PortfolioAnalyzer {
                 AccountAny::Margin(margin) => margin,
                 AccountAny::Cash(cash) => cash,
                 AccountAny::Betting(betting) => betting,
+                AccountAny::Wallet(wallet) => wallet,
             };
             account_ids.push(account_ref.id());
 

@@ -56,7 +56,7 @@ use super::consts::{
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -138,7 +138,7 @@ impl AxEnvironment {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -262,7 +262,7 @@ impl From<AxCategory> for AssetClass {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -281,8 +281,8 @@ pub enum AxOrderSide {
 impl From<AxOrderSide> for AggressorSide {
     fn from(side: AxOrderSide) -> Self {
         match side {
-            AxOrderSide::Buy => Self::Buyer,
-            AxOrderSide::Sell => Self::Seller,
+            AxOrderSide::Buy => Self::Buy,
+            AxOrderSide::Sell => Self::Sell,
         }
     }
 }
@@ -374,7 +374,7 @@ pub enum AxFundingSlotStatus {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -458,7 +458,7 @@ impl From<AxOrderStatus> for OrderStatus {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -543,7 +543,7 @@ impl TryFrom<TimeInForce> for AxTimeInForce {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -730,7 +730,7 @@ pub enum AxOrderRequestType {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -791,7 +791,7 @@ pub enum AxMdWsMessageType {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -866,7 +866,7 @@ pub enum AxOrderWsMessageType {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -906,7 +906,7 @@ pub enum AxCancelReason {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )

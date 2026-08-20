@@ -15,7 +15,10 @@
 
 //! Provides the HTTP client for the Polymarket CLOB REST API.
 
-use std::{collections::HashMap, result::Result as StdResult, str::from_utf8, sync::Arc};
+use std::{
+    collections::HashMap, convert::Infallible, result::Result as StdResult, str::from_utf8,
+    sync::Arc,
+};
 
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT,
@@ -31,20 +34,25 @@ use nautilus_network::{
     http::{HttpClient, HttpClientError, Method, USER_AGENT},
     websocket::proxy::ProxyUrl,
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
-    common::{credential::Credential, enums::PolymarketOrderType, urls::clob_http_url},
+    common::{
+        credential::Credential, enums::PolymarketOrderType, parse::deserialize_decimal_from_str,
+        urls::clob_http_url,
+    },
     http::{
         error::{Error, Result},
         models::{
             ClobBookResponse, ClobMarketResponse, FeeRateResponse, PolymarketOpenOrder,
             PolymarketOrder, PolymarketTradeReport, TickSizeResponse,
         },
+        pagination::{CollectAll, Completion, CursorProtocol, FetchOutcome, Paginator},
         query::{
             BalanceAllowance, BatchCancelResponse, CancelMarketOrdersParams, CancelResponse,
-            GetBalanceAllowanceParams, GetOrdersParams, GetTradesParams, OrderResponse,
-            PaginatedResponse,
+            ClobVersionResponse, GetBalanceAllowanceParams, GetOrdersParams, GetTradesParams,
+            OrderResponse, PaginatedResponse,
         },
         rate_limits::{PolymarketRateLimiter, RateLimitHeaders, TradingBucket},
     },
@@ -56,13 +64,14 @@ const CURSOR_END: &str = "LTE=";
 
 const PATH_ORDERS: &str = "/data/orders";
 const PATH_TRADES: &str = "/data/trades";
+const PATH_VERSION: &str = "/version";
 const PATH_BALANCE_ALLOWANCE: &str = "/balance-allowance";
 const PATH_BALANCE_ALLOWANCE_UPDATE: &str = "/balance-allowance/update";
 const PATH_POST_ORDER: &str = "/order";
 const PATH_POST_ORDERS: &str = "/orders";
 const PATH_CANCEL_ALL: &str = "/cancel-all";
 const PATH_CANCEL_MARKET_ORDERS: &str = "/cancel-market-orders";
-const PATH_HEARTBEATS: &str = "/heartbeats";
+const PATH_HEARTBEATS: &str = "/v1/heartbeats";
 
 const CLOB_CANCEL_BATCH_LIMIT: usize = 1_000;
 
@@ -90,14 +99,19 @@ struct HeartbeatRequest<'a> {
 #[derive(Deserialize)]
 struct HeartbeatWireResponse {
     heartbeat_id: Option<String>,
-    status: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct BalanceResponse {
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    balance: Decimal,
 }
 
 /// Outcome from an authenticated CLOB order-safety heartbeat.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HeartbeatResponse {
-    /// The heartbeat was acknowledged, with an optional next ID for chaining.
-    Acknowledged(Option<String>),
+    /// The heartbeat was acknowledged and the venue returned the next ID for chaining.
+    Acknowledged(String),
     /// The supplied ID was stale and the venue returned the current ID.
     Resynchronize(String),
 }
@@ -359,10 +373,12 @@ impl PolymarketClobHttpClient {
                 .await;
 
             if rate_limited {
-                Err(Error::rate_limit(
+                Err(Error::rate_limit_from_body(
                     path,
                     cost,
                     rate_limit_headers.retry_after_ms(),
+                    &response.body,
+                    rate_limit_headers.has_signer_headers(),
                 ))
             } else {
                 Err(Error::from_status_code(
@@ -371,6 +387,11 @@ impl PolymarketClobHttpClient {
                 ))
             }
         }
+    }
+
+    /// Returns the CLOB protocol version reported by the venue.
+    pub async fn get_version(&self) -> Result<ClobVersionResponse> {
+        self.send_get::<(), _>(PATH_VERSION, None, false).await
     }
 
     /// Sends an authenticated order-safety heartbeat.
@@ -394,22 +415,34 @@ impl PolymarketClobHttpClient {
             .await
             .map_err(Error::from_http_client)?;
 
+        if response.status.as_u16() == 429 {
+            let rate_limit_headers = RateLimitHeaders::parse(&response.headers);
+            return Err(Error::rate_limit_from_body(
+                PATH_HEARTBEATS,
+                0,
+                rate_limit_headers.retry_after_ms(),
+                &response.body,
+                rate_limit_headers.has_signer_headers(),
+            ));
+        }
+
         let wire = serde_json::from_slice::<HeartbeatWireResponse>(&response.body);
+        let next_id = |wire: HeartbeatWireResponse| {
+            wire.heartbeat_id
+                .filter(|heartbeat_id| !heartbeat_id.is_empty())
+        };
+
         if response.status.is_success() {
-            let wire = wire.map_err(Error::Serde)?;
-            if let Some(heartbeat_id) = wire.heartbeat_id.filter(|id| !id.is_empty()) {
-                return Ok(HeartbeatResponse::Acknowledged(Some(heartbeat_id)));
+            if let Some(heartbeat_id) = next_id(wire.map_err(Error::Serde)?) {
+                return Ok(HeartbeatResponse::Acknowledged(heartbeat_id));
             }
 
-            if wire.status.as_deref() == Some("ok") {
-                return Ok(HeartbeatResponse::Acknowledged(None));
-            }
             return Err(Error::exchange("Heartbeat acknowledgment was invalid"));
         }
 
         if response.status.as_u16() == 400
             && let Ok(wire) = wire
-            && let Some(heartbeat_id) = wire.heartbeat_id.filter(|id| !id.is_empty())
+            && let Some(heartbeat_id) = next_id(wire)
         {
             return Ok(HeartbeatResponse::Resynchronize(heartbeat_id));
         }
@@ -421,35 +454,46 @@ impl PolymarketClobHttpClient {
     }
 
     /// Fetches all open orders matching the given parameters (auto-paginated).
-    pub async fn get_orders(
-        &self,
-        mut params: GetOrdersParams,
-    ) -> Result<Vec<PolymarketOpenOrder>> {
-        if params.next_cursor.is_none() {
-            params.next_cursor = Some(CURSOR_START.to_string());
-        }
-        let mut all = Vec::new();
+    pub async fn get_orders(&self, params: GetOrdersParams) -> Result<Vec<PolymarketOpenOrder>> {
+        let initial_cursor = params
+            .next_cursor
+            .clone()
+            .unwrap_or_else(|| CURSOR_START.to_string());
+        let protocol = CursorProtocol::<Infallible>::clob(PATH_ORDERS, initial_cursor, CURSOR_END);
+        let paginator = Paginator::new(PATH_ORDERS, protocol, CollectAll::new());
+        let completed = paginator
+            .run(
+                |position| {
+                    let mut request = params.clone();
+                    request.next_cursor =
+                        position.as_ref().map(|cursor| cursor.as_ref().to_string());
+                    async move {
+                        let page: PaginatedResponse<PolymarketOpenOrder> =
+                            self.send_get(PATH_ORDERS, Some(&request), true).await?;
+                        Ok(FetchOutcome::Page {
+                            rows: page.data,
+                            wire: page.next_cursor,
+                        })
+                    }
+                },
+                |e| Error::decode(e.to_string()),
+            )
+            .await?;
 
-        loop {
-            let page: PaginatedResponse<PolymarketOpenOrder> =
-                self.send_get(PATH_ORDERS, Some(&params), true).await?;
-            all.extend(page.data);
-            if page.next_cursor == CURSOR_END {
-                break;
-            }
-            params.next_cursor = Some(page.next_cursor);
+        match completed.completion {
+            Completion::WireExhausted => Ok(completed.output),
+            Completion::Stopped(never) => match never {},
         }
-        Ok(all)
     }
 
-    /// Fetches a single open order by ID, returning `None` for empty/null responses.
+    /// Fetches a single order by ID, returning `None` for empty/null responses.
     pub async fn get_order_optional(&self, order_id: &str) -> Result<Option<PolymarketOpenOrder>> {
         let path = format!("/data/order/{order_id}");
         self.send_get_optional::<(), _>(&path, None::<&()>, true)
             .await
     }
 
-    /// Fetches a single open order by ID.
+    /// Fetches a single order by ID.
     ///
     /// Returns an error if the order is not found (empty/null response).
     pub async fn get_order(&self, order_id: &str) -> Result<PolymarketOpenOrder> {
@@ -459,48 +503,61 @@ impl PolymarketClobHttpClient {
     }
 
     /// Fetches all trades matching the given parameters (auto-paginated).
-    pub async fn get_trades(
-        &self,
-        mut params: GetTradesParams,
-    ) -> Result<Vec<PolymarketTradeReport>> {
-        if params.next_cursor.is_none() {
-            params.next_cursor = Some(CURSOR_START.to_string());
-        }
-        let mut all = Vec::new();
+    pub async fn get_trades(&self, params: GetTradesParams) -> Result<Vec<PolymarketTradeReport>> {
+        let initial_cursor = params
+            .next_cursor
+            .clone()
+            .unwrap_or_else(|| CURSOR_START.to_string());
+        let protocol = CursorProtocol::<Infallible>::clob(PATH_TRADES, initial_cursor, CURSOR_END);
+        let paginator = Paginator::new(PATH_TRADES, protocol, CollectAll::new());
+        let completed = paginator
+            .run(
+                |position| {
+                    let mut request = params.clone();
+                    request.next_cursor =
+                        position.as_ref().map(|cursor| cursor.as_ref().to_string());
+                    async move {
+                        let page: PaginatedResponse<PolymarketTradeReport> =
+                            self.send_get(PATH_TRADES, Some(&request), true).await?;
+                        Ok(FetchOutcome::Page {
+                            rows: page.data,
+                            wire: page.next_cursor,
+                        })
+                    }
+                },
+                |e| Error::decode(e.to_string()),
+            )
+            .await?;
 
-        loop {
-            let page: PaginatedResponse<PolymarketTradeReport> =
-                self.send_get(PATH_TRADES, Some(&params), true).await?;
-            all.extend(page.data);
-            if page.next_cursor == CURSOR_END {
-                break;
-            }
-            params.next_cursor = Some(page.next_cursor);
+        match completed.completion {
+            Completion::WireExhausted => Ok(completed.output),
+            Completion::Stopped(never) => match never {},
         }
-        Ok(all)
     }
 
-    /// Fetches balance and allowance for the given parameters.
+    /// Fetches strict V2 balance and allowance evidence for the given parameters.
+    ///
+    /// The response must contain a plural spender map with canonical, unique EVM addresses.
+    /// A non-null legacy singular allowance is rejected as conflicting authority. Internal
+    /// balance-only consumers use the private projection instead.
     pub async fn get_balance_allowance(
         &self,
         params: GetBalanceAllowanceParams,
     ) -> Result<BalanceAllowance> {
-        let headers = Some(self.auth_headers("GET", PATH_BALANCE_ALLOWANCE, ""));
-        let url = self.url(PATH_BALANCE_ALLOWANCE);
-        let response = self
-            .client
-            .request_with_params(Method::GET, url, Some(&params), headers, None, None, None)
+        self.send_get(PATH_BALANCE_ALLOWANCE, Some(&params), true)
             .await
-            .map_err(Error::from_http_client)?;
+    }
 
-        if response.status.is_success() {
-            serde_json::from_slice(&response.body).map_err(Error::Serde)
-        } else {
-            Err(Error::from_status_code(
-                response.status.as_u16(),
-                &response.body,
-            ))
-        }
+    /// Fetches balance for internal account refresh and market-buy fee adjustment without consuming
+    /// allowance evidence.
+    ///
+    /// Allowance fields are intentionally ignored and cannot grant authority through this return
+    /// type.
+    pub(crate) async fn get_balance(&self, params: GetBalanceAllowanceParams) -> Result<Decimal> {
+        let response: BalanceResponse = self
+            .send_get(PATH_BALANCE_ALLOWANCE, Some(&params), true)
+            .await?;
+        Ok(response.balance)
     }
 
     /// Refreshes the CLOB backend's cached balance and allowance data.

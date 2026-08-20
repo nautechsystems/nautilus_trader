@@ -15,21 +15,26 @@
 
 use std::{collections::HashMap, fmt::Display};
 
-use nautilus_core::{UUID4, UnixNanos};
-use serde::{Deserialize, Serialize};
+use nautilus_core::{Params, UUID4, UnixNanos};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
 
 use crate::{
     enums::AccountType,
     identifiers::{AccountId, InstrumentId},
-    types::{AccountBalance, Currency, MarginBalance},
+    types::{AccountBalance, Currency, MarginBalance, balance::WalletAccountBalances},
 };
 
 /// Represents an event which includes information on the state of the account.
+///
+/// The optional `info` bag carries venue-specific account data that does not map
+/// to the typed `balances` and `margins` fields, such as wallet balance,
+/// available balance, or an account summary, so consumers can read the venue
+/// context that accompanied a given snapshot.
 #[repr(C)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -55,6 +60,36 @@ pub struct AccountState {
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
+    /// Additional implementation-specific account information, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub info: Option<Params>,
+}
+
+impl Serialize for AccountState {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let field_count = 9 + usize::from(self.info.is_some());
+        let mut state = serializer.serialize_struct("AccountState", field_count)?;
+        state.serialize_field("account_id", &self.account_id)?;
+        state.serialize_field("account_type", &self.account_type)?;
+        state.serialize_field("base_currency", &self.base_currency)?;
+        if self.account_type == AccountType::Wallet {
+            state.serialize_field("balances", &WalletAccountBalances::new(&self.balances))?;
+        } else {
+            state.serialize_field("balances", &self.balances)?;
+        }
+        state.serialize_field("margins", &self.margins)?;
+        state.serialize_field("is_reported", &self.is_reported)?;
+        state.serialize_field("event_id", &self.event_id)?;
+        state.serialize_field("ts_event", &self.ts_event)?;
+        state.serialize_field("ts_init", &self.ts_init)?;
+        if let Some(info) = &self.info {
+            state.serialize_field("info", info)?;
+        }
+        state.end()
+    }
 }
 
 impl AccountState {
@@ -82,7 +117,15 @@ impl AccountState {
             event_id,
             ts_event,
             ts_init,
+            info: None,
         }
+    }
+
+    /// Attaches additional implementation-specific account information to this event.
+    #[must_use]
+    pub fn with_info(mut self, info: Option<Params>) -> Self {
+        self.info = info;
+        self
     }
 
     /// Returns `true` if this account state has the same balances and margins as another.
@@ -197,11 +240,16 @@ impl PartialEq for AccountState {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{UUID4, UnixNanos};
+    #[cfg(feature = "defi")]
+    use std::process::Command;
+
+    use indexmap::IndexMap;
+    use nautilus_core::{Params, UUID4, UnixNanos};
     use rstest::rstest;
+    use serde_json::json;
 
     use crate::{
-        enums::AccountType,
+        enums::{AccountType, CurrencyType},
         events::{
             AccountState,
             account::stubs::{cash_account_state, margin_account_state},
@@ -437,5 +485,310 @@ mod tests {
         );
 
         assert!(state1.has_same_balances_and_margins(&state2));
+    }
+
+    fn account_state_with_info() -> AccountState {
+        let mut info = IndexMap::new();
+        info.insert("total_wallet_balance".to_string(), json!(1525.0_f64));
+        info.insert("available_balance".to_string(), json!(1500.0_f64));
+        AccountState::new(
+            AccountId::new("SIM-001"),
+            AccountType::Cash,
+            vec![],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(Currency::USD()),
+        )
+        .with_info(Some(Params::from_index_map(info)))
+    }
+
+    #[rstest]
+    fn test_new_defaults_info_to_none() {
+        let state = cash_account_state();
+        assert!(state.info.is_none());
+    }
+
+    #[rstest]
+    fn test_with_info_attaches_params() {
+        let state = account_state_with_info();
+        let info = state.info.expect("info should be set");
+        assert_eq!(info.get_f64("total_wallet_balance"), Some(1525.0));
+        assert_eq!(info.get_f64("available_balance"), Some(1500.0));
+        assert_eq!(info.get_f64("missing"), None);
+    }
+
+    #[rstest]
+    fn test_serde_round_trips_info() {
+        let state = account_state_with_info();
+        let serialized = serde_json::to_string(&state).expect("serialize");
+        let deserialized: AccountState = serde_json::from_str(&serialized).expect("deserialize");
+        let info = deserialized.info.expect("info should round-trip");
+        assert_eq!(info.get_f64("total_wallet_balance"), Some(1525.0));
+        assert_eq!(info.get_f64("available_balance"), Some(1500.0));
+    }
+
+    #[rstest]
+    fn test_serde_back_compatible_without_info() {
+        // Serialized AccountState from before the info field existed must still
+        // deserialize, defaulting info to None. Build the JSON by serializing a
+        // current state and removing the info key so the format is exact.
+        let state = cash_account_state();
+        let mut value = serde_json::to_value(&state)
+            .expect("serialize")
+            .as_object()
+            .cloned()
+            .unwrap();
+        value.remove("info");
+        let deserialized: AccountState =
+            serde_json::from_value(serde_json::Value::Object(value)).expect("deserialize legacy");
+        assert!(deserialized.info.is_none());
+    }
+
+    #[rstest]
+    #[case(AccountType::Cash, false)]
+    #[case(AccountType::Margin, false)]
+    #[case(AccountType::Betting, false)]
+    #[case(AccountType::Wallet, true)]
+    fn test_registered_account_balance_keeps_legacy_fields(
+        #[case] account_type: AccountType,
+        #[case] has_wallet_identity: bool,
+    ) {
+        let currency = Currency::USD();
+        let total = Money::from("10.25 USD");
+        let state = AccountState::new(
+            AccountId::new("SERDE-001"),
+            account_type,
+            vec![AccountBalance::new(total, Money::zero(currency), total)],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+        );
+
+        let value = serde_json::to_value(&state).expect("serialize account state");
+        let balance = &value["balances"][0];
+        let restored: AccountState =
+            serde_json::from_value(value.clone()).expect("deserialize account state");
+
+        assert_eq!(balance["currency"], "USD");
+        assert_eq!(balance["total"], "10.25 USD");
+        assert_eq!(balance["locked"], "0.00 USD");
+        assert_eq!(balance["free"], "10.25 USD");
+        assert_eq!(
+            balance.get("currency_identity").is_some(),
+            has_wallet_identity
+        );
+        assert_eq!(restored.balances[0].total.raw, total.raw);
+        assert_currency_identity(restored.balances[0].currency, currency);
+    }
+
+    #[rstest]
+    fn test_wallet_account_state_rejects_unaligned_raw_balance() {
+        let currency = Currency::USD();
+        let total = Money::from_raw(1, currency);
+        let state = AccountState::new(
+            AccountId::new("WALLET-SERDE-INVALID"),
+            AccountType::Wallet,
+            vec![AccountBalance::new(total, Money::zero(currency), total)],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+        );
+
+        let error = serde_json::to_string(&state).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("is not aligned to currency precision 2"),
+            "was: {error}"
+        );
+    }
+
+    #[rstest]
+    fn test_wallet_account_state_rejects_inconsistent_exact_balance() {
+        let currency = Currency::USD();
+        let total = Money::from("10.25 USD");
+        let state = AccountState::new(
+            AccountId::new("WALLET-SERDE-CORRUPT"),
+            AccountType::Wallet,
+            vec![AccountBalance::new(total, Money::zero(currency), total)],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+        );
+        let mut value = serde_json::to_value(&state).expect("serialize account state");
+        value["balances"][0]["free_minor"] = json!("999");
+
+        let error = serde_json::from_value::<AccountState>(value).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("`total` (10.25 USD) - `locked` (0.00 USD) != `free` (9.99 USD)"),
+            "was: {error}"
+        );
+    }
+
+    #[rstest]
+    fn test_wallet_account_state_rejects_same_code_currency_identity_mismatch() {
+        let balance_currency =
+            Currency::new("ENG729D", 6, 0, "Balance token", CurrencyType::Crypto);
+        let money_currency = Currency::new("ENG729D", 8, 0, "Money token", CurrencyType::Crypto);
+        let total = Money::from_mantissa_exponent(123_456_789, -8, money_currency);
+        let balance = AccountBalance {
+            currency: balance_currency,
+            total,
+            locked: Money::zero(money_currency),
+            free: total,
+        };
+        let state = AccountState::new(
+            AccountId::new("WALLET-SERDE-IDENTITY"),
+            AccountType::Wallet,
+            vec![balance],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+        );
+
+        let error = serde_json::to_string(&state).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Wallet account balance currency identity ENG729D does not match"),
+            "was: {error}"
+        );
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_wallet_account_state_fresh_process_round_trip() {
+        const PAYLOAD_ENV: &str = "NAUTILUS_WALLET_ACCOUNT_STATE_PAYLOAD";
+        const SUCCESS_SENTINEL: &str = "wallet account state fresh-process assertions passed";
+        const TEST_NAME: &str =
+            "events::account::state::tests::test_wallet_account_state_fresh_process_round_trip";
+
+        if let Ok(payload) = std::env::var(PAYLOAD_ENV) {
+            assert!(Currency::try_from_str("ENG729A").is_none());
+            assert!(Currency::try_from_str("ENG729B").is_none());
+
+            let restored: AccountState =
+                serde_json::from_str(&payload).expect("deserialize wallet account state");
+            let expected = wallet_serde_balances();
+
+            assert_eq!(restored.balances.len(), expected.len());
+            for (restored, expected) in restored.balances.iter().zip(&expected) {
+                assert_eq!(restored.total.raw, expected.total.raw);
+                assert_eq!(restored.locked.raw, expected.locked.raw);
+                assert_eq!(restored.free.raw, expected.free.raw);
+                assert_currency_identity(restored.currency, expected.currency);
+                assert_currency_identity(restored.total.currency, expected.total.currency);
+                assert_currency_identity(restored.locked.currency, expected.locked.currency);
+                assert_currency_identity(restored.free.currency, expected.free.currency);
+            }
+            assert!(Currency::try_from_str("ENG729A").is_none());
+            assert!(Currency::try_from_str("ENG729B").is_none());
+            println!("{SUCCESS_SENTINEL}");
+            return;
+        }
+
+        let producer_currency = Currency::new(
+            "ENG729A",
+            6,
+            0,
+            "Producer registered token",
+            CurrencyType::Crypto,
+        );
+        Currency::register(producer_currency, false).expect("register producer-only currency");
+        let state = AccountState::new(
+            AccountId::new("WALLET-SERDE-001"),
+            AccountType::Wallet,
+            wallet_serde_balances(),
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+        );
+        let payload = serde_json::to_string(&state).expect("serialize wallet account state");
+
+        let output = Command::new(std::env::current_exe().expect("current test executable"))
+            .args(["--exact", TEST_NAME, "--nocapture"])
+            .env(PAYLOAD_ENV, payload)
+            .output()
+            .expect("run fresh-process wallet round-trip");
+
+        assert!(
+            output.status.success(),
+            "fresh-process wallet round-trip failed\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains(SUCCESS_SENTINEL),
+            "fresh-process wallet round-trip did not run child assertions\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(feature = "defi")]
+    fn wallet_serde_balances() -> Vec<AccountBalance> {
+        let eth = Currency::new("ETH", 18, 0, "Ethereum", CurrencyType::Crypto);
+        let registered = Currency::new(
+            "ENG729A",
+            6,
+            0,
+            "Producer registered token",
+            CurrencyType::Crypto,
+        );
+        let unregistered =
+            Currency::new("ENG729B", 8, 0, "Unregistered token", CurrencyType::Crypto);
+        let eth_total = Money::from_raw(1_234_567_890_123_456_789, eth);
+        let registered_total = Money::from_mantissa_exponent(123_456_789, -6, registered);
+        let unregistered_total = Money::from_mantissa_exponent(98_765_432, -8, unregistered);
+
+        [eth_total, registered_total, unregistered_total]
+            .into_iter()
+            .map(|total| AccountBalance::new(total, Money::zero(total.currency), total))
+            .collect()
+    }
+
+    fn assert_currency_identity(actual: Currency, expected: Currency) {
+        assert_eq!(actual.code, expected.code);
+        assert_eq!(actual.precision, expected.precision);
+        assert_eq!(actual.iso4217, expected.iso4217);
+        assert_eq!(actual.name, expected.name);
+        assert_eq!(actual.currency_type, expected.currency_type);
+    }
+
+    #[rstest]
+    fn test_info_excluded_from_equality() {
+        // Equality keys on account_id, account_type, and event_id only, so a
+        // differing info bag must not affect equality.
+        let base = account_state_with_info();
+        let mut other_info = IndexMap::new();
+        other_info.insert("different".to_string(), json!(1_u64));
+        let other = AccountState {
+            info: Some(Params::from_index_map(other_info)),
+            ..base.clone()
+        };
+        assert_eq!(base, other);
     }
 }

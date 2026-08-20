@@ -50,7 +50,7 @@ use crate::{
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -124,7 +124,7 @@ impl OrderBook {
             OrderSideSpecified::Sell => self.asks.add(order, flags),
         }
 
-        self.increment(sequence, ts_event);
+        self.increment(sequence, ts_event, flags);
     }
 
     /// Updates an existing order in the book after preprocessing based on book type.
@@ -135,7 +135,7 @@ impl OrderBook {
             OrderSideSpecified::Sell => self.asks.update(order, flags),
         }
 
-        self.increment(sequence, ts_event);
+        self.increment(sequence, ts_event, flags);
     }
 
     /// Deletes an order from the book after preprocessing based on book type.
@@ -146,26 +146,30 @@ impl OrderBook {
             OrderSideSpecified::Sell => self.asks.delete(order, sequence, ts_event),
         }
 
-        self.increment(sequence, ts_event);
+        self.increment(sequence, ts_event, flags);
     }
 
     /// Clears all orders from both sides of the book.
     pub fn clear(&mut self, sequence: u64, ts_event: UnixNanos) {
-        self.bids.clear();
-        self.asks.clear();
-        self.increment(sequence, ts_event);
+        self.clear_with_flags(sequence, ts_event, 0);
     }
 
     /// Clears all bid orders from the book.
     pub fn clear_bids(&mut self, sequence: u64, ts_event: UnixNanos) {
         self.bids.clear();
-        self.increment(sequence, ts_event);
+        self.increment(sequence, ts_event, 0);
     }
 
     /// Clears all ask orders from the book.
     pub fn clear_asks(&mut self, sequence: u64, ts_event: UnixNanos) {
         self.asks.clear();
-        self.increment(sequence, ts_event);
+        self.increment(sequence, ts_event, 0);
+    }
+
+    fn clear_with_flags(&mut self, sequence: u64, ts_event: UnixNanos, flags: u8) {
+        self.bids.clear();
+        self.asks.clear();
+        self.increment(sequence, ts_event, flags);
     }
 
     /// Removes overlapped bid/ask levels when the book is strictly crossed (best bid > best ask)
@@ -250,7 +254,7 @@ impl OrderBook {
             }
         }
 
-        self.increment(self.sequence, self.ts_last);
+        self.increment(self.sequence, self.ts_last, 0);
 
         if removed_levels.is_empty() {
             None
@@ -316,6 +320,12 @@ impl OrderBook {
         &mut self,
         delta: &OrderBookDelta,
     ) -> Result<(), BookIntegrityError> {
+        // No batch wraps a standalone delta, so it reports its own stale metadata
+        self.report_out_of_order_snapshot(delta.flags, delta.sequence, delta.ts_event, 1);
+        self.apply_delta_inner(delta)
+    }
+
+    fn apply_delta_inner(&mut self, delta: &OrderBookDelta) -> Result<(), BookIntegrityError> {
         let mut order = delta.order;
 
         if order.side == OrderSide::NoOrderSide && order.order_id != 0 {
@@ -366,7 +376,7 @@ impl OrderBook {
             BookAction::Add => self.add(order, flags, sequence, ts_event),
             BookAction::Update => self.update(order, flags, sequence, ts_event),
             BookAction::Delete => self.delete(order, flags, sequence, ts_event),
-            BookAction::Clear => self.clear(sequence, ts_event),
+            BookAction::Clear => self.clear_with_flags(sequence, ts_event, flags),
         }
 
         Ok(())
@@ -396,14 +406,62 @@ impl OrderBook {
     /// # Errors
     ///
     /// Returns an error if any individual delta application fails.
+    ///
+    /// # Notes
+    ///
+    /// A snapshot batch carrying metadata earlier than the last applied update is reported once
+    /// here rather than per delta, since every delta in the batch shares the snapshot sequence and
+    /// timestamp.
     pub fn apply_deltas_unchecked(
         &mut self,
         deltas: &OrderBookDeltas,
     ) -> Result<(), BookIntegrityError> {
+        self.report_out_of_order_snapshot(
+            deltas.flags,
+            deltas.sequence,
+            deltas.ts_event,
+            deltas.deltas.len(),
+        );
+
         for delta in &deltas.deltas {
-            self.apply_delta_unchecked(delta)?;
+            self.apply_delta_inner(delta)?;
         }
+
         Ok(())
+    }
+
+    // Reports the incoming snapshot, so the result does not depend on whether every delta in it
+    // reaches the book
+    fn report_out_of_order_snapshot(
+        &self,
+        flags: u8,
+        sequence: u64,
+        ts_event: UnixNanos,
+        count: usize,
+    ) {
+        if !RecordFlag::F_SNAPSHOT.matches(flags) {
+            return;
+        }
+
+        if sequence > 0 && sequence < self.sequence {
+            log::warn!(
+                "Out-of-order snapshot: sequence {} < {} (deltas={}, instrument_id={})",
+                sequence,
+                self.sequence,
+                count,
+                self.instrument_id
+            );
+        }
+
+        if ts_event < self.ts_last {
+            log::warn!(
+                "Out-of-order snapshot: ts_event {} < {} (deltas={}, instrument_id={})",
+                ts_event,
+                self.ts_last,
+                count,
+                self.instrument_id
+            );
+        }
     }
 
     /// Creates an `OrderBookDeltas` snapshot from the current order book state.
@@ -423,8 +481,8 @@ impl OrderBook {
     pub fn to_deltas(&self, ts_event: UnixNanos, ts_init: UnixNanos) -> OrderBookDeltas {
         let mut deltas = Vec::new();
 
-        let total_orders = self.bids(None).map(|level| level.len()).sum::<usize>()
-            + self.asks(None).map(|level| level.len()).sum::<usize>();
+        let total_orders = self.bids(None).map(BookLevel::len).sum::<usize>()
+            + self.asks(None).map(BookLevel::len).sum::<usize>();
 
         // Set F_LAST on clear when book is empty so buffered consumers flush
         let mut clear = OrderBookDelta::clear(self.instrument_id, self.sequence, ts_event, ts_init);
@@ -562,7 +620,9 @@ impl OrderBook {
             self.asks.add(order, depth.flags);
         }
 
-        self.increment(depth.sequence, depth.ts_event);
+        // Depth increments once per snapshot, so there is no per-level flood to suppress and
+        // the existing single warning is already the one-per-rebuild signal
+        self.increment(depth.sequence, depth.ts_event, 0);
 
         Ok(())
     }
@@ -1063,8 +1123,11 @@ impl OrderBook {
         pprint_book(self, num_levels, group_size)
     }
 
-    fn increment(&mut self, sequence: u64, ts_event: UnixNanos) {
-        if sequence > 0 && sequence < self.sequence {
+    fn increment(&mut self, sequence: u64, ts_event: UnixNanos, flags: u8) {
+        // A snapshot rebuild legitimately carries metadata behind the last applied update
+        let is_snapshot = RecordFlag::F_SNAPSHOT.matches(flags);
+
+        if !is_snapshot && sequence > 0 && sequence < self.sequence {
             log::warn!(
                 "Out-of-order update: sequence {} < {} (instrument_id={})",
                 sequence,
@@ -1073,7 +1136,7 @@ impl OrderBook {
             );
         }
 
-        if ts_event < self.ts_last {
+        if !is_snapshot && ts_event < self.ts_last {
             log::warn!(
                 "Out-of-order update: ts_event {} < {} (instrument_id={})",
                 ts_event,
@@ -1148,7 +1211,7 @@ impl OrderBook {
         self.update_book_bid(bid, quote.ts_event);
         self.update_book_ask(ask, quote.ts_event);
 
-        self.increment(self.sequence.saturating_add(1), quote.ts_event);
+        self.increment(self.sequence.saturating_add(1), quote.ts_event, 0);
 
         Ok(())
     }
@@ -1204,7 +1267,7 @@ impl OrderBook {
         self.update_book_bid(bid, trade.ts_event);
         self.update_book_ask(ask, trade.ts_event);
 
-        self.increment(self.sequence.saturating_add(1), trade.ts_event);
+        self.increment(self.sequence.saturating_add(1), trade.ts_event, 0);
 
         Ok(())
     }

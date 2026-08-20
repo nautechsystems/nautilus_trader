@@ -178,12 +178,20 @@ NautilusTrader RSI returns values in `[0.0, 1.0]`, not `[0, 100]`. The
 
 ## Backtest setup
 
+From the repository root:
+
 ```python
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.examples.strategies.bb_mean_reversion import BBMeanReversion
-from nautilus_trader.examples.strategies.bb_mean_reversion import BBMeanReversionConfig
+import sys
+from pathlib import Path
+
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.config import LoggerConfig
+
+sys.path.insert(0, str(Path("examples/live/architect_ax")))
+from strategies import BBMeanReversion
+from strategies import BBMeanReversionConfig
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
@@ -194,7 +202,7 @@ from nautilus_trader.model.objects import Money
 engine = BacktestEngine(
     BacktestEngineConfig(
         trader_id=TraderId("BACKTESTER-001"),
-        logging=LoggingConfig(log_level="INFO"),
+        logging=LoggerConfig(stdout_level=LogLevel.INFO),
     ),
 )
 
@@ -226,12 +234,12 @@ engine.add_strategy(strategy)
 engine.run()
 ```
 
-Reports come straight off `engine.trader`:
+Reports come off the engine:
 
 ```python
-print(engine.trader.generate_account_report(AX))
-print(engine.trader.generate_order_fills_report())
-print(engine.trader.generate_positions_report())
+print(engine.generate_account_report(AX))
+print(engine.generate_order_fills_report())
+print(engine.generate_positions_report())
 
 engine.reset()
 engine.dispose()
@@ -284,7 +292,7 @@ tearsheet theme.
 
 ```bash
 uv sync --extra visualization
-TRUEFX_CSV=tests/test_data/local/truefx/EURUSD-2025-12.csv \
+TRUEFX_CSV=test_data/local/truefx/EURUSD-2025-12.csv \
     python3 docs/tutorials/assets/fx_mean_reversion_ax/render_panels.py
 ```
 
@@ -307,7 +315,7 @@ Set `TRUEFX_CSV` to wherever you saved the EUR/USD archive.
 ## Running live
 
 The same `BBMeanReversion` strategy runs live against AX Exchange. The
-launch script swaps the `BacktestEngine` for a `TradingNode` with the AX
+launch script swaps the `BacktestEngine` for a `LiveNode` with the AX
 data and execution clients configured. See the live example:
 [`ax_mean_reversion.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_mean_reversion.py).
 
@@ -316,6 +324,6 @@ For connection setup and API key configuration, see the
 
 ## Further reading
 
-- [`BBMeanReversion` strategy source](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/examples/strategies/bb_mean_reversion.py)
+- [`BBMeanReversion` strategy source](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/architect_ax/strategies.py)
 - [Gold perpetual book imbalance tutorial](gold_book_imbalance_ax.md)
 - [Architect Exchange documentation](https://docs.architect.exchange/)

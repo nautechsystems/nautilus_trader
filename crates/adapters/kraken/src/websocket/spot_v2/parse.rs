@@ -16,7 +16,7 @@
 //! WebSocket message parsers for converting Kraken streaming data to Nautilus domain models.
 
 use anyhow::Context;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::{UUID4, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarSpecification, BarType, BookOrder, OrderBookDelta, QuoteTick, TradeTick},
@@ -106,8 +106,8 @@ pub fn parse_trade_tick(
         .with_context(|| format!("Failed to construct Quantity with precision {size_precision}"))?;
 
     let aggressor = match trade.side {
-        KrakenOrderSide::Buy => AggressorSide::Buyer,
-        KrakenOrderSide::Sell => AggressorSide::Seller,
+        KrakenOrderSide::Buy => AggressorSide::Buy,
+        KrakenOrderSide::Sell => AggressorSide::Sell,
     };
 
     let trade_id = TradeId::new_checked(trade.trade_id.to_string())?;
@@ -278,11 +278,10 @@ fn parse_book_level(
     )))
 }
 
-pub(super) fn datetime_to_nanos(value: DateTime<Utc>, field: &str) -> anyhow::Result<UnixNanos> {
-    let nanos = value
-        .timestamp_nanos_opt()
-        .with_context(|| format!("Failed to convert {field}='{value}' to nanoseconds"))?;
-    Ok(UnixNanos::from(nanos as u64))
+pub(super) fn datetime_to_nanos(value: Timestamp, field: &str) -> anyhow::Result<UnixNanos> {
+    let nanos = u64::try_from(value.as_nanosecond())
+        .with_context(|| format!("Timestamp predates Unix epoch: {field}='{value}'"))?;
+    Ok(UnixNanos::from(nanos))
 }
 
 /// Parses Kraken WebSocket OHLC data into a Nautilus bar.
@@ -314,8 +313,8 @@ pub fn parse_ws_bar(
 
     // Compute bar close time: interval_begin + interval minutes
     let interval_secs = i64::from(ohlc.interval) * 60;
-    let close_time = ohlc.interval_begin + chrono::Duration::seconds(interval_secs);
-    let ts_event = UnixNanos::from(close_time.timestamp_nanos_opt().unwrap_or(0) as u64);
+    let close_time = ohlc.interval_begin + jiff::SignedDuration::from_secs(interval_secs);
+    let ts_event = UnixNanos::from(u64::try_from(close_time.as_nanosecond()).unwrap_or(0));
 
     Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
 }
@@ -744,7 +743,7 @@ mod tests {
         assert_eq!(trade_tick.size, Quantity::from("0.00027625"));
         assert!(matches!(
             trade_tick.aggressor_side,
-            AggressorSide::Buyer | AggressorSide::Seller
+            AggressorSide::Buy | AggressorSide::Sell
         ));
         assert_eq!(
             trade_tick.ts_event,
@@ -931,16 +930,14 @@ mod tests {
 
     #[rstest]
     fn test_datetime_to_nanos() {
-        let dt = "2023-10-06T17:35:55.440295Z"
-            .parse::<DateTime<Utc>>()
-            .unwrap();
+        let dt = "2023-10-06T17:35:55.440295Z".parse::<Timestamp>().unwrap();
         let result = datetime_to_nanos(dt, "test").unwrap();
         assert_eq!(result, UnixNanos::from(1_696_613_755_440_295_000));
     }
 
     #[rstest]
     fn test_datetime_to_nanos_out_of_range_errors() {
-        let dt = "1500-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let dt = "1500-01-01T00:00:00Z".parse::<Timestamp>().unwrap();
         let result = datetime_to_nanos(dt, "test");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -970,9 +967,9 @@ mod tests {
 
         // Verify ts_event is computed as interval_begin + interval (close time)
         // interval_begin is 2023-10-04T16:25:00Z, interval is 1 minute, so close is 16:26:00Z
-        let expected_close = ohlc.interval_begin + chrono::Duration::minutes(1);
+        let expected_close = ohlc.interval_begin + jiff::SignedDuration::from_mins(1);
         let expected_ts_event =
-            UnixNanos::from(expected_close.timestamp_nanos_opt().unwrap() as u64);
+            UnixNanos::from(u64::try_from(expected_close.as_nanosecond()).unwrap());
         assert_eq!(bar.ts_event, expected_ts_event);
     }
 

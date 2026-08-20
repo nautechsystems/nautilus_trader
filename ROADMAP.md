@@ -18,12 +18,12 @@ and developers alike.
 
 ## Priorities
 
-1. **Port core to Rust**
+1. **Stabilize the Rust‑native core**
 
-   **Goal**: Leverage Rust's performance and safety features to improve reliability, performance, and scalability.
-   - Rewrite performance-critical components in Rust (replacing existing Cython modules).
-   - Ensure interoperability between Rust and Python layers using PyO3.
-   - Benchmark performance improvements throughout the transition.
+   **Goal**: Mature the v2 runtime and improve its reliability, performance, and scalability.
+   - Refine the Python bindings and Rust/Python interoperability through PyO3.
+   - Close remaining feature and API gaps that fit the current project scope.
+   - Benchmark and tune performance‑critical paths.
 
 2. **Improve documentation and tutorials**
 

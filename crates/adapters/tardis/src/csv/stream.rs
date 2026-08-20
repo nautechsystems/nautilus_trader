@@ -18,6 +18,8 @@ use std::{io::Read, path::Path};
 use ahash::AHashMap;
 use csv::{Reader, StringRecord};
 use nautilus_core::UnixNanos;
+#[cfg(feature = "python")]
+use nautilus_model::{data::OrderBookDeltas, python::data::data_to_pyobject};
 use nautilus_model::{
     data::{DEPTH10_LEN, Data, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     enums::{OrderSide, RecordFlag},
@@ -25,12 +27,7 @@ use nautilus_model::{
     types::Quantity,
 };
 #[cfg(feature = "python")]
-use nautilus_model::{
-    data::{OrderBookDeltas, OrderBookDeltas_API},
-    python::data::data_to_pycapsule,
-};
-#[cfg(feature = "python")]
-use pyo3::{Py, PyAny, Python};
+use pyo3::{Py, PyAny, PyResult, Python};
 
 use crate::{
     common::parse::{parse_instrument_id, parse_timestamp},
@@ -301,16 +298,11 @@ pub fn stream_deltas<P: AsRef<Path>>(
     )
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Vec<Py<PyAny>> (OrderBookDeltas as PyCapsule) Streaming
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(feature = "python")]
 /// Streaming iterator over CSV records that yields chunks of parsed data.
 struct BatchedDeltasStreamIterator {
     reader: Reader<Box<dyn std::io::Read>>,
     record: StringRecord,
-    buffer: Vec<Py<PyAny>>,
     current_batch: Vec<OrderBookDelta>,
     pending_batches: Vec<Vec<OrderBookDelta>>,
     chunk_size: usize,
@@ -369,7 +361,6 @@ impl BatchedDeltasStreamIterator {
         Ok(Self {
             reader,
             record: StringRecord::new(),
-            buffer: Vec::with_capacity(chunk_size),
             current_batch: Vec::new(),
             pending_batches: Vec::with_capacity(chunk_size),
             chunk_size,
@@ -523,8 +514,6 @@ impl Iterator for BatchedDeltasStreamIterator {
             return None;
         }
 
-        self.buffer.clear();
-
         if let Some(Err(e)) = self.fill_pending_batches() {
             return Some(Err(e));
         }
@@ -532,23 +521,26 @@ impl Iterator for BatchedDeltasStreamIterator {
         if self.pending_batches.is_empty() {
             None
         } else {
-            // Create all capsules in a single GIL acquisition
-            Python::attach(|py| {
-                for batch in self.pending_batches.drain(..) {
-                    let deltas = OrderBookDeltas::new(self.instrument_id, batch);
-                    let deltas = OrderBookDeltas_API::new(deltas);
-                    let capsule = data_to_pycapsule(py, Data::Deltas(deltas));
-                    self.buffer.push(capsule);
-                }
-            });
-            Some(Ok(std::mem::take(&mut self.buffer)))
+            let batches = std::mem::take(&mut self.pending_batches);
+            let result = Python::attach(|py| {
+                batches
+                    .into_iter()
+                    .map(|batch| {
+                        let deltas = OrderBookDeltas::new(self.instrument_id, batch);
+                        let deltas = Box::new(deltas);
+                        data_to_pyobject(py, Data::Deltas(deltas))
+                    })
+                    .collect::<PyResult<Vec<_>>>()
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to convert batched deltas to Python: {e}"));
+            Some(result)
         }
     }
 }
 
 #[cfg(feature = "python")]
-/// Streams [`Vec<Py<PyAny>>`]s (`PyCapsule`) from a Tardis format CSV at the given `filepath`,
-/// yielding chunks of the specified size.
+/// Streams batches of `OrderBookDeltas` Python objects from a Tardis format CSV at the given
+/// `filepath`, yielding chunks of the specified size.
 ///
 /// # Errors
 ///
@@ -1700,8 +1692,8 @@ impl Iterator for FundingRateStreamIterator {
 /// Streams [`FundingRateUpdate`]s from a Tardis derivative ticker CSV file,
 /// yielding chunks of the specified size.
 ///
-/// This function parses the `funding_rate`, `predicted_funding_rate`, and `funding_timestamp`
-/// fields from derivative ticker data to create funding rate updates.
+/// This function parses the `funding_rate` and `funding_timestamp` fields from derivative ticker
+/// data to create funding rate updates.
 ///
 /// # Errors
 ///
@@ -1819,6 +1811,43 @@ binance,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0.5";
         assert_eq!(total_deltas, 6);
 
         std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn test_stream_batched_deltas_returns_python_objects() {
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance,BTCUSDT,1640995200000000,1640995200100000,true,ask,50000.0,1.0
+binance,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.5,2.0";
+
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(temp_file.path(), csv_data).unwrap();
+        Python::initialize();
+
+        let mut stream =
+            stream_batched_deltas(temp_file.path(), 10, Some(1), Some(1), None, None).unwrap();
+        let objects = stream.next().unwrap().unwrap();
+
+        Python::attach(|py| {
+            let deltas: Vec<_> = objects
+                .iter()
+                .map(|obj| {
+                    obj.bind(py)
+                        .cast::<OrderBookDeltas>()
+                        .unwrap()
+                        .borrow()
+                        .clone()
+                })
+                .collect();
+
+            assert_eq!(deltas.len(), 2);
+            assert_eq!(deltas[0].deltas.len(), 2);
+            assert_eq!(deltas[0].deltas[0].action, BookAction::Clear);
+            assert_eq!(deltas[0].deltas[1].action, BookAction::Add);
+            assert_eq!(deltas[1].deltas.len(), 1);
+            assert_eq!(deltas[1].deltas[0].action, BookAction::Update);
+        });
+        assert!(stream.next().is_none());
     }
 
     #[cfg(feature = "python")]
@@ -2121,8 +2150,8 @@ binance,BTCUSDT,1640995204000000,1640995204100000,trade5,buy,50000.1234,0.5";
         assert_eq!(chunk2[0].price.precision, 4);
         assert_eq!(chunk2[1].price.precision, 4);
 
-        assert_eq!(chunk1[0].aggressor_side, AggressorSide::Buyer);
-        assert_eq!(chunk1[1].aggressor_side, AggressorSide::Seller);
+        assert_eq!(chunk1[0].aggressor_side, AggressorSide::Buy);
+        assert_eq!(chunk1[1].aggressor_side, AggressorSide::Sell);
 
         let total_trades: usize = chunks.iter().map(|c| c.as_ref().unwrap().len()).sum();
         assert_eq!(total_trades, 5);

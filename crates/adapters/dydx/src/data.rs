@@ -53,7 +53,7 @@ use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data as NautilusData, FundingRateUpdate,
         IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDeltas_API, QuoteTick,
+        QuoteTick,
     },
     enums::{BookAction, BookType, MarketStatusAction, OrderSide, RecordFlag},
     identifiers::{ClientId, InstrumentId, Symbol, Venue},
@@ -1336,7 +1336,7 @@ impl DydxDataClient {
 
                 if ctx.active_mark_price_subs.contains(&instrument_id) {
                     let mark_price = MarkPriceUpdate::new(instrument_id, price, ts_init, ts_init);
-                    let data = NautilusData::MarkPriceUpdate(mark_price);
+                    let data = NautilusData::MarkPrice(mark_price);
                     if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
                         log::error!("Failed to emit mark price for {instrument_id}: {e}");
                     }
@@ -1344,7 +1344,7 @@ impl DydxDataClient {
 
                 if ctx.active_index_price_subs.contains(&instrument_id) {
                     let index_price = IndexPriceUpdate::new(instrument_id, price, ts_init, ts_init);
-                    let data = NautilusData::IndexPriceUpdate(index_price);
+                    let data = NautilusData::IndexPrice(index_price);
                     if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
                         log::error!("Failed to emit index price for {instrument_id}: {e}");
                     }
@@ -1446,7 +1446,7 @@ impl DydxDataClient {
             {
                 if ctx.active_mark_price_subs.contains(&instrument_id) {
                     let mark_price = MarkPriceUpdate::new(instrument_id, price, ts_init, ts_init);
-                    let data = NautilusData::MarkPriceUpdate(mark_price);
+                    let data = NautilusData::MarkPrice(mark_price);
 
                     if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
                         log::error!("Failed to emit mark price for {instrument_id}: {e}");
@@ -1455,7 +1455,7 @@ impl DydxDataClient {
 
                 if ctx.active_index_price_subs.contains(&instrument_id) {
                     let index_price = IndexPriceUpdate::new(instrument_id, price, ts_init, ts_init);
-                    let data = NautilusData::IndexPriceUpdate(index_price);
+                    let data = NautilusData::IndexPrice(index_price);
 
                     if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
                         log::error!("Failed to emit index price for {instrument_id}: {e}");
@@ -1742,9 +1742,7 @@ impl DydxDataClient {
                 log::error!("Cannot resolve crossed order book: no instrument for {instrument_id}");
                 // Still emit the raw deltas if delta subscription is active
                 if active_delta_subs.contains(&instrument_id)
-                    && let Err(e) = data_sender.send(DataEvent::Data(NautilusData::from(
-                        OrderBookDeltas_API::new(deltas),
-                    )))
+                    && let Err(e) = data_sender.send(DataEvent::Data(NautilusData::from(deltas)))
                 {
                     log::error!("Failed to emit order book deltas: {e}");
                 }
@@ -1822,7 +1820,7 @@ impl DydxDataClient {
 
         // Conditionally emit OrderBookDeltas if instrument has delta subscription
         if active_delta_subs.contains(&instrument_id) {
-            let data: NautilusData = OrderBookDeltas_API::new(resolved_deltas).into();
+            let data: NautilusData = resolved_deltas.into();
             if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                 log::error!("Failed to emit order book deltas event: {e}");
             }

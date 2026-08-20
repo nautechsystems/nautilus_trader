@@ -246,8 +246,8 @@ impl HyperliquidHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<chrono::DateTime<chrono::Utc>>,
-        end: Option<chrono::DateTime<chrono::Utc>>,
+        start: Option<jiff::Timestamp>,
+        end: Option<jiff::Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let _ = (instrument_id, start, end, limit);
@@ -263,8 +263,8 @@ impl HyperliquidHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<chrono::DateTime<chrono::Utc>>,
-        end: Option<chrono::DateTime<chrono::Utc>>,
+        start: Option<jiff::Timestamp>,
+        end: Option<jiff::Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let _ = (instrument_id, start, end, limit);
@@ -289,8 +289,8 @@ impl HyperliquidHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<chrono::DateTime<chrono::Utc>>,
-        end: Option<chrono::DateTime<chrono::Utc>>,
+        start: Option<jiff::Timestamp>,
+        end: Option<jiff::Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -333,8 +333,8 @@ impl HyperliquidHttpClient {
         &self,
         py: Python<'py>,
         bar_type: BarType,
-        start: Option<chrono::DateTime<chrono::Utc>>,
-        end: Option<chrono::DateTime<chrono::Utc>>,
+        start: Option<jiff::Timestamp>,
+        end: Option<jiff::Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -536,7 +536,8 @@ impl HyperliquidHttpClient {
 
     /// Request order status reports for a user.
     ///
-    /// Fetches open orders via `info_frontend_open_orders` and parses them into OrderStatusReports.
+    /// Fetches frontend open orders from the default and all cached builder dexes when unfiltered,
+    /// or from the dex selected by an instrument filter, then parses them into OrderStatusReports.
     /// This method requires instruments to be added to the client cache via `cache_instrument()`.
     ///
     /// For vault tokens (starting with "vntls:") that are not in the cache, synthetic instruments
@@ -674,10 +675,10 @@ impl HyperliquidHttpClient {
 
     /// Request position status reports for a user.
     ///
-    /// Fetches perp clearinghouse state and spot clearinghouse state, then returns
-    /// the union of perp asset positions (short/long with PnL) and spot holdings
-    /// (long only). This method requires instruments to be added to the client
-    /// cache via `cache_instrument()`.
+    /// Fetches clearinghouse state from the default and all cached builder dexes when unfiltered,
+    /// plus spot clearinghouse state, then returns the union of perp asset positions (short/long
+    /// with PnL) and spot holdings (long only). This method requires instruments to be added to the
+    /// client cache via `cache_instrument()`.
     ///
     /// When `instrument_id` resolves to a specific product type, the opposite
     /// product's endpoint is skipped to avoid wasted round trips and make
@@ -691,8 +692,8 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if either clearinghouse request fails (when that
-    /// product is in scope) or parsing fails.
+    /// Returns an error if any clearinghouse request fails (when that product or dex is in scope)
+    /// or parsing fails.
     ///
     /// Returns an error if `account_id` has not been set on the client.
     #[pyo3(name = "request_position_status_reports")]

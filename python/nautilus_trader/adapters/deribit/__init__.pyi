@@ -11,6 +11,7 @@ __all__ = [
     "DERIBIT",
     "DERIBIT_CLIENT_ID",
     "DERIBIT_VENUE",
+    "DeribitBookSummary",
     "DeribitCurrency",
     "DeribitDataClientConfig",
     "DeribitDataClientFactory",
@@ -25,6 +26,107 @@ __all__ = [
 DERIBIT: str
 DERIBIT_CLIENT_ID: model.ClientId
 DERIBIT_VENUE: model.Venue
+
+@typing.final
+class DeribitBookSummary:
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def instrument_name(self) -> str: ...
+    @property
+    def underlying_price(self) -> typing.Any: ...
+    @property
+    def underlying_index(self) -> typing.Any: ...
+    @property
+    def mark_price(self) -> typing.Any: ...
+    @property
+    def mid_price(self) -> typing.Any: ...
+    @property
+    def bid_price(self) -> typing.Any: ...
+    @property
+    def ask_price(self) -> typing.Any: ...
+    @property
+    def last_price(self) -> typing.Any: ...
+    @property
+    def mark_iv(self) -> typing.Any: ...
+    @property
+    def bid_iv(self) -> typing.Any: ...
+    @property
+    def ask_iv(self) -> typing.Any: ...
+    @property
+    def interest_rate(self) -> typing.Any: ...
+    @property
+    def open_interest(self) -> typing.Any: ...
+    @property
+    def open_interest_value(self) -> typing.Any: ...
+    @property
+    def volume(self) -> typing.Any: ...
+    @property
+    def volume_usd(self) -> typing.Any: ...
+    @property
+    def volume_notional(self) -> typing.Any: ...
+    @property
+    def volume_btc(self) -> typing.Any: ...
+    @property
+    def high(self) -> typing.Any: ...
+    @property
+    def low(self) -> typing.Any: ...
+    @property
+    def price_change(self) -> typing.Any: ...
+    @property
+    def estimated_delivery_price(self) -> typing.Any: ...
+    @property
+    def delivery_price(self) -> typing.Any: ...
+    @property
+    def base_currency(self) -> typing.Any: ...
+    @property
+    def quote_currency(self) -> typing.Any: ...
+    @property
+    def creation_timestamp(self) -> int: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    def __new__(
+        cls,
+        instrument_id: model.InstrumentId,
+        instrument_name: str,
+        underlying_price: typing.Any,
+        underlying_index: typing.Any,
+        mark_price: typing.Any,
+        mid_price: typing.Any,
+        bid_price: typing.Any,
+        ask_price: typing.Any,
+        last_price: typing.Any,
+        mark_iv: typing.Any,
+        bid_iv: typing.Any,
+        ask_iv: typing.Any,
+        interest_rate: typing.Any,
+        open_interest: typing.Any,
+        open_interest_value: typing.Any,
+        volume: typing.Any,
+        volume_usd: typing.Any,
+        volume_notional: typing.Any,
+        volume_btc: typing.Any,
+        high: typing.Any,
+        low: typing.Any,
+        price_change: typing.Any,
+        estimated_delivery_price: typing.Any,
+        delivery_price: typing.Any,
+        base_currency: typing.Any,
+        quote_currency: typing.Any,
+        creation_timestamp: int,
+        ts_event: int,
+        ts_init: int,
+    ) -> DeribitBookSummary: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
+    @classmethod
+    def decode_record_batch_py(
+        cls, metadata: typing.Mapping[str, str], py_batch: typing.Any
+    ) -> typing.Any: ...
+    def encode_record_batch_py(self, items: list) -> typing.Any: ...
 
 @typing.final
 class DeribitDataClientConfig:
@@ -193,6 +295,7 @@ class DeribitHttpClient:
     def request_position_status_reports(
         self, account_id: model.AccountId, instrument_id: model.InstrumentId | None = None
     ) -> typing.Any: ...
+    def request_book_summaries(self, currency: str, kind: str | None = None) -> typing.Any: ...
     def request_forward_prices(
         self, currency: str, instrument_id: model.InstrumentId | None = None
     ) -> typing.Any: ...

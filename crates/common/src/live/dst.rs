@@ -316,7 +316,7 @@ mod tests {
     #[madsim::test]
     async fn test_dst_wall_clock_advances_with_virtual_time() {
         let before = nanos_since_unix_epoch();
-        time::sleep(time::Duration::from_secs(60)).await;
+        time::sleep(time::Duration::from_mins(1)).await;
         let after = nanos_since_unix_epoch();
 
         let elapsed_ns = after.saturating_sub(before);

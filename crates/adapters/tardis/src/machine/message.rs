@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Deserializer, Serialize, de::Error};
 use ustr::Ustr;
 
@@ -46,9 +46,9 @@ pub struct BookChangeMsg {
     #[serde(deserialize_with = "deserialize_book_levels")]
     pub asks: Vec<BookLevel>,
     /// The order book update timestamp provided by the exchange (ISO 8601 format).
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// The local timestamp when the message was received.
-    pub local_timestamp: DateTime<Utc>,
+    pub local_timestamp: Timestamp,
 }
 
 /// Represents a Tardis WebSocket message for book snapshots.
@@ -73,9 +73,9 @@ pub struct BookSnapshotMsg {
     #[serde(deserialize_with = "deserialize_book_levels")]
     pub asks: Vec<BookLevel>,
     /// The snapshot timestamp based on the last book change message processed timestamp.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// The local timestamp when the message was received.
-    pub local_timestamp: DateTime<Utc>,
+    pub local_timestamp: Timestamp,
 }
 
 /// Represents a Tardis WebSocket message for trades.
@@ -97,9 +97,9 @@ pub struct TradeMsg {
     /// The liquidity taker side (aggressor) for the trade.
     pub side: String,
     /// The trade timestamp provided by the exchange.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// The local timestamp when the message was received.
-    pub local_timestamp: DateTime<Utc>,
+    pub local_timestamp: Timestamp,
 }
 
 /// Derivative instrument ticker info sourced from real-time ticker & instrument channels.
@@ -117,14 +117,16 @@ pub struct DerivativeTickerMsg {
     pub open_interest: Option<f64>,
     /// The last funding rate if provided by exchange.
     pub funding_rate: Option<f64>,
+    /// The timestamp of the next funding if provided by exchange.
+    pub funding_timestamp: Option<Timestamp>,
     /// The last index price if provided by exchange.
     pub index_price: Option<f64>,
     /// The last mark price if provided by exchange.
     pub mark_price: Option<f64>,
     /// The message timestamp provided by exchange.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// The local timestamp when the message was received.
-    pub local_timestamp: DateTime<Utc>,
+    pub local_timestamp: Timestamp,
 }
 
 /// Option summary info sourced from the options instrument channel, carrying exchange-provided
@@ -142,7 +144,7 @@ pub struct OptionSummaryMsg {
     /// The option strike price.
     pub strike_price: f64,
     /// The option expiration date provided by the exchange.
-    pub expiration_date: DateTime<Utc>,
+    pub expiration_date: Timestamp,
     /// The best bid price if provided by the exchange.
     pub best_bid_price: Option<f64>,
     /// The best bid amount if provided by the exchange.
@@ -181,9 +183,9 @@ pub struct OptionSummaryMsg {
     /// The underlying index name.
     pub underlying_index: String,
     /// The message timestamp provided by the exchange.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// The local timestamp when the message was received.
-    pub local_timestamp: DateTime<Utc>,
+    pub local_timestamp: Timestamp,
 }
 
 /// Trades data in aggregated form, known as OHLC, candlesticks, klines etc. Not only most common
@@ -220,13 +222,13 @@ pub struct BarMsg {
     /// The volume weighted average price.
     pub vwap: f64,
     /// The timestamp of first trade for given bar.
-    pub open_timestamp: DateTime<Utc>,
+    pub open_timestamp: Timestamp,
     /// The timestamp of last trade for given bar.
-    pub close_timestamp: DateTime<Utc>,
+    pub close_timestamp: Timestamp,
     /// The end of interval period timestamp.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// The message arrival timestamp that triggered given bar computation.
-    pub local_timestamp: DateTime<Utc>,
+    pub local_timestamp: Timestamp,
 }
 
 /// Message that marks events when real-time WebSocket connection that was used to collect the
@@ -237,7 +239,7 @@ pub struct DisconnectMsg {
     /// The exchange ID.
     pub exchange: TardisExchange,
     /// The message arrival timestamp that triggered given bar computation (ISO 8601 format).
-    pub local_timestamp: DateTime<Utc>,
+    pub local_timestamp: Timestamp,
 }
 
 /// A Tardis Machine Server message type.
@@ -296,11 +298,11 @@ mod tests {
         assert_eq!(message.asks[0].amount, 283_318.0);
         assert_eq!(
             message.timestamp,
-            DateTime::parse_from_rfc3339("2019-10-23T11:29:53.469Z").unwrap()
+            "2019-10-23T11:29:53.469Z".parse::<Timestamp>().unwrap()
         );
         assert_eq!(
             message.local_timestamp,
-            DateTime::parse_from_rfc3339("2019-10-23T11:29:53.469Z").unwrap()
+            "2019-10-23T11:29:53.469Z".parse::<Timestamp>().unwrap()
         );
     }
 
@@ -368,11 +370,11 @@ mod tests {
         assert_eq!(message.asks[0].amount, 1_467_849.0);
         assert_eq!(
             message.timestamp,
-            DateTime::parse_from_rfc3339("2019-10-25T13:39:46.950Z").unwrap(),
+            "2019-10-25T13:39:46.950Z".parse::<Timestamp>().unwrap(),
         );
         assert_eq!(
             message.local_timestamp,
-            DateTime::parse_from_rfc3339("2019-10-25T13:39:46.961Z").unwrap()
+            "2019-10-25T13:39:46.961Z".parse::<Timestamp>().unwrap()
         );
     }
 
@@ -437,11 +439,11 @@ mod tests {
         assert_eq!(message.side, "sell");
         assert_eq!(
             message.timestamp,
-            DateTime::parse_from_rfc3339("2019-10-23T10:32:49.669Z").unwrap()
+            "2019-10-23T10:32:49.669Z".parse::<Timestamp>().unwrap()
         );
         assert_eq!(
             message.local_timestamp,
-            DateTime::parse_from_rfc3339("2019-10-23T10:32:49.740Z").unwrap()
+            "2019-10-23T10:32:49.740Z".parse::<Timestamp>().unwrap()
         );
     }
 
@@ -459,11 +461,11 @@ mod tests {
         assert_eq!(message.mark_price, Some(7_987.56));
         assert_eq!(
             message.timestamp,
-            DateTime::parse_from_rfc3339("2019-10-23T11:34:29.302Z").unwrap()
+            "2019-10-23T11:34:29.302Z".parse::<Timestamp>().unwrap()
         );
         assert_eq!(
             message.local_timestamp,
-            DateTime::parse_from_rfc3339("2019-10-23T11:34:29.416Z").unwrap()
+            "2019-10-23T11:34:29.416Z".parse::<Timestamp>().unwrap()
         );
     }
 
@@ -489,11 +491,11 @@ mod tests {
         assert_eq!(message.open_interest, Some(150.0));
         assert_eq!(
             message.timestamp,
-            DateTime::parse_from_rfc3339("2024-01-15T10:30:00.123Z").unwrap()
+            "2024-01-15T10:30:00.123Z".parse::<Timestamp>().unwrap()
         );
         assert_eq!(
             message.local_timestamp,
-            DateTime::parse_from_rfc3339("2024-01-15T10:30:00.234Z").unwrap()
+            "2024-01-15T10:30:00.234Z".parse::<Timestamp>().unwrap()
         );
     }
 
@@ -517,19 +519,19 @@ mod tests {
         assert_eq!(message.vwap, 7_623.327320840309);
         assert_eq!(
             message.open_timestamp,
-            DateTime::parse_from_rfc3339("2019-10-25T13:11:31.574Z").unwrap()
+            "2019-10-25T13:11:31.574Z".parse::<Timestamp>().unwrap()
         );
         assert_eq!(
             message.close_timestamp,
-            DateTime::parse_from_rfc3339("2019-10-25T13:11:39.212Z").unwrap()
+            "2019-10-25T13:11:39.212Z".parse::<Timestamp>().unwrap()
         );
         assert_eq!(
             message.local_timestamp,
-            DateTime::parse_from_rfc3339("2019-10-25T13:11:40.369Z").unwrap()
+            "2019-10-25T13:11:40.369Z".parse::<Timestamp>().unwrap()
         );
         assert_eq!(
             message.timestamp,
-            DateTime::parse_from_rfc3339("2019-10-25T13:11:40.000Z").unwrap()
+            "2019-10-25T13:11:40.000Z".parse::<Timestamp>().unwrap()
         );
     }
 
@@ -541,7 +543,7 @@ mod tests {
         assert_eq!(message.exchange, TardisExchange::Deribit);
         assert_eq!(
             message.local_timestamp,
-            DateTime::parse_from_rfc3339("2019-10-23T11:34:29.416Z").unwrap()
+            "2019-10-23T11:34:29.416Z".parse::<Timestamp>().unwrap()
         );
     }
 }

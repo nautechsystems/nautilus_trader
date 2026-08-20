@@ -153,7 +153,7 @@ pub trait Strategy: DataActor {
         let core = StrategyNative::strategy_core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
-        let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
+        let strategy_id = registered_strategy_id(core)?;
         let ts_init = core.clock_mut().timestamp_ns();
 
         if order.status() != OrderStatus::Initialized {
@@ -277,7 +277,7 @@ pub trait Strategy: DataActor {
         let core = StrategyNative::strategy_core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
-        let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
+        let strategy_id = registered_strategy_id(core)?;
         let ts_init = core.clock_mut().timestamp_ns();
 
         // TODO: Replace with fluent builder API for order list construction
@@ -328,7 +328,7 @@ pub trait Strategy: DataActor {
 
         let first_order = orders.first();
         let order_inits: Vec<_> = orders.iter().map(|o| o.init_event().clone()).collect();
-        let exec_algorithm_id = first_order.and_then(|o| o.exec_algorithm_id());
+        let exec_algorithm_id = first_order.and_then(Order::exec_algorithm_id);
 
         let command = SubmitOrderList::new(
             trader_id,
@@ -384,10 +384,7 @@ pub trait Strategy: DataActor {
     {
         let (trader_id, strategy_id) = {
             let core = StrategyNative::strategy_core_mut(self);
-            (
-                registered_trader_id(core)?,
-                StrategyId::from(core.actor_id().inner().as_str()),
-            )
+            (registered_trader_id(core)?, registered_strategy_id(core)?)
         };
 
         let params = params.filter(|params| !params.is_empty());
@@ -499,7 +496,7 @@ pub trait Strategy: DataActor {
             let core = StrategyNative::strategy_core_mut(self);
             (
                 registered_trader_id(core)?,
-                StrategyId::from(core.actor_id().inner().as_str()),
+                registered_strategy_id(core)?,
                 core.clock_mut().timestamp_ns(),
             )
         };
@@ -641,7 +638,7 @@ pub trait Strategy: DataActor {
             let core = StrategyNative::strategy_core_mut(self);
             (
                 registered_trader_id(core)?,
-                StrategyId::from(core.actor_id().inner().as_str()),
+                registered_strategy_id(core)?,
                 core.clock_mut().timestamp_ns(),
             )
         };
@@ -721,7 +718,7 @@ pub trait Strategy: DataActor {
             let core = StrategyNative::strategy_core_mut(self);
             (
                 registered_trader_id(core)?,
-                StrategyId::from(core.actor_id().inner().as_str()),
+                registered_strategy_id(core)?,
                 core.clock_mut().timestamp_ns(),
             )
         };
@@ -962,7 +959,7 @@ pub trait Strategy: DataActor {
         let core = StrategyNative::strategy_core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
-        let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
+        let strategy_id = registered_strategy_id(core)?;
         let ts_init = core.clock_mut().timestamp_ns();
         let cache = core.cache_ref();
 
@@ -1150,7 +1147,7 @@ pub trait Strategy: DataActor {
         Self: StrategyNative,
     {
         let core = StrategyNative::strategy_core_mut(self);
-        let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
+        let strategy_id = registered_strategy_id(core)?;
         let cache = core.cache_ref();
 
         let positions_open = cache.positions_open(
@@ -1264,7 +1261,7 @@ pub trait Strategy: DataActor {
         let core = StrategyNative::strategy_core_mut(self);
 
         let trader_id = registered_trader_id(core)?;
-        let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
+        let strategy_id = registered_strategy_id(core)?;
         let ts_init = core.clock_mut().timestamp_ns();
 
         let command = QueryOrder::new(
@@ -1437,7 +1434,7 @@ pub trait Strategy: DataActor {
         Self: StrategyNative,
     {
         let core = StrategyNative::strategy_core_mut(self);
-        let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
+        let strategy_id = registered_strategy_id(core)?;
         log::info!("Starting {strategy_id}");
 
         if core.config.manage_gtd_expiry {
@@ -1639,7 +1636,7 @@ pub trait Strategy: DataActor {
         Self: StrategyNative,
     {
         let core = StrategyNative::strategy_core_mut(self);
-        let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
+        let strategy_id = registered_strategy_id(core)?;
 
         if core.actor.state() != ComponentState::Running {
             log::warn!("{strategy_id} Cannot market exit: strategy is not running");
@@ -1754,7 +1751,10 @@ pub trait Strategy: DataActor {
         }
 
         let core = StrategyNative::strategy_core_mut(self);
-        let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
+        let Some(strategy_id) = core.strategy_id() else {
+            log::error!("Cannot check market exit: strategy_id is not set");
+            return;
+        };
 
         core.market_exit_attempts += 1;
         let attempts = core.market_exit_attempts;
@@ -1850,11 +1850,11 @@ pub trait Strategy: DataActor {
     where
         Self: StrategyNative,
     {
-        let (strategy_id, should_stop) = {
+        let (actor_id, should_stop) = {
             let core = StrategyNative::strategy_core_mut(self);
-            let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
+            let actor_id = core.actor_id();
             let should_stop = core.pending_stop;
-            (strategy_id, should_stop)
+            (actor_id, should_stop)
         };
 
         self.cancel_market_exit();
@@ -1864,14 +1864,14 @@ pub trait Strategy: DataActor {
         }));
 
         if let Err(e) = hook_result {
-            log::error!("{strategy_id} Error in post_market_exit: {e:?}");
+            log::error!("{actor_id} Error in post_market_exit: {e:?}");
         }
 
         if should_stop {
-            log::info!("{strategy_id} Market exit complete, stopping strategy");
+            log::info!("{actor_id} Market exit complete, stopping strategy");
 
             if let Err(e) = Component::stop(self) {
-                log::error!("{strategy_id} Failed to stop: {e}");
+                log::error!("{actor_id} Failed to stop: {e}");
             }
         }
 
@@ -1924,7 +1924,7 @@ pub trait Strategy: DataActor {
     {
         let (manage_stop, is_exiting, should_initiate_exit) = {
             let core = StrategyNative::strategy_core_mut(self);
-            let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
+            let actor_id = core.actor_id();
             let manage_stop = core.config.manage_stop;
             let state = core.actor.state();
             let pending_stop = core.pending_stop;
@@ -1943,7 +1943,7 @@ pub trait Strategy: DataActor {
                 let should_initiate_exit = !is_exiting;
 
                 if should_initiate_exit {
-                    log::info!("{strategy_id} Initiating market exit before stop");
+                    log::info!("{actor_id} Initiating market exit before stop");
                 }
 
                 (manage_stop, is_exiting, should_initiate_exit)
@@ -1989,7 +1989,13 @@ pub trait Strategy: DataActor {
             );
             return;
         };
-        let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
+        let Some(strategy_id) = core.strategy_id() else {
+            log::error!(
+                "Cannot deny order {}: strategy_id is not set",
+                order.client_order_id()
+            );
+            return;
+        };
         let ts_now = core.clock_mut().timestamp_ns();
 
         let event = OrderDenied::new(
@@ -2170,7 +2176,10 @@ pub trait Strategy: DataActor {
         Self: StrategyNative,
     {
         let core = StrategyNative::strategy_core_mut(self);
-        let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
+        let Some(strategy_id) = core.strategy_id() else {
+            log::error!("Cannot reactivate GTD timers: strategy_id is not set");
+            return;
+        };
         let current_time_ns = core.clock_mut().timestamp_ns();
 
         let gtd_orders: Vec<OrderAny> = core
@@ -2244,6 +2253,11 @@ fn log_cmd_send(command: &TradingCommand) {
 fn registered_trader_id(core: &StrategyCore) -> anyhow::Result<TraderId> {
     core.trader_id()
         .ok_or_else(|| anyhow::anyhow!("Strategy not registered: trader_id is not set"))
+}
+
+fn registered_strategy_id(core: &StrategyCore) -> anyhow::Result<StrategyId> {
+    core.strategy_id()
+        .ok_or_else(|| anyhow::anyhow!("Strategy not registered: strategy_id is not set"))
 }
 
 fn required_account_id(order: &OrderAny, operation: &str) -> anyhow::Result<AccountId> {
@@ -2686,6 +2700,7 @@ mod tests {
             last_px: Price::default(),
             currency: Currency::from("USD"),
             avg_px_open: 0.0,
+            realized_pnl: None,
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
@@ -3012,6 +3027,35 @@ mod tests {
     }
 
     #[rstest]
+    fn test_submit_order_uses_stored_strategy_id_when_actor_id_diverges() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        // A hyphenless actor ID has no strategy ID form, so any re-parse of it panics
+        strategy.core.actor.actor_id = ActorId::from("Strategy");
+        let order = make_initialized_market_order("O-20250208-DIVERGED-001");
+
+        strategy.submit_order(order, None, None, None).unwrap();
+
+        let risk_messages = risk_messages.get_messages();
+        assert_eq!(risk_messages.len(), 1);
+        let Some(TradingCommand::SubmitOrder(command)) = risk_messages.first() else {
+            panic!("Expected a SubmitOrder command, was {risk_messages:?}");
+        };
+        assert_eq!(command.strategy_id, StrategyId::from("TEST-001"));
+        assert_eq!(
+            command.client_order_id,
+            ClientOrderId::from("O-20250208-DIVERGED-001")
+        );
+    }
+
+    #[rstest]
     fn test_required_account_id_errors_when_missing_for_strategy_event() {
         let order = make_initialized_market_order("O-20250208-NO-ACCOUNT-001");
 
@@ -3224,6 +3268,7 @@ mod tests {
                             let cached_order2 = cache.order(&client_order_id2).unwrap();
                             let order_list_id = cached_order1.order_list_id().unwrap();
                             assert_eq!(cached_order2.order_list_id(), Some(order_list_id));
+                            assert_eq!(e.order_list_id, Some(order_list_id));
                             assert!(cache.order_list_exists(&order_list_id));
                             let order_list = cache.order_list(&order_list_id).unwrap();
                             assert_eq!(
@@ -3233,7 +3278,9 @@ mod tests {
                             timeline.borrow_mut().push("init1");
                         }
                         OrderEventAny::Initialized(e) if e.client_order_id == client_order_id2 => {
-                            assert!(cache_rc.borrow().order_exists(&client_order_id2));
+                            let cache = cache_rc.borrow();
+                            let cached_order = cache.order(&client_order_id2).unwrap();
+                            assert_eq!(e.order_list_id, cached_order.order_list_id());
                             timeline.borrow_mut().push("init2");
                         }
                         _ => panic!("unexpected order event {event:?}"),
@@ -3247,7 +3294,15 @@ mod tests {
             TypedIntoHandler::from_with_id(
                 "RiskEngine.queue_execute",
                 move |command: TradingCommand| {
-                    assert!(matches!(command, TradingCommand::SubmitOrderList(_)));
+                    let TradingCommand::SubmitOrderList(command) = command else {
+                        panic!("expected SubmitOrderList command");
+                    };
+                    assert!(
+                        command
+                            .order_inits
+                            .iter()
+                            .all(|init| init.order_list_id == Some(command.order_list.id))
+                    );
                     timeline.borrow_mut().push("command");
                 },
             )
@@ -3261,28 +3316,28 @@ mod tests {
         msgbus::subscribe_order_events(topic.clone().into(), event_handler.clone(), None);
 
         strategy
-            .submit_order_list(orders.clone(), None, None, None)
+            .submit_order_list(orders, None, None, None)
             .unwrap();
 
         msgbus::unsubscribe_order_events(topic.into(), &event_handler);
-
-        let event_messages = event_messages.borrow();
-        assert_eq!(event_messages.len(), 2);
-        assert_eq!(
-            event_messages[0],
-            OrderEventAny::Initialized(orders[0].init_event().clone())
-        );
-        assert_eq!(
-            event_messages[1],
-            OrderEventAny::Initialized(orders[1].init_event().clone())
-        );
-        assert_eq!(timeline.borrow().as_slice(), &["init1", "init2", "command"]);
 
         let cache = strategy.cache();
         let cached_order1 = cache.order(&client_order_id1).unwrap();
         let cached_order2 = cache.order(&client_order_id2).unwrap();
         let order_list_id = cached_order1.order_list_id().unwrap();
         assert_eq!(cached_order2.order_list_id(), Some(order_list_id));
+
+        let event_messages = event_messages.borrow();
+        assert_eq!(event_messages.len(), 2);
+        let OrderEventAny::Initialized(init1) = &event_messages[0] else {
+            panic!("expected first OrderInitialized event");
+        };
+        let OrderEventAny::Initialized(init2) = &event_messages[1] else {
+            panic!("expected second OrderInitialized event");
+        };
+        assert_eq!(init1.order_list_id, Some(order_list_id));
+        assert_eq!(init2.order_list_id, Some(order_list_id));
+        assert_eq!(timeline.borrow().as_slice(), &["init1", "init2", "command"]);
 
         let order_list = cache.order_list(&order_list_id).unwrap();
         assert_eq!(
@@ -3973,6 +4028,15 @@ mod tests {
 
         let result = Strategy::on_start(&mut strategy);
         assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_on_start_errors_when_strategy_id_is_not_set() {
+        let mut strategy = TestStrategy::new(StrategyConfig::default());
+
+        let err = Strategy::on_start(&mut strategy).unwrap_err().to_string();
+
+        assert_eq!(err, "Strategy not registered: strategy_id is not set");
     }
 
     // -- QUERY TESTS ---------------------------------------------------------------------------------

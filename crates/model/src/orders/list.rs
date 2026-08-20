@@ -62,7 +62,7 @@ pub enum OrderListValidationError {
 #[derive(Clone, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -140,7 +140,7 @@ impl OrderList {
             );
         }
 
-        let client_order_ids = orders.iter().map(|o| o.client_order_id()).collect();
+        let client_order_ids = orders.iter().map(Order::client_order_id).collect();
 
         Self {
             id: order_list_id,

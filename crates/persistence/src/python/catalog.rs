@@ -21,44 +21,17 @@ use nautilus_model::{
         Bar, Data, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OptionGreeks,
         OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
     },
-    python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
+    python::{
+        data::data_to_pyobject,
+        instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
+    },
 };
 use pyo3::{exceptions::PyIOError, prelude::*, types::PyList};
 
 use crate::backend::catalog::ParquetDataCatalog;
 
-/// Converts a single `Data` variant into a Python object for returning from catalog methods.
-#[allow(
-    clippy::match_wildcard_for_single_variants,
-    reason = "Data::Defi appears through nautilus-model feature unification"
-)]
-fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
-    match item {
-        Data::Quote(quote) => Py::new(py, quote).map(pyo3::Py::into_any),
-        Data::Trade(trade) => Py::new(py, trade).map(pyo3::Py::into_any),
-        Data::Bar(bar) => Py::new(py, bar).map(pyo3::Py::into_any),
-        Data::Delta(delta) => Py::new(py, delta).map(pyo3::Py::into_any),
-        Data::Deltas(deltas) => Py::new(py, (*deltas).clone()).map(pyo3::Py::into_any),
-        Data::Depth10(depth) => Py::new(py, *depth).map(pyo3::Py::into_any),
-        Data::IndexPriceUpdate(price) => Py::new(py, price).map(pyo3::Py::into_any),
-        Data::MarkPriceUpdate(price) => Py::new(py, price).map(pyo3::Py::into_any),
-        Data::FundingRateUpdate(funding) => Py::new(py, funding).map(pyo3::Py::into_any),
-        Data::OptionGreeks(greeks) => Py::new(py, greeks).map(pyo3::Py::into_any),
-        Data::InstrumentStatus(status) => Py::new(py, status).map(pyo3::Py::into_any),
-        Data::InstrumentClose(close) => Py::new(py, close).map(pyo3::Py::into_any),
-        Data::Custom(custom) => Py::new(py, custom).map(pyo3::Py::into_any),
-        #[cfg(feature = "defi")]
-        Data::Defi(_) => Err(to_pytype_err("Unsupported Data::Defi variant")),
-        #[allow(unreachable_patterns)]
-        _ => Err(to_pytype_err("Unsupported Data variant")),
-    }
-}
-
 /// A catalog for writing data to Parquet files.
-#[pyclass(
-    name = "ParquetDataCatalog",
-    module = "nautilus_trader.core.nautilus_pyo3.persistence"
-)]
+#[pyclass(name = "ParquetDataCatalog", module = "nautilus_trader.persistence")]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")]
 pub struct PyParquetDataCatalog {
     inner: ParquetDataCatalog,

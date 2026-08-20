@@ -97,7 +97,7 @@ use crate::{
             BINANCE_FUTURES_DUAL_SIDE_SYNC_REJECT_CODE, BINANCE_FUTURES_USD_WS_API_TESTNET_URL,
             BINANCE_FUTURES_USD_WS_API_URL, BINANCE_GTX_ORDER_REJECT_CODE,
             BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_STATUS_UNKNOWN_CODE,
-            BINANCE_UNEXPECTED_RESPONSE_CODE, BINANCE_VENUE,
+            BINANCE_UNEXPECTED_RESPONSE_CODE, BINANCE_VENUE, BINANCE_WS_HEARTBEAT_SECS,
         },
         credential::resolve_credentials,
         dispatch::{OrderIdentity, PendingOperation, PendingRequest, WsDispatchState},
@@ -288,7 +288,7 @@ impl BinanceFuturesExecutionClient {
                     ws_trading_url,
                     api_key,
                     api_secret,
-                    None, // heartbeat
+                    Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )
                 .with_proxy(config.proxy_url.clone())
@@ -421,6 +421,32 @@ impl BinanceFuturesExecutionClient {
             margins.push(MarginBalance::new(initial, maintenance, None));
         }
 
+        let mut info = Params::new();
+        let mut push_decimal = |key: &str, val: Option<Decimal>| {
+            if let Some(decimal) = val {
+                info.insert(
+                    key.to_string(),
+                    serde_json::Value::from(decimal.to_string()),
+                );
+            }
+        };
+        push_decimal("total_wallet_balance", account_info.total_wallet_balance);
+        push_decimal("total_margin_balance", account_info.total_margin_balance);
+        push_decimal("total_initial_margin", account_info.total_initial_margin);
+        push_decimal("total_maint_margin", account_info.total_maint_margin);
+        push_decimal(
+            "total_unrealized_profit",
+            account_info.total_unrealized_profit,
+        );
+        push_decimal(
+            "total_cross_wallet_balance",
+            account_info.total_cross_wallet_balance,
+        );
+        push_decimal("total_cross_unpnl", account_info.total_cross_un_pnl);
+        push_decimal("available_balance", account_info.available_balance);
+        push_decimal("max_withdraw_amount", account_info.max_withdraw_amount);
+        let info = if info.is_empty() { None } else { Some(info) };
+
         AccountState::new(
             account_id,
             account_type,
@@ -432,6 +458,7 @@ impl BinanceFuturesExecutionClient {
             ts_now,
             None, // base currency
         )
+        .with_info(info)
     }
 
     async fn refresh_account_state(&self) -> anyhow::Result<AccountState> {
@@ -472,6 +499,7 @@ impl BinanceFuturesExecutionClient {
                 account_state.margins.clone(),
                 account_state.is_reported,
                 ts_now,
+                account_state.info,
             );
             Ok(())
         });
@@ -515,7 +543,21 @@ impl BinanceFuturesExecutionClient {
         let activation_price = order.activation_price();
         let trailing_offset = order.trailing_offset();
         let trigger_type = order.trigger_type();
-        let position_side = determine_position_side(self.is_hedge_mode(), order_side, reduce_only);
+
+        let close_position = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get_bool("close_position"))
+            .unwrap_or(false);
+
+        // `close_position` retires an entire hedge leg, so it carries close intent on
+        // its own. It cannot be combined with `reduce_only` (rejected in `submit_order`),
+        // which is otherwise the flag that selects the closing `positionSide`.
+        let position_side = determine_position_side(
+            self.is_hedge_mode(),
+            order_side,
+            reduce_only || close_position,
+        );
 
         // Register identity for tracked/external dispatch routing
         self.dispatch_state.order_identities.insert(
@@ -531,12 +573,6 @@ impl BinanceFuturesExecutionClient {
         );
 
         let use_algo_api = is_algo_order_type(order_type);
-
-        let close_position = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get_bool("close_position"))
-            .unwrap_or(false);
 
         let price_match = cmd
             .params
@@ -741,17 +777,23 @@ impl BinanceFuturesExecutionClient {
             .cache()
             .order(&command.client_order_id)
             .is_some_and(|order| is_algo_order_type(order.order_type()));
-        let is_triggered = self
-            .triggered_algo_order_ids
-            .contains(&command.client_order_id);
-        let use_algo_cancel = is_algo && !is_triggered;
+        let promoted_venue_order_id = self
+            .dispatch_state
+            .promoted_algo_order_id(&command.client_order_id);
+        let use_algo_cancel = should_use_algo_cancel(
+            is_algo,
+            self.triggered_algo_order_ids
+                .contains(&command.client_order_id),
+            promoted_venue_order_id.is_some(),
+        );
 
         let emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
         let clock = self.clock;
         let instrument_id = command.instrument_id;
-        let venue_order_id = command.venue_order_id;
+        let venue_order_id =
+            cancel_venue_order_id(is_algo, command.venue_order_id, promoted_venue_order_id);
         let client_order_id = command.client_order_id;
 
         // Non-algo cancels can route through WS trading API when active
@@ -2396,9 +2438,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
+            .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
     }
 
@@ -3070,6 +3113,22 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 }
 
+fn should_use_algo_cancel(is_algo: bool, is_triggered: bool, has_promoted_id: bool) -> bool {
+    is_algo && !is_triggered && !has_promoted_id
+}
+
+fn cancel_venue_order_id(
+    is_algo: bool,
+    venue_order_id: Option<VenueOrderId>,
+    promoted_algo_order_id: Option<VenueOrderId>,
+) -> Option<VenueOrderId> {
+    if is_algo {
+        promoted_algo_order_id
+    } else {
+        venue_order_id
+    }
+}
+
 fn is_instrument_for_product(instrument: &InstrumentAny, product_type: BinanceProductType) -> bool {
     match product_type {
         BinanceProductType::UsdM => {
@@ -3102,12 +3161,118 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::common::testing::load_fixture_string;
 
     fn http_error(code: i64) -> anyhow::Error {
         anyhow::Error::new(BinanceFuturesHttpError::BinanceError {
             code,
             message: format!("test error {code}"),
         })
+    }
+
+    #[rstest]
+    fn test_create_account_state_preserves_info_decimal_values() {
+        let json = load_fixture_string("futures/http_json/account_info_v2.json");
+        let mut account_info: BinanceFuturesAccountInfo = serde_json::from_str(&json).unwrap();
+        account_info.total_wallet_balance = Some("1.0000000000000001".parse().unwrap());
+        account_info.total_margin_balance = Some("2.0000000000000002".parse().unwrap());
+        account_info.total_initial_margin = Some("3.0000000000000003".parse().unwrap());
+        account_info.total_maint_margin = Some("4.0000000000000004".parse().unwrap());
+        account_info.total_unrealized_profit = Some("5.0000000000000005".parse().unwrap());
+        account_info.total_cross_wallet_balance = Some("6.0000000000000006".parse().unwrap());
+        account_info.total_cross_un_pnl = Some("7.0000000000000007".parse().unwrap());
+        account_info.available_balance = Some("8.0000000000000008".parse().unwrap());
+        account_info.max_withdraw_amount = Some("9.0000000000000009".parse().unwrap());
+
+        let state = BinanceFuturesExecutionClient::create_account_state_from(
+            &account_info,
+            AccountId::from("BINANCE-001"),
+            AccountType::Margin,
+            Currency::USDT(),
+            get_atomic_clock_realtime(),
+        );
+
+        let info = state.info.as_ref().unwrap();
+        assert_eq!(info.len(), 9);
+        assert_eq!(
+            info.get_str("total_wallet_balance"),
+            Some("1.0000000000000001")
+        );
+        assert_eq!(
+            info.get_str("total_margin_balance"),
+            Some("2.0000000000000002")
+        );
+        assert_eq!(
+            info.get_str("total_initial_margin"),
+            Some("3.0000000000000003")
+        );
+        assert_eq!(
+            info.get_str("total_maint_margin"),
+            Some("4.0000000000000004")
+        );
+        assert_eq!(
+            info.get_str("total_unrealized_profit"),
+            Some("5.0000000000000005")
+        );
+        assert_eq!(
+            info.get_str("total_cross_wallet_balance"),
+            Some("6.0000000000000006")
+        );
+        assert_eq!(
+            info.get_str("total_cross_unpnl"),
+            Some("7.0000000000000007")
+        );
+        assert_eq!(
+            info.get_str("available_balance"),
+            Some("8.0000000000000008")
+        );
+        assert_eq!(
+            info.get_str("max_withdraw_amount"),
+            Some("9.0000000000000009")
+        );
+    }
+
+    #[rstest]
+    #[case::regular(false, false, false, false)]
+    #[case::untriggered_algo(true, false, false, true)]
+    #[case::triggered_algo(true, true, false, false)]
+    #[case::promoted_algo(true, false, true, false)]
+    fn test_should_use_algo_cancel(
+        #[case] is_algo: bool,
+        #[case] is_triggered: bool,
+        #[case] has_promoted_id: bool,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            should_use_algo_cancel(is_algo, is_triggered, has_promoted_id),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case::regular(
+        false,
+        Some(VenueOrderId::from("8886774")),
+        None,
+        Some(VenueOrderId::from("8886774"))
+    )]
+    #[case::unpromoted_algo(true, Some(VenueOrderId::from("2148719")), None, None)]
+    #[case::promoted(
+        true,
+        Some(VenueOrderId::from("2148719")),
+        Some(VenueOrderId::from("22542179")),
+        Some(VenueOrderId::from("22542179"))
+    )]
+    fn test_cancel_venue_order_id(
+        #[case] is_algo: bool,
+        #[case] venue_order_id: Option<VenueOrderId>,
+        #[case] promoted_algo_order_id: Option<VenueOrderId>,
+        #[case] expected: Option<VenueOrderId>,
+    ) {
+        assert_eq!(
+            cancel_venue_order_id(is_algo, venue_order_id, promoted_algo_order_id),
+            expected
+        );
     }
 
     #[rstest]

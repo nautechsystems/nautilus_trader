@@ -16,13 +16,13 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, DEPTH10_LEN, Data, FundingRateUpdate, IndexPriceUpdate,
         MarkPriceUpdate, NULL_ORDER, OptionGreekValues, OptionGreeks, OrderBookDelta,
-        OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{AggregationSource, BookAction, GreeksConvention, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
@@ -42,6 +42,12 @@ use crate::{
     },
     config::BookSnapshotOutput,
 };
+
+fn timestamp_to_unix_nanos(timestamp: Timestamp, field: &str) -> anyhow::Result<UnixNanos> {
+    let nanos = u64::try_from(timestamp.as_nanosecond())
+        .with_context(|| format!("invalid timestamp: {field} is outside the UnixNanos range"))?;
+    Ok(UnixNanos::from(nanos))
+}
 
 #[must_use]
 pub fn parse_tardis_ws_message(
@@ -64,7 +70,7 @@ pub fn parse_tardis_ws_message(
                 info.size_precision,
                 info.instrument_id,
             ) {
-                Ok(deltas) => Some(Data::Deltas(deltas)),
+                Ok(deltas) => Some(Data::Deltas(Box::new(deltas))),
                 Err(e) => {
                     log::error!("Failed to parse book change message: {e}");
                     None
@@ -108,7 +114,7 @@ pub fn parse_tardis_ws_message(
                         info.size_precision,
                         info.instrument_id,
                     ) {
-                        Ok(deltas) => Some(Data::Deltas(deltas)),
+                        Ok(deltas) => Some(Data::Deltas(Box::new(deltas))),
                         Err(e) => {
                             log::error!("Failed to parse book snapshot as deltas: {e}");
                             None
@@ -296,7 +302,7 @@ pub fn parse_book_change_msg_as_deltas(
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
-) -> anyhow::Result<OrderBookDeltas_API> {
+) -> anyhow::Result<OrderBookDeltas> {
     parse_book_msg_as_deltas(
         &msg.bids,
         &msg.asks,
@@ -320,7 +326,7 @@ pub fn parse_book_snapshot_msg_as_deltas(
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
-) -> anyhow::Result<OrderBookDeltas_API> {
+) -> anyhow::Result<OrderBookDeltas> {
     parse_book_msg_as_deltas(
         &msg.bids,
         &msg.asks,
@@ -344,25 +350,8 @@ pub fn parse_book_snapshot_msg_as_depth10(
     size_precision: u8,
     instrument_id: InstrumentId,
 ) -> anyhow::Result<OrderBookDepth10> {
-    let ts_event_nanos = msg
-        .timestamp
-        .timestamp_nanos_opt()
-        .context("invalid timestamp: cannot extract event nanoseconds")?;
-    anyhow::ensure!(
-        ts_event_nanos >= 0,
-        "invalid timestamp: event nanoseconds {ts_event_nanos} is before UNIX epoch"
-    );
-    let ts_event = UnixNanos::from(ts_event_nanos as u64);
-
-    let ts_init_nanos = msg
-        .local_timestamp
-        .timestamp_nanos_opt()
-        .context("invalid timestamp: cannot extract init nanoseconds")?;
-    anyhow::ensure!(
-        ts_init_nanos >= 0,
-        "invalid timestamp: init nanoseconds {ts_init_nanos} is before UNIX epoch"
-    );
-    let ts_init = UnixNanos::from(ts_init_nanos as u64);
+    let ts_event = timestamp_to_unix_nanos(msg.timestamp, "event timestamp")?;
+    let ts_init = timestamp_to_unix_nanos(msg.local_timestamp, "init timestamp")?;
 
     let mut bids = [NULL_ORDER; DEPTH10_LEN];
     let mut asks = [NULL_ORDER; DEPTH10_LEN];
@@ -416,25 +405,11 @@ pub fn parse_book_msg_as_deltas(
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
-    timestamp: DateTime<Utc>,
-    local_timestamp: DateTime<Utc>,
-) -> anyhow::Result<OrderBookDeltas_API> {
-    let event_nanos = timestamp
-        .timestamp_nanos_opt()
-        .context("invalid timestamp: cannot extract event nanoseconds")?;
-    anyhow::ensure!(
-        event_nanos >= 0,
-        "invalid timestamp: event nanoseconds {event_nanos} is before UNIX epoch"
-    );
-    let ts_event = UnixNanos::from(event_nanos as u64);
-    let init_nanos = local_timestamp
-        .timestamp_nanos_opt()
-        .context("invalid timestamp: cannot extract init nanoseconds")?;
-    anyhow::ensure!(
-        init_nanos >= 0,
-        "invalid timestamp: init nanoseconds {init_nanos} is before UNIX epoch"
-    );
-    let ts_init = UnixNanos::from(init_nanos as u64);
+    timestamp: Timestamp,
+    local_timestamp: Timestamp,
+) -> anyhow::Result<OrderBookDeltas> {
+    let ts_event = timestamp_to_unix_nanos(timestamp, "event timestamp")?;
+    let ts_init = timestamp_to_unix_nanos(local_timestamp, "init timestamp")?;
 
     let capacity = if is_snapshot {
         bids.len() + asks.len() + 1
@@ -483,11 +458,7 @@ pub fn parse_book_msg_as_deltas(
         last_delta.flags |= RecordFlag::F_LAST as u8;
     }
 
-    // TODO: Opaque pointer wrapper necessary for Cython (remove once Cython gone)
-    Ok(OrderBookDeltas_API::new(OrderBookDeltas::new(
-        instrument_id,
-        deltas,
-    )))
+    Ok(OrderBookDeltas::new(instrument_id, deltas))
 }
 
 /// Parse a single book level into an order book delta.
@@ -648,27 +619,9 @@ pub fn parse_bar_msg(
 fn parse_derivative_ticker_timestamps(
     msg: &DerivativeTickerMsg,
 ) -> anyhow::Result<(UnixNanos, UnixNanos)> {
-    let ts_event_nanos = msg
-        .timestamp
-        .timestamp_nanos_opt()
-        .context("invalid timestamp: cannot extract event nanoseconds")?;
-    anyhow::ensure!(
-        ts_event_nanos >= 0,
-        "invalid timestamp: event nanoseconds {ts_event_nanos} is before UNIX epoch"
-    );
-
-    let ts_init_nanos = msg
-        .local_timestamp
-        .timestamp_nanos_opt()
-        .context("invalid timestamp: cannot extract init nanoseconds")?;
-    anyhow::ensure!(
-        ts_init_nanos >= 0,
-        "invalid timestamp: init nanoseconds {ts_init_nanos} is before UNIX epoch"
-    );
-
     Ok((
-        UnixNanos::from(ts_event_nanos as u64),
-        UnixNanos::from(ts_init_nanos as u64),
+        timestamp_to_unix_nanos(msg.timestamp, "event timestamp")?,
+        timestamp_to_unix_nanos(msg.local_timestamp, "init timestamp")?,
     ))
 }
 
@@ -689,12 +642,16 @@ pub fn parse_derivative_ticker_msg(
     let (ts_event, ts_init) = parse_derivative_ticker_timestamps(msg)?;
     let rate = rust_decimal::Decimal::try_from(funding_rate)
         .with_context(|| format!("failed to convert funding rate {funding_rate} to Decimal"))?;
+    let next_funding_ns = msg
+        .funding_timestamp
+        .map(|ts| timestamp_to_unix_nanos(ts, "funding timestamp"))
+        .transpose()?;
 
     Ok(Some(FundingRateUpdate::new(
         instrument_id,
         rate,
         None,
-        None,
+        next_funding_ns,
         ts_event,
         ts_init,
     )))
@@ -754,9 +711,12 @@ pub fn parse_derivative_ticker_index_price(
 mod tests {
     use nautilus_model::enums::AggressorSide;
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::common::{enums::TardisExchange, testing::load_test_json};
+    use crate::common::{
+        enums::TardisExchange, parse::parse_instrument_id, testing::load_test_json,
+    };
 
     #[rstest]
     fn test_parse_book_change_message() {
@@ -946,7 +906,7 @@ mod tests {
         assert_eq!(trade.instrument_id, instrument_id);
         assert_eq!(trade.price, Price::from("7996"));
         assert_eq!(trade.size, Quantity::from(50));
-        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.aggressor_side, AggressorSide::Sell);
         assert_eq!(trade.ts_event, UnixNanos::from(1571826769669000000));
         assert_eq!(trade.ts_init, UnixNanos::from(1571826769740000000));
     }
@@ -1301,9 +1261,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_option_summary_msg_defaults_absent_fields() {
-        let ts = DateTime::parse_from_rfc3339("2024-01-15T10:30:00.123Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let ts = "2024-01-15T10:30:00.123Z".parse::<Timestamp>().unwrap();
         let msg = OptionSummaryMsg {
             symbol: ustr::Ustr::from("BTC-28JUN24-70000-C"),
             exchange: TardisExchange::Deribit,
@@ -1422,7 +1380,7 @@ mod tests {
         let instrument_id = InstrumentId::from("BTCUSD.BITMEX");
 
         let funding = parse_derivative_ticker_msg(&msg, instrument_id).unwrap();
-        assert!(funding.is_some());
+        assert_eq!(funding.unwrap().next_funding_ns, None);
 
         let mark = parse_derivative_ticker_mark_price(&msg, instrument_id, 1).unwrap();
         assert!(mark.is_none());
@@ -1446,5 +1404,85 @@ mod tests {
         assert_eq!(funding.unwrap().rate.to_string(), "0.0001");
         assert_eq!(mark.unwrap().value, Price::new(61235.2, 1));
         assert_eq!(index.unwrap().value, Price::new(61230.1, 1));
+    }
+
+    #[rstest]
+    fn test_parse_okex_xperp_derivative_ticker() {
+        let json_data = load_test_json("okex_futures_xperp_derivative_ticker.json");
+        let msg: DerivativeTickerMsg = serde_json::from_str(&json_data).unwrap();
+
+        let instrument_id = parse_instrument_id(&msg.exchange, msg.symbol);
+        let funding = parse_derivative_ticker_msg(&msg, instrument_id)
+            .unwrap()
+            .unwrap();
+        let mark = parse_derivative_ticker_mark_price(&msg, instrument_id, 1)
+            .unwrap()
+            .unwrap();
+        let index = parse_derivative_ticker_index_price(&msg, instrument_id, 1)
+            .unwrap()
+            .unwrap();
+
+        // OKX X-Perps publish no predicted rate, so the funding timestamp is the only forward
+        // reference carried through normalization
+        assert_eq!(msg.exchange, TardisExchange::OkexFutures);
+        assert_eq!(
+            instrument_id,
+            InstrumentId::from("BTC-USD_UM_XPERP-310404.OKEX")
+        );
+        assert_eq!(funding.rate, dec!(-0.0004050736802759));
+        assert_eq!(
+            funding.next_funding_ns,
+            Some(UnixNanos::from("2026-08-10T16:00:00Z"))
+        );
+        assert_eq!(funding.interval, None);
+        assert_eq!(
+            funding.ts_event,
+            UnixNanos::from("2026-08-10T12:00:13.061Z")
+        );
+        assert_eq!(funding.ts_init, UnixNanos::from("2026-08-10T12:00:13.093Z"));
+        assert_eq!(mark.value, Price::new(65014.7, 1));
+        assert_eq!(index.value, Price::new(65066.1, 1));
+    }
+
+    #[rstest]
+    fn test_parse_okex_usdc_derivative_ticker_across_index_migration() {
+        let pre_json = load_test_json("okex_swap_derivative_ticker_pre_index_migration.json");
+        let post_json = load_test_json("okex_swap_derivative_ticker_post_index_migration.json");
+        let pre: DerivativeTickerMsg = serde_json::from_str(&pre_json).unwrap();
+        let post: DerivativeTickerMsg = serde_json::from_str(&post_json).unwrap();
+
+        let pre_id = parse_instrument_id(&pre.exchange, pre.symbol);
+        let post_id = parse_instrument_id(&post.exchange, post.symbol);
+        let pre_index = parse_derivative_ticker_index_price(&pre, pre_id, 1)
+            .unwrap()
+            .unwrap();
+        let post_index = parse_derivative_ticker_index_price(&post, post_id, 1)
+            .unwrap()
+            .unwrap();
+        let pre_funding = parse_derivative_ticker_msg(&pre, pre_id).unwrap().unwrap();
+        let post_funding = parse_derivative_ticker_msg(&post, post_id)
+            .unwrap()
+            .unwrap();
+
+        // Captured either side of the 2023-04-10T08:40Z index migration, which switches the index
+        // feed Tardis reads from BTC-USD to BTC-USDC but leaves the contract symbol alone, so both
+        // must still resolve to one instrument. The index prices are a month apart and only pin
+        // each capture, they do not themselves demonstrate the switch.
+        assert_eq!(pre.exchange, TardisExchange::OkexSwap);
+        assert_eq!(post.exchange, TardisExchange::OkexSwap);
+        assert_eq!(pre_id, InstrumentId::from("BTC-USDC-SWAP.OKEX"));
+        assert_eq!(post_id, pre_id);
+        assert_eq!(pre_index.value, Price::new(28379.9, 1));
+        assert_eq!(post_index.value, Price::new(28525.1, 1));
+        assert_eq!(pre_funding.rate, dec!(-0.0001546799749051));
+        assert_eq!(post_funding.rate, dec!(0.0001309027042856));
+        assert_eq!(
+            pre_funding.next_funding_ns,
+            Some(UnixNanos::from("2023-04-01T16:00:00Z"))
+        );
+        assert_eq!(
+            post_funding.next_funding_ns,
+            Some(UnixNanos::from("2023-05-01T16:00:00Z"))
+        );
     }
 }

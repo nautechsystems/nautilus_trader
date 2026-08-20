@@ -50,6 +50,18 @@ impl TaskHandles {
         }
     }
 
+    /// Aborts all stored task handles without draining them, so callers can await their
+    /// termination later through [`Self::all_finished`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
+    pub fn abort_all_retained(&self) {
+        for handle in self.handles.lock().expect(MUTEX_POISONED).iter() {
+            handle.abort();
+        }
+    }
+
     /// Removes and returns all stored task handles.
     ///
     /// # Panics
@@ -155,6 +167,43 @@ mod tests {
                 .expect("aborted task should drop its future")
                 .expect("drop signal should be sent");
         }
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_abort_all_retained_keeps_finished_handles_observable() {
+        let tasks = TaskHandles::default();
+        let mut drop_receivers = Vec::new();
+
+        for _ in 0..2 {
+            let (drop_tx, drop_rx) = tokio::sync::oneshot::channel();
+            let signal = DropSignal { tx: Some(drop_tx) };
+            tasks.push(task::spawn(async move {
+                let _signal = signal;
+                std::future::pending::<()>().await;
+            }));
+            drop_receivers.push(drop_rx);
+        }
+
+        tasks.abort_all_retained();
+
+        assert!(!tasks.is_empty());
+
+        for drop_rx in drop_receivers {
+            time::timeout(Duration::from_secs(1), drop_rx)
+                .await
+                .expect("aborted task should drop its future")
+                .expect("drop signal should be sent");
+        }
+
+        let _ = time::timeout(Duration::from_secs(1), async {
+            while !tasks.all_finished() {
+                task::yield_now().await;
+            }
+        })
+        .await;
+        assert!(tasks.all_finished());
     }
 
     #[rstest]

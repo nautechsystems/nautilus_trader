@@ -494,8 +494,8 @@ pub fn parse_trade_tick_from_array(
         .and_then(|v| v.as_str())
         .context("Missing or invalid side")?;
     let aggressor = match side_str {
-        "b" => AggressorSide::Buyer,
-        "s" => AggressorSide::Seller,
+        "b" => AggressorSide::Buy,
+        "s" => AggressorSide::Sell,
         _ => AggressorSide::NoAggressor,
     };
 
@@ -545,8 +545,8 @@ pub fn parse_futures_public_execution(
 
     // Aggressor side is determined by the taker's direction
     let aggressor = match execution.taker_order.direction.to_lowercase().as_str() {
-        "buy" => AggressorSide::Buyer,
-        "sell" => AggressorSide::Seller,
+        "buy" => AggressorSide::Buy,
+        "sell" => AggressorSide::Sell,
         _ => AggressorSide::NoAggressor,
     };
 

@@ -14,35 +14,56 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Example: Subscribe to option greeks for individual BTC CALL options on Deribit.
+Subscribe to option Greeks for individual BTC call options on Deribit.
 
-Discovers BTC CALL options from the instrument cache, filters out expired contracts,
-and subscribes to exchange-provided greeks (delta, gamma, vega, theta, IV) for each.
+Running this example connects to Deribit mainnet, loads options, selects call contracts
+from the instrument cache, and logs every Greeks update. No orders are placed.
+
 """
+
+from __future__ import annotations
 
 from nautilus_trader.adapters.deribit import DERIBIT
 from nautilus_trader.adapters.deribit import DeribitDataClientConfig
-from nautilus_trader.adapters.deribit import DeribitLiveDataClientFactory
-from nautilus_trader.common.actor import Actor
-from nautilus_trader.config import ActorConfig
-from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
-from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.adapters.deribit import DeribitDataClientFactory
+from nautilus_trader.adapters.deribit import DeribitEnvironment
+from nautilus_trader.adapters.deribit import DeribitProductType
+from nautilus_trader.common import DataActor
+from nautilus_trader.common import Environment
+from nautilus_trader.config import DataActorConfig
+from nautilus_trader.config import ImportableActorConfig
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import ActorId
+from nautilus_trader.model import ClientId
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OptionGreeks
+from nautilus_trader.model import TraderId
 
 
-class OptionGreeksTesterConfig(ActorConfig, frozen=True):
-    underlying: str = "BTC"
-    max_subscriptions: int = 10
+TRADER_ID = TraderId.from_str("GREEKS-001")
+UNDERLYING = "BTC"
+MAX_SUBSCRIPTIONS = 10
 
 
-class OptionGreeksTester(Actor):
+class OptionGreeksTesterConfig(DataActorConfig):
+    def __init__(
+        self,
+        underlying: str = "BTC",
+        max_subscriptions: int = 10,
+        actor_id: ActorId | str | None = None,
+        log_events: bool = True,
+        log_commands: bool = True,
+    ) -> None:
+        self.actor_id = ActorId.from_str(actor_id) if isinstance(actor_id, str) else actor_id
+        self.log_events = log_events
+        self.log_commands = log_commands
+        self.underlying = underlying
+        self.max_subscriptions = max_subscriptions
+
+
+class OptionGreeksTester(DataActor):
     """
-    Subscribes to option greeks for individual BTC CALL options on Deribit.
+    Subscribe to option Greeks for call options on Deribit.
     """
 
     def __init__(self, config: OptionGreeksTesterConfig) -> None:
@@ -52,39 +73,28 @@ class OptionGreeksTester(Actor):
         self._max_subscriptions = config.max_subscriptions
 
     def on_start(self) -> None:
-        instruments = self.cache.instruments()
-
-        # Filter for CALL options on the target underlying
         call_options = []
 
-        for inst in instruments:
-            symbol = str(inst.id.symbol)
-            if not symbol.startswith(f"{self._underlying}-"):
-                continue
-            # Deribit option symbols end with "-C" for calls, "-P" for puts
-            if symbol.endswith("-C"):
-                call_options.append(inst)
+        for instrument in self.cache.instruments():
+            symbol = str(instrument.id.symbol)
+            if symbol.startswith(f"{self._underlying}-") and symbol.endswith("-C"):
+                call_options.append(instrument)
 
         if not call_options:
-            self.log.warning(f"No {self._underlying} CALL options found in cache")
+            self.log.warning(f"No {self._underlying} call options found in cache")
             return
 
-        self.log.info(f"Found {len(call_options)} {self._underlying} CALL options")
+        call_options.sort(key=lambda instrument: str(instrument.id.symbol))
+        client_id = ClientId.from_str(DERIBIT)
 
-        # Sort by symbol for logical ordering and limit subscriptions
-        call_options.sort(key=lambda i: str(i.id.symbol))
-        to_subscribe = call_options[: self._max_subscriptions]
+        for instrument in call_options[: self._max_subscriptions]:
+            self.log.info(f"Subscribing to Greeks: {instrument.id}")
+            self.subscribe_option_greeks(instrument.id, client_id=client_id)
+            self._subscribed_ids.append(instrument.id)
 
-        client_id = ClientId(DERIBIT)
+        self.log.info(f"Subscribed to {len(self._subscribed_ids)} option Greeks streams")
 
-        for inst in to_subscribe:
-            self.log.info(f"Subscribing to greeks: {inst.id}")
-            self.subscribe_option_greeks(inst.id, client_id=client_id)
-            self._subscribed_ids.append(inst.id)
-
-        self.log.info(f"Subscribed to {len(self._subscribed_ids)} option greeks streams")
-
-    def on_option_greeks(self, greeks) -> None:
+    def on_option_greeks(self, greeks: OptionGreeks) -> None:
         self.log.info(
             f"GREEKS {greeks.instrument_id}: "
             f"delta={greeks.delta:.4f} gamma={greeks.gamma:.6f} "
@@ -94,39 +104,45 @@ class OptionGreeksTester(Actor):
         )
 
     def on_stop(self) -> None:
-        client_id = ClientId(DERIBIT)
+        client_id = ClientId.from_str(DERIBIT)
+
         for instrument_id in self._subscribed_ids:
             self.unsubscribe_option_greeks(instrument_id, client_id=client_id)
-        self.log.info("Unsubscribed from all option greeks")
+
+        self.log.info("Unsubscribed from all option Greeks")
 
 
-# Configure the trading node
-config_node = TradingNodeConfig(
-    trader_id=TraderId("GREEKS-001"),
-    logging=LoggingConfig(
-        log_level="INFO",
-        use_pyo3=True,
-    ),
-    data_clients={
-        DERIBIT: DeribitDataClientConfig(
-            environment=DeribitEnvironment.MAINNET,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+def main() -> None:
+    node = (
+        LiveNode.builder(
+            "DERIBIT-OPTION-GREEKS-001",
+            TRADER_ID,
+            Environment.LIVE,
+        )
+        .add_data_client(
+            None,
+            DeribitDataClientFactory(),
+            DeribitDataClientConfig(
+                product_types=[DeribitProductType.OPTION],
+                environment=DeribitEnvironment.MAINNET,
+            ),
+        )
+        .build()
+    )
+    node.add_actor_from_config(
+        ImportableActorConfig(
+            actor_path="deribit_option_greeks:OptionGreeksTester",
+            config_path="deribit_option_greeks:OptionGreeksTesterConfig",
+            config={
+                "actor_id": "DERIBIT-OPTION-GREEKS-001",
+                "underlying": UNDERLYING,
+                "max_subscriptions": MAX_SUBSCRIPTIONS,
+            },
         ),
-    },
-    timeout_connection=30.0,
-    timeout_reconciliation=10.0,
-    timeout_portfolio=10.0,
-    timeout_disconnection=10.0,
-    timeout_post_stop=2.0,
-)
+    )
 
-node = TradingNode(config=config_node)
-node.trader.add_actor(OptionGreeksTester(OptionGreeksTesterConfig()))
-
-node.add_data_client_factory(DERIBIT, DeribitLiveDataClientFactory)
-node.build()
-
-try:
     node.run()
-finally:
-    node.dispose()
+
+
+if __name__ == "__main__":
+    main()

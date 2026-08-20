@@ -34,7 +34,7 @@ use crate::{
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.indicators")
 )]
 #[cfg_attr(
     feature = "python",
@@ -102,9 +102,11 @@ impl Indicator for AdaptiveMovingAverage {
 
     fn reset(&mut self) {
         self.value = 0.0;
+        self.prior_value = None;
         self.count = 0;
         self.has_inputs = false;
         self.initialized = false;
+        self.efficiency_ratio.reset();
     }
 }
 
@@ -166,12 +168,8 @@ impl AdaptiveMovingAverage {
         self.alpha_slow
     }
 
-    pub const fn reset(&mut self) {
-        self.value = 0.0;
-        self.prior_value = None;
-        self.count = 0;
-        self.has_inputs = false;
-        self.initialized = false;
+    pub fn reset(&mut self) {
+        Indicator::reset(self);
     }
 }
 
@@ -225,6 +223,7 @@ mod tests {
         average::ama::AdaptiveMovingAverage,
         indicator::{Indicator, MovingAverage},
         stubs::*,
+        testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -246,7 +245,7 @@ mod tests {
     fn test_value_with_two_inputs(mut indicator_ama_10: AdaptiveMovingAverage) {
         indicator_ama_10.update_raw(1.0);
         indicator_ama_10.update_raw(2.0);
-        assert_eq!(indicator_ama_10.value, 1.444_444_444_444_444_2);
+        assert_approx_equal(indicator_ama_10.value, 1.44444444444);
     }
 
     #[rstest]
@@ -254,20 +253,31 @@ mod tests {
         indicator_ama_10.update_raw(1.0);
         indicator_ama_10.update_raw(2.0);
         indicator_ama_10.update_raw(3.0);
-        assert_eq!(indicator_ama_10.value, 2.135_802_469_135_802);
+        assert_approx_equal(indicator_ama_10.value, 2.13580246914);
     }
 
     #[rstest]
-    fn test_reset(mut indicator_ama_10: AdaptiveMovingAverage) {
-        for _ in 0..10 {
-            indicator_ama_10.update_raw(1.0);
+    #[case::inherent(AdaptiveMovingAverage::reset)]
+    #[case::indicator(<AdaptiveMovingAverage as Indicator>::reset)]
+    fn test_reset(
+        #[case] reset: fn(&mut AdaptiveMovingAverage),
+        mut indicator_ama_10: AdaptiveMovingAverage,
+    ) {
+        for value in 1..=10 {
+            indicator_ama_10.update_raw(f64::from(value));
         }
         assert!(indicator_ama_10.initialized);
-        indicator_ama_10.reset();
+
+        reset(&mut indicator_ama_10);
+
         assert!(!indicator_ama_10.initialized);
         assert!(!indicator_ama_10.has_inputs);
         assert_eq!(indicator_ama_10.value, 0.0);
+        assert_eq!(indicator_ama_10.prior_value, None);
         assert_eq!(indicator_ama_10.count, 0);
+        assert!(!indicator_ama_10.efficiency_ratio.has_inputs());
+        assert!(!indicator_ama_10.efficiency_ratio.initialized());
+        assert_eq!(indicator_ama_10.efficiency_ratio.value, 0.0);
     }
 
     #[rstest]

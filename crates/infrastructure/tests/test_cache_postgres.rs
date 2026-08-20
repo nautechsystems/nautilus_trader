@@ -42,7 +42,7 @@ mod serial_tests {
             order::spec::{OrderCancelRejectedSpec, OrderModifyRejectedSpec},
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+            AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
             TradeId, TraderId, VenueOrderId,
         },
         instruments::{
@@ -117,6 +117,7 @@ mod serial_tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from("1.0"))
             .client_order_id(ClientOrderId::new("O-19700101-0000-001-001-1"))
+            .tags(vec![Ustr::from("tag-1"), Ustr::from("tag-2")])
             .build();
 
         // Add foreign key dependencies: instrument and currencies
@@ -358,10 +359,10 @@ mod serial_tests {
         let synthetic_result = database
             .load_synthetic(&InstrumentId::from("SYNTHETIC.SYNTH"))
             .await;
-        let actor_result = database.load_actor(&ComponentId::from("ACTOR-001"));
+        let actor_result = database.load_actor(&ActorId::from("ACTOR-001"));
         let strategy_result = database.load_strategy(&StrategyId::from("STRATEGY-001"));
         let state = AHashMap::from([("state".to_string(), Bytes::from_static(b"value"))]);
-        let actor_update_result = database.update_actor(&ComponentId::from("ACTOR-001"), &state);
+        let actor_update_result = database.update_actor(&ActorId::from("ACTOR-001"), &state);
         let strategy_update_result =
             database.update_strategy(&StrategyId::from("STRATEGY-001"), &state);
 

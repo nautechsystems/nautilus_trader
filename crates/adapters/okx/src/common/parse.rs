@@ -18,6 +18,7 @@
 use std::str::FromStr;
 
 use anyhow::Context;
+use jiff::Timestamp;
 pub use nautilus_core::serialization::{
     deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
     deserialize_optional_string_to_u64, deserialize_string_to_u64,
@@ -115,7 +116,11 @@ pub fn is_market_price(px: &str) -> bool {
 ///
 /// For FOK, IOC, and OptimalLimitIoc orders, the presence of a price
 /// determines whether it's a market or limit order execution.
-pub fn determine_order_type(okx_ord_type: OKXOrderType, px: &str) -> OrderType {
+///
+/// # Errors
+///
+/// Returns an error if the OKX order type has no Nautilus equivalent.
+pub fn determine_order_type(okx_ord_type: OKXOrderType, px: &str) -> anyhow::Result<OrderType> {
     determine_order_type_with_alt(okx_ord_type, px, "", "")
 }
 
@@ -124,23 +129,29 @@ pub fn determine_order_type(okx_ord_type: OKXOrderType, px: &str) -> OrderType {
 /// When options are priced via `px_vol` or `px_usd`, the primary `px` field
 /// is empty. Treating that as a market order is wrong: the order was a limit
 /// priced in an alternative unit.
+///
+/// # Errors
+///
+/// Returns an error if the OKX order type has no Nautilus equivalent.
 pub fn determine_order_type_with_alt(
     okx_ord_type: OKXOrderType,
     px: &str,
     px_vol: &str,
     px_usd: &str,
-) -> OrderType {
+) -> anyhow::Result<OrderType> {
     match okx_ord_type {
-        OKXOrderType::OpFok => OrderType::Limit,
+        OKXOrderType::OpFok => Ok(OrderType::Limit),
         OKXOrderType::Fok | OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => {
             let has_alt_price = !px_vol.is_empty() || !px_usd.is_empty();
             if has_alt_price || !is_market_price(px) {
-                OrderType::Limit
+                Ok(OrderType::Limit)
             } else {
-                OrderType::Market
+                Ok(OrderType::Market)
             }
         }
-        _ => okx_ord_type.into(),
+        other => other
+            .try_into()
+            .map_err(|e| anyhow::anyhow!("Unsupported OKX order type: {e}")),
     }
 }
 
@@ -326,6 +337,45 @@ pub fn parse_client_order_id(value: &str) -> Option<ClientOrderId> {
     }
 }
 
+pub(crate) fn parse_parent_client_order_id(
+    algo_client_order_id: Option<&str>,
+    client_order_id: &str,
+) -> Option<ClientOrderId> {
+    // OKX keeps the submitted algo client ID when it creates a triggered child order.
+    algo_client_order_id
+        .and_then(parse_client_order_id)
+        .or_else(|| parse_client_order_id(client_order_id))
+}
+
+pub(crate) fn is_order_status_report_more_advanced(
+    candidate: &OrderStatusReport,
+    current: &OrderStatusReport,
+) -> bool {
+    if candidate.filled_qty != current.filled_qty {
+        return candidate.filled_qty > current.filled_qty;
+    }
+
+    let candidate_priority = order_status_priority(candidate.order_status);
+    let current_priority = order_status_priority(current.order_status);
+    if candidate_priority != current_priority {
+        return candidate_priority > current_priority;
+    }
+
+    candidate.ts_last > current.ts_last
+}
+
+const fn order_status_priority(status: OrderStatus) -> u8 {
+    match status {
+        OrderStatus::Initialized | OrderStatus::Submitted | OrderStatus::Emulated => 0,
+        OrderStatus::Released | OrderStatus::Denied => 1,
+        OrderStatus::Accepted | OrderStatus::PendingUpdate | OrderStatus::PendingCancel => 2,
+        OrderStatus::Triggered => 3,
+        OrderStatus::PartiallyFilled => 4,
+        OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Rejected => 5,
+        OrderStatus::Filled | OrderStatus::Voided => 6,
+    }
+}
+
 /// Converts a millisecond-based timestamp (as returned by OKX) into
 /// [`UnixNanos`].
 #[must_use]
@@ -340,15 +390,14 @@ pub fn parse_millisecond_timestamp(timestamp_ms: u64) -> UnixNanos {
 /// Returns an error if the string is not a valid RFC 3339 datetime or if the
 /// timestamp cannot be represented in nanoseconds.
 pub fn parse_rfc3339_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos> {
-    let dt = chrono::DateTime::parse_from_rfc3339(timestamp)?;
-    let nanos = dt.timestamp_nanos_opt().ok_or_else(|| {
-        anyhow::anyhow!("Failed to extract nanoseconds from timestamp: {timestamp}")
-    })?;
-
+    let dt = timestamp.parse::<Timestamp>()?;
+    let nanos = dt.as_nanosecond();
     if nanos < 0 {
         anyhow::bail!("Negative nanosecond timestamp from: {timestamp}");
     }
-    Ok(UnixNanos::from(nanos as u64))
+    let nanos = u64::try_from(nanos)
+        .with_context(|| format!("Timestamp is outside the UnixNanos range: {timestamp}"))?;
+    Ok(UnixNanos::from(nanos))
 }
 
 /// Converts a textual price to a [`Price`] using the given precision.
@@ -380,13 +429,21 @@ pub fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
 ///
 /// # Errors
 ///
-/// Returns an error if the fee cannot be parsed into `Decimal` or fails internal
-/// validation in [`Money::from_decimal`].
+/// Returns an error if the fee is missing or empty, cannot be parsed into
+/// `Decimal`, or fails internal validation in [`Money::from_decimal`].
 pub fn parse_fee(value: Option<&str>, currency: Currency) -> anyhow::Result<Money> {
     // OKX uses opposite sign convention: negative = cost, positive = rebate.
     // Negate to match Nautilus convention: positive = cost, negative = rebate.
-    let decimal = Decimal::from_str(value.unwrap_or("0"))?;
+    let decimal = required_fee_amount(value)?;
     Money::from_decimal(-decimal, currency).map_err(Into::into)
+}
+
+fn required_fee_amount(value: Option<&str>) -> anyhow::Result<Decimal> {
+    let value = value
+        .map(str::trim)
+        .filter(|fee| !fee.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("missing fee"))?;
+    Decimal::from_str(value).map_err(Into::into)
 }
 
 /// Parses OKX fee currency code, handling empty strings.
@@ -418,8 +475,8 @@ pub fn parse_fee_currency(
 /// Parses OKX side to Nautilus aggressor side.
 pub fn parse_aggressor_side(side: &Option<OKXSide>) -> AggressorSide {
     match side {
-        Some(OKXSide::Buy) => AggressorSide::Buyer,
-        Some(OKXSide::Sell) => AggressorSide::Seller,
+        Some(OKXSide::Buy) => AggressorSide::Buy,
+        Some(OKXSide::Sell) => AggressorSide::Sell,
         None => AggressorSide::NoAggressor,
     }
 }
@@ -651,7 +708,7 @@ pub fn parse_order_status_report(
 
     let okx_ord_type: OKXOrderType = order.ord_type;
     let order_type =
-        determine_order_type_with_alt(okx_ord_type, &order.px, &order.px_vol, &order.px_usd);
+        determine_order_type_with_alt(okx_ord_type, &order.px, &order.px_vol, &order.px_usd)?;
 
     // Parse quantities based on target currency
     // OKX always returns acc_fill_sz in base currency, but sz depends on tgt_ccy
@@ -775,34 +832,21 @@ pub fn parse_order_status_report(
     };
 
     let order_side: OrderSide = order.side.into();
-    let okx_status: OKXOrderStatus = order.state;
-    let order_status: OrderStatus = okx_status.into();
+    let order_status: OrderStatus = order
+        .state
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("Unsupported OKX order status: {e}"))?;
     let time_in_force = match okx_ord_type {
         OKXOrderType::Fok | OKXOrderType::OpFok => TimeInForce::Fok,
         OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
         _ => TimeInForce::Gtc,
     };
 
-    let mut client_order_id = if order.cl_ord_id.is_empty() {
-        None
-    } else {
-        Some(ClientOrderId::new(order.cl_ord_id.as_str()))
-    };
-
+    let client_order_id = parse_parent_client_order_id(
+        order.algo_cl_ord_id.as_ref().map(Ustr::as_str),
+        order.cl_ord_id.as_str(),
+    );
     let mut linked_ids = Vec::new();
-
-    if let Some(algo_cl_ord_id) = order
-        .algo_cl_ord_id
-        .as_ref()
-        .filter(|value| !value.as_str().is_empty())
-    {
-        let algo_client_id = ClientOrderId::new(algo_cl_ord_id.as_str());
-        match &client_order_id {
-            Some(existing) if existing == &algo_client_id => {}
-            Some(_) => linked_ids.push(algo_client_id),
-            None => client_order_id = Some(algo_client_id),
-        }
-    }
 
     if let Some(attach_algo_cl_ord_id) = order
         .attach_algo_cl_ord_id
@@ -1145,7 +1189,9 @@ pub fn parse_fill_report(
     let order_side: OrderSide = detail.side.into();
     let last_px = parse_price(&detail.fill_px, price_precision)?;
     let last_qty = parse_quantity(&detail.fill_sz, size_precision)?;
-    let fee_dec = Decimal::from_str(detail.fee.as_deref().unwrap_or("0"))?;
+    let fee_dec = required_fee_amount(detail.fee.as_deref()).with_context(|| {
+        format!("missing or invalid fee for fill report instrument_id={instrument_id}")
+    })?;
     let fee_currency = parse_fee_currency(&detail.fee_ccy, fee_dec, || {
         format!("fill report for instrument_id={instrument_id}")
     });
@@ -1184,11 +1230,14 @@ pub fn parse_spread_order_status_report(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
-    let order_type = determine_order_type(order.ord_type, &order.px);
+    let order_type = determine_order_type(order.ord_type, &order.px)?;
     let quantity = parse_quantity(&order.sz, size_precision)?;
     let filled_qty = parse_quantity(&order.acc_fill_sz, size_precision)?;
     let order_side: OrderSide = order.side.into();
-    let order_status: OrderStatus = order.state.into();
+    let order_status: OrderStatus = order
+        .state
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("Unsupported OKX order status: {e}"))?;
     let time_in_force = match order.ord_type {
         OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
         OKXOrderType::Fok | OKXOrderType::OpFok => TimeInForce::Fok,
@@ -1270,7 +1319,9 @@ pub fn parse_spread_fill_report(
     let order_side: OrderSide = detail.side.into();
     let last_px = parse_price(&detail.fill_px, price_precision)?;
     let last_qty = parse_quantity(&detail.fill_sz, size_precision)?;
-    let fee_dec = Decimal::from_str(detail.fee.as_deref().unwrap_or("0"))?;
+    let fee_dec = required_fee_amount(detail.fee.as_deref()).with_context(|| {
+        format!("missing or invalid fee for spread fill report instrument_id={instrument_id}")
+    })?;
     let fee_currency = parse_fee_currency(&detail.fee_ccy, fee_dec, || {
         format!("spread fill report for instrument_id={instrument_id}")
     });
@@ -2811,8 +2862,8 @@ pub fn parse_account_state(
     ))
 }
 
-/// Converts an optional `UnixNanos` to an optional `DateTime<Utc>`.
-pub fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<chrono::DateTime<chrono::Utc>> {
+/// Converts an optional `UnixNanos` to an optional `Timestamp`.
+pub fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<jiff::Timestamp> {
     value.map(|nanos| nanos.to_datetime_utc())
 }
 
@@ -4301,6 +4352,39 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_triggered_order_history_preserves_parent_identity() {
+        let json_data = load_test_json("http_get_orders_history.json");
+        let response: OKXResponse<OKXOrderHistory> = serde_json::from_str(&json_data).unwrap();
+        let mut okx_order = response
+            .data
+            .first()
+            .expect("Test data must have an order")
+            .clone();
+        okx_order.cl_ord_id = Ustr::from("706620792746729474_0");
+        okx_order.algo_cl_ord_id = Some(Ustr::from("STOP003BTCUSDT20250120"));
+        okx_order.ord_id = Ustr::from("706620792746729999");
+
+        let order_report = parse_order_status_report(
+            &okx_order,
+            AccountId::new("OKX-001"),
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            2,
+            8,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            order_report.client_order_id,
+            Some(ClientOrderId::from("STOP003BTCUSDT20250120"))
+        );
+        assert_eq!(
+            order_report.venue_order_id,
+            VenueOrderId::from("706620792746729999")
+        );
+    }
+
+    #[rstest]
     fn test_parse_position_status_report() {
         let json_data = load_test_json("http_get_positions.json");
         let response: OKXResponse<OKXPosition> = serde_json::from_str(&json_data).unwrap();
@@ -4338,7 +4422,7 @@ mod tests {
         assert_eq!(trade_tick.instrument_id, instrument_id);
         assert_eq!(trade_tick.price, Price::from("102537.90"));
         assert_eq!(trade_tick.size, Quantity::from("0.00013669"));
-        assert_eq!(trade_tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade_tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(trade_tick.trade_id, TradeId::new("734864333"));
     }
 
@@ -4466,11 +4550,11 @@ mod tests {
     fn test_parse_aggressor_side() {
         assert_eq!(
             parse_aggressor_side(&Some(OKXSide::Buy)),
-            AggressorSide::Buyer
+            AggressorSide::Buy
         );
         assert_eq!(
             parse_aggressor_side(&Some(OKXSide::Sell)),
-            AggressorSide::Seller
+            AggressorSide::Sell
         );
         assert_eq!(parse_aggressor_side(&None), AggressorSide::NoAggressor);
     }
@@ -4578,6 +4662,71 @@ mod tests {
         assert_eq!(fill_report.last_px, Price::from("42219.50"));
         assert_eq!(fill_report.last_qty, Quantity::from("0.00100000"));
         assert_eq!(fill_report.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(
+            fill_report.commission,
+            Money::from_decimal(dec!(-0.042), Currency::USDT()).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_fee_rejects_missing_or_empty() {
+        let currency = Currency::USDT();
+
+        let missing = parse_fee(None, currency).unwrap_err();
+        assert!(missing.to_string().contains("missing fee"));
+
+        let empty = parse_fee(Some(""), currency).unwrap_err();
+        assert!(empty.to_string().contains("missing fee"));
+
+        let blank = parse_fee(Some("   "), currency).unwrap_err();
+        assert!(blank.to_string().contains("missing fee"));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_rejects_missing_fee() {
+        let json_data = load_test_json("http_transaction_detail_empty_fee.json");
+        let detail: OKXTransactionDetail = serde_json::from_str(&json_data).unwrap();
+        let error = parse_fill_report(
+            &detail,
+            AccountId::new("OKX-001"),
+            InstrumentId::from("BTC-USDT.OKX"),
+            2,
+            8,
+            UnixNanos::default(),
+        )
+        .unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("missing fee"), "was {message}");
+    }
+
+    #[rstest]
+    fn test_parse_spread_fill_report_rejects_missing_fee() {
+        let detail = OKXSpreadTrade {
+            sprd_id: Ustr::from("ETH-USD-SWAP_ETH-USD-231229"),
+            trade_id: Ustr::from("9001"),
+            ord_id: Ustr::from("12345"),
+            cl_ord_id: Ustr::from("O-spread-entry"),
+            fill_px: "1.20".to_string(),
+            fill_sz: "5".to_string(),
+            side: OKXSide::Buy,
+            exec_type: OKXExecType::Taker,
+            fee_ccy: "USDT".to_string(),
+            fee: None,
+            ts: 1_700_000_001_000,
+        };
+        let error = parse_spread_fill_report(
+            &detail,
+            AccountId::new("OKX-001"),
+            InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"),
+            2,
+            0,
+            UnixNanos::default(),
+        )
+        .unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("missing fee"), "was {message}");
     }
 
     #[rstest]
@@ -6111,7 +6260,12 @@ mod tests {
         #[case] price: &str,
         #[case] expected: OrderType,
     ) {
-        assert_eq!(determine_order_type(okx_ord_type, price), expected);
+        assert_eq!(determine_order_type(okx_ord_type, price).unwrap(), expected);
+    }
+
+    #[rstest]
+    fn test_determine_order_type_rejects_unknown_order_type() {
+        assert!(determine_order_type(OKXOrderType::Other, "100.5").is_err());
     }
 
     #[rstest]

@@ -15,7 +15,7554 @@
 
 //! Order matching engine components for simulating trading venue behavior.
 
-pub mod adapter;
 pub mod config;
-pub mod engine;
 pub mod ids_generator;
+
+mod settlement;
+
+use std::{
+    cell::RefCell,
+    cmp::min,
+    fmt::Debug,
+    mem,
+    ops::{Add, Sub},
+    rc::Rc,
+};
+
+use indexmap::{IndexMap, IndexSet};
+use jiff::SignedDuration;
+use nautilus_common::{
+    cache::Cache,
+    clock::Clock,
+    messages::execution::{
+        BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+    },
+    msgbus::{self, MessagingSwitchboard},
+};
+use nautilus_core::{UUID4, UnixNanos, correctness::CorrectnessResult};
+use nautilus_model::{
+    data::{
+        Bar, BarType, InstrumentClose, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
+        QuoteTick, TradeTick,
+        order::{BookOrder, OrderId},
+    },
+    enums::{
+        AccountType, AggregationSource, AggressorSide, BookAction, BookType, ContingencyType,
+        InstrumentCloseType, LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OrderSide,
+        OrderSideSpecified, OrderStatus, OrderType, PositionSide, PriceType, RecordFlag,
+        TimeInForce, TriggerType,
+    },
+    events::{
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
+        OrderFilled, OrderModifyRejected, OrderRejected, OrderSubmitted, OrderTriggered,
+        OrderUpdated,
+    },
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId, Venue,
+        VenueOrderId,
+    },
+    instruments::{Instrument, InstrumentAny},
+    orderbook::OrderBook,
+    orders::{MarketOrder, Order, OrderAny, OrderCore},
+    position::Position,
+    types::{
+        Currency, Money, Price, Quantity, fixed::FIXED_PRECISION, price::PriceRaw,
+        quantity::QuantityRaw,
+    },
+};
+use ustr::Ustr;
+
+use self::{config::OrderMatchingEngineConfig, ids_generator::IdsGenerator};
+use crate::{
+    matching_core::{MatchAction, OrderMatchingCore, RestingOrder},
+    models::{
+        fee::{FeeModel, FeeModelHandle},
+        fill::{FillModel, FillModelHandle},
+    },
+    protection::protection_price_calculate,
+    trailing::trailing_stop_calculate,
+};
+
+/// An order matching engine for a single market.
+pub struct OrderMatchingEngine {
+    /// The venue for the matching engine.
+    pub venue: Venue,
+    /// The instrument for the matching engine.
+    pub instrument: InstrumentAny,
+    /// The instruments raw integer ID for the venue.
+    pub raw_id: u32,
+    /// The order book type for the matching engine.
+    pub book_type: BookType,
+    /// The order management system (OMS) type for the matching engine.
+    pub oms_type: OmsType,
+    /// The account type for the matching engine.
+    pub account_type: AccountType,
+    /// The market status for the matching engine.
+    pub market_status: MarketStatus,
+    /// The config for the matching engine.
+    pub config: OrderMatchingEngineConfig,
+    core: OrderMatchingCore,
+    clock: Rc<RefCell<dyn Clock>>,
+    cache: Rc<RefCell<Cache>>,
+    book: OrderBook,
+    fill_model: FillModelHandle,
+    fee_model: FeeModelHandle,
+    event_handler: Option<Rc<dyn Fn(OrderEventAny)>>,
+    target_bid: Option<Price>,
+    target_ask: Option<Price>,
+    target_last: Option<Price>,
+    last_bar_bid: Option<Bar>,
+    last_bar_ask: Option<Bar>,
+    fill_at_market: bool,
+    execution_bar_types: IndexMap<InstrumentId, BarType>,
+    execution_bar_deltas: IndexMap<BarType, SignedDuration>,
+    account_ids: IndexMap<TraderId, AccountId>,
+    cached_filled_qty: IndexMap<ClientOrderId, Quantity>,
+    post_match_order_ids: IndexSet<ClientOrderId>,
+    ids_generator: IdsGenerator,
+    last_trade_size: Option<Quantity>,
+    trade_consumption: QuantityRaw,
+    bid_consumption: IndexMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
+    ask_consumption: IndexMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
+    queue_pending: IndexMap<ClientOrderId, PriceRaw>,
+    queue_ahead_orders: IndexMap<ClientOrderId, IndexMap<OrderId, QuantityRaw>>,
+    queue_ahead_total: IndexMap<ClientOrderId, (PriceRaw, QuantityRaw)>,
+    queue_excess: IndexMap<ClientOrderId, QuantityRaw>,
+    queue_id_scratch: Vec<ClientOrderId>,
+    queue_stale_scratch: Vec<ClientOrderId>,
+    queue_entry_scratch: Vec<(ClientOrderId, QuantityRaw, QuantityRaw)>,
+    prev_bid_price_raw: PriceRaw,
+    prev_bid_size_raw: QuantityRaw,
+    prev_ask_price_raw: PriceRaw,
+    prev_ask_size_raw: QuantityRaw,
+    tob_initialized: bool,
+    last_quote_bid: Option<Price>,
+    last_quote_ask: Option<Price>,
+    precision_mismatch_streak: u32,
+    instrument_close: Option<InstrumentClose>,
+    pending_resolution: bool,
+    settlement_price: Option<Price>,
+    expiration_processed: bool,
+    option_settlement_failed: bool,
+    option_settlement_warning: Option<&'static str>,
+    option_expiration_orders_canceled: bool,
+}
+
+impl Debug for OrderMatchingEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(OrderMatchingEngine))
+            .field("venue", &self.venue)
+            .field("instrument", &self.instrument.id())
+            .finish()
+    }
+}
+
+impl OrderMatchingEngine {
+    /// Creates a new [`OrderMatchingEngine`] instance.
+    #[expect(clippy::too_many_arguments)]
+    pub fn new(
+        instrument: InstrumentAny,
+        raw_id: u32,
+        fill_model: FillModelHandle,
+        fee_model: FeeModelHandle,
+        book_type: BookType,
+        oms_type: OmsType,
+        account_type: AccountType,
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+        config: OrderMatchingEngineConfig,
+    ) -> Self {
+        let book = OrderBook::new(instrument.id(), book_type);
+        let mut core = OrderMatchingCore::new(instrument.id(), instrument.price_increment());
+        core.set_fill_limit_inside_spread(Self::fill_limit_inside_spread_or_false(&fill_model));
+        let ids_generator = IdsGenerator::new(
+            instrument.id().venue,
+            oms_type,
+            raw_id,
+            config.use_random_ids,
+            config.use_position_ids,
+            cache.clone(),
+        );
+
+        Self {
+            venue: instrument.id().venue,
+            instrument,
+            raw_id,
+            fill_model,
+            fee_model,
+            event_handler: None,
+            book_type,
+            oms_type,
+            account_type,
+            clock,
+            cache,
+            book,
+            market_status: MarketStatus::Open,
+            config,
+            core,
+            target_bid: None,
+            target_ask: None,
+            target_last: None,
+            last_bar_bid: None,
+            last_bar_ask: None,
+            fill_at_market: true,
+            execution_bar_types: IndexMap::new(),
+            execution_bar_deltas: IndexMap::new(),
+            account_ids: IndexMap::new(),
+            cached_filled_qty: IndexMap::new(),
+            post_match_order_ids: IndexSet::new(),
+            ids_generator,
+            last_trade_size: None,
+            trade_consumption: 0,
+            bid_consumption: IndexMap::new(),
+            ask_consumption: IndexMap::new(),
+            queue_pending: IndexMap::new(),
+            queue_ahead_orders: IndexMap::new(),
+            queue_ahead_total: IndexMap::new(),
+            queue_excess: IndexMap::new(),
+            queue_id_scratch: Vec::new(),
+            queue_stale_scratch: Vec::new(),
+            queue_entry_scratch: Vec::new(),
+            prev_bid_price_raw: 0,
+            prev_bid_size_raw: 0,
+            prev_ask_price_raw: 0,
+            prev_ask_size_raw: 0,
+            tob_initialized: false,
+            last_quote_bid: None,
+            last_quote_ask: None,
+            precision_mismatch_streak: 0,
+            instrument_close: None,
+            pending_resolution: false,
+            settlement_price: None,
+            expiration_processed: false,
+            option_settlement_failed: false,
+            option_settlement_warning: None,
+            option_expiration_orders_canceled: false,
+        }
+    }
+
+    /// Sets the event handler for dispatching order events.
+    ///
+    /// When set, events are routed through the handler instead of directly
+    /// through the message bus. This allows sandbox execution clients to
+    /// dispatch events through the async runner channel, avoiding `RefCell`
+    /// re-entrancy panics.
+    pub fn set_event_handler(&mut self, handler: Rc<dyn Fn(OrderEventAny)>) {
+        self.event_handler = Some(handler);
+    }
+
+    fn dispatch_order_event(&self, event: OrderEventAny) {
+        if let Some(handler) = &self.event_handler {
+            handler(event);
+        } else {
+            let endpoint = MessagingSwitchboard::exec_engine_process();
+            msgbus::send_order_event(endpoint, event);
+        }
+    }
+
+    /// Resets the matching engine to its initial state.
+    ///
+    /// Clears the order book, execution state, cached data, and resets all
+    /// internal components. This is typically used for backtesting scenarios
+    /// where the engine needs to be reset between test runs.
+    pub fn reset(&mut self) {
+        self.book.reset();
+        self.execution_bar_types.clear();
+        self.execution_bar_deltas.clear();
+        self.account_ids.clear();
+        self.cached_filled_qty.clear();
+        self.post_match_order_ids.clear();
+        self.core.reset();
+        self.target_bid = None;
+        self.target_ask = None;
+        self.target_last = None;
+        self.last_trade_size = None;
+        self.trade_consumption = 0;
+        self.bid_consumption.clear();
+        self.ask_consumption.clear();
+        self.queue_pending.clear();
+        self.queue_ahead_orders.clear();
+        self.queue_ahead_total.clear();
+        self.queue_excess.clear();
+        self.queue_id_scratch.clear();
+        self.queue_stale_scratch.clear();
+        self.queue_entry_scratch.clear();
+        self.prev_bid_price_raw = 0;
+        self.prev_bid_size_raw = 0;
+        self.prev_ask_price_raw = 0;
+        self.prev_ask_size_raw = 0;
+        self.tob_initialized = false;
+        self.last_quote_bid = None;
+        self.last_quote_ask = None;
+        self.last_bar_bid = None;
+        self.last_bar_ask = None;
+        self.precision_mismatch_streak = 0;
+        self.instrument_close = None;
+        self.market_status = MarketStatus::Open;
+        self.pending_resolution = false;
+        self.settlement_price = None;
+        self.expiration_processed = false;
+        self.option_settlement_failed = false;
+        self.option_settlement_warning = None;
+        self.option_expiration_orders_canceled = false;
+        self.fill_at_market = true;
+        self.ids_generator.reset();
+
+        log::info!("Reset {}", self.instrument.id());
+    }
+
+    fn apply_liquidity_consumption(
+        &mut self,
+        fills: Vec<(Price, Quantity)>,
+        order_side: OrderSide,
+        leaves_qty: Quantity,
+        book_prices: Option<&[Price]>,
+    ) -> Vec<(Price, Quantity)> {
+        if !self.config.liquidity_consumption {
+            return fills;
+        }
+
+        let consumption = match order_side {
+            OrderSide::Buy => &mut self.ask_consumption,
+            OrderSide::Sell => &mut self.bid_consumption,
+            _ => return fills,
+        };
+
+        let mut adjusted_fills = Vec::with_capacity(fills.len());
+        let mut remaining_qty = leaves_qty.raw;
+
+        for (fill_idx, (price, qty)) in fills.into_iter().enumerate() {
+            if remaining_qty == 0 {
+                break;
+            }
+
+            // Use book_price for consumption tracking (original price before MAKER adjustment),
+            // but use price (potentially adjusted) for the output fill.
+            let book_price = book_prices
+                .and_then(|bp| bp.get(fill_idx).copied())
+                .unwrap_or(price);
+
+            let book_price_raw = book_price.raw;
+            let level_size = self
+                .book
+                .get_quantity_at_level(book_price, order_side, qty.precision);
+
+            let (original_size, consumed) = consumption
+                .entry(book_price_raw)
+                .or_insert((level_size.raw, 0));
+
+            // Reset consumption when book size changes (fresh data)
+            if *original_size != level_size.raw {
+                *original_size = level_size.raw;
+                *consumed = 0;
+            }
+
+            let available = original_size.saturating_sub(*consumed);
+            if available == 0 {
+                continue;
+            }
+
+            let adjusted_qty_raw = min(min(qty.raw, available), remaining_qty);
+            if adjusted_qty_raw == 0 {
+                continue;
+            }
+
+            *consumed += adjusted_qty_raw;
+            remaining_qty -= adjusted_qty_raw;
+
+            let adjusted_qty = Quantity::from_raw(adjusted_qty_raw, qty.precision);
+            adjusted_fills.push((price, adjusted_qty));
+        }
+
+        adjusted_fills
+    }
+
+    fn seed_trade_consumption(
+        &mut self,
+        trade_price_raw: PriceRaw,
+        trade_size_raw: QuantityRaw,
+        trade_ts_event: UnixNanos,
+        aggressor_side: AggressorSide,
+    ) {
+        if trade_size_raw == 0 {
+            return;
+        }
+
+        // If the book was updated after the trade's event time, depth deltas
+        // already reflect this trade's consumed volume, skip to avoid double-counting
+        if self.book.ts_last > trade_ts_event {
+            return;
+        }
+
+        let consumption = match aggressor_side {
+            AggressorSide::Buy => &mut self.ask_consumption,
+            AggressorSide::Sell => &mut self.bid_consumption,
+            AggressorSide::NoAggressor => return,
+        };
+
+        let levels: Vec<_> = match aggressor_side {
+            AggressorSide::Buy => self
+                .book
+                .asks(None)
+                .take_while(|l| l.price.value.raw <= trade_price_raw)
+                .collect(),
+            AggressorSide::Sell => self
+                .book
+                .bids(None)
+                .take_while(|l| l.price.value.raw >= trade_price_raw)
+                .collect(),
+            _ => unreachable!(),
+        };
+
+        let mut remaining = trade_size_raw;
+        for level in &levels {
+            if remaining == 0 {
+                break;
+            }
+            let level_size = level.size_raw();
+            let entry = consumption
+                .entry(level.price.value.raw)
+                .or_insert((level_size, 0));
+
+            // Reconcile stale level size to prevent reset in apply_liquidity_consumption
+            if entry.0 != level_size {
+                entry.0 = level_size;
+                entry.1 = 0;
+            }
+
+            let available = level_size.saturating_sub(entry.1);
+            let consume = min(remaining, available);
+            entry.1 += consume;
+            remaining -= consume;
+        }
+    }
+
+    /// Sets the fill model for the matching engine.
+    pub fn set_fill_model(&mut self, fill_model: FillModelHandle) {
+        self.core
+            .set_fill_limit_inside_spread(Self::fill_limit_inside_spread_or_false(&fill_model));
+        self.fill_model = fill_model;
+    }
+
+    fn fill_limit_inside_spread_or_false(fill_model: &FillModelHandle) -> bool {
+        fill_model.fill_limit_inside_spread().unwrap_or_else(|e| {
+            log::error!("Failed to query fill model spread behavior: {e}");
+            false
+        })
+    }
+
+    pub fn set_settlement_price(&mut self, price: Price) {
+        self.settlement_price = Some(price);
+    }
+
+    fn snapshot_queue_position(&mut self, order: &OrderAny, price: Price) {
+        if !self.config.queue_position {
+            return;
+        }
+        let size_prec = self.instrument.size_precision();
+
+        // Pass opposite side because get_quantity_at_level flips internally
+        // (BUY reads asks, SELL reads bids). We want the resting side depth.
+        let qty_ahead = self.book.get_quantity_at_level(
+            price,
+            OrderCore::opposite_side(order.order_side()),
+            size_prec,
+        );
+
+        let client_order_id = order.client_order_id();
+
+        // Clear stale entries from all maps (e.g. order modified to new price)
+        self.queue_pending.shift_remove(&client_order_id);
+        self.queue_ahead_total.shift_remove(&client_order_id);
+        self.queue_ahead_orders.shift_remove(&client_order_id);
+
+        // For L1 books, levels behind the BBO have no visible depth. Track
+        // these orders separately so fills are blocked until the BBO reaches
+        // this price. Only truly behind-BBO prices are pending (BUY below
+        // best bid / SELL above best ask); inside-spread and no-book keep 0.
+        if self.book_type == BookType::L1_MBP && qty_ahead.raw == 0 {
+            let behind_bbo = match order.order_side() {
+                OrderSide::Buy => self.book.best_bid_price().is_some_and(|bid| price < bid),
+                OrderSide::Sell => self.book.best_ask_price().is_some_and(|ask| price > ask),
+                _ => false,
+            };
+
+            if behind_bbo {
+                self.queue_pending.insert(client_order_id, price.raw);
+                return;
+            }
+        }
+
+        self.queue_ahead_total
+            .insert(client_order_id, (price.raw, qty_ahead.raw));
+
+        // L3 books identify orders, so track which specific orders are ahead
+        if self.book_type == BookType::L3_MBO {
+            let orders_ahead: IndexMap<OrderId, QuantityRaw> = self
+                .book
+                .get_orders_at_level(price, OrderCore::opposite_side(order.order_side()))
+                .iter()
+                .map(|book_order| (book_order.order_id, book_order.size.raw))
+                .collect();
+            self.queue_ahead_orders
+                .insert(client_order_id, orders_ahead);
+        }
+    }
+
+    fn decrement_queue_on_trade(
+        &mut self,
+        price_raw: PriceRaw,
+        trade_size_raw: QuantityRaw,
+        aggressor_side: AggressorSide,
+    ) {
+        if !self.config.queue_position {
+            return;
+        }
+
+        self.queue_excess.clear();
+
+        let mut keys = Self::take_cleared(&mut self.queue_id_scratch);
+        keys.extend(self.queue_ahead_total.keys().copied());
+        let mut entries = Self::take_cleared(&mut self.queue_entry_scratch);
+        let mut stale = Self::take_cleared(&mut self.queue_stale_scratch);
+
+        for client_order_id in keys.iter().copied() {
+            let (order_price_raw, ahead_raw) =
+                match self.queue_ahead_total.get(&client_order_id).copied() {
+                    Some(v) => v,
+                    None => continue,
+                };
+
+            let cache = self.cache.borrow();
+            let order_info = cache.order(&client_order_id).and_then(|order| {
+                if order.is_closed() {
+                    None
+                } else {
+                    Some((order.order_side(), order.leaves_qty().raw))
+                }
+            });
+            drop(cache);
+
+            let Some((order_side, leaves_raw)) = order_info else {
+                stale.push(client_order_id);
+                continue;
+            };
+
+            if order_price_raw != price_raw || ahead_raw == 0 {
+                continue;
+            }
+
+            let should_decrement = matches!(aggressor_side, AggressorSide::NoAggressor)
+                || (aggressor_side == AggressorSide::Buy && order_side == OrderSide::Sell)
+                || (aggressor_side == AggressorSide::Sell && order_side == OrderSide::Buy);
+
+            if should_decrement {
+                entries.push((client_order_id, ahead_raw, leaves_raw));
+            }
+        }
+
+        for id in stale.drain(..) {
+            self.queue_ahead_total.shift_remove(&id);
+            self.queue_ahead_orders.shift_remove(&id);
+        }
+
+        // Sort by queue position (earliest first) for shared budget allocation
+        entries.sort_by_key(|&(_, ahead, _)| ahead);
+
+        let mut remaining = trade_size_raw;
+        let mut prev_position: QuantityRaw = 0;
+
+        for (client_order_id, ahead_raw, leaves_raw) in &entries {
+            if remaining == 0 {
+                let new_ahead = ahead_raw.saturating_sub(trade_size_raw);
+                self.reduce_queue_ahead(*client_order_id, price_raw, *ahead_raw, new_ahead);
+                if new_ahead == 0 {
+                    // Queue cleared but no trade volume left for this order
+                    self.queue_excess.insert(*client_order_id, 0);
+                }
+                continue;
+            }
+
+            // Consume the gap between previous position and this order's depth
+            let gap = ahead_raw.saturating_sub(prev_position);
+            let queue_consumed = remaining.min(gap);
+            remaining -= queue_consumed;
+
+            if remaining == 0 && queue_consumed < gap {
+                let new_ahead = ahead_raw.saturating_sub(trade_size_raw);
+                self.reduce_queue_ahead(*client_order_id, price_raw, *ahead_raw, new_ahead);
+                continue;
+            }
+
+            self.reduce_queue_ahead(*client_order_id, price_raw, *ahead_raw, 0);
+            let excess = remaining.min(*leaves_raw);
+            self.queue_excess.insert(*client_order_id, excess);
+            remaining -= excess;
+            prev_position = ahead_raw + excess;
+        }
+
+        self.queue_id_scratch = keys;
+        self.queue_entry_scratch = entries;
+        self.queue_stale_scratch = stale;
+    }
+
+    /// Reduces an order's quantity ahead, front-consuming its tracked orders by
+    /// the same amount so the pair stays in sync and later granular deltas for
+    /// consumed orders cannot advance the queue again.
+    fn reduce_queue_ahead(
+        &mut self,
+        client_order_id: ClientOrderId,
+        price_raw: PriceRaw,
+        ahead_raw: QuantityRaw,
+        new_ahead_raw: QuantityRaw,
+    ) {
+        self.queue_ahead_total
+            .insert(client_order_id, (price_raw, new_ahead_raw));
+        self.consume_queue_ahead_orders(client_order_id, ahead_raw.saturating_sub(new_ahead_raw));
+    }
+
+    /// Front-consumes (FIFO) the tracked orders in step with `queue_ahead_total`.
+    fn consume_queue_ahead_orders(
+        &mut self,
+        client_order_id: ClientOrderId,
+        mut amount_raw: QuantityRaw,
+    ) {
+        let Some(orders_ahead) = self.queue_ahead_orders.get_mut(&client_order_id) else {
+            return;
+        };
+
+        while amount_raw > 0 {
+            let Some((&book_order_id, &size_raw)) = orders_ahead.get_index(0) else {
+                break;
+            };
+
+            if size_raw <= amount_raw {
+                orders_ahead.shift_remove(&book_order_id);
+                amount_raw -= size_raw;
+            } else {
+                orders_ahead.insert(book_order_id, size_raw - amount_raw);
+                amount_raw = 0;
+            }
+        }
+    }
+
+    fn determine_trade_fill_qty(&self, order: &OrderAny) -> Option<QuantityRaw> {
+        if !self.config.queue_position {
+            return Some(order.leaves_qty().raw);
+        }
+
+        let client_order_id = order.client_order_id();
+
+        // Block fills for L1 orders pending a deferred snapshot
+        if self.queue_pending.contains_key(&client_order_id) {
+            return None;
+        }
+
+        if let Some(&(tracked_price_raw, ahead_raw)) = self.queue_ahead_total.get(&client_order_id)
+            && let Some(order_price) = order.price()
+            && order_price.raw == tracked_price_raw
+            && ahead_raw > 0
+        {
+            return None;
+        }
+
+        let leaves_raw = order.leaves_qty().raw;
+        if leaves_raw == 0 {
+            return None;
+        }
+
+        let mut available_raw = leaves_raw;
+
+        // Cap by remaining trade volume and queue excess (only during trade processing)
+        if let Some(trade_size) = self.last_trade_size {
+            let remaining = trade_size.raw.saturating_sub(self.trade_consumption);
+            available_raw = available_raw.min(remaining);
+
+            if let Some(&excess_raw) = self.queue_excess.get(&client_order_id) {
+                if excess_raw == 0 {
+                    return None;
+                }
+                available_raw = available_raw.min(excess_raw);
+            }
+        }
+
+        if available_raw == 0 {
+            return None;
+        }
+
+        Some(available_raw)
+    }
+
+    fn clear_all_queue_positions(&mut self) {
+        for (_, (_, ahead_raw)) in &mut self.queue_ahead_total {
+            *ahead_raw = 0;
+        }
+
+        for orders_ahead in self.queue_ahead_orders.values_mut() {
+            orders_ahead.clear();
+        }
+    }
+
+    fn adjust_queue_for_delta(&mut self, delta: &OrderBookDelta) {
+        if delta.action == BookAction::Delete {
+            if self.is_order_granular_delta(delta.flags) {
+                self.advance_l3_queue_on_delete(delta.order.order_id);
+            } else {
+                self.clear_queue_on_delete(delta.order.price.raw, delta.order.side);
+            }
+        } else if delta.action == BookAction::Update {
+            if self.is_order_granular_delta(delta.flags) {
+                self.adjust_l3_queue_on_update(&delta.order);
+            } else {
+                self.cap_queue_ahead(
+                    delta.order.price.raw,
+                    delta.order.size.raw,
+                    delta.order.side,
+                );
+            }
+        }
+    }
+
+    fn clear_queue_on_delete(&mut self, deleted_price_raw: PriceRaw, deleted_side: OrderSide) {
+        let mut keys = Self::take_cleared(&mut self.queue_id_scratch);
+        keys.extend(self.queue_ahead_total.keys().copied());
+        for client_order_id in keys.iter().copied() {
+            if let Some(&(order_price_raw, ahead_raw)) =
+                self.queue_ahead_total.get(&client_order_id)
+                && order_price_raw == deleted_price_raw
+            {
+                let matches_side = self
+                    .cache
+                    .borrow()
+                    .order(&client_order_id)
+                    .is_some_and(|o| o.order_side() == deleted_side);
+
+                if matches_side {
+                    self.reduce_queue_ahead(client_order_id, order_price_raw, ahead_raw, 0);
+                }
+            }
+        }
+        self.queue_id_scratch = keys;
+    }
+
+    /// Returns `true` when the delta identifies a single book order (pure MBO);
+    /// TOB/MBP-flagged deltas use level-wide handling instead.
+    fn is_order_granular_delta(&self, flags: u8) -> bool {
+        self.book_type == BookType::L3_MBO
+            && !RecordFlag::F_TOB.matches(flags)
+            && !RecordFlag::F_MBP.matches(flags)
+    }
+
+    fn advance_l3_queue_on_delete(&mut self, book_order_id: OrderId) {
+        for (client_order_id, orders_ahead) in &mut self.queue_ahead_orders {
+            let Some(size_raw) = orders_ahead.shift_remove(&book_order_id) else {
+                continue;
+            };
+
+            if let Some((_, ahead_raw)) = self.queue_ahead_total.get_mut(client_order_id) {
+                *ahead_raw = ahead_raw.saturating_sub(size_raw);
+            }
+        }
+    }
+
+    /// Adjusts tracked queues for a per-order update. A size decrease retains
+    /// time priority and advances the queue by the difference. A size increase
+    /// keeps its book FIFO slot, so it stays ahead with the larger size
+    /// (pessimistic versus venues that demote, but consistent with the book
+    /// that later snapshots read). A price move leaves the level.
+    fn adjust_l3_queue_on_update(&mut self, book_order: &BookOrder) {
+        for (client_order_id, orders_ahead) in &mut self.queue_ahead_orders {
+            let Some(&tracked_size_raw) = orders_ahead.get(&book_order.order_id) else {
+                continue;
+            };
+            let Some((tracked_price_raw, ahead_raw)) =
+                self.queue_ahead_total.get_mut(client_order_id)
+            else {
+                continue;
+            };
+
+            if book_order.price.raw != *tracked_price_raw {
+                *ahead_raw = ahead_raw.saturating_sub(tracked_size_raw);
+                orders_ahead.shift_remove(&book_order.order_id);
+            } else if book_order.size.raw < tracked_size_raw {
+                // Size decrease retains time priority
+                *ahead_raw = ahead_raw.saturating_sub(tracked_size_raw - book_order.size.raw);
+                orders_ahead.insert(book_order.order_id, book_order.size.raw);
+            } else if book_order.size.raw > tracked_size_raw {
+                *ahead_raw = ahead_raw.saturating_add(book_order.size.raw - tracked_size_raw);
+                orders_ahead.insert(book_order.order_id, book_order.size.raw);
+            }
+        }
+    }
+
+    fn cap_queue_ahead(
+        &mut self,
+        price_raw: PriceRaw,
+        size_raw: QuantityRaw,
+        order_side: OrderSide,
+    ) {
+        let mut keys = Self::take_cleared(&mut self.queue_id_scratch);
+        keys.extend(self.queue_ahead_total.keys().copied());
+        let mut stale = Self::take_cleared(&mut self.queue_stale_scratch);
+
+        for client_order_id in keys.iter().copied() {
+            let (order_price_raw, ahead_raw) =
+                match self.queue_ahead_total.get(&client_order_id).copied() {
+                    Some(v) => v,
+                    None => continue,
+                };
+
+            if order_price_raw != price_raw || ahead_raw <= size_raw {
+                continue;
+            }
+
+            let cache = self.cache.borrow();
+            let order_info = cache.order(&client_order_id).and_then(|order| {
+                if order.is_closed() {
+                    None
+                } else {
+                    Some(order.order_side())
+                }
+            });
+            drop(cache);
+
+            let Some(side) = order_info else {
+                stale.push(client_order_id);
+                continue;
+            };
+
+            if side != order_side {
+                continue;
+            }
+
+            self.reduce_queue_ahead(client_order_id, order_price_raw, ahead_raw, size_raw);
+        }
+
+        for id in stale.drain(..) {
+            self.queue_ahead_total.shift_remove(&id);
+            self.queue_ahead_orders.shift_remove(&id);
+        }
+
+        self.queue_id_scratch = keys;
+        self.queue_stale_scratch = stale;
+    }
+
+    fn seed_tob_baseline(&mut self) {
+        let bid = self.book.best_bid_price();
+        let ask = self.book.best_ask_price();
+        self.prev_bid_price_raw = bid.map_or(0, |p| p.raw);
+        self.prev_bid_size_raw = self.book.best_bid_size().map_or(0, |q| q.raw);
+        self.prev_ask_price_raw = ask.map_or(0, |p| p.raw);
+        self.prev_ask_size_raw = self.book.best_ask_size().map_or(0, |q| q.raw);
+        self.tob_initialized = bid.is_some() || ask.is_some();
+    }
+
+    fn decrement_l1_queue_on_quote(
+        &mut self,
+        bid_price_raw: PriceRaw,
+        bid_size_raw: QuantityRaw,
+        ask_price_raw: PriceRaw,
+        ask_size_raw: QuantityRaw,
+    ) {
+        if !self.config.queue_position {
+            return;
+        }
+
+        // Price-move detection requires a valid prior TOB snapshot
+        if self.tob_initialized {
+            // BID side (BUY limit orders): handle price drops (crossed/snapshot)
+            if bid_price_raw < self.prev_bid_price_raw {
+                self.adjust_l1_queue_on_price_move(bid_price_raw, bid_size_raw, OrderSide::Buy);
+            }
+
+            // ASK side (SELL limit orders): handle price rises (crossed/snapshot)
+            if ask_price_raw > self.prev_ask_price_raw {
+                self.adjust_l1_queue_on_price_move(ask_price_raw, ask_size_raw, OrderSide::Sell);
+            }
+        }
+
+        // Resolve pending snapshots when BBO reaches a tracked order's price
+        self.resolve_pending_l1_snapshots(bid_price_raw, bid_size_raw, ask_price_raw, ask_size_raw);
+    }
+
+    fn adjust_l1_queue_on_price_move(
+        &mut self,
+        new_price_raw: PriceRaw,
+        new_size_raw: QuantityRaw,
+        order_side: OrderSide,
+    ) {
+        let mut keys = Self::take_cleared(&mut self.queue_id_scratch);
+        keys.extend(self.queue_ahead_total.keys().copied());
+        let mut stale = Self::take_cleared(&mut self.queue_stale_scratch);
+
+        for client_order_id in keys.iter().copied() {
+            let Some(&(order_price_raw, ahead_raw)) = self.queue_ahead_total.get(&client_order_id)
+            else {
+                continue;
+            };
+
+            let cache = self.cache.borrow();
+            let order_info = cache.order(&client_order_id).and_then(|order| {
+                if order.is_closed() {
+                    None
+                } else {
+                    Some(order.order_side())
+                }
+            });
+            drop(cache);
+
+            let Some(side) = order_info else {
+                stale.push(client_order_id);
+                continue;
+            };
+
+            if side != order_side {
+                continue;
+            }
+
+            // BUY orders crossed when bid drops below order price
+            // SELL orders crossed when ask rises above order price
+            let crossed = match order_side {
+                OrderSide::Buy => order_price_raw > new_price_raw,
+                _ => order_price_raw < new_price_raw,
+            };
+
+            if crossed {
+                self.queue_ahead_total
+                    .insert(client_order_id, (order_price_raw, 0));
+            } else if order_price_raw == new_price_raw && ahead_raw > new_size_raw {
+                self.queue_ahead_total
+                    .insert(client_order_id, (order_price_raw, new_size_raw));
+            }
+        }
+
+        for id in stale.drain(..) {
+            self.queue_ahead_total.shift_remove(&id);
+        }
+
+        // Pending L1 orders affected by this price move. `stale` must be empty
+        // here so ids from the ahead-total walk are not removed from pending.
+        keys.clear();
+        keys.extend(self.queue_pending.keys().copied());
+
+        for client_order_id in keys.iter().copied() {
+            let Some(&order_price_raw) = self.queue_pending.get(&client_order_id) else {
+                continue;
+            };
+
+            let cache = self.cache.borrow();
+            let order_info = cache.order(&client_order_id).and_then(|order| {
+                if order.is_closed() {
+                    None
+                } else {
+                    Some(order.order_side())
+                }
+            });
+            drop(cache);
+
+            let Some(side) = order_info else {
+                stale.push(client_order_id);
+                continue;
+            };
+
+            if side != order_side {
+                continue;
+            }
+
+            let crossed = match order_side {
+                OrderSide::Buy => order_price_raw > new_price_raw,
+                _ => order_price_raw < new_price_raw,
+            };
+
+            if crossed {
+                self.queue_pending.shift_remove(&client_order_id);
+                self.queue_ahead_total
+                    .insert(client_order_id, (order_price_raw, 0));
+            } else if order_price_raw == new_price_raw {
+                self.queue_pending.shift_remove(&client_order_id);
+                self.queue_ahead_total
+                    .insert(client_order_id, (order_price_raw, new_size_raw));
+            }
+        }
+
+        for id in stale.drain(..) {
+            self.queue_pending.shift_remove(&id);
+        }
+
+        self.queue_id_scratch = keys;
+        self.queue_stale_scratch = stale;
+    }
+
+    fn resolve_pending_l1_snapshots(
+        &mut self,
+        bid_price_raw: PriceRaw,
+        bid_size_raw: QuantityRaw,
+        ask_price_raw: PriceRaw,
+        ask_size_raw: QuantityRaw,
+    ) {
+        let mut keys = Self::take_cleared(&mut self.queue_id_scratch);
+        keys.extend(self.queue_pending.keys().copied());
+        let mut stale = Self::take_cleared(&mut self.queue_stale_scratch);
+
+        for client_order_id in keys.iter().copied() {
+            let Some(&order_price_raw) = self.queue_pending.get(&client_order_id) else {
+                continue;
+            };
+
+            let cache = self.cache.borrow();
+            let order_info = cache.order(&client_order_id).and_then(|order| {
+                if order.is_closed() {
+                    None
+                } else {
+                    Some(order.order_side())
+                }
+            });
+            drop(cache);
+
+            let Some(side) = order_info else {
+                stale.push(client_order_id);
+                continue;
+            };
+
+            // Initialize snapshot when BBO reaches the order's price level
+            let matched_size = match side {
+                OrderSide::Buy if order_price_raw == bid_price_raw => Some(bid_size_raw),
+                OrderSide::Sell if order_price_raw == ask_price_raw => Some(ask_size_raw),
+                _ => None,
+            };
+
+            if let Some(size) = matched_size {
+                self.queue_pending.shift_remove(&client_order_id);
+                self.queue_ahead_total
+                    .insert(client_order_id, (order_price_raw, size));
+            }
+        }
+
+        for id in stale.drain(..) {
+            self.queue_pending.shift_remove(&id);
+        }
+
+        self.queue_id_scratch = keys;
+        self.queue_stale_scratch = stale;
+    }
+
+    fn resolve_pending_on_trade(&mut self, trade_price_raw: PriceRaw) {
+        let mut keys = Self::take_cleared(&mut self.queue_id_scratch);
+        keys.extend(self.queue_pending.keys().copied());
+        let mut stale = Self::take_cleared(&mut self.queue_stale_scratch);
+
+        for client_order_id in keys.iter().copied() {
+            let Some(&order_price_raw) = self.queue_pending.get(&client_order_id) else {
+                continue;
+            };
+
+            let cache = self.cache.borrow();
+            let order_side = cache.order(&client_order_id).and_then(|order| {
+                if order.is_closed() {
+                    None
+                } else {
+                    Some(order.order_side())
+                }
+            });
+            drop(cache);
+
+            let Some(side) = order_side else {
+                stale.push(client_order_id);
+                continue;
+            };
+
+            // Trade through a pending level proves the queue was crossed
+            let crossed = match side {
+                OrderSide::Buy => trade_price_raw < order_price_raw,
+                OrderSide::Sell => trade_price_raw > order_price_raw,
+                _ => false,
+            };
+
+            if crossed {
+                self.queue_pending.shift_remove(&client_order_id);
+                self.queue_ahead_total
+                    .insert(client_order_id, (order_price_raw, 0));
+            }
+        }
+
+        for id in stale.drain(..) {
+            self.queue_pending.shift_remove(&id);
+        }
+
+        self.queue_id_scratch = keys;
+        self.queue_stale_scratch = stale;
+    }
+
+    fn take_cleared<T>(buf: &mut Vec<T>) -> Vec<T> {
+        let mut items = mem::take(buf);
+        items.clear();
+        items
+    }
+
+    #[must_use]
+    /// Returns the best bid price from the order book.
+    pub fn best_bid_price(&self) -> Option<Price> {
+        self.book.best_bid_price()
+    }
+
+    #[must_use]
+    /// Returns the best ask price from the order book.
+    pub fn best_ask_price(&self) -> Option<Price> {
+        self.book.best_ask_price()
+    }
+
+    #[must_use]
+    /// Returns a reference to the internal order book.
+    pub const fn get_book(&self) -> &OrderBook {
+        &self.book
+    }
+
+    #[must_use]
+    /// Returns all open bid orders managed by the matching core.
+    pub fn get_open_bid_orders(&self) -> Vec<RestingOrder> {
+        self.core.get_orders_bid()
+    }
+
+    #[must_use]
+    /// Returns all open ask orders managed by the matching core.
+    pub fn get_open_ask_orders(&self) -> Vec<RestingOrder> {
+        self.core.get_orders_ask()
+    }
+
+    #[must_use]
+    /// Returns all open orders from both bid and ask sides.
+    pub fn get_open_orders(&self) -> Vec<RestingOrder> {
+        self.core.get_orders()
+    }
+
+    #[must_use]
+    /// Returns true if an order with the given client order ID exists in the matching engine.
+    pub fn order_exists(&self, client_order_id: ClientOrderId) -> bool {
+        self.core.order_exists(client_order_id)
+    }
+
+    #[must_use]
+    /// Returns the number of partial-fill counters tracked by the engine.
+    pub fn cached_filled_qty_len(&self) -> usize {
+        self.cached_filled_qty.len()
+    }
+
+    #[must_use]
+    pub const fn get_core(&self) -> &OrderMatchingCore {
+        &self.core
+    }
+
+    pub fn set_fill_at_market(&mut self, value: bool) {
+        self.fill_at_market = value;
+    }
+
+    /// Updates the instrument definition used by this matching engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `instrument.id()` does not match this engines instrument ID.
+    pub fn update_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
+        if instrument.id() != self.instrument.id() {
+            anyhow::bail!(
+                "Cannot update instrument {} with {}",
+                self.instrument.id(),
+                instrument.id()
+            );
+        }
+
+        let changed = instrument.price_increment() != self.instrument.price_increment()
+            || instrument.price_precision() != self.instrument.price_precision()
+            || instrument.size_precision() != self.instrument.size_precision();
+
+        if changed {
+            self.core
+                .update_price_increment(instrument.price_increment());
+            self.book.reset();
+            self.trade_consumption = 0;
+            self.bid_consumption.clear();
+            self.ask_consumption.clear();
+            self.queue_pending.clear();
+            self.queue_ahead_orders.clear();
+            self.queue_ahead_total.clear();
+            self.queue_excess.clear();
+            self.prev_bid_price_raw = 0;
+            self.prev_bid_size_raw = 0;
+            self.prev_ask_price_raw = 0;
+            self.prev_ask_size_raw = 0;
+            self.tob_initialized = false;
+            self.last_quote_bid = None;
+            self.last_quote_ask = None;
+            self.precision_mismatch_streak = 0;
+            self.target_bid = None;
+            self.target_ask = None;
+            self.target_last = None;
+            self.last_bar_bid = None;
+            self.last_bar_ask = None;
+            self.core.bid = None;
+            self.core.ask = None;
+            self.core.last = None;
+            log::info!(
+                "Updated instrument {} (price_precision={} size_precision={})",
+                instrument.id(),
+                instrument.price_precision(),
+                instrument.size_precision()
+            );
+        }
+
+        self.instrument = instrument;
+
+        if changed {
+            self.drop_incompatible_core_orders();
+        }
+        Ok(())
+    }
+
+    fn check_price_precision(&self, actual: u8, field: &str) -> anyhow::Result<()> {
+        let expected = self.instrument.price_precision();
+        if actual != expected {
+            anyhow::bail!(
+                "Invalid {field} precision {actual}, expected {expected} for {}",
+                self.instrument.id()
+            );
+        }
+        Ok(())
+    }
+
+    fn check_size_precision(&self, actual: u8, field: &str) -> anyhow::Result<()> {
+        let expected = self.instrument.size_precision();
+        if actual != expected {
+            anyhow::bail!(
+                "Invalid {field} precision {actual}, expected {expected} for {}",
+                self.instrument.id()
+            );
+        }
+        Ok(())
+    }
+
+    fn log_precision_mismatch(
+        &mut self,
+        data_type: &str,
+        instrument_id: InstrumentId,
+        err: &anyhow::Error,
+    ) {
+        self.precision_mismatch_streak = self.precision_mismatch_streak.saturating_add(1);
+        let streak = self.precision_mismatch_streak;
+
+        if streak <= 3 || streak.is_multiple_of(100) {
+            log::warn!(
+                "Skipping {data_type} for {instrument_id}: {err} \
+                 (consecutive_precision_mismatches={streak})"
+            );
+        }
+
+        if streak == 20 {
+            log::error!(
+                "Precision mismatches reached {streak} consecutive events for \
+                 {instrument_id}; check instrument update flow and upstream market data"
+            );
+        }
+    }
+
+    fn drop_incompatible_core_orders(&mut self) {
+        let client_order_ids: Vec<ClientOrderId> = self
+            .core
+            .iter_orders()
+            .filter(|order| {
+                !self.resting_order_matches_current_instrument(order)
+                    || !self.cached_order_matches_current_instrument(order.client_order_id)
+            })
+            .map(|order| order.client_order_id)
+            .collect();
+
+        for client_order_id in client_order_ids {
+            let order = self
+                .cache
+                .borrow()
+                .order(&client_order_id)
+                .map(|o| o.clone());
+
+            if let Some(order) = order
+                && (order.is_inflight() || order.is_open())
+            {
+                log::warn!(
+                    "Canceling order {client_order_id} after instrument update: \
+                     price, trigger price, or quantity is not compatible with {}",
+                    self.instrument.id()
+                );
+                self.cancel_order(&order, None);
+            } else {
+                self.delete_core_order(client_order_id);
+                self.cached_filled_qty.swap_remove(&client_order_id);
+            }
+        }
+    }
+
+    fn cached_order_matches_current_instrument(&self, client_order_id: ClientOrderId) -> bool {
+        self.cache
+            .borrow()
+            .order(&client_order_id)
+            .is_none_or(|order| {
+                Self::quantity_matches_precision(order.quantity(), self.instrument.size_precision())
+            })
+    }
+
+    fn resting_order_matches_current_instrument(&self, order: &RestingOrder) -> bool {
+        order
+            .limit_price
+            .is_none_or(|price| self.price_matches_current_instrument(price))
+            && order
+                .trigger_price
+                .is_none_or(|price| self.price_matches_current_instrument(price))
+    }
+
+    fn price_matches_current_instrument(&self, price: Price) -> bool {
+        Self::price_matches_precision(price, self.instrument.price_precision())
+            && Self::price_matches_tick(price, self.instrument.price_increment())
+    }
+
+    fn price_matches_precision(price: Price, precision: u8) -> bool {
+        let precision_diff = FIXED_PRECISION.saturating_sub(precision);
+        let scale = PriceRaw::pow(10, u32::from(precision_diff));
+        price.raw % scale == 0
+    }
+
+    fn price_matches_tick(price: Price, increment: Price) -> bool {
+        let increment_raw = increment.raw.abs();
+        increment_raw == 0 || price.raw % increment_raw == 0
+    }
+
+    fn quantity_matches_precision(quantity: Quantity, precision: u8) -> bool {
+        let precision_diff = FIXED_PRECISION.saturating_sub(precision);
+        let scale = QuantityRaw::pow(10, u32::from(precision_diff));
+        quantity.raw.is_multiple_of(scale)
+    }
+
+    fn normalize_price_for_current_instrument(&self, price: Price) -> Option<Price> {
+        if !self.price_matches_current_instrument(price) {
+            return None;
+        }
+
+        Some(Price::from_raw(
+            price.raw,
+            self.instrument.price_precision(),
+        ))
+    }
+
+    fn normalize_quantity_for_current_instrument(&self, quantity: Quantity) -> Option<Quantity> {
+        let precision = self.instrument.size_precision();
+        if !Self::quantity_matches_precision(quantity, precision) {
+            return None;
+        }
+
+        Some(Quantity::from_raw(quantity.raw, precision))
+    }
+
+    /// Process the venues market for the given order book delta.
+    ///
+    /// # Errors
+    ///
+    /// - If delta order price precision does not match the instrument (for Add/Update actions).
+    /// - If delta order size precision does not match the instrument (for Add/Update actions).
+    /// - If applying the delta to the book fails.
+    pub fn process_order_book_delta(&mut self, delta: &OrderBookDelta) -> anyhow::Result<()> {
+        log::debug!("Processing {delta}");
+
+        // Validate precision for Add and Update actions (Delete/Clear may have NULL_ORDER)
+        if matches!(delta.action, BookAction::Add | BookAction::Update) {
+            self.check_price_precision(delta.order.price.precision, "delta order price")?;
+            self.check_size_precision(delta.order.size.precision, "delta order size")?;
+        }
+
+        // L1 books are driven by top-of-book data only, ignore deltas
+        if self.book_type == BookType::L1_MBP {
+            self.iterate(delta.ts_init, AggressorSide::NoAggressor);
+            return Ok(());
+        }
+
+        self.book.apply_delta(delta)?;
+
+        let delta_snapshot_or_clear = (delta.flags & 32) != 0 || delta.action == BookAction::Clear;
+
+        if self.config.queue_position {
+            if delta_snapshot_or_clear {
+                self.clear_all_queue_positions();
+            } else {
+                self.adjust_queue_for_delta(delta);
+            }
+        }
+
+        if self.config.queue_position && delta_snapshot_or_clear {
+            self.seed_tob_baseline();
+        }
+
+        self.iterate(delta.ts_init, AggressorSide::NoAggressor);
+        Ok(())
+    }
+
+    /// Process the venues market for the given order book deltas.
+    ///
+    /// # Errors
+    ///
+    /// - If any delta order price precision does not match the instrument (for Add/Update actions).
+    /// - If any delta order size precision does not match the instrument (for Add/Update actions).
+    /// - If applying the deltas to the book fails.
+    pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
+        log::debug!("Processing {deltas}");
+
+        // Validate precision for Add and Update actions (Delete/Clear may have NULL_ORDER)
+        for delta in &deltas.deltas {
+            if matches!(delta.action, BookAction::Add | BookAction::Update) {
+                self.check_price_precision(delta.order.price.precision, "delta order price")?;
+                self.check_size_precision(delta.order.size.precision, "delta order size")?;
+            }
+        }
+
+        // L1 books are driven by top-of-book data only, ignore deltas
+        if self.book_type == BookType::L1_MBP {
+            self.iterate(deltas.ts_init, AggressorSide::NoAggressor);
+            return Ok(());
+        }
+
+        self.book.apply_deltas(deltas)?;
+
+        let mut has_snapshot_or_clear = false;
+
+        if self.config.queue_position {
+            for delta in &deltas.deltas {
+                if (delta.flags & 32) != 0 || delta.action == BookAction::Clear {
+                    self.clear_all_queue_positions();
+                    has_snapshot_or_clear = true;
+                    break;
+                }
+                self.adjust_queue_for_delta(delta);
+            }
+        }
+
+        if self.config.queue_position && has_snapshot_or_clear {
+            self.seed_tob_baseline();
+        }
+
+        self.iterate(deltas.ts_init, AggressorSide::NoAggressor);
+        Ok(())
+    }
+
+    /// Process the venues market for the given order book depth10.
+    ///
+    /// # Errors
+    ///
+    /// - If any bid/ask price precision does not match the instrument.
+    /// - If any bid/ask size precision does not match the instrument.
+    /// - If applying the depth to the book fails.
+    /// - If updating the L1 order book with the top-of-book quote fails.
+    pub fn process_order_book_depth10(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
+        log::debug!("Processing OrderBookDepth10 for {}", depth.instrument_id);
+
+        // Validate precision for non-padding entries
+        for order in &depth.bids {
+            if order.side == OrderSide::NoOrderSide || !order.size.is_positive() {
+                continue;
+            }
+            self.check_price_precision(order.price.precision, "bid price")?;
+            self.check_size_precision(order.size.precision, "bid size")?;
+        }
+
+        for order in &depth.asks {
+            if order.side == OrderSide::NoOrderSide || !order.size.is_positive() {
+                continue;
+            }
+            self.check_price_precision(order.price.precision, "ask price")?;
+            self.check_size_precision(order.size.precision, "ask size")?;
+        }
+
+        let top_bid = Self::first_valid_depth_order(&depth.bids, OrderSide::Buy);
+        let top_ask = Self::first_valid_depth_order(&depth.asks, OrderSide::Sell);
+
+        // For L1 books, only apply top-of-book to avoid mispricing
+        // against worst-level entries when full depth is applied
+        if self.book_type == BookType::L1_MBP {
+            let quote = QuoteTick::new(
+                depth.instrument_id,
+                Self::depth_quote_price(top_bid, self.instrument.price_precision()),
+                Self::depth_quote_price(top_ask, self.instrument.price_precision()),
+                Self::depth_quote_size(top_bid, self.instrument.size_precision()),
+                Self::depth_quote_size(top_ask, self.instrument.size_precision()),
+                depth.ts_event,
+                depth.ts_init,
+            );
+            self.book.update_quote_tick(&quote)?;
+            self.last_quote_bid = top_bid.map(|order| order.price);
+            self.last_quote_ask = top_ask.map(|order| order.price);
+        } else {
+            self.book.apply_depth(depth)?;
+        }
+
+        // Depth10 always replaces the full book via apply_depth regardless of flags
+        if self.config.queue_position {
+            self.clear_all_queue_positions();
+            let bid_price_raw = top_bid.map_or(0, |order| order.price.raw);
+            let bid_size_raw = top_bid.map_or(0, |order| order.size.raw);
+            let ask_price_raw = top_ask.map_or(0, |order| order.price.raw);
+            let ask_size_raw = top_ask.map_or(0, |order| order.size.raw);
+
+            // Handle crossed/matched pending orders (same as quote path)
+            if self.tob_initialized {
+                if bid_price_raw < self.prev_bid_price_raw {
+                    self.adjust_l1_queue_on_price_move(bid_price_raw, bid_size_raw, OrderSide::Buy);
+                }
+
+                if ask_price_raw > self.prev_ask_price_raw {
+                    self.adjust_l1_queue_on_price_move(
+                        ask_price_raw,
+                        ask_size_raw,
+                        OrderSide::Sell,
+                    );
+                }
+            }
+
+            self.resolve_pending_l1_snapshots(
+                bid_price_raw,
+                bid_size_raw,
+                ask_price_raw,
+                ask_size_raw,
+            );
+
+            self.prev_bid_price_raw = bid_price_raw;
+            self.prev_bid_size_raw = bid_size_raw;
+            self.prev_ask_price_raw = ask_price_raw;
+            self.prev_ask_size_raw = ask_size_raw;
+            self.tob_initialized = true;
+        }
+
+        self.iterate(depth.ts_init, AggressorSide::NoAggressor);
+        Ok(())
+    }
+
+    fn first_valid_depth_order(orders: &[BookOrder], side: OrderSide) -> Option<BookOrder> {
+        orders
+            .iter()
+            .copied()
+            .find(|order| order.side == side && order.size.is_positive())
+    }
+
+    fn depth_quote_price(order: Option<BookOrder>, price_precision: u8) -> Price {
+        order.map_or_else(|| Price::zero(price_precision), |order| order.price)
+    }
+
+    fn depth_quote_size(order: Option<BookOrder>, size_precision: u8) -> Quantity {
+        order.map_or_else(|| Quantity::zero(size_precision), |order| order.size)
+    }
+
+    /// Processes a quote tick to update the market state.
+    pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
+        log::debug!("Processing {quote}");
+
+        if let Err(e) = self.check_price_precision(quote.bid_price.precision, "bid_price") {
+            self.log_precision_mismatch("quote tick", quote.instrument_id, &e);
+            return;
+        }
+
+        if let Err(e) = self.check_price_precision(quote.ask_price.precision, "ask_price") {
+            self.log_precision_mismatch("quote tick", quote.instrument_id, &e);
+            return;
+        }
+
+        if let Err(e) = self.check_size_precision(quote.bid_size.precision, "bid_size") {
+            self.log_precision_mismatch("quote tick", quote.instrument_id, &e);
+            return;
+        }
+
+        if let Err(e) = self.check_size_precision(quote.ask_size.precision, "ask_size") {
+            self.log_precision_mismatch("quote tick", quote.instrument_id, &e);
+            return;
+        }
+
+        self.precision_mismatch_streak = 0;
+
+        if self.book_type == BookType::L1_MBP {
+            // Stale update: skip book mutation and cache updates
+            if quote.ts_event < self.book.ts_last {
+                log::warn!(
+                    "Skipping stale quote: ts_event {} < book.ts_last {} for {}",
+                    quote.ts_event,
+                    self.book.ts_last,
+                    self.book.instrument_id,
+                );
+                self.iterate(quote.ts_init, AggressorSide::NoAggressor);
+                return;
+            }
+
+            if !self.update_quote_tick_or_skip(quote, "quote tick") {
+                return;
+            }
+
+            if self.config.queue_position {
+                self.decrement_l1_queue_on_quote(
+                    quote.bid_price.raw,
+                    quote.bid_size.raw,
+                    quote.ask_price.raw,
+                    quote.ask_size.raw,
+                );
+                self.prev_bid_price_raw = quote.bid_price.raw;
+                self.prev_bid_size_raw = quote.bid_size.raw;
+                self.prev_ask_price_raw = quote.ask_price.raw;
+                self.prev_ask_size_raw = quote.ask_size.raw;
+                self.tob_initialized = true;
+            }
+            self.last_quote_bid = Some(quote.bid_price);
+            self.last_quote_ask = Some(quote.ask_price);
+        }
+
+        self.iterate(quote.ts_init, AggressorSide::NoAggressor);
+    }
+
+    /// Processes a bar and simulates market dynamics by creating synthetic ticks.
+    ///
+    /// For L1 books with bar execution enabled, generates synthetic trade or quote
+    /// ticks from bar OHLC data to drive order matching.
+    ///
+    /// # Panics
+    ///
+    /// - If the bar type configuration is missing a time delta.
+    pub fn process_bar(&mut self, bar: &Bar) {
+        log::debug!("Processing {bar}");
+
+        debug_assert!(
+            bar.high >= bar.open
+                && bar.high >= bar.low
+                && bar.high >= bar.close
+                && bar.low <= bar.open
+                && bar.low <= bar.close,
+            "OHLC invariant violated for {bar}"
+        );
+
+        // Check if configured for bar execution can only process an L1 book with bars
+        if !self.config.bar_execution || self.book_type != BookType::L1_MBP {
+            return;
+        }
+
+        let bar_type = bar.bar_type;
+        // Do not process internally aggregated bars
+        if bar_type.aggregation_source() == AggregationSource::Internal {
+            return;
+        }
+
+        if let Err(e) = self.check_price_precision(bar.open.precision, "bar open") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        if let Err(e) = self.check_price_precision(bar.high.precision, "bar high") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        if let Err(e) = self.check_price_precision(bar.low.precision, "bar low") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        if let Err(e) = self.check_price_precision(bar.close.precision, "bar close") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        if let Err(e) = self.check_size_precision(bar.volume.precision, "bar volume") {
+            self.log_precision_mismatch("bar", bar.instrument_id(), &e);
+            return;
+        }
+
+        self.precision_mismatch_streak = 0;
+
+        let price_type = bar_type.spec().price_type;
+        if price_type == PriceType::Mark {
+            log::warn!(
+                "Cannot process bar for {} with `PriceType::Mark`, mark price bars are not supported for bar execution",
+                bar.instrument_id(),
+            );
+            return;
+        }
+
+        let execution_bar_type =
+            if let Some(execution_bar_type) = self.execution_bar_types.get(&bar.instrument_id()) {
+                execution_bar_type.to_owned()
+            } else {
+                self.execution_bar_types
+                    .insert(bar.instrument_id(), bar_type);
+                self.execution_bar_deltas
+                    .insert(bar_type, bar_type.spec().timedelta());
+                bar_type
+            };
+
+        if execution_bar_type != bar_type {
+            let mut bar_type_timedelta = self.execution_bar_deltas.get(&bar_type).copied();
+            if bar_type_timedelta.is_none() {
+                bar_type_timedelta = Some(bar_type.spec().timedelta());
+                self.execution_bar_deltas
+                    .insert(bar_type, bar_type_timedelta.unwrap());
+            }
+
+            if self.execution_bar_deltas.get(&execution_bar_type).unwrap()
+                >= &bar_type_timedelta.unwrap()
+            {
+                self.execution_bar_types
+                    .insert(bar_type.instrument_id(), bar_type);
+            } else {
+                return;
+            }
+        }
+
+        match price_type {
+            PriceType::Last | PriceType::Mid => self.process_trade_ticks_from_bar(bar),
+            PriceType::Bid => {
+                self.last_bar_bid = Some(bar.to_owned());
+                self.process_quote_ticks_from_bar();
+            }
+            PriceType::Ask => {
+                self.last_bar_ask = Some(bar.to_owned());
+                self.process_quote_ticks_from_bar();
+            }
+            PriceType::Mark => {
+                unreachable!("PriceType::Mark bars return before execution bar state updates")
+            }
+        }
+    }
+
+    fn process_trade_ticks_from_bar(&mut self, bar: &Bar) {
+        let sizes = BarTickSizes::from_volume(bar.volume, self.instrument.size_increment());
+
+        let aggressor_side = if self.core.last.is_none_or(|last| bar.open > last) {
+            AggressorSide::Buy
+        } else {
+            AggressorSide::Sell
+        };
+
+        // Open: fill at market price (gap from previous bar)
+        if self.core.last.is_none() {
+            self.fill_at_market = true;
+
+            if !self.process_bar_trade_tick(
+                bar,
+                bar.open,
+                sizes.open,
+                aggressor_side,
+                "bar open trade tick",
+            ) {
+                return;
+            }
+            self.core.set_last_raw(bar.open);
+        } else if self.core.last.is_some_and(|last| bar.open != last) {
+            // Gap between previous close and this bar's open
+            self.fill_at_market = true;
+
+            if !self.process_bar_trade_tick(
+                bar,
+                bar.open,
+                sizes.open,
+                aggressor_side,
+                "bar gap-open trade tick",
+            ) {
+                return;
+            }
+            self.core.set_last_raw(bar.open);
+        }
+
+        // Determine high/low processing order.
+        // Default: O > H > L > C. With adaptive ordering, swap if low is closer to open.
+        let high_first = !self.config.bar_adaptive_high_low_ordering
+            || (bar.high.raw - bar.open.raw).abs() < (bar.low.raw - bar.open.raw).abs();
+
+        if high_first {
+            self.process_bar_high(bar, sizes.high);
+            self.process_bar_low(bar, sizes.low);
+        } else {
+            self.process_bar_low(bar, sizes.low);
+            self.process_bar_high(bar, sizes.high);
+        }
+
+        // Close: fill at trigger price (market moving through prices)
+        if self.core.last.is_some_and(|last| bar.close != last) {
+            self.fill_at_market = false;
+
+            let aggressor_side = if bar.close > self.core.last.unwrap() {
+                AggressorSide::Buy
+            } else {
+                AggressorSide::Sell
+            };
+
+            if !self.process_bar_trade_tick(
+                bar,
+                bar.close,
+                sizes.close,
+                aggressor_side,
+                "bar close trade tick",
+            ) {
+                return;
+            }
+
+            self.core.set_last_raw(bar.close);
+        }
+
+        self.fill_at_market = true;
+    }
+
+    fn process_bar_high(&mut self, bar: &Bar, size: Quantity) {
+        if self.core.last.is_some_and(|last| bar.high > last) {
+            self.fill_at_market = false;
+
+            if !self.process_bar_trade_tick(
+                bar,
+                bar.high,
+                size,
+                AggressorSide::Buy,
+                "bar high trade tick",
+            ) {
+                return;
+            }
+
+            self.core.set_last_raw(bar.high);
+        }
+    }
+
+    fn process_bar_low(&mut self, bar: &Bar, size: Quantity) {
+        if self.core.last.is_some_and(|last| bar.low < last) {
+            self.fill_at_market = false;
+
+            if !self.process_bar_trade_tick(
+                bar,
+                bar.low,
+                size,
+                AggressorSide::Sell,
+                "bar low trade tick",
+            ) {
+                return;
+            }
+
+            self.core.set_last_raw(bar.low);
+        }
+    }
+
+    fn process_bar_trade_tick(
+        &mut self,
+        bar: &Bar,
+        price: Price,
+        size: Quantity,
+        aggressor_side: AggressorSide,
+        context: &str,
+    ) -> bool {
+        if size.is_zero() {
+            return true;
+        }
+
+        let trade_tick = TradeTick::new(
+            bar.instrument_id(),
+            price,
+            size,
+            aggressor_side,
+            self.ids_generator.generate_trade_id(bar.ts_init),
+            bar.ts_init,
+            bar.ts_init,
+        );
+
+        if !self.update_trade_tick_or_skip(&trade_tick, context) {
+            return false;
+        }
+
+        self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
+        true
+    }
+
+    fn process_quote_ticks_from_bar(&mut self) {
+        // Wait for next bar
+        if self.last_bar_bid.is_none()
+            || self.last_bar_ask.is_none()
+            || self.last_bar_bid.unwrap().ts_init != self.last_bar_ask.unwrap().ts_init
+        {
+            return;
+        }
+        let bid_bar = self.last_bar_bid.unwrap();
+        let ask_bar = self.last_bar_ask.unwrap();
+
+        let size_increment = self.instrument.size_increment();
+        let bid_sizes = BarTickSizes::from_volume(bid_bar.volume, size_increment);
+        let ask_sizes = BarTickSizes::from_volume(ask_bar.volume, size_increment);
+        let mut has_current_bid = false;
+        let mut has_current_ask = false;
+
+        let mut quote_tick = QuoteTick::new(
+            self.book.instrument_id,
+            bid_bar.open,
+            ask_bar.open,
+            bid_sizes.open,
+            ask_sizes.open,
+            bid_bar.ts_init,
+            bid_bar.ts_init,
+        );
+
+        // Open: fill at market price (gap from previous bar)
+        self.fill_at_market = true;
+
+        if !self.process_bar_quote_tick(
+            &quote_tick,
+            "bar open quote tick",
+            &mut has_current_bid,
+            &mut has_current_ask,
+        ) {
+            return;
+        }
+
+        // Determine high/low processing order from the bid bar (v1 parity).
+        // Default: O > H > L > C. With adaptive ordering, swap if low is closer to open
+        let high_first = !self.config.bar_adaptive_high_low_ordering
+            || (bid_bar.high.raw - bid_bar.open.raw).abs()
+                < (bid_bar.low.raw - bid_bar.open.raw).abs();
+
+        let high_leg = (
+            bid_bar.high,
+            ask_bar.high,
+            bid_sizes.high,
+            ask_sizes.high,
+            "bar high quote tick",
+        );
+        let low_leg = (
+            bid_bar.low,
+            ask_bar.low,
+            bid_sizes.low,
+            ask_sizes.low,
+            "bar low quote tick",
+        );
+        let legs = if high_first {
+            [high_leg, low_leg]
+        } else {
+            [low_leg, high_leg]
+        };
+
+        // High/low: fill at trigger price (market moving through prices)
+        for (bid_price, ask_price, bid_size, ask_size, context) in legs {
+            self.fill_at_market = false;
+            quote_tick.bid_price = bid_price;
+            quote_tick.ask_price = ask_price;
+            quote_tick.bid_size = bid_size;
+            quote_tick.ask_size = ask_size;
+
+            if !self.process_bar_quote_tick(
+                &quote_tick,
+                context,
+                &mut has_current_bid,
+                &mut has_current_ask,
+            ) {
+                return;
+            }
+        }
+
+        // Close: fill at trigger price (market moving through prices)
+        self.fill_at_market = false;
+        quote_tick.bid_price = bid_bar.close;
+        quote_tick.ask_price = ask_bar.close;
+        quote_tick.bid_size = bid_sizes.close;
+        quote_tick.ask_size = ask_sizes.close;
+
+        if !self.process_bar_quote_tick(
+            &quote_tick,
+            "bar close quote tick",
+            &mut has_current_bid,
+            &mut has_current_ask,
+        ) {
+            return;
+        }
+
+        self.last_bar_bid = None;
+        self.last_bar_ask = None;
+        self.fill_at_market = true;
+    }
+
+    fn process_bar_quote_tick(
+        &mut self,
+        quote: &QuoteTick,
+        context: &str,
+        has_current_bid: &mut bool,
+        has_current_ask: &mut bool,
+    ) -> bool {
+        let has_bid_size = !quote.bid_size.is_zero();
+        let has_ask_size = !quote.ask_size.is_zero();
+        let mut book_changed = false;
+        let mut bid_cleared = false;
+        let mut ask_cleared = false;
+
+        match (has_bid_size, has_ask_size) {
+            (true, true) => {
+                if !self.update_quote_tick_or_skip(quote, context) {
+                    return false;
+                }
+                *has_current_bid = true;
+                *has_current_ask = true;
+                book_changed = true;
+            }
+            _ => {
+                if has_bid_size {
+                    self.update_bar_quote_bid(quote);
+                    *has_current_bid = true;
+                    book_changed = true;
+                } else if !*has_current_bid {
+                    self.clear_bar_quote_bid(quote);
+                    *has_current_bid = true;
+                    book_changed = true;
+                    bid_cleared = true;
+                }
+
+                if has_ask_size {
+                    self.update_bar_quote_ask(quote);
+                    *has_current_ask = true;
+                    book_changed = true;
+                } else if !*has_current_ask {
+                    self.clear_bar_quote_ask(quote);
+                    *has_current_ask = true;
+                    book_changed = true;
+                    ask_cleared = true;
+                }
+            }
+        }
+
+        if book_changed
+            && let (Some(best_bid), Some(best_ask)) =
+                (self.book.best_bid_price(), self.book.best_ask_price())
+            && best_bid > best_ask
+        {
+            if has_bid_size && !has_ask_size {
+                self.clear_bar_quote_ask(quote);
+                ask_cleared = true;
+            } else if has_ask_size && !has_bid_size {
+                self.clear_bar_quote_bid(quote);
+                bid_cleared = true;
+            }
+        }
+
+        if has_bid_size {
+            self.last_quote_bid = Some(quote.bid_price);
+        } else if bid_cleared {
+            self.last_quote_bid = None;
+        }
+
+        if has_ask_size {
+            self.last_quote_ask = Some(quote.ask_price);
+        } else if ask_cleared {
+            self.last_quote_ask = None;
+        }
+
+        if !book_changed {
+            return true;
+        }
+
+        self.iterate(quote.ts_init, AggressorSide::NoAggressor);
+        true
+    }
+
+    fn update_bar_quote_bid(&mut self, quote: &QuoteTick) {
+        let bid = BookOrder::new(
+            OrderSide::Buy,
+            quote.bid_price,
+            quote.bid_size,
+            OrderSide::Buy as u64,
+        );
+        self.book
+            .add(bid, 0, self.book.sequence.saturating_add(1), quote.ts_event);
+    }
+
+    fn clear_bar_quote_bid(&mut self, quote: &QuoteTick) {
+        self.book
+            .clear_bids(self.book.sequence.saturating_add(1), quote.ts_event);
+    }
+
+    fn update_bar_quote_ask(&mut self, quote: &QuoteTick) {
+        let ask = BookOrder::new(
+            OrderSide::Sell,
+            quote.ask_price,
+            quote.ask_size,
+            OrderSide::Sell as u64,
+        );
+        self.book
+            .add(ask, 0, self.book.sequence.saturating_add(1), quote.ts_event);
+    }
+
+    fn clear_bar_quote_ask(&mut self, quote: &QuoteTick) {
+        self.book
+            .clear_asks(self.book.sequence.saturating_add(1), quote.ts_event);
+    }
+
+    /// Processes a trade tick to update the market state.
+    ///
+    /// For L1 books, always updates the order book with the trade tick to maintain
+    /// market state. When `trade_execution` is disabled, order matching and maintenance
+    /// operations (GTD order expiry, trailing stop activation, instrument expiration)
+    /// are skipped. These maintenance operations will run on the next quote tick or bar.
+    pub fn process_trade_tick(&mut self, trade: &TradeTick) {
+        log::debug!("Processing {trade}");
+
+        if let Err(e) = self.check_price_precision(trade.price.precision, "trade price") {
+            self.log_precision_mismatch("trade tick", trade.instrument_id, &e);
+            return;
+        }
+
+        if let Err(e) = self.check_size_precision(trade.size.precision, "trade size") {
+            self.log_precision_mismatch("trade tick", trade.instrument_id, &e);
+            return;
+        }
+
+        self.precision_mismatch_streak = 0;
+
+        let price_raw = trade.price.raw;
+
+        if self.book_type == BookType::L1_MBP {
+            // Stale update: skip book mutation and trade execution
+            if trade.ts_event < self.book.ts_last {
+                log::warn!(
+                    "Skipping stale trade: ts_event {} < book.ts_last {} for {}",
+                    trade.ts_event,
+                    self.book.ts_last,
+                    self.book.instrument_id,
+                );
+                self.iterate(trade.ts_init, AggressorSide::NoAggressor);
+                return;
+            }
+
+            if !self.update_trade_tick_or_skip(trade, "trade tick") {
+                return;
+            }
+        }
+
+        self.core.set_last_raw(trade.price);
+
+        if !self.config.trade_execution {
+            // Sync core to L1 book, skip order matching
+            if self.book_type == BookType::L1_MBP {
+                if let Some(bid) = self.book.best_bid_price() {
+                    self.core.set_bid_raw(bid);
+                }
+
+                if let Some(ask) = self.book.best_ask_price() {
+                    self.core.set_ask_raw(ask);
+                }
+            }
+            return;
+        }
+
+        let aggressor_side = trade.aggressor_side;
+
+        match aggressor_side {
+            AggressorSide::Buy => {
+                // Buyer lifted the ask: ask was at trade.price, post-trade
+                // ask is at least this level (only widen)
+                if self.core.ask.is_none() || price_raw > self.core.ask.map_or(0, |p| p.raw) {
+                    self.core.set_ask_raw(trade.price);
+                }
+
+                // Initialize bid from first trade if needed
+                if self.core.bid.is_none() {
+                    self.core.set_bid_raw(trade.price);
+                }
+            }
+            AggressorSide::Sell => {
+                // Seller hit the bid: bid was at trade.price, post-trade
+                // bid is at most this level (only narrow)
+                if self.core.bid.is_none()
+                    || price_raw < self.core.bid.map_or(PriceRaw::MAX, |p| p.raw)
+                {
+                    self.core.set_bid_raw(trade.price);
+                }
+
+                // Initialize ask from first trade if needed
+                if self.core.ask.is_none() {
+                    self.core.set_ask_raw(trade.price);
+                }
+            }
+            AggressorSide::NoAggressor => {
+                if self.core.bid.is_none()
+                    || price_raw <= self.core.bid.map_or(PriceRaw::MAX, |p| p.raw)
+                {
+                    self.core.set_bid_raw(trade.price);
+                }
+
+                if self.core.ask.is_none() || price_raw >= self.core.ask.map_or(0, |p| p.raw) {
+                    self.core.set_ask_raw(trade.price);
+                }
+            }
+        }
+
+        let original_bid = self.core.bid;
+        let original_ask = self.core.ask;
+
+        match aggressor_side {
+            AggressorSide::Sell => {
+                if original_ask.is_some_and(|ask| price_raw < ask.raw) {
+                    self.core.set_ask_raw(trade.price);
+                }
+            }
+            AggressorSide::Buy => {
+                if original_bid.is_some_and(|bid| price_raw > bid.raw) {
+                    self.core.set_bid_raw(trade.price);
+                }
+            }
+            AggressorSide::NoAggressor => {
+                // No directional information, so both sides take the trade price
+                self.core.set_bid_raw(trade.price);
+                self.core.set_ask_raw(trade.price);
+            }
+        }
+
+        self.last_trade_size = Some(trade.size);
+        self.trade_consumption = 0;
+
+        if self.config.liquidity_consumption && self.book_type != BookType::L1_MBP {
+            self.seed_trade_consumption(price_raw, trade.size.raw, trade.ts_event, aggressor_side);
+        }
+
+        self.resolve_pending_on_trade(price_raw);
+        self.decrement_queue_on_trade(price_raw, trade.size.raw, aggressor_side);
+
+        self.iterate(trade.ts_init, aggressor_side);
+
+        self.last_trade_size = None;
+        self.trade_consumption = 0;
+
+        // Restore the non-aggressor side after temporary trade price override.
+        // For L2/L3 books the book has independent depth so restore from originals.
+        // For L1_MBP restore from the last quote values (not originals, which are
+        // polluted by iterate's L1 book sync). Without quotes, skip the restore
+        // so the core tracks the latest trade price.
+        if self.book_type == BookType::L1_MBP {
+            match aggressor_side {
+                AggressorSide::Sell => {
+                    if let Some(ask) = self.last_quote_ask {
+                        self.core.ask = Some(ask);
+                    }
+                }
+                AggressorSide::Buy => {
+                    if let Some(bid) = self.last_quote_bid {
+                        self.core.bid = Some(bid);
+                    }
+                }
+                AggressorSide::NoAggressor => {}
+            }
+        } else {
+            match aggressor_side {
+                AggressorSide::Sell => {
+                    if let Some(ask) = original_ask
+                        && price_raw < ask.raw
+                    {
+                        self.core.ask = Some(ask);
+                    }
+                }
+                AggressorSide::Buy => {
+                    if let Some(bid) = original_bid
+                        && price_raw > bid.raw
+                    {
+                        self.core.bid = Some(bid);
+                    }
+                }
+                AggressorSide::NoAggressor => {}
+            }
+        }
+    }
+
+    fn update_quote_tick_or_skip(&mut self, quote: &QuoteTick, context: &str) -> bool {
+        if let Err(e) = self.book.update_quote_tick(quote) {
+            log::warn!(
+                "Skipping {context} for {}: update_quote_tick failed: {e}",
+                quote.instrument_id,
+            );
+            return false;
+        }
+        true
+    }
+
+    fn update_trade_tick_or_skip(&mut self, trade: &TradeTick, context: &str) -> bool {
+        if let Err(e) = self.book.update_trade_tick(trade) {
+            log::warn!(
+                "Skipping {context} for {}: update_trade_tick failed: {e}",
+                trade.instrument_id,
+            );
+            return false;
+        }
+        true
+    }
+
+    /// Processes a market status action to update the market state.
+    pub fn process_status(&mut self, action: MarketStatusAction) {
+        log::debug!("Processing {action}");
+
+        match action {
+            MarketStatusAction::Trading | MarketStatusAction::PreOpen
+                if matches!(
+                    self.market_status,
+                    MarketStatus::Closed | MarketStatus::Paused | MarketStatus::Suspended
+                ) =>
+            {
+                self.market_status = MarketStatus::Open;
+            }
+            MarketStatusAction::Pause if self.market_status == MarketStatus::Open => {
+                self.market_status = MarketStatus::Paused;
+            }
+            MarketStatusAction::Suspend if self.market_status == MarketStatus::Open => {
+                self.market_status = MarketStatus::Suspended;
+            }
+            MarketStatusAction::Halt | MarketStatusAction::Close
+                if self.market_status == MarketStatus::Open =>
+            {
+                self.market_status = MarketStatus::Closed;
+            }
+            _ => {}
+        }
+    }
+
+    /// Processes an instrument close event.
+    ///
+    /// For `ContractExpired` close types, stores the close and triggers expiration
+    /// processing which cancels all open orders and closes all open positions.
+    pub fn process_instrument_close(&mut self, close: InstrumentClose) {
+        if close.instrument_id != self.instrument.id() {
+            log::warn!(
+                "Received instrument close for unknown instrument_id: {}",
+                close.instrument_id
+            );
+            return;
+        }
+
+        if close.close_type == InstrumentCloseType::ContractExpired {
+            self.instrument_close = Some(close);
+            self.iterate(close.ts_init, AggressorSide::NoAggressor);
+        }
+    }
+
+    /// Processes instrument expiration at the given timestamp.
+    pub fn process_instrument_expiration(&mut self, timestamp_ns: UnixNanos) {
+        self.check_instrument_expiration(timestamp_ns);
+    }
+
+    /// Returns whether instrument expiration has already been processed.
+    #[must_use]
+    pub const fn is_expiration_processed(&self) -> bool {
+        self.expiration_processed
+    }
+
+    fn requires_pending_resolution(&self) -> bool {
+        matches!(self.instrument, InstrumentAny::BinaryOption(_))
+    }
+
+    fn cancel_open_orders_for_expiration(&mut self) {
+        // Build a single de-duplicated cancellation set across the matching
+        // core and cache. Resting orders may still only be represented in the
+        // core while inflight orders can remain cache-only during the
+        // submitted/pending transition window.
+        let instrument_id = self.instrument.id();
+        let expiration_order_ids: IndexSet<ClientOrderId> = {
+            let cache = self.cache.borrow();
+            let mut order_ids = IndexSet::new();
+
+            for order_info in self.get_open_orders() {
+                order_ids.insert(order_info.client_order_id);
+            }
+
+            for order in cache.orders(None, Some(&instrument_id), None, None, None) {
+                if order.is_open() || order.is_inflight() {
+                    order_ids.insert(order.client_order_id());
+                }
+            }
+
+            order_ids
+        };
+
+        for client_order_id in expiration_order_ids {
+            let order = {
+                let cache = self.cache.borrow();
+                cache.order(&client_order_id).map(|order| order.clone())
+            };
+
+            if let Some(order) = order {
+                self.cancel_order(&order, None);
+            }
+        }
+    }
+
+    fn enter_pending_resolution(&mut self) {
+        if self.pending_resolution {
+            return;
+        }
+
+        self.pending_resolution = true;
+        self.market_status = MarketStatus::Closed;
+        self.cancel_open_orders_for_expiration();
+        log::info!(
+            "{} expired and is now pending resolution; open orders canceled and new orders blocked",
+            self.instrument.id()
+        );
+    }
+
+    fn check_instrument_expiration(&mut self, timestamp_ns: UnixNanos) {
+        if self.expiration_processed || self.option_settlement_failed {
+            return;
+        }
+
+        let timestamp_triggered = self
+            .instrument
+            .expiration_ns()
+            .is_some_and(|ns| timestamp_ns >= ns);
+
+        if !timestamp_triggered && self.instrument_close.is_none() {
+            return;
+        }
+
+        if self.instrument_close.is_none()
+            && timestamp_triggered
+            && self.requires_pending_resolution()
+        {
+            self.enter_pending_resolution();
+            return;
+        }
+
+        if matches!(
+            self.instrument,
+            InstrumentAny::OptionContract(_) | InstrumentAny::CryptoOption(_)
+        ) {
+            // `iterate` matches resting orders ahead of this check, so enter
+            // pending resolution at the first trigger. Latched because a queueing
+            // handler leaves the cached status behind the cancellation dispatch.
+            if !self.option_expiration_orders_canceled {
+                self.option_expiration_orders_canceled = true;
+                self.enter_pending_resolution();
+            }
+
+            match self.process_option_expiry(timestamp_ns) {
+                Ok(true) => {
+                    self.expiration_processed = true;
+                    self.pending_resolution = false;
+                    self.instrument_close.take();
+                    self.option_settlement_warning = None;
+                    log::info!("{} reached expiration", self.instrument.id());
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    self.option_settlement_failed = true;
+                    log::error!(
+                        "Option settlement failed terminally for {}: {e}",
+                        self.instrument.id()
+                    );
+                }
+            }
+            return;
+        }
+
+        self.expiration_processed = true;
+        self.pending_resolution = false;
+        let close = self.instrument_close.take();
+        log::info!("{} reached expiration", self.instrument.id());
+        self.cancel_open_orders_for_expiration();
+
+        let instrument_id = self.instrument.id();
+        let positions: Vec<(
+            TraderId,
+            StrategyId,
+            AccountId,
+            PositionId,
+            OrderSide,
+            Quantity,
+        )> = {
+            let cache = self.cache.borrow();
+            cache
+                .positions_open(None, Some(&instrument_id), None, None, None)
+                .into_iter()
+                .map(|pos| {
+                    let closing_side = match pos.side {
+                        PositionSide::Long => OrderSide::Sell,
+                        PositionSide::Short => OrderSide::Buy,
+                        _ => OrderSide::NoOrderSide,
+                    };
+                    (
+                        pos.trader_id,
+                        pos.strategy_id,
+                        pos.account_id,
+                        pos.id,
+                        closing_side,
+                        pos.quantity,
+                    )
+                })
+                .collect()
+        };
+
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let close_price_fallback = close.as_ref().map(|c| c.close_price);
+
+        for (trader_id, strategy_id, account_id, position_id, closing_side, quantity) in positions {
+            let client_order_id =
+                ClientOrderId::from(format!("EXPIRATION-{}-{}", self.venue, UUID4::new()).as_str());
+            let mut order = OrderAny::Market(MarketOrder::new(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                closing_side,
+                quantity,
+                TimeInForce::Gtc,
+                UUID4::new(),
+                ts_now,
+                true, // reduce_only
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(vec![Ustr::from(&format!(
+                    "EXPIRATION_{}_CLOSE",
+                    self.venue
+                ))]),
+            ));
+            order.set_liquidity_side(LiquiditySide::Taker);
+
+            let add_result =
+                self.cache
+                    .borrow_mut()
+                    .add_order(order.clone(), Some(position_id), None, false);
+            if add_result.is_err() {
+                log::debug!("Expiration order already in cache: {client_order_id}");
+            } else {
+                self.publish_order_initialized(&order);
+            }
+
+            let venue_order_id = self.ids_generator.get_venue_order_id(&order).unwrap();
+
+            // A restored position can expire with no order processed this
+            // session, leaving the account unindexed.
+            self.account_ids.insert(trader_id, account_id);
+            self.generate_order_accepted(&order, venue_order_id);
+
+            let fill_price = self.settlement_price.or(close_price_fallback);
+            if let Some(fill_price) = fill_price {
+                if let Err(e) = self.apply_fills(
+                    &order,
+                    &[(fill_price, quantity)],
+                    LiquiditySide::Taker,
+                    Some(position_id),
+                    None,
+                    None,
+                ) {
+                    log::error!("Cannot fill expiration order {client_order_id}: {e}");
+                }
+            } else {
+                self.fill_market_order(client_order_id);
+            }
+        }
+    }
+
+    /// Liquidates all open positions for this instrument.
+    ///
+    /// Cancels open orders if `cancel_open_orders` is true, then closes every open
+    /// position at best bid/ask or the settlement price, emitting accepted and filled
+    /// events for each synthetic close order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the venue order ID generator cannot produce an ID for the synthetic
+    /// liquidation order (internal state inconsistency).
+    ///
+    /// Only positions whose instrument settles in `settlement_currency` are closed.
+    /// Matching engines for other settlement currencies are skipped, scoping
+    /// liquidation to the currency whose margin account breached the threshold.
+    pub fn liquidate_open_positions(
+        &mut self,
+        ts_now: UnixNanos,
+        cancel_open_orders: bool,
+        settlement_currency: Currency,
+    ) {
+        // Only liquidate positions settled in the breached currency.
+        if self.instrument.settlement_currency() != settlement_currency {
+            return;
+        }
+
+        if cancel_open_orders {
+            let open_orders: Vec<RestingOrder> = self.get_open_orders();
+            for order_info in &open_orders {
+                let order = {
+                    let cache = self.cache.borrow();
+                    cache.order_owned(&order_info.client_order_id)
+                };
+
+                if let Some(order) = order {
+                    self.cancel_order(&order, None);
+                }
+            }
+        }
+
+        let instrument_id = self.instrument.id();
+        let positions: Vec<(
+            TraderId,
+            StrategyId,
+            AccountId,
+            PositionId,
+            OrderSide,
+            Quantity,
+        )> = {
+            let cache = self.cache.borrow();
+            cache
+                .positions_open(None, Some(&instrument_id), None, None, None)
+                .into_iter()
+                .map(|pos| {
+                    (
+                        pos.trader_id,
+                        pos.strategy_id,
+                        pos.account_id,
+                        pos.id,
+                        OrderCore::closing_side(pos.side),
+                        pos.quantity,
+                    )
+                })
+                .collect()
+        };
+
+        for (trader_id, strategy_id, account_id, position_id, closing_side, quantity) in positions {
+            // Pre-check: ensure a price source is available before emitting events.
+            let has_price = if closing_side == OrderSide::Sell {
+                self.best_bid_price().is_some() || self.settlement_price.is_some()
+            } else {
+                self.best_ask_price().is_some() || self.settlement_price.is_some()
+            };
+
+            if !has_price {
+                log::warn!(
+                    "LIQUIDATION: no price available for {instrument_id} position {position_id}, skipping"
+                );
+                continue;
+            }
+
+            let client_order_id = ClientOrderId::from(
+                format!("LIQUIDATION-{}-{}", self.venue, UUID4::new()).as_str(),
+            );
+            let order = OrderAny::Market(MarketOrder::new(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                closing_side,
+                quantity,
+                TimeInForce::Ioc,
+                UUID4::new(),
+                ts_now,
+                true, // reduce_only
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(vec![Ustr::from(&format!(
+                    "LIQUIDATION_{}_CLOSE",
+                    self.venue
+                ))]),
+            ));
+
+            let venue_order_id = self.ids_generator.get_venue_order_id(&order).unwrap();
+            {
+                let mut cache = self.cache.borrow_mut();
+                if let Err(e) = cache.add_order(order.clone(), Some(position_id), None, false) {
+                    log::debug!("Liquidation order already in cache: {e}");
+                } else {
+                    drop(cache);
+                    self.publish_order_initialized(&order);
+                    self.cache
+                        .borrow_mut()
+                        .add_venue_order_id(&client_order_id, &venue_order_id, false)
+                        .ok();
+                }
+            }
+
+            // Route through the normal market-order fill machinery (fill model,
+            // book depth consumption, slippage) instead of apply_fills directly.
+            self.account_ids.insert(trader_id, account_id);
+            self.generate_order_submitted(&order, account_id);
+            self.generate_order_accepted(&order, venue_order_id);
+            self.fill_market_order(client_order_id);
+        }
+    }
+
+    /// Processes a new order submission.
+    ///
+    /// Validates the order against instrument precision, expiration, and contingency
+    /// rules before accepting or rejecting it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an OTO child order references a missing or non-OTO parent.
+    pub fn process_order(&mut self, order: &mut OrderAny, account_id: AccountId) {
+        // Idempotent: OTO children may be re-routed via `fill_order`
+        if self.core.order_exists(order.client_order_id()) {
+            return;
+        }
+
+        // Ensure expiration semantics are enforced even when no fresh market-data
+        // tick arrives for this instrument after expiry (e.g. after rotation).
+        let ts_now = self.clock.borrow().timestamp_ns();
+        self.check_instrument_expiration(ts_now);
+
+        // Validate inside a cache borrow scope, collecting any rejection
+        // reason rather than emitting events while the borrow is held.
+        // This avoids RefCell re-entrancy panics from synchronous event
+        // dispatch that calls back into the execution engine.
+        let reject_reason: Option<Ustr> = 'validate: {
+            let cache_borrow = self.cache.as_ref().borrow();
+
+            // Index identifiers
+            self.account_ids.insert(order.trader_id(), account_id);
+
+            if self.pending_resolution {
+                break 'validate Some(
+                    format!(
+                        "Contract {} has expired and is pending resolution",
+                        self.instrument.id()
+                    )
+                    .into(),
+                );
+            }
+
+            if self.market_status != MarketStatus::Open {
+                break 'validate Some(
+                    format!(
+                        "Market {} is {}, cannot accept order {}",
+                        self.instrument.id(),
+                        self.market_status,
+                        order.client_order_id()
+                    )
+                    .into(),
+                );
+            }
+
+            // Check for instrument expiration or activation
+            if self.instrument.has_expiration() {
+                if let Some(activation_ns) = self.instrument.activation_ns()
+                    && self.clock.borrow().timestamp_ns() < activation_ns
+                {
+                    break 'validate Some(
+                        format!(
+                            "Contract {} is not yet active, activation {activation_ns}",
+                            self.instrument.id(),
+                        )
+                        .into(),
+                    );
+                }
+
+                if let Some(expiration_ns) = self.instrument.expiration_ns()
+                    && self.clock.borrow().timestamp_ns() >= expiration_ns
+                {
+                    break 'validate Some(
+                        format!(
+                            "Contract {} has expired, expiration {expiration_ns}",
+                            self.instrument.id(),
+                        )
+                        .into(),
+                    );
+                }
+            }
+
+            // Contingent orders checks
+            if self.config.support_contingent_orders {
+                if let Some(parent_order_id) = order.parent_order_id() {
+                    let parent_order = match cache_borrow.order(&parent_order_id) {
+                        Some(o) if o.contingency_type().unwrap() == ContingencyType::Oto => o,
+                        _ => panic!("OTO parent not found"),
+                    };
+
+                    if parent_order.status() == OrderStatus::Rejected && order.is_open() {
+                        break 'validate Some(
+                            format!("Rejected OTO order from {parent_order_id}").into(),
+                        );
+                    } else if parent_order.status() == OrderStatus::Accepted
+                        || parent_order.status() == OrderStatus::Triggered
+                        || (self.config.oto_full_trigger
+                            && parent_order.status() == OrderStatus::PartiallyFilled)
+                    {
+                        log::info!(
+                            "Pending OTO order {} triggers from {parent_order_id}",
+                            order.client_order_id(),
+                        );
+                        return;
+                    }
+                }
+
+                if let Some(linked_order_ids) = order.linked_order_ids() {
+                    for client_order_id in linked_order_ids {
+                        match cache_borrow.order(client_order_id) {
+                            Some(contingent_order)
+                                if (order.contingency_type().unwrap() == ContingencyType::Oco
+                                    || order.contingency_type().unwrap()
+                                        == ContingencyType::Ouo)
+                                    && !order.is_closed()
+                                    && contingent_order.is_closed() =>
+                            {
+                                break 'validate Some(
+                                    format!("Contingent order {client_order_id} already closed")
+                                        .into(),
+                                );
+                            }
+                            None => panic!("Cannot find contingent order for {client_order_id}"),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            // Check for valid order quantity precision
+            if order.quantity().precision != self.instrument.size_precision() {
+                break 'validate Some(
+                    format!(
+                        "Invalid order quantity precision for order {}, was {} when {} size precision is {}",
+                        order.client_order_id(),
+                        order.quantity().precision,
+                        self.instrument.id(),
+                        self.instrument.size_precision()
+                    )
+                    .into(),
+                );
+            }
+
+            // Check for valid order display quantity precision
+            if let Some(display_qty) = order.display_qty()
+                && display_qty.precision != self.instrument.size_precision()
+            {
+                break 'validate Some(
+                    format!(
+                        "Invalid order display quantity precision for order {}, was {} when {} size precision is {}",
+                        order.client_order_id(),
+                        display_qty.precision,
+                        self.instrument.id(),
+                        self.instrument.size_precision()
+                    )
+                    .into(),
+                );
+            }
+
+            // Check for valid order price precision
+            if let Some(price) = order.price()
+                && price.precision != self.instrument.price_precision()
+            {
+                break 'validate Some(
+                    format!(
+                        "Invalid order price precision for order {}, was {} when {} price precision is {}",
+                        order.client_order_id(),
+                        price.precision,
+                        self.instrument.id(),
+                        self.instrument.price_precision()
+                    )
+                    .into(),
+                );
+            }
+
+            // Check for valid order trigger price precision
+            if let Some(trigger_price) = order.trigger_price()
+                && trigger_price.precision != self.instrument.price_precision()
+            {
+                break 'validate Some(
+                    format!(
+                        "Invalid order trigger price precision for order {}, was {} when {} price precision is {}",
+                        order.client_order_id(),
+                        trigger_price.precision,
+                        self.instrument.id(),
+                        self.instrument.price_precision()
+                    )
+                    .into(),
+                );
+            }
+
+            let position = self.position_for_order_in_cache(&cache_borrow, order);
+
+            // Check not shorting an equity without a MARGIN account
+            if order.order_side() == OrderSide::Sell
+                && self.account_type != AccountType::Margin
+                && matches!(self.instrument, InstrumentAny::Equity(_))
+                && position
+                    .as_ref()
+                    .is_none_or(|pos| !order.would_reduce_only(pos.side, pos.quantity))
+            {
+                let position_string = position
+                    .as_ref()
+                    .map_or("None".to_string(), |pos| pos.id.to_string());
+                break 'validate Some(
+                    format!(
+                        "Short selling not permitted on a CASH account with position {position_string} and order {order}",
+                    )
+                    .into(),
+                );
+            }
+
+            // Check reduce-only instruction
+            if self.config.use_reduce_only
+                && order.is_reduce_only()
+                && !order.is_closed()
+                && position.as_ref().is_none_or(|pos| {
+                    pos.is_closed()
+                        || (order.is_buy() && pos.is_long())
+                        || (order.is_sell() && pos.is_short())
+                })
+            {
+                break 'validate Some(
+                    format!(
+                        "Reduce-only order {} ({}-{}) would have increased position",
+                        order.client_order_id(),
+                        order.order_type().to_string().to_uppercase(),
+                        order.order_side().to_string().to_uppercase()
+                    )
+                    .into(),
+                );
+            }
+
+            None
+        };
+
+        if let Some(reason) = reject_reason {
+            self.generate_order_rejected(order, reason);
+            return;
+        }
+
+        // Convert quote-denominated quantity to base quantity for non-inverse instruments.
+        // Mirrors live venue semantics where the quote notional is settled into a base
+        // quantity before the order enters normal fill and state handling. Without this
+        // conversion the book simulation would treat the quote notional as base size.
+        // Only applies to order types with a reliable reference price at submission;
+        // trigger-style market orders and trailing orders are left untouched so they
+        // convert at fill time from the actual (possibly-trailed) price.
+        if order.is_quote_quantity()
+            && !self.instrument.is_inverse()
+            && !matches!(
+                order.order_type(),
+                OrderType::TrailingStopLimit | OrderType::TrailingStopMarket,
+            )
+            && (order.price().is_some()
+                || matches!(
+                    order.order_type(),
+                    OrderType::Market | OrderType::MarketToLimit,
+                ))
+            && !self.convert_quote_to_base_quantity(order)
+        {
+            return;
+        }
+
+        match order.order_type() {
+            OrderType::Market => self.process_market_order(order),
+            OrderType::Limit => self.process_limit_order(order),
+            OrderType::MarketToLimit => self.process_market_to_limit_order(order),
+            OrderType::StopMarket => self.process_stop_market_order(order),
+            OrderType::StopLimit => self.process_stop_limit_order(order),
+            OrderType::MarketIfTouched => self.process_market_if_touched_order(order),
+            OrderType::LimitIfTouched => self.process_limit_if_touched_order(order),
+            OrderType::TrailingStopMarket => self.process_trailing_stop_order(order),
+            OrderType::TrailingStopLimit => self.process_trailing_stop_order(order),
+        }
+    }
+
+    fn convert_quote_to_base_quantity(&self, order: &mut OrderAny) -> bool {
+        // Pick a reference price to convert the quote notional into a base quantity.
+        // Priced orders use their own price (worst-case execution); marketable orders
+        // use the best opposing book level.
+        let reference_price = if let Some(price) = order.price() {
+            Some(price)
+        } else {
+            match order.order_side() {
+                OrderSide::Buy => self.core.ask,
+                OrderSide::Sell => self.core.bid,
+                OrderSide::NoOrderSide => None,
+            }
+        };
+
+        let Some(reference_price) = reference_price else {
+            self.generate_order_rejected(
+                order,
+                format!(
+                    "No market for {} to convert quote quantity to base",
+                    order.instrument_id(),
+                )
+                .into(),
+            );
+            return false;
+        };
+
+        let base_quantity = self
+            .instrument
+            .calculate_base_quantity(order.quantity(), reference_price);
+
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let event = OrderEventAny::Updated(OrderUpdated::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            base_quantity,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            order.venue_order_id(),
+            order.account_id(),
+            None,
+            None,
+            None,
+            false,
+        ));
+
+        // Apply the update to the local order so subsequent dispatch uses the base
+        // quantity immediately (the event is also dispatched to the execution engine
+        // for cache reconciliation).
+        if let Err(e) = order.apply(event.clone()) {
+            log::error!(
+                "Failed to apply quote-to-base update for {}: {e}",
+                order.client_order_id(),
+            );
+            return false;
+        }
+        self.dispatch_order_event(event);
+        true
+    }
+
+    /// Processes an order modify command to update quantity, price, or trigger price.
+    pub fn process_modify(&mut self, command: &ModifyOrder, account_id: AccountId) {
+        if !self.core.order_exists(command.client_order_id) {
+            self.generate_order_modify_rejected(
+                command.trader_id,
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                Ustr::from(format!("Order {} not found", command.client_order_id).as_str()),
+                command.venue_order_id,
+                Some(account_id),
+            );
+            return;
+        }
+
+        let order = match self
+            .cache
+            .borrow()
+            .order(&command.client_order_id)
+            .map(|o| o.clone())
+        {
+            Some(order) => order,
+            None => {
+                log::error!(
+                    "Cannot modify order: order {} not found in cache",
+                    command.client_order_id
+                );
+                return;
+            }
+        };
+
+        let update_success = self.update_order(
+            &order,
+            command.quantity,
+            command.price,
+            command.trigger_price,
+            None,
+        );
+
+        if !update_success {
+            return;
+        }
+
+        // Local `order` is pre-event; resync from the cache for fresh state
+        let Some(refreshed) = self.resync_core_entry(command.client_order_id) else {
+            return;
+        };
+
+        // Skip queue reset on rejected modifies to preserve accrued position
+        let price_changed = refreshed.price() != order.price()
+            || refreshed.trigger_price() != order.trigger_price();
+
+        if price_changed
+            && refreshed.is_open()
+            && self.config.queue_position
+            && let Some(new_price) = refreshed.price()
+        {
+            self.snapshot_queue_position(&refreshed, new_price);
+            self.queue_excess.swap_remove(&refreshed.client_order_id());
+        }
+    }
+
+    /// Processes an order cancel command.
+    pub fn process_cancel(&mut self, command: &CancelOrder, account_id: AccountId) {
+        if !self.core.order_exists(command.client_order_id) {
+            self.generate_order_cancel_rejected(
+                command.trader_id,
+                command.strategy_id,
+                account_id,
+                command.instrument_id,
+                command.client_order_id,
+                command.venue_order_id,
+                Ustr::from(format!("Order {} not found", command.client_order_id).as_str()),
+            );
+            return;
+        }
+
+        let order = match self
+            .cache
+            .borrow()
+            .order(&command.client_order_id)
+            .map(|o| o.clone())
+        {
+            Some(order) => order,
+            None => {
+                log::error!(
+                    "Cannot cancel order: order {} not found in cache",
+                    command.client_order_id
+                );
+                return;
+            }
+        };
+
+        if !order.is_inflight() && !order.is_open() {
+            self.purge_stale_core_entry(command.client_order_id);
+            return;
+        }
+
+        self.cancel_order(&order, None);
+    }
+
+    /// Processes a cancel all orders command for an instrument.
+    pub fn process_cancel_all(&mut self, command: &CancelAllOrders, _account_id: AccountId) {
+        let instrument_id = command.instrument_id;
+        let order_side = if command.order_side == OrderSide::NoOrderSide {
+            None
+        } else {
+            Some(command.order_side)
+        };
+
+        let client_order_ids: Vec<ClientOrderId> = self
+            .cache
+            .borrow()
+            .orders_open(None, Some(&instrument_id), None, None, order_side)
+            .iter()
+            .map(|o| o.client_order_id())
+            .collect();
+
+        for client_order_id in client_order_ids {
+            let order = match self
+                .cache
+                .borrow()
+                .order(&client_order_id)
+                .map(|o| o.clone())
+            {
+                Some(order) => order,
+                None => continue,
+            };
+
+            if !order.is_inflight() && !order.is_open() {
+                self.purge_stale_core_entry(client_order_id);
+                continue;
+            }
+
+            self.cancel_order(&order, None);
+        }
+    }
+
+    // Removes a closed order's stale entry from the matching core so the next
+    // `iterate_bids/asks` does not produce a spurious fill action.
+    fn purge_stale_core_entry(&mut self, client_order_id: ClientOrderId) {
+        if self.core.order_exists(client_order_id) {
+            self.delete_core_order(client_order_id);
+        }
+        self.cached_filled_qty.swap_remove(&client_order_id);
+    }
+
+    fn resync_core_entry(&mut self, client_order_id: ClientOrderId) -> Option<OrderAny> {
+        let order = self
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .map(|o| o.clone())?;
+
+        // Gate on `is_closed`, not `is_open`: cache may transiently hold the
+        // order in `Submitted` (process_limit_order accepts before cache add)
+        if order.is_closed() {
+            self.delete_core_order(client_order_id);
+            return Some(order);
+        }
+
+        let new_match_info = Self::matching_core_entry(&order);
+
+        // Skip the delete+add when unchanged to preserve FIFO at the level
+        let unchanged = self
+            .core
+            .get_order(client_order_id)
+            .is_some_and(|existing| *existing == new_match_info);
+
+        if unchanged {
+            self.track_post_match_order(&order);
+            return Some(order);
+        }
+
+        self.delete_core_order(client_order_id);
+        self.track_post_match_order(&order);
+        self.core.add_order(new_match_info);
+        Some(order)
+    }
+
+    /// Processes a batch cancel orders command.
+    pub fn process_batch_cancel(&mut self, command: &BatchCancelOrders, account_id: AccountId) {
+        for order in &command.cancels {
+            self.process_cancel(order, account_id);
+        }
+    }
+
+    /// Processes a batch modify orders command.
+    pub fn process_batch_modify(&mut self, command: &BatchModifyOrders, account_id: AccountId) {
+        for order in &command.modifies {
+            self.process_modify(order, account_id);
+        }
+    }
+
+    fn process_market_order(&mut self, order: &OrderAny) {
+        if order.time_in_force() == TimeInForce::AtTheOpen
+            || order.time_in_force() == TimeInForce::AtTheClose
+        {
+            self.generate_order_rejected(
+                order,
+                format!(
+                    "time in force {} is not currently supported",
+                    order.time_in_force()
+                )
+                .into(),
+            );
+            return;
+        }
+
+        // Check if market exists
+        if (order.order_side() == OrderSide::Buy && self.core.ask.is_none())
+            || (order.order_side() == OrderSide::Sell && self.core.bid.is_none())
+        {
+            self.generate_order_rejected(
+                order,
+                format!("No market for {}", order.instrument_id()).into(),
+            );
+            return;
+        }
+
+        if self.config.use_market_order_acks {
+            let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
+            self.generate_order_accepted(order, venue_order_id);
+        }
+
+        // Add order to cache for fill_market_order to fetch
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+        {
+            log::debug!("Order already in cache: {e}");
+        }
+
+        self.fill_market_order(order.client_order_id());
+    }
+
+    fn process_limit_order(&mut self, order: &mut OrderAny) {
+        if order.time_in_force() == TimeInForce::AtTheOpen
+            || order.time_in_force() == TimeInForce::AtTheClose
+        {
+            self.generate_order_rejected(
+                order,
+                format!(
+                    "time in force {} is not currently supported",
+                    order.time_in_force()
+                )
+                .into(),
+            );
+            return;
+        }
+
+        let limit_px = order.price().expect("Limit order must have a price");
+        if order.is_post_only()
+            && self
+                .core
+                .is_limit_matched(order.order_side_specified(), limit_px)
+        {
+            self.generate_order_rejected(
+                order,
+                format!(
+                    "POST_ONLY {} {} order limit px of {} would have been a TAKER: bid={}, ask={}",
+                    order.order_type(),
+                    order.order_side(),
+                    order.price().unwrap(),
+                    self.core
+                        .bid
+                        .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                    self.core
+                        .ask
+                        .map_or_else(|| "None".to_string(), |p| p.to_string())
+                )
+                .into(),
+            );
+            return;
+        }
+
+        // Order is valid and accepted
+        self.accept_order(order);
+
+        // Check for immediate fill
+        if self
+            .core
+            .is_limit_matched(order.order_side_specified(), limit_px)
+        {
+            // Filling as liquidity taker
+            order.set_liquidity_side(LiquiditySide::Taker);
+
+            if self
+                .cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .is_err()
+                && let Err(e) = self.cache.borrow_mut().replace_order(order)
+            {
+                log::debug!("Failed to update order in cache: {e}");
+            }
+            self.fill_limit_order(order.client_order_id());
+
+            // If fill didn't execute (e.g. all liquidity consumed), revert to
+            // maker so the fill model check applies on subsequent iterations
+            if self.core.order_exists(order.client_order_id())
+                && let Some(mut order) = self.cache.borrow_mut().order_mut(&order.client_order_id())
+            {
+                order.set_liquidity_side(LiquiditySide::Maker);
+            }
+        } else if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc) {
+            self.cancel_order(order, None);
+        } else {
+            // Add passive order to cache for later modify/cancel operations
+            order.set_liquidity_side(LiquiditySide::Maker);
+
+            if let Some(price) = order.price() {
+                self.snapshot_queue_position(order, price);
+            }
+
+            let add_result = self
+                .cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false);
+
+            if let Err(e) = add_result {
+                log::debug!("Failed to add order to cache: {e}");
+
+                // Persist Maker side on the cached copy when exec engine
+                // already cached the order (only if not already Maker/Taker)
+                if let Some(mut order) = self.cache.borrow_mut().order_mut(&order.client_order_id())
+                    && !matches!(
+                        order.liquidity_side(),
+                        Some(LiquiditySide::Maker | LiquiditySide::Taker)
+                    )
+                {
+                    order.set_liquidity_side(LiquiditySide::Maker);
+                }
+            }
+        }
+    }
+
+    fn process_market_to_limit_order(&mut self, order: &OrderAny) {
+        // Check that market exists
+        if (order.order_side() == OrderSide::Buy && self.core.ask.is_none())
+            || (order.order_side() == OrderSide::Sell && self.core.bid.is_none())
+        {
+            self.generate_order_rejected(
+                order,
+                format!("No market for {}", order.instrument_id()).into(),
+            );
+            return;
+        }
+
+        if self.config.use_market_order_acks {
+            let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
+            self.generate_order_accepted(order, venue_order_id);
+        }
+
+        // Immediately fill marketable order
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+        {
+            log::debug!("Order already in cache: {e}");
+        }
+        let client_order_id = order.client_order_id();
+        self.fill_market_order(client_order_id);
+
+        // Check for remaining quantity to rest as limit order
+        let filled_qty = self
+            .cached_filled_qty
+            .get(&client_order_id)
+            .copied()
+            .unwrap_or_default();
+        let leaves_qty = order.quantity().saturating_sub(filled_qty);
+        if leaves_qty.is_zero() {
+            self.purge_cached_filled_qty_if_closed(client_order_id);
+            return;
+        }
+
+        let updated_order = self
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .map(|o| o.clone());
+
+        if let Some(mut updated_order) = updated_order {
+            self.accept_order(&mut updated_order);
+        }
+    }
+
+    fn process_stop_market_order(&mut self, order: &mut OrderAny) {
+        let stop_px = order
+            .trigger_price()
+            .expect("Stop order must have a trigger price");
+
+        if self.core.is_stop_matched_with_trigger_type(
+            order.order_side_specified(),
+            stop_px,
+            order.trigger_type().unwrap_or(TriggerType::Default),
+        ) {
+            if self.config.reject_stop_orders {
+                self.generate_order_rejected(
+                    order,
+                    format!(
+                        "{} {} order stop px of {} was in the market: bid={}, ask={}, but rejected because of configuration",
+                        order.order_type(),
+                        order.order_side(),
+                        order.trigger_price().unwrap(),
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    ).into(),
+                );
+                return;
+            }
+
+            if let Err(e) = self
+                .cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+            {
+                log::debug!("Order already in cache: {e}");
+            }
+            self.fill_market_order(order.client_order_id());
+            return;
+        }
+
+        // order is not matched but is valid and we accept it
+        self.accept_order(order);
+
+        // Add passive order to cache for later modify/cancel operations
+        order.set_liquidity_side(LiquiditySide::Maker);
+
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+        {
+            log::debug!("Order already in cache: {e}");
+        }
+    }
+
+    fn process_stop_limit_order(&mut self, order: &mut OrderAny) {
+        let stop_px = order
+            .trigger_price()
+            .expect("Stop order must have a trigger price");
+
+        if self.core.is_stop_matched_with_trigger_type(
+            order.order_side_specified(),
+            stop_px,
+            order.trigger_type().unwrap_or(TriggerType::Default),
+        ) {
+            if self.config.reject_stop_orders {
+                self.generate_order_rejected(
+                    order,
+                    format!(
+                        "{} {} order stop px of {} was in the market: bid={}, ask={}, but rejected because of configuration",
+                        order.order_type(),
+                        order.order_side(),
+                        order.trigger_price().unwrap(),
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    ).into(),
+                );
+                return;
+            }
+
+            self.accept_triggered_limit_style_order(order);
+            return;
+        }
+
+        self.accept_order(order);
+
+        // Add passive order to cache for later modify/cancel operations
+        order.set_liquidity_side(LiquiditySide::Maker);
+
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+        {
+            log::debug!("Order already in cache: {e}");
+        }
+    }
+
+    fn process_market_if_touched_order(&mut self, order: &mut OrderAny) {
+        if self.core.is_touch_triggered_with_trigger_type(
+            order.order_side_specified(),
+            order.trigger_price().unwrap(),
+            order.trigger_type().unwrap_or(TriggerType::Default),
+        ) {
+            if self.config.reject_stop_orders {
+                self.generate_order_rejected(
+                    order,
+                    format!(
+                        "{} {} order trigger px of {} was in the market: bid={}, ask={}, but rejected because of configuration",
+                        order.order_type(),
+                        order.order_side(),
+                        order.trigger_price().unwrap(),
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    ).into(),
+                );
+                return;
+            }
+
+            if let Err(e) = self
+                .cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+            {
+                log::debug!("Order already in cache: {e}");
+            }
+            self.fill_market_order(order.client_order_id());
+            return;
+        }
+
+        // Order is valid and accepted
+        self.accept_order(order);
+
+        // Add passive order to cache for later modify/cancel operations
+        order.set_liquidity_side(LiquiditySide::Maker);
+
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+        {
+            log::debug!("Order already in cache: {e}");
+        }
+    }
+
+    fn process_limit_if_touched_order(&mut self, order: &mut OrderAny) {
+        if self.core.is_touch_triggered_with_trigger_type(
+            order.order_side_specified(),
+            order.trigger_price().unwrap(),
+            order.trigger_type().unwrap_or(TriggerType::Default),
+        ) {
+            if self.config.reject_stop_orders {
+                self.generate_order_rejected(
+                    order,
+                    format!(
+                        "{} {} order trigger px of {} was in the market: bid={}, ask={}, but rejected because of configuration",
+                        order.order_type(),
+                        order.order_side(),
+                        order.trigger_price().unwrap(),
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    ).into(),
+                );
+                return;
+            }
+            self.accept_triggered_limit_style_order(order);
+            return;
+        }
+
+        // Order is valid and accepted
+        self.accept_order(order);
+
+        // Add passive order to cache for later modify/cancel operations
+        order.set_liquidity_side(LiquiditySide::Maker);
+
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+        {
+            log::debug!("Order already in cache: {e}");
+        }
+    }
+
+    fn accept_triggered_limit_style_order(&mut self, order: &mut OrderAny) {
+        self.accept_order(order);
+
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+        {
+            log::debug!("Order already in cache: {e}");
+        }
+
+        self.trigger_limit_style_stop_order(order.client_order_id(), order.clone());
+
+        if let Some(cached_order) = self
+            .cache
+            .borrow()
+            .order(&order.client_order_id())
+            .map(|order| order.clone())
+        {
+            *order = cached_order;
+        }
+    }
+
+    fn process_trailing_stop_order(&mut self, order: &mut OrderAny) {
+        if let Some(trigger_price) = order.trigger_price()
+            && self.core.is_stop_matched_with_trigger_type(
+                order.order_side_specified(),
+                trigger_price,
+                order.trigger_type().unwrap_or(TriggerType::Default),
+            )
+        {
+            self.generate_order_rejected(
+                    order,
+                    format!(
+                        "{} {} order trigger px of {} was in the market: bid={}, ask={}, but rejected because of configuration",
+                        order.order_type(),
+                        order.order_side(),
+                        trigger_price,
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    ).into(),
+                );
+            return;
+        }
+
+        // Set Maker before `accept_order` so trail-on-accept's cache write
+        // captures it (a later `set_liquidity_side` would be dropped by the
+        // `add_order` no-op below).
+        order.set_liquidity_side(LiquiditySide::Maker);
+
+        self.accept_order(order);
+
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+        {
+            log::debug!("Order already in cache: {e}");
+        }
+    }
+
+    /// Iterate the matching engine by processing the bid and ask order sides
+    /// and advancing time up to the given UNIX `timestamp_ns`.
+    ///
+    /// The `aggressor_side` parameter is used for trade execution processing.
+    /// When not `NoAggressor`, the book-based bid/ask reset is skipped to preserve
+    /// transient trade price overrides.
+    pub fn iterate(&mut self, timestamp_ns: UnixNanos, aggressor_side: AggressorSide) {
+        // TODO implement correct clock fixed time setting self.clock.set_time(ts_now);
+        self.purge_closed_cached_filled_qty();
+
+        // Only reset bid/ask from book when not processing trade execution
+        // (preserves transient trade price override for L2/L3 books). The
+        // `last_trade_size` gate covers the no-aggressor trade-tick path
+        // where `process_trade_tick` overrides both sides to the trade
+        // price; without it the override is undone here.
+        if aggressor_side == AggressorSide::NoAggressor && self.last_trade_size.is_none() {
+            if let Some(bid) = self.book.best_bid_price() {
+                self.core.set_bid_raw(bid);
+            }
+
+            if let Some(ask) = self.book.best_ask_price() {
+                self.core.set_ask_raw(ask);
+            }
+        }
+
+        let mut matched_order = false;
+
+        if self.market_status == MarketStatus::Open {
+            // Process bid actions before snapshotting asks so cross-side
+            // contingencies (OCO/OUO) mutate state between sides
+            for action in self.core.iterate_bids() {
+                matched_order = true;
+
+                match action {
+                    MatchAction::FillLimit(id) => self.fill_limit_order(id),
+                    MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
+                }
+            }
+
+            for action in self.core.iterate_asks() {
+                matched_order = true;
+
+                match action {
+                    MatchAction::FillLimit(id) => self.fill_limit_order(id),
+                    MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
+                }
+            }
+        }
+
+        let order_ids: Vec<ClientOrderId> = if matched_order {
+            self.core.iter_orders().map(|m| m.client_order_id).collect()
+        } else if self.post_match_order_ids.is_empty() {
+            Vec::new()
+        } else {
+            self.core
+                .iter_orders()
+                .filter_map(|order| {
+                    self.post_match_order_ids
+                        .contains(&order.client_order_id)
+                        .then_some(order.client_order_id)
+                })
+                .collect()
+        };
+        let support_gtd_orders = self.config.support_gtd_orders;
+
+        for client_order_id in order_ids {
+            let (action, keep_tracking) = {
+                let cache = self.cache.borrow();
+                let Some(order) = cache.order(&client_order_id) else {
+                    self.post_match_order_ids.swap_remove(&client_order_id);
+                    continue;
+                };
+
+                (
+                    post_match_order_action(&order, support_gtd_orders, timestamp_ns, |order| {
+                        order.clone()
+                    }),
+                    Self::requires_post_match_maintenance(&order),
+                )
+            };
+
+            match action {
+                PostMatchOrderAction::RemoveClosed => {
+                    self.delete_core_order(client_order_id);
+                    self.cached_filled_qty.swap_remove(&client_order_id);
+                    continue;
+                }
+                PostMatchOrderAction::Expire(order) => {
+                    self.delete_core_order(client_order_id);
+                    self.cached_filled_qty.swap_remove(&client_order_id);
+                    self.expire_order(&order);
+                    continue;
+                }
+                PostMatchOrderAction::UpdateTrailing(mut order) => {
+                    if self.maybe_activate_trailing_stop(
+                        &mut order,
+                        self.core.bid,
+                        self.core.ask,
+                        self.core.last,
+                    ) {
+                        self.update_trailing_stop_order(&order);
+                        self.resync_core_entry(client_order_id);
+                    }
+                }
+                PostMatchOrderAction::NoMaintenance => {
+                    if !keep_tracking {
+                        self.post_match_order_ids.swap_remove(&client_order_id);
+                    }
+                }
+            }
+
+            // Single-shot: only the first order after a trigger fill sees
+            // the mutated core; the restore clears the override here.
+            if self.target_bid.is_some() || self.target_ask.is_some() || self.target_last.is_some()
+            {
+                if let Some(t) = self.target_bid.take() {
+                    self.core.bid = Some(t);
+                }
+
+                if let Some(t) = self.target_ask.take() {
+                    self.core.ask = Some(t);
+                }
+
+                if let Some(t) = self.target_last.take() {
+                    self.core.last = Some(t);
+                }
+            }
+        }
+
+        // Fallback for when the per-order loop hit no eligible order (e.g.,
+        // all closed by the matching pass) so the fill override on
+        // `core.last` cannot leak into the next iterate.
+        if let Some(t) = self.target_bid.take() {
+            self.core.bid = Some(t);
+        }
+
+        if let Some(t) = self.target_ask.take() {
+            self.core.ask = Some(t);
+        }
+
+        if let Some(t) = self.target_last.take() {
+            self.core.last = Some(t);
+        }
+
+        // Restore core bid/ask to book values after iteration
+        // (during trade execution, transient override was used for matching)
+        self.core.bid = self.book.best_bid_price();
+        self.core.ask = self.book.best_ask_price();
+
+        // Process instrument expiration last so orders at the expiration tick
+        // get a chance to fill before positions are closed.
+        self.check_instrument_expiration(timestamp_ns);
+        self.purge_closed_cached_filled_qty();
+    }
+
+    fn get_trailing_activation_price(
+        &self,
+        trigger_type: TriggerType,
+        order_side: OrderSide,
+        bid: Option<Price>,
+        ask: Option<Price>,
+        last: Option<Price>,
+    ) -> Option<Price> {
+        match trigger_type {
+            TriggerType::LastPrice => last,
+            TriggerType::LastOrBidAsk => last.or(match order_side {
+                OrderSide::Buy => ask,
+                OrderSide::Sell => bid,
+                _ => None,
+            }),
+            // Default, BidAsk, DoubleBidAsk, DoubleLastPrice, IndexPrice, MarkPrice
+            _ => match order_side {
+                OrderSide::Buy => ask,
+                OrderSide::Sell => bid,
+                _ => None,
+            },
+        }
+    }
+
+    fn maybe_activate_trailing_stop(
+        &self,
+        order: &mut OrderAny,
+        bid: Option<Price>,
+        ask: Option<Price>,
+        last: Option<Price>,
+    ) -> bool {
+        match order {
+            OrderAny::TrailingStopMarket(inner) => {
+                if inner.is_activated {
+                    return true;
+                }
+
+                if inner.activation_price.is_none() {
+                    let px = self.get_trailing_activation_price(
+                        inner.trigger_type,
+                        inner.order_side(),
+                        bid,
+                        ask,
+                        last,
+                    );
+
+                    if let Some(p) = px {
+                        inner.activation_price = Some(p);
+                        inner.set_activated();
+
+                        if let Err(e) = self.cache.borrow_mut().replace_order(order) {
+                            log::error!("Failed to update order: {e}");
+                        }
+                        return true;
+                    }
+                    return false;
+                }
+
+                let activation_price = inner.activation_price.unwrap();
+                let hit = match inner.order_side() {
+                    OrderSide::Buy => ask.is_some_and(|a| a <= activation_price),
+                    OrderSide::Sell => bid.is_some_and(|b| b >= activation_price),
+                    _ => false,
+                };
+
+                if hit {
+                    inner.set_activated();
+
+                    if let Err(e) = self.cache.borrow_mut().replace_order(order) {
+                        log::error!("Failed to update order: {e}");
+                    }
+                }
+                hit
+            }
+            OrderAny::TrailingStopLimit(inner) => {
+                if inner.is_activated {
+                    return true;
+                }
+
+                if inner.activation_price.is_none() {
+                    let px = self.get_trailing_activation_price(
+                        inner.trigger_type,
+                        inner.order_side(),
+                        bid,
+                        ask,
+                        last,
+                    );
+
+                    if let Some(p) = px {
+                        inner.activation_price = Some(p);
+                        inner.set_activated();
+
+                        if let Err(e) = self.cache.borrow_mut().replace_order(order) {
+                            log::error!("Failed to update order: {e}");
+                        }
+                        return true;
+                    }
+                    return false;
+                }
+
+                let activation_price = inner.activation_price.unwrap();
+                let hit = match inner.order_side() {
+                    OrderSide::Buy => ask.is_some_and(|a| a <= activation_price),
+                    OrderSide::Sell => bid.is_some_and(|b| b >= activation_price),
+                    _ => false,
+                };
+
+                if hit {
+                    inner.set_activated();
+
+                    if let Err(e) = self.cache.borrow_mut().replace_order(order) {
+                        log::error!("Failed to update order: {e}");
+                    }
+                }
+                hit
+            }
+            _ => true,
+        }
+    }
+
+    fn determine_limit_price_and_volume(&mut self, order: &OrderAny) -> Vec<(Price, Quantity)> {
+        match order.price() {
+            Some(order_price) => {
+                // When liquidity consumption is enabled, get ALL crossed levels so that
+                // consumed levels can be filtered out while still finding valid ones.
+                // Otherwise simulate_fills only returns enough levels to satisfy leaves_qty,
+                // which may all be consumed, missing other valid crossed levels.
+                let mut fills = if self.config.liquidity_consumption {
+                    let size_prec = self.instrument.size_precision();
+                    self.book
+                        .get_all_crossed_levels(order.order_side(), order_price, size_prec)
+                } else {
+                    let book_order =
+                        BookOrder::new(order.order_side(), order_price, order.quantity(), 1);
+                    self.book.simulate_fills(&book_order)
+                };
+
+                // Trade execution: use trade-driven fill when book doesn't reflect trade price
+                if let Some(trade_size) = self.last_trade_size
+                    && let Some(trade_price) = self.core.last
+                {
+                    let fills_at_trade_price = fills.iter().any(|(px, _)| *px == trade_price);
+
+                    if !fills_at_trade_price
+                        && self
+                            .core
+                            .is_limit_matched(order.order_side_specified(), order_price)
+                    {
+                        // Fill model check for MAKER at limit is already handled in fill_limit_order,
+                        // don't re-check here to avoid calling is_limit_filled() twice (p² probability).
+                        let leaves_qty = order.leaves_qty();
+                        let available_qty = if self.config.liquidity_consumption {
+                            let remaining = trade_size.raw.saturating_sub(self.trade_consumption);
+                            Quantity::from_raw(remaining, trade_size.precision)
+                        } else {
+                            trade_size
+                        };
+
+                        let fill_qty = min(leaves_qty, available_qty);
+
+                        if !fill_qty.is_zero() {
+                            log::debug!(
+                                "Trade execution fill: {} @ {} (trade_price={}, available: {}, book had {} fills)",
+                                fill_qty,
+                                order_price,
+                                trade_price,
+                                available_qty,
+                                fills.len()
+                            );
+
+                            if self.config.liquidity_consumption {
+                                self.trade_consumption += fill_qty.raw;
+                            }
+
+                            // Fill at the limit price (conservative) rather than the trade price.
+                            // Trade execution fills already account for consumption via trade_consumption,
+                            // return early to bypass apply_liquidity_consumption which would incorrectly
+                            // discard these fills when the trade price isn't in the order book.
+                            return vec![(order_price, fill_qty)];
+                        }
+                    }
+                }
+
+                // Return immediately if no fills
+                if fills.is_empty() {
+                    return fills;
+                }
+
+                // Save original book prices BEFORE any fill price modifications for consumption tracking,
+                // since the MAKER loop below may adjust fill prices. Consumption should be
+                // tracked against the original book price levels where liquidity was sourced from.
+                let book_prices: Vec<Price> = if self.config.liquidity_consumption {
+                    fills.iter().map(|(px, _)| *px).collect()
+                } else {
+                    Vec::new()
+                };
+                let book_prices_ref: Option<&[Price]> = if book_prices.is_empty() {
+                    None
+                } else {
+                    Some(&book_prices)
+                };
+
+                // Filling as MAKER from trigger
+                if order
+                    .liquidity_side()
+                    .is_some_and(|liquidity_side| liquidity_side == LiquiditySide::Maker)
+                {
+                    match order.order_side().as_specified() {
+                        OrderSideSpecified::Buy => {
+                            let target_price = if order
+                                .trigger_price()
+                                .is_some_and(|trigger_price| order_price > trigger_price)
+                            {
+                                order.trigger_price().unwrap()
+                            } else {
+                                order_price
+                            };
+
+                            for fill in &mut fills {
+                                let last_px = fill.0;
+                                if last_px < order_price {
+                                    // Marketable BUY would have filled at limit
+                                    self.target_bid = self.core.bid;
+                                    self.target_ask = self.core.ask;
+                                    self.target_last = self.core.last;
+                                    self.core.set_ask_raw(target_price);
+                                    self.core.set_last_raw(target_price);
+                                    fill.0 = target_price;
+                                }
+                            }
+                        }
+                        OrderSideSpecified::Sell => {
+                            let target_price = if order
+                                .trigger_price()
+                                .is_some_and(|trigger_price| order_price < trigger_price)
+                            {
+                                order.trigger_price().unwrap()
+                            } else {
+                                order_price
+                            };
+
+                            for fill in &mut fills {
+                                let last_px = fill.0;
+                                if last_px > order_price {
+                                    // Marketable SELL would have filled at limit
+                                    self.target_bid = self.core.bid;
+                                    self.target_ask = self.core.ask;
+                                    self.target_last = self.core.last;
+                                    self.core.set_bid_raw(target_price);
+                                    self.core.set_last_raw(target_price);
+                                    fill.0 = target_price;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                self.apply_liquidity_consumption(
+                    fills,
+                    order.order_side(),
+                    order.leaves_qty(),
+                    book_prices_ref,
+                )
+            }
+            None => panic!("Limit order must have a price"),
+        }
+    }
+
+    fn determine_market_price_and_volume(&self, order: &OrderAny) -> Vec<(Price, Quantity)> {
+        let price = match order.order_side().as_specified() {
+            OrderSideSpecified::Buy => Price::max(FIXED_PRECISION),
+            OrderSideSpecified::Sell => Price::min(FIXED_PRECISION),
+        };
+
+        // When liquidity consumption is enabled, get ALL crossed levels so that
+        // consumed levels can be filtered out while still finding valid ones.
+        let mut fills = if self.config.liquidity_consumption {
+            let size_prec = self.instrument.size_precision();
+            self.book
+                .get_all_crossed_levels(order.order_side(), price, size_prec)
+        } else {
+            let book_order = BookOrder::new(order.order_side(), price, order.quantity(), 0);
+            self.book.simulate_fills(&book_order)
+        };
+
+        // For stop market and market-if-touched orders during bar H/L/C processing, fill at trigger price
+        // (market moved through the trigger). For gaps/immediate triggers, fill at market.
+        if !self.fill_at_market
+            && self.book_type == BookType::L1_MBP
+            && !fills.is_empty()
+            && matches!(
+                order.order_type(),
+                OrderType::StopMarket | OrderType::TrailingStopMarket | OrderType::MarketIfTouched
+            )
+            && let Some(trigger_price) = order.trigger_price()
+        {
+            fills[0] = (trigger_price, fills[0].1);
+
+            // Skip liquidity consumption for trigger price fills (gap price may not exist in book).
+            let mut remaining_qty = order.leaves_qty().raw;
+            let mut capped_fills = Vec::with_capacity(fills.len());
+
+            for (price, qty) in fills {
+                if remaining_qty == 0 {
+                    break;
+                }
+
+                let capped_qty_raw = min(qty.raw, remaining_qty);
+                if capped_qty_raw == 0 {
+                    continue;
+                }
+
+                remaining_qty -= capped_qty_raw;
+                capped_fills.push((price, Quantity::from_raw(capped_qty_raw, qty.precision)));
+            }
+
+            return capped_fills;
+        }
+
+        fills
+    }
+
+    fn determine_market_fill_model_price_and_volume(
+        &mut self,
+        order: &OrderAny,
+    ) -> anyhow::Result<(Vec<(Price, Quantity)>, bool)> {
+        if let (Some(best_bid), Some(best_ask)) = (self.core.bid, self.core.ask)
+            && let Some(book) = self.fill_model.get_orderbook_for_fill_simulation(
+                &self.instrument,
+                order,
+                best_bid,
+                best_ask,
+            )?
+        {
+            let price = match order.order_side().as_specified() {
+                OrderSideSpecified::Buy => Price::max(FIXED_PRECISION),
+                OrderSideSpecified::Sell => Price::min(FIXED_PRECISION),
+            };
+            let book_order = BookOrder::new(order.order_side(), price, order.quantity(), 0);
+            let fills = book.simulate_fills(&book_order);
+            if !fills.is_empty() {
+                return Ok((fills, true));
+            }
+        }
+        Ok((self.determine_market_price_and_volume(order), false))
+    }
+
+    fn determine_limit_fill_model_price_and_volume(
+        &mut self,
+        order: &OrderAny,
+    ) -> anyhow::Result<Vec<(Price, Quantity)>> {
+        if let (Some(best_bid), Some(best_ask)) = (self.core.bid, self.core.ask)
+            && let Some(book) = self.fill_model.get_orderbook_for_fill_simulation(
+                &self.instrument,
+                order,
+                best_bid,
+                best_ask,
+            )?
+            && let Some(limit_price) = order.price()
+        {
+            let book_order = BookOrder::new(order.order_side(), limit_price, order.quantity(), 0);
+            let fills = book.simulate_fills(&book_order);
+            if !fills.is_empty() {
+                return Ok(fills);
+            }
+        }
+        Ok(self.determine_limit_price_and_volume(order))
+    }
+
+    /// Fills a market order against the current order book.
+    ///
+    /// The order is filled as a taker against available liquidity.
+    /// Reduce-only orders are canceled if no position exists.
+    pub fn fill_market_order(&mut self, client_order_id: ClientOrderId) {
+        let mut order = match self
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .map(|o| o.clone())
+        {
+            Some(order) => order,
+            None => {
+                log::error!("Cannot fill market order: order {client_order_id} not found in cache");
+                return;
+            }
+        };
+
+        if order.is_closed() {
+            self.purge_stale_core_entry(client_order_id);
+            return;
+        }
+
+        // Convert quote-denominated quantity at fill time for trigger-style market
+        // orders that skipped conversion at submission. Idempotent: orders already
+        // converted have `is_quote_quantity == false`.
+        if order.is_quote_quantity()
+            && !self.instrument.is_inverse()
+            && !self.convert_quote_to_base_quantity(&mut order)
+        {
+            return;
+        }
+
+        if let Some(filled_qty) = self.cached_filled_qty.get(&order.client_order_id())
+            && filled_qty >= &order.quantity()
+        {
+            log::debug!(
+                "Ignoring fill as already filled pending application of events: {:?}, {:?}, {:?}, {:?}",
+                filled_qty,
+                order.quantity(),
+                order.filled_qty(),
+                order.quantity()
+            );
+            return;
+        }
+
+        let (venue_position_id, position) = self.fill_position_for_order(&order, Some(true));
+
+        if self.config.use_reduce_only && order.is_reduce_only() && position.is_none() {
+            log::warn!(
+                "Canceling REDUCE_ONLY {} as would increase position",
+                order.order_type()
+            );
+            self.cancel_order(&order, None);
+            return;
+        }
+
+        order.set_liquidity_side(LiquiditySide::Taker);
+        let (mut fills, from_synthetic) =
+            match self.determine_market_fill_model_price_and_volume(&order) {
+                Ok(result) => result,
+                Err(e) => {
+                    log::error!(
+                        "Cannot fill market order {}: fill model failed: {e}",
+                        order.client_order_id()
+                    );
+                    return;
+                }
+            };
+
+        // Apply protection price filtering at fill time (trigger-time semantics for stops)
+        let protection_price: Option<Price> = if let Some(protection_points) =
+            self.config.price_protection_points
+            && matches!(
+                order.order_type(),
+                OrderType::Market | OrderType::StopMarket
+            ) {
+            protection_price_calculate(
+                self.instrument.price_increment(),
+                &order,
+                protection_points,
+                self.core.bid,
+                self.core.ask,
+            )
+            .ok()
+        } else {
+            None
+        };
+
+        if let Some(protection_price) = protection_price {
+            fills = self.filter_fills_by_protection(fills, &order, protection_price);
+        }
+
+        // Skip consumption for synthetic fill-model books (prices may not exist
+        // in the real book) and trigger price fills (gap price may not exist)
+        let is_trigger_price_fill = !self.fill_at_market
+            && self.book_type == BookType::L1_MBP
+            && matches!(
+                order.order_type(),
+                OrderType::StopMarket | OrderType::TrailingStopMarket | OrderType::MarketIfTouched
+            )
+            && order.trigger_price().is_some();
+
+        if !from_synthetic && !is_trigger_price_fill {
+            fills = self.apply_liquidity_consumption(
+                fills,
+                order.order_side(),
+                order.leaves_qty(),
+                None,
+            );
+        }
+
+        if let Err(e) = self.apply_fills(
+            &order,
+            &fills,
+            LiquiditySide::Taker,
+            if self.config.use_reduce_only && order.is_reduce_only() {
+                venue_position_id
+            } else {
+                None
+            },
+            position.as_ref(),
+            protection_price,
+        ) {
+            log::error!("Cannot fill market order {}: {e}", order.client_order_id());
+        }
+    }
+
+    fn filter_fills_by_protection(
+        &self,
+        fills: Vec<(Price, Quantity)>,
+        order: &OrderAny,
+        protection_price: Price,
+    ) -> Vec<(Price, Quantity)> {
+        let protection_raw = protection_price.raw;
+        fills
+            .into_iter()
+            .filter(|(fill_price, _)| {
+                match order.order_side() {
+                    // BUY: only fill at prices <= protection_price
+                    OrderSide::Buy => fill_price.raw <= protection_raw,
+                    // SELL: only fill at prices >= protection_price
+                    OrderSide::Sell => fill_price.raw >= protection_raw,
+                    OrderSide::NoOrderSide => false,
+                }
+            })
+            .collect()
+    }
+
+    /// Attempts to fill a limit order against the current order book.
+    ///
+    /// Determines fill prices and quantities based on available liquidity,
+    /// then applies the fills to the order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the order has no price (design error).
+    pub fn fill_limit_order(&mut self, client_order_id: ClientOrderId) {
+        let mut order = match self
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .map(|o| o.clone())
+        {
+            Some(order) => order,
+            None => {
+                log::error!("Cannot fill limit order: order {client_order_id} not found in cache");
+                return;
+            }
+        };
+
+        if order.is_closed() {
+            self.purge_stale_core_entry(client_order_id);
+            return;
+        }
+
+        // Convert quote-denominated quantity at fill time for orders that entered
+        // this path still carrying a quote notional (e.g. trailing-stop-limit with
+        // a late-assigned price). Idempotent for already-converted orders.
+        if order.is_quote_quantity()
+            && !self.instrument.is_inverse()
+            && !self.convert_quote_to_base_quantity(&mut order)
+        {
+            return;
+        }
+
+        match order.price() {
+            Some(order_price) => {
+                let cached_filled_qty = self.cached_filled_qty.get(&order.client_order_id());
+                if let Some(&qty) = cached_filled_qty
+                    && qty >= order.quantity()
+                {
+                    log::debug!(
+                        "Ignoring fill as already filled pending application of events: {}, {}, {}, {}",
+                        qty,
+                        order.quantity(),
+                        order.filled_qty(),
+                        order.leaves_qty(),
+                    );
+                    return;
+                }
+
+                // Check fill model for MAKER orders at the limit price
+                if order
+                    .liquidity_side()
+                    .is_some_and(|liquidity_side| liquidity_side == LiquiditySide::Maker)
+                {
+                    // For trade execution: check if trade price equals order price
+                    // For quote updates: check if bid/ask equals order price
+                    let at_limit = if self.last_trade_size.is_some() && self.core.last.is_some() {
+                        self.core.last.is_some_and(|last| last == order_price)
+                    } else if order.order_side() == OrderSide::Buy {
+                        self.core.bid.is_some_and(|bid| bid == order_price)
+                    } else {
+                        self.core.ask.is_some_and(|ask| ask == order_price)
+                    };
+
+                    if at_limit {
+                        let is_limit_filled = match self.fill_model.is_limit_filled() {
+                            Ok(value) => value,
+                            Err(e) => {
+                                log::error!(
+                                    "Cannot fill limit order {}: fill model failed: {e}",
+                                    order.client_order_id()
+                                );
+                                return;
+                            }
+                        };
+
+                        if !is_limit_filled {
+                            return; // Not filled (simulates queue position)
+                        }
+                    }
+                }
+
+                let queue_allowed_raw = if self.config.queue_position {
+                    match self.determine_trade_fill_qty(&order) {
+                        None | Some(0) => {
+                            if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc)
+                            {
+                                self.cancel_order(&order, None);
+                            }
+                            return;
+                        }
+                        Some(allowed) => Some(allowed),
+                    }
+                } else {
+                    None
+                };
+
+                let (venue_position_id, position) = self.fill_position_for_order(&order, None);
+
+                if self.config.use_reduce_only && order.is_reduce_only() && position.is_none() {
+                    log::warn!(
+                        "Canceling REDUCE_ONLY {} as would increase position",
+                        order.order_type()
+                    );
+                    self.cancel_order(&order, None);
+                    return;
+                }
+
+                let tc_before = self.trade_consumption;
+                let mut fills = match self.determine_limit_fill_model_price_and_volume(&order) {
+                    Ok(fills) => fills,
+                    Err(e) => {
+                        log::error!(
+                            "Cannot fill limit order {}: fill model failed: {e}",
+                            order.client_order_id()
+                        );
+                        return;
+                    }
+                };
+
+                if let Some(allowed_raw) = queue_allowed_raw {
+                    let size_prec = self.instrument.size_precision();
+                    let mut remaining = allowed_raw;
+                    fills = fills
+                        .into_iter()
+                        .filter_map(|(price, qty)| {
+                            if remaining == 0 {
+                                return None;
+                            }
+                            let capped = qty.raw.min(remaining);
+                            remaining -= capped;
+                            Some((price, Quantity::from_raw(capped, size_prec)))
+                        })
+                        .collect();
+
+                    // Consume excess and reconcile trade budget after capping
+                    let consumed: QuantityRaw = fills.iter().map(|(_, qty)| qty.raw).sum();
+
+                    if let Some(excess) = self.queue_excess.get_mut(&order.client_order_id()) {
+                        *excess = excess.saturating_sub(consumed);
+                    }
+                    self.trade_consumption = tc_before + consumed;
+                }
+
+                // Skip apply_fills when consumed-liquidity adjustment produces no fills.
+                // This occurs for partially filled orders when an unrelated delta arrives
+                // and no new liquidity is available at the order's price level.
+                if fills.is_empty() && self.config.liquidity_consumption {
+                    log::debug!(
+                        "Skipping fill for {}: no liquidity available after consumption",
+                        order.client_order_id()
+                    );
+
+                    if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc) {
+                        self.cancel_order(&order, None);
+                    }
+
+                    return;
+                }
+
+                let liquidity_side = order.liquidity_side().unwrap();
+                if let Err(e) = self.apply_fills(
+                    &order,
+                    &fills,
+                    liquidity_side,
+                    venue_position_id,
+                    position.as_ref(),
+                    None,
+                ) {
+                    log::error!("Cannot fill limit order {}: {e}", order.client_order_id());
+                }
+            }
+            None => panic!("Limit order must have a price"),
+        }
+    }
+
+    fn fill_position_for_order(
+        &mut self,
+        order: &OrderAny,
+        generate: Option<bool>,
+    ) -> (Option<PositionId>, Option<Position>) {
+        if self.oms_type == OmsType::Hedging
+            && self.config.use_reduce_only
+            && order.is_reduce_only()
+        {
+            let cache = self.cache.as_ref().borrow();
+
+            if let Some(position) = cache.position_for_order(&order.client_order_id()) {
+                let position = position.cloned();
+                return (Some(position.id), Some(position));
+            }
+
+            if let Some(position) = Self::open_position_reduced_by_order(&cache, order) {
+                return (Some(position.id), Some(position));
+            }
+        }
+
+        let venue_position_id = self.ids_generator.get_position_id(order, generate);
+
+        let position = {
+            let cache = self.cache.as_ref().borrow();
+            venue_position_id
+                .as_ref()
+                .and_then(|position_id| cache.position_owned(position_id))
+        };
+
+        (venue_position_id, position)
+    }
+
+    fn position_for_order_in_cache(&self, cache: &Cache, order: &OrderAny) -> Option<Position> {
+        if let Some(position) = cache.position_for_order(&order.client_order_id()) {
+            return Some(position.cloned());
+        }
+
+        if self.oms_type == OmsType::Netting {
+            let position_id = PositionId::new(
+                format!("{}-{}", order.instrument_id(), order.strategy_id()).as_str(),
+            );
+            return cache
+                .position(&position_id)
+                .map(|position| position.cloned());
+        }
+
+        if self.oms_type == OmsType::Hedging
+            && self.config.use_reduce_only
+            && order.is_reduce_only()
+        {
+            return Self::open_position_reduced_by_order(cache, order);
+        }
+
+        None
+    }
+
+    fn open_position_reduced_by_order(cache: &Cache, order: &OrderAny) -> Option<Position> {
+        cache
+            .positions_open(
+                None,
+                Some(&order.instrument_id()),
+                Some(&order.strategy_id()),
+                None,
+                None,
+            )
+            .into_iter()
+            .find(|position| order.would_reduce_only(position.side, position.quantity))
+            .map(|position| position.cloned())
+    }
+
+    fn apply_fills(
+        &mut self,
+        order: &OrderAny,
+        fills: &[(Price, Quantity)],
+        liquidity_side: LiquiditySide,
+        venue_position_id: Option<PositionId>,
+        position: Option<&Position>,
+        protection_price: Option<Price>,
+    ) -> anyhow::Result<()> {
+        if order.time_in_force() == TimeInForce::Fok {
+            let mut total_size = Quantity::zero(order.quantity().precision);
+
+            for &(fill_px, fill_qty) in fills {
+                if self
+                    .normalize_price_for_current_instrument(fill_px)
+                    .is_some()
+                    && let Some(fill_qty) = self.normalize_quantity_for_current_instrument(fill_qty)
+                {
+                    total_size = total_size.add(fill_qty);
+                }
+            }
+
+            if order.leaves_qty() > total_size {
+                self.cancel_order(order, None);
+                return Ok(());
+            }
+        }
+
+        if fills.is_empty() {
+            if order.status() == OrderStatus::Submitted {
+                self.generate_order_rejected(
+                    order,
+                    format!("No market for {}", order.instrument_id()).into(),
+                );
+            } else {
+                log::error!(
+                    "Cannot fill order: no fills from book when fills were expected (check size in data)"
+                );
+                return Ok(());
+            }
+        }
+
+        // For netting mode, don't use venue position ID (use None instead)
+        let venue_position_id = if self.oms_type == OmsType::Netting {
+            None
+        } else {
+            venue_position_id
+        };
+
+        let mut initial_market_to_limit_fill = false;
+        let mut total_filled = self
+            .cached_filled_qty
+            .get(&order.client_order_id())
+            .copied()
+            .unwrap_or_else(|| order.filled_qty());
+        let initial_total_filled = total_filled;
+        let mut last_fill_px: Option<Price> = None;
+        let mut reduce_only_remaining_raw = None;
+        let mut reduce_only_filled_raw = None;
+
+        if self.config.use_reduce_only
+            && order.is_reduce_only()
+            && let Some(current_position) = position
+        {
+            reduce_only_remaining_raw = Some(current_position.quantity.raw);
+            reduce_only_filled_raw = Some(total_filled.raw);
+        }
+
+        for &(fill_px, fill_qty) in fills {
+            let Some(mut fill_px) = self.normalize_fill_price(fill_px, order.client_order_id())
+            else {
+                continue;
+            };
+
+            let Some(fill_qty) = self.normalize_fill_quantity(fill_qty, order.client_order_id())
+            else {
+                continue;
+            };
+
+            if order.filled_qty() == Quantity::zero(order.filled_qty().precision)
+                && order.order_type() == OrderType::MarketToLimit
+            {
+                self.generate_order_updated(order, order.quantity(), Some(fill_px), None, None);
+                initial_market_to_limit_fill = true;
+            }
+
+            if self.book_type == BookType::L1_MBP && self.fill_model.is_slipped()? {
+                fill_px = match order.order_side().as_specified() {
+                    OrderSideSpecified::Buy => fill_px.add(self.instrument.price_increment()),
+                    OrderSideSpecified::Sell => fill_px.sub(self.instrument.price_increment()),
+                }
+            }
+
+            let mut effective_fill_qty = fill_qty;
+
+            if let Some(remaining_raw) = reduce_only_remaining_raw {
+                if remaining_raw == 0 {
+                    return Ok(());
+                }
+
+                if effective_fill_qty.raw > remaining_raw {
+                    effective_fill_qty =
+                        Quantity::from_raw(remaining_raw, effective_fill_qty.precision);
+                }
+            }
+
+            if fill_qty.is_zero() {
+                if fills.len() == 1 && order.status() == OrderStatus::Submitted {
+                    self.generate_order_rejected(
+                        order,
+                        format!("No market for {}", order.instrument_id()).into(),
+                    );
+                }
+                return Ok(());
+            }
+
+            // Mirror `fill_order`'s leaves cap
+            let capped_fill_qty = min(
+                effective_fill_qty,
+                order.quantity().saturating_sub(total_filled),
+            );
+            let reduce_only_exhausts_position = reduce_only_remaining_raw
+                .is_some_and(|remaining_raw| capped_fill_qty.raw >= remaining_raw);
+
+            if reduce_only_exhausts_position {
+                let reduce_only_target_raw = reduce_only_filled_raw
+                    .unwrap_or(initial_total_filled.raw)
+                    .checked_add(capped_fill_qty.raw)
+                    .expect("Overflow occurred when adding reduce-only target quantity");
+                let reduce_only_target =
+                    Quantity::from_raw(reduce_only_target_raw, order.quantity().precision);
+
+                if order.quantity() != reduce_only_target {
+                    self.generate_order_updated(order, reduce_only_target, None, None, None);
+                }
+            }
+
+            total_filled = total_filled.add(capped_fill_qty);
+
+            if let Some(remaining_raw) = reduce_only_remaining_raw.as_mut() {
+                *remaining_raw = remaining_raw.saturating_sub(capped_fill_qty.raw);
+            }
+
+            if let Some(filled_raw) = reduce_only_filled_raw.as_mut() {
+                *filled_raw = filled_raw
+                    .checked_add(capped_fill_qty.raw)
+                    .expect("Overflow occurred when adding reduce-only filled quantity");
+            }
+
+            self.fill_order(
+                order,
+                fill_px,
+                effective_fill_qty,
+                liquidity_side,
+                venue_position_id,
+                position,
+            )?;
+            last_fill_px = Some(fill_px);
+
+            if order.order_type() == OrderType::MarketToLimit && initial_market_to_limit_fill {
+                // Filled initial level
+                return Ok(());
+            }
+
+            if reduce_only_exhausts_position {
+                self.purge_cached_filled_qty_if_closed(order.client_order_id());
+                return Ok(());
+            }
+        }
+
+        let leaves_remaining = total_filled < order.quantity();
+        let filled_in_loop = total_filled > initial_total_filled;
+
+        if order.time_in_force() == TimeInForce::Ioc && leaves_remaining {
+            self.cancel_order(order, None);
+            return Ok(());
+        }
+
+        // `filled_in_loop` covers the just-partially-filled case where the
+        // local clone's status has not seen the fill events yet.
+        if leaves_remaining
+            && (order.is_open() || filled_in_loop)
+            && self.book_type == BookType::L1_MBP
+            && matches!(
+                order.order_type(),
+                OrderType::Market
+                    | OrderType::MarketIfTouched
+                    | OrderType::StopMarket
+                    | OrderType::TrailingStopMarket
+            )
+        {
+            // Exhausted L1 volume: slip remainder by a single price increment
+            let Some(last_fill_px) = last_fill_px else {
+                return Ok(());
+            };
+
+            let side = order.order_side().as_specified();
+            let slip_fill_px = match side {
+                OrderSideSpecified::Buy => last_fill_px.add(self.instrument.price_increment()),
+                OrderSideSpecified::Sell => last_fill_px.sub(self.instrument.price_increment()),
+            };
+
+            if let Some(protection_price) = protection_price {
+                let exceeds_boundary = match side {
+                    OrderSideSpecified::Buy => slip_fill_px.raw > protection_price.raw,
+                    OrderSideSpecified::Sell => slip_fill_px.raw < protection_price.raw,
+                };
+
+                if exceeds_boundary {
+                    return Ok(());
+                }
+            }
+
+            let mut leaves_qty = order.quantity().saturating_sub(total_filled);
+
+            if let Some(remaining_raw) = reduce_only_remaining_raw {
+                if remaining_raw == 0 {
+                    return Ok(());
+                }
+
+                if leaves_qty.raw > remaining_raw {
+                    leaves_qty = Quantity::from_raw(remaining_raw, leaves_qty.precision);
+                }
+
+                if leaves_qty.raw >= remaining_raw {
+                    let reduce_only_target_raw = reduce_only_filled_raw
+                        .unwrap_or(initial_total_filled.raw)
+                        .checked_add(leaves_qty.raw)
+                        .expect("Overflow occurred when adding reduce-only target quantity");
+                    let reduce_only_target =
+                        Quantity::from_raw(reduce_only_target_raw, order.quantity().precision);
+
+                    if order.quantity() != reduce_only_target {
+                        self.generate_order_updated(order, reduce_only_target, None, None, None);
+                    }
+                }
+            }
+
+            if leaves_qty.is_zero() {
+                return Ok(());
+            }
+
+            self.fill_order(
+                order,
+                slip_fill_px,
+                leaves_qty,
+                liquidity_side,
+                venue_position_id,
+                position,
+            )?;
+            self.purge_cached_filled_qty_if_closed(order.client_order_id());
+        }
+
+        Ok(())
+    }
+
+    fn normalize_fill_price(
+        &self,
+        fill_px: Price,
+        client_order_id: ClientOrderId,
+    ) -> Option<Price> {
+        let normalized = self.normalize_price_for_current_instrument(fill_px);
+        if normalized.is_none() {
+            log::warn!(
+                "Skipping fill for {client_order_id}: fill price {fill_px} is not compatible \
+                 with {} price_precision={} price_increment={}",
+                self.instrument.id(),
+                self.instrument.price_precision(),
+                self.instrument.price_increment()
+            );
+        }
+        normalized
+    }
+
+    fn normalize_fill_quantity(
+        &self,
+        fill_qty: Quantity,
+        client_order_id: ClientOrderId,
+    ) -> Option<Quantity> {
+        let normalized = self.normalize_quantity_for_current_instrument(fill_qty);
+        if normalized.is_none() {
+            log::warn!(
+                "Skipping fill for {client_order_id}: fill quantity {fill_qty} is not compatible \
+                 with {} size_precision={}",
+                self.instrument.id(),
+                self.instrument.size_precision()
+            );
+        }
+        normalized
+    }
+
+    fn fill_order(
+        &mut self,
+        order: &OrderAny,
+        last_px: Price,
+        last_qty: Quantity,
+        liquidity_side: LiquiditySide,
+        venue_position_id: Option<PositionId>,
+        _position: Option<&Position>,
+    ) -> anyhow::Result<()> {
+        self.check_size_precision(last_qty.precision, "fill quantity")?;
+
+        let (last_qty, new_filled_qty) =
+            if let Some(filled_qty) = self.cached_filled_qty.get(&order.client_order_id()) {
+                let leaves_qty = order.quantity().saturating_sub(*filled_qty);
+                let last_qty = min(last_qty, leaves_qty);
+                (last_qty, *filled_qty + last_qty)
+            } else {
+                let last_qty = min(last_qty, order.quantity());
+                (last_qty, last_qty)
+            };
+
+        if last_qty.is_zero() {
+            return Ok(());
+        }
+
+        let fee_order;
+        let commission_order = {
+            // `order` is a stale pre-fill clone: give fee models the current
+            // pre-fill `filled_qty` (e.g. `FixedFeeModel` charges once per order).
+            let mut cloned = order.clone();
+            write_filled_qty(&mut cloned, new_filled_qty.saturating_sub(last_qty));
+            if order.liquidity_side() != Some(liquidity_side) {
+                cloned.set_liquidity_side(liquidity_side);
+            }
+            fee_order = cloned;
+            &fee_order
+        };
+
+        let underlying_px = self.fee_underlying_price()?;
+        let commission = self.fee_model.get_commission_with_context(
+            commission_order,
+            last_qty,
+            last_px,
+            &self.instrument,
+            underlying_px,
+        )?;
+
+        self.cached_filled_qty
+            .insert(order.client_order_id(), new_filled_qty);
+
+        let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
+        self.generate_order_filled(
+            order,
+            venue_order_id,
+            venue_position_id,
+            last_qty,
+            last_px,
+            self.instrument.quote_currency(),
+            commission,
+            liquidity_side,
+        );
+
+        let post_fill_filled_qty = self
+            .cached_filled_qty
+            .get(&order.client_order_id())
+            .copied()
+            .unwrap_or(order.filled_qty());
+        let post_fill_leaves_qty = order.quantity().saturating_sub(post_fill_filled_qty);
+        let fully_filled = post_fill_leaves_qty.is_zero();
+
+        if order.is_closed() || fully_filled {
+            if self.core.order_exists(order.client_order_id()) {
+                self.delete_core_order(order.client_order_id());
+            }
+            // MarketToLimit reads `cached_filled_qty` in its caller to compute leaves;
+            // its own cleanup happens there after the read.
+            if order.order_type() != OrderType::MarketToLimit {
+                self.purge_cached_filled_qty_if_closed(order.client_order_id());
+            }
+        }
+
+        if !self.config.support_contingent_orders {
+            return Ok(());
+        }
+
+        if let Some(contingency_type) = order.contingency_type() {
+            match contingency_type {
+                ContingencyType::Oto => {
+                    if let Some(linked_orders_ids) = order.linked_order_ids() {
+                        for client_order_id in linked_orders_ids {
+                            let mut child_order = match self.cache.borrow().order(client_order_id) {
+                                Some(child_order) => child_order.clone(),
+                                None => anyhow::bail!("Order {client_order_id} not found in cache"),
+                            };
+
+                            if child_order.is_closed() || child_order.is_active_local() {
+                                continue;
+                            }
+
+                            // Check if we need to index position id
+                            if let (None, Some(position_id)) =
+                                (child_order.position_id(), order.position_id())
+                            {
+                                self.cache
+                                    .borrow_mut()
+                                    .add_position_id(
+                                        &position_id,
+                                        &self.venue,
+                                        client_order_id,
+                                        &child_order.strategy_id(),
+                                    )
+                                    .unwrap();
+                                log::debug!(
+                                    "Added position id {position_id} to cache for order {client_order_id}"
+                                );
+                            }
+
+                            if (!child_order.is_open())
+                                || (matches!(child_order.status(), OrderStatus::PendingUpdate)
+                                    && child_order
+                                        .previous_status()
+                                        .is_some_and(|s| matches!(s, OrderStatus::Submitted)))
+                            {
+                                let account_id = order
+                                    .account_id()
+                                    .or_else(|| self.account_ids.get(&order.trader_id()).copied())
+                                    .ok_or_else(|| {
+                                        anyhow::anyhow!(
+                                            "Account ID not found for trader {}",
+                                            order.trader_id()
+                                        )
+                                    })?;
+                                self.process_order(&mut child_order, account_id);
+                            }
+                        }
+                    } else {
+                        log::error!(
+                            "OTO order {} does not have linked orders",
+                            order.client_order_id()
+                        );
+                    }
+                }
+                ContingencyType::Oco => {
+                    if let Some(linked_orders_ids) = order.linked_order_ids() {
+                        for client_order_id in linked_orders_ids {
+                            let child_order = match self.cache.borrow().order(client_order_id) {
+                                Some(child_order) => child_order.clone(),
+                                None => anyhow::bail!("Order {client_order_id} not found in cache"),
+                            };
+
+                            if child_order.is_closed() || child_order.is_active_local() {
+                                continue;
+                            }
+
+                            self.cancel_order(&child_order, None);
+                        }
+                    } else {
+                        log::error!(
+                            "OCO order {} does not have linked orders",
+                            order.client_order_id()
+                        );
+                    }
+                }
+                ContingencyType::Ouo => {
+                    if let Some(linked_orders_ids) = order.linked_order_ids() {
+                        for client_order_id in linked_orders_ids {
+                            let child_order = match self.cache.borrow().order(client_order_id) {
+                                Some(child_order) => child_order.clone(),
+                                None => anyhow::bail!("Order {client_order_id} not found in cache"),
+                            };
+
+                            if child_order.is_active_local() {
+                                continue;
+                            }
+
+                            let child_filled_qty = self
+                                .cached_filled_qty
+                                .get(&child_order.client_order_id())
+                                .copied()
+                                .unwrap_or(child_order.filled_qty());
+
+                            if post_fill_leaves_qty.is_zero() && child_order.is_open() {
+                                self.cancel_order(&child_order, None);
+                            } else if child_order.is_open()
+                                && child_filled_qty >= post_fill_leaves_qty
+                            {
+                                self.cancel_order(&child_order, Some(false));
+                            } else if !post_fill_leaves_qty.is_zero()
+                                && post_fill_leaves_qty != child_order.leaves_qty()
+                            {
+                                let price = child_order.price();
+                                let trigger_price = child_order.trigger_price();
+                                self.update_order(
+                                    &child_order,
+                                    Some(post_fill_leaves_qty),
+                                    price,
+                                    trigger_price,
+                                    Some(false),
+                                );
+                            }
+                        }
+                    } else {
+                        log::error!(
+                            "OUO order {} does not have linked orders",
+                            order.client_order_id()
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    fn fee_underlying_price(&self) -> CorrectnessResult<Option<Price>> {
+        if !matches!(
+            self.instrument,
+            InstrumentAny::CryptoOption(_) | InstrumentAny::OptionContract(_)
+        ) {
+            return Ok(None);
+        }
+
+        let Some(underlying) = self.instrument.underlying() else {
+            return Ok(None);
+        };
+
+        let underlying_id = InstrumentId::from(format!("{underlying}.{}", self.venue).as_str());
+        let instrument_id = self.instrument.id();
+        let cache = self.cache.borrow();
+        if let Some(price) = cache
+            .price(&underlying_id, PriceType::Last)
+            .or_else(|| cache.price(&underlying_id, PriceType::Mark))
+            .or_else(|| cache.price(&underlying_id, PriceType::Mid))
+        {
+            return Ok(Some(price));
+        }
+
+        cache
+            .option_greeks(&instrument_id)
+            .and_then(|greeks| greeks.underlying_price)
+            .map(|price| Price::new_checked(price, FIXED_PRECISION))
+            .transpose()
+    }
+
+    fn cached_order_is_closed(&self, client_order_id: ClientOrderId) -> bool {
+        self.cache
+            .borrow()
+            .order(&client_order_id)
+            .is_none_or(|order| order.is_closed())
+    }
+
+    fn purge_cached_filled_qty_if_closed(&mut self, client_order_id: ClientOrderId) {
+        if self.cached_order_is_closed(client_order_id) {
+            self.cached_filled_qty.swap_remove(&client_order_id);
+        }
+    }
+
+    fn purge_closed_cached_filled_qty(&mut self) {
+        let client_order_ids: Vec<ClientOrderId> = self.cached_filled_qty.keys().copied().collect();
+
+        for client_order_id in client_order_ids {
+            self.purge_cached_filled_qty_if_closed(client_order_id);
+        }
+    }
+
+    fn update_limit_order(
+        &mut self,
+        order: &OrderAny,
+        quantity: Quantity,
+        price: Price,
+    ) -> ModifyOutcome {
+        if self
+            .core
+            .is_limit_matched(order.order_side_specified(), price)
+        {
+            if order.is_post_only() {
+                self.generate_order_modify_rejected(
+                    order.trader_id(),
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    order.client_order_id(),
+                    Ustr::from(format!(
+                        "POST_ONLY {} {} order with new limit px of {} would have been a TAKER: bid={}, ask={}",
+                        order.order_type(),
+                        order.order_side(),
+                        price,
+                        self.core.bid.map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core.ask.map_or_else(|| "None".to_string(), |p| p.to_string())
+                    ).as_str()),
+                    order.venue_order_id(),
+                    order.account_id(),
+                );
+                return ModifyOutcome::Rejected;
+            }
+
+            self.generate_order_updated(order, quantity, Some(price), None, None);
+
+            // Re-read from cache to get the order with events applied
+            let client_order_id = order.client_order_id();
+            if let Some(mut order) = self.cache.borrow_mut().order_mut(&client_order_id) {
+                order.set_liquidity_side(LiquiditySide::Taker);
+            }
+            self.fill_limit_order(client_order_id);
+            return ModifyOutcome::Applied;
+        }
+        self.generate_order_updated(order, quantity, Some(price), None, None);
+        ModifyOutcome::Applied
+    }
+
+    fn update_stop_market_order(
+        &self,
+        order: &OrderAny,
+        quantity: Quantity,
+        trigger_price: Price,
+    ) -> ModifyOutcome {
+        if self.core.is_stop_matched_with_trigger_type(
+            order.order_side_specified(),
+            trigger_price,
+            order.trigger_type().unwrap_or(TriggerType::Default),
+        ) {
+            self.generate_order_modify_rejected(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                Ustr::from(
+                    format!(
+                        "{} {} order new stop px of {} was in the market: bid={}, ask={}",
+                        order.order_type(),
+                        order.order_side(),
+                        trigger_price,
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    )
+                    .as_str(),
+                ),
+                order.venue_order_id(),
+                order.account_id(),
+            );
+            return ModifyOutcome::Rejected;
+        }
+
+        self.generate_order_updated(order, quantity, None, Some(trigger_price), None);
+        ModifyOutcome::Applied
+    }
+
+    fn update_stop_limit_order(
+        &mut self,
+        order: &OrderAny,
+        quantity: Quantity,
+        price: Price,
+        trigger_price: Price,
+    ) -> ModifyOutcome {
+        if order.is_triggered().is_some_and(|t| t) {
+            // Update limit price
+            if self
+                .core
+                .is_limit_matched(order.order_side_specified(), price)
+            {
+                if order.is_post_only() {
+                    self.generate_order_modify_rejected(
+                        order.trader_id(),
+                        order.strategy_id(),
+                        order.instrument_id(),
+                        order.client_order_id(),
+                        Ustr::from(format!(
+                            "POST_ONLY {} {} order with new limit px of {} would have been a TAKER: bid={}, ask={}",
+                            order.order_type(),
+                            order.order_side(),
+                            price,
+                            self.core.bid.map_or_else(|| "None".to_string(), |p| p.to_string()),
+                            self.core.ask.map_or_else(|| "None".to_string(), |p| p.to_string())
+                        ).as_str()),
+                        order.venue_order_id(),
+                        order.account_id(),
+                    );
+                    return ModifyOutcome::Rejected;
+                }
+                self.generate_order_updated(order, quantity, Some(price), None, None);
+
+                // Re-read from cache to get the order with events applied
+                let client_order_id = order.client_order_id();
+                if let Some(mut order) = self.cache.borrow_mut().order_mut(&client_order_id) {
+                    order.set_liquidity_side(LiquiditySide::Taker);
+                }
+                self.fill_limit_order(client_order_id);
+                return ModifyOutcome::Applied;
+            }
+        } else {
+            // Update stop price
+            if self.core.is_stop_matched_with_trigger_type(
+                order.order_side_specified(),
+                trigger_price,
+                order.trigger_type().unwrap_or(TriggerType::Default),
+            ) {
+                self.generate_order_modify_rejected(
+                    order.trader_id(),
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    order.client_order_id(),
+                    Ustr::from(
+                        format!(
+                            "{} {} order new stop px of {} was in the market: bid={}, ask={}",
+                            order.order_type(),
+                            order.order_side(),
+                            trigger_price,
+                            self.core
+                                .bid
+                                .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                            self.core
+                                .ask
+                                .map_or_else(|| "None".to_string(), |p| p.to_string())
+                        )
+                        .as_str(),
+                    ),
+                    order.venue_order_id(),
+                    order.account_id(),
+                );
+                return ModifyOutcome::Rejected;
+            }
+        }
+
+        self.generate_order_updated(order, quantity, Some(price), Some(trigger_price), None);
+        ModifyOutcome::Applied
+    }
+
+    fn update_market_if_touched_order(
+        &self,
+        order: &OrderAny,
+        quantity: Quantity,
+        trigger_price: Price,
+    ) -> ModifyOutcome {
+        if self.core.is_touch_triggered_with_trigger_type(
+            order.order_side_specified(),
+            trigger_price,
+            order.trigger_type().unwrap_or(TriggerType::Default),
+        ) {
+            self.generate_order_modify_rejected(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                Ustr::from(
+                    format!(
+                        "{} {} order new trigger px of {} was in the market: bid={}, ask={}",
+                        order.order_type(),
+                        order.order_side(),
+                        trigger_price,
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    )
+                    .as_str(),
+                ),
+                order.venue_order_id(),
+                order.account_id(),
+            );
+            // Cannot update order
+            return ModifyOutcome::Rejected;
+        }
+
+        self.generate_order_updated(order, quantity, None, Some(trigger_price), None);
+        ModifyOutcome::Applied
+    }
+
+    fn update_limit_if_touched_order(
+        &mut self,
+        order: &OrderAny,
+        quantity: Quantity,
+        price: Price,
+        trigger_price: Price,
+    ) -> ModifyOutcome {
+        if order.is_triggered().is_some_and(|t| t) {
+            // Update limit price
+            if self
+                .core
+                .is_limit_matched(order.order_side_specified(), price)
+            {
+                if order.is_post_only() {
+                    self.generate_order_modify_rejected(
+                        order.trader_id(),
+                        order.strategy_id(),
+                        order.instrument_id(),
+                        order.client_order_id(),
+                        Ustr::from(format!(
+                            "POST_ONLY {} {} order with new limit px of {} would have been a TAKER: bid={}, ask={}",
+                            order.order_type(),
+                            order.order_side(),
+                            price,
+                            self.core.bid.map_or_else(|| "None".to_string(), |p| p.to_string()),
+                            self.core.ask.map_or_else(|| "None".to_string(), |p| p.to_string())
+                        ).as_str()),
+                        order.venue_order_id(),
+                        order.account_id(),
+                    );
+                    // Cannot update order
+                    return ModifyOutcome::Rejected;
+                }
+                self.generate_order_updated(order, quantity, Some(price), None, None);
+
+                // Re-read from cache to get the order with events applied
+                let client_order_id = order.client_order_id();
+                if let Some(mut order) = self.cache.borrow_mut().order_mut(&client_order_id) {
+                    order.set_liquidity_side(LiquiditySide::Taker);
+                }
+                self.fill_limit_order(client_order_id);
+                return ModifyOutcome::Applied;
+            }
+        } else {
+            // Update trigger price
+            if self.core.is_touch_triggered_with_trigger_type(
+                order.order_side_specified(),
+                trigger_price,
+                order.trigger_type().unwrap_or(TriggerType::Default),
+            ) {
+                self.generate_order_modify_rejected(
+                    order.trader_id(),
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    order.client_order_id(),
+                    Ustr::from(
+                        format!(
+                            "{} {} order new trigger px of {} was in the market: bid={}, ask={}",
+                            order.order_type(),
+                            order.order_side(),
+                            trigger_price,
+                            self.core
+                                .bid
+                                .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                            self.core
+                                .ask
+                                .map_or_else(|| "None".to_string(), |p| p.to_string())
+                        )
+                        .as_str(),
+                    ),
+                    order.venue_order_id(),
+                    order.account_id(),
+                );
+                return ModifyOutcome::Rejected;
+            }
+        }
+
+        self.generate_order_updated(order, quantity, Some(price), Some(trigger_price), None);
+        ModifyOutcome::Applied
+    }
+
+    fn update_trailing_stop_order(&self, order: &OrderAny) {
+        let (new_trigger_price, new_price) = match trailing_stop_calculate(
+            self.instrument.price_increment(),
+            order.trigger_price(),
+            order,
+            self.core.bid,
+            self.core.ask,
+            self.core.last,
+        ) {
+            Ok(prices) => prices,
+            Err(e) => {
+                // Missing market data yet: await the next update to compute the trigger.
+                log::debug!("Cannot calculate trailing-stop update: {e}");
+                return;
+            }
+        };
+
+        if new_trigger_price.is_none() && new_price.is_none() {
+            return;
+        }
+
+        self.generate_order_updated(order, order.quantity(), new_price, new_trigger_price, None);
+    }
+
+    fn accept_order(&mut self, order: &mut OrderAny) {
+        if order.is_closed() {
+            // Temporary guard to prevent invalid processing
+            return;
+        }
+
+        if order.status() != OrderStatus::Accepted {
+            let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
+            let event = self.create_order_accepted(order, venue_order_id);
+            // Apply locally so `cancel_order` sees `Accepted`,
+            // dispatch on apply failure so `Released` still registers with the core.
+            if let Err(e) = order.apply(event.clone()) {
+                log::warn!(
+                    "Skipping local apply of accepted event for {}: {e}",
+                    order.client_order_id(),
+                );
+            }
+            self.dispatch_order_event(event);
+
+            // Activate before emitting `OrderUpdated` so `match_info` below
+            // carries the activation flag.
+            if matches!(
+                order.order_type(),
+                OrderType::TrailingStopLimit | OrderType::TrailingStopMarket
+            ) && order.trigger_price().is_none()
+                && self.maybe_activate_trailing_stop(
+                    order,
+                    self.core.bid,
+                    self.core.ask,
+                    self.core.last,
+                )
+            {
+                self.update_trailing_stop_order(order);
+            }
+        }
+
+        let match_info = Self::matching_core_entry(order);
+        self.track_post_match_order(order);
+        self.core.add_order(match_info);
+    }
+
+    fn track_post_match_order(&mut self, order: &OrderAny) {
+        self.post_match_order_ids.insert(order.client_order_id());
+    }
+
+    fn delete_core_order(&mut self, client_order_id: ClientOrderId) {
+        self.post_match_order_ids.swap_remove(&client_order_id);
+        let _ = self.core.delete_order(client_order_id);
+    }
+
+    fn requires_post_match_maintenance(order: &OrderAny) -> bool {
+        order.expire_time().is_some()
+            || matches!(
+                order.order_type(),
+                OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+            )
+    }
+
+    fn matching_core_entry(order: &OrderAny) -> RestingOrder {
+        let triggered_limit_style = matches!(
+            order.order_type(),
+            OrderType::StopLimit | OrderType::LimitIfTouched | OrderType::TrailingStopLimit
+        ) && order.is_triggered().is_some_and(|triggered| triggered);
+
+        RestingOrder::new_with_trigger_type(
+            order.client_order_id(),
+            order.order_side().as_specified(),
+            order.order_type(),
+            order.trigger_type().unwrap_or(TriggerType::Default),
+            if triggered_limit_style {
+                None
+            } else {
+                order.trigger_price()
+            },
+            order.price(),
+            match order {
+                OrderAny::TrailingStopMarket(o) => o.is_activated,
+                OrderAny::TrailingStopLimit(o) => o.is_activated,
+                _ => true,
+            },
+        )
+    }
+
+    fn expire_order(&mut self, order: &OrderAny) {
+        if self.config.support_contingent_orders
+            && order
+                .contingency_type()
+                .is_some_and(|c| c != ContingencyType::NoContingency)
+        {
+            self.cancel_contingent_orders(order);
+        }
+
+        self.generate_order_expired(order);
+    }
+
+    fn cancel_order(&mut self, order: &OrderAny, cancel_contingencies: Option<bool>) {
+        let cancel_contingencies = cancel_contingencies.unwrap_or(true);
+
+        if order.is_active_local()
+            && !matches!(
+                (order.status(), order.order_type(), order.time_in_force()),
+                (
+                    OrderStatus::Initialized | OrderStatus::Released,
+                    OrderType::Market,
+                    TimeInForce::Ioc | TimeInForce::Fok
+                )
+            )
+        {
+            log::error!(
+                "Cannot cancel an order with {} from the matching engine",
+                order.status()
+            );
+            return;
+        }
+
+        // Check if order exists in OrderMatching core, and delete it if it does
+        if self.core.order_exists(order.client_order_id()) {
+            self.delete_core_order(order.client_order_id());
+        }
+        self.cached_filled_qty.swap_remove(&order.client_order_id());
+
+        let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
+        self.generate_order_canceled(order, venue_order_id);
+
+        if self.config.support_contingent_orders
+            && order.contingency_type().is_some()
+            && order.contingency_type().unwrap() != ContingencyType::NoContingency
+            && cancel_contingencies
+        {
+            self.cancel_contingent_orders(order);
+        }
+    }
+
+    fn update_order(
+        &mut self,
+        order: &OrderAny,
+        quantity: Option<Quantity>,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+        update_contingencies: Option<bool>,
+    ) -> bool {
+        let update_contingencies = update_contingencies.unwrap_or(true);
+        let quantity = quantity.unwrap_or(order.quantity());
+
+        let price_prec = self.instrument.price_precision();
+        let size_prec = self.instrument.size_precision();
+        let instrument_id = self.instrument.id();
+
+        if quantity.precision != size_prec {
+            self.generate_order_modify_rejected(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                Ustr::from(&format!(
+                    "Invalid update quantity precision {}, expected {size_prec} for {instrument_id}",
+                    quantity.precision
+                )),
+                order.venue_order_id(),
+                order.account_id(),
+            );
+            return false;
+        }
+
+        if let Some(px) = price
+            && px.precision != price_prec
+        {
+            self.generate_order_modify_rejected(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                Ustr::from(&format!(
+                    "Invalid update price precision {}, expected {price_prec} for {instrument_id}",
+                    px.precision
+                )),
+                order.venue_order_id(),
+                order.account_id(),
+            );
+            return false;
+        }
+
+        if let Some(tp) = trigger_price
+            && tp.precision != price_prec
+        {
+            self.generate_order_modify_rejected(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                Ustr::from(&format!(
+                    "Invalid update trigger_price precision {}, expected {price_prec} for {instrument_id}",
+                    tp.precision
+                )),
+                order.venue_order_id(),
+                order.account_id(),
+            );
+            return false;
+        }
+
+        // Use cached_filled_qty since PassiveOrderAny in core is not updated with fills
+        let filled_qty = self
+            .cached_filled_qty
+            .get(&order.client_order_id())
+            .copied()
+            .unwrap_or(order.filled_qty());
+        if quantity < filled_qty {
+            self.generate_order_modify_rejected(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                Ustr::from(&format!(
+                    "Cannot reduce order quantity {quantity} below filled quantity {filled_qty}",
+                )),
+                order.venue_order_id(),
+                order.account_id(),
+            );
+            return false;
+        }
+
+        let outcome = match order {
+            OrderAny::Limit(_) | OrderAny::MarketToLimit(_) => {
+                let price = price.unwrap_or(order.price().unwrap());
+                self.update_limit_order(order, quantity, price)
+            }
+            OrderAny::StopMarket(_) => {
+                let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
+                self.update_stop_market_order(order, quantity, trigger_price)
+            }
+            OrderAny::StopLimit(_) => {
+                let price = price.unwrap_or(order.price().unwrap());
+                let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
+                self.update_stop_limit_order(order, quantity, price, trigger_price)
+            }
+            OrderAny::MarketIfTouched(_) => {
+                let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
+                self.update_market_if_touched_order(order, quantity, trigger_price)
+            }
+            OrderAny::LimitIfTouched(_) => {
+                let price = price.unwrap_or(order.price().unwrap());
+                let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
+                self.update_limit_if_touched_order(order, quantity, price, trigger_price)
+            }
+            OrderAny::TrailingStopMarket(_) => {
+                if let Some(trigger_price) = trigger_price.or(order.trigger_price()) {
+                    self.update_market_if_touched_order(order, quantity, trigger_price)
+                } else {
+                    self.generate_order_updated(order, quantity, None, trigger_price, None);
+                    ModifyOutcome::Applied
+                }
+            }
+            OrderAny::TrailingStopLimit(_) => {
+                match (
+                    price.or(order.price()),
+                    trigger_price.or(order.trigger_price()),
+                ) {
+                    (Some(price), Some(trigger_price)) => {
+                        self.update_limit_if_touched_order(order, quantity, price, trigger_price)
+                    }
+                    _ => {
+                        self.generate_order_updated(order, quantity, price, trigger_price, None);
+                        ModifyOutcome::Applied
+                    }
+                }
+            }
+            _ => {
+                panic!(
+                    "Unsupported order type {} for update_order",
+                    order.order_type()
+                );
+            }
+        };
+
+        if outcome == ModifyOutcome::Rejected {
+            return false;
+        }
+
+        // If order now has zero leaves after update, cancel it
+        let new_leaves_qty = quantity.saturating_sub(filled_qty);
+        if new_leaves_qty.is_zero() {
+            if self.config.support_contingent_orders
+                && order
+                    .contingency_type()
+                    .is_some_and(|c| c != ContingencyType::NoContingency)
+                && update_contingencies
+            {
+                self.update_contingent_order(order, quantity);
+            }
+            // Pass false since we already handled contingents above
+            self.cancel_order(order, Some(false));
+            return true;
+        }
+
+        if self.config.support_contingent_orders
+            && order
+                .contingency_type()
+                .is_some_and(|c| c != ContingencyType::NoContingency)
+            && update_contingencies
+        {
+            self.update_contingent_order(order, quantity);
+        }
+
+        true
+    }
+
+    /// Triggers a stop order, converting it to an active market or limit order.
+    pub fn trigger_stop_order(&mut self, client_order_id: ClientOrderId) {
+        let order = match self
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .map(|o| o.clone())
+        {
+            Some(order) => order,
+            None => {
+                log::error!(
+                    "Cannot trigger stop order: order {client_order_id} not found in cache"
+                );
+                return;
+            }
+        };
+
+        if order.is_closed() {
+            log::debug!("Cannot trigger stop order: {client_order_id} already closed");
+            return;
+        }
+
+        match order.order_type() {
+            OrderType::StopLimit | OrderType::LimitIfTouched | OrderType::TrailingStopLimit => {
+                self.trigger_limit_style_stop_order(client_order_id, order);
+            }
+            OrderType::StopMarket | OrderType::MarketIfTouched | OrderType::TrailingStopMarket => {
+                self.fill_market_order(client_order_id);
+            }
+            _ => {
+                log::error!(
+                    "Cannot trigger stop order: invalid order type {}",
+                    order.order_type()
+                );
+            }
+        }
+    }
+
+    fn trigger_limit_style_stop_order(&mut self, client_order_id: ClientOrderId, order: OrderAny) {
+        if order.is_triggered().is_some_and(|triggered| triggered) {
+            let liquidity_side = match (order.price(), order.trigger_price()) {
+                (Some(price), Some(trigger_price)) => Self::determine_triggered_limit_liquidity(
+                    order.order_side(),
+                    price,
+                    trigger_price,
+                ),
+                _ => LiquiditySide::Maker,
+            };
+
+            if let Some(mut cached_order) = self.cache.borrow_mut().order_mut(&client_order_id)
+                && !matches!(
+                    cached_order.liquidity_side(),
+                    Some(LiquiditySide::Maker | LiquiditySide::Taker)
+                )
+            {
+                cached_order.set_liquidity_side(liquidity_side);
+            }
+            self.fill_limit_order(client_order_id);
+            return;
+        }
+
+        let event = self.create_order_triggered(&order);
+        let order = match self.cache.borrow_mut().update_order(&event) {
+            Ok(order) => order,
+            Err(e) => {
+                log::debug!(
+                    "Failed to apply triggered event for {} before fill: {e}",
+                    order.client_order_id(),
+                );
+                order
+            }
+        };
+        self.dispatch_order_event(event);
+
+        let trigger_price = order
+            .trigger_price()
+            .expect("Limit-style stop order must have a trigger price");
+        let price = order
+            .price()
+            .expect("Limit-style stop order must have a price");
+
+        let maker_inside = match order.order_side() {
+            OrderSide::Buy => self
+                .core
+                .ask
+                .is_some_and(|ask| trigger_price > price && price > ask),
+            OrderSide::Sell => self
+                .core
+                .bid
+                .is_some_and(|bid| trigger_price < price && price < bid),
+            OrderSide::NoOrderSide => false,
+        };
+
+        if maker_inside {
+            if let Some(mut cached_order) = self.cache.borrow_mut().order_mut(&client_order_id) {
+                cached_order.set_liquidity_side(LiquiditySide::Maker);
+            }
+            self.resync_core_entry(client_order_id);
+            self.fill_limit_order(client_order_id);
+            return;
+        }
+
+        if self
+            .core
+            .is_limit_matched(order.order_side_specified(), price)
+        {
+            if order.is_post_only() {
+                self.delete_core_order(client_order_id);
+                self.cached_filled_qty.swap_remove(&client_order_id);
+                let event = self.create_order_rejected(
+                    &order,
+                    format!(
+                        "POST_ONLY {} {} order limit px of {} would have been a TAKER: bid={}, ask={}",
+                        order.order_type(),
+                        order.order_side(),
+                        price,
+                        self.core
+                            .bid
+                            .map_or_else(|| "None".to_string(), |p| p.to_string()),
+                        self.core
+                            .ask
+                            .map_or_else(|| "None".to_string(), |p| p.to_string())
+                    )
+                    .into(),
+                );
+
+                if let Err(e) = self.cache.borrow_mut().update_order(&event) {
+                    log::debug!(
+                        "Failed to apply rejected event for {} after post-only trigger: {e}",
+                        order.client_order_id(),
+                    );
+                }
+                self.dispatch_order_event(event);
+                return;
+            }
+
+            if let Some(mut cached_order) = self.cache.borrow_mut().order_mut(&client_order_id) {
+                cached_order.set_liquidity_side(LiquiditySide::Taker);
+            }
+            self.resync_core_entry(client_order_id);
+            self.fill_limit_order(client_order_id);
+            return;
+        }
+
+        if let Some(mut cached_order) = self.cache.borrow_mut().order_mut(&client_order_id) {
+            cached_order.set_liquidity_side(Self::determine_triggered_limit_liquidity(
+                order.order_side(),
+                price,
+                trigger_price,
+            ));
+        }
+        self.resync_core_entry(client_order_id);
+    }
+
+    fn determine_triggered_limit_liquidity(
+        side: OrderSide,
+        price: Price,
+        trigger_price: Price,
+    ) -> LiquiditySide {
+        if (side == OrderSide::Buy && trigger_price > price)
+            || (side == OrderSide::Sell && trigger_price < price)
+        {
+            LiquiditySide::Maker
+        } else {
+            LiquiditySide::Taker
+        }
+    }
+
+    fn update_contingent_order(&mut self, order: &OrderAny, parent_quantity: Quantity) {
+        log::debug!(
+            "Updating contingent orders from {}",
+            order.client_order_id()
+        );
+
+        if let Some(linked_order_ids) = order.linked_order_ids() {
+            let parent_filled_qty = self
+                .cached_filled_qty
+                .get(&order.client_order_id())
+                .copied()
+                .unwrap_or(order.filled_qty());
+            let parent_leaves_qty = parent_quantity.saturating_sub(parent_filled_qty);
+
+            for client_order_id in linked_order_ids {
+                let child_order = match self.cache.borrow().order(client_order_id) {
+                    Some(order) => order.clone(),
+                    None => panic!("Order {client_order_id} not found in cache."),
+                };
+
+                if child_order.is_active_local() {
+                    continue;
+                }
+
+                let child_filled_qty = self
+                    .cached_filled_qty
+                    .get(&child_order.client_order_id())
+                    .copied()
+                    .unwrap_or(child_order.filled_qty());
+
+                if parent_leaves_qty.is_zero() {
+                    self.cancel_order(&child_order, Some(false));
+                } else if child_filled_qty >= parent_leaves_qty {
+                    // Child already filled beyond parent's remaining qty, cancel it
+                    self.cancel_order(&child_order, Some(false));
+                } else {
+                    let child_leaves_qty = child_order.quantity().saturating_sub(child_filled_qty);
+                    if child_leaves_qty != parent_leaves_qty {
+                        let price = child_order.price();
+                        let trigger_price = child_order.trigger_price();
+                        self.update_order(
+                            &child_order,
+                            Some(parent_leaves_qty),
+                            price,
+                            trigger_price,
+                            Some(false),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn cancel_contingent_orders(&mut self, order: &OrderAny) {
+        if let Some(linked_order_ids) = order.linked_order_ids() {
+            for client_order_id in linked_order_ids {
+                let contingent_order = match self.cache.borrow().order(client_order_id) {
+                    Some(order) => order.clone(),
+                    None => panic!("Cannot find contingent order for {client_order_id}"),
+                };
+
+                if contingent_order.is_active_local() {
+                    // order is not on the exchange yet
+                    continue;
+                }
+
+                if !contingent_order.is_closed() {
+                    self.cancel_order(&contingent_order, Some(false));
+                }
+            }
+        }
+    }
+
+    fn generate_order_submitted(&self, order: &OrderAny, account_id: AccountId) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let event = OrderEventAny::Submitted(OrderSubmitted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+        ));
+        self.dispatch_order_event(event);
+    }
+
+    fn create_order_rejected(&self, order: &OrderAny, reason: Ustr) -> OrderEventAny {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let account_id = order
+            .account_id()
+            .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
+
+        let due_post_only = reason.as_str().starts_with("POST_ONLY");
+
+        OrderEventAny::Rejected(OrderRejected::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            reason,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            due_post_only,
+        ))
+    }
+
+    fn generate_order_rejected(&self, order: &OrderAny, reason: Ustr) {
+        let event = self.create_order_rejected(order, reason);
+        self.dispatch_order_event(event);
+    }
+
+    fn publish_order_initialized(&self, order: &OrderAny) {
+        let event = OrderEventAny::Initialized(order.init_event().clone());
+        msgbus::publish_order_event(
+            format!("events.order.{}", order.strategy_id()).into(),
+            &event,
+        );
+    }
+
+    fn create_order_accepted(
+        &self,
+        order: &OrderAny,
+        venue_order_id: VenueOrderId,
+    ) -> OrderEventAny {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let account_id = order
+            .account_id()
+            .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
+        OrderEventAny::Accepted(OrderAccepted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            venue_order_id,
+            account_id,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+        ))
+    }
+
+    fn generate_order_accepted(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
+        let event = self.create_order_accepted(order, venue_order_id);
+        self.dispatch_order_event(event);
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    fn generate_order_modify_rejected(
+        &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        reason: Ustr,
+        venue_order_id: Option<VenueOrderId>,
+        account_id: Option<AccountId>,
+    ) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let event = OrderEventAny::ModifyRejected(OrderModifyRejected::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            reason,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            venue_order_id,
+            account_id,
+        ));
+        self.dispatch_order_event(event);
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    fn generate_order_cancel_rejected(
+        &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+        reason: Ustr,
+    ) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let event = OrderEventAny::CancelRejected(OrderCancelRejected::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            reason,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            venue_order_id,
+            Some(account_id),
+        ));
+        self.dispatch_order_event(event);
+    }
+
+    fn generate_order_updated(
+        &self,
+        order: &OrderAny,
+        quantity: Quantity,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+        protection_price: Option<Price>,
+    ) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let event = OrderEventAny::Updated(OrderUpdated::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            quantity,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            order.venue_order_id(),
+            order.account_id(),
+            price,
+            trigger_price,
+            protection_price,
+            order.is_quote_quantity(),
+        ));
+
+        self.dispatch_order_event(event);
+    }
+
+    fn generate_order_canceled(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let event = OrderEventAny::Canceled(OrderCanceled::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            Some(venue_order_id),
+            order.account_id(),
+        ));
+        self.dispatch_order_event(event);
+    }
+
+    fn create_order_triggered(&self, order: &OrderAny) -> OrderEventAny {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        OrderEventAny::Triggered(OrderTriggered::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            order.venue_order_id(),
+            order.account_id(),
+        ))
+    }
+
+    fn generate_order_expired(&self, order: &OrderAny) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let event = OrderEventAny::Expired(OrderExpired::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            order.venue_order_id(),
+            order.account_id(),
+        ));
+        self.dispatch_order_event(event);
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    fn generate_order_filled(
+        &mut self,
+        order: &OrderAny,
+        venue_order_id: VenueOrderId,
+        venue_position_id: Option<PositionId>,
+        last_qty: Quantity,
+        last_px: Price,
+        quote_currency: Currency,
+        commission: Money,
+        liquidity_side: LiquiditySide,
+    ) {
+        debug_assert!(
+            last_qty <= order.quantity(),
+            "Fill quantity {last_qty} exceeds order quantity {order_qty} for {client_order_id}",
+            order_qty = order.quantity(),
+            client_order_id = order.client_order_id()
+        );
+
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let account_id = order
+            .account_id()
+            .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
+        let event = OrderEventAny::Filled(OrderFilled::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            venue_order_id,
+            account_id,
+            self.ids_generator.generate_trade_id(ts_now),
+            order.order_side(),
+            order.order_type(),
+            last_qty,
+            last_px,
+            quote_currency,
+            liquidity_side,
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            venue_position_id,
+            Some(commission),
+            None,
+        ));
+
+        self.dispatch_order_event(event);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModifyOutcome {
+    Applied,
+    Rejected,
+}
+
+#[derive(Debug)]
+enum PostMatchOrderAction {
+    RemoveClosed,
+    Expire(OrderAny),
+    UpdateTrailing(OrderAny),
+    NoMaintenance,
+}
+
+fn post_match_order_action<F>(
+    order: &OrderAny,
+    support_gtd_orders: bool,
+    timestamp_ns: UnixNanos,
+    clone_order: F,
+) -> PostMatchOrderAction
+where
+    F: FnOnce(&OrderAny) -> OrderAny,
+{
+    if order.is_closed() {
+        PostMatchOrderAction::RemoveClosed
+    } else if support_gtd_orders
+        && order
+            .expire_time()
+            .is_some_and(|expire_ns| timestamp_ns >= expire_ns)
+    {
+        PostMatchOrderAction::Expire(clone_order(order))
+    } else if matches!(
+        order.order_type(),
+        OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+    ) {
+        PostMatchOrderAction::UpdateTrailing(clone_order(order))
+    } else {
+        PostMatchOrderAction::NoMaintenance
+    }
+}
+
+/// Writes `filled_qty` directly onto an order clone's core state.
+///
+/// Used to present fee models with the current pre-fill quantity when the
+/// order passed to the fill path is a stale clone (see `fill_order`).
+fn write_filled_qty(order: &mut OrderAny, filled_qty: Quantity) {
+    match order {
+        OrderAny::Limit(o) => o.filled_qty = filled_qty,
+        OrderAny::LimitIfTouched(o) => o.filled_qty = filled_qty,
+        OrderAny::Market(o) => o.filled_qty = filled_qty,
+        OrderAny::MarketIfTouched(o) => o.filled_qty = filled_qty,
+        OrderAny::MarketToLimit(o) => o.filled_qty = filled_qty,
+        OrderAny::StopLimit(o) => o.filled_qty = filled_qty,
+        OrderAny::StopMarket(o) => o.filled_qty = filled_qty,
+        OrderAny::TrailingStopLimit(o) => o.filled_qty = filled_qty,
+        OrderAny::TrailingStopMarket(o) => o.filled_qty = filled_qty,
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BarTickSizes {
+    open: Quantity,
+    high: Quantity,
+    low: Quantity,
+    close: Quantity,
+}
+
+impl BarTickSizes {
+    fn from_volume(volume: Quantity, size_increment: Quantity) -> Self {
+        let precision_diff = FIXED_PRECISION.saturating_sub(volume.precision);
+        let scale = QuantityRaw::pow(10, u32::from(precision_diff));
+        let units = volume.raw / scale;
+        let increment_units = (size_increment.raw / scale).max(1);
+        let rounded_units = (units / increment_units) * increment_units;
+        let increments = rounded_units / increment_units;
+        let zero = Quantity::zero(volume.precision);
+        let size =
+            |increments| Quantity::from_raw(increments * increment_units * scale, volume.precision);
+
+        match increments {
+            0 => Self {
+                open: zero,
+                high: zero,
+                low: zero,
+                close: zero,
+            },
+            // One increment cannot cover both high and low without exceeding the bar volume.
+            1 => Self {
+                open: zero,
+                high: zero,
+                low: zero,
+                close: size(1),
+            },
+            2 => Self {
+                open: zero,
+                high: size(1),
+                low: size(1),
+                close: zero,
+            },
+            3 => {
+                let path_size = size(1);
+
+                Self {
+                    open: path_size,
+                    high: path_size,
+                    low: path_size,
+                    close: zero,
+                }
+            }
+            _ => {
+                let path_increments = increments / 4;
+                let close_increments = increments - (path_increments * 3);
+                let path_size = size(path_increments);
+
+                Self {
+                    open: path_size,
+                    high: path_size,
+                    low: path_size,
+                    close: size(close_increments),
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        cell::{Cell, RefCell},
+        collections::{HashMap, HashSet},
+        rc::Rc,
+    };
+
+    use nautilus_common::{cache::Cache, clock::TestClock};
+    use nautilus_core::{UnixNanos, correctness::CorrectnessError};
+    use nautilus_model::{
+        data::{
+            DEPTH10_LEN, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+            option_chain::OptionGreeks,
+            order::{BookOrder, OrderId},
+        },
+        enums::{
+            AccountType, AggressorSide, BookAction, BookType, LiquiditySide, OmsType, OrderSide,
+            OrderType, RecordFlag, TimeInForce, TrailingOffsetType, TriggerType,
+        },
+        events::OrderEventAny,
+        identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
+        instruments::{
+            Instrument, InstrumentAny,
+            stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt, futures_contract_es},
+        },
+        orderbook::OrderBook,
+        orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+        types::{Money, Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
+    };
+    use proptest::prelude::*;
+    use rstest::rstest;
+    use rust_decimal::Decimal;
+
+    use super::{BarTickSizes, OrderMatchingEngine, PostMatchOrderAction, post_match_order_action};
+    use crate::{
+        matching_engine::config::OrderMatchingEngineConfig,
+        models::{
+            fee::{FeeModel, FeeModelAny, FeeModelHandle},
+            fill::{FillModel, FillModelHandle},
+        },
+    };
+
+    fn assert_valid_bar_tick_sizes(volume: Quantity, size_increment: Quantity) {
+        let sizes = BarTickSizes::from_volume(volume, size_increment);
+        let total_raw = sizes.open.raw + sizes.high.raw + sizes.low.raw + sizes.close.raw;
+        assert!(total_raw <= volume.raw);
+
+        for quantity in [sizes.open, sizes.high, sizes.low, sizes.close] {
+            assert_eq!(quantity.precision, volume.precision);
+            assert!(
+                OrderMatchingEngine::quantity_matches_precision(quantity, volume.precision),
+                "bar tick quantity {quantity} not aligned to precision {}",
+                volume.precision,
+            );
+            assert!(
+                size_increment.raw == 0 || quantity.raw.is_multiple_of(size_increment.raw),
+                "bar tick quantity {quantity} not aligned to increment {size_increment}",
+            );
+        }
+
+        if size_increment.raw > 0 {
+            assert!(
+                volume.raw - total_raw < size_increment.raw,
+                "bar tick split left {} raw units from volume {volume} and increment {size_increment}",
+                volume.raw - total_raw,
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_post_match_order_action_does_not_clone_no_maintenance_order() {
+        let order = post_match_limit_order();
+        let clone_count = Cell::new(0);
+
+        let action = post_match_order_action(&order, true, UnixNanos::from(1_u64), |order| {
+            clone_count.set(clone_count.get() + 1);
+            order.clone()
+        });
+
+        assert!(matches!(action, PostMatchOrderAction::NoMaintenance));
+        assert_eq!(clone_count.get(), 0);
+    }
+
+    #[rstest]
+    fn test_post_match_order_action_does_not_clone_closed_order() {
+        let order = post_match_closed_limit_order();
+        let clone_count = Cell::new(0);
+
+        let action = post_match_order_action(&order, true, UnixNanos::from(1_u64), |order| {
+            clone_count.set(clone_count.get() + 1);
+            order.clone()
+        });
+
+        assert!(matches!(action, PostMatchOrderAction::RemoveClosed));
+        assert_eq!(clone_count.get(), 0);
+    }
+
+    #[rstest]
+    fn test_post_match_order_action_clones_expired_gtd_order_once() {
+        let order = post_match_gtd_limit_order();
+        let clone_count = Cell::new(0);
+
+        let action = post_match_order_action(&order, true, UnixNanos::from(10_u64), |order| {
+            clone_count.set(clone_count.get() + 1);
+            order.clone()
+        });
+
+        let PostMatchOrderAction::Expire(cloned) = action else {
+            panic!("Expected expired action, was {action:?}");
+        };
+        assert_eq!(cloned.client_order_id(), order.client_order_id());
+        assert_eq!(clone_count.get(), 1);
+    }
+
+    #[rstest]
+    fn test_post_match_order_action_clones_trailing_order_once() {
+        let order = post_match_trailing_stop_order();
+        let clone_count = Cell::new(0);
+
+        let action = post_match_order_action(&order, true, UnixNanos::from(1_u64), |order| {
+            clone_count.set(clone_count.get() + 1);
+            order.clone()
+        });
+
+        let PostMatchOrderAction::UpdateTrailing(cloned) = action else {
+            panic!("Expected trailing update action, was {action:?}");
+        };
+        assert_eq!(cloned.client_order_id(), order.client_order_id());
+        assert_eq!(clone_count.get(), 1);
+    }
+
+    fn post_match_limit_order() -> OrderAny {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(crypto_perpetual_ethusdt().id())
+            .side(OrderSide::Buy)
+            .price(Price::from("1500.00"))
+            .quantity(Quantity::from("1.000"))
+            .client_order_id(ClientOrderId::from("POST-MATCH-LIMIT"))
+            .submit(true)
+            .build()
+    }
+
+    fn post_match_closed_limit_order() -> OrderAny {
+        let account_id = AccountId::from("SIM-001");
+        let venue_order_id = VenueOrderId::from("V-001");
+        let mut order = post_match_limit_order();
+        order
+            .apply(TestOrderEventStubs::accepted(
+                &order,
+                account_id,
+                venue_order_id,
+            ))
+            .unwrap();
+        order
+            .apply(TestOrderEventStubs::canceled(
+                &order,
+                account_id,
+                Some(venue_order_id),
+            ))
+            .unwrap();
+        order
+    }
+
+    fn post_match_gtd_limit_order() -> OrderAny {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(crypto_perpetual_ethusdt().id())
+            .side(OrderSide::Buy)
+            .price(Price::from("1500.00"))
+            .quantity(Quantity::from("1.000"))
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(UnixNanos::from(10_u64))
+            .client_order_id(ClientOrderId::from("POST-MATCH-GTD"))
+            .submit(true)
+            .build()
+    }
+
+    fn post_match_trailing_stop_order() -> OrderAny {
+        OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(crypto_perpetual_ethusdt().id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .trigger_price(Price::from("1510.00"))
+            .trigger_type(TriggerType::BidAsk)
+            .trailing_offset(Decimal::new(5, 0))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .client_order_id(ClientOrderId::from("POST-MATCH-TRAIL"))
+            .submit(true)
+            .build()
+    }
+
+    #[rstest]
+    fn test_fill_order_calculates_commission_from_fill_liquidity_side() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            cache,
+            Default::default(),
+        );
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handler = Rc::clone(&events);
+        engine.set_event_handler(Rc::new(move |event| {
+            events_handler.borrow_mut().push(event);
+        }));
+
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .submit(true)
+            .build();
+        order.set_liquidity_side(LiquiditySide::Maker);
+        engine
+            .account_ids
+            .insert(order.trader_id(), AccountId::from("ACCOUNT-001"));
+
+        engine
+            .fill_order(
+                &order,
+                Price::from("1500.00"),
+                Quantity::from("1.000"),
+                LiquiditySide::Taker,
+                None,
+                None,
+            )
+            .unwrap();
+
+        let events = events.borrow();
+        assert_eq!(events.len(), 1);
+        let fill = match &events[0] {
+            OrderEventAny::Filled(fill) => fill,
+            event => panic!("Expected OrderFilled, was {event:?}"),
+        };
+        let commission = fill.commission.expect("expected commission");
+        let expected_commission =
+            fill.last_qty.as_decimal() * fill.last_px.as_decimal() * instrument.taker_fee();
+
+        assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(commission.currency, instrument.quote_currency());
+        assert_eq!(commission.as_decimal(), expected_commission);
+    }
+
+    #[rstest]
+    fn test_custom_fee_model_handle_is_called_by_fill_order() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let calls = Rc::new(Cell::new(0));
+        let expected_commission = Money::from("1.23 USDT");
+        let fee_model = FeeModelHandle::new(RecordingFeeModel {
+            calls: Rc::clone(&calls),
+            commission: expected_commission,
+        });
+        let cloned_fee_model = fee_model.clone();
+        drop(fee_model);
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelHandle::default(),
+            cloned_fee_model,
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            cache,
+            Default::default(),
+        );
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handler = Rc::clone(&events);
+        engine.set_event_handler(Rc::new(move |event| {
+            events_handler.borrow_mut().push(event);
+        }));
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .submit(true)
+            .build();
+        engine
+            .account_ids
+            .insert(order.trader_id(), AccountId::from("ACCOUNT-001"));
+
+        engine
+            .fill_order(
+                &order,
+                Price::from("1500.00"),
+                Quantity::from("1.000"),
+                LiquiditySide::Taker,
+                None,
+                None,
+            )
+            .unwrap();
+
+        let events = events.borrow();
+        assert_eq!(events.len(), 1);
+        let fill = match &events[0] {
+            OrderEventAny::Filled(fill) => fill,
+            event => panic!("Expected OrderFilled, was {event:?}"),
+        };
+
+        assert_eq!(calls.get(), 1);
+        assert_eq!(fill.commission, Some(expected_commission));
+    }
+
+    #[rstest]
+    fn test_fill_order_does_not_cache_filled_qty_when_fee_model_fails() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelHandle::new(FailingFeeModel),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            cache,
+            Default::default(),
+        );
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handler = Rc::clone(&events);
+        engine.set_event_handler(Rc::new(move |event| {
+            events_handler.borrow_mut().push(event);
+        }));
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .submit(true)
+            .build();
+        engine
+            .account_ids
+            .insert(order.trader_id(), AccountId::from("ACCOUNT-001"));
+
+        let result = engine.fill_order(
+            &order,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            LiquiditySide::Taker,
+            None,
+            None,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(engine.cached_filled_qty_len(), 0);
+        assert!(events.borrow().is_empty());
+    }
+
+    fn collision_engine() -> (OrderMatchingEngine, Rc<RefCell<Cache>>, VenueOrderId) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let venue_order_id = VenueOrderId::from(format!("{}-1-1", instrument.id().venue));
+        cache
+            .borrow_mut()
+            .add_venue_order_id(&ClientOrderId::from("O-OWNER"), &venue_order_id, false)
+            .unwrap();
+        let engine = OrderMatchingEngine::new(
+            instrument,
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            Rc::new(RefCell::new(TestClock::new())),
+            Rc::clone(&cache),
+            Default::default(),
+        );
+
+        (engine, cache, venue_order_id)
+    }
+
+    #[rstest]
+    #[case(OrderType::Market)]
+    #[case(OrderType::MarketToLimit)]
+    fn test_market_collision_probes_and_fills_with_default_ack_config(
+        #[case] order_type: OrderType,
+    ) {
+        let (mut engine, cache, venue_order_id) = collision_engine();
+        assert!(!engine.config.use_market_order_acks);
+        let quote = QuoteTick::new(
+            engine.instrument.id(),
+            Price::from("1499.00"),
+            Price::from("1500.00"),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        engine.process_quote_tick(&quote);
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handler = Rc::clone(&events);
+        engine.set_event_handler(Rc::new(move |event| {
+            events_handler.borrow_mut().push(event);
+        }));
+        let mut order = OrderTestBuilder::new(order_type)
+            .instrument_id(engine.instrument.id())
+            .client_order_id(ClientOrderId::from("O-CLAIMANT"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .submit(true)
+            .build();
+
+        engine.process_order(&mut order, AccountId::from("ACCOUNT-001"));
+
+        assert!(
+            !events
+                .borrow()
+                .iter()
+                .any(|event| matches!(event, OrderEventAny::Rejected(_)))
+        );
+        assert!(
+            events
+                .borrow()
+                .iter()
+                .any(|event| matches!(event, OrderEventAny::Filled(_)))
+        );
+        assert!(cache.borrow().order_exists(&order.client_order_id()));
+        assert_eq!(
+            cache.borrow().client_order_id(&venue_order_id),
+            Some(&ClientOrderId::from("O-OWNER"))
+        );
+        assert_eq!(
+            cache.borrow().venue_order_id(&order.client_order_id()),
+            Some(&VenueOrderId::from(format!("{}-1-2", engine.venue)))
+        );
+    }
+
+    struct RecordingFeeModel {
+        calls: Rc<Cell<u32>>,
+        commission: Money,
+    }
+
+    impl FeeModel for RecordingFeeModel {
+        fn get_commission(
+            &self,
+            _order: &OrderAny,
+            _fill_quantity: Quantity,
+            _fill_px: Price,
+            _instrument: &InstrumentAny,
+        ) -> anyhow::Result<Money> {
+            self.calls.set(self.calls.get() + 1);
+            Ok(self.commission)
+        }
+    }
+
+    struct FailingFeeModel;
+
+    impl FeeModel for FailingFeeModel {
+        fn get_commission(
+            &self,
+            _order: &OrderAny,
+            _fill_quantity: Quantity,
+            _fill_px: Price,
+            _instrument: &InstrumentAny,
+        ) -> anyhow::Result<Money> {
+            Err(anyhow::anyhow!("fee model failed"))
+        }
+    }
+
+    #[rstest]
+    fn test_custom_fill_model_handle_is_called_by_market_fill() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let calls = Rc::new(Cell::new(0));
+        let fill_model = FillModelHandle::new(RecordingFillModel {
+            calls: Rc::clone(&calls),
+        });
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            fill_model,
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            cache,
+            Default::default(),
+        );
+        let quote = QuoteTick::new(
+            instrument.id(),
+            Price::from("1500.00"),
+            Price::from("1501.00"),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        engine.process_quote_tick(&quote);
+
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .submit(true)
+            .build();
+        engine.process_order(&mut order, AccountId::from("ACCOUNT-001"));
+
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[rstest]
+    fn test_l1_depth10_skips_padding_for_last_quote_tracking() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            cache,
+            Default::default(),
+        );
+        let mut bids = [BookOrder::default(); DEPTH10_LEN];
+        let mut asks = [BookOrder::default(); DEPTH10_LEN];
+        bids[1] = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1499.00"),
+            Quantity::from("1.000"),
+            1,
+        );
+        asks[0] = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            2,
+        );
+
+        let depth = OrderBookDepth10::new(
+            instrument.id(),
+            bids,
+            asks,
+            [0; DEPTH10_LEN],
+            [0; DEPTH10_LEN],
+            0,
+            0,
+            UnixNanos::from(1_u64),
+            UnixNanos::from(1_u64),
+        );
+        engine.process_order_book_depth10(&depth).unwrap();
+
+        assert_eq!(engine.last_quote_bid, Some(Price::from("1499.00")));
+        assert_eq!(engine.last_quote_ask, Some(Price::from("1500.00")));
+
+        let depth_without_bid = OrderBookDepth10::new(
+            instrument.id(),
+            [BookOrder::default(); DEPTH10_LEN],
+            asks,
+            [0; DEPTH10_LEN],
+            [0; DEPTH10_LEN],
+            0,
+            1,
+            UnixNanos::from(2_u64),
+            UnixNanos::from(2_u64),
+        );
+        engine
+            .process_order_book_depth10(&depth_without_bid)
+            .unwrap();
+
+        assert_eq!(engine.last_quote_bid, None);
+        assert_eq!(engine.last_quote_ask, Some(Price::from("1500.00")));
+    }
+
+    struct RecordingFillModel {
+        calls: Rc<Cell<u32>>,
+    }
+
+    impl FillModel for RecordingFillModel {
+        fn is_limit_filled(&mut self) -> anyhow::Result<bool> {
+            Ok(true)
+        }
+
+        fn is_slipped(&mut self) -> anyhow::Result<bool> {
+            Ok(false)
+        }
+
+        fn get_orderbook_for_fill_simulation(
+            &mut self,
+            _instrument: &InstrumentAny,
+            _order: &OrderAny,
+            _best_bid: Price,
+            _best_ask: Price,
+        ) -> anyhow::Result<Option<OrderBook>> {
+            self.calls.set(self.calls.get() + 1);
+            Ok(None)
+        }
+    }
+
+    #[rstest]
+    fn test_fee_underlying_price_uses_valid_cached_greeks_price() {
+        let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit(
+            3,
+            1,
+            Price::from("0.001"),
+            Quantity::from("0.1"),
+        ));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache.borrow_mut().add_option_greeks(OptionGreeks {
+            instrument_id: instrument.id(),
+            underlying_price: Some(50_000.0),
+            ..Default::default()
+        });
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let engine = OrderMatchingEngine::new(
+            instrument,
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            cache,
+            Default::default(),
+        );
+
+        let price = engine
+            .fee_underlying_price()
+            .unwrap()
+            .expect("expected underlying price");
+
+        assert_eq!(price.precision, FIXED_PRECISION);
+        assert_eq!(price.as_decimal(), Decimal::from(50_000));
+    }
+
+    #[rstest]
+    fn test_fee_underlying_price_rejects_invalid_cached_greeks_price() {
+        let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit(
+            3,
+            1,
+            Price::from("0.001"),
+            Quantity::from("0.1"),
+        ));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache.borrow_mut().add_option_greeks(OptionGreeks {
+            instrument_id: instrument.id(),
+            underlying_price: Some(f64::NAN),
+            ..Default::default()
+        });
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let engine = OrderMatchingEngine::new(
+            instrument,
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            cache,
+            Default::default(),
+        );
+
+        let error = engine.fee_underlying_price().unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::InvalidValue {
+                param: "value".to_string(),
+                value: "NaN".to_string(),
+                type_name: "f64",
+            }
+        );
+    }
+
+    #[rstest]
+    fn test_bar_tick_sizes_divisible() {
+        // precision=3, units=100_000: exactly divisible by 4, no rounding.
+        let volume = Quantity::from("100.000");
+        let increment = Quantity::from("0.001");
+        let sizes = BarTickSizes::from_volume(volume, increment);
+        assert_eq!(sizes.open, Quantity::from("25.000"));
+        assert_eq!(sizes.high, Quantity::from("25.000"));
+        assert_eq!(sizes.low, Quantity::from("25.000"));
+        assert_eq!(sizes.close, Quantity::from("25.000"));
+        assert_valid_bar_tick_sizes(volume, increment);
+    }
+
+    #[rstest]
+    fn test_bar_tick_sizes_indivisible_with_remainder() {
+        // precision=2, units=5: quarter_units=1, remainder=1; close carries 2 units.
+        let volume = Quantity::from("0.05");
+        let increment = Quantity::from("0.01");
+        let sizes = BarTickSizes::from_volume(volume, increment);
+        assert_eq!(sizes.open, Quantity::from("0.01"));
+        assert_eq!(sizes.high, Quantity::from("0.01"));
+        assert_eq!(sizes.low, Quantity::from("0.01"));
+        assert_eq!(sizes.close, Quantity::from("0.02"));
+        assert_valid_bar_tick_sizes(volume, increment);
+        assert_eq!(
+            sizes.open.raw + sizes.high.raw + sizes.low.raw + sizes.close.raw,
+            volume.raw
+        );
+    }
+
+    #[rstest]
+    #[case("1", "0", "0", "0", "1")]
+    #[case("2", "0", "1", "1", "0")]
+    #[case("3", "1", "1", "1", "0")]
+    fn test_bar_tick_sizes_units_less_than_four_preserves_volume(
+        #[case] volume: &str,
+        #[case] open_size: &str,
+        #[case] high_size: &str,
+        #[case] low_size: &str,
+        #[case] close_size: &str,
+    ) {
+        let volume = Quantity::from(volume);
+        let increment = Quantity::from("1");
+        let sizes = BarTickSizes::from_volume(volume, increment);
+
+        assert_eq!(sizes.open, Quantity::from(open_size));
+        assert_eq!(sizes.high, Quantity::from(high_size));
+        assert_eq!(sizes.low, Quantity::from(low_size));
+        assert_eq!(sizes.close, Quantity::from(close_size));
+        assert_valid_bar_tick_sizes(volume, increment);
+        assert_eq!(
+            sizes.open.raw + sizes.high.raw + sizes.low.raw + sizes.close.raw,
+            volume.raw
+        );
+    }
+
+    #[rstest]
+    fn test_bar_tick_sizes_zero_volume_remains_zero() {
+        let volume = Quantity::zero(3);
+        let increment = Quantity::from("0.001");
+        let sizes = BarTickSizes::from_volume(volume, increment);
+        assert_eq!(sizes.open, Quantity::zero(3));
+        assert_eq!(sizes.high, Quantity::zero(3));
+        assert_eq!(sizes.low, Quantity::zero(3));
+        assert_eq!(sizes.close, Quantity::zero(3));
+        assert_valid_bar_tick_sizes(volume, increment);
+    }
+
+    #[rstest]
+    fn test_bar_tick_sizes_rounds_down_to_size_increment() {
+        let volume = Quantity::from("1.07");
+        let increment = Quantity::from("0.10");
+        let sizes = BarTickSizes::from_volume(volume, increment);
+        assert_eq!(sizes.open, Quantity::from("0.20"));
+        assert_eq!(sizes.high, Quantity::from("0.20"));
+        assert_eq!(sizes.low, Quantity::from("0.20"));
+        assert_eq!(sizes.close, Quantity::from("0.40"));
+        assert_valid_bar_tick_sizes(volume, increment);
+    }
+
+    #[rstest]
+    fn test_bar_tick_sizes_at_fixed_precision() {
+        // When volume.precision == FIXED_PRECISION the scale is 1 and the formula
+        // degenerates to a plain raw-space quartering.
+        let units: QuantityRaw = 17;
+        let volume = Quantity::from_raw(units, FIXED_PRECISION);
+        let increment = Quantity::from_raw(1, FIXED_PRECISION);
+        let sizes = BarTickSizes::from_volume(volume, increment);
+        assert_eq!(sizes.open.raw, 4);
+        assert_eq!(sizes.high.raw, 4);
+        assert_eq!(sizes.low.raw, 4);
+        assert_eq!(sizes.close.raw, 5);
+        assert_valid_bar_tick_sizes(volume, increment);
+    }
+
+    fn get_l3_queue_engine(instrument: InstrumentAny) -> (OrderMatchingEngine, Rc<RefCell<Cache>>) {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let config = OrderMatchingEngineConfig {
+            trade_execution: true,
+            queue_position: true,
+            ..Default::default()
+        };
+
+        let mut engine = OrderMatchingEngine::new(
+            instrument,
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L3_MBO,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            Rc::clone(&cache),
+            config,
+        );
+
+        let handler_cache = Rc::clone(&cache);
+        engine.set_event_handler(Rc::new(move |event: OrderEventAny| {
+            if let Ok(mut cache) = handler_cache.try_borrow_mut() {
+                let _ = cache.update_order(&event);
+            }
+        }));
+
+        (engine, cache)
+    }
+
+    fn assert_l3_queue_synced(engine: &OrderMatchingEngine) {
+        for (client_order_id, orders_ahead) in &engine.queue_ahead_orders {
+            let set_sum: QuantityRaw = orders_ahead.values().sum();
+            let counter = engine
+                .queue_ahead_total
+                .get(client_order_id)
+                .map_or(0, |&(_, ahead_raw)| ahead_raw);
+            assert_eq!(
+                set_sum, counter,
+                "tracked orders out of sync with quantity-ahead counter for {client_order_id}",
+            );
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum QueueEvent {
+        Add { id: OrderId, size: u64 },
+        Update { id: OrderId, size: u64 },
+        MoveAway { id: OrderId },
+        Delete { id: OrderId },
+        Trade { size: u64, aggressor: u8 },
+        AggregateCap { size: u64 },
+        AggregateDelete,
+        RestOrder,
+    }
+
+    fn granular_queue_event() -> impl Strategy<Value = QueueEvent> {
+        prop_oneof![
+            3 => (1u64..=6, 1u64..=9).prop_map(|(id, size)| QueueEvent::Add { id, size }),
+            3 => (1u64..=6, 1u64..=9).prop_map(|(id, size)| QueueEvent::Update { id, size }),
+            1 => (1u64..=6).prop_map(|id| QueueEvent::MoveAway { id }),
+            2 => (1u64..=6).prop_map(|id| QueueEvent::Delete { id }),
+            2 => Just(QueueEvent::RestOrder),
+        ]
+    }
+
+    fn any_queue_event() -> impl Strategy<Value = QueueEvent> {
+        prop_oneof![
+            5 => granular_queue_event(),
+            3 => (1u64..=9, 0u8..3).prop_map(|(size, aggressor)| QueueEvent::Trade {
+                size,
+                aggressor,
+            }),
+            1 => (1u64..=9).prop_map(|size| QueueEvent::AggregateCap { size }),
+            1 => Just(QueueEvent::AggregateDelete),
+        ]
+    }
+
+    // Drives generated events through an L3 queue_position engine; the
+    // shadow id maps sanitize the feed to what real MBO feeds guarantee
+    struct L3QueueSim {
+        engine: OrderMatchingEngine,
+        account_id: AccountId,
+        live_main: HashMap<OrderId, u64>,
+        live_away: HashSet<OrderId>,
+        rest_snapshots: HashMap<ClientOrderId, HashSet<OrderId>>,
+        rested: usize,
+        sequence: u64,
+    }
+
+    impl L3QueueSim {
+        const MAIN_PRICE: &'static str = "100.00";
+        const AWAY_PRICE: &'static str = "101.00";
+
+        fn new() -> Self {
+            let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+            let (engine, _cache) = get_l3_queue_engine(instrument);
+
+            Self {
+                engine,
+                account_id: AccountId::from("SIM-001"),
+                live_main: HashMap::new(),
+                live_away: HashSet::new(),
+                rest_snapshots: HashMap::new(),
+                rested: 0,
+                sequence: 0,
+            }
+        }
+
+        fn quantity(size: u64) -> Quantity {
+            Quantity::from(format!("{size}.000").as_str())
+        }
+
+        fn process_delta(
+            &mut self,
+            action: BookAction,
+            price: &str,
+            size: u64,
+            order_id: OrderId,
+            flags: u8,
+        ) {
+            self.sequence += 1;
+            let delta = OrderBookDelta::new(
+                self.engine.instrument.id(),
+                action,
+                BookOrder::new(
+                    OrderSide::Sell,
+                    Price::from(price),
+                    Self::quantity(size),
+                    order_id,
+                ),
+                flags,
+                self.sequence,
+                UnixNanos::from(self.sequence),
+                UnixNanos::from(self.sequence),
+            );
+            self.engine.process_order_book_delta(&delta).unwrap();
+        }
+
+        fn apply(&mut self, event: QueueEvent) {
+            match event {
+                QueueEvent::Add { id, size } => {
+                    if self.live_main.contains_key(&id) || self.live_away.contains(&id) {
+                        return;
+                    }
+                    self.process_delta(BookAction::Add, Self::MAIN_PRICE, size, id, 0);
+                    self.live_main.insert(id, size);
+                }
+                QueueEvent::Update { id, size } => {
+                    if !self.live_main.contains_key(&id) {
+                        return;
+                    }
+                    self.process_delta(BookAction::Update, Self::MAIN_PRICE, size, id, 0);
+                    self.live_main.insert(id, size);
+                }
+                QueueEvent::MoveAway { id } => {
+                    let Some(size) = self.live_main.remove(&id) else {
+                        return;
+                    };
+                    self.process_delta(BookAction::Update, Self::AWAY_PRICE, size, id, 0);
+                    self.live_away.insert(id);
+                }
+                QueueEvent::Delete { id } => {
+                    if let Some(size) = self.live_main.remove(&id) {
+                        self.process_delta(BookAction::Delete, Self::MAIN_PRICE, size, id, 0);
+                    } else if self.live_away.remove(&id) {
+                        self.process_delta(BookAction::Delete, Self::AWAY_PRICE, 1, id, 0);
+                    } else {
+                        // Unknown id exercises the ignore path
+                        self.process_delta(BookAction::Delete, Self::MAIN_PRICE, 1, id, 0);
+                    }
+
+                    // A later Add reusing this id is a new order, not the
+                    // snapshot-time one (real feeds never reuse ids)
+                    for snapshot_ids in self.rest_snapshots.values_mut() {
+                        snapshot_ids.remove(&id);
+                    }
+                }
+                QueueEvent::Trade { size, aggressor } => {
+                    self.sequence += 1;
+                    let aggressor_side = match aggressor {
+                        0 => AggressorSide::Buy,
+                        1 => AggressorSide::Sell,
+                        _ => AggressorSide::NoAggressor,
+                    };
+                    let trade = TradeTick::new(
+                        self.engine.instrument.id(),
+                        Price::from(Self::MAIN_PRICE),
+                        Self::quantity(size),
+                        aggressor_side,
+                        TradeId::new(format!("T-{}", self.sequence).as_str()),
+                        UnixNanos::from(self.sequence),
+                        UnixNanos::from(self.sequence),
+                    );
+                    self.engine.process_trade_tick(&trade);
+                }
+                QueueEvent::AggregateCap { size } => {
+                    self.process_delta(
+                        BookAction::Update,
+                        Self::MAIN_PRICE,
+                        size,
+                        0,
+                        RecordFlag::F_MBP as u8,
+                    );
+                }
+                QueueEvent::AggregateDelete => {
+                    self.process_delta(
+                        BookAction::Delete,
+                        Self::MAIN_PRICE,
+                        1,
+                        0,
+                        RecordFlag::F_MBP as u8,
+                    );
+                }
+                QueueEvent::RestOrder => {
+                    if self.rested >= 3 {
+                        return;
+                    }
+                    self.rested += 1;
+                    let mut order = OrderTestBuilder::new(OrderType::Limit)
+                        .instrument_id(self.engine.instrument.id())
+                        .side(OrderSide::Sell)
+                        .price(Price::from(Self::MAIN_PRICE))
+                        .quantity(Self::quantity(5))
+                        .client_order_id(ClientOrderId::from(
+                            format!("O-PROP-{}", self.rested).as_str(),
+                        ))
+                        .submit(true)
+                        .build();
+                    self.engine.process_order(&mut order, self.account_id);
+
+                    assert!(
+                        self.engine
+                            .queue_ahead_orders
+                            .contains_key(&order.client_order_id()),
+                        "L3 snapshot must track the resting order",
+                    );
+
+                    self.rest_snapshots.insert(
+                        order.client_order_id(),
+                        self.live_main.keys().copied().collect(),
+                    );
+                }
+            }
+        }
+
+        // Without trades or aggregate rows, tracked orders must mirror the book
+        // exactly, and equal the rest-time snapshot ids still at the level
+        fn assert_tracked_orders_match_book(&self) {
+            let level: HashMap<OrderId, QuantityRaw> = self
+                .engine
+                .book
+                .get_orders_at_level(Price::from(Self::MAIN_PRICE), OrderSide::Buy)
+                .iter()
+                .map(|order| (order.order_id, order.size.raw))
+                .collect();
+
+            for (client_order_id, orders_ahead) in &self.engine.queue_ahead_orders {
+                for (order_id, size_raw) in orders_ahead {
+                    let book_size = level.get(order_id).copied().unwrap_or_else(|| {
+                        panic!("tracked order {order_id} for {client_order_id} not in book level")
+                    });
+                    assert_eq!(
+                        book_size, *size_raw,
+                        "tracked size diverged from book for order {order_id}",
+                    );
+                }
+
+                let tracked: HashSet<OrderId> = orders_ahead.keys().copied().collect();
+                let expected: HashSet<OrderId> = self.rest_snapshots[client_order_id]
+                    .iter()
+                    .filter(|id| self.live_main.contains_key(id))
+                    .copied()
+                    .collect();
+                assert_eq!(
+                    tracked, expected,
+                    "tracked set incomplete or stale for {client_order_id}",
+                );
+            }
+        }
+    }
+
+    #[rstest]
+    fn prop_test_l3_queue_tracking_stays_synced_with_counter() {
+        proptest!(|(events in prop::collection::vec(any_queue_event(), 1..=80))| {
+            let mut sim = L3QueueSim::new();
+            for event in events {
+                sim.apply(event);
+                assert_l3_queue_synced(&sim.engine);
+            }
+        });
+    }
+
+    #[rstest]
+    fn prop_test_l3_queue_tracking_mirrors_book_without_trades() {
+        proptest!(|(events in prop::collection::vec(granular_queue_event(), 1..=80))| {
+            let mut sim = L3QueueSim::new();
+            for event in events {
+                sim.apply(event);
+                assert_l3_queue_synced(&sim.engine);
+                sim.assert_tracked_orders_match_book();
+            }
+        });
+    }
+
+    // Replays real GLBX MBO flow (records 9150..10650 of
+    // test_data/databento/esh4-glbx-mdp3-20231225.mbo.dbn.zst as JSON),
+    // joining the touch periodically; the mid-stream start also exercises
+    // unseen-id ignore paths
+    #[rstest]
+    fn test_l3_queue_position_replay_databento_mbo_stays_synced() {
+        let json = include_str!("../../../../test_data/databento/esh4-glbx-mdp3-20231225.mbo.json");
+        let records: Vec<serde_json::Value> = serde_json::from_str(json).unwrap();
+        assert!(records.len() > 1000);
+
+        let instrument = InstrumentAny::FuturesContract(futures_contract_es(None, None));
+        let instrument_id = instrument.id();
+        let (mut engine, cache) = get_l3_queue_engine(instrument);
+        let account_id = AccountId::from("SIM-001");
+
+        let mut rested = 0usize;
+        let mut trades = 0usize;
+
+        for (index, record) in records.iter().enumerate() {
+            match record.get("type").and_then(serde_json::Value::as_str) {
+                Some("OrderBookDelta") => {
+                    let mut delta: OrderBookDelta = serde_json::from_value(record.clone()).unwrap();
+                    delta.instrument_id = instrument_id;
+                    engine.process_order_book_delta(&delta).unwrap();
+                }
+                Some("TradeTick") => {
+                    let mut trade: TradeTick = serde_json::from_value(record.clone()).unwrap();
+                    trade.instrument_id = instrument_id;
+                    engine.process_trade_tick(&trade);
+                    trades += 1;
+                }
+                other => panic!("unexpected record type {other:?}"),
+            }
+
+            if index % 150 == 100 {
+                let (side, price) = if rested.is_multiple_of(2) {
+                    (OrderSide::Sell, engine.book.best_ask_price())
+                } else {
+                    (OrderSide::Buy, engine.book.best_bid_price())
+                };
+
+                if let Some(price) = price {
+                    rested += 1;
+                    let mut order = OrderTestBuilder::new(OrderType::Limit)
+                        .instrument_id(instrument_id)
+                        .side(side)
+                        .price(price)
+                        .quantity(Quantity::from("1"))
+                        .client_order_id(ClientOrderId::from(format!("O-MBO-{rested}").as_str()))
+                        .submit(true)
+                        .build();
+                    engine.process_order(&mut order, account_id);
+
+                    // A crossed mid-stream book can fill a joined order on
+                    // arrival; only open orders are tracked
+                    let is_open = cache
+                        .borrow()
+                        .order(&order.client_order_id())
+                        .is_some_and(|order| order.is_open());
+                    if is_open {
+                        assert!(
+                            engine
+                                .queue_ahead_orders
+                                .contains_key(&order.client_order_id()),
+                            "L3 snapshot must track the resting order",
+                        );
+                    }
+                }
+            }
+
+            assert_l3_queue_synced(&engine);
+        }
+
+        assert!(rested >= 5, "replay must exercise resting orders");
+        assert!(trades >= 50, "replay must exercise trade interleavings");
+    }
+}

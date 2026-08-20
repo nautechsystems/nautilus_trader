@@ -86,6 +86,19 @@ impl MStr<Pattern> {
             _marker: std::marker::PhantomData,
         }
     }
+
+    /// Create a new pattern from a string, validating it can match a topic.
+    ///
+    /// Wildcards are valid in a pattern, so only empty and whitespace-only values are rejected.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the pattern is empty or all whitespace.
+    pub fn pattern_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+        check_valid_string_utf8(value.as_ref(), stringify!(value))?;
+
+        Ok(Self::pattern(value))
+    }
 }
 
 impl From<&str> for MStr<Pattern> {
@@ -287,6 +300,25 @@ mod tests {
     fn test_pattern_accepts_all(#[case] input: &str) {
         let pattern = MStr::<Pattern>::pattern(input);
         assert_eq!(pattern.as_ref(), input);
+    }
+
+    #[rstest]
+    #[case("data.*")]
+    #[case("*.quotes.*")]
+    #[case("data.?.BINANCE")]
+    #[case("*")]
+    #[case("exact.match.no.wildcards")]
+    fn test_pattern_checked_accepts_matchable_patterns(#[case] input: &str) {
+        let pattern = MStr::<Pattern>::pattern_checked(input).unwrap();
+        assert_eq!(pattern.as_ref(), input);
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("   ")]
+    #[case("\t\n")]
+    fn test_pattern_checked_rejects_empty_whitespace(#[case] input: &str) {
+        assert!(MStr::<Pattern>::pattern_checked(input).is_err());
     }
 
     #[rstest]

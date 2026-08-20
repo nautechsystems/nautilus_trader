@@ -394,6 +394,8 @@ pub struct FuturesSendOrderResponse {
 pub struct FuturesSendStatus {
     #[serde(rename = "order_id", default)]
     pub order_id: Option<String>,
+    #[serde(rename = "order_tag", default)]
+    pub order_tag: Option<String>,
     pub status: String,
     #[serde(default)]
     pub order_events: Option<Vec<FuturesSendOrderEvent>>,

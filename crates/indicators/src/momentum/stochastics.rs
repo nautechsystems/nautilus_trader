@@ -61,7 +61,7 @@ const MAX_PERIOD: usize = 1_024;
         eq,
         eq_int,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.indicators",
+        module = "nautilus_trader.indicators",
         from_py_object,
     )
 )]
@@ -82,7 +82,7 @@ pub enum StochasticsDMethod {
 #[repr(C)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.indicators")
 )]
 #[cfg_attr(
     feature = "python",
@@ -397,6 +397,7 @@ mod tests {
         indicator::Indicator,
         momentum::stochastics::{Stochastics, StochasticsDMethod},
         stubs::{bar_ethusdt_binance_minute_bid, stochastics_10},
+        testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -459,8 +460,8 @@ mod tests {
     #[rstest]
     fn test_handle_bar(mut stochastics_10: Stochastics, bar_ethusdt_binance_minute_bid: Bar) {
         stochastics_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(stochastics_10.value_d, 49.090_909_090_909_09);
-        assert_eq!(stochastics_10.value_k, 49.090_909_090_909_09);
+        assert_approx_equal(stochastics_10.value_d, 49.0909090909);
+        assert_approx_equal(stochastics_10.value_k, 49.0909090909);
         assert!(stochastics_10.has_inputs);
         assert!(!stochastics_10.initialized);
     }

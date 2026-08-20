@@ -21,8 +21,8 @@ Examples include listed vertical spreads, calendar spreads, and other option str
 | `currency`        | `Currency`         | `Currency`         | Required         | Premium quote and settlement currency.   |
 | `price_precision` | `u8`               | `int`              | Required         | Decimal places allowed for prices.       |
 | `price_increment` | `Price`            | `Price`            | Required         | Smallest valid price step.               |
-| `size_precision`  | `u8`               | `int`              | `0`              | Option spreads trade in whole contracts. |
-| `size_increment`  | `Quantity`         | `Quantity`         | `1`              | Minimum contract size step.              |
+| `size_precision`  | `u8`               | `int`              | Fixed `0`        | Option spreads trade in whole contracts. |
+| `size_increment`  | `Quantity`         | `Quantity`         | Fixed `1`        | Minimum contract size step.              |
 | `multiplier`      | `Quantity`         | `Quantity`         | Required         | Strategy multiplier.                     |
 | `lot_size`        | `Quantity`         | `Quantity`         | Required         | Rounded lot or contract lot size.        |
 | `margin_init`     | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
@@ -50,7 +50,7 @@ Examples include listed vertical spreads, calendar spreads, and other option str
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::AssetClass,
@@ -60,8 +60,8 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-let activation = Utc.with_ymd_and_hms(2023, 11, 6, 20, 54, 7).unwrap();
-let expiration = Utc.with_ymd_and_hms(2024, 2, 23, 22, 59, 0).unwrap();
+let activation: Timestamp = "2023-11-06T20:54:07Z".parse().unwrap();
+let expiration: Timestamp = "2024-02-23T22:59:00Z".parse().unwrap();
 
 let sr3_spread = OptionSpread::builder()
     .instrument_id(InstrumentId::from("UD:U$: GN 2534559.GLBX"))
@@ -70,8 +70,8 @@ let sr3_spread = OptionSpread::builder()
     .exchange(Ustr::from("XCME"))
     .underlying(Ustr::from("SR3"))
     .strategy_type(Ustr::from("GN"))
-    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
-    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .activation_ns(UnixNanos::from(activation))
+    .expiration_ns(UnixNanos::from(expiration))
     .currency(Currency::from("USD"))
     .price_precision(2)
     .price_increment(Price::from("0.01"))
@@ -118,7 +118,7 @@ sr3_spread = OptionSpread(
 Representative adapters that create or consume `OptionSpread` instruments include:
 
 - [Databento](../../integrations/databento.md) for listed option spread markets.
-- [Interactive Brokers](../../integrations/ib.md) for exchange-defined option strategies.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for exchange‑defined option strategies.
 
 ## Related guides
 

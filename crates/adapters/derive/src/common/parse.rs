@@ -61,7 +61,7 @@ pub fn format_venue_symbol(instrument_id: &InstrumentId) -> anyhow::Result<Ustr>
         "instrument ID `{instrument_id}` is not for venue {}",
         DERIVE_VENUE.as_str(),
     );
-    Ok(Ustr::from(instrument_id.symbol.as_str()))
+    Ok(instrument_id.symbol.inner())
 }
 
 /// Deserializes a JSON array into `Vec<T>`, salvaging the decodable elements

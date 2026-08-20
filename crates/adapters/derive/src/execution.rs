@@ -31,7 +31,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
@@ -48,7 +48,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, UUID4, UnixNanos,
+    AtomicMap, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
@@ -89,7 +89,7 @@ use crate::{
     config::DeriveExecClientConfig,
     http::{
         DeriveCredentials, DeriveHttpClient,
-        models::{DeriveInstrument, DeriveOrder, DeriveTrade},
+        models::{DeriveInstrument, DeriveOrder, DeriveReplaceOutcome, DeriveTrade},
         parse::{
             parse_derive_order_to_report, parse_derive_position_to_report,
             parse_derive_subaccount_to_balances, parse_derive_trade_to_fill_report,
@@ -100,7 +100,8 @@ use crate::{
             DeriveGetOrderParams, DeriveGetPositionsParams, DeriveGetSubaccountParams,
             DeriveGetTradeHistoryParams, DeriveGetTriggerOrdersParams,
             order_replace_to_derive_payload, order_to_derive_payload,
-            trigger_order_to_derive_payload,
+            trigger_order_to_derive_payload, validate_order_support,
+            validate_trigger_order_support,
         },
     },
     signing::{
@@ -199,6 +200,7 @@ impl DeriveExecutionClient {
             config.proxy_url.clone(),
             ws_credentials,
             config.max_matching_requests_per_second,
+            config.max_per_instrument_matching_requests_per_second,
         );
 
         if let Some(secs) = config.ws_timeout_secs {
@@ -597,9 +599,10 @@ impl ExecutionClient for DeriveExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
+            .emit_account_state(balances, margins, reported, ts_event, info);
         Ok(())
     }
 
@@ -743,7 +746,7 @@ impl ExecutionClient for DeriveExecutionClient {
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         self.reconciliation_context()
-            .generate_order_status_reports(cmd)
+            .generate_order_status_reports(cmd, false)
             .await
     }
 
@@ -787,6 +790,22 @@ impl ExecutionClient for DeriveExecutionClient {
             return Ok(());
         }
 
+        // Deny before emit_order_submitted so unsupported fields never
+        // surface as venue rejections.
+        let is_trigger_order = is_derive_trigger_order_type(order.order_type());
+        let support = if is_trigger_order {
+            validate_trigger_order_support(&order)
+        } else {
+            validate_order_support(&order)
+        };
+
+        if let Err(e) = support {
+            let reason = e.to_string();
+            log::warn!("Cannot submit order {}: {reason}", order.client_order_id());
+            self.emitter.emit_order_denied(&order, &reason);
+            return Ok(());
+        }
+
         // Spot has no position to reduce; the venue rejects reduce-only
         // unconditionally (11025), so deny locally. Perp/option reduce-only is
         // position-conditional and must still reach the venue.
@@ -806,7 +825,6 @@ impl ExecutionClient for DeriveExecutionClient {
         }
 
         // Keep the existing OrderDenied path here, then refresh before signing
-        let is_trigger_order = is_derive_trigger_order_type(order.order_type());
         let market_quote = if order.order_type() == OrderType::Market {
             match self.core.cache().quote(&cmd.instrument_id) {
                 Some(_) => Some(()),
@@ -982,11 +1000,14 @@ impl ExecutionClient for DeriveExecutionClient {
             };
 
             let matching_reservation = match ws_exec
-                .reserve_matching_request(if is_trigger_order {
-                    "private/trigger_order"
-                } else {
-                    "private/order"
-                })
+                .reserve_matching_request(
+                    if is_trigger_order {
+                        "private/trigger_order"
+                    } else {
+                        "private/order"
+                    },
+                    &instrument.instrument_name,
+                )
                 .await
             {
                 Ok(reservation) => reservation,
@@ -1355,6 +1376,7 @@ impl ExecutionClient for DeriveExecutionClient {
                     let canceled_venue_order_id =
                         VenueOrderId::new(canceled_order.order_id.as_str());
                     let ts = clock.get_time_ns();
+
                     ensure_canceled_emitted(
                         &emitter,
                         &dispatch_state,
@@ -1598,6 +1620,7 @@ impl ExecutionClient for DeriveExecutionClient {
         let instrument_id = cmd.instrument_id;
         let client_order_id = cmd.client_order_id;
         let stale_venue_order_id = venue_order_id;
+        let account_id = self.core.account_id;
         let voi_str = venue_order_id.to_string();
 
         self.spawn_task("modify_order", async move {
@@ -1627,7 +1650,7 @@ impl ExecutionClient for DeriveExecutionClient {
             };
 
             let matching_reservation = match ws_exec
-                .reserve_matching_request("private/replace")
+                .reserve_matching_request("private/replace", &instrument.instrument_name)
                 .await
             {
                 Ok(reservation) => reservation,
@@ -1729,7 +1752,7 @@ impl ExecutionClient for DeriveExecutionClient {
             }
 
             match outcome {
-                Ok(order) => {
+                Ok(DeriveReplaceOutcome::Replaced(order)) => {
                     let new_voi = VenueOrderId::new(order.order_id.as_str());
 
                     if !dispatch_state.take_pending_modify(
@@ -1755,6 +1778,46 @@ impl ExecutionClient for DeriveExecutionClient {
                         None,
                         ts,
                     );
+                }
+                Ok(DeriveReplaceOutcome::Canceled {
+                    cancelled_order,
+                    create_order_error,
+                }) => {
+                    if !dispatch_state.take_pending_modify(
+                        &client_order_id,
+                        stale_venue_order_id,
+                        None,
+                    ) {
+                        log::debug!(
+                            "Skipping partial private/replace response for {client_order_id}: an incoming terminal frame already resolved the modify",
+                        );
+                        return Ok(());
+                    }
+
+                    log::warn!(
+                        "Derive cancelled {client_order_id} ({}) but did not create its replacement: JSON-RPC {}: {}",
+                        cancelled_order.order_id,
+                        create_order_error.code,
+                        create_order_error.message,
+                    );
+                    let ts = clock.get_time_ns();
+
+                    ensure_canceled_emitted(
+                        &emitter,
+                        &dispatch_state,
+                        client_order_id,
+                        OrderIdentity {
+                            instrument_id,
+                            strategy_id,
+                            order_side: order_for_task.order_side(),
+                            order_type: order_for_task.order_type(),
+                        },
+                        stale_venue_order_id,
+                        account_id,
+                        ts,
+                        ts,
+                    );
+                    dispatch_state.forget(&client_order_id);
                 }
                 Err(e) => {
                     if !dispatch_state.take_pending_modify(
@@ -1794,9 +1857,9 @@ impl ExecutionClient for DeriveExecutionClient {
             let subaccount = http_client
                 .get_subaccount(&DeriveGetSubaccountParams::new(subaccount_id))
                 .await?;
-            let (balances, margins) = parse_derive_subaccount_to_balances(&subaccount)?;
+            let (balances, margins, info) = parse_derive_subaccount_to_balances(&subaccount)?;
             let ts_event = clock.get_time_ns();
-            emitter.emit_account_state(balances, margins, true, ts_event);
+            emitter.emit_account_state(balances, margins, true, ts_event, Some(info));
             Ok(())
         });
         Ok(())
@@ -1849,6 +1912,7 @@ impl ExecutionClient for DeriveExecutionClient {
                     }
                 }
             };
+
             let ts_init = clock.get_time_ns();
             let report = parse_derive_order_to_report(&order, account_id, ts_init)?;
             emitter.send_order_status_report(report);
@@ -1876,11 +1940,11 @@ impl DeriveReconciliationContext {
             .get_subaccount(&DeriveGetSubaccountParams::new(self.subaccount_id))
             .await
             .context("failed to fetch Derive subaccount snapshot")?;
-        let (balances, margins) = parse_derive_subaccount_to_balances(&value)
+        let (balances, margins, info) = parse_derive_subaccount_to_balances(&value)
             .context("failed to parse Derive subaccount balances")?;
         let ts_event = self.clock.get_time_ns();
         self.emitter
-            .emit_account_state(balances, margins, true, ts_event);
+            .emit_account_state(balances, margins, true, ts_event, Some(info));
         Ok(())
     }
 
@@ -1901,6 +1965,7 @@ impl DeriveReconciliationContext {
     async fn generate_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
+        normalize_history_client_order_ids: bool,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         let instrument_name = cmd.instrument_id.map(|id| id.symbol.as_str().to_string());
         let orders: Vec<DeriveOrder> = if cmd.open_only {
@@ -1949,29 +2014,36 @@ impl DeriveReconciliationContext {
         let ts_init = self.clock.get_time_ns();
         let start_ms = cmd.start.map(|t| t.as_millis() as i64);
         let end_ms = cmd.end.map(|t| t.as_millis() as i64);
+
+        let orders: Vec<DeriveOrder> = orders
+            .into_iter()
+            .filter(|order| {
+                cmd.instrument_id.is_none_or(|instrument_id| {
+                    InstrumentId::new(Symbol::new(order.instrument_name.as_str()), *DERIVE_VENUE)
+                        == instrument_id
+                }) && start_ms.is_none_or(|start| order.last_update_timestamp >= start)
+                    && end_ms.is_none_or(|end| order.last_update_timestamp <= end)
+            })
+            .collect();
+
+        let ambiguous_client_order_ids = if normalize_history_client_order_ids {
+            ambiguous_history_client_order_ids(&orders)
+        } else {
+            AHashSet::new()
+        };
+
         let mut reports = Vec::with_capacity(orders.len());
+
         for order in orders {
-            if let Some(instrument_id) = cmd.instrument_id
-                && InstrumentId::new(Symbol::new(order.instrument_name.as_str()), *DERIVE_VENUE)
-                    != instrument_id
-            {
-                continue;
-            }
-
-            if let Some(start) = start_ms
-                && order.last_update_timestamp < start
-            {
-                continue;
-            }
-
-            if let Some(end) = end_ms
-                && order.last_update_timestamp > end
-            {
-                continue;
-            }
-
             match parse_derive_order_to_report(&order, self.account_id, ts_init) {
-                Ok(report) => reports.push(report),
+                Ok(mut report) => {
+                    if report.client_order_id.is_some_and(|client_order_id| {
+                        ambiguous_client_order_ids.contains(&client_order_id)
+                    }) {
+                        report.client_order_id = None;
+                    }
+                    reports.push(report);
+                }
                 Err(e) => log::warn!("Skipping order in status report: {e}"),
             }
         }
@@ -2012,11 +2084,14 @@ impl DeriveReconciliationContext {
         }
 
         let ts_init = self.clock.get_time_ns();
+
         let venue_order_id_filter = cmd
             .venue_order_id
             .as_ref()
             .map(|id| id.as_str().to_string());
+
         let mut reports = Vec::with_capacity(all_trades.len());
+
         for trade in all_trades {
             if let Some(target) = venue_order_id_filter.as_deref()
                 && trade.order_id != target
@@ -2059,6 +2134,7 @@ impl DeriveReconciliationContext {
         let ts_init = self.clock.get_time_ns();
         let mut reports = Vec::with_capacity(positions.len());
         let mut instruments = AHashSet::with_capacity(positions.len());
+
         for position in positions {
             let instrument_id = format_instrument_id(position.instrument_name.as_str());
             if let Some(target) = cmd.instrument_id
@@ -2074,6 +2150,7 @@ impl DeriveReconciliationContext {
                 Err(e) => log::warn!("Skipping position in status report: {e}"),
             }
         }
+
         Ok(PositionStatusSnapshot {
             reports,
             instruments,
@@ -2116,12 +2193,24 @@ impl DeriveReconciliationContext {
         let position_cmd =
             GeneratePositionStatusReports::new(UUID4::new(), ts_now, None, None, None, None, None);
 
-        let (history_order_reports, open_order_reports, fill_reports, position_snapshot) = tokio::try_join!(
-            self.generate_order_status_reports(&history_order_cmd),
-            self.generate_order_status_reports(&open_order_cmd),
+        let (history_order_reports, open_order_reports, mut fill_reports, position_snapshot) = tokio::try_join!(
+            self.generate_order_status_reports(&history_order_cmd, true),
+            self.generate_order_status_reports(&open_order_cmd, false),
             self.generate_fill_reports(fill_cmd),
             self.generate_position_status_snapshot(&position_cmd),
         )?;
+        let detached_history_order_ids: AHashSet<VenueOrderId> = history_order_reports
+            .iter()
+            .filter(|report| report.client_order_id.is_none())
+            .map(|report| report.venue_order_id)
+            .collect();
+
+        for report in &mut fill_reports {
+            if detached_history_order_ids.contains(&report.venue_order_id) {
+                report.client_order_id = None;
+            }
+        }
+
         log::info!(
             "Received {} historical OrderStatusReports",
             history_order_reports.len()
@@ -2159,6 +2248,7 @@ impl DeriveReconciliationContext {
         mass_status.add_order_reports(open_order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
+
         add_missing_flat_position_reports(
             &mut mass_status,
             self.account_id,
@@ -2166,8 +2256,69 @@ impl DeriveReconciliationContext {
             &position_instruments,
             ts_now,
         );
+
         Ok(mass_status)
     }
+}
+
+fn ambiguous_history_client_order_ids(orders: &[DeriveOrder]) -> AHashSet<ClientOrderId> {
+    let mut orders_by_label: AHashMap<Ustr, AHashMap<&str, Option<&str>>> = AHashMap::new();
+
+    for order in orders {
+        if order.label.is_empty() {
+            continue;
+        }
+        orders_by_label
+            .entry(order.label)
+            .or_default()
+            .insert(order.order_id.as_str(), order.replaced_order_id.as_deref());
+    }
+
+    let mut ambiguous_client_order_ids = AHashSet::new();
+
+    for (label, orders_by_id) in orders_by_label {
+        if orders_by_id.len() < 2 {
+            continue;
+        }
+
+        let predecessors: AHashMap<&str, &str> = orders_by_id
+            .iter()
+            .filter_map(|(order_id, replaced_order_id)| {
+                let replaced_order_id = (*replaced_order_id)?;
+                orders_by_id
+                    .contains_key(replaced_order_id)
+                    .then_some((*order_id, replaced_order_id))
+            })
+            .collect();
+        let predecessor_ids: AHashSet<&str> = predecessors.values().copied().collect();
+        let heads: Vec<&str> = orders_by_id
+            .keys()
+            .copied()
+            .filter(|order_id| !predecessor_ids.contains(order_id))
+            .collect();
+
+        // One client order may own several venue IDs only when they form one linear replace chain
+        let is_linear_chain = predecessors.len() + 1 == orders_by_id.len()
+            && predecessor_ids.len() == predecessors.len()
+            && heads.len() == 1
+            && {
+                let mut visited = AHashSet::new();
+                let mut current = Some(heads[0]);
+                while let Some(order_id) = current {
+                    if !visited.insert(order_id) {
+                        break;
+                    }
+                    current = predecessors.get(order_id).copied();
+                }
+                visited.len() == orders_by_id.len()
+            };
+
+        if !is_linear_chain {
+            ambiguous_client_order_ids.insert(ClientOrderId::new(label.as_str()));
+        }
+    }
+
+    ambiguous_client_order_ids
 }
 
 struct PositionStatusSnapshot {
@@ -2281,6 +2432,7 @@ pub fn dispatch_orders_payload(
     dispatch_state: &WsDispatchState,
 ) {
     let ts_init = clock.get_time_ns();
+
     for order in data.orders {
         let report = match parse_derive_order_to_report(&order, account_id, ts_init) {
             Ok(report) => report,
@@ -2320,8 +2472,9 @@ pub fn dispatch_trades_payload(
     clock: &'static AtomicTime,
     dispatch_state: &WsDispatchState,
 ) {
-    let ts_init = clock.get_time_ns();
     let fee_currency = Currency::USDC();
+    let ts_init = clock.get_time_ns();
+
     for trade in data.trades {
         match parse_derive_trade_to_fill_report(&trade, account_id, fee_currency, ts_init) {
             Ok(Some(report)) => {

@@ -1,94 +1,89 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Generating package index..."
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-bucket_path="s3://${CLOUDFLARE_R2_BUCKET_NAME}/${CLOUDFLARE_R2_PREFIX:-simple/nautilus-trader}/"
-index_file="index.html"
+manifest="${PUBLISH_WHEELS_MANIFEST:?PUBLISH_WHEELS_MANIFEST is required}"
+delete_manifest="${PUBLISH_WHEELS_DELETE_MANIFEST:?PUBLISH_WHEELS_DELETE_MANIFEST is required}"
+index_file="${PUBLISH_WHEELS_INDEX_FILE:?PUBLISH_WHEELS_INDEX_FILE is required}"
+bucket="${CLOUDFLARE_R2_BUCKET_NAME:?CLOUDFLARE_R2_BUCKET_NAME is required}"
+prefix="${CLOUDFLARE_R2_PREFIX:?CLOUDFLARE_R2_PREFIX is required}"
+endpoint="${CLOUDFLARE_R2_URL:?CLOUDFLARE_R2_URL is required}"
+bucket_path="s3://${bucket}/${prefix}/"
 
-# Create a temporary directory for downloads
-TEMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TEMP_DIR"' EXIT
+work_dir="$(mktemp -d)"
+trap 'rm -rf "$work_dir"' EXIT
+listing="${work_dir}/listing"
+remote_files="${work_dir}/remote-files"
+existing_index="${work_dir}/index.html"
+hashes="${work_dir}/hashes"
 
-# Download existing index.html if it exists
-if aws s3 ls "${bucket_path}${index_file}" --endpoint-url="${CLOUDFLARE_R2_URL}" > /dev/null 2>&1; then
-  echo "Existing index.html found, downloading..."
-  aws s3 cp "${bucket_path}${index_file}" . --endpoint-url="${CLOUDFLARE_R2_URL}"
+aws s3 ls "$bucket_path" --endpoint-url="$endpoint" \
+  --cli-connect-timeout 10 --cli-read-timeout 60 > "$listing"
+awk 'NF >= 4 { print $4 }' "$listing" | sort -u > "$remote_files"
+
+if grep -Fxq "index.html" "$remote_files"; then
+  aws s3 cp "${bucket_path}index.html" "$existing_index" \
+    --endpoint-url="$endpoint" --no-progress \
+    --cli-connect-timeout 10 --cli-read-timeout 60
 else
-  echo "No existing index.html found, creating a new one..."
-  echo '<!DOCTYPE html>' > "$index_file"
-  echo '<html><head><title>NautilusTrader Packages</title></head>' >> "$index_file"
-  echo '<body><h1>Packages for nautilus_trader</h1></body></html>' >> "$index_file"
+  : > "$existing_index"
 fi
 
-# Extract existing hashes from index.html
-declare -A existing_hashes=()
-if [[ -f "$index_file" ]]; then
-  echo "Extracting existing hashes from index.html..."
-  while IFS= read -r line; do
-    if [[ $line =~ href=\"([^\"#]+)#sha256=([a-f0-9]{64}) ]]; then
-      file="${BASH_REMATCH[1]}"
-      hash="${BASH_REMATCH[2]}"
-      existing_hashes["$file"]="$hash"
-      echo "Found existing hash for $file"
-    fi
-  done < "$index_file"
-fi
+existing_hash() {
+  local filename=$1
 
-# Create new index.html
-echo '<!DOCTYPE html>' > "${index_file}.new"
-echo '<html><head><title>NautilusTrader Packages</title></head>' >> "${index_file}.new"
-echo '<body><h1>Packages for nautilus_trader</h1>' >> "${index_file}.new"
+  awk -v filename="$filename" '
+    BEGIN {
+      prefix = "<a href=\"" filename "#sha256="
+      suffix = "\">" filename "</a><br>"
+    }
+    index($0, prefix) == 1 && substr($0, length($0) - length(suffix) + 1) == suffix {
+      hash = substr($0, length(prefix) + 1, length($0) - length(prefix) - length(suffix))
+      if (hash ~ /^[a-f0-9]{64}$/) {
+        print hash
+      }
+    }
+  ' "$existing_index"
+}
 
-# Map to store final hashes we'll use
-declare -A final_hashes=()
-
-# First, calculate hashes for all new/updated wheels
-# These will override any existing hashes for the same filename
-for file in dist/nautilus_trader-*.whl; do
-  if [[ -f "$file" ]]; then
-    filename=$(basename "$file")
-    hash=$(sha256sum "$file" | awk '{print $1}')
-    final_hashes["$filename"]="$hash"
-    echo "Calculated hash for new/updated wheel $filename: $hash"
+: > "$hashes"
+while IFS= read -r filename; do
+  if ! [[ "$filename" =~ ^nautilus_trader-[A-Za-z0-9_.+]+-[A-Za-z0-9_.-]+\.whl$ ]]; then
+    continue
   fi
-done
+  if grep -Fxq "$filename" "$delete_manifest"; then
+    continue
+  fi
 
-# Get list of all wheel files in bucket
-existing_files=$(aws s3 ls "${bucket_path}" --endpoint-url="${CLOUDFLARE_R2_URL}" | grep 'nautilus_trader-.*\.whl$' | awk '{print $4}')
-
-# For existing files, use hash from index if we don't have a new one
-for file in $existing_files; do
-  if [[ -z "${final_hashes[$file]:-}" ]]; then # Only if we don't have a new hash
-    if [[ -n "${existing_hashes[$file]:-}" ]]; then
-      final_hashes["$file"]="${existing_hashes[$file]}"
-      echo "Using existing hash for $file: ${existing_hashes[$file]}"
-    else
-      # Only download and calculate if we have no hash at all
-      echo "No existing hash found, downloading wheel to compute hash for $file..."
-      tmpfile="$TEMP_DIR/$file"
-      if aws s3 cp "${bucket_path}${file}" "$tmpfile" \
-        --endpoint-url="${CLOUDFLARE_R2_URL}"; then
-        hash=$(sha256sum "$tmpfile" | awk '{print $1}')
-        final_hashes["$file"]="$hash"
-        echo "Calculated hash for missing file $file: $hash"
-      else
-        echo "Warning: Could not download $file for hashing, skipping..."
-      fi
+  hash="$(awk -F '\t' -v filename="$filename" '$3 == filename { print $1 }' "$manifest")"
+  if [[ -z "$hash" ]]; then
+    hash="$(existing_hash "$filename")"
+    if [[ "$(printf '%s\n' "$hash" | sed '/^$/d' | wc -l | tr -d ' ')" -gt 1 ]]; then
+      echo "Error: Existing index has duplicate links for ${filename}" >&2
+      exit 1
     fi
   fi
-done
+  if [[ -z "$hash" ]]; then
+    wheel="${work_dir}/${filename}"
+    aws s3 cp "${bucket_path}${filename}" "$wheel" \
+      --endpoint-url="$endpoint" --no-progress \
+      --cli-connect-timeout 10 --cli-read-timeout 60
+    hash="$(bash "${script_dir}/publish-wheels-sha256.bash" "$wheel")"
+  fi
 
-# Sort files for consistent ordering
-readarray -t sorted_files < <(printf '%s\n' "${!final_hashes[@]}" | sort)
+  printf '%s\t%s\n' "$filename" "$hash" >> "$hashes"
+done < "$remote_files"
 
-# Generate index entries using sorted list
-for file in "${sorted_files[@]}"; do
-  hash="${final_hashes[$file]}"
-  escaped_file=$(echo "$file" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g; s/'"'"'/\&#39;/g')
-  echo "<a href=\"$escaped_file#sha256=$hash\">$escaped_file</a><br>" >> "${index_file}.new"
-done
+sort -t $'\t' -k1,1 -o "$hashes" "$hashes"
+{
+  echo '<!DOCTYPE html>'
+  echo '<html><head><title>NautilusTrader Packages</title></head>'
+  echo '<body><h1>Packages for nautilus_trader</h1>'
+  while IFS=$'\t' read -r filename hash; do
+    printf '<a href="%s#sha256=%s">%s</a><br>\n' "$filename" "$hash" "$filename"
+  done < "$hashes"
+  echo '</body></html>'
+} > "$index_file"
 
-echo '</body></html>' >> "${index_file}.new"
-mv "${index_file}.new" "$index_file"
-echo "Index generation complete"
+echo "Generated exact package index with $(wc -l < "$hashes" | tr -d ' ') wheels"

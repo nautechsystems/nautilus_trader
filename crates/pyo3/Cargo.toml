@@ -29,7 +29,6 @@ arrow = [
   "nautilus-serialization/arrow",
 ]
 betfair = ["dep:nautilus-betfair", "nautilus-betfair/python"]
-cython-compat = []
 defi = [
   "dep:nautilus-blockchain",
   "nautilus-backtest/defi",
@@ -73,12 +72,6 @@ extension-module = [
   "nautilus-testkit/extension-module",
   "nautilus-trading/extension-module",
   "pyo3/extension-module",
-]
-ffi = [
-  "nautilus-common/ffi",
-  "nautilus-core/ffi",
-  "nautilus-model/ffi",
-  "nautilus-persistence/ffi",
 ]
 high-precision = [
   "nautilus-model/high-precision",
@@ -164,12 +157,22 @@ nautilus-polymarket = { workspace = true, features = ["python"] }
 nautilus-sandbox = { workspace = true, features = ["python"] }
 nautilus-tardis = { workspace = true, features = ["python", "replay"] }
 
+pyo3 = { workspace = true }
+pyo3-stub-gen = { workspace = true }
+
 # local_dynamic_tls avoids exhausting static TLS space when the extension is dlopen'd
+[target.'cfg(target_os = "macos")'.dependencies]
+# v2 avoids conflicting with PyArrow's independent mimalloc instance on macOS;
+# remove it once libmimalloc-sys bundles native mimalloc v3.4.4 or later
+mimalloc = { workspace = true, features = [
+  "local_dynamic_tls",
+  "v2",
+], optional = true }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
 mimalloc = { workspace = true, features = [
   "local_dynamic_tls",
 ], optional = true }
-pyo3 = { workspace = true }
-pyo3-stub-gen = { workspace = true }
 
 # Run with `cargo run --bin python-stub-gen`
 [[bin]]

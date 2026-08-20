@@ -48,8 +48,8 @@ pub const fn parse_order_side(c: c_char) -> OrderSide {
 #[must_use]
 pub const fn parse_aggressor_side(c: c_char) -> AggressorSide {
     match c as u8 as char {
-        'A' => AggressorSide::Seller,
-        'B' => AggressorSide::Buyer,
+        'A' => AggressorSide::Sell,
+        'B' => AggressorSide::Buy,
         _ => AggressorSide::NoAggressor,
     }
 }

@@ -15,7 +15,6 @@
 
 //! Conversion utilities for Interactive Brokers data types.
 
-use chrono::{DateTime, Utc};
 use ibapi::market_data::{
     historical::{
         BarSize as HistoricalBarSize, BarTimestamp, Duration as IBDuration, ToDuration,
@@ -23,6 +22,7 @@ use ibapi::market_data::{
     },
     realtime::WhatToShow as RealtimeWhatToShow,
 };
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{Bar, BarSpecification, BarType},
@@ -239,16 +239,17 @@ pub fn ib_bar_to_nautilus_bar(
 #[must_use]
 pub fn bar_close_from_open(open: UnixNanos, spec: &BarSpecification) -> UnixNanos {
     let is_day = spec.aggregation == BarAggregation::Day;
-    let Some(duration_ns) = (match spec.aggregation {
+    let duration_ns = match spec.aggregation {
         BarAggregation::Second
         | BarAggregation::Minute
         | BarAggregation::Hour
-        | BarAggregation::Day => spec.timedelta().num_nanoseconds(),
-        _ => None,
-    }) else {
+        | BarAggregation::Day => spec.timedelta().as_nanos(),
+        _ => return open,
+    };
+    let Ok(duration_ns) = u64::try_from(duration_ns) else {
         return open;
     };
-    let close = open.saturating_add_ns(duration_ns as u64);
+    let close = open.saturating_add_ns(duration_ns);
     if is_day {
         close.saturating_sub_ns(1_u64)
     } else {
@@ -272,12 +273,9 @@ pub fn ib_timestamp_to_unix_nanos(dt: &OffsetDateTime) -> UnixNanos {
     UnixNanos::from(timestamp as u64)
 }
 
-/// Convert `DateTime<Utc>` to OffsetDateTime.
-pub fn chrono_to_ib_datetime(dt: &DateTime<Utc>) -> OffsetDateTime {
-    let timestamp = dt.timestamp();
-    let nanos = dt.timestamp_subsec_nanos();
-    let total_nanos = timestamp as i128 * 1_000_000_000 + nanos as i128;
-    OffsetDateTime::from_unix_timestamp_nanos(total_nanos)
+/// Convert `Timestamp` to OffsetDateTime.
+pub fn jiff_to_ib_datetime(dt: &Timestamp) -> OffsetDateTime {
+    OffsetDateTime::from_unix_timestamp_nanos(dt.as_nanosecond())
         .unwrap_or_else(|_| OffsetDateTime::now_utc())
 }
 
@@ -287,19 +285,19 @@ pub fn chrono_to_ib_datetime(dt: &DateTime<Utc>) -> OffsetDateTime {
 ///
 /// Returns an error if duration calculation fails.
 pub fn calculate_duration(
-    start: Option<DateTime<Utc>>,
-    end: Option<DateTime<Utc>>,
+    start: Option<Timestamp>,
+    end: Option<Timestamp>,
 ) -> anyhow::Result<IBDuration> {
     match (start, end) {
         (Some(start_dt), Some(end_dt)) => {
-            let duration = end_dt.signed_duration_since(start_dt);
-            let days = duration.num_days();
+            let duration = end_dt.duration_since(start_dt);
+            let days = duration.as_secs() / (24 * 60 * 60);
 
             if days > 0 && days <= i32::MAX as i64 {
                 Ok((days as i32).days())
             } else {
                 // Fallback to seconds if less than a day or too large
-                let seconds = duration.num_seconds();
+                let seconds = duration.as_secs();
                 if seconds > 0 && seconds <= i32::MAX as i64 {
                     Ok((seconds as i32).seconds())
                 } else {
@@ -328,12 +326,12 @@ pub fn calculate_duration(
 /// This is used to break down a large time range into multiple requests
 /// to comply with IB's duration limits for specific bar sizes.
 pub fn calculate_duration_segments(
-    start: DateTime<Utc>,
-    end: DateTime<Utc>,
-) -> Vec<(DateTime<Utc>, IBDuration)> {
+    start: Timestamp,
+    end: Timestamp,
+) -> Vec<(Timestamp, IBDuration)> {
     let mut results = Vec::new();
-    let duration = end.signed_duration_since(start);
-    let mut total_seconds = duration.num_seconds();
+    let duration = end.duration_since(start);
+    let mut total_seconds = duration.as_secs();
 
     if total_seconds <= 0 {
         return results;
@@ -350,19 +348,57 @@ pub fn calculate_duration_segments(
     }
 
     if days > 0 {
-        let minus_years_duration = chrono::Duration::days(years * 365);
+        let minus_years_duration = jiff::SignedDuration::from_hours(24 * (years * 365));
         let minus_years_date = end - minus_years_duration;
         results.push((minus_years_date, (days as i32).days()));
     }
 
     if seconds > 0 {
-        let minus_years_duration = chrono::Duration::days(years * 365);
-        let minus_days_duration = chrono::Duration::days(days);
+        let minus_years_duration = jiff::SignedDuration::from_hours(24 * (years * 365));
+        let minus_days_duration = jiff::SignedDuration::from_hours(24 * (days));
         let minus_days_date = end - minus_years_duration - minus_days_duration;
         results.push((minus_days_date, (seconds as i32).seconds()));
     }
 
     results
+}
+
+/// Adapt duration segments for an IB historical bars request.
+///
+/// For continuous futures the end date is dropped and only the first segment is
+/// kept (IB rejects an explicit end date with error 10339), logging a warning
+/// when the requested range cannot be honored.
+pub fn bar_request_segments(
+    segments: Vec<(Timestamp, IBDuration)>,
+    is_continuous_future: bool,
+) -> Vec<(Option<Timestamp>, IBDuration)> {
+    if is_continuous_future {
+        // Treat end dates within the last second as "now" so requests whose
+        // end defaults to the current time do not trigger a spurious warning.
+        let now = Timestamp::now();
+        let end_in_past = segments
+            .first()
+            .is_some_and(|(end, _)| *end < now - jiff::SignedDuration::from_secs(1));
+
+        if end_in_past || segments.len() > 1 {
+            tracing::warn!(
+                "Continuous futures cannot use an explicit end_date_time (IB error 10339); \
+                 the request is anchored to the current time using only the first duration \
+                 segment, so the returned bars may not cover the full requested range"
+            );
+        }
+
+        segments
+            .into_iter()
+            .take(1)
+            .map(|(_, d)| (None, d))
+            .collect()
+    } else {
+        segments
+            .into_iter()
+            .map(|(end, d)| (Some(end), d))
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -695,10 +731,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_chrono_to_ib_datetime() {
-        let dt = DateTime::parse_from_rfc3339("2024-01-01T10:00:00Z").unwrap();
-        let utc_dt = dt.with_timezone(&Utc);
-        let result = chrono_to_ib_datetime(&utc_dt);
+    fn test_jiff_to_ib_datetime() {
+        let utc_dt = "2024-01-01T10:00:00Z".parse::<Timestamp>().unwrap();
+        let result = jiff_to_ib_datetime(&utc_dt);
         assert_eq!(result.year(), 2024);
         assert_eq!(result.month(), time::Month::January);
         assert_eq!(result.day(), 1);
@@ -706,12 +741,8 @@ mod tests {
 
     #[rstest]
     fn test_calculate_duration_with_start_and_end() {
-        let start = DateTime::parse_from_rfc3339("2024-01-01T10:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        let end = DateTime::parse_from_rfc3339("2024-01-02T10:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let start = "2024-01-01T10:00:00Z".parse::<Timestamp>().unwrap();
+        let end = "2024-01-02T10:00:00Z".parse::<Timestamp>().unwrap();
         let result = calculate_duration(Some(start), Some(end));
         assert!(result.is_ok());
         // Should be 1 day
@@ -721,9 +752,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_duration_no_start() {
-        let end = DateTime::parse_from_rfc3339("2024-01-02T10:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let end = "2024-01-02T10:00:00Z".parse::<Timestamp>().unwrap();
         let result = calculate_duration(None, Some(end));
         assert!(result.is_ok());
         // Should default to 1 day
@@ -733,9 +762,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_duration_no_end() {
-        let start = DateTime::parse_from_rfc3339("2024-01-01T10:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let start = "2024-01-01T10:00:00Z".parse::<Timestamp>().unwrap();
         let result = calculate_duration(Some(start), None);
         assert!(result.is_ok());
         // Should default to 1 day
@@ -746,8 +773,8 @@ mod tests {
     #[rstest]
     fn test_calculate_duration_segments() {
         // Test case: 1.5 years ago to now
-        let now = Utc::now();
-        let start = now - chrono::Duration::days(365 + 182); // ~1.5 years
+        let now = Timestamp::now();
+        let start = now - jiff::SignedDuration::from_hours(24 * (365 + 182)); // ~1.5 years
         let segments = calculate_duration_segments(start, now);
 
         assert!(!segments.is_empty());
@@ -757,5 +784,37 @@ mod tests {
         // Check first segment is ~1Y
         let dur1 = &segments[0].1;
         assert!(dur1.to_string().contains("1 Y") || dur1.to_string().contains("1Y"));
+    }
+
+    #[rstest]
+    fn test_bar_request_segments_attaches_end_dates_when_not_continuous() {
+        let end = "2025-01-01T00:00:00Z".parse::<Timestamp>().unwrap();
+        let earlier = "2024-06-01T00:00:00Z".parse::<Timestamp>().unwrap();
+        let segments = vec![(end, IBDuration::years(1)), (earlier, IBDuration::days(30))];
+
+        let result = bar_request_segments(segments, false);
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, Some(end));
+        assert_eq!(result[1].0, Some(earlier));
+    }
+
+    #[rstest]
+    fn test_bar_request_segments_drops_end_date_and_keeps_only_first_for_continuous() {
+        let end = "2025-01-01T00:00:00Z".parse::<Timestamp>().unwrap();
+        let earlier = "2024-06-01T00:00:00Z".parse::<Timestamp>().unwrap();
+        let segments = vec![(end, IBDuration::years(1)), (earlier, IBDuration::days(30))];
+
+        let result = bar_request_segments(segments, true);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, None);
+        assert_eq!(result[0].1, IBDuration::years(1));
+    }
+
+    #[rstest]
+    fn test_bar_request_segments_empty_input_yields_nothing_for_continuous() {
+        let result = bar_request_segments(vec![], true);
+        assert!(result.is_empty());
     }
 }

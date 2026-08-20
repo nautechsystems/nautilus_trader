@@ -65,15 +65,13 @@ pub type EpochMessageHandler = Arc<dyn Fn(u64, Message) + Send + Sync>;
 /// Function type for handling WebSocket ping messages.
 pub type PingHandler = Arc<dyn Fn(Vec<u8>) + Send + Sync>;
 
+/// Function type for handling WebSocket ping messages with connection ownership.
+pub type EpochPingHandler = Arc<dyn Fn(u64, Vec<u8>) + Send + Sync>;
+
 /// Creates a channel-based message handler.
 ///
-/// Returns a tuple containing the message handler and a receiver for messages.
-///
-/// During the migration to the [`crate::transport`] abstraction the receiver still
-/// yields `tokio_tungstenite::tungstenite::Message` so the 18 adapter crates keep
-/// compiling unchanged. The neutral [`Message`] is converted at the channel
-/// boundary; phase 3 of the migration switches both ends to the neutral type and
-/// removes this shim.
+/// The handler accepts neutral [`Message`] values. The receiver yields
+/// `tokio_tungstenite::tungstenite::Message` values for adapter compatibility.
 #[must_use]
 pub fn channel_message_handler() -> (
     MessageHandler,
@@ -117,17 +115,24 @@ pub fn channel_epoch_message_handler() -> (
     (handler, rx)
 }
 
-/// Represents a command for the writer task.
+/// A command processed by the WebSocket writer task.
 pub(crate) enum WriterCommand {
-    /// Update the writer reference with a new one after reconnection.
+    /// Replaces the writer after reconnection.
     Update(MessageWriter, tokio::sync::oneshot::Sender<u64>),
-    /// Send message to the server.
+    /// Sends a message to the server.
     Send(Message),
-    /// Send once if the active connection still owns the message.
+    /// Sends a connection keepalive. Never replayed on a replacement connection.
+    Heartbeat(Message),
+    /// Sends once if the active connection still owns the message.
     SendOnConnection {
         message: Message,
         connection_epoch: u64,
         response_tx: tokio::sync::oneshot::Sender<Result<(), SendError>>,
+    },
+    /// Sends a pong if the active connection still owns the ping that caused it.
+    SendPongOnConnection {
+        data: Vec<u8>,
+        connection_epoch: u64,
     },
 }
 
@@ -136,8 +141,12 @@ impl Debug for WriterCommand {
         match self {
             Self::Update(_, _) => f.debug_tuple("Update").field(&"<writer>").finish(),
             Self::Send(msg) => f.debug_tuple("Send").field(msg).finish(),
+            Self::Heartbeat(msg) => f.debug_tuple("Heartbeat").field(msg).finish(),
             Self::SendOnConnection { message, .. } => {
                 f.debug_tuple("SendOnConnection").field(message).finish()
+            }
+            Self::SendPongOnConnection { data, .. } => {
+                f.debug_tuple("SendPongOnConnection").field(data).finish()
             }
         }
     }

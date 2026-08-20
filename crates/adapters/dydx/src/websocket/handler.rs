@@ -139,7 +139,7 @@ impl FeedHandler {
                     }
                 },
                 should_retry_dydx_error,
-                create_dydx_timeout_error,
+                |e| create_dydx_timeout_error(e.to_string()),
             )
             .await
     }

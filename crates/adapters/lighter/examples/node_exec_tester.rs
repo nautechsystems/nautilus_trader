@@ -44,7 +44,7 @@ use nautilus_trading::strategy::StrategyConfig;
 
 // DRY_RUN connects to the venue, but ExecTester skips order submission and
 // shutdown cancel/close commands.
-const DRY_RUN: bool = true;
+const DRY_RUN: bool = false;
 const LIGHTER_ENVIRONMENT: LighterEnvironment = LighterEnvironment::Mainnet;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "LIGHTER-001";

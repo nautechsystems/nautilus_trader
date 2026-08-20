@@ -29,7 +29,7 @@ use crate::{
     instruments::InstrumentAny,
     position::Position,
     python::instruments::pyobject_to_instrument_any,
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 
 #[pymethods]
@@ -275,22 +275,74 @@ impl MarginAccount {
         self.is_unleveraged(instrument_id)
     }
 
+    /// Returns the margin balance for the specified instrument.
+    #[pyo3(name = "margin")]
+    fn py_margin(&self, instrument_id: InstrumentId) -> Option<MarginBalance> {
+        self.margin(&instrument_id)
+    }
+
+    #[pyo3(name = "margins")]
+    fn py_margins(&self) -> IndexMap<InstrumentId, MarginBalance> {
+        self.margins.clone()
+    }
+
     #[pyo3(name = "initial_margins")]
-    fn py_initial_margins(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let initial_margins = PyDict::new(py);
-        for (key, &value) in &self.initial_margins() {
-            initial_margins.set_item(key.into_py_any(py)?, value.into_py_any(py)?)?;
-        }
-        initial_margins.into_py_any(py)
+    fn py_initial_margins(&self) -> IndexMap<InstrumentId, Money> {
+        self.initial_margins()
     }
 
     #[pyo3(name = "maintenance_margins")]
-    fn py_maintenance_margins(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let maintenance_margins = PyDict::new(py);
-        for (key, &value) in &self.maintenance_margins() {
-            maintenance_margins.set_item(key.into_py_any(py)?, value.into_py_any(py)?)?;
-        }
-        maintenance_margins.into_py_any(py)
+    fn py_maintenance_margins(&self) -> IndexMap<InstrumentId, Money> {
+        self.maintenance_margins()
+    }
+
+    /// Returns the account-wide margin balance for the specified collateral currency.
+    #[pyo3(name = "account_margin")]
+    fn py_account_margin(&self, currency: Currency) -> Option<MarginBalance> {
+        self.account_margin(&currency)
+    }
+
+    #[pyo3(name = "account_margins")]
+    fn py_account_margins(&self) -> IndexMap<Currency, MarginBalance> {
+        self.account_margins.clone()
+    }
+
+    /// Returns the account-wide initial margin for the specified collateral currency.
+    #[pyo3(name = "account_initial_margin")]
+    fn py_account_initial_margin(&self, currency: Currency) -> Option<Money> {
+        self.account_initial_margin(&currency)
+    }
+
+    /// Returns all account-wide initial margins keyed by currency.
+    #[pyo3(name = "account_initial_margins")]
+    fn py_account_initial_margins(&self) -> IndexMap<Currency, Money> {
+        self.account_initial_margins()
+    }
+
+    /// Returns the account-wide maintenance margin for the specified collateral currency.
+    #[pyo3(name = "account_maintenance_margin")]
+    fn py_account_maintenance_margin(&self, currency: Currency) -> Option<Money> {
+        self.account_maintenance_margin(&currency)
+    }
+
+    /// Returns all account-wide maintenance margins keyed by currency.
+    #[pyo3(name = "account_maintenance_margins")]
+    fn py_account_maintenance_margins(&self) -> IndexMap<Currency, Money> {
+        self.account_maintenance_margins()
+    }
+
+    /// Returns the total initial margin reserved in the specified currency,
+    /// summing per-instrument and account-wide entries.
+    #[pyo3(name = "total_initial_margin")]
+    fn py_total_initial_margin(&self, currency: Currency) -> Money {
+        self.total_initial_margin(currency)
+    }
+
+    /// Returns the total maintenance margin reserved in the specified currency,
+    /// summing per-instrument and account-wide entries.
+    #[pyo3(name = "total_maintenance_margin")]
+    fn py_total_maintenance_margin(&self, currency: Currency) -> Money {
+        self.total_maintenance_margin(currency)
     }
 
     /// Updates the initial margin for the specified instrument.

@@ -82,7 +82,7 @@ Price protection limits how far `MARKET` and `STOP_MARKET` orders can walk the b
 offset as a number of instrument price increments:
 
 ```python
-from nautilus_trader.backtest import BacktestVenueConfig
+from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType
@@ -114,7 +114,7 @@ A simulated fill never decrements the historical book. By default, each matching
 the full recorded size:
 
 ```python
-from nautilus_trader.backtest import BacktestVenueConfig
+from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType

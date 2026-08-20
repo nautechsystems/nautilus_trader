@@ -1,0 +1,13 @@
+{
+  "type": "derivative_ticker",
+  "symbol": "BTC-USD_UM_XPERP-310404",
+  "exchange": "okex-futures",
+  "lastPrice": 65013.8,
+  "openInterest": 11009288,
+  "fundingRate": -0.0004050736802759,
+  "fundingTimestamp": "2026-08-10T16:00:00.000Z",
+  "indexPrice": 65066.1,
+  "markPrice": 65014.7,
+  "timestamp": "2026-08-10T12:00:13.061Z",
+  "localTimestamp": "2026-08-10T12:00:13.093Z"
+}

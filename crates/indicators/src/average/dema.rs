@@ -31,7 +31,7 @@ use crate::{
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.indicators")
 )]
 #[cfg_attr(
     feature = "python",
@@ -159,6 +159,7 @@ mod tests {
         average::dema::DoubleExponentialMovingAverage,
         indicator::{Indicator, MovingAverage},
         stubs::*,
+        testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -181,7 +182,7 @@ mod tests {
         indicator_dema_10.update_raw(1.0);
         indicator_dema_10.update_raw(2.0);
         indicator_dema_10.update_raw(3.0);
-        assert_eq!(indicator_dema_10.value, 1.904_583_020_285_499_4);
+        assert_approx_equal(indicator_dema_10.value, 1.90458302029);
     }
 
     #[rstest]

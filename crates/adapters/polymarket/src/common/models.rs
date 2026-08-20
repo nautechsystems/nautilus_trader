@@ -63,6 +63,22 @@ pub struct PolymarketMakerOrder {
     pub side: Option<PolymarketOrderSide>,
 }
 
+impl PolymarketMakerOrder {
+    /// Returns whether this maker order belongs to the account identified by
+    /// `user_address` and `api_key`.
+    ///
+    /// The address comparison ignores ASCII case: hex letter case carries no
+    /// account identity (EIP-55 checksumming encodes only a display checksum),
+    /// and the two sides routinely disagree: recorded venue payloads carry
+    /// checksummed maker addresses while configured funder addresses are
+    /// commonly lowercase, or vice versa. The API-key comparison stays exact
+    /// because keys are opaque credentials.
+    #[must_use]
+    pub(crate) fn is_owned_by(&self, user_address: &str, api_key: &str) -> bool {
+        self.maker_address.eq_ignore_ascii_case(user_address) || self.owner == api_key
+    }
+}
+
 /// Human-readable label for a Polymarket instrument.
 #[derive(Debug, Clone)]
 pub struct PolymarketLabel {
@@ -154,6 +170,54 @@ mod tests {
         let json = serde_json::to_string(&order).unwrap();
         let order2: PolymarketMakerOrder = serde_json::from_str(&json).unwrap();
         assert_eq!(order, order2);
+    }
+
+    #[rstest]
+    fn test_maker_order_ownership_ignores_address_case() {
+        let mut order: PolymarketMakerOrder =
+            serde_json::from_str(sample_maker_order_json()).unwrap();
+        let lowercase_address = order.maker_address.clone();
+        // All-uppercase hex stands in for the mixed-case checksummed form the
+        // venue sends; any case difference exercises the same comparison.
+        let uppercase_variant_address = lowercase_address
+            .to_ascii_uppercase()
+            .replacen("0X", "0x", 1);
+        assert_ne!(uppercase_variant_address, lowercase_address);
+
+        // Production direction: venue payloads carry checksummed maker
+        // addresses while configured funder addresses are commonly lowercase.
+        order.maker_address = uppercase_variant_address.clone();
+        assert!(order.is_owned_by(&lowercase_address, "no-such-key"));
+
+        // Reverse direction: lowercase payload, mixed-case configuration.
+        order.maker_address = lowercase_address;
+        assert!(order.is_owned_by(&uppercase_variant_address, "no-such-key"));
+    }
+
+    #[rstest]
+    fn test_maker_order_ownership_matches_exact_api_key() {
+        let order: PolymarketMakerOrder = serde_json::from_str(sample_maker_order_json()).unwrap();
+        let owner = order.owner.clone();
+
+        assert!(order.is_owned_by("0xother", &owner));
+    }
+
+    #[rstest]
+    fn test_maker_order_ownership_requires_exact_api_key() {
+        let mut order: PolymarketMakerOrder =
+            serde_json::from_str(sample_maker_order_json()).unwrap();
+        order.owner = "abcdefab-0000-0000-0000-000000000002".to_string();
+        let case_variant_key = order.owner.to_ascii_uppercase();
+        assert_ne!(case_variant_key, order.owner);
+
+        assert!(!order.is_owned_by("0xother", &case_variant_key));
+    }
+
+    #[rstest]
+    fn test_maker_order_ownership_rejects_foreign_identity() {
+        let order: PolymarketMakerOrder = serde_json::from_str(sample_maker_order_json()).unwrap();
+
+        assert!(!order.is_owned_by("0xother", "no-such-key"));
     }
 
     #[rstest]

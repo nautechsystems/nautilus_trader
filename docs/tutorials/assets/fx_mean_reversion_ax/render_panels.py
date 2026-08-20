@@ -4,7 +4,7 @@ Render the AX EURUSD-PERP mean reversion tutorial panels from a backtest run.
 Usage:
 
     uv sync --extra visualization
-    TRUEFX_CSV=tests/test_data/local/truefx/EURUSD-2025-12.csv \
+    TRUEFX_CSV=test_data/local/truefx/EURUSD-2025-12.csv \
         python3 docs/tutorials/assets/fx_mean_reversion_ax/render_panels.py
 
 Replays TrueFX EUR/USD ticks through the shipped ``BBMeanReversion`` strategy,
@@ -15,6 +15,7 @@ then writes four PNG panels using the ``nautilus_dark`` tearsheet theme.
 from __future__ import annotations
 
 import os
+import sys
 from decimal import Decimal
 from pathlib import Path
 
@@ -25,12 +26,11 @@ from plotly.subplots import make_subplots
 
 from nautilus_trader.analysis.tearsheet import _write_figure
 from nautilus_trader.analysis.themes import get_theme
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.examples.strategies.bb_mean_reversion import BBMeanReversion
-from nautilus_trader.examples.strategies.bb_mean_reversion import BBMeanReversionConfig
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.config import CacheConfig
+from nautilus_trader.config import LoggerConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
@@ -46,10 +46,14 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "examples" / "live" / "architect_ax"))
+from strategies import BBMeanReversion
+from strategies import BBMeanReversionConfig
+
 
 OUT = Path(__file__).resolve().parent
 TRUEFX_CSV = Path(
-    os.environ.get("TRUEFX_CSV", "tests/test_data/local/truefx/EURUSD-2025-12.csv"),
+    os.environ.get("TRUEFX_CSV", "test_data/local/truefx/EURUSD-2025-12.csv"),
 )
 
 THEME = get_theme("nautilus_dark")
@@ -124,7 +128,7 @@ def run_backtest():
     engine = BacktestEngine(
         BacktestEngineConfig(
             trader_id=TraderId("BACKTESTER-001"),
-            logging=LoggingConfig(log_level="ERROR"),
+            logging=LoggerConfig(stdout_level=LogLevel.ERROR),
             cache=CacheConfig(bar_capacity=200_000, tick_capacity=10_000),
         ),
     )
@@ -157,8 +161,8 @@ def run_backtest():
     engine.run()
 
     bars = engine.cache.bars(bar_type)
-    fills = engine.trader.generate_fills_report()
-    positions = engine.trader.generate_positions_report()
+    fills = engine.generate_fills_report()
+    positions = engine.generate_positions_report()
 
     bars_df = (
         pd.DataFrame(

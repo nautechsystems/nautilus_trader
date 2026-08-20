@@ -51,14 +51,15 @@ use nautilus_core::{
     python::{call_python_threadsafe, params::value_to_pyobject, to_pyruntime_err, to_pyvalue_err},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::execution::failure::CommandFailure;
 use nautilus_model::{
-    data::{BarType, Data, InstrumentStatus, OrderBookDeltas_API},
+    data::{BarType, Data, InstrumentStatus},
     enums::{OrderSide, OrderType, PositionSide, TimeInForce},
     events::{OrderAccepted, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     python::{
-        data::data_to_pycapsule,
+        data::data_to_pyobject,
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     },
     types::{Money, Price, Quantity},
@@ -75,11 +76,15 @@ use super::{extract_optional_string, extract_optional_trigger_type};
 use crate::{
     book_sync::{BookSequenceOutcome, BookSyncTracker},
     common::{
-        consts::{OKX_FIELD_CLORDID, OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_SUCCESS_CODE},
+        consts::{
+            OKX_FIELD_CLORDID, OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_SUCCESS_CODE,
+            OKX_WS_HEARTBEAT_SECS,
+        },
         enums::{
             OKXBookAction, OKXGreeksType, OKXInstrumentStatus, OKXInstrumentType, OKXTradeMode,
             OKXVipLevel,
         },
+        failure::{classify_okx_venue_code, classify_okx_ws_failure},
         models::OKXInstrument,
         parse::{
             okx_status_to_market_action, parse_account_state, parse_instrument_any,
@@ -318,7 +323,7 @@ impl OKXWebSocketError {
 impl OKXWebSocketClient {
     /// Provides a WebSocket client for connecting to [OKX](https://okx.com).
     #[new]
-    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=None, auth_timeout_secs=None, proxy_url=None))]
+    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=Some(OKX_WS_HEARTBEAT_SECS), auth_timeout_secs=None, proxy_url=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         url: Option<String>,
@@ -352,7 +357,7 @@ impl OKXWebSocketClient {
     /// client fails to initialize.
     #[staticmethod]
     #[pyo3(name = "with_credentials")]
-    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=None, auth_timeout_secs=None, proxy_url=None))]
+    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=Some(OKX_WS_HEARTBEAT_SECS), auth_timeout_secs=None, proxy_url=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_with_credentials(
         url: Option<String>,
@@ -698,6 +703,19 @@ impl OKXWebSocketClient {
                         }
                         OKXWsMessage::Error(msg) => {
                             call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
+                        }
+                        OKXWsMessage::LiquidationWarnings(warnings) => {
+                            for warning in warnings {
+                                log::warn!(
+                                    "Liquidation warning: inst_id={}, pos_side={:?}, pos={}, mgn_ratio={}, mark_px={}, mgn_mode={:?}",
+                                    warning.inst_id,
+                                    warning.pos_side,
+                                    warning.pos,
+                                    warning.mgn_ratio,
+                                    warning.mark_px,
+                                    warning.mgn_mode,
+                                );
+                            }
                         }
                         OKXWsMessage::Reconnected => {
                             quote_cache.clear();
@@ -1657,48 +1675,6 @@ impl OKXWebSocketClient {
         })
     }
 
-    /// Subscribes to fill updates for the given instrument type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the subscription request fails.
-    #[pyo3(name = "subscribe_fills")]
-    fn py_subscribe_fills<'py>(
-        &self,
-        py: Python<'py>,
-        instrument_type: OKXInstrumentType,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.subscribe_fills(instrument_type).await {
-                log::error!("Failed to subscribe to fills '{instrument_type}': {e}");
-            }
-            Ok(())
-        })
-    }
-
-    /// Unsubscribes from fill updates for the given instrument type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the subscription request fails.
-    #[pyo3(name = "unsubscribe_fills")]
-    fn py_unsubscribe_fills<'py>(
-        &self,
-        py: Python<'py>,
-        instrument_type: OKXInstrumentType,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            if let Err(e) = client.unsubscribe_fills(instrument_type).await {
-                log::error!("Failed to unsubscribe from fills '{instrument_type}': {e}");
-            }
-            Ok(())
-        })
-    }
-
     /// Subscribes to account balance updates.
     ///
     /// # Errors
@@ -1711,6 +1687,57 @@ impl OKXWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.subscribe_account().await {
                 log::error!("Failed to subscribe to account: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    /// Subscribes to liquidation risk warnings for the given instrument type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#trading-account-websocket-liquidation-warning-channel>
+    #[pyo3(name = "subscribe_liquidation_warning")]
+    fn py_subscribe_liquidation_warning<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_type: OKXInstrumentType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_liquidation_warning(instrument_type).await {
+                log::error!("Failed to subscribe to liquidation-warning '{instrument_type}': {e}");
+            }
+            Ok(())
+        })
+    }
+
+    /// Unsubscribes from liquidation risk warnings for the given instrument type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription request fails.
+    #[pyo3(name = "unsubscribe_liquidation_warning")]
+    fn py_unsubscribe_liquidation_warning<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_type: OKXInstrumentType,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client
+                .unsubscribe_liquidation_warning(instrument_type)
+                .await
+            {
+                log::error!(
+                    "Failed to unsubscribe from liquidation-warning '{instrument_type}': {e}"
+                );
             }
             Ok(())
         })
@@ -2272,8 +2299,7 @@ fn parse_rpi_book_data(
 fn emit_book_data(data: Vec<Data>, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
     Python::attach(|py| {
         for data in data {
-            let py_obj = data_to_pycapsule(py, data);
-            call_python_threadsafe(py, call_soon, callback, py_obj);
+            send_data_to_python(py, data, call_soon, callback);
         }
     });
 }
@@ -2366,8 +2392,7 @@ fn handle_channel_data(
             ) {
                 Python::attach(|py| {
                     for d in data_vec {
-                        let py_obj = data_to_pycapsule(py, d);
-                        call_python_threadsafe(py, call_soon, callback, py_obj);
+                        send_data_to_python(py, d, call_soon, callback);
                     }
                 });
             }
@@ -2458,8 +2483,7 @@ fn handle_bbo_tbt(
         ) {
             Ok(quote) => {
                 Python::attach(|py| {
-                    let py_obj = data_to_pycapsule(py, Data::Quote(quote));
-                    call_python_threadsafe(py, call_soon, callback, py_obj);
+                    send_data_to_python(py, Data::Quote(quote), call_soon, callback);
                 });
             }
             Err(e) => {
@@ -2479,7 +2503,7 @@ fn handle_instruments(
     let ts_init = clock.get_time_ns();
 
     for okx_inst in okx_instruments {
-        let inst_key = Ustr::from(&okx_inst.inst_id);
+        let inst_key = okx_inst.inst_id;
         let (margin_init, margin_maint, maker_fee, taker_fee) =
             instruments_by_symbol.get(&inst_key).map_or(
                 (None, None, None, None),
@@ -2672,7 +2696,7 @@ fn handle_positions(
         let ts_init = clock.get_time_ns();
 
         for position in positions {
-            let inst_key = Ustr::from(&position.inst_id);
+            let inst_key = position.inst_id;
             if let Some(instrument) = instruments_by_symbol.get(&inst_key) {
                 match parse_position_status_report(
                     &position,
@@ -2770,6 +2794,16 @@ fn handle_order_response(
                 _ => {}
             }
         } else if !cl_ord_id.is_empty() {
+            if matches!(
+                classify_okx_venue_code(s_code, s_msg),
+                CommandFailure::Ambiguous(_) | CommandFailure::NotSent(_)
+            ) {
+                log::warn!(
+                    "Ambiguous order response for {cl_ord_id}, awaiting reconciliation: \
+                     op={op:?} s_code={s_code} s_msg={s_msg}"
+                );
+                continue;
+            }
             log::warn!(
                 "Order response rejected: op={op:?} cl_ord_id={cl_ord_id} \
                  s_code={s_code} s_msg={s_msg}"
@@ -2855,31 +2889,42 @@ fn handle_send_failed(
     request_id: &str,
     client_order_id: Option<ClientOrderId>,
     op: Option<&OKXWsOperation>,
-    error: &str,
+    error: &crate::websocket::error::OKXWsError,
     client: &OKXWebSocketClient,
     account_id: AccountId,
     clock: &AtomicTime,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
 ) {
-    log::error!("WebSocket send failed: request_id={request_id} error={error}");
+    let failure = classify_okx_ws_failure(error);
+    log::error!("WebSocket send failed: request_id={request_id} error={error} {failure:?}");
 
     let Some(client_order_id) = client_order_id else {
         return;
     };
     let cl_ord_str = client_order_id.to_string();
     let ts_init = clock.get_time_ns();
+    let emit_terminal = !matches!(failure, CommandFailure::Ambiguous(_));
+    let reason = match failure {
+        CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => reason,
+        CommandFailure::Ambiguous(reason) => {
+            log::warn!(
+                "Ambiguous send failure for {client_order_id}, awaiting reconciliation: {reason}"
+            );
+            reason
+        }
+    };
 
     match op {
         Some(OKXWsOperation::Order | OKXWsOperation::BatchOrders | OKXWsOperation::OrderAlgo) => {
-            if let Some((_, info)) = client.pending_orders.remove(&cl_ord_str) {
+            if emit_terminal && let Some((_, info)) = client.pending_orders.remove(&cl_ord_str) {
                 let rejected = OrderRejected::new(
                     info.trader_id,
                     info.strategy_id,
                     info.instrument_id,
                     client_order_id,
                     account_id,
-                    Ustr::from(error),
+                    Ustr::from(reason.as_str()),
                     UUID4::new(),
                     ts_init,
                     ts_init,
@@ -2895,31 +2940,21 @@ fn handle_send_failed(
             | OKXWsOperation::MassCancel
             | OKXWsOperation::CancelAlgos,
         ) => {
-            if let Some((_, info)) = client.pending_cancels.remove(&cl_ord_str) {
-                let rejected = OrderCancelRejected::new(
-                    info.trader_id,
-                    info.strategy_id,
-                    info.instrument_id,
-                    client_order_id,
-                    Ustr::from(error),
-                    UUID4::new(),
-                    ts_init,
-                    ts_init,
-                    false,
-                    None,
-                    Some(account_id),
+            if emit_terminal {
+                client.pending_cancels.remove(&cl_ord_str);
+                log::warn!(
+                    "Cancel command failed local validation for {client_order_id}: {reason}"
                 );
-                call_python_with_data(call_soon, callback, |py| rejected.into_py_any(py));
             }
         }
         Some(OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders) => {
-            if let Some((_, info)) = client.pending_amends.remove(&cl_ord_str) {
+            if emit_terminal && let Some((_, info)) = client.pending_amends.remove(&cl_ord_str) {
                 let rejected = OrderModifyRejected::new(
                     info.trader_id,
                     info.strategy_id,
                     info.instrument_id,
                     client_order_id,
-                    Ustr::from(error),
+                    Ustr::from(reason.as_str()),
                     UUID4::new(),
                     ts_init,
                     ts_init,
@@ -2963,13 +2998,11 @@ fn dispatch_nautilus_ws_msg_to_python(
     match msg {
         NautilusWsMessage::Data(payloads) => Python::attach(|py| {
             for data in payloads {
-                let py_obj = data_to_pycapsule(py, data);
-                call_python_threadsafe(py, call_soon, callback, py_obj);
+                send_data_to_python(py, data, call_soon, callback);
             }
         }),
         NautilusWsMessage::Deltas(deltas) => Python::attach(|py| {
-            let py_obj = data_to_pycapsule(py, Data::Deltas(OrderBookDeltas_API::new(deltas)));
-            call_python_threadsafe(py, call_soon, callback, py_obj);
+            send_data_to_python(py, Data::Deltas(Box::new(deltas)), call_soon, callback);
         }),
         NautilusWsMessage::FundingRates(updates) => {
             for data in updates {
@@ -3010,6 +3043,13 @@ fn dispatch_execution_reports_to_python(
                 call_python_with_data(call_soon, callback, |py| report.into_py_any(py));
             }
         }
+    }
+}
+
+fn send_data_to_python(py: Python<'_>, data: Data, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
+    match data_to_pyobject(py, data) {
+        Ok(py_obj) => call_python_threadsafe(py, call_soon, callback, py_obj),
+        Err(e) => log::error!("Failed to convert data to Python object: {e}"),
     }
 }
 

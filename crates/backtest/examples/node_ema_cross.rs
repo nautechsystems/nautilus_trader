@@ -24,6 +24,9 @@
 //!
 //! Run with: `cargo run -p nautilus-backtest --features examples,streaming --example node-ema-cross`
 
+#[cfg(feature = "mimalloc")]
+mod allocator;
+
 use nautilus_backtest::{
     config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig, NautilusDataType},
     node::BacktestNode,
@@ -96,6 +99,9 @@ fn generate_quotes(instrument_id: InstrumentId) -> Vec<QuoteTick> {
 }
 
 fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "mimalloc")]
+    allocator::register();
+
     // Write synthetic data to a temporary parquet catalog
     let instrument = InstrumentAny::CurrencyPair(audusd_sim());
     let instrument_id = instrument.id();

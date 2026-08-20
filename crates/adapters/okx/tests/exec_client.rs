@@ -43,27 +43,37 @@ use nautilus_common::{
         ExecutionEvent,
         execution::{
             BatchCancelOrders, CancelOrder, ExecutionReport as CommonExecutionReport, ModifyOrder,
-            QueryAccount, SubmitOrder, SubmitOrderList,
-            report::{GenerateFillReports, GenerateOrderStatusReports},
+            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+            report::{GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports},
         },
     },
     testing::wait_until_async,
 };
 use nautilus_core::{AtomicMap, UUID4, UnixNanos, time::get_atomic_clock_realtime};
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, execution::context::OrderIdentity,
+};
 use nautilus_model::{
     enums::{
-        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce,
-        TriggerType,
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
+        PositionSideSpecified, TimeInForce, TriggerType,
     },
-    events::{OrderEventAny, OrderInitialized},
+    events::{
+        OrderEventAny, OrderInitialized,
+        order::spec::{
+            OrderAcceptedSpec, OrderSubmittedSpec, OrderTriggeredSpec, OrderUpdatedSpec,
+        },
+    },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
-        VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
+        TradeId, TraderId, VenueOrderId,
     },
     instruments::{
         CryptoFuturesSpread, InstrumentAny,
-        stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt, currency_pair_btcusdt},
+        stubs::{
+            crypto_option_btc_deribit, crypto_perpetual_ethusdt, currency_pair_btcusdt,
+            currency_pair_ethusdt,
+        },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     reports::{FillReport, OrderStatusReport},
@@ -75,24 +85,40 @@ use nautilus_okx::{
         consts::{
             OKX_CLIENT_ID, OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_VENUE,
         },
-        enums::{OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXSide},
+        enums::{
+            OKXInstrumentType, OKXMarginMode, OKXOrderStatus, OKXOrderType, OKXSide, OKXTradeMode,
+        },
+        models::OKXInstrument,
+        parse::parse_instrument_any,
     },
     config::OKXExecClientConfig,
     execution::OKXExecutionClient,
-    http::models::{OKXCancelAlgoOrderResponse, OKXSpreadOrder},
+    http::{
+        client::OKXResponse,
+        models::{OKXCancelAlgoOrderResponse, OKXSpreadOrder},
+    },
     websocket::{
         dispatch::{
-            AlgoCancelContext, OrderIdentity, WsDispatchState, dispatch_execution_reports,
-            dispatch_ws_message, emit_algo_cancel_rejections, emit_batch_cancel_failure,
+            AlgoCancelContext, WsDispatchState, dispatch_execution_reports, dispatch_ws_message,
+            emit_algo_cancel_rejections, emit_batch_cancel_failure,
         },
         enums::{OKXWsChannel, OKXWsOperation},
-        messages::{ExecutionReport, OKXOrderMsg, OKXWsFrame, OKXWsMessage},
+        error::OKXWsError,
+        messages::{
+            ExecutionReport, OKXLiquidationWarningMsg, OKXOrderMsg, OKXWebSocketArg, OKXWsFrame,
+            OKXWsMessage,
+        },
         parse::OrderStateSnapshot,
     },
 };
 use rstest::rstest;
 use serde_json::json;
 use ustr::Ustr;
+
+const MARGIN_SPOT_PARENT_CLIENT_ORDER_ID: &str = "OEEADEMOSTOPLIMIT001";
+const MARGIN_SPOT_PARENT_VENUE_ORDER_ID: &str = "2497956918703120500";
+const MARGIN_SPOT_CHILD_VENUE_ORDER_ID: &str = "2497956918703120501";
+const MARGIN_SPOT_TRADE_ID: &str = "1518905600";
 
 fn test_emitter() -> (
     ExecutionEventEmitter,
@@ -194,6 +220,19 @@ fn spread_instruments_cache() -> AtomicMap<Ustr, InstrumentAny> {
     instruments
 }
 
+fn load_order_messages(fixture: &str) -> (OKXWebSocketArg, Vec<OKXOrderMsg>) {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_data")
+        .join(fixture);
+    let content = std::fs::read_to_string(path).unwrap();
+    let frame: OKXWsFrame = serde_json::from_str(&content).unwrap();
+    let OKXWsFrame::Data { arg, data } = frame else {
+        panic!("Expected private order data frame");
+    };
+    let order_msgs = serde_json::from_value(data).unwrap();
+    (arg, order_msgs)
+}
+
 fn make_spread_order_msg(
     state: OKXOrderStatus,
     client_order_id: ClientOrderId,
@@ -202,7 +241,7 @@ fn make_spread_order_msg(
     OKXSpreadOrder {
         sprd_id: Ustr::from("BCH-USDT_BCH-USDT-SWAP"),
         ord_id: Ustr::from(venue_order_id),
-        cl_ord_id: Ustr::from(client_order_id.as_str()),
+        cl_ord_id: client_order_id.inner(),
         tag: String::new(),
         side: OKXSide::Buy,
         ord_type: OKXOrderType::Limit,
@@ -253,6 +292,7 @@ fn track_spread_order(state: &WsDispatchState, client_order_id: ClientOrderId) {
     state.order_identities.insert(
         client_order_id,
         OrderIdentity {
+            client_order_id,
             instrument_id: InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX"),
             strategy_id: StrategyId::from("STRATEGY-001"),
             order_side: OrderSide::Buy,
@@ -271,14 +311,81 @@ fn drain_events(
     events
 }
 
+async fn recv_query_order_report(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    expected_client_order_id: Option<ClientOrderId>,
+) -> OrderStatusReport {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+    loop {
+        tokio::select! {
+            event = rx.recv() => {
+                let Some(event) = event else {
+                    panic!("event stream closed before query order report");
+                };
+
+                if let ExecutionEvent::Report(CommonExecutionReport::Order(report)) = event {
+                    assert_eq!(report.client_order_id, expected_client_order_id);
+                    return *report;
+                }
+            }
+            () = tokio::time::sleep_until(deadline) => {
+                panic!("timed out waiting for query order report for {expected_client_order_id:?}");
+            }
+        }
+    }
+}
+
 #[rstest]
 fn test_ambiguous_submit_send_failure_does_not_emit_order_rejected() {
     let cid = ClientOrderId::new("O-submit-send-failure");
-    let (events, state) = dispatch_send_failed_response(OKXWsOperation::Order, cid);
+    let (events, state) = dispatch_send_failed_response(
+        OKXWsOperation::Order,
+        cid,
+        OKXWsError::SendFailed("send failed after retries".to_string()),
+    );
 
     assert!(
         !contains_order_event(&events, |event| matches!(event, OrderEventAny::Rejected(_))),
         "ambiguous submit failure should not emit OrderRejected: {events:?}"
+    );
+    assert!(state.order_identities.contains_key(&cid));
+}
+
+#[rstest]
+fn test_unsent_submit_send_failure_emits_order_rejected() {
+    let cid = ClientOrderId::new("O-submit-handler-unavailable");
+    let (events, state) = dispatch_send_failed_response(
+        OKXWsOperation::Order,
+        cid,
+        OKXWsError::HandlerUnavailable("channel closed".to_string()),
+    );
+
+    assert!(
+        contains_order_event(&events, |event| matches!(
+            event,
+            OrderEventAny::Rejected(rejected) if rejected.client_order_id == cid
+        )),
+        "unsent submit failure should emit OrderRejected: {events:?}"
+    );
+    assert!(!state.order_identities.contains_key(&cid));
+}
+
+#[rstest]
+fn test_unsent_modify_send_failure_emits_order_modify_rejected() {
+    let cid = ClientOrderId::new("O-modify-handler-unavailable");
+    let (events, state) = dispatch_send_failed_response(
+        OKXWsOperation::AmendOrder,
+        cid,
+        OKXWsError::HandlerUnavailable("channel closed".to_string()),
+    );
+
+    assert!(
+        contains_order_event(&events, |event| matches!(
+            event,
+            OrderEventAny::ModifyRejected(rejected) if rejected.client_order_id == cid
+        )),
+        "unsent modify failure should emit OrderModifyRejected: {events:?}"
     );
     assert!(state.order_identities.contains_key(&cid));
 }
@@ -295,9 +402,42 @@ fn test_explicit_venue_submit_rejection_emits_order_rejected() {
 }
 
 #[rstest]
+fn test_retryable_venue_submit_code_does_not_emit_order_rejected() {
+    let cid = ClientOrderId::new("O-submit-system-busy");
+    let events = dispatch_venue_code_response(OKXWsOperation::Order, cid, "50013", "System busy");
+
+    assert!(
+        !contains_order_event(&events, |event| matches!(
+            event,
+            OrderEventAny::Rejected(rejected) if rejected.client_order_id == cid
+        )),
+        "retryable venue submit code should not emit OrderRejected: {events:?}"
+    );
+}
+
+#[rstest]
+fn test_missing_venue_submit_code_does_not_emit_order_rejected() {
+    let cid = ClientOrderId::new("O-submit-missing-scode");
+    let events =
+        dispatch_venue_code_response(OKXWsOperation::Order, cid, "", "All operations failed");
+
+    assert!(
+        !contains_order_event(&events, |event| matches!(
+            event,
+            OrderEventAny::Rejected(rejected) if rejected.client_order_id == cid
+        )),
+        "missing venue sCode should not emit OrderRejected: {events:?}"
+    );
+}
+
+#[rstest]
 fn test_ambiguous_cancel_send_failure_does_not_emit_order_cancel_rejected() {
     let cid = ClientOrderId::new("O-cancel-send-failure");
-    let (events, state) = dispatch_send_failed_response(OKXWsOperation::CancelOrder, cid);
+    let (events, state) = dispatch_send_failed_response(
+        OKXWsOperation::CancelOrder,
+        cid,
+        OKXWsError::SendFailed("send failed after retries".to_string()),
+    );
 
     assert!(
         !contains_order_event(&events, |event| matches!(
@@ -326,7 +466,11 @@ fn test_explicit_venue_cancel_rejection_emits_order_cancel_rejected() {
 #[rstest]
 fn test_ambiguous_modify_send_failure_does_not_emit_order_modify_rejected() {
     let cid = ClientOrderId::new("O-modify-send-failure");
-    let (events, state) = dispatch_send_failed_response(OKXWsOperation::AmendOrder, cid);
+    let (events, state) = dispatch_send_failed_response(
+        OKXWsOperation::AmendOrder,
+        cid,
+        OKXWsError::SendFailed("send failed after retries".to_string()),
+    );
 
     assert!(
         !contains_order_event(&events, |event| matches!(
@@ -546,6 +690,7 @@ async fn test_local_modify_validation_failure_emits_order_modify_rejected() {
 fn dispatch_send_failed_response(
     op: OKXWsOperation,
     client_order_id: ClientOrderId,
+    error: OKXWsError,
 ) -> (Vec<ExecutionEvent>, WsDispatchState) {
     let (emitter, mut rx) = test_emitter();
     let state = state_with_order_identity(client_order_id, InstrumentId::from("ETH-USDT-SWAP.OKX"));
@@ -555,7 +700,7 @@ fn dispatch_send_failed_response(
             request_id: "req-send-failure".to_string(),
             client_order_id: Some(client_order_id),
             op: Some(op),
-            error: "send failed after retries".to_string(),
+            error,
         },
         &emitter,
         &state,
@@ -568,6 +713,15 @@ fn dispatch_explicit_rejection_response(
     op: OKXWsOperation,
     client_order_id: ClientOrderId,
 ) -> Vec<ExecutionEvent> {
+    dispatch_venue_code_response(op, client_order_id, "51000", "Order rejected by venue")
+}
+
+fn dispatch_venue_code_response(
+    op: OKXWsOperation,
+    client_order_id: ClientOrderId,
+    s_code: &str,
+    s_msg: &str,
+) -> Vec<ExecutionEvent> {
     let (emitter, mut rx) = test_emitter();
     let state = state_with_order_identity(client_order_id, InstrumentId::from("ETH-USDT-SWAP.OKX"));
 
@@ -578,8 +732,8 @@ fn dispatch_explicit_rejection_response(
             code: "1".to_string(),
             msg: "All operations failed".to_string(),
             data: vec![json!({
-                "sCode": "51000",
-                "sMsg": "Order rejected by venue",
+                "sCode": s_code,
+                "sMsg": s_msg,
                 "clOrdId": client_order_id.as_str(),
                 "ordId": "12345",
             })],
@@ -622,6 +776,7 @@ fn state_with_order_identity(
     state.order_identities.insert(
         client_order_id,
         OrderIdentity {
+            client_order_id,
             instrument_id,
             strategy_id: StrategyId::from("STRATEGY-001"),
             order_side: OrderSide::Buy,
@@ -788,6 +943,19 @@ fn test_dispatch_order_accepted_passes_through() {
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
     assert!(matches!(events[0], ExecutionEvent::Report(_)));
+    assert!(state.contains_accepted(&ClientOrderId::new("O-001")));
+
+    dispatch_execution_reports(
+        vec![ExecutionReport::Order(make_order_status_report(
+            "O-001",
+            OrderStatus::Accepted,
+        ))],
+        &emitter,
+        &state,
+    );
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    assert!(matches!(events[0], ExecutionEvent::Report(_)));
 }
 
 #[rstest]
@@ -804,11 +972,7 @@ fn test_dispatch_order_triggered_passes_through() {
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
     assert!(matches!(events[0], ExecutionEvent::Report(_)));
-    assert!(
-        state
-            .triggered_orders
-            .contains(&ClientOrderId::new("O-001"))
-    );
+    assert!(state.contains_triggered(&ClientOrderId::new("O-001")));
 }
 
 #[rstest]
@@ -822,7 +986,7 @@ fn test_dispatch_fill_report_passes_through() {
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
     assert!(matches!(events[0], ExecutionEvent::Report(_)));
-    assert!(state.filled_orders.contains(&ClientOrderId::new("O-001")));
+    assert!(state.contains_filled(&ClientOrderId::new("O-001")));
 }
 
 #[rstest]
@@ -844,7 +1008,7 @@ fn test_dispatch_order_status_report_accepted_passes_through() {
 fn test_dispatch_order_accepted_skipped_when_already_triggered() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
-    state.triggered_orders.insert(ClientOrderId::new("O-001"));
+    state.insert_triggered(ClientOrderId::new("O-001"));
 
     let reports = vec![ExecutionReport::Order(make_order_status_report(
         "O-001",
@@ -860,7 +1024,7 @@ fn test_dispatch_order_accepted_skipped_when_already_triggered() {
 fn test_dispatch_order_accepted_skipped_when_already_filled() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
-    state.filled_orders.insert(ClientOrderId::new("O-001"));
+    state.insert_filled(ClientOrderId::new("O-001"));
 
     let reports = vec![ExecutionReport::Order(make_order_status_report(
         "O-001",
@@ -876,7 +1040,7 @@ fn test_dispatch_order_accepted_skipped_when_already_filled() {
 fn test_dispatch_order_triggered_skipped_when_already_filled() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
-    state.filled_orders.insert(ClientOrderId::new("O-001"));
+    state.insert_filled(ClientOrderId::new("O-001"));
 
     let reports = vec![ExecutionReport::Order(make_order_status_report(
         "O-001",
@@ -892,7 +1056,7 @@ fn test_dispatch_order_triggered_skipped_when_already_filled() {
 fn test_dispatch_status_report_accepted_skipped_when_triggered() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
-    state.triggered_orders.insert(ClientOrderId::new("O-001"));
+    state.insert_triggered(ClientOrderId::new("O-001"));
 
     let reports = vec![ExecutionReport::Order(make_order_status_report(
         "O-001",
@@ -908,7 +1072,7 @@ fn test_dispatch_status_report_accepted_skipped_when_triggered() {
 fn test_dispatch_status_report_accepted_skipped_when_filled() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
-    state.filled_orders.insert(ClientOrderId::new("O-001"));
+    state.insert_filled(ClientOrderId::new("O-001"));
 
     let reports = vec![ExecutionReport::Order(make_order_status_report(
         "O-001",
@@ -924,7 +1088,7 @@ fn test_dispatch_status_report_accepted_skipped_when_filled() {
 fn test_dispatch_status_report_triggered_skipped_when_filled() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
-    state.filled_orders.insert(ClientOrderId::new("O-001"));
+    state.insert_filled(ClientOrderId::new("O-001"));
 
     let reports = vec![ExecutionReport::Order(make_order_status_report(
         "O-001",
@@ -949,11 +1113,7 @@ fn test_dispatch_status_report_triggered_records_state() {
 
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
-    assert!(
-        state
-            .triggered_orders
-            .contains(&ClientOrderId::new("O-001"))
-    );
+    assert!(state.contains_triggered(&ClientOrderId::new("O-001")));
 }
 
 #[rstest]
@@ -969,14 +1129,14 @@ fn test_dispatch_status_report_filled_records_state() {
 
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
-    assert!(state.filled_orders.contains(&ClientOrderId::new("O-001")));
+    assert!(state.contains_filled(&ClientOrderId::new("O-001")));
 }
 
 #[rstest]
 fn test_dispatch_dedup_does_not_affect_different_orders() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
-    state.filled_orders.insert(ClientOrderId::new("O-001"));
+    state.insert_filled(ClientOrderId::new("O-001"));
 
     let reports = vec![ExecutionReport::Order(make_order_status_report(
         "O-002",
@@ -1061,7 +1221,7 @@ fn test_dispatch_status_report_accepted_skipped_when_canceled() {
 
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
-    assert!(state.terminal_orders.contains(&ClientOrderId::new("O-001")));
+    assert!(state.contains_terminal(&ClientOrderId::new("O-001")));
 }
 
 #[rstest]
@@ -1074,6 +1234,16 @@ fn test_dispatch_spread_order_accept_then_cancel() {
     let cid = ClientOrderId::new("OSPRD001");
     let venue_order_id = "3386544889978159104";
     track_spread_order(&state, cid);
+    assert_eq!(
+        state.order_identities.get(&cid).map(|entry| *entry),
+        Some(OrderIdentity {
+            client_order_id: cid,
+            instrument_id: InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX"),
+            strategy_id: StrategyId::from("STRATEGY-001"),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+        })
+    );
 
     dispatch_spread_message(
         make_spread_order_msg(OKXOrderStatus::Live, cid, venue_order_id),
@@ -1121,7 +1291,7 @@ fn test_dispatch_spread_order_accept_then_cancel() {
     }
 
     assert!(state.order_identities.get(&cid).is_none());
-    assert!(!state.emitted_accepted.contains(&cid));
+    assert!(!state.contains_accepted(&cid));
 }
 
 #[rstest]
@@ -1224,7 +1394,7 @@ fn test_dispatch_spread_order_live_update_emits_updated() {
 }
 
 #[rstest]
-fn test_dispatch_spread_order_fill_synthesizes_accepted_and_dedups_replay() {
+fn test_dispatch_spread_order_fill_fails_closed_without_fee() {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::default();
     let instruments = spread_instruments_cache();
@@ -1250,23 +1420,13 @@ fn test_dispatch_spread_order_fill_synthesizes_accepted_and_dedups_replay() {
     );
 
     let events = drain_events(&mut rx);
-    assert_eq!(events.len(), 2);
-    match (&events[0], &events[1]) {
-        (
-            ExecutionEvent::Order(OrderEventAny::Accepted(accepted)),
-            ExecutionEvent::Order(OrderEventAny::Filled(filled)),
-        ) => {
-            assert_eq!(accepted.client_order_id, cid);
-            assert_eq!(filled.client_order_id, cid);
-            assert_eq!(filled.trade_id, TradeId::new("TSPRD001"));
-            assert_eq!(filled.last_qty, Quantity::from("0.01"));
-            assert_eq!(filled.last_px, Price::from("1.0"));
-        }
-        other => panic!("Expected Accepted then Filled spread events, was {other:?}"),
-    }
-
-    assert!(state.order_identities.get(&cid).is_none());
-    assert!(state.filled_orders.contains(&cid));
+    assert!(
+        events.is_empty(),
+        "WS sprd-orders omit fee so the fill must stay unprocessed, was {events:?}"
+    );
+    assert!(state.order_identities.get(&cid).is_some());
+    assert!(!state.contains_filled(&cid));
+    assert!(!state.check_and_insert_trade(TradeId::new("TSPRD001")));
 
     dispatch_spread_message(
         fill,
@@ -1278,7 +1438,422 @@ fn test_dispatch_spread_order_fill_synthesizes_accepted_and_dedups_replay() {
     );
 
     let replay_events = drain_events(&mut rx);
-    assert_eq!(replay_events.len(), 0);
+    assert!(replay_events.is_empty());
+    assert!(state.order_identities.get(&cid).is_some());
+}
+
+#[rstest]
+#[case::live_then_filled(true)]
+#[case::filled_only(false)]
+fn test_dispatch_tracked_algo_child_fill_with_empty_client_order_id(#[case] send_live: bool) {
+    // OKX reports cross-margin child orders as SPOT with the parent algo client ID,
+    // while the child client ID may be empty
+    let (arg, order_msgs) = load_order_messages("ws_orders_algo_child_filled_empty_cl_ord_id.json");
+    assert_eq!(order_msgs.len(), 1);
+    let message = &order_msgs[0];
+    let client_order_id = ClientOrderId::new("OEEADEMOSTOPLIMIT001");
+    let instrument_id = InstrumentId::from("ETH-USDT.OKX");
+    let venue_order_id = VenueOrderId::new("2497956918703120501");
+
+    assert_eq!(arg.channel, OKXWsChannel::Orders);
+    assert_eq!(arg.inst_type, Some(OKXInstrumentType::Spot));
+    assert_eq!(message.inst_id, Ustr::from("ETH-USDT"));
+    assert_eq!(message.inst_type, OKXInstrumentType::Spot);
+    assert_eq!(message.td_mode, OKXTradeMode::Cross);
+    assert_eq!(message.state, OKXOrderStatus::Filled);
+    assert_eq!(message.cl_ord_id, "");
+    assert_eq!(
+        message.algo_cl_ord_id.as_deref(),
+        Some(client_order_id.as_str())
+    );
+    assert_eq!(message.fill_sz, "0.003");
+    assert_eq!(message.fill_px, "1886.00");
+    assert_eq!(message.trade_id, "1518905600");
+    assert_eq!(message.fee.as_deref(), Some("-0.000006"));
+    assert_eq!(message.fee_ccy, Ustr::from("ETH"));
+
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    state.order_identities.insert(
+        client_order_id,
+        OrderIdentity {
+            client_order_id,
+            instrument_id,
+            strategy_id: StrategyId::from("STRATEGY-001"),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::StopLimit,
+        },
+    );
+    state.insert_accepted(client_order_id, VenueOrderId::new("2497956918703120500"));
+    state.insert_triggered(client_order_id);
+
+    let mut instrument = currency_pair_ethusdt();
+    instrument.id = instrument_id;
+    instrument.raw_symbol = Symbol::from("ETH-USDT");
+    let instruments = AtomicMap::new();
+    instruments.insert(
+        Ustr::from("ETH-USDT"),
+        InstrumentAny::CurrencyPair(instrument),
+    );
+    let mut fee_cache = AHashMap::new();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+
+    let assert_venue_order_id_update = |event: &ExecutionEvent| match event {
+        ExecutionEvent::Order(OrderEventAny::Updated(updated)) => {
+            assert_eq!(updated.client_order_id, client_order_id);
+            assert_eq!(updated.venue_order_id, Some(venue_order_id));
+            assert_eq!(updated.quantity, Quantity::from("0.003"));
+            assert_eq!(updated.price, Some(Price::from("1886.00")));
+            assert_eq!(updated.trigger_price, None);
+            assert_eq!(updated.account_id, Some(AccountId::from("OKX-001")));
+        }
+        other => panic!("Expected child venue order ID update, was {other:?}"),
+    };
+
+    if send_live {
+        let mut live = order_msgs[0].clone();
+        live.state = OKXOrderStatus::Live;
+        live.acc_fill_sz = Some("0".to_string());
+        live.fill_sz.clear();
+        live.fill_px.clear();
+        live.trade_id.clear();
+        live.fee = None;
+        live.fill_fee = None;
+
+        dispatch_ws_message(
+            OKXWsMessage::Orders(vec![live]),
+            &emitter,
+            &state,
+            AccountId::from("OKX-001"),
+            &instruments,
+            &mut fee_cache,
+            &mut filled_qty_cache,
+            &mut order_state_cache,
+            get_atomic_clock_realtime(),
+        );
+
+        let updated = drain_events(&mut rx);
+        assert_eq!(updated.len(), 1);
+        assert_venue_order_id_update(&updated[0]);
+    }
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(order_msgs.clone()),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), if send_live { 1 } else { 2 });
+    let filled_index = usize::from(!send_live);
+    if !send_live {
+        assert_venue_order_id_update(&events[0]);
+    }
+
+    match &events[filled_index] {
+        ExecutionEvent::Order(OrderEventAny::Filled(filled)) => {
+            assert_eq!(filled.trader_id, TraderId::from("TESTER-001"));
+            assert_eq!(filled.strategy_id, StrategyId::from("STRATEGY-001"));
+            assert_eq!(filled.instrument_id, instrument_id);
+            assert_eq!(filled.client_order_id, client_order_id);
+            assert_eq!(filled.venue_order_id, venue_order_id);
+            assert_eq!(filled.account_id, AccountId::from("OKX-001"));
+            assert_eq!(filled.trade_id, TradeId::new("1518905600"));
+            assert_eq!(filled.order_side, OrderSide::Buy);
+            assert_eq!(filled.order_type, OrderType::StopLimit);
+            assert_eq!(filled.last_qty, Quantity::from("0.003"));
+            assert_eq!(filled.last_px, Price::from("1886.00"));
+            assert_eq!(filled.currency, Currency::USDT());
+            assert_eq!(filled.liquidity_side, LiquiditySide::Taker);
+            assert_eq!(filled.commission, Some(Money::from("0.000006 ETH")));
+            assert!(!filled.reconciliation);
+        }
+        other => panic!("Expected tracked OrderFilled, was {other:?}"),
+    }
+    assert!(state.order_identities.get(&client_order_id).is_none());
+    assert!(state.contains_filled(&client_order_id));
+    assert!(state.contains_terminal(&client_order_id));
+    assert!(!state.contains_triggered(&client_order_id));
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(order_msgs),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
+}
+
+#[rstest]
+fn test_dispatch_untracked_algo_child_fill_with_empty_client_order_id_as_report() {
+    let (_, order_msgs) = load_order_messages("ws_orders_algo_child_filled_empty_cl_ord_id.json");
+    let client_order_id = ClientOrderId::new("OEEADEMOSTOPLIMIT001");
+    let instrument_id = InstrumentId::from("ETH-USDT.OKX");
+    let venue_order_id = VenueOrderId::new("2497956918703120501");
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let mut instrument = currency_pair_ethusdt();
+    instrument.id = instrument_id;
+    instrument.raw_symbol = Symbol::from("ETH-USDT");
+    let instruments = AtomicMap::new();
+    instruments.insert(
+        Ustr::from("ETH-USDT"),
+        InstrumentAny::CurrencyPair(instrument),
+    );
+    let mut fee_cache = AHashMap::new();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(order_msgs),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        ExecutionEvent::Report(CommonExecutionReport::Fill(report)) => {
+            assert_eq!(report.account_id, AccountId::from("OKX-001"));
+            assert_eq!(report.instrument_id, instrument_id);
+            assert_eq!(report.client_order_id, Some(client_order_id));
+            assert_eq!(report.venue_order_id, venue_order_id);
+            assert_eq!(report.trade_id, TradeId::new("1518905600"));
+            assert_eq!(report.order_side, OrderSide::Buy);
+            assert_eq!(report.last_qty, Quantity::from("0.003"));
+            assert_eq!(report.last_px, Price::from("1886.00"));
+            assert_eq!(report.commission, Money::from("0.000006 ETH"));
+            assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+            assert_eq!(report.venue_position_id, None);
+        }
+        other => panic!("Expected untracked child fill report, was {other:?}"),
+    }
+    assert!(state.order_identities.is_empty());
+    assert!(state.contains_filled(&client_order_id));
+}
+
+struct VenueFillCase {
+    fixture: &'static str,
+    raw_symbol: &'static str,
+    instrument_id: InstrumentId,
+    venue_order_id: &'static str,
+    trade_id: &'static str,
+    side: OrderSide,
+    qty: &'static str,
+    px: &'static str,
+    fee: &'static str,
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "case constructor mirrors the venue fill fields"
+)]
+fn venue_fill_case(
+    fixture: &'static str,
+    raw_symbol: &'static str,
+    venue_order_id: &'static str,
+    trade_id: &'static str,
+    side: OrderSide,
+    qty: &'static str,
+    px: &'static str,
+    fee: &'static str,
+) -> VenueFillCase {
+    VenueFillCase {
+        fixture,
+        raw_symbol,
+        instrument_id: InstrumentId::from(format!("{raw_symbol}.OKX").as_str()),
+        venue_order_id,
+        trade_id,
+        side,
+        qty,
+        px,
+        fee,
+    }
+}
+
+#[rstest]
+#[case::liquidation(venue_fill_case(
+    "ws_orders_liquidation.json",
+    "BTC-USDT-SWAP",
+    "2497956918703120999",
+    "1518905999",
+    OrderSide::Sell,
+    "0.500",
+    "40000.00",
+    "20 USDT"
+))]
+#[case::adl(venue_fill_case(
+    "ws_orders_adl.json",
+    "ETH-USDT-SWAP",
+    "2497956918703121000",
+    "1518906000",
+    OrderSide::Buy,
+    "0.300",
+    "41000.00",
+    "12.3 USDT"
+))]
+fn test_dispatch_venue_initiated_order_fill_as_report(#[case] case: VenueFillCase) {
+    let (_, order_msgs) = load_order_messages(case.fixture);
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let instruments = AtomicMap::new();
+    instruments.insert(
+        Ustr::from(case.raw_symbol),
+        order_instrument(OKXInstrumentType::Swap, case.instrument_id, case.raw_symbol),
+    );
+    let mut fee_cache = AHashMap::new();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+
+    dispatch_ws_message(
+        OKXWsMessage::Orders(order_msgs),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        ExecutionEvent::Report(CommonExecutionReport::Fill(report)) => {
+            // Venue-initiated flow (liquidation or ADL): no client order ID,
+            // surfaced as a fill report
+            assert_eq!(report.account_id, AccountId::from("OKX-001"));
+            assert_eq!(report.instrument_id, case.instrument_id);
+            assert_eq!(report.client_order_id, None);
+            assert_eq!(
+                report.venue_order_id,
+                VenueOrderId::new(case.venue_order_id)
+            );
+            assert_eq!(report.trade_id, TradeId::new(case.trade_id));
+            assert_eq!(report.order_side, case.side);
+            assert_eq!(report.last_qty, Quantity::from(case.qty));
+            assert_eq!(report.last_px, Price::from(case.px));
+            assert_eq!(report.commission, Money::from(case.fee));
+            assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+        }
+        other => panic!("Expected venue-initiated fill report, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn test_dispatch_positions_channel_emits_position_report() {
+    let content = std::fs::read_to_string(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join("ws_positions.json"),
+    )
+    .unwrap();
+    let frame: OKXWsFrame = serde_json::from_str(&content).unwrap();
+    let OKXWsFrame::Data { arg, data } = frame else {
+        panic!("Expected data frame");
+    };
+    assert_eq!(arg.channel, OKXWsChannel::Positions);
+
+    let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let instruments = AtomicMap::new();
+    instruments.insert(
+        Ustr::from("BTC-USDT-SWAP"),
+        order_instrument(OKXInstrumentType::Swap, instrument_id, "BTC-USDT-SWAP"),
+    );
+    let mut fee_cache = AHashMap::new();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+
+    dispatch_ws_message(
+        OKXWsMessage::Positions(data),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        ExecutionEvent::Report(CommonExecutionReport::Position(report)) => {
+            assert_eq!(report.account_id, AccountId::from("OKX-001"));
+            assert_eq!(report.instrument_id, instrument_id);
+            assert_eq!(report.position_side, PositionSideSpecified::Long);
+            assert_eq!(report.quantity, Quantity::from("0.500"));
+            assert_eq!(
+                report.venue_position_id,
+                Some(PositionId::new("12345-LONG"))
+            );
+        }
+        other => panic!("Expected position report, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn test_dispatch_liquidation_warning_logs_only() {
+    let content = std::fs::read_to_string(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join("ws_liquidation_warning.json"),
+    )
+    .unwrap();
+    let frame: OKXWsFrame = serde_json::from_str(&content).unwrap();
+    let OKXWsFrame::Data { arg, data } = frame else {
+        panic!("Expected data frame");
+    };
+    assert_eq!(arg.channel, OKXWsChannel::LiquidationWarning);
+
+    let warnings: Vec<OKXLiquidationWarningMsg> = serde_json::from_value(data).unwrap();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].inst_id, Ustr::from("BTC-USDT-SWAP"));
+
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let instruments = AtomicMap::new();
+    let mut fee_cache = AHashMap::new();
+    let mut filled_qty_cache = AHashMap::new();
+    let mut order_state_cache = AHashMap::new();
+
+    dispatch_ws_message(
+        OKXWsMessage::LiquidationWarnings(warnings),
+        &emitter,
+        &state,
+        AccountId::from("OKX-001"),
+        &instruments,
+        &mut fee_cache,
+        &mut filled_qty_cache,
+        &mut order_state_cache,
+        get_atomic_clock_realtime(),
+    );
+
+    // Risk warnings surface as logs only; no execution events
+    assert!(drain_events(&mut rx).is_empty());
 }
 
 #[rstest]
@@ -1532,7 +2107,7 @@ fn test_dispatch_rpi_canceled_first_emits_rejection_without_acceptance() {
         event,
         ExecutionEvent::Order(OrderEventAny::Accepted(_) | OrderEventAny::Canceled(_))
     )));
-    assert!(!state.emitted_accepted.contains(&client_order_id));
+    assert!(!state.contains_accepted(&client_order_id));
     assert!(!state.order_identities.contains_key(&client_order_id));
 }
 
@@ -1885,11 +2460,11 @@ fn test_dispatch_duplicate_fill_still_updates_filled_state() {
     let fill = make_fill_report_with_trade_id("O-001", "t-dup-2");
     dispatch_execution_reports(vec![ExecutionReport::Fill(fill.clone())], &emitter, &state);
 
-    assert!(state.filled_orders.contains(&cid));
+    assert!(state.contains_filled(&cid));
 
     dispatch_execution_reports(vec![ExecutionReport::Fill(fill)], &emitter, &state);
 
-    assert!(state.filled_orders.contains(&cid));
+    assert!(state.contains_filled(&cid));
 }
 
 #[rstest]
@@ -2039,12 +2614,301 @@ async fn test_trade_dedup_concurrent_inserts_only_one_wins() {
     );
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_dispatch_fill_reports_claim_trade_id_across_tasks() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::default());
+    let fill = make_fill_report_with_trade_id("O-001", "t-race-dispatch");
+    let mut handles = Vec::new();
+
+    for _ in 0..8 {
+        let emitter = emitter.clone();
+        let state = Arc::clone(&state);
+        let fill = fill.clone();
+        handles.push(tokio::spawn(async move {
+            dispatch_execution_reports(vec![ExecutionReport::Fill(fill)], &emitter, &state);
+        }));
+    }
+
+    for handle in handles {
+        handle.await.unwrap();
+    }
+    let events = drain_events(&mut rx);
+
+    assert_eq!(events.len(), 1, "exactly one fill should be emitted");
+    assert!(state.contains_trade(&TradeId::new("t-race-dispatch")));
+}
+
 fn load_test_data(filename: &str) -> serde_json::Value {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("test_data")
         .join(filename);
     let content = std::fs::read_to_string(path).unwrap();
     serde_json::from_str(&content).unwrap()
+}
+
+fn query_order_instrument() -> InstrumentAny {
+    let response: OKXResponse<OKXInstrument> =
+        serde_json::from_value(load_test_data("http_get_instruments_swap.json")).unwrap();
+    let raw = response
+        .data
+        .iter()
+        .find(|instrument| instrument.inst_id == Ustr::from("ETH-USDT-SWAP"))
+        .expect("expected ETH-USDT-SWAP fixture");
+
+    parse_instrument_any(raw, None, None, None, None, UnixNanos::default())
+        .unwrap()
+        .expect("expected parsed ETH-USDT-SWAP instrument")
+}
+
+fn regular_order_detail_response(params: &HashMap<String, String>) -> serde_json::Value {
+    let mut response = load_test_data("http_get_orders_history.json");
+    let order = &mut response["data"][0];
+    let query_id = params
+        .get("clOrdId")
+        .or_else(|| params.get("ordId"))
+        .map(String::as_str)
+        .expect("expected clOrdId or ordId query parameter");
+    let (algo_client_order_id, client_order_id, venue_order_id, order_type, state, price) =
+        match query_id {
+            "regular-venue-id" => (
+                "",
+                "OQUERYREGULAR1",
+                "regular-venue-id",
+                "limit",
+                "live",
+                "2000.00",
+            ),
+            "OQUERYREGULAR1" => (
+                "",
+                "OQUERYREGULAR1",
+                "reused-regular-venue-id",
+                "limit",
+                "live",
+                "2000.00",
+            ),
+            "market-child-venue-id" => (
+                "OQUERYMARKETCHILD1",
+                "",
+                "market-child-venue-id",
+                "market",
+                "filled",
+                "1000.00",
+            ),
+            "triggered-child-venue-id" => (
+                "OQUERYTRIGGERED1",
+                "",
+                "triggered-child-venue-id",
+                "limit",
+                "filled",
+                "900.00",
+            ),
+            "missed-child-venue-id" => (
+                "OQUERYMISSEDCHILD1",
+                "",
+                "missed-child-venue-id",
+                "limit",
+                "filled",
+                "850.00",
+            ),
+            "missed-accept-child-venue-id" => (
+                "OQUERYMISSEDACCEPT1",
+                "",
+                "missed-accept-child-venue-id",
+                "limit",
+                "filled",
+                "825.00",
+            ),
+            "single-child-venue-id" => (
+                "OQUERYSINGLECHILD1",
+                "",
+                "single-child-venue-id",
+                "limit",
+                "filled",
+                "800.00",
+            ),
+            "external-venue-id" => ("", "", "external-venue-id", "limit", "live", "2000.00"),
+            other => panic!("unexpected regular order detail query: {other}"),
+        };
+    let is_filled = state == "filled";
+
+    order["accFillSz"] = json!(if is_filled { "1" } else { "0" });
+    order["algoClOrdId"] = json!(algo_client_order_id);
+    order["avgPx"] = json!(if is_filled { price } else { "" });
+    order["clOrdId"] = json!(client_order_id);
+    order["fillPx"] = json!(if is_filled { price } else { "" });
+    order["fillSz"] = json!(if is_filled { "1" } else { "" });
+    order["instId"] = json!("ETH-USDT-SWAP");
+    order["ordId"] = json!(venue_order_id);
+    order["ordType"] = json!(order_type);
+    order["posSide"] = json!("net");
+    order["px"] = json!(if order_type == "market" { "" } else { price });
+    order["state"] = json!(state);
+    order["sz"] = json!("1");
+    order["tdMode"] = json!("cross");
+    response
+}
+
+fn algo_order_detail_response(params: &HashMap<String, String>) -> serde_json::Value {
+    let mut response = load_test_data("http_get_orders_algo_pending_close_fraction.json");
+    let order = &mut response["data"][0];
+    order["algoId"] = json!(
+        params
+            .get("algoId")
+            .map_or("unknown-algo-id", String::as_str)
+    );
+    order["algoClOrdId"] = json!(
+        params
+            .get("algoClOrdId")
+            .map_or("unknown-algo-client-id", String::as_str)
+    );
+    order["instId"] = json!("ETH-USDT-SWAP");
+
+    match params.get("algoClOrdId").map(String::as_str) {
+        Some("OQUERYALGO1") => {
+            order["algoId"] = json!("algo-venue-id");
+            order["ordId"] = json!("");
+            order["state"] = json!("live");
+        }
+        Some("OQUERYMARKETCHILD1") => {
+            order["algoId"] = json!("parent-market-algo-id");
+            order["ordId"] = json!("market-child-venue-id");
+            order["state"] = json!("effective");
+        }
+        Some("OQUERYTRIGGERED1") => {
+            order["algoId"] = json!("parent-algo-id");
+            order["ordId"] = json!("triggered-child-venue-id");
+            order["ordIdList"] = json!(["triggered-child-venue-id"]);
+            order["slOrdPx"] = json!("900.00");
+            order["state"] = json!("effective");
+        }
+        Some("OQUERYMISSEDCHILD1") => {
+            order["algoId"] = json!("parent-missed-algo-id");
+            order["ordId"] = json!("missed-child-venue-id");
+            order["ordIdList"] = json!(["missed-child-venue-id"]);
+            order["slOrdPx"] = json!("850.00");
+            order["state"] = json!("effective");
+        }
+        Some("OQUERYMISSEDACCEPT1") => {
+            order["algoId"] = json!("parent-missed-accept-algo-id");
+            order["ordId"] = json!("missed-accept-child-venue-id");
+            order["ordIdList"] = json!(["missed-accept-child-venue-id"]);
+            order["slOrdPx"] = json!("825.00");
+            order["state"] = json!("effective");
+        }
+        Some("OQUERYSINGLECHILD1") => {
+            order["algoId"] = json!("parent-single-algo-id");
+            order["ordId"] = json!("single-child-venue-id");
+            order["ordIdList"] = json!(["single-child-venue-id"]);
+            order["slOrdPx"] = json!("800.00");
+            order["state"] = json!("effective");
+        }
+        None if params.get("algoId").map(String::as_str) == Some("algo-venue-id") => {
+            order["algoClOrdId"] = json!("OQUERYALGO1");
+            order["ordId"] = json!("");
+            order["state"] = json!("live");
+        }
+        _ => {}
+    }
+
+    response
+}
+
+#[derive(Default)]
+struct QueryOrderRouteState {
+    regular_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+    algo_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+    sequence: tokio::sync::Mutex<Vec<String>>,
+}
+
+async fn start_exec_query_order_test_server(state: Arc<QueryOrderRouteState>) -> SocketAddr {
+    let regular_state = Arc::clone(&state);
+    let algo_state = state;
+    let router = create_exec_test_router()
+        .route(
+            "/api/v5/public/instruments",
+            get(|| async { Json(load_test_data("http_get_instruments_swap.json")) }),
+        )
+        .route(
+            "/api/v5/trade/order",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&regular_state);
+                async move {
+                    let query_id = params
+                        .get("clOrdId")
+                        .or_else(|| params.get("ordId"))
+                        .cloned()
+                        .unwrap_or_default();
+                    state
+                        .sequence
+                        .lock()
+                        .await
+                        .push(format!("regular:{query_id}"));
+
+                    if matches!(query_id.as_str(), "OQUERYUNKNOWN1" | "algo-venue-id") {
+                        state.regular_queries.lock().await.push(params);
+                        return Json(json!({
+                            "code": "51603",
+                            "msg": "Order does not exist",
+                            "data": [],
+                        }))
+                        .into_response();
+                    }
+
+                    let response = regular_order_detail_response(&params);
+                    state.regular_queries.lock().await.push(params);
+                    Json(response).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/order-algo",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&algo_state);
+                async move {
+                    let query_id = params
+                        .get("algoClOrdId")
+                        .or_else(|| params.get("algoId"))
+                        .cloned()
+                        .unwrap_or_default();
+                    state.sequence.lock().await.push(format!("algo:{query_id}"));
+                    state.algo_queries.lock().await.push(params.clone());
+
+                    Json(algo_order_detail_response(&params))
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    addr
+}
+
+async fn create_query_order_test_client() -> (
+    OKXExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+    Arc<QueryOrderRouteState>,
+) {
+    let state = Arc::new(QueryOrderRouteState::default());
+    let addr = start_exec_query_order_test_server(Arc::clone(&state)).await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) =
+        create_test_execution_client_configured(&base_url, |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+    client.on_instrument(query_order_instrument());
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+
+    (client, rx, cache, state)
 }
 
 fn create_exec_test_router() -> Router {
@@ -2060,6 +2924,8 @@ fn create_exec_test_router() -> Router {
 struct ReportRouteState {
     regular_order_pending_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     regular_order_history_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+    algo_order_pending_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+    algo_order_history_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     spread_order_pending_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     spread_order_history_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     regular_fill_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
@@ -2161,6 +3027,8 @@ async fn start_exec_report_test_server(state: Arc<ReportRouteState>) -> SocketAd
 fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
     let regular_pending_state = Arc::clone(&state);
     let regular_history_state = Arc::clone(&state);
+    let algo_pending_state = Arc::clone(&state);
+    let algo_history_state = Arc::clone(&state);
     let spread_pending_state = Arc::clone(&state);
     let spread_history_state = Arc::clone(&state);
     let regular_fill_state = Arc::clone(&state);
@@ -2187,12 +3055,72 @@ fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
             get(move |Query(params): Query<HashMap<String, String>>| {
                 let state = Arc::clone(&regular_history_state);
                 async move {
+                    let is_spot = params.get("instType").is_some_and(|value| value == "SPOT");
                     state
                         .regular_order_history_queries
                         .lock()
                         .await
                         .push(params);
+
+                    if !is_spot {
+                        return Json(json!({"code": "0", "msg": "", "data": []})).into_response();
+                    }
+
+                    let mut response =
+                        load_test_data("ws_orders_algo_child_filled_empty_cl_ord_id.json");
+                    response["code"] = json!("0");
+                    response["msg"] = json!("");
+                    Json(response).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&algo_pending_state);
+                async move {
+                    state.algo_order_pending_queries.lock().await.push(params);
                     Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-history",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&algo_history_state);
+                async move {
+                    let returns_parent =
+                        params.get("instType").is_some_and(|value| value == "SPOT")
+                            && params
+                                .get("ordType")
+                                .is_some_and(|value| value == "trigger")
+                            && params
+                                .get("state")
+                                .is_some_and(|value| value == "effective");
+                    state.algo_order_history_queries.lock().await.push(params);
+
+                    if !returns_parent {
+                        return Json(json!({"code": "0", "msg": "", "data": []})).into_response();
+                    }
+
+                    let mut response = load_test_data("http_get_orders_algo_history.json");
+                    let order = &mut response["data"][0];
+                    order["actualPx"] = json!("1886.00");
+                    order["actualSide"] = json!("buy");
+                    order["actualSz"] = json!("0.003");
+                    order["algoClOrdId"] = json!(MARGIN_SPOT_PARENT_CLIENT_ORDER_ID);
+                    order["algoId"] = json!(MARGIN_SPOT_PARENT_VENUE_ORDER_ID);
+                    order["clOrdId"] = json!("");
+                    order["instId"] = json!("ETH-USDT");
+                    order["instType"] = json!("SPOT");
+                    order["ordId"] = json!(MARGIN_SPOT_CHILD_VENUE_ORDER_ID);
+                    order["ordPx"] = json!("1886.00");
+                    order["posSide"] = json!("net");
+                    order["side"] = json!("buy");
+                    order["sz"] = json!("0.003");
+                    order["tdMode"] = json!("cross");
+                    order["triggerPx"] = json!("1887.00");
+                    Json(response).into_response()
                 }
             }),
         )
@@ -2221,8 +3149,20 @@ fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
             get(move |Query(params): Query<HashMap<String, String>>| {
                 let state = Arc::clone(&regular_fill_state);
                 async move {
+                    let is_spot = params.get("instType").is_some_and(|value| value == "SPOT");
                     state.regular_fill_queries.lock().await.push(params);
-                    Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+
+                    if !is_spot {
+                        return Json(json!({"code": "0", "msg": "", "data": []})).into_response();
+                    }
+
+                    let mut response =
+                        load_test_data("ws_orders_algo_child_filled_empty_cl_ord_id.json");
+                    response["code"] = json!("0");
+                    response["msg"] = json!("");
+                    response["data"][0]["billId"] = json!("bill-margin-spot-1");
+                    response["data"][0]["ts"] = json!("1786550400100");
+                    Json(response).into_response()
                 }
             }),
         )
@@ -2235,6 +3175,14 @@ fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
                     Json(load_test_data("http_get_spread_trades.json")).into_response()
                 }
             }),
+        )
+        .route(
+            "/api/v5/account/positions",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
         )
 }
 
@@ -2294,6 +3242,28 @@ fn create_test_execution_client_configured(
     (client, rx, cache)
 }
 
+fn make_margin_spot_report_instrument() -> InstrumentAny {
+    let mut instrument = currency_pair_ethusdt();
+    instrument.id = InstrumentId::from("ETH-USDT.OKX");
+    instrument.raw_symbol = Symbol::from("ETH-USDT");
+    InstrumentAny::CurrencyPair(instrument)
+}
+
+fn assert_margin_spot_queries(queries: &[HashMap<String, String>]) {
+    let margin_count = queries
+        .iter()
+        .filter(|query| query.get("instType").is_some_and(|value| value == "MARGIN"))
+        .count();
+    let spot_count = queries
+        .iter()
+        .filter(|query| query.get("instType").is_some_and(|value| value == "SPOT"))
+        .count();
+
+    assert!(margin_count > 0);
+    assert_eq!(margin_count, spot_count);
+    assert_eq!(queries.len(), margin_count + spot_count);
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_query_account_does_not_block_within_runtime() {
@@ -2327,6 +3297,481 @@ async fn test_query_account_does_not_block_within_runtime() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_margin_only_restart_recovers_spot_order_status_reports() {
+    let state = Arc::new(ReportRouteState::default());
+    let addr = start_exec_report_test_server(Arc::clone(&state)).await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Margin];
+        config.margin_mode = Some(OKXMarginMode::Cross);
+        config.use_spot_margin = true;
+    });
+    client.on_instrument(make_margin_spot_report_instrument());
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    let regular_pending_queries = state.regular_order_pending_queries.lock().await;
+    let regular_history_queries = state.regular_order_history_queries.lock().await;
+    let algo_pending_queries = state.algo_order_pending_queries.lock().await;
+    let algo_history_queries = state.algo_order_history_queries.lock().await;
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].instrument_id, InstrumentId::from("ETH-USDT.OKX"));
+    assert_eq!(
+        reports[0].client_order_id,
+        Some(ClientOrderId::from(MARGIN_SPOT_PARENT_CLIENT_ORDER_ID))
+    );
+    assert_eq!(
+        reports[0].venue_order_id,
+        VenueOrderId::from(MARGIN_SPOT_CHILD_VENUE_ORDER_ID)
+    );
+    assert_eq!(reports[0].order_status, OrderStatus::Filled);
+    assert_eq!(reports[0].filled_qty, Quantity::from("0.003"));
+    assert_margin_spot_queries(&regular_pending_queries);
+    assert_margin_spot_queries(&regular_history_queries);
+    assert_margin_spot_queries(&algo_pending_queries);
+    assert_margin_spot_queries(&algo_history_queries);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_margin_only_restart_recovers_spot_fill_reports() {
+    let state = Arc::new(ReportRouteState::default());
+    let addr = start_exec_report_test_server(Arc::clone(&state)).await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Margin];
+        config.margin_mode = Some(OKXMarginMode::Cross);
+        config.use_spot_margin = true;
+    });
+    client.on_instrument(make_margin_spot_report_instrument());
+
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_fill_reports(cmd).await.unwrap();
+    let regular_fill_queries = state.regular_fill_queries.lock().await;
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].instrument_id, InstrumentId::from("ETH-USDT.OKX"));
+    assert_eq!(reports[0].client_order_id, None);
+    assert_eq!(
+        reports[0].venue_order_id,
+        VenueOrderId::from(MARGIN_SPOT_CHILD_VENUE_ORDER_ID)
+    );
+    assert_eq!(reports[0].trade_id, TradeId::new(MARGIN_SPOT_TRADE_ID));
+    assert_eq!(reports[0].last_qty, Quantity::from("0.003"));
+    assert_eq!(reports[0].last_px, Price::from("1886.00"));
+    assert_margin_spot_queries(&regular_fill_queries);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_query_order_routes_cached_regular_pretrigger_algo_and_unknown_orders() {
+    let (client, mut rx, cache, state) = create_query_order_test_client().await;
+
+    let regular_client_order_id = ClientOrderId::from("OQUERYREGULAR1");
+    let regular_venue_order_id = VenueOrderId::from("regular-venue-id");
+    let regular_order =
+        build_test_regular_order_with_venue_id(regular_client_order_id, regular_venue_order_id);
+    cache
+        .borrow_mut()
+        .add_order(regular_order, None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+    client
+        .query_order(query_order_command(
+            regular_client_order_id,
+            Some(VenueOrderId::from("stale-regular-venue-id")),
+        ))
+        .unwrap();
+    let regular_report = recv_query_order_report(&mut rx, Some(regular_client_order_id)).await;
+    assert_eq!(regular_report.order_type, OrderType::Limit);
+    assert_eq!(regular_report.venue_order_id, regular_venue_order_id);
+
+    let algo_client_order_id = ClientOrderId::from("OQUERYALGO1");
+    let algo_venue_order_id = VenueOrderId::from("algo-venue-id");
+    let algo_order = build_test_conditional_order_with_single_venue_id(
+        algo_client_order_id,
+        algo_venue_order_id,
+    );
+    cache
+        .borrow_mut()
+        .add_order(algo_order, None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+    client
+        .query_order(query_order_command(
+            algo_client_order_id,
+            Some(algo_venue_order_id),
+        ))
+        .unwrap();
+    let algo_report = recv_query_order_report(&mut rx, Some(algo_client_order_id)).await;
+    assert_eq!(algo_report.order_type, OrderType::StopMarket);
+
+    let unknown_client_order_id = ClientOrderId::from("OQUERYUNKNOWN1");
+    client
+        .query_order(query_order_command(unknown_client_order_id, None))
+        .unwrap();
+    let unknown_report = recv_query_order_report(&mut rx, Some(unknown_client_order_id)).await;
+    assert_eq!(unknown_report.order_type, OrderType::StopMarket);
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let unexpected_reports: Vec<_> = drain_events(&mut rx)
+        .into_iter()
+        .filter(|event| {
+            matches!(
+                event,
+                ExecutionEvent::Report(CommonExecutionReport::Order(_))
+            )
+        })
+        .collect();
+    assert!(
+        unexpected_reports.is_empty(),
+        "query_order emitted duplicate reports: {unexpected_reports:?}"
+    );
+
+    let regular_queries = state.regular_queries.lock().await;
+    let algo_queries = state.algo_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+
+    assert_eq!(regular_queries.len(), 2);
+    assert_eq!(
+        regular_queries[0].get("ordId").map(String::as_str),
+        Some("regular-venue-id")
+    );
+    assert!(!regular_queries[0].contains_key("clOrdId"));
+    assert_eq!(
+        regular_queries[1].get("clOrdId").map(String::as_str),
+        Some("OQUERYUNKNOWN1")
+    );
+    assert!(!regular_queries[1].contains_key("ordId"));
+    assert_eq!(algo_queries.len(), 2);
+    assert_eq!(
+        algo_queries[0].get("algoClOrdId").map(String::as_str),
+        Some("OQUERYALGO1")
+    );
+    assert!(!algo_queries[0].contains_key("algoId"));
+    assert_eq!(
+        algo_queries[1].get("algoClOrdId").map(String::as_str),
+        Some("OQUERYUNKNOWN1")
+    );
+    assert!(!algo_queries[1].contains_key("algoId"));
+    assert_eq!(
+        sequence.as_slice(),
+        [
+            "regular:regular-venue-id",
+            "algo:OQUERYALGO1",
+            "regular:OQUERYUNKNOWN1",
+            "algo:OQUERYUNKNOWN1",
+        ]
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_query_order_market_conditional_with_child_id_queries_child_and_parent() {
+    let (client, mut rx, cache, state) = create_query_order_test_client().await;
+
+    // Market-style conditional orders can receive a regular child venue ID
+    // without transitioning their cached triggered flag.
+    let client_order_id = ClientOrderId::from("OQUERYMARKETCHILD1");
+    let child_venue_order_id = VenueOrderId::from("market-child-venue-id");
+    let order =
+        build_test_market_conditional_order_with_child(client_order_id, child_venue_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+
+    client
+        .query_order(query_order_command(
+            client_order_id,
+            Some(child_venue_order_id),
+        ))
+        .unwrap();
+    let report = recv_query_order_report(&mut rx, Some(client_order_id)).await;
+
+    assert_eq!(report.order_type, OrderType::Market);
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.filled_qty, Quantity::from("1"));
+    assert_eq!(report.venue_order_id, child_venue_order_id);
+
+    let regular_queries = state.regular_queries.lock().await;
+    let algo_queries = state.algo_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+    assert_eq!(regular_queries.len(), 1);
+    assert_eq!(
+        regular_queries[0].get("ordId").map(String::as_str),
+        Some("market-child-venue-id")
+    );
+    assert!(!regular_queries[0].contains_key("clOrdId"));
+    assert_eq!(algo_queries.len(), 1);
+    assert_eq!(
+        algo_queries[0].get("algoClOrdId").map(String::as_str),
+        Some("OQUERYMARKETCHILD1")
+    );
+    assert!(!algo_queries[0].contains_key("algoId"));
+    assert_eq!(
+        sequence.as_slice(),
+        ["algo:OQUERYMARKETCHILD1", "regular:market-child-venue-id",]
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_query_order_triggered_conditional_recovers_missed_child_fill() {
+    let (client, mut rx, cache, state) = create_query_order_test_client().await;
+
+    let client_order_id = ClientOrderId::from("OQUERYTRIGGERED1");
+    let child_venue_order_id = VenueOrderId::from("triggered-child-venue-id");
+    let order = build_test_triggered_conditional_order(client_order_id, child_venue_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+
+    client
+        .query_order(query_order_command(
+            client_order_id,
+            Some(child_venue_order_id),
+        ))
+        .unwrap();
+    let report = recv_query_order_report(&mut rx, Some(client_order_id)).await;
+
+    // The algo parent is only Triggered, while the regular child is Filled.
+    assert_eq!(report.order_type, OrderType::Limit);
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.filled_qty, Quantity::from("1"));
+    assert_eq!(report.venue_order_id, child_venue_order_id);
+
+    let regular_queries = state.regular_queries.lock().await;
+    let algo_queries = state.algo_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+    assert_eq!(regular_queries.len(), 1);
+    assert_eq!(
+        regular_queries[0].get("ordId").map(String::as_str),
+        Some("triggered-child-venue-id")
+    );
+    assert!(!regular_queries[0].contains_key("clOrdId"));
+    assert_eq!(algo_queries.len(), 1);
+    assert_eq!(
+        algo_queries[0].get("algoClOrdId").map(String::as_str),
+        Some("OQUERYTRIGGERED1")
+    );
+    assert!(!algo_queries[0].contains_key("algoId"));
+    assert_eq!(
+        sequence.as_slice(),
+        ["algo:OQUERYTRIGGERED1", "regular:triggered-child-venue-id",]
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_query_order_recovers_fill_when_child_event_was_completely_missed() {
+    let (client, mut rx, cache, state) = create_query_order_test_client().await;
+
+    let client_order_id = ClientOrderId::from("OQUERYMISSEDCHILD1");
+    let parent_venue_order_id = VenueOrderId::from("parent-missed-algo-id");
+    let child_venue_order_id = VenueOrderId::from("missed-child-venue-id");
+    let order =
+        build_test_conditional_order_with_single_venue_id(client_order_id, parent_venue_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+
+    client
+        .query_order(query_order_command(
+            client_order_id,
+            Some(parent_venue_order_id),
+        ))
+        .unwrap();
+    let report = recv_query_order_report(&mut rx, Some(client_order_id)).await;
+
+    assert_eq!(report.order_type, OrderType::Limit);
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.filled_qty, Quantity::from("1"));
+    assert_eq!(report.venue_order_id, child_venue_order_id);
+
+    let regular_queries = state.regular_queries.lock().await;
+    let algo_queries = state.algo_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+    assert_eq!(regular_queries.len(), 1);
+    assert_eq!(
+        regular_queries[0].get("ordId").map(String::as_str),
+        Some("missed-child-venue-id")
+    );
+    assert!(!regular_queries[0].contains_key("clOrdId"));
+    assert_eq!(algo_queries.len(), 1);
+    assert_eq!(
+        algo_queries[0].get("algoClOrdId").map(String::as_str),
+        Some("OQUERYMISSEDCHILD1")
+    );
+    assert!(!algo_queries[0].contains_key("algoId"));
+    assert_eq!(
+        sequence.as_slice(),
+        ["algo:OQUERYMISSEDCHILD1", "regular:missed-child-venue-id",]
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_query_order_recovers_fill_when_acceptance_and_child_events_were_missed() {
+    let (client, mut rx, cache, state) = create_query_order_test_client().await;
+
+    let client_order_id = ClientOrderId::from("OQUERYMISSEDACCEPT1");
+    let child_venue_order_id = VenueOrderId::from("missed-accept-child-venue-id");
+    let order = build_test_submitted_conditional_order(client_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+
+    client
+        .query_order(query_order_command(client_order_id, None))
+        .unwrap();
+    let report = recv_query_order_report(&mut rx, Some(client_order_id)).await;
+
+    assert_eq!(report.order_type, OrderType::Limit);
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.filled_qty, Quantity::from("1"));
+    assert_eq!(report.venue_order_id, child_venue_order_id);
+
+    let regular_queries = state.regular_queries.lock().await;
+    let algo_queries = state.algo_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+    assert_eq!(regular_queries.len(), 1);
+    assert_eq!(
+        regular_queries[0].get("ordId").map(String::as_str),
+        Some("missed-accept-child-venue-id")
+    );
+    assert!(!regular_queries[0].contains_key("clOrdId"));
+    assert_eq!(algo_queries.len(), 1);
+    assert_eq!(
+        algo_queries[0].get("algoClOrdId").map(String::as_str),
+        Some("OQUERYMISSEDACCEPT1")
+    );
+    assert!(!algo_queries[0].contains_key("algoId"));
+    assert_eq!(
+        sequence.as_slice(),
+        [
+            "algo:OQUERYMISSEDACCEPT1",
+            "regular:missed-accept-child-venue-id",
+        ]
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_query_order_recovers_fill_when_only_cached_id_is_child() {
+    let (client, mut rx, cache, state) = create_query_order_test_client().await;
+
+    let client_order_id = ClientOrderId::from("OQUERYSINGLECHILD1");
+    let child_venue_order_id = VenueOrderId::from("single-child-venue-id");
+    let order =
+        build_test_conditional_order_with_single_venue_id(client_order_id, child_venue_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+
+    client
+        .query_order(query_order_command(
+            client_order_id,
+            Some(child_venue_order_id),
+        ))
+        .unwrap();
+    let report = recv_query_order_report(&mut rx, Some(client_order_id)).await;
+
+    assert_eq!(report.order_type, OrderType::Limit);
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.filled_qty, Quantity::from("1"));
+    assert_eq!(report.venue_order_id, child_venue_order_id);
+
+    let regular_queries = state.regular_queries.lock().await;
+    let algo_queries = state.algo_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+    assert_eq!(regular_queries.len(), 1);
+    assert_eq!(
+        regular_queries[0].get("ordId").map(String::as_str),
+        Some("single-child-venue-id")
+    );
+    assert!(!regular_queries[0].contains_key("clOrdId"));
+    assert_eq!(algo_queries.len(), 1);
+    assert_eq!(
+        algo_queries[0].get("algoClOrdId").map(String::as_str),
+        Some("OQUERYSINGLECHILD1")
+    );
+    assert!(!algo_queries[0].contains_key("algoId"));
+    assert_eq!(
+        sequence.as_slice(),
+        ["algo:OQUERYSINGLECHILD1", "regular:single-child-venue-id",]
+    );
+}
+
+#[rstest]
+#[case(None)]
+#[case(Some("stale-external-venue-id"))]
+#[tokio::test]
+async fn test_query_order_adopted_external_regular_uses_cached_venue_order_id(
+    #[case] command_venue_order_id: Option<&str>,
+) {
+    let (client, mut rx, cache, state) = create_query_order_test_client().await;
+
+    // Adopted external regular orders synthesize their local client ID from
+    // ordId when OKX reports no clOrdId.
+    let venue_order_id = VenueOrderId::from("external-venue-id");
+    let client_order_id = ClientOrderId::from(venue_order_id.as_str());
+    let order = build_test_regular_order_with_venue_id(client_order_id, venue_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+
+    client
+        .query_order(query_order_command(
+            client_order_id,
+            command_venue_order_id.map(VenueOrderId::from),
+        ))
+        .unwrap();
+    let report = recv_query_order_report(&mut rx, None).await;
+
+    assert_eq!(report.order_type, OrderType::Limit);
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.venue_order_id, venue_order_id);
+
+    let regular_queries = state.regular_queries.lock().await;
+    let algo_queries = state.algo_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+    assert_eq!(regular_queries.len(), 1);
+    assert_eq!(
+        regular_queries[0].get("ordId").map(String::as_str),
+        Some("external-venue-id")
+    );
+    assert!(!regular_queries[0].contains_key("clOrdId"));
+    assert!(algo_queries.is_empty());
+    assert_eq!(sequence.as_slice(), ["regular:external-venue-id"]);
 }
 
 #[rstest]
@@ -2478,6 +3923,222 @@ fn build_test_stop_order(client_order_id: ClientOrderId) -> OrderAny {
         .trigger_type(TriggerType::MarkPrice)
         .time_in_force(TimeInForce::Gtc)
         .build()
+}
+
+fn build_test_conditional_order_with_single_venue_id(
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+) -> OrderAny {
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+    let account_id = AccountId::from("OKX-001");
+    let mut order = build_test_submitted_conditional_order(client_order_id);
+    let accepted = OrderAcceptedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .build();
+
+    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+    assert_eq!(order.is_triggered(), Some(false));
+    assert_eq!(order.venue_order_ids(), vec![&venue_order_id]);
+    assert_eq!(order.venue_order_id(), Some(venue_order_id));
+    order
+}
+
+fn build_test_submitted_conditional_order(client_order_id: ClientOrderId) -> OrderAny {
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+    let account_id = AccountId::from("OKX-001");
+    let mut order = OrderTestBuilder::new(OrderType::StopLimit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("850.00"))
+        .quantity(Quantity::from("1"))
+        .trigger_price(Price::from("1000.00"))
+        .trigger_type(TriggerType::MarkPrice)
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    let submitted = OrderSubmittedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .build();
+
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+
+    assert_eq!(order.is_triggered(), Some(false));
+    assert_eq!(order.status(), OrderStatus::Submitted);
+    assert_eq!(order.venue_order_id(), None);
+    order
+}
+
+fn build_test_triggered_conditional_order(
+    client_order_id: ClientOrderId,
+    child_venue_order_id: VenueOrderId,
+) -> OrderAny {
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+    let account_id = AccountId::from("OKX-001");
+    let mut order = OrderTestBuilder::new(OrderType::StopLimit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("900.00"))
+        .quantity(Quantity::from("1"))
+        .trigger_price(Price::from("1000.00"))
+        .trigger_type(TriggerType::MarkPrice)
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    let submitted = OrderSubmittedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .build();
+    let accepted = OrderAcceptedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(VenueOrderId::from("parent-algo-id"))
+        .account_id(account_id)
+        .build();
+    let triggered = OrderTriggeredSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(child_venue_order_id)
+        .account_id(account_id)
+        .build();
+    let updated = OrderUpdatedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(child_venue_order_id)
+        .account_id(account_id)
+        .quantity(Quantity::from("1"))
+        .build();
+
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+    order.apply(OrderEventAny::Triggered(triggered)).unwrap();
+    order.apply(OrderEventAny::Updated(updated)).unwrap();
+
+    assert_eq!(order.is_triggered(), Some(true));
+    assert_eq!(order.venue_order_id(), Some(child_venue_order_id));
+    order
+}
+
+fn build_test_market_conditional_order_with_child(
+    client_order_id: ClientOrderId,
+    child_venue_order_id: VenueOrderId,
+) -> OrderAny {
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+    let account_id = AccountId::from("OKX-001");
+    let mut order = build_test_stop_order(client_order_id);
+    let submitted = OrderSubmittedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .build();
+    let accepted = OrderAcceptedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(VenueOrderId::from("parent-market-algo-id"))
+        .account_id(account_id)
+        .build();
+    let updated = OrderUpdatedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(child_venue_order_id)
+        .account_id(account_id)
+        .quantity(Quantity::from("1"))
+        .build();
+
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+    order.apply(OrderEventAny::Updated(updated)).unwrap();
+
+    assert_eq!(order.is_triggered(), Some(false));
+    assert_eq!(order.venue_order_ids().len(), 2);
+    assert_eq!(order.venue_order_id(), Some(child_venue_order_id));
+    order
+}
+
+fn build_test_regular_order_with_venue_id(
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+) -> OrderAny {
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+    let account_id = AccountId::from("OKX-001");
+    let mut order = build_test_limit_order(instrument_id, client_order_id);
+    let submitted = OrderSubmittedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .account_id(account_id)
+        .build();
+    let accepted = OrderAcceptedSpec::builder()
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .venue_order_id(venue_order_id)
+        .account_id(account_id)
+        .build();
+
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+    assert_eq!(order.venue_order_id(), Some(venue_order_id));
+    order
+}
+
+fn query_order_command(
+    client_order_id: ClientOrderId,
+    venue_order_id: Option<VenueOrderId>,
+) -> QueryOrder {
+    QueryOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*OKX_CLIENT_ID),
+        StrategyId::from("STRATEGY-001"),
+        InstrumentId::from("ETH-USDT-SWAP.OKX"),
+        client_order_id,
+        venue_order_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
 }
 
 fn collect_order_denied_events(events: Vec<ExecutionEvent>) -> HashMap<ClientOrderId, String> {
@@ -2690,4 +4351,487 @@ async fn test_submit_order_list_denies_spread_instrument() {
             "reason was: {reason}"
         );
     }
+}
+
+fn generate_order_status_report_cmd(
+    instrument_id: Option<InstrumentId>,
+    client_order_id: Option<ClientOrderId>,
+    venue_order_id: Option<VenueOrderId>,
+) -> GenerateOrderStatusReport {
+    GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        None,
+        None,
+    )
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_requires_instrument_id() {
+    let (client, _rx, _cache, _state) = create_query_order_test_client().await;
+    let error = client
+        .generate_order_status_report(&generate_order_status_report_cmd(
+            None,
+            Some(ClientOrderId::from("OQUERYREGULAR1")),
+            None,
+        ))
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("requires instrument_id"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_uses_targeted_lookup() {
+    let (client, _rx, _cache, state) = create_query_order_test_client().await;
+    let client_order_id = ClientOrderId::from("OQUERYREGULAR1");
+    let report = client
+        .generate_order_status_report(&generate_order_status_report_cmd(
+            Some(InstrumentId::from("ETH-USDT-SWAP.OKX")),
+            Some(client_order_id),
+            None,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let regular_queries = state.regular_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+
+    assert_eq!(report.client_order_id, Some(client_order_id));
+    assert!(
+        regular_queries
+            .iter()
+            .any(|query| query.get("clOrdId").map(String::as_str) == Some("OQUERYREGULAR1"))
+    );
+    assert!(sequence.iter().any(|entry| entry.starts_with("regular:")));
+    assert!(
+        !sequence
+            .iter()
+            .any(|entry| entry.contains("orders-history"))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_venue_only_queries_algo_after_regular_miss() {
+    let (client, _rx, _cache, state) = create_query_order_test_client().await;
+    let venue_order_id = VenueOrderId::from("algo-venue-id");
+    let report = client
+        .generate_order_status_report(&generate_order_status_report_cmd(
+            Some(InstrumentId::from("ETH-USDT-SWAP.OKX")),
+            None,
+            Some(venue_order_id),
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let regular_queries = state.regular_queries.lock().await;
+    let algo_queries = state.algo_queries.lock().await;
+    let sequence = state.sequence.lock().await;
+
+    assert_eq!(report.venue_order_id, venue_order_id);
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("OQUERYALGO1"))
+    );
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(
+        regular_queries[0].get("ordId").map(String::as_str),
+        Some("algo-venue-id")
+    );
+    assert!(!regular_queries[0].contains_key("clOrdId"));
+    assert_eq!(
+        algo_queries[0].get("algoId").map(String::as_str),
+        Some("algo-venue-id")
+    );
+    assert!(!algo_queries[0].contains_key("algoClOrdId"));
+    assert_eq!(
+        sequence.as_slice(),
+        ["regular:algo-venue-id", "algo:algo-venue-id"]
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_sets_report_window() {
+    let state = Arc::new(ReportRouteState::default());
+    let addr = start_exec_report_test_server(Arc::clone(&state)).await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    client.on_instrument(query_order_instrument());
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(mass_status.lookback_start().is_some());
+    assert!(mass_status.reports_complete());
+}
+
+async fn start_live_order_report_server(inst_type: &'static str) -> SocketAddr {
+    let router = Router::new()
+        .route("/health", get(|| async { Json(json!({"ok": true})) }))
+        .route(
+            "/api/v5/trade/orders-pending",
+            get(move || async move {
+                let mut response = load_test_data("http_get_orders_pending.json");
+                response["data"][0]["instType"] = json!(inst_type);
+                Json(response).into_response()
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-history",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-history",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    addr
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_in_scope_open_order_cache_miss_fails_report_request() {
+    let addr = start_live_order_report_server("SWAP").await;
+    let base_url = format!("http://{addr}");
+    let (client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let error = client
+        .generate_order_status_reports(&cmd)
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("missing from cache"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_margin_only_open_spot_cache_miss_fails_report_request() {
+    let addr = start_live_order_report_server("SPOT").await;
+    let base_url = format!("http://{addr}");
+    let (client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Margin];
+        config.margin_mode = Some(OKXMarginMode::Cross);
+        config.use_spot_margin = true;
+    });
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let error = client
+        .generate_order_status_reports(&cmd)
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("missing from cache"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_out_of_scope_open_order_cache_miss_is_dropped() {
+    let addr = start_live_order_report_server("SWAP").await;
+    let base_url = format!("http://{addr}");
+    let (client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Spot];
+    });
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_http_failure_is_error() {
+    let router = Router::new()
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/order",
+            get(|| async {
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"code": "1", "msg": "internal", "data": []})),
+                )
+                    .into_response()
+            }),
+        )
+        .route(
+            "/api/v5/trade/order-algo",
+            get(|| async {
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"code": "1", "msg": "internal", "data": []})),
+                )
+                    .into_response()
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+    client.on_instrument(query_order_instrument());
+
+    let error = client
+        .generate_order_status_report(&generate_order_status_report_cmd(
+            Some(InstrumentId::from("ETH-USDT-SWAP.OKX")),
+            Some(ClientOrderId::from("OQUERYREGULAR1")),
+            None,
+        ))
+        .await
+        .unwrap_err();
+
+    assert!(
+        !error.to_string().is_empty(),
+        "failed lookup must not become Ok(None)"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_marks_historical_cache_miss_incomplete() {
+    let router = Router::new()
+        .route("/health", get(|| async { Json(json!({"ok": true})) }))
+        .route(
+            "/api/v5/trade/orders-pending",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/orders-history",
+            get(|| async {
+                let mut response = load_test_data("http_get_orders_history.json");
+                response["data"][0]["uTime"] =
+                    json!(jiff::Timestamp::now().as_millisecond().to_string());
+                Json(response).into_response()
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-history",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/fills",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/account/positions",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(mass_status.lookback_start().is_some());
+    assert!(!mass_status.reports_complete());
+    assert!(mass_status.order_reports().is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_fails_on_open_algo_cache_miss() {
+    let router = Router::new()
+        .route(
+            "/api/v5/trade/orders-pending",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/orders-history",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|| async {
+                Json(load_test_data("http_get_orders_algo_pending.json")).into_response()
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-history",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let error = client
+        .generate_order_status_reports(&cmd)
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("missing from cache"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_fails_on_spread_missing_fee() {
+    let mut fill = load_test_data("http_get_spread_trades.json");
+    fill["data"][0]["fee"] = json!("");
+    fill["data"][0]["sprdId"] = json!("BCH-USDT_BCH-USDT-SWAP");
+    let router = Router::new()
+        .route(
+            "/api/v5/trade/fills",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/sprd/trades",
+            get(move || {
+                let fill = fill.clone();
+                async move { Json(fill).into_response() }
+            }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+            config.load_spreads = true;
+        });
+    client.on_instrument(make_spread_instrument());
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let error = client.generate_fill_reports(cmd).await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("missing fee"),
+        "was {error:#}"
+    );
+}
+
+#[rstest]
+fn test_dispatch_fill_claims_trade_id() {
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    let fill = make_fill_report("O-ROUTE-1");
+    let trade_id = fill.trade_id;
+
+    assert!(!state.contains_trade(&trade_id));
+    dispatch_execution_reports(vec![ExecutionReport::Fill(fill)], &emitter, &state);
+    let events = drain_events(&mut rx);
+
+    assert_eq!(events.len(), 1);
+    assert!(state.contains_trade(&trade_id));
 }

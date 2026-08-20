@@ -43,13 +43,16 @@ mod serial_tests {
         enums::{OrderSide, OrderStatus, OrderType},
         events::{
             AccountState, OrderEventAny, OrderFilled, OrderSnapshot,
-            account::stubs::{cash_account_state_multi, cash_account_state_multi_changed_btc},
+            account::stubs::{
+                cash_account_state_multi, cash_account_state_multi_changed_btc,
+                wallet_account_state, wallet_account_state_changed,
+            },
             order::spec::OrderFillVoidedSpec,
             position::snapshot::PositionSnapshot,
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, ComponentId, PositionId, StrategyId, TradeId,
-            TraderId, VenueOrderId,
+            AccountId, ActorId, ClientId, ClientOrderId, PositionId, StrategyId, TradeId, TraderId,
+            VenueOrderId,
         },
         instruments::{
             Instrument, InstrumentAny, SyntheticInstrument, stubs::crypto_perpetual_ethusdt,
@@ -258,6 +261,39 @@ mod serial_tests {
         }
 
         // Final cleanup
+        let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_delete_account_event_is_a_no_op() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+
+        let account_id = AccountId::new("BINANCE-001");
+        let event_id = UUID4::new().to_string();
+        let account_key = format!("{}:accounts:{account_id}", adapter.database.trader_key);
+
+        let mut conn = adapter.database.con.clone();
+        let _: () = conn.set(&account_key, "test_data").await.unwrap();
+        let exists_before: bool = conn.exists(&account_key).await.unwrap();
+        assert!(exists_before);
+
+        adapter
+            .delete_account_event(&account_id, &event_id)
+            .unwrap();
+
+        // Deletion is dispatched asynchronously, so allow a real delete to land before asserting
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let exists_after: bool = conn.exists(&account_key).await.unwrap();
+        assert!(
+            exists_after,
+            "delete_account_event is a documented no-op pending redesign"
+        );
+
         let mut adapter = adapter;
         adapter.flush().unwrap();
     }
@@ -830,6 +866,74 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_index_order_clients_batch_survives_restart() {
+        let _guard = redis_test_mutex().lock().await;
+        let mut adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let client_a = ClientId::new("CLIENT-A");
+        let client_b = ClientId::new("CLIENT-B");
+        let order_1 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-REDIS-ORIGIN-001"))
+            .build();
+        let order_2 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-REDIS-ORIGIN-002"))
+            .build();
+        let claims = [
+            (order_1.client_order_id(), client_a),
+            (order_2.client_order_id(), client_b),
+        ];
+
+        adapter.add_instrument(&instrument).unwrap();
+        adapter.add_order(&order_1, None).unwrap();
+        adapter.add_order(&order_2, None).unwrap();
+        adapter.index_order_clients(&claims).unwrap();
+
+        wait_until_async(
+            || async {
+                let index = adapter.load_index_order_client().unwrap();
+                adapter
+                    .load_order(&order_1.client_order_id())
+                    .await
+                    .unwrap()
+                    .is_some()
+                    && adapter
+                        .load_order(&order_2.client_order_id())
+                        .await
+                        .unwrap()
+                        .is_some()
+                    && index.get(&order_1.client_order_id()) == Some(&client_a)
+                    && index.get(&order_2.client_order_id()) == Some(&client_b)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let restarted_adapter = connect_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        let mut cache = Cache::new(None, Some(Box::new(restarted_adapter)));
+        cache.cache_orders().await.unwrap();
+        cache.build_index();
+
+        assert!(cache.order(&order_1.client_order_id()).is_some());
+        assert!(cache.order(&order_2.client_order_id()).is_some());
+        assert_eq!(cache.client_id(&order_1.client_order_id()), Some(&client_a));
+        assert_eq!(cache.client_id(&order_2.client_order_id()), Some(&client_b));
+
+        cache.dispose();
+        adapter.flush().unwrap();
+        adapter.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_restart_recovery_restores_order_indexes() {
         let _guard = redis_test_mutex().lock().await;
         let adapter = get_redis_cache_adapter()
@@ -912,7 +1016,7 @@ mod serial_tests {
         position.apply(&close_fill);
         adapter.update_position(&position).unwrap();
 
-        let actor_id = ComponentId::new("ACTOR-001");
+        let actor_id = ActorId::new("ACTOR-001");
         assert!(adapter.load_actor(&actor_id).unwrap().is_empty());
         let mut actor_state = AHashMap::new();
         actor_state.insert("A".to_string(), Bytes::from_static(b"1"));
@@ -1281,6 +1385,59 @@ mod serial_tests {
         assert!(!order_loaded_after_flush);
 
         let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_and_update_wallet_account() {
+        let _guard = redis_test_mutex().lock().await;
+        let mut adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+
+        // Distinct account ID: the recovery test above shares this trader's keyspace
+        let mut init_state = wallet_account_state();
+        init_state.account_id = AccountId::from("WALLET-001");
+        let mut account = AccountAny::try_from_state(init_state).unwrap();
+        adapter.add_account(&account).unwrap();
+
+        wait_until_async(
+            || async { adapter.load_account(&account.id()).await.unwrap().is_some() },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let loaded = adapter.load_account(&account.id()).await.unwrap().unwrap();
+        assert!(matches!(loaded, AccountAny::Wallet(_)));
+        assert_eq!(
+            serde_json::to_string(&loaded).unwrap(),
+            serde_json::to_string(&account).unwrap()
+        );
+
+        let mut changed_state = wallet_account_state_changed();
+        changed_state.account_id = AccountId::from("WALLET-001");
+        account.apply(changed_state).unwrap();
+        adapter.update_account(&account).unwrap();
+
+        wait_until_async(
+            || async {
+                adapter
+                    .load_account(&account.id())
+                    .await
+                    .unwrap()
+                    .is_some_and(|loaded| loaded.events().len() >= 2)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let loaded = adapter.load_account(&account.id()).await.unwrap().unwrap();
+        assert!(matches!(loaded, AccountAny::Wallet(_)));
+        assert_eq!(
+            serde_json::to_string(&loaded).unwrap(),
+            serde_json::to_string(&account).unwrap()
+        );
+
         adapter.flush().unwrap();
     }
 

@@ -930,7 +930,10 @@ impl Logger {
     /// # Errors
     ///
     /// Returns an error if the logger fails to register or initialize the background thread.
-    #[expect(clippy::needless_pass_by_value)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        expect(clippy::needless_pass_by_value)
+    )]
     pub fn init_with_config(
         trader_id: TraderId,
         instance_id: UUID4,
@@ -1329,7 +1332,7 @@ pub(crate) fn is_running() -> bool {
 pub fn sync_to_disk() -> anyhow::Result<()> {
     #[cfg(all(feature = "simulation", madsim))]
     {
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(all(feature = "simulation", madsim)))]
@@ -1410,10 +1413,7 @@ pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, mes
 /// # Limits
 ///
 /// The system supports a maximum of 255 concurrent `LogGuard` instances.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
-)]
+#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.common"))]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")

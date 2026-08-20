@@ -52,13 +52,16 @@ use crate::{
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     position::Position,
-    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity, money::MoneyRaw},
+    types::{
+        AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
+        money::{MONEY_RAW_MAX, MONEY_RAW_MIN, MoneyRaw},
+    },
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -355,7 +358,7 @@ impl MarginAccount {
             }
         }
 
-        Money::from_raw(raw, currency)
+        Money::from_raw(clamp_money_raw(raw), currency)
     }
 
     /// Returns the total maintenance margin reserved in the specified currency,
@@ -376,7 +379,7 @@ impl MarginAccount {
             }
         }
 
-        Money::from_raw(raw, currency)
+        Money::from_raw(clamp_money_raw(raw), currency)
     }
 
     /// Updates the margin balance for the specified instrument or collateral.
@@ -519,6 +522,11 @@ impl MarginAccount {
         );
         self.balances.insert(currency, new_balance);
     }
+}
+
+#[inline]
+fn clamp_money_raw(raw: MoneyRaw) -> MoneyRaw {
+    raw.clamp(MONEY_RAW_MIN, MONEY_RAW_MAX)
 }
 
 impl Deref for MarginAccount {
@@ -755,7 +763,10 @@ mod tests {
         },
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
-        types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
+        types::{
+            AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
+            money::{MONEY_RAW_MAX, MONEY_RAW_MIN},
+        },
     };
 
     #[rstest]
@@ -1584,6 +1595,50 @@ mod tests {
             margin_account.total_maintenance_margin(usd).raw,
             baseline_maintenance.raw + Money::from("200 USD").raw,
         );
+    }
+
+    #[rstest]
+    fn test_total_margin_clamps_domain_overflow(
+        mut margin_account: MarginAccount,
+        instrument_id_aud_usd_sim: InstrumentId,
+    ) {
+        let usd = Currency::USD();
+        let max = Money::from_raw(MONEY_RAW_MAX, usd);
+        let other_instrument = InstrumentId::from("EUR/USD.SIM");
+
+        margin_account.margins.insert(
+            instrument_id_aud_usd_sim,
+            MarginBalance::new(max, max, Some(instrument_id_aud_usd_sim)),
+        );
+        margin_account.margins.insert(
+            other_instrument,
+            MarginBalance::new(max, max, Some(other_instrument)),
+        );
+
+        assert_eq!(margin_account.total_initial_margin(usd), max);
+        assert_eq!(margin_account.total_maintenance_margin(usd), max);
+    }
+
+    #[rstest]
+    fn test_total_margin_clamps_negative_domain_overflow(
+        mut margin_account: MarginAccount,
+        instrument_id_aud_usd_sim: InstrumentId,
+    ) {
+        let usd = Currency::USD();
+        let min = Money::from_raw(MONEY_RAW_MIN, usd);
+        let other_instrument = InstrumentId::from("EUR/USD.SIM");
+
+        margin_account.margins.insert(
+            instrument_id_aud_usd_sim,
+            MarginBalance::new(min, min, Some(instrument_id_aud_usd_sim)),
+        );
+        margin_account.margins.insert(
+            other_instrument,
+            MarginBalance::new(min, min, Some(other_instrument)),
+        );
+
+        assert_eq!(margin_account.total_initial_margin(usd), min);
+        assert_eq!(margin_account.total_maintenance_margin(usd), min);
     }
 
     #[rstest]

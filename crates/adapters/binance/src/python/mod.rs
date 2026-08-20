@@ -135,7 +135,7 @@ fn py_decode_binance_futures_client_order_id(encoded: &str) -> String {
 
 /// Binance adapter Python module.
 ///
-/// Loaded as `nautilus_pyo3.binance`.
+/// Exposed through `nautilus_trader.adapters.binance`.
 ///
 /// # Errors
 ///

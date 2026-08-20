@@ -16,13 +16,11 @@
 //! Enumerations for the Interactive Brokers adapter.
 
 mod contracts;
-mod events;
 mod market_data;
 mod misc;
 mod order;
 
 pub use contracts::*;
-pub use events::*;
 pub use market_data::*;
 pub use misc::*;
 pub use order::*;

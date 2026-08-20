@@ -22,7 +22,7 @@ inputs:
     required: false
     default: ""
   rust-cache-workspaces:
-    description: Optional rust-cache workspace mapping, e.g. ". -> target-v2/py3.13"
+    description: Optional rust-cache workspace mapping, e.g. ". -> target/py3.13"
     required: false
     default: ""
   rust-cache-on-failure:
@@ -127,13 +127,7 @@ runs:
         runner.os == 'Linux' &&
         (runner.arch == 'ARM64' || runner.arch == 'aarch64')
       shell: bash
-      run: |
-        sudo swapoff -a || true
-        sudo rm -f /swapfile || true
-        sudo fallocate -l 8G /swapfile
-        sudo chmod 600 /swapfile
-        sudo mkswap /swapfile
-        sudo swapon /swapfile
+      run: bash scripts/ci/configure-linux-swap.bash
 
     - name: Install runner dependencies
       if: runner.os == 'Linux'
@@ -162,22 +156,22 @@ runs:
     - name: Get Rust toolchain version
       id: rust-toolchain
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] Version comes from repository toolchain metadata
         TOOLCHAIN="$(bash scripts/rust-toolchain.sh)"
         echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
 
-    # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+      # https://github.com/actions-rust-lang/setup-rust-toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       with:
         toolchain: ${{ env.TOOLCHAIN }}
         components: clippy,rustfmt
         cache: false
         override: true
 
-    # https://github.com/Swatinem/rust-cache
     - name: Rust cache
       if: inputs.rust-cache-enabled == 'true'
+      # https://github.com/Swatinem/rust-cache
       uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       with:
         workspaces: ${{ inputs.rust-cache-workspaces || '. -> target' }}
@@ -188,7 +182,7 @@ runs:
     - name: Get cargo-nextest version
       if: inputs.build-type != 'pre-commit'
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] Version comes from repository tool metadata
         version="$(bash scripts/cargo-tool-version.sh cargo-nextest)"
         if [ -z "$version" ]; then
           echo "::error::Failed to extract cargo-nextest version"
@@ -217,20 +211,20 @@ runs:
     # > Python
     - name: Set up Python environment
       # https://github.com/actions/setup-python
-      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: ${{ inputs.python-version }}
 
     - name: Ensure ~/.local/bin on PATH
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] The user binary path is runner-defined
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
     - name: Get cache scope
       shell: bash
       env:
         CACHE_SCOPE: ${{ runner.os }}-${{ runner.arch }}-py${{ inputs.python-version }}
-      run: |
+      run: | # zizmor: ignore[github-env] All callers use fixed matrix Python versions
         echo "CACHE_SCOPE=$CACHE_SCOPE" >> "$GITHUB_ENV"
 
     - name: Get pre-commit config hash
@@ -257,12 +251,12 @@ runs:
     # > UV
     - name: Get uv version from pyproject.toml
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] Version comes from repository project metadata
         echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> $GITHUB_ENV
 
     - name: Install uv
       # https://github.com/astral-sh/setup-uv
-      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
       with:
         version: ${{ env.UV_VERSION }}
         enable-cache: >-
@@ -275,7 +269,7 @@ runs:
 
     - name: Set uv cache-dir
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] uv reports its own local cache path
         echo "UV_CACHE_DIR=$(uv cache dir)" >> $GITHUB_ENV
 
     # Self-hosted and macOS runners skip setup-uv's cache post-step under auto.
@@ -295,7 +289,7 @@ runs:
                 && runner.environment != 'self-hosted'))
       id: cached-prek
       # https://github.com/actions/cache
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/prek
         key: ${{ env.CACHE_SCOPE }}-prek-${{ env.PRE_COMMIT_CONFIG_HASH }}

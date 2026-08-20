@@ -17,18 +17,19 @@
 
 use std::{cell::UnsafeCell, collections::HashMap, fmt::Debug, rc::Rc};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_common::{
     actor::{DataActor, DataActorNative, data_actor::DataActorCore},
     component::Component,
     enums::ComponentState,
+    messages::system::{QueueStateChanged, SocketStateChanged},
     python::{cache::PyCache, clock::PyClock, logging::PyLogger},
     signal::Signal,
     timer::TimeEvent,
 };
 use nautilus_core::{
     UnixNanos,
-    python::{to_pyruntime_err, to_pyvalue_err},
+    python::{to_pyruntime_err, to_pyvalue_err, upgrade_py_weakref},
 };
 use nautilus_model::{
     data::{CustomData, DataType},
@@ -49,7 +50,7 @@ use nautilus_portfolio::python::PyPortfolio;
 use pyo3::{
     IntoPyObjectExt,
     prelude::*,
-    types::{PyDict, PyList},
+    types::{PyDict, PyList, PyWeakrefReference},
 };
 use ustr::Ustr;
 
@@ -58,19 +59,30 @@ use crate::algorithm::{
     ImportableExecAlgorithmConfig,
 };
 
-/// Inner state of `PyExecutionAlgorithm`, shared between Python and Rust registries.
+/// Inner state of `PyExecutionAlgorithm`, shared by the Python and Rust registries.
 pub struct PyExecutionAlgorithmInner {
     core: ExecutionAlgorithmCore,
-    py_self: Option<Py<PyAny>>,
+    py_self: Option<Py<PyWeakrefReference>>,
     config: Option<Py<PyAny>>,
     logger: PyLogger,
+}
+
+impl PyExecutionAlgorithmInner {
+    // The trader owns the wrapper for as long as the algorithm stays registered, so a collected
+    // wrapper propagates as an error rather than a skipped callback.
+    fn python_instance(&self) -> PyResult<Option<Py<PyAny>>> {
+        upgrade_py_weakref(self.py_self.as_ref(), &self.core.exec_algorithm_id)
+    }
 }
 
 impl Debug for PyExecutionAlgorithmInner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(PyExecutionAlgorithmInner))
             .field("core", &self.core)
-            .field("py_self", &self.py_self.as_ref().map(|_| "<Py<PyAny>>"))
+            .field(
+                "py_self",
+                &self.py_self.as_ref().map(|_| "<Py<PyWeakrefReference>>"),
+            )
             .field("config", &self.config.as_ref().map(|_| "<Py<PyAny>>"))
             .field("logger", &self.logger)
             .finish()
@@ -84,7 +96,8 @@ impl Debug for PyExecutionAlgorithmInner {
     name = "ExecutionAlgorithm",
     unsendable,
     subclass,
-    skip_from_py_object
+    skip_from_py_object,
+    weakref
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")]
 #[derive(Clone)]
@@ -143,8 +156,16 @@ impl PyExecutionAlgorithm {
     }
 
     /// Sets the Python instance reference for method dispatch.
-    pub fn set_python_instance(&mut self, py_obj: Py<PyAny>) {
-        self.inner_mut().py_self = Some(py_obj);
+    ///
+    /// Only a weak reference is stored, so the caller keeps ownership of `py_obj`. The trader
+    /// owns registered wrappers; an unregistered execution algorithm stays collectable.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `py_obj` cannot be weakly referenced.
+    pub fn set_python_instance(&mut self, py_obj: &Bound<'_, PyAny>) -> PyResult<()> {
+        self.inner_mut().py_self = Some(PyWeakrefReference::new(py_obj)?.unbind());
+        Ok(())
     }
 
     /// Stores the original Python config object passed at construction.
@@ -185,14 +206,14 @@ impl PyExecutionAlgorithm {
     }
 
     fn dispatch_no_args(&self, method_name: &str) -> PyResult<()> {
-        if let Some(ref py_self) = self.inner().py_self {
+        if let Some(py_self) = self.inner().python_instance()? {
             Python::attach(|py| py_self.call_method0(py, method_name))?;
         }
         Ok(())
     }
 
     fn dispatch_time_event(&self, event: &TimeEvent) -> PyResult<()> {
-        if let Some(ref py_self) = self.inner().py_self {
+        if let Some(py_self) = self.inner().python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_time_event", (event.clone().into_py_any(py)?,))
             })?;
@@ -201,7 +222,7 @@ impl PyExecutionAlgorithm {
     }
 
     fn dispatch_on_signal(&self, signal: &Signal) -> PyResult<()> {
-        if let Some(ref py_self) = self.inner().py_self {
+        if let Some(py_self) = self.inner().python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_signal", (signal.clone().into_py_any(py)?,))
             })?;
@@ -209,8 +230,26 @@ impl PyExecutionAlgorithm {
         Ok(())
     }
 
+    fn dispatch_on_queue_state(&self, event: &QueueStateChanged) -> PyResult<()> {
+        if let Some(py_self) = self.inner().python_instance()? {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_queue_state", (event.clone().into_py_any(py)?,))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_socket_state(&self, event: &SocketStateChanged) -> PyResult<()> {
+        if let Some(py_self) = self.inner().python_instance()? {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_socket_state", (event.clone().into_py_any(py)?,))
+            })?;
+        }
+        Ok(())
+    }
+
     fn dispatch_on_order(&self, order: OrderAny) -> PyResult<()> {
-        if let Some(ref py_self) = self.inner().py_self {
+        if let Some(py_self) = self.inner().python_instance()? {
             Python::attach(|py| {
                 let py_order = nautilus_model::python::orders::order_any_to_pyobject(py, order)?;
                 py_self.call_method1(py, "on_order", (py_order,))
@@ -220,7 +259,7 @@ impl PyExecutionAlgorithm {
     }
 
     fn dispatch_on_order_list(&self, order_list: OrderList, orders: Vec<OrderAny>) -> PyResult<()> {
-        if let Some(ref py_self) = self.inner().py_self {
+        if let Some(py_self) = self.inner().python_instance()? {
             Python::attach(|py| -> PyResult<()> {
                 let py_order_list = order_list.into_py_any(py)?;
                 let py_orders: Vec<_> = orders
@@ -237,7 +276,7 @@ impl PyExecutionAlgorithm {
 
     fn has_python_override(&self, method_name: &str) -> PyResult<bool> {
         Python::attach(|py| -> PyResult<bool> {
-            let Some(ref py_self) = self.inner().py_self else {
+            let Some(py_self) = self.inner().python_instance()? else {
                 return Ok(false);
             };
 
@@ -250,7 +289,7 @@ impl PyExecutionAlgorithm {
     }
 
     fn dispatch_order_event(&self, method_name: &str, event: OrderEventAny) -> PyResult<()> {
-        if let Some(ref py_self) = self.inner().py_self {
+        if let Some(py_self) = self.inner().python_instance()? {
             Python::attach(|py| {
                 let py_event = order_event_to_pyobject(py, event)?;
                 py_self.call_method1(py, method_name, (py_event,))
@@ -260,7 +299,7 @@ impl PyExecutionAlgorithm {
     }
 
     fn dispatch_position_event(&self, method_name: &str, event: PositionEvent) -> PyResult<()> {
-        if let Some(ref py_self) = self.inner().py_self {
+        if let Some(py_self) = self.inner().python_instance()? {
             Python::attach(|py| {
                 let py_event = match event {
                     PositionEvent::PositionOpened(event) => event.into_py_any(py)?,
@@ -515,6 +554,7 @@ impl DataActor for PyExecutionAlgorithm {
     }
 
     fn on_resume(&mut self) -> anyhow::Result<()> {
+        ExecutionAlgorithm::on_resume(self)?;
         self.dispatch_no_args("on_resume")
             .map_err(|e| anyhow::anyhow!("Python on_resume failed: {e}"))
     }
@@ -549,6 +589,16 @@ impl DataActor for PyExecutionAlgorithm {
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         self.dispatch_on_signal(signal)
             .map_err(|e| anyhow::anyhow!("Python on_signal failed: {e}"))
+    }
+
+    fn on_queue_state(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
+        self.dispatch_on_queue_state(event)
+            .map_err(|e| anyhow::anyhow!("Python on_queue_state failed: {e}"))
+    }
+
+    fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
+        self.dispatch_on_socket_state(event)
+            .map_err(|e| anyhow::anyhow!("Python on_socket_state failed: {e}"))
     }
 }
 
@@ -603,9 +653,8 @@ impl PyExecutionAlgorithm {
                 ExecAlgorithmId::new_checked(type_name.to_str()?).map_err(to_pyvalue_err)?;
             slf.borrow_mut().set_exec_algorithm_id(exec_algorithm_id);
         }
-        let py_self: Py<PyAny> = slf.clone().unbind().into_any();
         let mut borrowed = slf.borrow_mut();
-        borrowed.set_python_instance(py_self);
+        borrowed.set_python_instance(slf.as_any())?;
         if config.is_some() {
             borrowed.set_config(config);
         }
@@ -638,11 +687,9 @@ impl PyExecutionAlgorithm {
     fn py_to_importable_config(&self, py: Python<'_>) -> PyResult<ImportableExecAlgorithmConfig> {
         let py_self = self
             .inner()
-            .py_self
-            .as_ref()
-            .ok_or_else(|| to_pyruntime_err("Python execution algorithm instance is not set"))?
-            .bind(py);
-        let exec_algorithm_path = py_type_path(py_self)?;
+            .python_instance()?
+            .ok_or_else(|| to_pyruntime_err("Python execution algorithm instance is not set"))?;
+        let exec_algorithm_path = py_type_path(py_self.bind(py))?;
 
         let Some(config) = self.inner().config.as_ref() else {
             return Ok(ImportableExecAlgorithmConfig {
@@ -789,8 +836,10 @@ impl PyExecutionAlgorithm {
     }
 
     #[pyo3(name = "publish_data")]
-    fn py_publish_data(&self, data_type: &DataType, data: &CustomData) {
+    fn py_publish_data(&self, data_type: &DataType, data: &CustomData) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         DataActor::publish_data(self, data_type, data);
+        Ok(())
     }
 
     #[pyo3(name = "publish_signal")]
@@ -806,6 +855,7 @@ impl PyExecutionAlgorithm {
         value: Py<PyAny>,
         ts_event: u64,
     ) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         let value_str: String = value.bind(py).str()?.extract()?;
         DataActor::publish_signal(self, name, value_str, UnixNanos::from(ts_event));
         Ok(())
@@ -813,14 +863,48 @@ impl PyExecutionAlgorithm {
 
     #[pyo3(name = "subscribe_signal")]
     #[pyo3(signature = (name="", priority=None))]
-    fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) {
+    fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::subscribe_signal(self, name, priority);
+        Ok(())
+    }
+
+    #[pyo3(name = "subscribe_queue_state")]
+    #[pyo3(signature = (priority=None))]
+    fn py_subscribe_queue_state(&mut self, priority: Option<u32>) -> PyResult<()> {
+        self.ensure_registered()?;
+        DataActor::subscribe_queue_state(self, priority);
+        Ok(())
+    }
+
+    #[pyo3(name = "subscribe_socket_state")]
+    #[pyo3(signature = (priority=None))]
+    fn py_subscribe_socket_state(&mut self, priority: Option<u32>) -> PyResult<()> {
+        self.ensure_registered()?;
+        DataActor::subscribe_socket_state(self, priority);
+        Ok(())
     }
 
     #[pyo3(name = "unsubscribe_signal")]
     #[pyo3(signature = (name=""))]
-    fn py_unsubscribe_signal(&mut self, name: &str) {
+    fn py_unsubscribe_signal(&mut self, name: &str) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::unsubscribe_signal(self, name);
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_queue_state")]
+    fn py_unsubscribe_queue_state(&mut self) -> PyResult<()> {
+        self.ensure_registered()?;
+        DataActor::unsubscribe_queue_state(self);
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_socket_state")]
+    fn py_unsubscribe_socket_state(&mut self) -> PyResult<()> {
+        self.ensure_registered()?;
+        DataActor::unsubscribe_socket_state(self);
+        Ok(())
     }
 
     #[pyo3(name = "on_start")]
@@ -851,6 +935,14 @@ impl PyExecutionAlgorithm {
     #[allow(unused_variables)]
     #[pyo3(name = "on_signal")]
     fn py_on_signal(&mut self, signal: &Signal) {}
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_queue_state")]
+    fn py_on_queue_state(&mut self, event: QueueStateChanged) {}
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_socket_state")]
+    fn py_on_socket_state(&mut self, event: SocketStateChanged) {}
 
     #[allow(clippy::needless_pass_by_value)]
     #[pyo3(name = "execute")]
@@ -923,7 +1015,7 @@ impl PyExecutionAlgorithm {
         quantity: Quantity,
         price: Price,
         time_in_force: TimeInForce,
-        expire_time: Option<DateTime<Utc>>,
+        expire_time: Option<Timestamp>,
         post_only: bool,
         reduce_only: bool,
         display_qty: Option<Quantity>,
@@ -967,7 +1059,7 @@ impl PyExecutionAlgorithm {
         primary: Py<PyAny>,
         quantity: Quantity,
         time_in_force: TimeInForce,
-        expire_time: Option<DateTime<Utc>>,
+        expire_time: Option<Timestamp>,
         reduce_only: bool,
         display_qty: Option<Quantity>,
         emulation_trigger: Option<TriggerType>,
@@ -1192,6 +1284,26 @@ impl PyExecutionAlgorithm {
 
         Ok(has_id)
     }
+
+    fn ensure_registered_for_data(&self) -> PyResult<()> {
+        if self.inner().core.actor.is_registered() {
+            Ok(())
+        } else {
+            Err(to_pyruntime_err(
+                "ExecutionAlgorithm must be registered before publishing data",
+            ))
+        }
+    }
+
+    fn ensure_registered(&self) -> PyResult<()> {
+        if self.inner().core.actor.is_registered() {
+            Ok(())
+        } else {
+            Err(to_pyruntime_err(
+                "ExecutionAlgorithm must be registered before managing subscriptions",
+            ))
+        }
+    }
 }
 
 #[pyo3::pymethods]
@@ -1341,15 +1453,208 @@ fn py_dict_to_json(config: &Bound<'_, PyDict>) -> PyResult<HashMap<String, serde
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{
+        cache::Cache,
+        clock::{Clock, TestClock},
+        messages::system::{
+            QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged,
+        },
+        msgbus::{
+            MessageBus, MessagingSwitchboard, get_message_bus, switchboard::get_signal_topic,
+        },
+        runner::SystemChannel,
+    };
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::OrderType,
-        identifiers::{ClientOrderId, InstrumentId, OrderListId, StrategyId},
+        identifiers::{
+            ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, Venue,
+        },
         orders::OrderTestBuilder,
     };
-    use pyo3::ffi::c_str;
+    use pyo3::{
+        ffi::c_str,
+        types::{PyWeakrefMethods, PyWeakrefReference},
+    };
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
+
+    fn sample_queue_state_changed() -> QueueStateChanged {
+        QueueStateChanged::new(
+            TraderId::from("TRADER-001"),
+            SystemChannel::ExecCommands,
+            QueueCondition::Backlogged,
+            QueueState::Triggered,
+            17,
+            23,
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(1_700_000_000_000_000_001),
+            UnixNanos::from(1_700_000_000_000_000_002),
+        )
+    }
+
+    fn sample_socket_state_changed() -> SocketStateChanged {
+        SocketStateChanged::new(
+            TraderId::from("TRADER-001"),
+            ClientId::from("BINANCE"),
+            Some(Venue::from("BINANCE")),
+            Ustr::from("binance-futures-market-streams"),
+            SocketState::Connected,
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(1_700_000_000_000_000_001),
+            UnixNanos::from(1_700_000_000_000_000_002),
+        )
+    }
+
+    #[rstest]
+    fn test_python_queue_state_dispatches_exact_event() {
+        Python::initialize();
+
+        let tracker = Python::attach(|py| {
+            py.run(
+                c_str!(
+                    r#"
+class QueueStateTracker:
+    def __init__(self):
+        self.event = None
+
+    def on_queue_state(self, event):
+        self.event = event
+"#
+                ),
+                None,
+                None,
+            )
+            .unwrap();
+            py.eval(c_str!("QueueStateTracker()"), None, None)
+                .unwrap()
+                .unbind()
+        });
+        let mut algorithm = PyExecutionAlgorithm::new(None);
+        Python::attach(|py| algorithm.set_python_instance(tracker.bind(py))).unwrap();
+        let event = sample_queue_state_changed();
+
+        DataActor::on_queue_state(&mut algorithm, &event).unwrap();
+
+        let received = Python::attach(|py| {
+            tracker
+                .getattr(py, "event")
+                .unwrap()
+                .extract::<QueueStateChanged>(py)
+                .unwrap()
+        });
+        assert_eq!(received, event);
+    }
+
+    #[rstest]
+    fn test_python_socket_state_dispatches_exact_event() {
+        Python::initialize();
+
+        let tracker = Python::attach(|py| {
+            py.run(
+                c_str!(
+                    r#"
+class SocketStateTracker:
+    def __init__(self):
+        self.event = None
+
+    def on_socket_state(self, event):
+        self.event = event
+"#
+                ),
+                None,
+                None,
+            )
+            .unwrap();
+            py.eval(c_str!("SocketStateTracker()"), None, None)
+                .unwrap()
+                .unbind()
+        });
+        let mut algorithm = PyExecutionAlgorithm::new(None);
+        Python::attach(|py| algorithm.set_python_instance(tracker.bind(py))).unwrap();
+        let event = sample_socket_state_changed();
+
+        DataActor::on_socket_state(&mut algorithm, &event).unwrap();
+
+        let received = Python::attach(|py| {
+            tracker
+                .getattr(py, "event")
+                .unwrap()
+                .extract::<SocketStateChanged>(py)
+                .unwrap()
+        });
+        assert_eq!(received, event);
+    }
+
+    #[rstest]
+    fn test_python_subscribe_and_unsubscribe_signal_update_msgbus() {
+        *get_message_bus().borrow_mut() = MessageBus::default();
+
+        let mut algorithm = PyExecutionAlgorithm::new(None);
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache).unwrap();
+
+        algorithm.py_subscribe_signal("risk", Some(50)).unwrap();
+
+        let topic = get_signal_topic("risk");
+        let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+        assert_eq!(subscriptions.len(), 1);
+        assert_eq!(subscriptions[0].priority, 50);
+
+        algorithm.py_unsubscribe_signal("risk").unwrap();
+
+        let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+        assert!(subscriptions.is_empty());
+    }
+
+    #[rstest]
+    fn test_python_subscribe_and_unsubscribe_queue_state_update_msgbus() {
+        *get_message_bus().borrow_mut() = MessageBus::default();
+
+        let mut algorithm = PyExecutionAlgorithm::new(None);
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache).unwrap();
+
+        algorithm.py_subscribe_queue_state(Some(50)).unwrap();
+
+        let topic = MessagingSwitchboard::queue_state_changed_topic();
+        let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+        assert_eq!(subscriptions.len(), 1);
+        assert_eq!(subscriptions[0].priority, 50);
+
+        algorithm.py_unsubscribe_queue_state().unwrap();
+
+        let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+        assert!(subscriptions.is_empty());
+    }
+
+    #[rstest]
+    fn test_python_subscribe_and_unsubscribe_socket_state_update_msgbus() {
+        *get_message_bus().borrow_mut() = MessageBus::default();
+
+        let mut algorithm = PyExecutionAlgorithm::new(None);
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache).unwrap();
+
+        algorithm.py_subscribe_socket_state(Some(50)).unwrap();
+
+        let topic = MessagingSwitchboard::socket_state_changed_topic();
+        let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+        assert_eq!(subscriptions.len(), 1);
+        assert_eq!(subscriptions[0].priority, 50);
+
+        algorithm.py_unsubscribe_socket_state().unwrap();
+
+        let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+        assert!(subscriptions.is_empty());
+    }
 
     #[rstest]
     fn test_python_order_list_override_receives_resolved_orders_without_fanout() {
@@ -1387,7 +1692,7 @@ class OrderListTracker:
                 .unbind()
         });
         let mut algorithm = PyExecutionAlgorithm::new(None);
-        algorithm.set_python_instance(tracker);
+        Python::attach(|py| algorithm.set_python_instance(tracker.bind(py))).unwrap();
 
         let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
         let strategy_id = StrategyId::from("STRAT-LIST-OVERRIDE");
@@ -1414,11 +1719,7 @@ class OrderListTracker:
         ExecutionAlgorithm::on_order_list(&mut algorithm, order_list, vec![first, second]).unwrap();
 
         let observations = Python::attach(|py| {
-            algorithm
-                .inner()
-                .py_self
-                .as_ref()
-                .unwrap()
+            tracker
                 .call_method0(py, "observations")
                 .unwrap()
                 .extract::<(usize, Vec<String>, Vec<String>, Vec<String>)>(py)
@@ -1439,5 +1740,28 @@ class OrderListTracker:
                 Vec::new(),
             ),
         );
+    }
+
+    #[rstest]
+    fn test_python_self_is_weak() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let instance = py
+                .get_type::<PyExecutionAlgorithm>()
+                .call0()
+                .expect("ExecutionAlgorithm should construct");
+            let weakref = PyWeakrefReference::new(&instance)
+                .expect("ExecutionAlgorithm should be weak-referenceable");
+            assert!(weakref.upgrade().is_some());
+
+            drop(instance);
+
+            // A strong `py_self` would form an untraceable Rust-Python cycle and keep this alive
+            assert!(
+                weakref.upgrade().is_none(),
+                "an unregistered ExecutionAlgorithm must be collected once its last Python owner is dropped",
+            );
+        });
     }
 }

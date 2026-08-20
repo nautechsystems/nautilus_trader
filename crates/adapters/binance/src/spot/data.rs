@@ -50,10 +50,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{
-        BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas,
-        OrderBookDeltas_API, QuoteTick,
-    },
+    data::{BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick},
     enums::{
         AggregationSource, BookAction, BookType, MarketStatusAction, OrderSide, PriceType,
         RecordFlag,
@@ -69,7 +66,7 @@ use ustr::Ustr;
 use crate::{
     common::{
         bar::{binance_bar_data_type, parse_binance_bar_type},
-        consts::BINANCE_VENUE,
+        consts::{BINANCE_VENUE, BINANCE_WS_HEARTBEAT_SECS},
         credential::resolve_credentials,
         enums::{BinanceEnvironment, BinanceProductType},
         parse::{bar_spec_to_binance_interval, quote_to_l1_deltas},
@@ -291,25 +288,23 @@ impl BinanceSpotDataClient {
                     config.base_url_ws.clone(),
                     creds.as_ref().map(|(k, _)| k.clone()),
                     creds.as_ref().map(|(_, s)| s.clone()),
-                    Some(20), // Heartbeat interval
+                    Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )?
                 .with_proxy(config.proxy_url.clone()),
             ),
-            BinanceSpotMarketDataMode::Json => {
-                SpotWsClient::JsonPublic(
-                    BinanceSpotPublicJsonWebSocketClient::new(
-                        Some(resolve_spot_json_ws_url(
-                            config.base_url_ws.clone(),
-                            config.environment,
-                            config.us,
-                        )),
-                        Some(20), // Heartbeat interval
-                        config.transport_backend,
-                    )
-                    .with_proxy(config.proxy_url.clone()),
+            BinanceSpotMarketDataMode::Json => SpotWsClient::JsonPublic(
+                BinanceSpotPublicJsonWebSocketClient::new(
+                    Some(resolve_spot_json_ws_url(
+                        config.base_url_ws.clone(),
+                        config.environment,
+                        config.us,
+                    )),
+                    Some(BINANCE_WS_HEARTBEAT_SECS),
+                    config.transport_backend,
                 )
-            }
+                .with_proxy(config.proxy_url.clone()),
+            ),
         };
         let data_sender = get_data_event_sender();
 
@@ -426,7 +421,7 @@ impl BinanceSpotDataClient {
 
         match msg {
             BinanceSpotWsMessage::Trades(ref event) => {
-                let symbol = Ustr::from(&event.symbol);
+                let symbol = event.symbol;
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol) {
                     let trades = parse_trades_event(event, instrument, ts_init);
@@ -436,7 +431,7 @@ impl BinanceSpotDataClient {
                 }
             }
             BinanceSpotWsMessage::BestBidAsk(ref event) => {
-                let symbol = Ustr::from(&event.symbol);
+                let symbol = event.symbol;
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol) {
                     let quote = parse_bbo_event(event, instrument, ts_init);
@@ -449,16 +444,16 @@ impl BinanceSpotDataClient {
                 }
             }
             BinanceSpotWsMessage::DepthSnapshot(ref event) => {
-                let symbol = Ustr::from(&event.symbol);
+                let symbol = event.symbol;
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol)
                     && let Some(deltas) = parse_depth_snapshot(event, instrument, ts_init)
                 {
-                    Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+                    Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
                 }
             }
             BinanceSpotWsMessage::DepthDiff(ref event) => {
-                let symbol = Ustr::from(&event.symbol);
+                let symbol = event.symbol;
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol)
                     && let Some(deltas) = parse_depth_diff(event, instrument, ts_init)
@@ -553,7 +548,7 @@ impl BinanceSpotDataClient {
                 if let Some(instrument) = cache.get(&symbol)
                     && let Some(deltas) = parse_json_depth_snapshot(event, instrument, ts_init)
                 {
-                    Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+                    Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
                 }
             }
             BinanceSpotPublicWsMessage::DepthDiff(ref event) => {
@@ -644,7 +639,7 @@ impl BinanceSpotDataClient {
         Self::send_data(data_sender, Data::Quote(quote));
         if l1_book_subscriptions.contains_key(&quote.instrument_id) {
             let deltas = quote_to_l1_deltas(quote, sequence);
-            Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+            Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
         }
     }
 
@@ -681,7 +676,7 @@ impl BinanceSpotDataClient {
             }
         }
 
-        Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+        Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
     }
 
     fn rebuild_full_depth_books(
@@ -1041,16 +1036,16 @@ impl BinanceSpotDataClient {
                     }
                 };
 
-                if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(
-                    OrderBookDeltas_API::new(snapshot_deltas),
-                ))) {
+                if let Err(e) =
+                    sender.send(DataEvent::Data(Data::Deltas(Box::new(snapshot_deltas))))
+                {
                     log::error!("Failed to send snapshot: {e}");
                 }
 
                 for update in replay_ready {
-                    if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(
-                        OrderBookDeltas_API::new(update.deltas),
-                    ))) {
+                    if let Err(e) =
+                        sender.send(DataEvent::Data(Data::Deltas(Box::new(update.deltas))))
+                    {
                         log::error!("Failed to send replayed deltas: {e}");
                     }
                 }
@@ -1107,9 +1102,9 @@ impl BinanceSpotDataClient {
                         is_first = false;
                         replayed += 1;
 
-                        if let Err(e) = sender.send(DataEvent::Data(Data::Deltas(
-                            OrderBookDeltas_API::new(update.deltas),
-                        ))) {
+                        if let Err(e) =
+                            sender.send(DataEvent::Data(Data::Deltas(Box::new(update.deltas))))
+                        {
                             log::error!("Failed to send replayed deltas: {e}");
                         }
                     }

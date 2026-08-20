@@ -51,7 +51,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{BarType, Data, ForwardPrice, OrderBookDeltas_API, QuoteTick},
+    data::{BarType, Data, ForwardPrice, QuoteTick},
     enums::{BookType, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -366,7 +366,7 @@ fn handle_ws_message(
             if has_book_sub {
                 match parse_orderbook_deltas(msg, instrument, ts_init) {
                     Ok(deltas) => {
-                        send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+                        send_data(data_sender, Data::Deltas(Box::new(deltas)));
                     }
                     Err(e) => log::error!("Failed to parse orderbook deltas: {e}"),
                 }
@@ -517,7 +517,7 @@ fn handle_ws_message(
 
             if sub_set.is_some_and(|s| s.contains("mark_prices")) && msg.data.mark_price.is_some() {
                 match parse_ticker_linear_mark_price(&msg.data, instrument, ts_event, ts_init) {
-                    Ok(update) => send_data(data_sender, Data::MarkPriceUpdate(update)),
+                    Ok(update) => send_data(data_sender, Data::MarkPrice(update)),
                     Err(e) => log::debug!("Skipping mark price update: {e}"),
                 }
             }
@@ -525,7 +525,7 @@ fn handle_ws_message(
             if sub_set.is_some_and(|s| s.contains("index_prices")) && msg.data.index_price.is_some()
             {
                 match parse_ticker_linear_index_price(&msg.data, instrument, ts_event, ts_init) {
-                    Ok(update) => send_data(data_sender, Data::IndexPriceUpdate(update)),
+                    Ok(update) => send_data(data_sender, Data::IndexPrice(update)),
                     Err(e) => log::debug!("Skipping index price update: {e}"),
                 }
             }
@@ -557,14 +557,14 @@ fn handle_ws_message(
 
             if sub_set.is_some_and(|s| s.contains("mark_prices")) {
                 match parse_ticker_option_mark_price(msg, instrument, ts_init) {
-                    Ok(update) => send_data(data_sender, Data::MarkPriceUpdate(update)),
+                    Ok(update) => send_data(data_sender, Data::MarkPrice(update)),
                     Err(e) => log::error!("Failed to parse ticker option mark price: {e}"),
                 }
             }
 
             if sub_set.is_some_and(|s| s.contains("index_prices")) {
                 match parse_ticker_option_index_price(msg, instrument, ts_init) {
-                    Ok(update) => send_data(data_sender, Data::IndexPriceUpdate(update)),
+                    Ok(update) => send_data(data_sender, Data::IndexPrice(update)),
                     Err(e) => log::error!("Failed to parse ticker option index price: {e}"),
                 }
             }
@@ -2078,7 +2078,7 @@ mod tests {
                 assert_eq!(tick.instrument_id, instrument.id());
                 assert_eq!(tick.price, instrument.make_price(27451.00));
                 assert_eq!(tick.size, instrument.make_qty(0.010, None));
-                assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+                assert_eq!(tick.aggressor_side, AggressorSide::Buy);
             }
             other => panic!("Expected Trade data event, found {other:?}"),
         }
@@ -2342,10 +2342,10 @@ mod tests {
         );
 
         let event1 = rx.try_recv().unwrap();
-        assert!(matches!(event1, DataEvent::Data(Data::MarkPriceUpdate(_))));
+        assert!(matches!(event1, DataEvent::Data(Data::MarkPrice(_))));
 
         let event2 = rx.try_recv().unwrap();
-        assert!(matches!(event2, DataEvent::Data(Data::IndexPriceUpdate(_))));
+        assert!(matches!(event2, DataEvent::Data(Data::IndexPrice(_))));
     }
 
     #[rstest]

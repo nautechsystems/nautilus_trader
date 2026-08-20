@@ -22,8 +22,8 @@
 use std::str::FromStr;
 
 use anyhow::Context;
-use chrono::{DateTime, Utc};
 use dashmap::DashMap;
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, Data, OrderBookDelta, OrderBookDeltas, TradeTick},
@@ -211,8 +211,7 @@ fn convert_ws_order_to_http(
     let good_til_block_time = ws_order
         .good_til_block_time
         .as_ref()
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&Utc));
+        .and_then(|s| s.parse::<Timestamp>().ok());
 
     let trigger_price = ws_order
         .trigger_price
@@ -223,8 +222,7 @@ fn convert_ws_order_to_http(
     let updated_at = ws_order
         .updated_at
         .as_ref()
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&Utc));
+        .and_then(|s| s.parse::<Timestamp>().ok());
 
     // Parse updated_at_height (optional for BEST_EFFORT_OPENED orders)
     let updated_at_height = ws_order
@@ -359,9 +357,10 @@ fn convert_ws_fill_to_http(ws_fill: &DydxWsFillSubaccountMessageContents) -> any
         .clone()
         .ok_or_else(|| anyhow::anyhow!("Missing required field: order_id"))?;
 
-    let created_at = DateTime::parse_from_rfc3339(&ws_fill.created_at)
-        .context("Failed to parse created_at")?
-        .with_timezone(&Utc);
+    let created_at = ws_fill
+        .created_at
+        .parse::<Timestamp>()
+        .context("Failed to parse created_at")?;
 
     Ok(Fill {
         id: ws_fill.id.clone(),
@@ -468,17 +467,17 @@ fn convert_ws_position_to_http(
         .parse()
         .context("Failed to parse net_funding")?;
 
-    let created_at = DateTime::parse_from_rfc3339(&ws_position.created_at)
-        .context("Failed to parse created_at")?
-        .with_timezone(&Utc);
+    let created_at = ws_position
+        .created_at
+        .parse::<Timestamp>()
+        .context("Failed to parse created_at")?;
 
     let closed_at = ws_position
         .closed_at
         .as_ref()
-        .map(|s| DateTime::parse_from_rfc3339(s))
+        .map(|s| s.parse::<Timestamp>())
         .transpose()
-        .context("Failed to parse closed_at")?
-        .map(|dt| dt.with_timezone(&Utc));
+        .context("Failed to parse closed_at")?;
 
     // Preserve the venue-supplied side; only derive from size sign when side is absent
     // (the WS schema always provides it, but this keeps the behavior explicit).
@@ -757,8 +756,8 @@ pub fn parse_trade_ticks(
 
     for trade in &contents.trades {
         let aggressor_side = match trade.side {
-            OrderSide::Buy => AggressorSide::Buyer,
-            OrderSide::Sell => AggressorSide::Seller,
+            OrderSide::Buy => AggressorSide::Buy,
+            OrderSide::Sell => AggressorSide::Sell,
             _ => continue,
         };
 
@@ -768,7 +767,7 @@ pub fn parse_trade_ticks(
         let size = Decimal::from_str(&trade.size)
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse trade size: {e}")))?;
 
-        let trade_ts = trade.created_at.timestamp_nanos_opt().ok_or_else(|| {
+        let trade_ts = u64::try_from(trade.created_at.as_nanosecond()).map_err(|_| {
             DydxWsError::Parse(format!("Timestamp out of range for trade {}", trade.id))
         })?;
 
@@ -782,7 +781,7 @@ pub fn parse_trade_ticks(
             })?,
             aggressor_side,
             TradeId::new(&trade.id),
-            UnixNanos::from(trade_ts as u64),
+            UnixNanos::from(trade_ts),
             ts_init,
         );
         ticks.push(Data::Trade(tick));
@@ -822,25 +821,21 @@ pub fn parse_candle_bar(
         .map_err(|e| DydxWsError::Parse(format!("Failed to parse volume: {e}")))?
         .unwrap_or(Decimal::ZERO);
 
-    let started_at_nanos = candle.started_at.timestamp_nanos_opt().ok_or_else(|| {
+    let started_at_nanos = u64::try_from(candle.started_at.as_nanosecond()).map_err(|_| {
         DydxWsError::Parse(format!(
             "Timestamp out of range for candle at {}",
             candle.started_at
         ))
     })?;
-    let mut ts_event = UnixNanos::from(started_at_nanos as u64);
+    let mut ts_event = UnixNanos::from(started_at_nanos);
 
     if timestamp_on_close {
-        let interval_ns = bar_type
-            .spec()
-            .timedelta()
-            .num_nanoseconds()
-            .ok_or_else(|| DydxWsError::Parse("Bar interval overflow".to_string()))?;
-        let updated = (started_at_nanos as u64)
-            .checked_add(interval_ns as u64)
-            .ok_or_else(|| {
-                DydxWsError::Parse("Bar timestamp overflowed adjusting to close time".to_string())
-            })?;
+        let interval_ns = bar_type.spec().timedelta().as_nanos();
+        let interval_ns = u64::try_from(interval_ns)
+            .map_err(|_| DydxWsError::Parse("Bar interval overflow".to_string()))?;
+        let updated = started_at_nanos.checked_add(interval_ns).ok_or_else(|| {
+            DydxWsError::Parse("Bar timestamp overflowed adjusting to close time".to_string())
+        })?;
         ts_event = UnixNanos::from(updated);
     }
 
@@ -1953,7 +1948,7 @@ mod tests {
             assert_eq!(tick.instrument_id, instrument_id);
             assert_eq!(tick.price.to_string(), "43250.00");
             assert_eq!(tick.size.to_string(), "0.50000000");
-            assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+            assert_eq!(tick.aggressor_side, AggressorSide::Buy);
             assert_eq!(tick.trade_id.to_string(), "trade-001");
         } else {
             panic!("Expected Trade data");

@@ -543,11 +543,11 @@ impl GreeksCalculator {
             .map(|ns| ns.to_datetime_utc())
             .unwrap_or_default();
         let expiry_int = expiry_utc
-            .format("%Y%m%d")
+            .strftime("%Y%m%d")
             .to_string()
             .parse::<i32>()
             .unwrap_or(0);
-        let raw_days = (expiry_utc - utc_now).num_days();
+        let raw_days = utc_now.duration_until(expiry_utc).as_hours() / 24;
         let expiry_in_days = raw_days.max(1) as i32;
         let expiry_in_years = expiry_in_days as f64 / 365.25;
         let currency = instrument.quote_currency().code.to_string();
@@ -974,7 +974,7 @@ impl GreeksCalculator {
         let side = side.unwrap_or(PositionSide::NoPositionSide);
 
         let cache = self.cache.borrow();
-        let open_positions = cache.positions(
+        let open_positions = cache.positions_open(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
@@ -1170,9 +1170,8 @@ impl GreeksCalculator {
             .expiration_ns()
             .map(|ns| ns.to_datetime_utc())
             .unwrap_or_default();
-        let expiry_in_days = (expiry_utc - self.clock.borrow().timestamp_ns().to_datetime_utc())
-            .num_days()
-            .max(1) as i32;
+        let now = self.clock.borrow().timestamp_ns().to_datetime_utc();
+        let expiry_in_days = (now.duration_until(expiry_utc).as_hours() / 24).max(1) as i32;
         let expiry_in_years = expiry_in_days as f64 / 365.25;
         let currency = call_instrument.quote_currency().code.to_string();
         let interest_rate = self
@@ -1257,11 +1256,14 @@ impl GreeksCalculator {
 mod tests {
     use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-    use chrono::{TimeZone, Utc};
+    use jiff::{Timestamp, civil::Date, tz::Offset};
     use nautilus_model::{
         data::{IndexPriceUpdate, QuoteTick},
-        enums::{AssetClass, OptionKind, PositionSide},
-        identifiers::{InstrumentId, StrategyId, Symbol, Venue},
+        enums::{AssetClass, OmsType, OptionKind, OrderSide, PositionSide},
+        events::order::spec::OrderFilledSpec,
+        identifiers::{
+            ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, Venue,
+        },
         instruments::{Equity, FuturesContract, OptionContract, any::InstrumentAny},
         types::{Currency, Price, Quantity},
     };
@@ -1270,6 +1272,16 @@ mod tests {
 
     use super::*;
     use crate::{cache::Cache, clock::TestClock};
+
+    fn utc_timestamp(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
+        Offset::UTC
+            .to_timestamp(
+                Date::new(year, month, day)
+                    .unwrap()
+                    .at(hour, minute, second, 0),
+            )
+            .unwrap()
+    }
 
     fn create_test_calculator() -> GreeksCalculator {
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
@@ -1737,7 +1749,7 @@ mod tests {
     }
 
     fn option_with_expiration(instrument_id: &str, expiration_ns: UnixNanos) -> OptionContract {
-        let activation_ns = UnixNanos::from(Utc.with_ymd_and_hms(2021, 9, 17, 0, 0, 0).unwrap());
+        let activation_ns = UnixNanos::from(utc_timestamp(2021, 9, 17, 0, 0, 0));
         OptionContract::new(
             InstrumentId::from(instrument_id),
             Symbol::from("AAPL211217C00150000"),
@@ -1916,10 +1928,291 @@ mod tests {
         cache
     }
 
+    fn position_from_fill(
+        instrument: &InstrumentAny,
+        position_id: &str,
+        client_order_id: &str,
+        trade_id: &str,
+        side: OrderSide,
+        quantity: u64,
+        price: &str,
+    ) -> Position {
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(client_order_id))
+            .trade_id(TradeId::from(trade_id))
+            .order_side(side)
+            .last_qty(Quantity::from(quantity))
+            .last_px(Price::from(price))
+            .currency(Currency::USD())
+            .position_id(PositionId::from(position_id))
+            .build();
+        Position::new(instrument, fill)
+    }
+
+    fn calculate_portfolio_greeks(
+        calculator: &GreeksCalculator,
+        side: Option<PositionSide>,
+    ) -> anyhow::Result<PortfolioGreeks> {
+        calculator.portfolio_greeks(
+            None, None, None, None, side, None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None,
+        )
+    }
+
+    fn assert_portfolio_greeks_eq(actual: &PortfolioGreeks, expected: &PortfolioGreeks) {
+        assert_eq!(actual.ts_init, expected.ts_init);
+        assert_eq!(actual.ts_event, expected.ts_event);
+        assert_eq!(actual.pnl, expected.pnl);
+        assert_eq!(actual.price, expected.price);
+        assert_eq!(actual.delta, expected.delta);
+        assert_eq!(actual.gamma, expected.gamma);
+        assert_eq!(actual.vega, expected.vega);
+        assert_eq!(actual.theta, expected.theta);
+        assert_eq!(actual.rho, expected.rho);
+    }
+
+    #[rstest]
+    fn test_portfolio_greeks_ignores_closed_position_with_missing_price() {
+        let now = utc_timestamp(2025, 3, 8, 12, 0, 0);
+        let expiry = now + jiff::SignedDuration::from_hours(24 * 30);
+        let now_ns = UnixNanos::from(now);
+        let expiry_ns = UnixNanos::from(expiry);
+        let open_option = option_with_expiration("AAPL250417C00150000.OPRA", expiry_ns);
+        let open_option_id = open_option.id();
+        let underlying_id = InstrumentId::from("AAPL.OPRA");
+        let cache = setup_cache_with_option_and_quotes(open_option.clone(), underlying_id, now_ns);
+        let closed_future = future_with_expiration("CLOSED.GLBX", "CLOSED", expiry_ns);
+        let closed_future_id = closed_future.id();
+        let open_instrument = InstrumentAny::OptionContract(open_option);
+        let closed_instrument = InstrumentAny::FuturesContract(closed_future);
+
+        let open_position = position_from_fill(
+            &open_instrument,
+            "P-OPEN",
+            "O-OPEN",
+            "T-OPEN",
+            OrderSide::Buy,
+            2,
+            "10.50",
+        );
+        let mut closed_position = position_from_fill(
+            &closed_instrument,
+            "P-CLOSED",
+            "O-CLOSED-OPEN",
+            "T-CLOSED-OPEN",
+            OrderSide::Buy,
+            1,
+            "100.00",
+        );
+        cache
+            .borrow_mut()
+            .add_instrument(closed_instrument)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_position(&open_position, OmsType::Hedging)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_position(&closed_position, OmsType::Hedging)
+            .unwrap();
+        let closing_fill = OrderFilledSpec::builder()
+            .instrument_id(closed_future_id)
+            .client_order_id(ClientOrderId::from("O-CLOSED-CLOSE"))
+            .trade_id(TradeId::from("T-CLOSED-CLOSE"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(1))
+            .last_px(Price::from("101.00"))
+            .currency(Currency::USD())
+            .position_id(PositionId::from("P-CLOSED"))
+            .build();
+        closed_position.apply(&closing_fill);
+        cache
+            .borrow_mut()
+            .update_position(&closed_position)
+            .unwrap();
+
+        // Pin the fixture itself: the closed position must have left the open index,
+        // or this would exercise `add_position`'s open-index insertion rather than
+        // the query scope under test.
+        assert!(closed_position.is_closed());
+        assert_eq!(
+            cache
+                .borrow()
+                .positions_open(None, None, None, None, None)
+                .len(),
+            1
+        );
+
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        clock.borrow_mut().set_time(now_ns);
+        let calculator = GreeksCalculator::new(cache, clock);
+        let expected = calculator
+            .instrument_greeks(
+                open_option_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(now_ns),
+                Some(open_position.clone()),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let expected = PortfolioGreeks::from(open_position.signed_qty * &expected);
+
+        assert_ne!(expected.delta, 0.0);
+        assert_portfolio_greeks_eq(
+            &calculate_portfolio_greeks(&calculator, None).unwrap(),
+            &expected,
+        );
+        assert_portfolio_greeks_eq(
+            &calculate_portfolio_greeks(&calculator, Some(PositionSide::Flat)).unwrap(),
+            &PortfolioGreeks::new(now_ns, now_ns, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        );
+    }
+
+    #[rstest]
+    fn test_portfolio_greeks_preserves_open_position_aggregate_and_side_filters() {
+        let now = utc_timestamp(2025, 3, 8, 12, 0, 0);
+        let expiry = now + jiff::SignedDuration::from_hours(24 * 30);
+        let now_ns = UnixNanos::from(now);
+        let expiry_ns = UnixNanos::from(expiry);
+        let long_option = option_with_expiration("AAPL250417C00145000.OPRA", expiry_ns);
+        let short_option = option_with_expiration("AAPL250417C00155000.OPRA", expiry_ns);
+        let long_instrument = InstrumentAny::OptionContract(long_option.clone());
+        let short_instrument = InstrumentAny::OptionContract(short_option.clone());
+        let underlying_id = InstrumentId::from("AAPL.OPRA");
+        let cache = setup_cache_with_option_and_quotes(long_option, underlying_id, now_ns);
+        cache
+            .borrow_mut()
+            .add_instrument(short_instrument.clone())
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_quote(QuoteTick::new(
+                short_option.id(),
+                Price::from("3.50"),
+                Price::from("3.60"),
+                Quantity::from(100),
+                Quantity::from(100),
+                now_ns,
+                now_ns,
+            ))
+            .unwrap();
+        let long_position = position_from_fill(
+            &long_instrument,
+            "P-LONG",
+            "O-LONG",
+            "T-LONG",
+            OrderSide::Buy,
+            3,
+            "10.50",
+        );
+        let short_position = position_from_fill(
+            &short_instrument,
+            "P-SHORT",
+            "O-SHORT",
+            "T-SHORT",
+            OrderSide::Sell,
+            2,
+            "3.50",
+        );
+        cache
+            .borrow_mut()
+            .add_position(&long_position, OmsType::Hedging)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_position(&short_position, OmsType::Hedging)
+            .unwrap();
+
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        clock.borrow_mut().set_time(now_ns);
+        let calculator = GreeksCalculator::new(cache, clock);
+        let long_greeks = calculator
+            .instrument_greeks(
+                long_instrument.id(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(now_ns),
+                Some(long_position.clone()),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let short_greeks = calculator
+            .instrument_greeks(
+                short_instrument.id(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(now_ns),
+                Some(short_position.clone()),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let expected_long = PortfolioGreeks::from(long_position.signed_qty * &long_greeks);
+        let expected_short = PortfolioGreeks::from(short_position.signed_qty * &short_greeks);
+        let expected = expected_long + expected_short;
+
+        assert_ne!(expected.pnl, 0.0);
+        assert_ne!(expected.price, 0.0);
+        assert_ne!(expected.delta, 0.0);
+        assert_ne!(expected.gamma, 0.0);
+        assert_ne!(expected.vega, 0.0);
+        assert_ne!(expected.theta, 0.0);
+        assert_portfolio_greeks_eq(
+            &calculate_portfolio_greeks(&calculator, None).unwrap(),
+            &expected,
+        );
+        assert_portfolio_greeks_eq(
+            &calculate_portfolio_greeks(&calculator, Some(PositionSide::Long)).unwrap(),
+            &PortfolioGreeks::from(long_position.signed_qty * &long_greeks),
+        );
+        assert_portfolio_greeks_eq(
+            &calculate_portfolio_greeks(&calculator, Some(PositionSide::Short)).unwrap(),
+            &PortfolioGreeks::from(short_position.signed_qty * &short_greeks),
+        );
+    }
+
     #[rstest]
     fn test_expiry_in_days_multi_day_unchanged() {
-        let now = Utc.with_ymd_and_hms(2025, 3, 8, 12, 0, 0).unwrap();
-        let expiry = now + chrono::Duration::days(30);
+        let now = utc_timestamp(2025, 3, 8, 12, 0, 0);
+        let expiry = now + jiff::SignedDuration::from_hours(24 * (30));
         let now_ns = UnixNanos::from(now);
         let expiry_ns = UnixNanos::from(expiry);
         let option = option_with_expiration("AAPL250417C00150000.OPRA", expiry_ns);
@@ -1958,8 +2251,8 @@ mod tests {
 
     #[rstest]
     fn test_expiry_in_days_same_day_clamped_to_one() {
-        let now = Utc.with_ymd_and_hms(2025, 3, 8, 12, 0, 0).unwrap();
-        let expiry_same_day = Utc.with_ymd_and_hms(2025, 3, 8, 18, 0, 0).unwrap();
+        let now = utc_timestamp(2025, 3, 8, 12, 0, 0);
+        let expiry_same_day = utc_timestamp(2025, 3, 8, 18, 0, 0);
         let now_ns = UnixNanos::from(now);
         let expiry_ns = UnixNanos::from(expiry_same_day);
         let option = option_with_expiration("AAPL250308C00150000.OPRA", expiry_ns);
@@ -1998,8 +2291,8 @@ mod tests {
 
     #[rstest]
     fn test_instrument_greeks_beta_weights_vega_to_vol_index() {
-        let now = Utc.with_ymd_and_hms(2025, 3, 8, 12, 0, 0).unwrap();
-        let expiry = now + chrono::Duration::days(30);
+        let now = utc_timestamp(2025, 3, 8, 12, 0, 0);
+        let expiry = now + jiff::SignedDuration::from_hours(24 * (30));
         let now_ns = UnixNanos::from(now);
         let expiry_ns = UnixNanos::from(expiry);
         let option = option_with_expiration("AAPL250417C00150000.OPRA", expiry_ns);
@@ -2087,8 +2380,8 @@ mod tests {
 
     #[rstest]
     fn test_instrument_greeks_errors_when_vol_index_price_missing() {
-        let now = Utc.with_ymd_and_hms(2025, 3, 8, 12, 0, 0).unwrap();
-        let expiry = now + chrono::Duration::days(30);
+        let now = utc_timestamp(2025, 3, 8, 12, 0, 0);
+        let expiry = now + jiff::SignedDuration::from_hours(24 * (30));
         let now_ns = UnixNanos::from(now);
         let expiry_ns = UnixNanos::from(expiry);
         let option = option_with_expiration("AAPL250417C00150000.OPRA", expiry_ns);
@@ -2220,8 +2513,8 @@ mod tests {
 
     #[rstest]
     fn test_instrument_greeks_errors_when_future_underlying_price_missing_without_cached_spread() {
-        let now = Utc.with_ymd_and_hms(2024, 2, 14, 16, 0, 0).unwrap();
-        let expiry = Utc.with_ymd_and_hms(2024, 3, 15, 16, 0, 0).unwrap();
+        let now = utc_timestamp(2024, 2, 14, 16, 0, 0);
+        let expiry = utc_timestamp(2024, 3, 15, 16, 0, 0);
         let now_ns = UnixNanos::from(now);
         let expiry_ns = UnixNanos::from(expiry);
 
@@ -2310,8 +2603,8 @@ mod tests {
 
     #[rstest]
     fn test_cache_futures_spread_returns_price_to_reference_future() {
-        let now = Utc.with_ymd_and_hms(2024, 2, 14, 16, 0, 0).unwrap();
-        let expiry = Utc.with_ymd_and_hms(2024, 3, 15, 16, 0, 0).unwrap();
+        let now = utc_timestamp(2024, 2, 14, 16, 0, 0);
+        let expiry = utc_timestamp(2024, 3, 15, 16, 0, 0);
         let now_ns = UnixNanos::from(now);
         let expiry_ns = UnixNanos::from(expiry);
 
@@ -2405,8 +2698,8 @@ mod tests {
 
     #[rstest]
     fn test_instrument_greeks_uses_cached_futures_spread_when_underlying_price_missing() {
-        let now = Utc.with_ymd_and_hms(2024, 2, 14, 16, 0, 0).unwrap();
-        let expiry = Utc.with_ymd_and_hms(2024, 3, 15, 16, 0, 0).unwrap();
+        let now = utc_timestamp(2024, 2, 14, 16, 0, 0);
+        let expiry = utc_timestamp(2024, 3, 15, 16, 0, 0);
         let now_ns = UnixNanos::from(now);
         let expiry_ns = UnixNanos::from(expiry);
 
@@ -2541,8 +2834,8 @@ mod tests {
 
     #[rstest]
     fn test_instrument_greeks_uses_index_price_for_index_underlying() {
-        let now = Utc.with_ymd_and_hms(2024, 2, 14, 16, 0, 0).unwrap();
-        let expiry = Utc.with_ymd_and_hms(2024, 3, 15, 16, 0, 0).unwrap();
+        let now = utc_timestamp(2024, 2, 14, 16, 0, 0);
+        let expiry = utc_timestamp(2024, 3, 15, 16, 0, 0);
         let now_ns = UnixNanos::from(now);
         let expiry_ns = UnixNanos::from(expiry);
 
@@ -2618,8 +2911,8 @@ mod tests {
 
     #[rstest]
     fn test_instrument_greeks_prefers_quote_over_index_price_for_index_future() {
-        let now = Utc.with_ymd_and_hms(2024, 2, 14, 16, 0, 0).unwrap();
-        let expiry = Utc.with_ymd_and_hms(2024, 3, 15, 16, 0, 0).unwrap();
+        let now = utc_timestamp(2024, 2, 14, 16, 0, 0);
+        let expiry = utc_timestamp(2024, 3, 15, 16, 0, 0);
         let now_ns = UnixNanos::from(now);
         let expiry_ns = UnixNanos::from(expiry);
 

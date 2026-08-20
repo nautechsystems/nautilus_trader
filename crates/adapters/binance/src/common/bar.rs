@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 /// `taker_buy_base_volume`, and `taker_buy_quote_volume`.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.binance", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

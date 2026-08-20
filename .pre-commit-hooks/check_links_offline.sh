@@ -19,23 +19,19 @@ if ! command -v lychee > /dev/null 2>&1; then
   exit 0
 fi
 
-# pre-commit passes changed files as arguments. If none are passed (no
-# relevant files in the commit), skip; use `make docs-check-links` for a
-# full audit.
-if [ $# -eq 0 ]; then
-  exit 0
-fi
-
 repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
 
-lychee \
-  --no-progress \
-  --offline \
-  --include-fragments \
-  --root-dir "$repo_root" \
-  --fallback-extensions md,py,html \
-  --exclude-path .venv \
-  --exclude-path target \
-  --exclude-path docs/python-api-latest \
-  --exclude "file://.*/python-api-latest/.*" \
-  "$@"
+# Check every tracked input because an edited target can break links from unchanged files
+git ls-files -- '*.md' 'docs/*.py' ':(exclude)patches/pyo3-stub-gen/**' |
+  lychee \
+    --no-progress \
+    --offline \
+    --include-fragments \
+    --root-dir "$repo_root" \
+    --fallback-extensions md,py,html \
+    --exclude-path .venv \
+    --exclude-path target \
+    --exclude-path docs/python-api-latest \
+    --exclude "file://.*/python-api-latest/.*" \
+    --files-from -

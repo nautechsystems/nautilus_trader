@@ -28,15 +28,15 @@ use std::{
 };
 
 use async_stream::stream;
-use futures_util::{SinkExt, Stream, StreamExt, stream::SplitSink};
+use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use message::WsMessage;
 use nautilus_common::live::get_runtime;
 use nautilus_core::string::urlencoding;
-use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream, connect_async,
+    connect_async,
     tungstenite::{self, protocol::frame::coding::CloseCode},
 };
+use tokio_util::sync::CancellationToken;
 use types::{ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions};
 
 pub use crate::machine::client::TardisMachineClient;
@@ -133,7 +133,9 @@ async fn stream_from_websocket(
 
     Ok(stream! {
         let (writer, mut reader) = ws_stream.split();
-        get_runtime().spawn(heartbeat(writer));
+        let cancel = CancellationToken::new();
+        get_runtime().spawn(heartbeat(writer, cancel.child_token()));
+        let _cancel_heartbeat = cancel.drop_guard();
 
         // Timeout awaiting the next record before checking signal
         let timeout = Duration::from_millis(10);
@@ -226,20 +228,94 @@ fn handle_connection_response(
     Ok(())
 }
 
-async fn heartbeat(
-    mut sender: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
-) {
+async fn heartbeat<S>(mut sender: S, cancel: CancellationToken)
+where
+    S: Sink<tungstenite::Message> + Unpin,
+    S::Error: std::fmt::Display,
+{
     let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(10));
 
     loop {
-        heartbeat_interval.tick().await;
+        tokio::select! {
+            _ = heartbeat_interval.tick() => {}
+            () = cancel.cancelled() => break,
+        }
+
         log::trace!("Sending PING");
 
-        if let Err(e) = sender.send(tungstenite::Message::Ping(vec![].into())).await {
-            log::debug!("Heartbeat send failed (connection closed): {e}");
-            break;
+        tokio::select! {
+            result = sender.send(tungstenite::Message::Ping(vec![].into())) => {
+                if let Err(e) = result {
+                    log::debug!("Heartbeat send failed (connection closed): {e}");
+                    break;
+                }
+            }
+            () = cancel.cancelled() => break,
         }
     }
 
     log::debug!("Heartbeat task exiting");
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        convert::Infallible,
+        pin::Pin,
+        task::{Context, Poll},
+        time::Duration,
+    };
+
+    use futures_util::Sink;
+    use rstest::rstest;
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_util::sync::CancellationToken;
+
+    use super::heartbeat;
+
+    struct StallSink;
+
+    impl Sink<Message> for StallSink {
+        type Error = Infallible;
+
+        fn poll_ready(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Pending
+        }
+
+        fn start_send(self: Pin<&mut Self>, _item: Message) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Pending
+        }
+
+        fn poll_close(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_heartbeat_exits_on_cancel_during_stalled_send() {
+        let cancel = CancellationToken::new();
+        let task = tokio::spawn(heartbeat(StallSink, cancel.clone()));
+
+        tokio::task::yield_now().await;
+        cancel.cancel();
+
+        tokio::time::timeout(Duration::from_secs(1), task)
+            .await
+            .expect("heartbeat should exit after cancel during a stalled send")
+            .unwrap();
+    }
 }

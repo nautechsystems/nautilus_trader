@@ -21,23 +21,20 @@
 //! Uses [`RetryManager`] from `nautilus-network` with exponential backoff for
 //! transient HTTP failures (timeouts, 5xx, rate limits).
 
-use std::{
-    error::Error as StdError,
-    fmt::Display,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
     identifiers::VenueOrderId,
-    types::Quantity,
+    types::{Price, Quantity},
 };
-use nautilus_network::retry::{RetryConfig, RetryManager};
+use nautilus_network::retry::{RetryConfig, RetryError, RetryManager};
 use rust_decimal::Decimal;
+use thiserror::Error;
 
 use super::{
     order_builder::PolymarketOrderBuilder,
@@ -48,7 +45,7 @@ use crate::{
     common::enums::{PolymarketOrderSide, PolymarketOrderType},
     http::{
         clob::PolymarketClobHttpClient,
-        error::{Error, Result as HttpResult},
+        error::{Error, Result as HttpResult, sanitize_error_text},
         models::{PolymarketOpenOrder, PolymarketOrder},
         query::{CancelResponse, OrderResponse},
     },
@@ -75,7 +72,7 @@ pub(crate) struct MarketOrderSubmitRequest {
     pub(crate) amount: Quantity,
     pub(crate) time_in_force: TimeInForce,
     pub(crate) neg_risk: bool,
-    pub(crate) tick_decimals: u32,
+    pub(crate) tick_size: Price,
     pub(crate) fee_context: Option<MarketBuyFeeContext>,
 }
 
@@ -86,24 +83,24 @@ pub(crate) struct MarketOrderSubmitResult {
     pub expected_venue_order_id: VenueOrderId,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
+#[error("submit outcome unknown for {expected_venue_order_id}: {reason}")]
 pub(crate) struct UnknownSubmitError {
     pub reason: String,
     pub expected_venue_order_id: VenueOrderId,
     pub expected_base_qty: Option<Decimal>,
 }
 
-impl Display for UnknownSubmitError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "submit outcome unknown for {}: {}",
-            self.expected_venue_order_id, self.reason
-        )
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SubmitResponseOutcome {
+    Accepted,
+    Rejected,
+    Unknown,
 }
 
-impl StdError for UnknownSubmitError {}
+#[derive(Debug, Error)]
+#[error("{0}")]
+pub(crate) struct InvalidMarketPriceError(String);
 
 /// HTTP order submission and cancellation facade.
 ///
@@ -158,7 +155,7 @@ impl OrderSubmitter {
             amount,
             time_in_force,
             neg_risk,
-            tick_decimals,
+            tick_size,
             fee_context,
         } = request;
         let poly_side = PolymarketOrderSide::try_from(side)
@@ -180,6 +177,9 @@ impl OrderSubmitter {
 
         let result = calculate_market_price(levels, amount_dec, poly_side)
             .map_err(|e| anyhow::anyhow!("Market price calculation failed: {e}"))?;
+        let price =
+            PolymarketOrderBuilder::normalize_market_price(result.crossing_price, tick_size)
+                .map_err(InvalidMarketPriceError)?;
 
         // Fee-aware sizing applies to BUY only and only when a context is
         // provided. Run before signing so the on-chain `taker_amount` and
@@ -188,7 +188,7 @@ impl OrderSubmitter {
             (PolymarketOrderSide::Buy, Some(ctx)) => adjust_market_buy_amount(
                 amount_dec,
                 ctx.user_pusd_balance,
-                result.crossing_price,
+                price,
                 ctx.fee_rate,
                 ctx.fee_exponent,
                 ctx.builder_taker_fee_rate,
@@ -201,10 +201,10 @@ impl OrderSubmitter {
             .build_market_order(
                 &token_id,
                 poly_side,
-                result.crossing_price,
+                price,
                 signed_amount,
                 neg_risk,
-                tick_decimals,
+                u32::from(tick_size.precision),
             )
             .map_err(|e| anyhow::anyhow!("Failed to build market order: {e}"))?;
 
@@ -230,19 +230,47 @@ impl OrderSubmitter {
                     let saw_unknown_outcome = saw_unknown_outcome.clone();
                     async move {
                         let result = http_client.post_order(&poly_order, order_type, false).await;
+
                         if result.as_ref().is_err_and(Error::is_submit_outcome_unknown) {
                             saw_unknown_outcome.store(true, Ordering::Release);
                         }
+
                         result
                     }
                 },
                 |e| e.is_retryable(),
                 Error::retry_after,
-                Error::transport,
+                |e| submit_retry_error(e, &saw_unknown_outcome),
             )
             .await
         {
-            Ok(response) => response,
+            Ok(response) => {
+                let is_fok = order_type == PolymarketOrderType::FOK;
+                let outcome = submit_response_outcome(&response, is_fok);
+                let earlier_attempt_unknown = saw_unknown_outcome.load(Ordering::Acquire);
+
+                if outcome == SubmitResponseOutcome::Unknown
+                    || (earlier_attempt_unknown
+                        && !submit_response_confirms_expected(
+                            &response,
+                            expected_venue_order_id,
+                            is_fok,
+                        ))
+                {
+                    return Err(UnknownSubmitError {
+                        reason: submit_response_unknown_reason(
+                            &response,
+                            earlier_attempt_unknown,
+                            expected_venue_order_id,
+                        ),
+                        expected_venue_order_id,
+                        expected_base_qty: Some(signed_base_qty),
+                    }
+                    .into());
+                }
+
+                response
+            }
             Err(e)
                 if submit_outcome_is_unknown(&e, saw_unknown_outcome.load(Ordering::Acquire)) =>
             {
@@ -253,7 +281,7 @@ impl OrderSubmitter {
                 }
                 .into());
             }
-            Err(e) => anyhow::bail!("{e}"),
+            Err(e) => return Err(e.into()),
         };
 
         Ok(MarketOrderSubmitResult {
@@ -278,7 +306,7 @@ impl OrderSubmitter {
                 },
                 |e| e.is_retryable(),
                 Error::retry_after,
-                Error::transport,
+                |e| Error::transport(e.to_string()),
             )
             .await
     }
@@ -330,7 +358,7 @@ impl OrderSubmitter {
                 },
                 |e| e.is_retryable(),
                 Error::retry_after,
-                Error::transport,
+                |e| Error::transport(e.to_string()),
             )
             .await
     }
@@ -355,7 +383,7 @@ impl OrderSubmitter {
                 },
                 |e| e.is_retryable(),
                 Error::retry_after,
-                Error::transport,
+                |e| Error::transport(e.to_string()),
             )
             .await
             .map_err(|e| anyhow::anyhow!("Failed to fetch order status: {e}"))
@@ -435,16 +463,39 @@ impl OrderSubmitter {
                         if result.as_ref().is_err_and(Error::is_submit_outcome_unknown) {
                             saw_unknown_outcome.store(true, Ordering::Release);
                         }
+
                         result
                     }
                 },
                 |e| e.is_retryable(),
                 Error::retry_after,
-                Error::transport,
+                |e| submit_retry_error(e, &saw_unknown_outcome),
             )
             .await;
 
         match result {
+            Ok(response) => {
+                let is_fok = submission.order_type == PolymarketOrderType::FOK;
+                let earlier_attempt_unknown = saw_unknown_outcome.load(Ordering::Acquire);
+                let outcome = submit_response_outcome(&response, is_fok);
+
+                if outcome == SubmitResponseOutcome::Unknown
+                    || (earlier_attempt_unknown
+                        && !submit_response_confirms_expected(
+                            &response,
+                            submission.expected_venue_order_id,
+                            is_fok,
+                        ))
+                {
+                    Err(Error::decode(submit_response_unknown_reason(
+                        &response,
+                        earlier_attempt_unknown,
+                        submission.expected_venue_order_id,
+                    )))
+                } else {
+                    Ok(response)
+                }
+            }
             Err(e) if saw_unknown_outcome.load(Ordering::Acquire) => Err(Error::transport(
                 format!("submit outcome unknown after an earlier attempt: {e}"),
             )),
@@ -478,6 +529,85 @@ fn submit_outcome_is_unknown(error: &Error, earlier_attempt_unknown: bool) -> bo
     error.is_submit_outcome_unknown() || earlier_attempt_unknown
 }
 
+pub(super) fn submit_response_outcome(
+    response: &OrderResponse,
+    is_fok: bool,
+) -> SubmitResponseOutcome {
+    if is_fok && response.error_msg.as_deref().is_some_and(is_fok_unfilled) {
+        SubmitResponseOutcome::Rejected
+    } else if response.success && submit_response_venue_order_id(response).is_some() {
+        SubmitResponseOutcome::Accepted
+    } else if response
+        .error_msg
+        .as_deref()
+        .is_some_and(|reason| !reason.trim().is_empty())
+    {
+        SubmitResponseOutcome::Rejected
+    } else {
+        SubmitResponseOutcome::Unknown
+    }
+}
+
+pub(super) fn submit_response_venue_order_id(response: &OrderResponse) -> Option<VenueOrderId> {
+    response
+        .order_id
+        .as_deref()
+        .and_then(|order_id| VenueOrderId::new_checked(order_id).ok())
+}
+
+fn submit_response_confirms_expected(
+    response: &OrderResponse,
+    expected_venue_order_id: VenueOrderId,
+    is_fok: bool,
+) -> bool {
+    submit_response_outcome(response, is_fok) == SubmitResponseOutcome::Accepted
+        && submit_response_venue_order_id(response) == Some(expected_venue_order_id)
+}
+
+pub(super) fn submit_response_unknown_reason(
+    response: &OrderResponse,
+    earlier_attempt_unknown: bool,
+    expected_venue_order_id: VenueOrderId,
+) -> String {
+    if earlier_attempt_unknown {
+        if submit_response_venue_order_id(response)
+            .is_some_and(|venue_order_id| venue_order_id != expected_venue_order_id)
+        {
+            return "earlier attempt was ambiguous; final response returned an unexpected order ID"
+                .to_string();
+        }
+
+        let final_response = response.error_msg.as_deref().map_or_else(
+            || "no venue rejection reason".to_string(),
+            sanitize_error_text,
+        );
+
+        format!("earlier attempt was ambiguous; final response: {final_response}")
+    } else {
+        "response contained neither a non-empty order ID nor a venue rejection reason".to_string()
+    }
+}
+
+fn submit_retry_error(error: RetryError, saw_unknown_outcome: &AtomicBool) -> Error {
+    match error {
+        RetryError::OperationTimeout { .. } => {
+            saw_unknown_outcome.store(true, Ordering::Release);
+            Error::Timeout
+        }
+        error @ RetryError::ElapsedBudgetExceeded { .. } => {
+            saw_unknown_outcome.store(true, Ordering::Release);
+            Error::transport(error.to_string())
+        }
+        error @ RetryError::InvalidConfiguration { .. } => Error::bad_request(error.to_string()),
+        error => Error::transport(error.to_string()),
+    }
+}
+
+pub(super) fn is_fok_unfilled(reason: &str) -> bool {
+    reason.contains("couldn't be fully filled")
+        && reason.contains("FOK orders are fully filled or killed")
+}
+
 fn signed_base_quantity(
     maker_amount: Decimal,
     taker_amount: Decimal,
@@ -494,7 +624,7 @@ fn signed_base_quantity(
 // Polymarket API. Returns `"0"` when there is no expiration.
 fn limit_order_expiration(expire_time: Option<UnixNanos>) -> String {
     match expire_time {
-        Some(ns) if ns.as_u64() > 0 => (ns.as_u64() / 1_000_000_000).to_string(),
+        Some(ns) if !ns.is_zero() => ns.as_seconds().to_string(),
         _ => "0".to_string(),
     }
 }
@@ -533,14 +663,137 @@ mod tests {
 
     #[rstest]
     fn test_rate_limit_is_definitive_unless_an_earlier_attempt_was_unknown() {
-        let rate_limit = Error::rate_limit("/order", 1, Some(2_000));
+        let signer_limited = Error::RateLimit {
+            endpoint: "/order",
+            token_cost: 1,
+            retry_after_ms: Some(2_000),
+            message: "rate limit exceeded".to_string(),
+            signer_limited: true,
+        };
+        let bare_rate_limit = Error::rate_limit("/order", 1, Some(2_000));
 
-        assert!(!submit_outcome_is_unknown(&rate_limit, false));
-        assert!(submit_outcome_is_unknown(&rate_limit, true));
+        assert!(!submit_outcome_is_unknown(&signer_limited, false));
+        assert!(submit_outcome_is_unknown(&signer_limited, true));
+        assert!(submit_outcome_is_unknown(&bare_rate_limit, false));
         assert!(submit_outcome_is_unknown(
             &Error::transport("connection reset"),
             false
         ));
         assert!(submit_outcome_is_unknown(&Error::Timeout, false));
+    }
+
+    #[rstest]
+    #[case::accepted(false, true, Some("0xorder"), None, SubmitResponseOutcome::Accepted)]
+    #[case::rejected(false, false, None, Some("rejected"), SubmitResponseOutcome::Rejected)]
+    #[case::successful_rejection(
+        false,
+        true,
+        Some(""),
+        Some("rejected"),
+        SubmitResponseOutcome::Rejected
+    )]
+    #[case::missing_id(false, true, None, None, SubmitResponseOutcome::Unknown)]
+    #[case::empty_id(false, true, Some(""), None, SubmitResponseOutcome::Unknown)]
+    #[case::whitespace_id_rejection(
+        false,
+        true,
+        Some(" \t"),
+        Some("rejected"),
+        SubmitResponseOutcome::Rejected
+    )]
+    #[case::non_ascii_id(false, true, Some("é"), None, SubmitResponseOutcome::Unknown)]
+    #[case::whitespace_reason(false, false, None, Some(" \n\t"), SubmitResponseOutcome::Unknown)]
+    #[case::fok_unfilled(
+        true,
+        true,
+        Some("0xfok"),
+        Some("order couldn't be fully filled. FOK orders are fully filled or killed."),
+        SubmitResponseOutcome::Rejected
+    )]
+    fn test_submit_response_outcome(
+        #[case] is_fok: bool,
+        #[case] success: bool,
+        #[case] order_id: Option<&str>,
+        #[case] error_msg: Option<&str>,
+        #[case] expected: SubmitResponseOutcome,
+    ) {
+        let response = OrderResponse {
+            success,
+            order_id: order_id.map(str::to_string),
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
+            error_msg: error_msg.map(str::to_string),
+        };
+
+        assert_eq!(submit_response_outcome(&response, is_fok), expected);
+    }
+
+    #[rstest]
+    fn test_submit_response_confirms_only_expected_order_id() {
+        let expected_venue_order_id = VenueOrderId::from("0xexpected");
+        let mut response = OrderResponse {
+            success: true,
+            order_id: Some(expected_venue_order_id.to_string()),
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
+            error_msg: None,
+        };
+
+        assert!(submit_response_confirms_expected(
+            &response,
+            expected_venue_order_id,
+            false
+        ));
+
+        response.order_id = Some("0xother".to_string());
+        assert!(!submit_response_confirms_expected(
+            &response,
+            expected_venue_order_id,
+            false
+        ));
+    }
+
+    #[rstest]
+    #[case::operation_timeout(RetryError::OperationTimeout { timeout_ms: 500 }, true, true, true)]
+    #[case::elapsed_budget(
+        RetryError::ElapsedBudgetExceeded {
+            attempt: 2,
+            max_attempts: 3,
+            last_error: None,
+        },
+        true,
+        false,
+        true
+    )]
+    #[case::invalid_configuration(
+        RetryError::InvalidConfiguration {
+            message: "invalid".to_string(),
+        },
+        false,
+        false,
+        false
+    )]
+    fn test_submit_retry_error_tracks_ambiguous_control_errors(
+        #[case] retry_error: RetryError,
+        #[case] expected_unknown: bool,
+        #[case] expected_timeout: bool,
+        #[case] expected_error_unknown: bool,
+    ) {
+        let saw_unknown_outcome = AtomicBool::new(false);
+
+        let error = submit_retry_error(retry_error, &saw_unknown_outcome);
+
+        assert_eq!(
+            saw_unknown_outcome.load(Ordering::Acquire),
+            expected_unknown
+        );
+        assert_eq!(matches!(error, Error::Timeout), expected_timeout);
+        assert_eq!(error.is_submit_outcome_unknown(), expected_error_unknown);
     }
 }

@@ -44,13 +44,13 @@ use nautilus_common::{
             CancelAllOrders, GenerateOrderStatusReport, GenerateOrderStatusReports,
             GeneratePositionStatusReports, QueryOrder,
         },
-        system::ShutdownSystem,
+        system::{QueueStateChanged, ShutdownSystem},
     },
-    msgbus::{self, MessagingSwitchboard, switchboard},
+    msgbus::{self, MessagingSwitchboard, ShareableMessageHandler, switchboard},
     nautilus_actor,
     testing::{wait_until, wait_until_async},
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::{
     builder::LiveNodeBuilder,
     config::{LiveExecEngineConfig, LiveNodeConfig},
@@ -59,6 +59,7 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::AccountAny,
     enums::{OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+    events::OrderEventAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
         Venue, VenueOrderId,
@@ -301,6 +302,8 @@ mod serial_tests {
         connected: Arc<AtomicBool>,
         disconnect_attempted: Arc<AtomicBool>,
         mass_status_requested: Arc<AtomicBool>,
+        mass_status: Arc<Mutex<Option<ExecutionMassStatus>>>,
+        registered_external_orders: Arc<Mutex<Vec<ClientOrderId>>>,
         cancel_all_orders_received: Arc<AtomicUsize>,
         cancel_all_orders_while_connected: Arc<AtomicBool>,
     }
@@ -329,6 +332,7 @@ mod serial_tests {
 
     #[derive(Clone, Copy, Debug)]
     enum StartupMassStatusBehavior {
+        Available,
         Unavailable,
         Error,
         Pending,
@@ -337,6 +341,10 @@ mod serial_tests {
     struct StartupMassStatusExecutionClient {
         state: StartupMassStatusClientState,
         behavior: StartupMassStatusBehavior,
+        client_id: ClientId,
+        account_id: AccountId,
+        venue: Venue,
+        handles_all_order_venues: bool,
     }
 
     struct FailingDisconnectDataClient {
@@ -356,8 +364,22 @@ mod serial_tests {
     impl StartupMassStatusExecutionClient {
         const CLIENT_ID: &'static str = "STARTUP-MASS-STATUS";
 
-        fn new(state: StartupMassStatusClientState, behavior: StartupMassStatusBehavior) -> Self {
-            Self { state, behavior }
+        fn new(
+            state: StartupMassStatusClientState,
+            behavior: StartupMassStatusBehavior,
+            client_id: ClientId,
+            account_id: AccountId,
+            venue: Venue,
+            handles_all_order_venues: bool,
+        ) -> Self {
+            Self {
+                state,
+                behavior,
+                client_id,
+                account_id,
+                venue,
+                handles_all_order_venues,
+            }
         }
     }
 
@@ -409,6 +431,10 @@ mod serial_tests {
     struct StartupMassStatusExecutionClientFactory {
         state: StartupMassStatusClientState,
         behavior: StartupMassStatusBehavior,
+        client_id: ClientId,
+        account_id: AccountId,
+        venue: Venue,
+        handles_all_order_venues: bool,
     }
 
     #[derive(Debug)]
@@ -430,7 +456,31 @@ mod serial_tests {
 
     impl StartupMassStatusExecutionClientFactory {
         fn new(state: StartupMassStatusClientState, behavior: StartupMassStatusBehavior) -> Self {
-            Self { state, behavior }
+            Self {
+                state,
+                behavior,
+                client_id: ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID),
+                account_id: AccountId::from("STARTUP-MASS-STATUS-001"),
+                venue: crypto_perpetual_ethusdt().id().venue,
+                handles_all_order_venues: false,
+            }
+        }
+
+        fn with_identity(
+            mut self,
+            client_id: ClientId,
+            account_id: AccountId,
+            venue: Venue,
+        ) -> Self {
+            self.client_id = client_id;
+            self.account_id = account_id;
+            self.venue = venue;
+            self
+        }
+
+        fn with_handles_all_order_venues(mut self) -> Self {
+            self.handles_all_order_venues = true;
+            self
         }
     }
 
@@ -462,6 +512,10 @@ mod serial_tests {
             Ok(Box::new(StartupMassStatusExecutionClient::new(
                 self.state.clone(),
                 self.behavior,
+                self.client_id,
+                self.account_id,
+                self.venue,
+                self.handles_all_order_venues,
             )))
         }
 
@@ -688,15 +742,19 @@ mod serial_tests {
         }
 
         fn client_id(&self) -> ClientId {
-            ClientId::from(Self::CLIENT_ID)
+            self.client_id
         }
 
         fn account_id(&self) -> AccountId {
-            AccountId::from("STARTUP-MASS-STATUS-001")
+            self.account_id
         }
 
         fn venue(&self) -> Venue {
-            crypto_perpetual_ethusdt().id().venue
+            self.venue
+        }
+
+        fn handles_order_venue(&self, venue: Venue) -> bool {
+            self.handles_all_order_venues || self.venue == venue
         }
 
         fn oms_type(&self) -> OmsType {
@@ -713,6 +771,7 @@ mod serial_tests {
             _margins: Vec<MarginBalance>,
             _reported: bool,
             _ts_event: UnixNanos,
+            _info: Option<Params>,
         ) -> anyhow::Result<()> {
             Ok(())
         }
@@ -758,12 +817,33 @@ mod serial_tests {
                 .store(true, Ordering::Relaxed);
 
             match self.behavior {
+                StartupMassStatusBehavior::Available => Ok(self
+                    .state
+                    .mass_status
+                    .lock()
+                    .expect("mass status lock poisoned")
+                    .clone()),
                 StartupMassStatusBehavior::Unavailable => Ok(None),
                 StartupMassStatusBehavior::Error => Err(anyhow::anyhow!("mass status failed")),
                 StartupMassStatusBehavior::Pending => {
                     std::future::pending::<anyhow::Result<Option<ExecutionMassStatus>>>().await
                 }
             }
+        }
+
+        fn register_external_order(
+            &self,
+            client_order_id: ClientOrderId,
+            _venue_order_id: VenueOrderId,
+            _instrument_id: InstrumentId,
+            _strategy_id: StrategyId,
+            _ts_init: UnixNanos,
+        ) {
+            self.state
+                .registered_external_orders
+                .lock()
+                .expect("registered external orders lock poisoned")
+                .push(client_order_id);
         }
     }
 
@@ -799,6 +879,7 @@ mod serial_tests {
             _margins: Vec<MarginBalance>,
             _reported: bool,
             _ts_event: UnixNanos,
+            _info: Option<Params>,
         ) -> anyhow::Result<()> {
             Ok(())
         }
@@ -1132,6 +1213,7 @@ mod serial_tests {
             _margins: Vec<MarginBalance>,
             _reported: bool,
             _ts_event: UnixNanos,
+            _info: Option<Params>,
         ) -> anyhow::Result<()> {
             Ok(())
         }
@@ -1251,6 +1333,15 @@ mod serial_tests {
         venue_order_id: VenueOrderId,
         client_id: ClientId,
     ) {
+        add_accepted_test_order_with_origin(node, client_order_id, venue_order_id, Some(client_id));
+    }
+
+    fn add_accepted_test_order_with_origin(
+        node: &LiveNode,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        client_id: Option<ClientId>,
+    ) {
         let instrument_id = crypto_perpetual_ethusdt().id();
         let account_id = AccountId::from("BLOCKING-REPORT-001");
         let order = OrderTestBuilder::new(OrderType::Limit)
@@ -1263,7 +1354,7 @@ mod serial_tests {
         node.kernel()
             .cache
             .borrow_mut()
-            .add_order(order, None, Some(client_id), false)
+            .add_order(order, None, client_id, false)
             .unwrap();
         let order = node
             .kernel()
@@ -1314,6 +1405,47 @@ mod serial_tests {
             None,
         )
         .with_price(Price::from("100.0"))
+    }
+
+    fn live_node_with_available_mass_status(
+        name: &str,
+        state: StartupMassStatusClientState,
+        client_id: ClientId,
+        account_id: AccountId,
+        venue: Venue,
+    ) -> LiveNode {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let factory = StartupMassStatusExecutionClientFactory::new(
+            state,
+            StartupMassStatusBehavior::Available,
+        )
+        .with_identity(client_id, account_id, venue)
+        .with_handles_all_order_venues();
+        let node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name(name)
+            .add_exec_client(
+                Some("source-client".to_string()),
+                Box::new(factory),
+                Box::new(StartupMassStatusExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        node.kernel()
+            .cache()
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+            .unwrap();
+        node
     }
 
     #[rstest]
@@ -1808,7 +1940,7 @@ mod serial_tests {
         let result = dst::time::timeout(Duration::from_millis(200), node.start())
             .await
             .expect("start should finish within the lifecycle timeout");
-        let elapsed = dst::time::Instant::now() - started_at;
+        let elapsed = started_at.elapsed();
         let err = result.expect_err("start should fail on a readiness timeout");
 
         assert!(
@@ -2172,6 +2304,336 @@ mod serial_tests {
         assert!(!state.connected.load(Ordering::Relaxed));
         assert!(node.kernel().trader().borrow().is_disposed());
         assert_eq!(node.kernel().trader().borrow().component_count(), 0);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_startup_mass_status_registers_external_order_with_source_client() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        let venue_client_id = ClientId::from("VENUE-CLIENT");
+        let source_client_id = ClientId::from("ROUTING-CLIENT");
+        let source_account_id = AccountId::from("ROUTING-001");
+        let source_venue = Venue::from("ROUTING");
+        let client_order_id = ClientOrderId::from("O-EXT-SOURCE");
+        let venue_order_id = VenueOrderId::from("V-EXT-SOURCE");
+        let venue_state = StartupMassStatusClientState::default();
+        let source_state = StartupMassStatusClientState::default();
+        let report = test_order_report(
+            source_account_id,
+            client_order_id,
+            venue_order_id,
+            OrderStatus::Accepted,
+        );
+        let mut mass_status = ExecutionMassStatus::new(
+            source_client_id,
+            source_account_id,
+            source_venue,
+            UnixNanos::default(),
+            None,
+        );
+        mass_status.add_order_reports(vec![report]);
+        *source_state
+            .mass_status
+            .lock()
+            .expect("mass status lock poisoned") = Some(mass_status);
+
+        let venue_factory = StartupMassStatusExecutionClientFactory::new(
+            venue_state.clone(),
+            StartupMassStatusBehavior::Unavailable,
+        )
+        .with_identity(
+            venue_client_id,
+            AccountId::from("VENUE-001"),
+            instrument_id.venue,
+        )
+        .with_handles_all_order_venues();
+        let source_factory = StartupMassStatusExecutionClientFactory::new(
+            source_state.clone(),
+            StartupMassStatusBehavior::Available,
+        )
+        .with_identity(source_client_id, source_account_id, source_venue)
+        .with_handles_all_order_venues();
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("StartupMassStatusSourceNode")
+            .add_exec_client(
+                Some("venue-client".to_string()),
+                Box::new(venue_factory),
+                Box::new(StartupMassStatusExecutionClientConfig),
+            )
+            .unwrap()
+            .add_exec_client(
+                Some("source-client".to_string()),
+                Box::new(source_factory),
+                Box::new(StartupMassStatusExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        node.kernel()
+            .cache()
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+            .unwrap();
+
+        node.start().await.unwrap();
+
+        assert_eq!(
+            node.kernel()
+                .cache()
+                .borrow()
+                .client_id(&client_order_id)
+                .copied(),
+            Some(source_client_id)
+        );
+        assert!(
+            venue_state
+                .registered_external_orders
+                .lock()
+                .expect("registered external orders lock poisoned")
+                .is_empty()
+        );
+        assert_eq!(
+            *source_state
+                .registered_external_orders
+                .lock()
+                .expect("registered external orders lock poisoned"),
+            vec![client_order_id]
+        );
+
+        node.stop().await.unwrap();
+        node.dispose();
+    }
+
+    #[rstest]
+    #[case("OTHER", "SOURCE-001", "SOURCE", "client ID")]
+    #[case("SOURCE", "OTHER-001", "SOURCE", "account ID")]
+    #[case("SOURCE", "SOURCE-001", "OTHER", "venue")]
+    #[tokio::test]
+    async fn test_startup_mass_status_rejects_mismatched_source_identity(
+        #[case] reported_client_id: &str,
+        #[case] reported_account_id: &str,
+        #[case] reported_venue: &str,
+        #[case] expected_error: &str,
+    ) {
+        let source_client_id = ClientId::from("SOURCE");
+        let source_account_id = AccountId::from("SOURCE-001");
+        let source_venue = Venue::from("SOURCE");
+        let client_order_id = ClientOrderId::from("O-MISMATCHED-SOURCE");
+        let venue_order_id = VenueOrderId::from("V-MISMATCHED-SOURCE");
+        let state = StartupMassStatusClientState::default();
+        let mut mass_status = ExecutionMassStatus::new(
+            ClientId::from(reported_client_id),
+            AccountId::from(reported_account_id),
+            Venue::from(reported_venue),
+            UnixNanos::default(),
+            None,
+        );
+        mass_status.add_order_reports(vec![test_order_report(
+            AccountId::from(reported_account_id),
+            client_order_id,
+            venue_order_id,
+            OrderStatus::Accepted,
+        )]);
+        *state.mass_status.lock().expect("mass status lock poisoned") = Some(mass_status);
+        let mut node = live_node_with_available_mass_status(
+            "StartupMassStatusIdentityNode",
+            state.clone(),
+            source_client_id,
+            source_account_id,
+            source_venue,
+        );
+        let raw_topic = MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+        let raw_pattern: msgbus::MStr<msgbus::Pattern> = raw_topic.into();
+        let (raw_handler, raw_saver) =
+            nautilus_common::msgbus::stubs::get_any_saving_handler::<OrderStatusReport>(None);
+        msgbus::subscribe_any(raw_pattern, raw_handler.clone(), None);
+        let event_topic = switchboard::get_event_order_topic(StrategyId::from("EXTERNAL"));
+        let (event_handler, event_saver) =
+            nautilus_common::msgbus::stubs::get_typed_message_saving_handler::<OrderEventAny>(None);
+        msgbus::subscribe_order_events(event_topic.into(), event_handler.clone(), None);
+
+        let result = node.start().await;
+
+        msgbus::unsubscribe_any(raw_pattern, &raw_handler);
+        msgbus::unsubscribe_order_events(event_topic.into(), &event_handler);
+        let error = result.expect_err("mismatched mass status identity should abort startup");
+
+        assert!(
+            format!("{error:#}").contains(expected_error),
+            "unexpected error: {error:#}"
+        );
+        assert_eq!(node.state(), NodeState::Stopped);
+        assert!(raw_saver.get_messages().is_empty());
+        assert!(event_saver.get_messages().is_empty());
+        assert!(
+            node.kernel()
+                .cache()
+                .borrow()
+                .order(&client_order_id)
+                .is_none()
+        );
+        assert!(
+            state
+                .registered_external_orders
+                .lock()
+                .expect("registered external orders lock poisoned")
+                .is_empty()
+        );
+        node.dispose();
+    }
+
+    #[rstest]
+    #[case::missing_origin(None)]
+    #[case::conflicting_origin(Some("OTHER"))]
+    #[tokio::test]
+    async fn test_startup_mass_status_warns_on_untrusted_cached_order_origin(
+        #[case] cached_client_id: Option<&str>,
+    ) {
+        let source_client_id = ClientId::from("SOURCE-CLIENT");
+        let source_account_id = AccountId::from("BLOCKING-REPORT-001");
+        let source_venue = Venue::from("SOURCE");
+        let client_order_id = ClientOrderId::from("O-UNTRUSTED-SOURCE");
+        let venue_order_id = VenueOrderId::from("V-UNTRUSTED-SOURCE");
+        let state = StartupMassStatusClientState::default();
+        let mut mass_status = ExecutionMassStatus::new(
+            source_client_id,
+            source_account_id,
+            source_venue,
+            UnixNanos::default(),
+            None,
+        );
+        mass_status.add_order_reports(vec![test_order_report(
+            source_account_id,
+            client_order_id,
+            venue_order_id,
+            OrderStatus::Canceled,
+        )]);
+        *state.mass_status.lock().expect("mass status lock poisoned") = Some(mass_status);
+        let mut node = live_node_with_available_mass_status(
+            "StartupMassStatusUntrustedOriginNode",
+            state.clone(),
+            source_client_id,
+            source_account_id,
+            source_venue,
+        );
+        add_accepted_test_order_with_origin(
+            &node,
+            client_order_id,
+            venue_order_id,
+            cached_client_id.map(ClientId::from),
+        );
+
+        node.start()
+            .await
+            .expect("untrusted cached order origin should warn, not abort startup");
+
+        assert!(
+            state
+                .registered_external_orders
+                .lock()
+                .expect("registered external orders lock poisoned")
+                .is_empty()
+        );
+        {
+            let cache = node.kernel().cache();
+            let cache = cache.borrow();
+            assert_eq!(
+                cache.order(&client_order_id).unwrap().status(),
+                OrderStatus::Canceled
+            );
+            assert_eq!(
+                cache.client_id(&client_order_id).copied(),
+                cached_client_id.map(ClientId::from)
+            );
+        }
+
+        node.stop().await.unwrap();
+        node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_startup_mass_status_aborts_if_source_disappears_during_raw_publish() {
+        let source_client_id = ClientId::from("SOURCE-CLIENT");
+        let source_account_id = AccountId::from("BLOCKING-REPORT-001");
+        let source_venue = Venue::from("SOURCE");
+        let client_order_id = ClientOrderId::from("O-DISAPPEARING-SOURCE");
+        let venue_order_id = VenueOrderId::from("V-DISAPPEARING-SOURCE");
+        let state = StartupMassStatusClientState::default();
+        let mut mass_status = ExecutionMassStatus::new(
+            source_client_id,
+            source_account_id,
+            source_venue,
+            UnixNanos::default(),
+            None,
+        );
+        mass_status.add_order_reports(vec![test_order_report(
+            source_account_id,
+            client_order_id,
+            venue_order_id,
+            OrderStatus::Canceled,
+        )]);
+        *state.mass_status.lock().expect("mass status lock poisoned") = Some(mass_status);
+        let mut node = live_node_with_available_mass_status(
+            "StartupMassStatusDisappearingSourceNode",
+            state.clone(),
+            source_client_id,
+            source_account_id,
+            source_venue,
+        );
+        add_accepted_test_order(&node, client_order_id, venue_order_id, source_client_id);
+
+        let exec_engine = node.kernel().exec_engine().clone();
+        let handler = ShareableMessageHandler::from_typed(move |_report: &OrderStatusReport| {
+            exec_engine
+                .borrow_mut()
+                .deregister_client(source_client_id)
+                .expect("source execution client should still be registered");
+        });
+        let raw_pattern: msgbus::MStr<msgbus::Pattern> =
+            MessagingSwitchboard::reconciliation_raw_order_status_report_topic().into();
+        msgbus::subscribe_any(raw_pattern, handler.clone(), None);
+
+        let result = node.start().await;
+
+        msgbus::unsubscribe_any(raw_pattern, &handler);
+        let error = result.expect_err("disappearing source client should abort startup");
+        assert!(
+            error
+                .to_string()
+                .contains("disappeared during startup reconciliation"),
+            "unexpected error: {error:#}"
+        );
+        assert_eq!(node.state(), NodeState::Stopped);
+        assert!(
+            state
+                .registered_external_orders
+                .lock()
+                .expect("registered external orders lock poisoned")
+                .is_empty()
+        );
+        assert_eq!(
+            node.kernel()
+                .cache()
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+                .status(),
+            OrderStatus::Accepted
+        );
+
+        node.dispose();
     }
 
     #[rstest]
@@ -2547,6 +3009,52 @@ mod serial_tests {
             "run() should succeed after maintenance dispatcher fires"
         );
         assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_queue_monitor_unset_does_not_publish() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("QueueMonitorUnsetNode".to_string(), Some(config)).unwrap();
+        let handle = node.handle();
+        let received = Rc::new(RefCell::new(Vec::<QueueStateChanged>::new()));
+
+        let handler = ShareableMessageHandler::from_typed({
+            let received = received.clone();
+            move |event: &QueueStateChanged| received.borrow_mut().push(event.clone())
+        });
+
+        msgbus::subscribe_any(
+            MessagingSwitchboard::queue_state_changed_topic().into(),
+            handler,
+            None,
+        );
+        let stop_handle = handle.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { stop_handle.is_running() },
+                Duration::from_secs(5),
+            )
+            .await;
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(5), node.run()).await;
+
+        assert!(result.is_ok(), "run() should complete within timeout");
+        assert!(result.unwrap().is_ok(), "run() should succeed");
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(received.borrow().is_empty());
+        msgbus::get_message_bus().borrow_mut().dispose();
     }
 
     #[rstest]

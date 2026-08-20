@@ -34,6 +34,7 @@ from plotly.subplots import make_subplots
 from nautilus_trader.analysis.tearsheet import _write_figure
 from nautilus_trader.analysis.themes import get_theme
 
+
 LOG_PATH = Path(os.environ.get("BACKTEST_LOG", "/tmp/backtest.log"))  # noqa: S108
 OUT = Path(__file__).resolve().parent
 
@@ -97,9 +98,9 @@ def walk_fills(
     """
     Walk the fill sequence tracking running net position on a Netting OMS.
 
-    Returns entries, partial reductions, full closes, and (open_ts, close_ts)
-    intervals per position cycle. ``close_ts`` is None for a position that is
-    still open at the end of the fill series.
+    Returns entries, partial reductions, full closes, and (open_ts, close_ts) intervals
+    per position cycle. ``close_ts`` is None for a position that is still open at the
+    end of the fill series.
 
     """
     entries: list[dict] = []

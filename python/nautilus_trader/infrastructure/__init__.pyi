@@ -11,10 +11,29 @@ __all__ = [
     "RedisCacheConfig",
     "RedisMessageBusBacking",
     "RedisMessageBusConfig",
+    "RedisMessageBusFactory",
 ]
 
 @typing.final
-class PostgresCacheConfig: ...
+class PostgresCacheConfig:
+    def __init__(
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        database: str | None = None,
+    ) -> None: ...
+    @property
+    def host(self) -> str | None: ...
+    @property
+    def port(self) -> int | None: ...
+    @property
+    def username(self) -> str | None: ...
+    @property
+    def password(self) -> str | None: ...
+    @property
+    def database(self) -> str | None: ...
 
 @typing.final
 class PostgresConnectOptions:
@@ -41,7 +60,83 @@ class RedisMessageBusBacking:
     def close(self) -> None: ...
 
 @typing.final
-class RedisCacheConfig: ...
+class RedisMessageBusFactory:
+    def __init__(self, config: RedisMessageBusConfig | None = None) -> None: ...
 
 @typing.final
-class RedisMessageBusConfig: ...
+class RedisCacheConfig:
+    def __init__(
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        ssl: bool | None = None,
+        connection_timeout: int | None = None,
+        response_timeout: int | None = None,
+        number_of_retries: int | None = None,
+        exponent_base: int | None = None,
+        max_delay: int | None = None,
+        factor: int | None = None,
+    ) -> None: ...
+    @property
+    def host(self) -> str | None: ...
+    @property
+    def port(self) -> int | None: ...
+    @property
+    def username(self) -> str | None: ...
+    @property
+    def password(self) -> str | None: ...
+    @property
+    def ssl(self) -> bool: ...
+    @property
+    def connection_timeout(self) -> int: ...
+    @property
+    def response_timeout(self) -> int: ...
+    @property
+    def number_of_retries(self) -> int: ...
+    @property
+    def exponent_base(self) -> int: ...
+    @property
+    def max_delay(self) -> int: ...
+    @property
+    def factor(self) -> int: ...
+
+@typing.final
+class RedisMessageBusConfig:
+    def __init__(
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        ssl: bool | None = None,
+        connection_timeout: int | None = None,
+        response_timeout: int | None = None,
+        number_of_retries: int | None = None,
+        exponent_base: int | None = None,
+        max_delay: int | None = None,
+        factor: int | None = None,
+    ) -> None: ...
+    @property
+    def host(self) -> str | None: ...
+    @property
+    def port(self) -> int | None: ...
+    @property
+    def username(self) -> str | None: ...
+    @property
+    def password(self) -> str | None: ...
+    @property
+    def ssl(self) -> bool: ...
+    @property
+    def connection_timeout(self) -> int: ...
+    @property
+    def response_timeout(self) -> int: ...
+    @property
+    def number_of_retries(self) -> int: ...
+    @property
+    def exponent_base(self) -> int: ...
+    @property
+    def max_delay(self) -> int: ...
+    @property
+    def factor(self) -> int: ...

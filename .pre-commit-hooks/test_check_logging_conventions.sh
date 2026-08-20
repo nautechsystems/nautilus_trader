@@ -3,8 +3,9 @@
 set -euo pipefail
 
 if ! command -v rg &> /dev/null; then
-  echo "WARNING: ripgrep not found, skipping logging convention hook tests"
-  exit 0
+  echo "ERROR: ripgrep is required for logging convention hook tests" >&2
+  echo "       install from: https://github.com/BurntSushi/ripgrep#installation" >&2
+  exit 1
 fi
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
@@ -50,6 +51,44 @@ expect_success() {
     exit 1
   fi
 }
+
+reject_logging_import_case="$TMP_DIR/reject-logging-macro-import"
+write_rs "$reject_logging_import_case/crates/common/src/lib.rs" \
+  'use tracing::{info, Level};'
+expect_failure "$reject_logging_import_case" "Invalid logging macro import"
+
+reject_multiline_logging_import_case="$TMP_DIR/reject-multiline-logging-macro-import"
+write_rs "$reject_multiline_logging_import_case/crates/common/src/lib.rs" \
+  'use log::{' \
+  '    Level,' \
+  '    warn,' \
+  '};'
+expect_failure "$reject_multiline_logging_import_case" "Invalid logging macro import"
+
+reject_commented_logging_import_case="$TMP_DIR/reject-commented-logging-macro-import"
+write_rs "$reject_commented_logging_import_case/crates/common/src/lib.rs" \
+  'use tracing::{' \
+  '    Level, // retained context;' \
+  '    info,' \
+  '};'
+expect_failure "$reject_commented_logging_import_case" "Invalid logging macro import"
+
+reject_log_period_case="$TMP_DIR/reject-log-period"
+write_rs "$reject_log_period_case/crates/common/src/lib.rs" \
+  'pub fn report() {' \
+  '    tracing::info!("Server started.");' \
+  '}'
+expect_failure "$reject_log_period_case" "Log message with terminating period"
+
+reject_multiline_log_period_case="$TMP_DIR/reject-multiline-log-period"
+write_rs "$reject_multiline_log_period_case/crates/common/src/lib.rs" \
+  'pub fn report() {' \
+  '    log::warn!(' \
+  '        target = "network";' \
+  '        "Connection closed."' \
+  '    );' \
+  '}'
+expect_failure "$reject_multiline_log_period_case" "Log message with terminating period"
 
 reject_direct_case="$TMP_DIR/reject-direct-production-output"
 write_rs "$reject_direct_case/crates/common/src/lib.rs" \
@@ -130,14 +169,21 @@ expect_success "$allow_method_exit_case"
 
 allow_case="$TMP_DIR/allow-intentional-output"
 write_rs "$allow_case/crates/common/src/lib.rs" \
+  'use tracing::{' \
+  '    Level, // info stays fully qualified' \
+  '};' \
+  '' \
   'pub fn literal_text() {' \
   '    let _text = "println!(not a macro)";' \
   '    let _exit_text = "std::process::exit(1)";' \
   '    let exit = || ();' \
   '    exit();' \
+  '    tracing::info!("Starting server...");' \
   '}' \
   '' \
   '// std::process::exit(1);' \
+  '// log-period-ok: sentence is quoted output' \
+  'log::info!("Protocol response: Ready.");' \
   '' \
   'use std::process::exit as process_exit;' \
   '' \

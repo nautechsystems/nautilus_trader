@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
-# Run cargo clippy only on crates with staged changes.
-# Falls back to full workspace for clean checkouts, workspace-level config
+# Run cargo clippy only on crates with staged Rust build input changes.
+# Falls back to full workspace for clean checkouts, workspace-level Rust config
 # changes, or when no crate-level changes can be identified.
 set -euo pipefail
 
-DESIRED_FEATURES=(ffi python high-precision defi)
+DESIRED_FEATURES=(arrow ffi python high-precision streaming defi)
 PROFILE="${CARGO_CI_PROFILE:-nextest}"
 export HIGH_PRECISION="${HIGH_PRECISION:-1}"
 resolved_changed_base=0
+
+select_rust_inputs() {
+  while IFS= read -r file; do
+    case "$file" in
+      *.rs | Cargo.toml | */Cargo.toml | Cargo.lock | clippy.toml | rust-toolchain.toml | python/pyproject.toml | .cargo/config.toml)
+        printf '%s\n' "$file"
+        ;;
+    esac
+  done
+}
 
 run_full() {
   echo "Running full workspace clippy"
@@ -19,10 +29,10 @@ run_full() {
     --profile "$PROFILE" -- -D warnings
 }
 
-# Get staged .rs and .toml files; fall back to unstaged diff
-changed_files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rs' '*.toml' 2> /dev/null || true)
+# Get staged candidate files; fall back to unstaged diff
+changed_files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rs' '*.toml' 'Cargo.lock' 2> /dev/null || true)
 if [ -z "$changed_files" ]; then
-  changed_files=$(git diff --name-only HEAD -- '*.rs' '*.toml' 2> /dev/null || true)
+  changed_files=$(git diff --name-only HEAD -- '*.rs' '*.toml' 'Cargo.lock' 2> /dev/null || true)
 fi
 
 # CI fallback: clean checkouts have no diff vs HEAD; derive changed files
@@ -33,7 +43,7 @@ if [ -z "$changed_files" ] &&
   base=$(git merge-base "$CHANGED_BASE_SHA" HEAD 2> /dev/null || true)
   if [ -n "$base" ]; then
     resolved_changed_base=1
-    changed_files=$(git diff --name-only "$base"..HEAD -- '*.rs' '*.toml' 2> /dev/null || true)
+    changed_files=$(git diff --name-only "$base"..HEAD -- '*.rs' '*.toml' 'Cargo.lock' 2> /dev/null || true)
   fi
 fi
 
@@ -47,8 +57,14 @@ if [ -z "$changed_files" ]; then
   run_full
 fi
 
+changed_files=$(printf '%s\n' "$changed_files" | select_rust_inputs)
+if [ -z "$changed_files" ]; then
+  echo "No Rust build inputs detected; skipping clippy"
+  exit 0
+fi
+
 # Workspace-level files that affect all crates
-if echo "$changed_files" | grep -qE '^(Cargo\.toml|clippy\.toml|rust-toolchain\.toml|\.cargo/)'; then
+if echo "$changed_files" | grep -qE '^(Cargo\.toml|Cargo\.lock|clippy\.toml|rust-toolchain\.toml|\.cargo/config\.toml)'; then
   run_full
 fi
 
@@ -82,7 +98,7 @@ for file in $changed_files; do
   esac
 done
 
-# Unrecognized paths (non-crate TOML files matched by pre-commit filter)
+# Unrecognized Rust input paths
 if [ ${#seen_list[@]} -eq 0 ]; then
   run_full
 fi

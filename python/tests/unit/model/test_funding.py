@@ -73,12 +73,20 @@ def test_funding_rate_update_to_dict_and_from_dict_roundtrip(audusd_id):
     d = FundingRateUpdate.to_dict(funding)
     restored = FundingRateUpdate.from_dict(d)
 
-    assert d["type"] == "FundingRateUpdate"
+    assert d == {
+        "type": "FundingRateUpdate",
+        "instrument_id": "AUD/USD.SIM",
+        "rate": "0.0001",
+        "interval": 480,
+        "next_funding_ns": 2_000_000_000,
+        "ts_event": 1_000_000_000,
+        "ts_init": 1_000_000_001,
+    }
     assert restored == funding
 
 
 def test_funding_rate_update_fully_qualified_name():
-    assert "FundingRateUpdate" in FundingRateUpdate.fully_qualified_name()
+    assert FundingRateUpdate.fully_qualified_name() == "nautilus_trader.model:FundingRateUpdate"
 
 
 def test_funding_rate_update_pickle_roundtrip(audusd_id):
@@ -117,6 +125,10 @@ def test_funding_rate_update_get_metadata(audusd_id):
 def test_funding_rate_update_get_fields():
     fields = FundingRateUpdate.get_fields()
 
-    assert "rate" in fields
-    assert "ts_event" in fields
-    assert "ts_init" in fields
+    assert fields == {
+        "rate": "Decimal128",
+        "interval": "UInt16",
+        "next_funding_ns": "UInt64",
+        "ts_event": "UInt64",
+        "ts_init": "UInt64",
+    }

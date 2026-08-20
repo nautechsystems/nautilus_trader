@@ -41,10 +41,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{
-        CustomData, CustomDataTrait, Data, DataType, OrderBookDeltas, OrderBookDeltas_API,
-        TradeTick,
-    },
+    data::{CustomData, CustomDataTrait, Data, DataType, OrderBookDeltas, TradeTick},
     identifiers::{ClientId, InstrumentId, TradeId, Venue},
     instruments::{Instrument, InstrumentAny},
     types::{Currency, Money},
@@ -306,7 +303,7 @@ impl BetfairDataClient {
                                     Ok(Some(deltas)) => {
                                         if is_snapshot {
                                             if let Err(e) = data_sender.send(DataEvent::Data(
-                                                Data::Deltas(OrderBookDeltas_API::new(deltas)),
+                                                Data::Deltas(Box::new(deltas)),
                                             )) {
                                                 log::warn!("Failed to send book deltas: {e}");
                                             }
@@ -404,9 +401,9 @@ impl BetfairDataClient {
                         }
 
                         for deltas in buffered_deltas {
-                            if let Err(e) = data_sender.send(DataEvent::Data(Data::Deltas(
-                                OrderBookDeltas_API::new(deltas),
-                            ))) {
+                            if let Err(e) =
+                                data_sender.send(DataEvent::Data(Data::Deltas(Box::new(deltas))))
+                            {
                                 log::warn!("Failed to send book deltas: {e}");
                             }
                         }
@@ -820,32 +817,37 @@ impl DataClient for BetfairDataClient {
             loop {
                 tokio::time::sleep(interval).await;
 
-                match keep_alive_client.keep_alive().await {
-                    Ok(()) => {}
+                let session_replaced = match keep_alive_client.keep_alive_with_token().await {
+                    Ok(_) => false,
                     Err(ref e) if e.is_login_failed() => {
                         log::warn!("Betfair session expired, attempting re-login: {e}");
-                        if let Err(e) = keep_alive_client.reconnect().await {
-                            log::warn!("Betfair re-login failed: {e}");
-                            continue;
+
+                        match keep_alive_client.reconnect_with_token().await {
+                            Ok(_) => true,
+                            Err(e) => {
+                                log::warn!("Betfair re-login failed: {e}");
+                                continue;
+                            }
                         }
                     }
                     Err(e) => {
                         log::warn!("Betfair keep-alive failed (transient): {e}");
                         continue;
                     }
-                }
+                };
 
-                if let Some(token) = keep_alive_client.session_token().await {
-                    keep_alive_stream.update_auth(&keep_alive_app_key, token.clone());
-
-                    if let Some(ref race_stream) = keep_alive_race_stream {
-                        race_stream.update_auth(&keep_alive_app_key, token.clone());
-                    }
-
-                    if let Some(ref cricket_stream) = keep_alive_cricket_stream {
-                        cricket_stream.update_auth(&keep_alive_app_key, token);
-                    }
-                }
+                let _ = keep_alive_client
+                    .with_session_token(|token| {
+                        refresh_stream_sessions(
+                            keep_alive_stream.as_ref(),
+                            keep_alive_race_stream.as_deref(),
+                            keep_alive_cricket_stream.as_deref(),
+                            &keep_alive_app_key,
+                            token,
+                            session_replaced,
+                        );
+                    })
+                    .await;
                 log::debug!("Betfair session keep-alive sent");
             }
         }));
@@ -861,32 +863,37 @@ impl DataClient for BetfairDataClient {
             while reconnect_rx.recv().await.is_some() {
                 log::info!("Handling data stream reconnection");
 
-                match reconnect_http.keep_alive().await {
-                    Ok(()) => {}
+                let session_replaced = match reconnect_http.keep_alive_with_token().await {
+                    Ok(_) => false,
                     Err(ref e) if e.is_login_failed() => {
                         log::warn!("Session expired on reconnect, attempting re-login: {e}");
-                        if let Err(e) = reconnect_http.reconnect().await {
-                            log::warn!("Re-login failed on reconnect: {e}");
-                            continue;
+
+                        match reconnect_http.reconnect_with_token().await {
+                            Ok(_) => true,
+                            Err(e) => {
+                                log::warn!("Re-login failed on reconnect: {e}");
+                                continue;
+                            }
                         }
                     }
                     Err(e) => {
                         log::warn!("Keep-alive failed on reconnect (transient): {e}");
                         continue;
                     }
-                }
+                };
 
-                if let Some(token) = reconnect_http.session_token().await {
-                    reconnect_stream.update_auth(&reconnect_app_key, token.clone());
-
-                    if let Some(ref race_stream) = reconnect_race_stream {
-                        race_stream.update_auth(&reconnect_app_key, token.clone());
-                    }
-
-                    if let Some(ref cricket_stream) = reconnect_cricket_stream {
-                        cricket_stream.update_auth(&reconnect_app_key, token);
-                    }
-                }
+                let _ = reconnect_http
+                    .with_session_token(|token| {
+                        refresh_stream_sessions(
+                            reconnect_stream.as_ref(),
+                            reconnect_race_stream.as_deref(),
+                            reconnect_cricket_stream.as_deref(),
+                            &reconnect_app_key,
+                            token,
+                            session_replaced,
+                        );
+                    })
+                    .await;
             }
         }));
 
@@ -1086,6 +1093,39 @@ impl DataClient for BetfairDataClient {
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
         log::debug!("Skipping unsubscribe bars for Betfair: {}", cmd.bar_type);
         Ok(())
+    }
+}
+
+fn refresh_stream_sessions(
+    stream: &BetfairStreamClient,
+    race_stream: Option<&BetfairRaceStreamClient>,
+    cricket_stream: Option<&BetfairRaceStreamClient>,
+    app_key: &str,
+    token: &str,
+    session_replaced: bool,
+) {
+    stream.update_auth(app_key, token.to_string());
+
+    if let Some(race_stream) = race_stream {
+        race_stream.update_auth(app_key, token.to_string());
+    }
+
+    if let Some(cricket_stream) = cricket_stream {
+        cricket_stream.update_auth(app_key, token.to_string());
+    }
+
+    if !session_replaced {
+        return;
+    }
+
+    let _ = stream.request_reconnect();
+
+    if let Some(race_stream) = race_stream {
+        let _ = race_stream.request_reconnect();
+    }
+
+    if let Some(cricket_stream) = cricket_stream {
+        let _ = cricket_stream.request_reconnect();
     }
 }
 
