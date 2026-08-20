@@ -8,18 +8,35 @@ if [[ -z "${GITHUB_OUTPUT:-}" ]]; then
   exit 1
 fi
 
-if ! successful_workflow=$(jq -e '
+if ! successful_workflow=$(jq -ce '
   .workflow_runs
-  | if length == 1 then .[0] else empty end
-  | select(
-      .name == "build"
-      and .head_branch == "develop"
-      and .event == "push"
-      and .status == "completed"
-      and .conclusion == "success"
+  | select(type == "array")
+  | map(
+      select(
+        .name == "build"
+        and .head_branch == "develop"
+        and .event == "push"
+        and .status == "completed"
+        and .conclusion == "success"
+      )
     )
+  | select(
+      all(.[];
+        (try (
+          (.created_at | type) == "string"
+          and (.created_at | fromdateiso8601 | type) == "number"
+        ) catch false)
+        and (try (
+          (.run_number | type) == "number"
+          and .run_number > 0
+          and (.run_number | floor) == .run_number
+        ) catch false)
+      )
+    )
+  | sort_by([.created_at, .run_number])
+  | last // empty
 ' "$workflow_runs_path"); then
-  echo "::error::Expected one successful develop build workflow" >&2
+  echo "::error::Expected a successful develop build workflow" >&2
   exit 1
 fi
 
@@ -30,7 +47,7 @@ if [[ ! "$develop_sha" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 
 echo "Last successful workflow:"
-echo "$successful_workflow" | jq '.'
+echo "$successful_workflow" | jq '{id, run_number, head_sha, created_at, updated_at}'
 echo "Last successful develop commit: $develop_sha"
 
 nightly_sha=$(git rev-parse --verify 'refs/remotes/origin/nightly^{commit}')

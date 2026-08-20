@@ -48,6 +48,8 @@ run_check() {
       event: "push",
       status: "completed",
       conclusion: "success",
+      created_at: "2026-08-20T00:00:00Z",
+      run_number: 1,
       head_sha: $sha
     }]
   }' > "$repo/workflow-runs.json"
@@ -103,6 +105,48 @@ expect_log() {
   fi
 }
 
+expect_invalid_ordering_metadata() {
+  local repo="$1"
+  local older_sha="$2"
+  local current_sha="$3"
+  local created_at="$4"
+  local run_number="$5"
+
+  jq -n \
+    --arg older "$older_sha" \
+    --arg current "$current_sha" \
+    --arg created_at "$created_at" \
+    --argjson run_number "$run_number" \
+    '{
+      workflow_runs: [
+        {
+          name: "build",
+          head_branch: "develop",
+          event: "push",
+          status: "completed",
+          conclusion: "success",
+          created_at: "2026-08-20T01:00:00Z",
+          run_number: 10,
+          head_sha: $older
+        },
+        {
+          name: "build",
+          head_branch: "develop",
+          event: "push",
+          status: "completed",
+          conclusion: "success",
+          created_at: $created_at,
+          run_number: $run_number,
+          head_sha: $current
+        }
+      ]
+    }' > "$repo/workflow-runs.json"
+  run_script "$repo"
+  expect_status 1
+  expect_output ""
+  expect_log "Expected a successful develop build workflow"
+}
+
 advance_repo=$(create_repo "advance")
 commit_change "$advance_repo" "Nightly"
 advance_nightly="$COMMIT_SHA"
@@ -113,6 +157,70 @@ run_check "$advance_repo" "$advance_build" "$advance_nightly" "$COMMIT_SHA"
 expect_status 0
 expect_output $'sha='"$advance_build"$'\nhas_changes=true'
 expect_log "Develop has new successful changes to merge"
+
+selection_repo=$(create_repo "selection")
+commit_change "$selection_repo" "Nightly"
+selection_nightly="$COMMIT_SHA"
+commit_change "$selection_repo" "Older successful build"
+selection_older="$COMMIT_SHA"
+commit_change "$selection_repo" "Latest successful build"
+selection_latest="$COMMIT_SHA"
+commit_change "$selection_repo" "Current develop"
+selection_develop="$COMMIT_SHA"
+git -C "$selection_repo" update-ref refs/remotes/origin/nightly "$selection_nightly"
+git -C "$selection_repo" update-ref refs/remotes/origin/develop "$selection_develop"
+jq -n \
+  --arg older "$selection_older" \
+  --arg latest "$selection_latest" \
+  --arg current "$selection_develop" \
+  '{
+    workflow_runs: [
+      {
+        name: "build",
+        head_branch: "develop",
+        event: "push",
+        status: "completed",
+        conclusion: "success",
+        created_at: "2026-08-20T01:00:00Z",
+        run_number: 10,
+        head_sha: $older
+      },
+      {
+        name: "build",
+        head_branch: "develop",
+        event: "push",
+        status: "in_progress",
+        conclusion: null,
+        created_at: "2026-08-20T04:00:00Z",
+        run_number: 13,
+        head_sha: $current
+      },
+      {
+        name: "build",
+        head_branch: "develop",
+        event: "push",
+        status: "completed",
+        conclusion: "success",
+        created_at: "2026-08-20T03:00:00Z",
+        run_number: 12,
+        head_sha: $latest
+      },
+      {
+        name: "build",
+        head_branch: "develop",
+        event: "push",
+        status: "completed",
+        conclusion: "failure",
+        created_at: "2026-08-20T05:00:00Z",
+        run_number: 14,
+        head_sha: $current
+      }
+    ]
+  }' > "$selection_repo/workflow-runs.json"
+run_script "$selection_repo"
+expect_status 0
+expect_output $'sha='"$selection_latest"$'\nhas_changes=true'
+expect_log "Last successful develop commit: $selection_latest"
 
 stale_repo=$(create_repo "stale")
 commit_change "$stale_repo" "Successful build"
@@ -210,7 +318,86 @@ printf '%s\n' '{"workflow_runs":[]}' > "$empty_response_repo/workflow-runs.json"
 run_script "$empty_response_repo"
 expect_status 1
 expect_output ""
-expect_log "Expected one successful develop build workflow"
+expect_log "Expected a successful develop build workflow"
+
+unsuccessful_response_repo=$(create_repo "unsuccessful-response")
+unsuccessful_response_sha=$(git -C "$unsuccessful_response_repo" rev-parse HEAD)
+git -C "$unsuccessful_response_repo" update-ref refs/remotes/origin/nightly "$unsuccessful_response_sha"
+git -C "$unsuccessful_response_repo" update-ref refs/remotes/origin/develop "$unsuccessful_response_sha"
+jq -n --arg sha "$unsuccessful_response_sha" '{
+  workflow_runs: [{
+    name: "build",
+    head_branch: "develop",
+    event: "push",
+    status: "completed",
+    conclusion: "failure",
+    created_at: "2026-08-20T00:00:00Z",
+    run_number: 1,
+    head_sha: $sha
+  }]
+}' > "$unsuccessful_response_repo/workflow-runs.json"
+run_script "$unsuccessful_response_repo"
+expect_status 1
+expect_output ""
+expect_log "Expected a successful develop build workflow"
+
+malformed_response_repo=$(create_repo "malformed-response")
+commit_change "$malformed_response_repo" "Nightly"
+malformed_response_nightly="$COMMIT_SHA"
+commit_change "$malformed_response_repo" "Older successful build"
+malformed_response_older="$COMMIT_SHA"
+commit_change "$malformed_response_repo" "Current develop"
+malformed_response_develop="$COMMIT_SHA"
+git -C "$malformed_response_repo" update-ref refs/remotes/origin/nightly "$malformed_response_nightly"
+git -C "$malformed_response_repo" update-ref refs/remotes/origin/develop "$malformed_response_develop"
+jq -n \
+  --arg older "$malformed_response_older" \
+  --arg current "$malformed_response_develop" \
+  '{
+  workflow_runs: [
+    {
+      name: "build",
+      head_branch: "develop",
+      event: "push",
+      status: "completed",
+      conclusion: "success",
+      created_at: "2026-08-20T01:00:00Z",
+      run_number: 10,
+      head_sha: $older
+    },
+    {
+      name: "build",
+      head_branch: "develop",
+      event: "push",
+      status: "completed",
+      conclusion: "success",
+      created_at: "2026-08-20T02:00:00Z",
+      head_sha: $current
+    }
+  ]
+}' > "$malformed_response_repo/workflow-runs.json"
+run_script "$malformed_response_repo"
+expect_status 1
+expect_output ""
+expect_log "Expected a successful develop build workflow"
+expect_invalid_ordering_metadata \
+  "$malformed_response_repo" \
+  "$malformed_response_older" \
+  "$malformed_response_develop" \
+  "9999" \
+  "11"
+expect_invalid_ordering_metadata \
+  "$malformed_response_repo" \
+  "$malformed_response_older" \
+  "$malformed_response_develop" \
+  "2026-08-20T02:00:00Z" \
+  "1.5"
+expect_invalid_ordering_metadata \
+  "$malformed_response_repo" \
+  "$malformed_response_older" \
+  "$malformed_response_develop" \
+  "2026-08-20T02:00:00Z" \
+  "-1"
 
 invalid_sha_repo=$(create_repo "invalid-sha")
 invalid_sha_head=$(git -C "$invalid_sha_repo" rev-parse HEAD)
@@ -220,7 +407,11 @@ expect_output ""
 expect_log "Successful develop build has an invalid head SHA"
 
 grep -Fq 'actions/workflows/build.yml/runs' "$WORKFLOW"
-grep -Fq '?branch=develop&event=push&status=success&per_page=1' "$WORKFLOW"
+grep -Fq '?branch=develop&event=push&per_page=100' "$WORKFLOW"
+if grep -Fq 'status=success' "$WORKFLOW"; then
+  echo "Nightly merge workflow must select successful runs locally"
+  exit 1
+fi
 grep -Fq 'Accept: application/vnd.github+json' "$WORKFLOW"
 grep -Fq 'X-GitHub-Api-Version: 2022-11-28' "$WORKFLOW"
 grep -Fq -- '--fail-with-body' "$WORKFLOW"
