@@ -24,7 +24,7 @@ use nautilus_model::{
         SharedDex, Token,
         data::{
             DexPoolData, PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate, PoolFlash,
-            block::BlockPosition,
+            block::{BLOCK_SCOPED_SNAPSHOT_INDEX, BlockPosition},
         },
         pool_analysis::{
             position::PoolPosition,
@@ -356,35 +356,58 @@ impl BlockchainCacheDatabase {
             return Ok(());
         }
 
+        let chain_id_db = i32::try_from(chain_id)
+            .with_context(|| format!("Chain ID {chain_id} exceeds PostgreSQL INTEGER"))?;
         let mut numbers: Vec<i64> = Vec::with_capacity(blocks.len());
+        let mut hashes: Vec<String> = Vec::with_capacity(blocks.len());
         let mut timestamps: Vec<String> = Vec::with_capacity(blocks.len());
 
         for block in blocks {
-            numbers.push(block.number as i64);
+            numbers.push(i64::try_from(block.number).with_context(|| {
+                format!(
+                    "Pool event block {} exceeds PostgreSQL BIGINT",
+                    block.number
+                )
+            })?);
+            hashes.push(block.hash.clone());
             timestamps.push(block.timestamp.to_string());
         }
 
         sqlx::query(
             "
             INSERT INTO pool_event_block (
-                chain_id, number, timestamp
+                chain_id, number, hash, timestamp
             )
             SELECT
                 $1, *
             FROM UNNEST(
-                $2::int8[], $3::text[]
+                $2::int8[], $3::text[], $4::text[]
             )
             ON CONFLICT (chain_id, number)
-            DO UPDATE SET timestamp = EXCLUDED.timestamp
+            DO UPDATE SET hash = EXCLUDED.hash, timestamp = EXCLUDED.timestamp
            ",
         )
-        .bind(chain_id as i32)
+        .bind(chain_id_db)
         .bind(&numbers[..])
+        .bind(&hashes[..])
         .bind(&timestamps[..])
         .execute(&self.pool)
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_event_block table: {e}"))
+    }
+
+    /// Adds block-hash storage to databases created before hash-bound profiler checkpoints.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schema update fails.
+    pub async fn ensure_pool_event_block_hash_schema(&self) -> anyhow::Result<()> {
+        sqlx::query("ALTER TABLE pool_event_block ADD COLUMN IF NOT EXISTS hash TEXT")
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("Failed to add pool event block hash storage: {e}"))
     }
 
     /// Inserts blocks using PostgreSQL COPY BINARY for maximum performance.
@@ -1056,7 +1079,7 @@ impl BlockchainCacheDatabase {
                             token_row.address,
                             token_row.name,
                             token_row.symbol,
-                            token_row.decimals as u8,
+                            token_row.decimals,
                         )
                     })
                     .collect::<Vec<_>>()
@@ -2131,6 +2154,10 @@ impl BlockchainCacheDatabase {
             "
             SELECT
                 block, transaction_index, log_index, transaction_hash,
+                COALESCE(
+                    (SELECT hash FROM pool_event_block WHERE pool_event_block.chain_id = pool_snapshot.chain_id AND pool_event_block.number = pool_snapshot.block),
+                    (SELECT hash FROM block WHERE block.chain_id = pool_snapshot.chain_id AND block.number = pool_snapshot.block)
+                ) as block_hash,
                 current_tick, price_sqrt_ratio_x96::TEXT, liquidity::TEXT,
                 protocol_fees_token0::TEXT, protocol_fees_token1::TEXT, fee_protocol,
                 fee_protocol0_basis_points, fee_protocol1_basis_points,
@@ -2166,6 +2193,20 @@ impl BlockchainCacheDatabase {
             let transaction_index: i32 = row.get("transaction_index");
             let log_index: i32 = row.get("log_index");
             let transaction_hash: String = row.get("transaction_hash");
+            let observed_block_hash = row.try_get::<Option<String>, _>("block_hash")?;
+            let block =
+                u64::try_from(block).with_context(|| "Pool snapshot block number is negative")?;
+            let transaction_index = u32::try_from(transaction_index)
+                .with_context(|| "Pool snapshot transaction index is negative")?;
+            let log_index =
+                u32::try_from(log_index).with_context(|| "Pool snapshot log index is negative")?;
+            let block_hash = if transaction_index == BLOCK_SCOPED_SNAPSHOT_INDEX
+                && log_index == BLOCK_SCOPED_SNAPSHOT_INDEX
+            {
+                Some(transaction_hash.clone())
+            } else {
+                observed_block_hash
+            };
             let block_timestamp = row
                 .try_get::<Option<String>, _>("block_timestamp")?
                 .ok_or_else(|| {
@@ -2178,12 +2219,30 @@ impl BlockchainCacheDatabase {
             let timestamp = parse_cached_block_timestamp(&block_timestamp)
                 .map_err(|e| anyhow::anyhow!("Invalid block timestamp '{block_timestamp}': {e}"))?;
 
-            let block_position = BlockPosition::new(
-                block as u64,
-                transaction_hash,
-                transaction_index as u32,
-                log_index as u32,
-            );
+            let block_position =
+                BlockPosition::new(block, transaction_hash, transaction_index, log_index)
+                    .with_block_hash(block_hash);
+
+            let fee_protocol_value = row.get::<i16, _>("fee_protocol");
+            let fee_protocol = u8::try_from(fee_protocol_value).with_context(|| {
+                format!("Invalid pool snapshot fee protocol {fee_protocol_value}")
+            })?;
+            let fee_protocol0_basis_points = row
+                .get::<Option<i32>, _>("fee_protocol0_basis_points")
+                .map(|value| {
+                    u32::try_from(value).with_context(|| {
+                        format!("Invalid token0 fee protocol basis points {value}")
+                    })
+                })
+                .transpose()?;
+            let fee_protocol1_basis_points = row
+                .get::<Option<i32>, _>("fee_protocol1_basis_points")
+                .map(|value| {
+                    u32::try_from(value).with_context(|| {
+                        format!("Invalid token1 fee protocol basis points {value}")
+                    })
+                })
+                .transpose()?;
 
             let state = PoolState {
                 current_tick: row.get("current_tick"),
@@ -2191,13 +2250,9 @@ impl BlockchainCacheDatabase {
                 liquidity: row.get::<String, _>("liquidity").parse()?,
                 protocol_fees_token0: row.get::<String, _>("protocol_fees_token0").parse()?,
                 protocol_fees_token1: row.get::<String, _>("protocol_fees_token1").parse()?,
-                fee_protocol: row.get::<i16, _>("fee_protocol") as u8,
-                fee_protocol0_basis_points: row
-                    .get::<Option<i32>, _>("fee_protocol0_basis_points")
-                    .map(|value| value as u32),
-                fee_protocol1_basis_points: row
-                    .get::<Option<i32>, _>("fee_protocol1_basis_points")
-                    .map(|value| value as u32),
+                fee_protocol,
+                fee_protocol0_basis_points,
+                fee_protocol1_basis_points,
                 fee_growth_global_0: row.get::<String, _>("fee_growth_global_0").parse()?,
                 fee_growth_global_1: row.get::<String, _>("fee_growth_global_1").parse()?,
             };
@@ -2207,11 +2262,16 @@ impl BlockchainCacheDatabase {
                 total_amount1_deposited: row.get::<String, _>("total_amount1_deposited").parse()?,
                 total_amount0_collected: row.get::<String, _>("total_amount0_collected").parse()?,
                 total_amount1_collected: row.get::<String, _>("total_amount1_collected").parse()?,
-                total_swaps: row.get::<i32, _>("total_swaps") as u64,
-                total_mints: row.get::<i32, _>("total_mints") as u64,
-                total_burns: row.get::<i32, _>("total_burns") as u64,
-                total_fee_collects: row.get::<i32, _>("total_fee_collects") as u64,
-                total_flashes: row.get::<i32, _>("total_flashes") as u64,
+                total_swaps: u64::try_from(row.get::<i32, _>("total_swaps"))
+                    .with_context(|| "Pool snapshot total swaps is negative")?,
+                total_mints: u64::try_from(row.get::<i32, _>("total_mints"))
+                    .with_context(|| "Pool snapshot total mints is negative")?,
+                total_burns: u64::try_from(row.get::<i32, _>("total_burns"))
+                    .with_context(|| "Pool snapshot total burns is negative")?,
+                total_fee_collects: u64::try_from(row.get::<i32, _>("total_fee_collects"))
+                    .with_context(|| "Pool snapshot total fee collects is negative")?,
+                total_flashes: u64::try_from(row.get::<i32, _>("total_flashes"))
+                    .with_context(|| "Pool snapshot total flashes is negative")?,
                 liquidity_utilization_rate: row.get::<f64, _>("liquidity_utilization_rate"),
             };
 
@@ -2220,9 +2280,9 @@ impl BlockchainCacheDatabase {
                 .load_pool_positions_for_snapshot(
                     chain_id,
                     pool_identifier,
-                    block as u64,
-                    transaction_index as u32,
-                    log_index as u32,
+                    block,
+                    transaction_index,
+                    log_index,
                 )
                 .await?;
 
@@ -2230,9 +2290,9 @@ impl BlockchainCacheDatabase {
                 .load_pool_ticks_for_snapshot(
                     chain_id,
                     pool_identifier,
-                    block as u64,
-                    transaction_index as u32,
-                    log_index as u32,
+                    block,
+                    transaction_index,
+                    log_index,
                 )
                 .await?;
 
@@ -2466,7 +2526,8 @@ impl BlockchainCacheDatabase {
                     row.get::<String, _>("fee_growth_outside_0").parse()?,
                     row.get::<String, _>("fee_growth_outside_1").parse()?,
                     row.get("initialized"),
-                    row.get::<i64, _>("last_updated_block") as u64,
+                    u64::try_from(row.get::<i64, _>("last_updated_block"))
+                        .with_context(|| "Pool tick last updated block is negative")?,
                 );
                 Ok(tick)
             })
@@ -2496,6 +2557,12 @@ impl BlockchainCacheDatabase {
         to_block: Option<u64>,
     ) -> Pin<Box<dyn Stream<Item = Result<DexPoolData, anyhow::Error>> + Send + 'a>> {
         const QUERY_ALL: &str = "
+            SELECT events.*,
+                COALESCE(
+                    (SELECT hash FROM pool_event_block WHERE pool_event_block.chain_id = events.chain_id AND pool_event_block.number = events.block),
+                    (SELECT hash FROM block WHERE block.chain_id = events.chain_id AND block.number = events.block)
+                ) as block_hash
+            FROM (
             (SELECT
                 'swap' as event_type,
                 chain_id,
@@ -2711,9 +2778,16 @@ impl BlockchainCacheDatabase {
             FROM pool_flash_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND ($3::BIGINT IS NULL OR block <= $3))
-            ORDER BY block, transaction_index, log_index";
+            ) AS events
+            ORDER BY events.block, events.transaction_index, events.log_index";
 
         const QUERY_FROM_POSITION: &str = "
+            SELECT events.*,
+                COALESCE(
+                    (SELECT hash FROM pool_event_block WHERE pool_event_block.chain_id = events.chain_id AND pool_event_block.number = events.block),
+                    (SELECT hash FROM block WHERE block.chain_id = events.chain_id AND block.number = events.block)
+                ) as block_hash
+            FROM (
             (SELECT
                 'swap' as event_type,
                 chain_id,
@@ -2935,7 +3009,8 @@ impl BlockchainCacheDatabase {
             WHERE chain_id = $1 AND pool_identifier = $2
             AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5))
             AND ($6::BIGINT IS NULL OR block <= $6))
-            ORDER BY block, transaction_index, log_index";
+            ) AS events
+            ORDER BY events.block, events.transaction_index, events.log_index";
 
         // Build query with appropriate bindings
         let query = if let Some(pos) = from_position {
@@ -3439,14 +3514,14 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to lock recoverable execution intent: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("Execution intent {intent_id} was not found"))?;
         anyhow::ensure!(
-            matches!(current_status.as_str(), "prepared" | "signed"),
-            "Execution intent {intent_id} is {current_status}, not recoverable before broadcast"
+            current_status == "prepared",
+            "Execution intent {intent_id} is {current_status}, not recoverable before signing"
         );
         let result = sqlx::query(
             "
             UPDATE execution_intent
             SET status = 'recoverable', active = FALSE, updated_at = NOW()
-            WHERE id = $1 AND status IN ('prepared', 'signed')
+            WHERE id = $1 AND status = 'prepared'
             ",
         )
         .bind(intent_id)
@@ -3743,6 +3818,38 @@ impl BlockchainCacheDatabase {
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to load active execution intent: {e}"))
+    }
+
+    /// Reports whether a released legacy intent still retains a broadcastable signature.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub async fn has_recoverable_signed_execution(
+        &self,
+        chain_id: u32,
+        wallet_address: &str,
+    ) -> anyhow::Result<bool> {
+        let chain_id_db = i32::try_from(chain_id)
+            .with_context(|| format!("Chain ID {chain_id} exceeds PostgreSQL INTEGER"))?;
+        sqlx::query_scalar::<_, bool>(
+            "
+            SELECT EXISTS (
+                SELECT 1
+                FROM execution_intent AS intent
+                JOIN execution_transaction_hash AS hash ON hash.intent_id = intent.id
+                WHERE intent.chain_id = $1
+                  AND intent.wallet_address = $2
+                  AND intent.status = 'recoverable'
+                  AND hash.raw_transaction IS NOT NULL
+            )
+            ",
+        )
+        .bind(chain_id_db)
+        .bind(wallet_address)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to inspect recoverable signed executions: {e}"))
     }
 
     /// Loads all transaction hashes for an intent in insertion order.

@@ -1347,12 +1347,15 @@ fn test_compare_pool_profiler_reports_structural_mismatch(mut profiler: PoolProf
 }
 
 #[rstest]
-fn test_extract_snapshot_uses_last_processed_event_timestamp(mut profiler: PoolProfiler) {
+fn test_extract_snapshot_uses_last_processed_event_provenance(mut profiler: PoolProfiler) {
     let min_tick = PoolTick::get_min_tick(TICK_SPACING);
     let max_tick = PoolTick::get_max_tick(TICK_SPACING);
     let mut mint_event = create_mint_event(lp_address(), min_tick, max_tick, 10000);
     let event_ts = UnixNanos::from(profiler.pool.ts_init.as_u64() + 1_000_000_000);
+    let block_hash =
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string();
     mint_event.ts_event = event_ts;
+    mint_event.block_hash = Some(block_hash.clone());
     profiler
         .process(&DexPoolData::LiquidityUpdate(mint_event))
         .unwrap();
@@ -1361,6 +1364,7 @@ fn test_extract_snapshot_uses_last_processed_event_timestamp(mut profiler: PoolP
 
     assert_eq!(snapshot.ts_event, event_ts);
     assert_eq!(snapshot.ts_init, event_ts);
+    assert_eq!(snapshot.block_position.block_hash, Some(block_hash));
     assert_ne!(snapshot.ts_event, profiler.pool.ts_init);
 }
 

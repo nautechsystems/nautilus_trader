@@ -15,6 +15,8 @@
 
 use std::{
     collections::HashSet,
+    fmt::Debug,
+    ops::RangeInclusive,
     str::FromStr,
     sync::{Arc, Mutex},
     time::Duration,
@@ -48,6 +50,7 @@ use nautilus_model::{
     accounts::AccountAny,
     defi::{
         DexType, Pool, PoolIdentifier, SharedChain, Token,
+        data::block::{BLOCK_SCOPED_SNAPSHOT_INDEX, BlockPosition},
         pool_analysis::quote::SwapQuote,
         validation::validate_address,
         wallet::{TokenBalance, WalletBalance},
@@ -60,6 +63,7 @@ use nautilus_model::{
         AccountBalance, Currency, MarginBalance, Money, Price, Quantity, fixed::FIXED_PRECISION,
     },
 };
+use zeroize::Zeroizing;
 
 use crate::{
     cache::{
@@ -70,7 +74,7 @@ use crate::{
     config::BlockchainExecutionClientConfig,
     contracts::{
         erc20::{ERC20, Erc20Contract},
-        uniswap_v3_swap::UniswapV3SwapRouter,
+        uniswap_v3_swap::{UniswapV3Deployment, UniswapV3SwapRouter},
         weth::WETH9,
     },
     execution::{
@@ -84,8 +88,9 @@ use crate::{
     },
     rpc::{
         error::BroadcastError,
+        helpers as rpc_helpers,
         http::{BlockchainHttpRpcClient, EXECUTION_RPC_TIMEOUT_SECS},
-        types::{RpcTransaction, RpcTransactionReceipt},
+        types::{RpcBlock, RpcTransaction, RpcTransactionReceipt},
     },
 };
 
@@ -103,6 +108,8 @@ const ORDER_CANCEL_UNSUPPORTED: &str = "Order cancellation is not supported";
 /// Error for venue report probes that cannot answer without implying absence.
 const VENUE_EXECUTION_REPORTS_UNSUPPORTED: &str =
     "Venue execution reports are not supported on the blockchain execution client";
+/// Maximum historical block range inspected to identify a signer-nonce replacement.
+const MAX_REPLACEMENT_SCAN_BLOCKS: u64 = 4_096;
 
 // A broadcast transaction awaiting finality, occupying the single in-flight slot.
 #[derive(Debug, Clone, Copy)]
@@ -191,7 +198,7 @@ pub struct BlockchainExecutionClient {
     /// The wallet address used for transactions and balance queries.
     wallet_address: Address,
     /// Transaction signer loaded from the configured environment variable at connect.
-    signer: Option<PrivateKeySigner>,
+    signer: Option<Arc<PrivateKeySigner>>,
     /// Validated allowlist of SwapRouter addresses.
     router_addresses: Vec<Address>,
     /// Validated transaction limits required before execution can start.
@@ -586,19 +593,19 @@ impl BlockchainExecutionClient {
     }
 
     /// Approves an allowlisted SwapRouter to spend `amount` of `token` via an ERC-20
-    /// `approve` transaction. When `unlimited_approval` is configured the transaction requests
-    /// `U256::MAX`, while the resulting allowance must still cover `amount`.
+    /// `approve` transaction. Zero always revokes the allowance. For nonzero requests,
+    /// `unlimited_approval` changes the target to `U256::MAX`.
     ///
     /// This is an explicit operator operation; it never runs inside `submit_order`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the router is not allowlisted, the token is not a deployed contract,
-    /// approval simulation returns false or malformed data, the client is not connected, another
-    /// transaction is in flight, no durable store is configured, the resulting allowance is below
-    /// the requested amount, or any RPC, policy, signing, persistence, or broadcast step fails. A
-    /// persistence failure after signing, or a failed postcondition after finality, leaves the
-    /// in-flight slot occupied.
+    /// Returns an error if the router or token fails policy and deployment checks, a nonzero
+    /// allowance was not cleared first, approval simulation returns false or malformed data, the
+    /// client is not connected, another transaction is in flight, no durable store is configured,
+    /// the resulting allowance differs from the target, or any RPC, signing, persistence, or
+    /// broadcast step fails. A persistence failure after signing, or a failed postcondition after
+    /// finality, leaves the in-flight slot occupied.
     pub async fn approve(
         &mut self,
         token: Address,
@@ -609,15 +616,43 @@ impl BlockchainExecutionClient {
             anyhow::bail!("Router {router} is not in the configured `router_addresses` allowlist");
         }
 
+        if !amount.is_zero()
+            && !self
+                .transaction_limits
+                .allowed_token_pairs
+                .iter()
+                .any(|(token_in, _)| *token_in == token)
+        {
+            anyhow::bail!(
+                "Token {token} is not an input token in the configured `allowed_token_pairs`"
+            );
+        }
+
         self.ensure_transaction_ready(TransactionPurpose::Approve)?;
         self.ensure_contract_deployed(&token, "ERC-20 token")
             .await?;
 
-        let approval_amount = if self.config.unlimited_approval {
+        if !amount.is_zero() {
+            self.ensure_router_deployment(&router).await?;
+        }
+
+        let approval_amount = if amount.is_zero() {
+            U256::ZERO
+        } else if self.config.unlimited_approval {
             U256::MAX
         } else {
             amount
         };
+        let current_allowance = self
+            .erc20_contract
+            .allowance(&token, &self.wallet_address, &router)
+            .await?;
+
+        if !current_allowance.is_zero() && !approval_amount.is_zero() {
+            anyhow::bail!(
+                "Router allowance for token {token} is already {current_allowance}; approve zero before setting a new nonzero allowance"
+            );
+        }
 
         if !self
             .erc20_contract
@@ -647,7 +682,7 @@ impl BlockchainExecutionClient {
                 None,
             )
             .await?;
-        self.ensure_approve_allowance(&token, &router, amount, tx_hash, block_number)
+        self.ensure_approve_allowance(&token, &router, approval_amount, tx_hash, block_number)
             .await?;
         executor
             .database
@@ -668,6 +703,43 @@ impl BlockchainExecutionClient {
             anyhow::bail!("No deployed bytecode at configured {description} address {address}");
         }
         Ok(())
+    }
+
+    async fn ensure_router_deployment(&self, router: &Address) -> anyhow::Result<()> {
+        let factory = self.uniswap_v3_factory()?;
+        self.ensure_contract_deployed(router, "router").await?;
+        self.ensure_contract_deployed(&factory, "Uniswap V3 factory")
+            .await?;
+        self.ensure_contract_deployed(&self.weth_address, "WETH")
+            .await?;
+
+        let deployment = UniswapV3Deployment::new(
+            self.http_rpc_client.clone(),
+            Some(EXECUTION_RPC_TIMEOUT_SECS),
+        );
+        let actual_factory = deployment.router_factory(router).await?;
+        anyhow::ensure!(
+            actual_factory == factory,
+            "Router {router} reports factory {actual_factory}, expected registered factory {factory}"
+        );
+        let actual_weth = deployment.router_weth9(router).await?;
+        anyhow::ensure!(
+            actual_weth == self.weth_address,
+            "Router {router} reports WETH9 {actual_weth}, expected configured WETH {}",
+            self.weth_address
+        );
+        Ok(())
+    }
+
+    fn uniswap_v3_factory(&self) -> anyhow::Result<Address> {
+        crate::exchanges::get_dex_extended(self.chain.name, &DexType::UniswapV3)
+            .map(|dex| dex.factory)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No registered Uniswap V3 deployment for chain {}",
+                    self.chain.name
+                )
+            })
     }
 
     /// Ensures the wrapped native token balance increased by exactly `amount_wei` across the
@@ -716,7 +788,7 @@ impl BlockchainExecutionClient {
         Ok(())
     }
 
-    /// Ensures the router allowance at the block that included transaction `tx_hash` covers
+    /// Ensures the router allowance at the block that included transaction `tx_hash` equals
     /// `amount`. Shared by the live approve path and restart reconciliation.
     async fn ensure_approve_allowance(
         &self,
@@ -736,9 +808,9 @@ impl BlockchainExecutionClient {
                 )
             })?;
 
-        if allowance < amount {
+        if allowance != amount {
             anyhow::bail!(
-                "Router allowance after transaction {tx_hash} is below the requested amount {amount}: was {allowance}"
+                "Router allowance after transaction {tx_hash} does not equal the requested amount {amount}: was {allowance}"
             );
         }
 
@@ -894,6 +966,12 @@ impl BlockchainExecutionClient {
             pool.get_base_token().address,
             quote_token.address,
         )?;
+        let factory = self.uniswap_v3_factory()?;
+        anyhow::ensure!(
+            pool.dex.factory == factory,
+            "Restored pool {instrument_id} references factory {}, expected registered factory {factory}",
+            pool.dex.factory
+        );
 
         Ok(SwapPlan {
             order,
@@ -902,12 +980,14 @@ impl BlockchainExecutionClient {
             instrument_id,
             pool_address,
             router: Address::from_str(&intent.transaction_to)?,
+            factory,
+            weth: self.weth_address,
             token_in,
             token_out,
             fee,
             amount_in,
             min_amount_out: U256::ZERO,
-            profiler_block: intent.created_block,
+            profiler_position: None,
         })
     }
 
@@ -916,6 +996,13 @@ impl BlockchainExecutionClient {
             anyhow::anyhow!("No durable store configured for execution reconciliation")
         })?;
         let wallet_address = self.wallet_address.to_string();
+        anyhow::ensure!(
+            !database
+                .has_recoverable_signed_execution(self.chain.chain_id, &wallet_address)
+                .await?,
+            "A recoverable execution for wallet {} retains signed transaction bytes; refusing to reuse its nonce without explicit recovery",
+            self.wallet_address
+        );
         let Some(intent) = database
             .get_active_execution_intent(self.chain.chain_id, &wallet_address)
             .await?
@@ -929,7 +1016,7 @@ impl BlockchainExecutionClient {
             intent.schema_version
         );
 
-        if matches!(intent.status.as_str(), "prepared" | "signed") {
+        if intent.status == "prepared" {
             database
                 .mark_execution_intent_recoverable(intent.id)
                 .await?;
@@ -963,6 +1050,14 @@ impl BlockchainExecutionClient {
                 purpose,
             }));
 
+        if intent.status == "signed" {
+            anyhow::bail!(
+                "Execution intent {} has a signed transaction {} that was not authorized for broadcast; its nonce remains reserved pending explicit recovery",
+                intent.id,
+                tx_hash
+            );
+        }
+
         let plan = if purpose == TransactionPurpose::Swap {
             Some(self.restore_swap_plan(&intent)?)
         } else {
@@ -988,6 +1083,19 @@ impl BlockchainExecutionClient {
             tx_hash,
             raw_tx: current.raw_transaction.clone().unwrap_or_default(),
         };
+
+        if intent.status == "broadcast" {
+            anyhow::ensure!(
+                !prepared.raw_tx.is_empty(),
+                "Broadcast execution intent {} has no persisted signed transaction bytes",
+                intent.id
+            );
+
+            match executor.broadcast(&prepared).await? {
+                BroadcastOutcome::Accepted => {}
+                BroadcastOutcome::Ambiguous(message) => log::warn!("{message}"),
+            }
+        }
         let outcome = if matches!(intent.status.as_str(), "finalized" | "reverted") {
             let receipt = executor
                 .http_rpc_client
@@ -1030,20 +1138,20 @@ impl BlockchainExecutionClient {
                         )
                         .await?;
                     } else {
+                        let message = format!(
+                            "Finalized signer-nonce transaction {} does not match the persisted swap intent",
+                            included.tx_hash
+                        );
+
                         if plan.order.status() != OrderStatus::Rejected {
                             self.emitter.emit_order_rejected(
                                 &plan.order,
-                                &format!(
-                                    "Finalized signer-nonce transaction {} does not match the persisted swap intent",
-                                    included.tx_hash
-                                ),
+                                &message,
                                 get_atomic_clock_realtime().get_time_ns(),
                                 false,
                             );
                         }
-                        database
-                            .mark_execution_event_emitted(intent.id, "terminal")
-                            .await?;
+                        anyhow::bail!(message);
                     }
                     executor.release_slot();
                 } else {
@@ -1248,13 +1356,9 @@ impl BlockchainExecutionClient {
         if !profiler.is_initialized {
             anyhow::bail!("Pool profiler for {instrument_id} is not initialized");
         }
-        let profiler_block = profiler
-            .last_processed_event
-            .as_ref()
-            .map(|position| position.number)
-            .ok_or_else(|| {
-                anyhow::anyhow!("Pool profiler for {instrument_id} has processed no events")
-            })?;
+        let profiler_position = profiler.last_processed_event.clone().ok_or_else(|| {
+            anyhow::anyhow!("Pool profiler for {instrument_id} has processed no events")
+        })?;
 
         let zero_for_one = token_in == pool.token0.address;
         let (amount_in, quoted_amount_out) = match order.order_side() {
@@ -1296,6 +1400,12 @@ impl BlockchainExecutionClient {
         }
 
         let pool_address = pool.address;
+        let factory = self.uniswap_v3_factory()?;
+        anyhow::ensure!(
+            pool.dex.factory == factory,
+            "Pool {instrument_id} references factory {}, expected registered factory {factory}",
+            pool.dex.factory
+        );
 
         Ok(SwapPlan {
             order: order.clone(),
@@ -1304,24 +1414,37 @@ impl BlockchainExecutionClient {
             instrument_id,
             pool_address,
             router: self.router_addresses[0],
+            factory,
+            weth: self.weth_address,
             token_in,
             token_out,
             fee,
             amount_in,
             min_amount_out,
-            profiler_block,
+            profiler_position: Some(profiler_position),
         })
     }
 }
 
 /// A locally signed EIP-1559 transaction ready for persist-before-broadcast.
-#[derive(Debug)]
 struct PreparedTransaction {
     intent_id: i64,
     created_block: u64,
     nonce: u64,
     tx_hash: B256,
     raw_tx: Vec<u8>,
+}
+
+impl Debug for PreparedTransaction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(PreparedTransaction))
+            .field("intent_id", &self.intent_id)
+            .field("created_block", &self.created_block)
+            .field("nonce", &self.nonce)
+            .field("tx_hash", &self.tx_hash)
+            .field("raw_tx", &"<redacted>")
+            .finish()
+    }
 }
 
 /// The classified outcome of a broadcast attempt.
@@ -1355,7 +1478,7 @@ enum InclusionOutcome {
 struct TransactionExecutor {
     http_rpc_client: Arc<BlockchainHttpRpcClient>,
     database: BlockchainCacheDatabase,
-    signer: PrivateKeySigner,
+    signer: Arc<PrivateKeySigner>,
     in_flight: Arc<Mutex<Option<InFlightSlot>>>,
     wallet_balance: Arc<Mutex<WalletBalance>>,
     account_id: AccountId,
@@ -1407,9 +1530,15 @@ impl TransactionExecutor {
             amount_in: None,
             created_block,
         };
-        let intent = self.database.reserve_execution_intent(&intent).await?;
+        let intent = match self.database.reserve_execution_intent(&intent).await {
+            Ok(intent) => intent,
+            Err(e) => {
+                release_preparing_slot(&self.in_flight);
+                return Err(e);
+            }
+        };
         let prepared = match self
-            .prepare_and_sign(intent.id, intent.created_block, to, value, input)
+            .prepare_and_sign(intent.id, intent.created_block, to, value, input, None)
             .await
         {
             Ok(prepared) => prepared,
@@ -1433,7 +1562,19 @@ impl TransactionExecutor {
         }
 
         match self.await_finality(&prepared).await? {
-            InclusionOutcome::Finalized(included) => Ok(included),
+            InclusionOutcome::Finalized(included) => {
+                if included.tx_hash != prepared.tx_hash
+                    && !finalized_transaction_matches(&included, &intent, prepared.nonce, self)
+                        .await?
+                {
+                    anyhow::bail!(
+                        "Finalized signer-nonce transaction {} does not match the persisted {} intent",
+                        included.tx_hash,
+                        purpose.as_str()
+                    );
+                }
+                Ok(included)
+            }
             InclusionOutcome::Reverted(tx_hash) => {
                 self.database
                     .mark_execution_event_emitted(prepared.intent_id, "terminal")
@@ -1465,6 +1606,7 @@ impl TransactionExecutor {
         to: Address,
         value: U256,
         input: Bytes,
+        swap_anchors: Option<&SwapQuoteAnchors>,
     ) -> anyhow::Result<PreparedTransaction> {
         let expected_chain_id = u64::from(self.chain_id);
         let actual_chain_id = self.http_rpc_client.chain_id().await?;
@@ -1524,6 +1666,10 @@ impl TransactionExecutor {
             value,
             input,
         );
+
+        if let Some(anchors) = swap_anchors {
+            validate_swap_anchors_before_sign(anchors, &self.http_rpc_client).await?;
+        }
         let (tx_hash, raw_tx) = sign_eip1559_transaction(tx, &self.signer).await?;
 
         Ok(PreparedTransaction {
@@ -1821,7 +1967,7 @@ impl TransactionExecutor {
         let head = self.http_rpc_client.latest_block().await?;
         let mut found = None;
 
-        for number in from_block..=head.number {
+        for number in replacement_scan_range(from_block, head.number)? {
             let block = self.http_rpc_client.block_by_number(number, true).await?;
             if let Some(transaction) = block.transactions.into_iter().find(|transaction| {
                 transaction.from == self.wallet_address && transaction.nonce == nonce
@@ -1844,6 +1990,22 @@ impl TransactionExecutor {
     fn release_slot(&self) {
         *self.in_flight.lock().expect("in-flight mutex poisoned") = None;
     }
+}
+
+fn replacement_scan_range(from_block: u64, head_block: u64) -> anyhow::Result<RangeInclusive<u64>> {
+    anyhow::ensure!(
+        head_block >= from_block,
+        "Canonical head {head_block} is behind execution creation block {from_block}"
+    );
+    let block_count = head_block
+        .checked_sub(from_block)
+        .and_then(|distance| distance.checked_add(1))
+        .ok_or_else(|| anyhow::anyhow!("Signer-nonce replacement scan range overflow"))?;
+    anyhow::ensure!(
+        block_count <= MAX_REPLACEMENT_SCAN_BLOCKS,
+        "Signer-nonce replacement scan requires {block_count} blocks, exceeding the safety bound {MAX_REPLACEMENT_SCAN_BLOCKS}; explicit recovery is required"
+    );
+    Ok(from_block..=head_block)
 }
 
 fn current_execution_hash(
@@ -1917,12 +2079,22 @@ struct SwapPlan {
     instrument_id: InstrumentId,
     pool_address: Address,
     router: Address,
+    factory: Address,
+    weth: Address,
     token_in: Address,
     token_out: Address,
     fee: U24,
     amount_in: U256,
     min_amount_out: U256,
-    profiler_block: u64,
+    profiler_position: Option<BlockPosition>,
+}
+
+#[derive(Debug, Clone)]
+struct SwapQuoteAnchors {
+    position: BlockPosition,
+    head_number: u64,
+    head_hash: B256,
+    max_age_blocks: u64,
 }
 
 /// Executes a validated swap plan: read-only pre-trade checks, signing, persistence,
@@ -1959,30 +2131,28 @@ async fn execute_swap(
         }
     };
 
-    if plan.profiler_block > latest_block.number {
+    let Some(profiler_position) = plan.profiler_position.as_ref() else {
         release_preparing_slot(&executor.in_flight);
-        emitter.emit_order_denied(
-            order,
-            &format!(
-                "Pool state for {} at block {} is ahead of the latest block {}; the execution RPC endpoint lags the data feed",
-                plan.instrument_id, plan.profiler_block, latest_block.number
-            ),
-        );
+        emitter.emit_order_denied(order, "Pool profiler has no quote provenance");
         return Ok(());
-    }
-
-    let quote_age = latest_block.number - plan.profiler_block;
-    if quote_age > max_quote_age_blocks {
-        release_preparing_slot(&executor.in_flight);
-        emitter.emit_order_denied(
-            order,
-            &format!(
-                "Stale quote for {}: pool state at block {}, latest block {}, exceeds `max_quote_age_blocks` {max_quote_age_blocks}",
-                plan.instrument_id, plan.profiler_block, latest_block.number
-            ),
-        );
-        return Ok(());
-    }
+    };
+    let swap_anchors = match validate_swap_quote(
+        profiler_position,
+        plan.pool_address,
+        &plan.pool,
+        &latest_block,
+        max_quote_age_blocks,
+        &executor.http_rpc_client,
+    )
+    .await
+    {
+        Ok(anchors) => anchors,
+        Err(e) => {
+            release_preparing_slot(&executor.in_flight);
+            emitter.emit_order_denied(order, &e.to_string());
+            return Ok(());
+        }
+    };
     let deadline = match latest_block.timestamp.checked_add(deadline_seconds) {
         Some(deadline) => deadline,
         None => {
@@ -2038,6 +2208,7 @@ async fn execute_swap(
     let intent = match executor.database.reserve_execution_intent(&intent).await {
         Ok(intent) => intent,
         Err(e) => {
+            release_preparing_slot(&executor.in_flight);
             emitter.emit_order_denied(order, &e.to_string());
             return Ok(());
         }
@@ -2049,6 +2220,7 @@ async fn execute_swap(
             plan.router,
             U256::ZERO,
             calldata,
+            Some(&swap_anchors),
         )
         .await
     {
@@ -2100,21 +2272,17 @@ async fn execute_swap(
         Ok(InclusionOutcome::Finalized(included)) => {
             if !finalized_transaction_matches(&included, &intent, prepared.nonce, &executor).await?
             {
+                let message = format!(
+                    "Finalized signer-nonce transaction {} does not match the persisted swap intent",
+                    included.tx_hash
+                );
                 emitter.emit_order_rejected(
                     order,
-                    &format!(
-                        "Finalized signer-nonce transaction {} does not match the persisted swap intent",
-                        included.tx_hash
-                    ),
+                    &message,
                     get_atomic_clock_realtime().get_time_ns(),
                     false,
                 );
-                executor
-                    .database
-                    .mark_execution_event_emitted(intent.id, "terminal")
-                    .await?;
-                executor.release_slot();
-                return Ok(());
+                anyhow::bail!(message);
             }
 
             complete_finalized_swap(&plan, intent.id, &included, &executor, &emitter).await?;
@@ -2138,6 +2306,204 @@ async fn execute_swap(
         Ok(InclusionOutcome::Pending(message)) => anyhow::bail!(message),
         Err(e) => Err(e),
     }
+}
+
+async fn validate_swap_quote(
+    position: &BlockPosition,
+    pool_address: Address,
+    pool: &Pool,
+    head: &RpcBlock,
+    max_age_blocks: u64,
+    rpc: &BlockchainHttpRpcClient,
+) -> anyhow::Result<SwapQuoteAnchors> {
+    validate_quote_age(position.number, head.number, max_age_blocks)?;
+    let block_hash = position.block_hash.as_deref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Pool state at block {} has no ingestion-time block hash; refresh the profiler before execution",
+            position.number
+        )
+    })?;
+    let expected_block_hash = B256::from_str(block_hash)
+        .with_context(|| format!("Invalid profiler block hash {block_hash}"))?;
+    let canonical_block = rpc.block_by_number(position.number, false).await?;
+    anyhow::ensure!(
+        canonical_block.hash == expected_block_hash,
+        "Pool state block {} changed from {} to {}; refresh the profiler before execution",
+        position.number,
+        expected_block_hash,
+        canonical_block.hash
+    );
+
+    let snapshot_transaction = position.transaction_index == BLOCK_SCOPED_SNAPSHOT_INDEX;
+    let snapshot_log = position.log_index == BLOCK_SCOPED_SNAPSHOT_INDEX;
+    anyhow::ensure!(
+        snapshot_transaction == snapshot_log,
+        "Pool state at block {} has an invalid partial snapshot watermark",
+        position.number
+    );
+
+    if snapshot_transaction {
+        let snapshot_hash = B256::from_str(&position.transaction_hash)
+            .with_context(|| "Invalid block-scoped snapshot hash")?;
+        anyhow::ensure!(
+            snapshot_hash == expected_block_hash,
+            "Block-scoped snapshot hash {snapshot_hash} does not match ingestion hash {expected_block_hash}"
+        );
+    } else {
+        validate_profiler_event(position, expected_block_hash, pool_address, pool, rpc).await?;
+    }
+
+    Ok(SwapQuoteAnchors {
+        position: position.clone(),
+        head_number: head.number,
+        head_hash: head.hash,
+        max_age_blocks,
+    })
+}
+
+async fn validate_profiler_event(
+    position: &BlockPosition,
+    expected_block_hash: B256,
+    pool_address: Address,
+    pool: &Pool,
+    rpc: &BlockchainHttpRpcClient,
+) -> anyhow::Result<()> {
+    let transaction_hash = B256::from_str(&position.transaction_hash).with_context(|| {
+        format!(
+            "Invalid profiler transaction hash {}",
+            position.transaction_hash
+        )
+    })?;
+    let receipt = rpc
+        .get_transaction_receipt(&transaction_hash)
+        .await?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Profiler transaction {transaction_hash} has no canonical receipt; refresh the profiler before execution"
+            )
+        })?;
+    anyhow::ensure!(
+        receipt.status,
+        "Profiler transaction {transaction_hash} did not execute successfully"
+    );
+    anyhow::ensure!(
+        receipt.transaction_hash == transaction_hash,
+        "Profiler receipt transaction hash {} does not match {transaction_hash}",
+        receipt.transaction_hash
+    );
+    anyhow::ensure!(
+        receipt.block_number == position.number
+            && receipt.block_hash == expected_block_hash
+            && receipt.transaction_index == u64::from(position.transaction_index),
+        "Profiler receipt position does not match its ingestion watermark"
+    );
+
+    let matching_logs = receipt
+        .logs
+        .iter()
+        .filter(|log| rpc_helpers::extract_log_index(log).ok() == Some(position.log_index))
+        .collect::<Vec<_>>();
+    anyhow::ensure!(
+        matching_logs.len() == 1,
+        "Profiler receipt contains {} logs at global index {}; expected exactly one",
+        matching_logs.len(),
+        position.log_index
+    );
+    let log = matching_logs[0];
+    anyhow::ensure!(!log.removed, "Profiler watermark refers to a removed log");
+    let log_transaction_hash = B256::from_str(&rpc_helpers::extract_transaction_hash(log)?)
+        .with_context(|| "Invalid profiler log transaction hash")?;
+    anyhow::ensure!(
+        rpc_helpers::extract_block_number(log)? == position.number
+            && rpc_helpers::extract_transaction_index(log)? == position.transaction_index
+            && log_transaction_hash == transaction_hash,
+        "Profiler log position does not match its ingestion watermark"
+    );
+    let log_block_hash = log
+        .block_hash
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Profiler log has no block hash"))?;
+    anyhow::ensure!(
+        B256::from_str(log_block_hash).with_context(|| "Invalid profiler log block hash")?
+            == expected_block_hash,
+        "Profiler log block hash does not match its ingestion watermark"
+    );
+    anyhow::ensure!(
+        rpc_helpers::extract_address(log)? == pool_address,
+        "Profiler watermark log did not come from expected pool {pool_address}"
+    );
+    let signature = log
+        .topics
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("Profiler watermark log has no event signature"))?;
+    anyhow::ensure!(
+        profiler_event_signatures(pool).any(|expected| expected.eq_ignore_ascii_case(signature)),
+        "Profiler watermark log signature {signature} is not a supported pool event"
+    );
+    Ok(())
+}
+
+fn profiler_event_signatures(pool: &Pool) -> impl Iterator<Item = &str> {
+    [
+        Some(pool.dex.swap_created_event.as_ref()),
+        Some(pool.dex.mint_created_event.as_ref()),
+        Some(pool.dex.burn_created_event.as_ref()),
+        Some(pool.dex.collect_created_event.as_ref()),
+        pool.dex.flash_created_event.as_deref(),
+        pool.dex.fee_protocol_update_event.as_deref(),
+        pool.dex.fee_protocol_collect_event.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+}
+
+async fn validate_swap_anchors_before_sign(
+    anchors: &SwapQuoteAnchors,
+    rpc: &BlockchainHttpRpcClient,
+) -> anyhow::Result<()> {
+    let current_head = rpc.latest_block().await?;
+    validate_quote_age(
+        anchors.position.number,
+        current_head.number,
+        anchors.max_age_blocks,
+    )?;
+    let expected_block_hash = B256::from_str(
+        anchors
+            .position
+            .block_hash
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("Profiler block hash disappeared before signing"))?,
+    )?;
+    let watermark = rpc.block_by_number(anchors.position.number, false).await?;
+    anyhow::ensure!(
+        watermark.hash == expected_block_hash,
+        "Pool state block {} changed before signing",
+        anchors.position.number
+    );
+    let head_anchor = rpc.block_by_number(anchors.head_number, false).await?;
+    anyhow::ensure!(
+        head_anchor.hash == anchors.head_hash,
+        "Canonical head anchor {} changed before signing",
+        anchors.head_number
+    );
+    Ok(())
+}
+
+fn validate_quote_age(
+    profiler_block: u64,
+    latest_block: u64,
+    max_age_blocks: u64,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        profiler_block <= latest_block,
+        "Pool state at block {profiler_block} is ahead of the latest block {latest_block}; the execution RPC endpoint lags the data feed"
+    );
+    let quote_age = latest_block - profiler_block;
+    anyhow::ensure!(
+        quote_age <= max_age_blocks,
+        "Stale quote: pool state at block {profiler_block}, latest block {latest_block}, exceeds `max_quote_age_blocks` {max_age_blocks}"
+    );
+    Ok(())
 }
 
 async fn finalized_transaction_matches(
@@ -2239,21 +2605,36 @@ async fn emit_finalized_swap_fill(
         .receipt
         .logs
         .iter()
-        .filter(|log| log.topics.first().is_some_and(|topic| topic == &signature))
+        .filter(|log| {
+            !log.removed
+                && log.topics.first().is_some_and(|topic| topic == &signature)
+                && Address::from_str(&log.address).ok() == Some(plan.pool_address)
+        })
         .collect::<Vec<_>>();
     anyhow::ensure!(
         swap_logs.len() == 1,
-        "Finalized transaction {} emitted {} Swap logs; expected exactly one",
+        "Finalized transaction {} emitted {} Swap logs from expected pool {}; expected exactly one",
         included.tx_hash,
-        swap_logs.len()
+        swap_logs.len(),
+        plan.pool_address
     );
     let log = swap_logs[0];
-    let address = Address::from_str(&log.address)
-        .with_context(|| format!("Invalid finalized Swap log address {}", log.address))?;
+    let log_transaction_hash = B256::from_str(&rpc_helpers::extract_transaction_hash(log)?)
+        .with_context(|| "Invalid finalized Swap log transaction hash")?;
+    let log_block_hash = log
+        .block_hash
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Finalized Swap log has no block hash"))?;
     anyhow::ensure!(
-        address == plan.pool_address,
-        "Finalized Swap log came from pool {address}, expected {}",
-        plan.pool_address
+        log_transaction_hash == included.tx_hash
+            && rpc_helpers::extract_block_number(log)? == included.block_number
+            && u64::from(rpc_helpers::extract_transaction_index(log)?)
+                == included.receipt.transaction_index
+            && B256::from_str(log_block_hash)
+                .with_context(|| "Invalid finalized Swap log block hash")?
+                == included.receipt.block_hash,
+        "Finalized Swap log position does not match transaction {}",
+        included.tx_hash
     );
 
     let dex = crate::exchanges::get_dex_extended(plan.pool.chain.name, &plan.pool.dex.name)
@@ -2450,6 +2831,8 @@ async fn check_swap_preconditions(
     for (address, description) in [
         (plan.pool_address, "pool"),
         (plan.router, "router"),
+        (plan.factory, "factory"),
+        (plan.weth, "WETH"),
         (plan.token_in, "input token"),
         (plan.token_out, "output token"),
     ] {
@@ -2464,6 +2847,46 @@ async fn check_swap_preconditions(
         Some(EXECUTION_RPC_TIMEOUT_SECS),
         true,
     );
+    let deployment = UniswapV3Deployment::new(
+        executor.http_rpc_client.clone(),
+        Some(EXECUTION_RPC_TIMEOUT_SECS),
+    );
+    let router_factory = deployment.router_factory(&plan.router).await?;
+    anyhow::ensure!(
+        router_factory == plan.factory,
+        "Router {} reports factory {router_factory}, expected registered factory {}",
+        plan.router,
+        plan.factory
+    );
+    let router_weth = deployment.router_weth9(&plan.router).await?;
+    anyhow::ensure!(
+        router_weth == plan.weth,
+        "Router {} reports WETH9 {router_weth}, expected configured WETH {}",
+        plan.router,
+        plan.weth
+    );
+    let registered_pool = deployment
+        .pool(&plan.factory, plan.token_in, plan.token_out, plan.fee)
+        .await?;
+    anyhow::ensure!(
+        registered_pool == plan.pool_address,
+        "Factory {} resolves pool {registered_pool} for token pair {} -> {} and fee {}, expected {}",
+        plan.factory,
+        plan.token_in,
+        plan.token_out,
+        plan.fee,
+        plan.pool_address
+    );
+
+    for token in [&plan.pool.token0, &plan.pool.token1] {
+        let decimals = erc20_contract.decimals(&token.address).await?;
+        anyhow::ensure!(
+            decimals == token.decimals,
+            "Token {} reports {decimals} decimals on-chain, expected cached decimals {}",
+            token.address,
+            token.decimals
+        );
+    }
 
     let allowance = erc20_contract
         .allowance(&plan.token_in, &executor.wallet_address, &plan.router)
@@ -2873,15 +3296,25 @@ impl ExecutionClient for BlockchainExecutionClient {
 
         // Load the signer key from the configured environment variable; the key is never
         // logged, serialized, or stored in configuration
-        let private_key = std::env::var(&self.config.signer_private_key_env).map_err(|_| {
-            anyhow::anyhow!(
-                "Signer private key environment variable '{}' is not set",
-                self.config.signer_private_key_env
-            )
-        })?;
-        let signer = PrivateKeySigner::from_str(private_key.trim()).map_err(|_| {
+        let private_key = Zeroizing::new(
+            std::env::var(&self.config.signer_private_key_env).map_err(|_| {
+                anyhow::anyhow!(
+                    "Signer private key environment variable '{}' is not set",
+                    self.config.signer_private_key_env
+                )
+            })?,
+        );
+        let encoded_key = private_key.trim();
+        let encoded_key = encoded_key.strip_prefix("0x").unwrap_or(encoded_key);
+        let key_bytes = Zeroizing::new(hex::decode_array::<32>(encoded_key).map_err(|_| {
             anyhow::anyhow!(
                 "Signer private key in '{}' is not a valid hex private key",
+                self.config.signer_private_key_env
+            )
+        })?);
+        let signer = PrivateKeySigner::from_slice(&key_bytes[..]).map_err(|_| {
+            anyhow::anyhow!(
+                "Signer private key in '{}' is not a valid secp256k1 private key",
                 self.config.signer_private_key_env
             )
         })?;
@@ -2895,7 +3328,7 @@ impl ExecutionClient for BlockchainExecutionClient {
             );
         }
 
-        self.signer = Some(signer);
+        self.signer = Some(Arc::new(signer));
 
         if self.cache.has_database()
             && let Err(e) = self.reconcile_unresolved_execution().await
@@ -3039,6 +3472,13 @@ mod tests {
     const CALL_ZERO: &str = include_str!("../../test_data/execution/rpc_eth_call_zero.json");
     const CALL_ALLOWANCE: &str =
         include_str!("../../test_data/execution/rpc_eth_call_allowance.json");
+    const CALL_ALLOWANCE_1000: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x00000000000000000000000000000000000000000000000000000000000003e8\"}";
+    const CALL_ALLOWANCE_MAX: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\"}";
+    const CALL_FACTORY: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x0000000000000000000000001f98431c8ad98523631ae4a59f267346ea31f984\"}";
+    const CALL_WETH: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x00000000000000000000000082af49447d8a07e3bd95bd0d56f35241523fbab1\"}";
+    const CALL_POOL: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x000000000000000000000000c6962004f452be9203591991d15f6b388e09e8d0\"}";
+    const CALL_DECIMALS_18: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x0000000000000000000000000000000000000000000000000000000000000012\"}";
+    const CALL_DECIMALS_6: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x0000000000000000000000000000000000000000000000000000000000000006\"}";
     const TRANSACTION_COUNT: &str =
         include_str!("../../test_data/execution/rpc_eth_get_transaction_count.json");
     const TRANSACTION_COUNT_NEXT: &str =
@@ -3082,6 +3522,10 @@ mod tests {
 
     const BALANCE_OF_SELECTOR: &str = "0x70a08231";
     const ALLOWANCE_SELECTOR: &str = "0xdd62ed3e";
+    const DECIMALS_SELECTOR: &str = "0x313ce567";
+    const FACTORY_SELECTOR: &str = "0xc45a0155";
+    const WETH9_SELECTOR: &str = "0x4aa4a4fc";
+    const GET_POOL_SELECTOR: &str = "0x1698ee82";
 
     fn test_pool() -> Pool {
         let chain = Arc::new(chains::ARBITRUM.clone());
@@ -3227,6 +3671,11 @@ mod tests {
             .with_parameter_response("eth_getBlockByNumber", "finalized", BLOCK_FINALIZED)
             .with_parameter_response("eth_getBlockByNumber", "0x1cf0d42", BLOCK_FINALIZED)
             .with_response("eth_maxPriorityFeePerGas", MAX_PRIORITY_FEE)
+            .with_call_response(FACTORY_SELECTOR, CALL_FACTORY)
+            .with_call_response(WETH9_SELECTOR, CALL_WETH)
+            .with_call_response(GET_POOL_SELECTOR, CALL_POOL)
+            .with_contract_call_response(WETH, DECIMALS_SELECTOR, CALL_DECIMALS_18)
+            .with_contract_call_response(USDC, DECIMALS_SELECTOR, CALL_DECIMALS_6)
     }
 
     fn ready_rpc_state() -> MockRpcState {
@@ -3247,6 +3696,7 @@ mod tests {
             .with_response("eth_estimateGas", ESTIMATE_GAS)
             .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
             .with_send_raw_transaction_echo()
+            .with_call_response_sequence(ALLOWANCE_SELECTOR, &[CALL_ZERO, CALL_ALLOWANCE_1000])
     }
 
     async fn expected_wrap_tx_hash(value: U256) -> B256 {
@@ -3301,6 +3751,8 @@ mod tests {
     /// The block number served by the `eth_getBlockByNumber` fixture; swap quotes pin their
     /// profiler state to it so the freshness check passes.
     const FIXTURE_BLOCK: u64 = 30_346_560;
+    const FIXTURE_BLOCK_HASH: &str =
+        "0x1111111111111111111111111111111111111111111111111111111111111111";
     /// The timestamp served by the `eth_getBlockByNumber` fixture.
     const FIXTURE_BLOCK_TIMESTAMP: u64 = 1_761_888_800;
     /// Synthetic full-range liquidity for the test pool profiler.
@@ -3380,10 +3832,11 @@ mod tests {
             PoolAnalytics::default(),
             BlockPosition::new(
                 block_number,
-                "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
-                0,
-                0,
-            ),
+                FIXTURE_BLOCK_HASH.to_string(),
+                BLOCK_SCOPED_SNAPSHOT_INDEX,
+                BLOCK_SCOPED_SNAPSHOT_INDEX,
+            )
+            .with_block_hash(Some(FIXTURE_BLOCK_HASH.to_string())),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -3509,7 +3962,9 @@ mod tests {
             .ensure_execution_transaction_schema()
             .await
             .unwrap();
-        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        client.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
         client.core.set_connected();
 
         Some((admin_pool, schema, client, state, cache))
@@ -3554,6 +4009,28 @@ mod tests {
         .unwrap()
     }
 
+    async fn reserve_test_wrap_intent(database: &BlockchainCacheDatabase) -> ExecutionIntentRow {
+        database
+            .reserve_execution_intent(&ExecutionIntentInsert {
+                chain_id: 42161,
+                wallet_address: WALLET.to_string(),
+                purpose: "wrap".to_string(),
+                client_order_id: None,
+                trader_id: None,
+                strategy_id: None,
+                account_id: None,
+                instrument_id: None,
+                pool_address: None,
+                transaction_to: WETH_ADDRESS.to_string(),
+                transaction_input: "0xd0e30db0".to_string(),
+                transaction_value: "1".to_string(),
+                amount_in: None,
+                created_block: FIXTURE_BLOCK,
+            })
+            .await
+            .unwrap()
+    }
+
     async fn later_reconnect(
         previous: BlockchainExecutionClient,
         http_rpc_url: String,
@@ -3562,7 +4039,9 @@ mod tests {
         drop(previous);
         let mut next = test_client(http_rpc_url);
         next.cache.database = Some(database);
-        next.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        next.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
         next.reconcile_unresolved_execution().await.unwrap_err()
     }
 
@@ -3846,6 +4325,17 @@ mod tests {
         .to_string()
     }
 
+    fn finalized_swap_receipt_with_unrelated_swap(tx_hash: B256) -> String {
+        let mut receipt: serde_json::Value =
+            serde_json::from_str(&finalized_swap_receipt(tx_hash)).unwrap();
+        let logs = receipt["result"]["logs"].as_array_mut().unwrap();
+        let mut unrelated = logs[0].clone();
+        unrelated["address"] = serde_json::json!(ROUTER);
+        unrelated["logIndex"] = serde_json::json!("0x7");
+        logs.push(unrelated);
+        receipt.to_string()
+    }
+
     fn finalized_swap_block(tx_hash: B256, min_amount_out: U256) -> String {
         serde_json::json!({
             "jsonrpc": "2.0",
@@ -3925,6 +4415,13 @@ mod tests {
         .to_string()
     }
 
+    fn mismatched_finalized_wrap_block(tx_hash: B256) -> String {
+        let mut block: serde_json::Value =
+            serde_json::from_str(&finalized_wrap_block(tx_hash)).unwrap();
+        block["result"]["transactions"][0]["value"] = serde_json::json!("0x1");
+        block.to_string()
+    }
+
     /// The canonical block at the receipt height containing the given approve transaction
     /// with the exact persisted call fields.
     fn finalized_approve_block(tx_hash: B256, amount: U256) -> String {
@@ -3952,6 +4449,65 @@ mod tests {
             }
         })
         .to_string()
+    }
+
+    fn fixture_rpc_block() -> RpcBlock {
+        RpcBlock {
+            number: FIXTURE_BLOCK,
+            hash: B256::from([0x11; 32]),
+            timestamp: FIXTURE_BLOCK_TIMESTAMP,
+            base_fee_per_gas: Some(100_000_000),
+            transactions: Vec::new(),
+        }
+    }
+
+    fn fixture_block_response(number: u64, hash: B256) -> String {
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "number": format!("0x{number:x}"),
+                "hash": hash.to_string(),
+                "timestamp": "0x69044a20",
+                "baseFeePerGas": "0x5f5e100",
+                "transactions": []
+            }
+        })
+        .to_string()
+    }
+
+    fn profiler_event_receipt(pool_address: Address) -> String {
+        let transaction_hash = B256::from([0x33; 32]);
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "transactionHash": transaction_hash.to_string(),
+                "blockHash": FIXTURE_BLOCK_HASH,
+                "blockNumber": "0x1cf0d40",
+                "transactionIndex": "0x2",
+                "gasUsed": "0xc3c0",
+                "effectiveGasPrice": "0x5f5e100",
+                "status": "0x1",
+                "logs": [{
+                    "removed": false,
+                    "logIndex": "0x6",
+                    "transactionIndex": "0x2",
+                    "transactionHash": transaction_hash.to_string(),
+                    "blockHash": FIXTURE_BLOCK_HASH,
+                    "blockNumber": "0x1cf0d40",
+                    "address": pool_address.to_string(),
+                    "data": "0x",
+                    "topics": [test_pool().dex.swap_created_event.as_ref()]
+                }]
+            }
+        })
+        .to_string()
+    }
+
+    fn profiler_event_position() -> BlockPosition {
+        BlockPosition::new(FIXTURE_BLOCK, B256::from([0x33; 32]).to_string(), 2, 6)
+            .with_block_hash(Some(FIXTURE_BLOCK_HASH.to_string()))
     }
 
     #[rstest]
@@ -4118,6 +4674,220 @@ mod tests {
             error.to_string().contains("must be below 10000"),
             "was: {error}"
         );
+    }
+
+    #[rstest]
+    fn replacement_scan_range_is_bounded_and_checked() {
+        assert_eq!(
+            replacement_scan_range(10, 10).unwrap(),
+            RangeInclusive::new(10, 10)
+        );
+        assert_eq!(
+            replacement_scan_range(10, 10 + MAX_REPLACEMENT_SCAN_BLOCKS - 1).unwrap(),
+            RangeInclusive::new(10, 10 + MAX_REPLACEMENT_SCAN_BLOCKS - 1)
+        );
+        assert!(
+            replacement_scan_range(10, 10 + MAX_REPLACEMENT_SCAN_BLOCKS)
+                .unwrap_err()
+                .to_string()
+                .contains("exceeding the safety bound")
+        );
+        assert!(
+            replacement_scan_range(11, 10)
+                .unwrap_err()
+                .to_string()
+                .contains("is behind execution creation block")
+        );
+        assert!(replacement_scan_range(0, u64::MAX).is_err());
+    }
+
+    #[rstest]
+    fn prepared_transaction_debug_redacts_raw_transaction() {
+        let prepared = PreparedTransaction {
+            intent_id: 1,
+            created_block: 2,
+            nonce: 3,
+            tx_hash: B256::ZERO,
+            raw_tx: vec![0xde, 0xad, 0xbe, 0xef],
+        };
+
+        let debug = format!("{prepared:?}");
+
+        assert!(debug.contains("raw_tx: \"<redacted>\""));
+        assert!(!debug.contains("[222, 173, 190, 239]"));
+    }
+
+    #[tokio::test]
+    async fn swap_quote_rejects_missing_ingestion_block_hash() {
+        let (client, state) = client_with_mock_rpc(execution_rpc_state()).await;
+        let pool = test_pool();
+        let position = BlockPosition::new(
+            FIXTURE_BLOCK,
+            FIXTURE_BLOCK_HASH.to_string(),
+            BLOCK_SCOPED_SNAPSHOT_INDEX,
+            BLOCK_SCOPED_SNAPSHOT_INDEX,
+        );
+
+        let error = validate_swap_quote(
+            &position,
+            pool.address,
+            &pool,
+            &fixture_rpc_block(),
+            100,
+            &client.http_rpc_client,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            error.to_string().contains("no ingestion-time block hash"),
+            "was: {error}"
+        );
+        assert!(state.recorded_requests().is_empty());
+    }
+
+    #[tokio::test]
+    async fn swap_quote_rejects_replaced_ingestion_block() {
+        let changed = fixture_block_response(FIXTURE_BLOCK, B256::from([0x44; 32]));
+        let state = execution_rpc_state().with_parameter_response(
+            "eth_getBlockByNumber",
+            "0x1cf0d40",
+            &changed,
+        );
+        let (client, _) = client_with_mock_rpc(state).await;
+        let pool = test_pool();
+        let position = BlockPosition::new(
+            FIXTURE_BLOCK,
+            FIXTURE_BLOCK_HASH.to_string(),
+            BLOCK_SCOPED_SNAPSHOT_INDEX,
+            BLOCK_SCOPED_SNAPSHOT_INDEX,
+        )
+        .with_block_hash(Some(FIXTURE_BLOCK_HASH.to_string()));
+
+        let error = validate_swap_quote(
+            &position,
+            pool.address,
+            &pool,
+            &fixture_rpc_block(),
+            100,
+            &client.http_rpc_client,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.to_string().contains("changed from"), "was: {error}");
+    }
+
+    #[tokio::test]
+    async fn swap_quote_accepts_exact_canonical_event_watermark() {
+        let pool = test_pool();
+        let receipt = profiler_event_receipt(pool.address);
+        let state = execution_rpc_state().with_response("eth_getTransactionReceipt", &receipt);
+        let (client, _) = client_with_mock_rpc(state).await;
+
+        let anchors = validate_swap_quote(
+            &profiler_event_position(),
+            pool.address,
+            &pool,
+            &fixture_rpc_block(),
+            100,
+            &client.http_rpc_client,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(anchors.position, profiler_event_position());
+        assert_eq!(anchors.head_number, FIXTURE_BLOCK);
+        assert_eq!(anchors.head_hash, B256::from([0x11; 32]));
+    }
+
+    #[tokio::test]
+    async fn swap_quote_rejects_mismatched_receipt_position() {
+        let pool = test_pool();
+        let mut receipt: serde_json::Value =
+            serde_json::from_str(&profiler_event_receipt(pool.address)).unwrap();
+        receipt["result"]["transactionIndex"] = serde_json::json!("0x3");
+        let state =
+            execution_rpc_state().with_response("eth_getTransactionReceipt", &receipt.to_string());
+        let (client, _) = client_with_mock_rpc(state).await;
+
+        let error = validate_swap_quote(
+            &profiler_event_position(),
+            pool.address,
+            &pool,
+            &fixture_rpc_block(),
+            100,
+            &client.http_rpc_client,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Profiler receipt position does not match its ingestion watermark"
+        );
+    }
+
+    #[tokio::test]
+    async fn swap_quote_rejects_watermark_from_different_pool() {
+        let pool = test_pool();
+        let receipt = profiler_event_receipt(ROUTER_ADDRESS);
+        let state = execution_rpc_state().with_response("eth_getTransactionReceipt", &receipt);
+        let (client, _) = client_with_mock_rpc(state).await;
+
+        let error = validate_swap_quote(
+            &profiler_event_position(),
+            pool.address,
+            &pool,
+            &fixture_rpc_block(),
+            100,
+            &client.http_rpc_client,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("did not come from expected pool"),
+            "was: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn swap_quote_rechecks_head_anchor_before_signing() {
+        let canonical = fixture_block_response(FIXTURE_BLOCK, B256::from([0x11; 32]));
+        let changed = fixture_block_response(FIXTURE_BLOCK, B256::from([0x44; 32]));
+        let state = execution_rpc_state().with_parameter_response_sequence(
+            "eth_getBlockByNumber",
+            "0x1cf0d40",
+            &[&canonical, &canonical, &changed],
+        );
+        let (client, _) = client_with_mock_rpc(state).await;
+        let pool = test_pool();
+        let position = BlockPosition::new(
+            FIXTURE_BLOCK,
+            FIXTURE_BLOCK_HASH.to_string(),
+            BLOCK_SCOPED_SNAPSHOT_INDEX,
+            BLOCK_SCOPED_SNAPSHOT_INDEX,
+        )
+        .with_block_hash(Some(FIXTURE_BLOCK_HASH.to_string()));
+        let anchors = validate_swap_quote(
+            &position,
+            pool.address,
+            &pool,
+            &fixture_rpc_block(),
+            100,
+            &client.http_rpc_client,
+        )
+        .await
+        .unwrap();
+
+        let error = validate_swap_anchors_before_sign(&anchors, &client.http_rpc_client)
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("head anchor"), "was: {error}");
     }
 
     #[rstest]
@@ -4810,7 +5580,9 @@ mod tests {
         drop(client);
         let (mut restarted, _) = swap_client_with_cache(restart_config);
         restarted.cache.database = Some(database);
-        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
         let mut restart_receiver = start_with_events(&mut restarted);
         restarted.reconcile_unresolved_execution().await.unwrap();
         restarted.reconcile_unresolved_execution().await.unwrap();
@@ -4842,6 +5614,30 @@ mod tests {
                 .count(),
             2
         );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn finalized_swap_ignores_unrelated_swap_logs() {
+        let min_amount_out = expected_min_amount_out(50);
+        let (expected_hash, _) = expected_swap_tx(min_amount_out).await;
+        let receipt = finalized_swap_receipt_with_unrelated_swap(expected_hash);
+        let state = finalized_swap_rpc_state(expected_hash, min_amount_out)
+            .with_response("eth_getTransactionReceipt", &receipt);
+        let Some((admin_pool, schema, mut client, _, _)) =
+            swap_client_with_database("execution_submit_unrelated_log_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert_swap_submitted_and_filled(&events);
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -4988,7 +5784,9 @@ mod tests {
         drop(client);
         let (mut restarted, _) = swap_client_with_cache(restart_config);
         restarted.cache.database = Some(database);
-        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
         let mut restart_receiver = start_with_events(&mut restarted);
         restarted.reconcile_unresolved_execution().await.unwrap();
         restarted.reconcile_unresolved_execution().await.unwrap();
@@ -5327,6 +6125,175 @@ mod tests {
         assert!(!fill_emitted);
         assert!(active);
         assert!(client.in_flight.lock().unwrap().is_some());
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_router_factory_mismatch_before_signing() {
+        let state = swap_rpc_state()
+            .await
+            .with_call_response(FACTORY_SELECTOR, CALL_ZERO);
+        let Some((admin_pool, schema, mut client, state, _)) =
+            swap_client_with_database("execution_submit_factory_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied.reason.as_str().contains("reports factory"),
+            "was: {}",
+            denied.reason
+        );
+        let requests = state.recorded_requests();
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_getTransactionCount")
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_router_weth_mismatch_before_signing() {
+        let state = swap_rpc_state()
+            .await
+            .with_call_response(WETH9_SELECTOR, CALL_ZERO);
+        let Some((admin_pool, schema, mut client, state, _)) =
+            swap_client_with_database("execution_submit_weth_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied.reason.as_str().contains("reports WETH9"),
+            "was: {}",
+            denied.reason
+        );
+        let requests = state.recorded_requests();
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_getTransactionCount")
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_factory_pool_mismatch_before_signing() {
+        let state = swap_rpc_state()
+            .await
+            .with_call_response(GET_POOL_SELECTOR, CALL_ZERO);
+        let Some((admin_pool, schema, mut client, state, _)) =
+            swap_client_with_database("execution_submit_pool_identity_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied.reason.as_str().contains("resolves pool"),
+            "was: {}",
+            denied.reason
+        );
+        let requests = state.recorded_requests();
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_getTransactionCount")
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_cached_token_decimal_mismatch_before_signing() {
+        let state = swap_rpc_state().await.with_contract_call_response(
+            WETH,
+            DECIMALS_SELECTOR,
+            CALL_DECIMALS_6,
+        );
+        let Some((admin_pool, schema, mut client, state, _)) =
+            swap_client_with_database("execution_submit_decimals_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied
+                .reason
+                .as_str()
+                .contains("reports 6 decimals on-chain, expected cached decimals 18"),
+            "was: {}",
+            denied.reason
+        );
+        let requests = state.recorded_requests();
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_getTransactionCount")
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -5779,7 +6746,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn submit_order_persist_failure_denies_without_broadcast() {
+    async fn submit_order_reservation_failure_denies_without_broadcast_and_releases_slot() {
         let Some((admin_pool, schema, mut client, state, _)) =
             swap_client_with_database("execution_submit_persist_fail_test", swap_rpc_state().await)
                 .await
@@ -5817,7 +6784,7 @@ mod tests {
             .filter(|request| request["method"] == "eth_sendRawTransaction")
             .count();
         assert_eq!(broadcasts, 0);
-        assert!(client.in_flight.lock().unwrap().is_some());
+        assert!(client.in_flight.lock().unwrap().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -6246,18 +7213,23 @@ mod tests {
 
     #[tokio::test]
     async fn submit_order_accepts_quote_fresh_at_max_age_boundary() {
-        let Some((admin_pool, schema, mut client, _state, cache)) = swap_client_with_database(
-            "execution_submit_fresh_boundary_test",
-            swap_rpc_state().await,
-        )
-        .await
+        let profiler_block = FIXTURE_BLOCK - 100;
+        let profiler_block_response =
+            fixture_block_response(profiler_block, B256::from([0x11; 32]));
+        let state = swap_rpc_state().await.with_parameter_response(
+            "eth_getBlockByNumber",
+            &format!("0x{profiler_block:x}"),
+            &profiler_block_response,
+        );
+        let Some((admin_pool, schema, mut client, _state, cache)) =
+            swap_client_with_database("execution_submit_fresh_boundary_test", state).await
         else {
             return;
         };
         let pool = test_pool();
         cache
             .borrow_mut()
-            .add_pool_profiler(test_profiler(&pool, FIXTURE_BLOCK - 100))
+            .add_pool_profiler(test_profiler(&pool, profiler_block))
             .unwrap();
         let order = test_market_sell_order(pool.instrument_id);
         let mut receiver = start_with_events(&mut client);
@@ -6357,7 +7329,9 @@ mod tests {
             .ensure_execution_transaction_schema()
             .await
             .unwrap();
-        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        client.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
         client.core.set_connected();
         let mut receiver = start_with_events(&mut client);
 
@@ -6906,7 +7880,7 @@ mod tests {
 
     #[tokio::test]
     async fn approve_rejects_router_outside_allowlist() {
-        let (mut client, _) = client_with_mock_rpc(ready_rpc_state()).await;
+        let (mut client, state) = client_with_mock_rpc(ready_rpc_state()).await;
 
         let error = client
             .approve(
@@ -6923,6 +7897,25 @@ mod tests {
                 .contains("not in the configured `router_addresses` allowlist"),
             "was: {error}"
         );
+        assert!(state.recorded_requests().is_empty());
+    }
+
+    #[tokio::test]
+    async fn approve_rejects_token_outside_input_allowlist() {
+        let (mut client, state) = client_with_mock_rpc(ready_rpc_state()).await;
+
+        let error = client
+            .approve(USDC_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .await
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("is not an input token in the configured `allowed_token_pairs`"),
+            "was: {error}"
+        );
+        assert!(state.recorded_requests().is_empty());
     }
 
     #[tokio::test]
@@ -7108,18 +8101,170 @@ mod tests {
         assert!(error.to_string().contains("returned false"), "was: {error}");
         assert!(client.in_flight.lock().unwrap().is_none());
         let requests = state.recorded_requests();
-        assert_eq!(requests.len(), 2);
-        assert_eq!(requests[0]["method"], "eth_getCode");
-        assert_eq!(requests[1]["method"], "eth_call");
-        assert_eq!(requests[1]["params"][0]["from"], WALLET);
+        assert!(requests.iter().any(|request| {
+            request["method"] == "eth_call"
+                && request["params"][0]["from"] == WALLET
+                && request["params"][0]["data"]
+                    .as_str()
+                    .is_some_and(|data| data.starts_with("0x095ea7b3"))
+        }));
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_getTransactionCount")
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn approve_rejects_router_with_wrong_factory_before_signing() {
+        let state = ready_rpc_state().with_call_response(FACTORY_SELECTOR, CALL_ZERO);
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_approve_factory_test", state).await
+        else {
+            return;
+        };
+
+        let error = client
+            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .await
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains("reports factory"),
+            "was: {error}"
+        );
+        let requests = state.recorded_requests();
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_getTransactionCount")
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn approve_rejects_router_with_wrong_weth_before_signing() {
+        let state = ready_rpc_state().with_call_response(WETH9_SELECTOR, CALL_ZERO);
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_approve_weth_test", state).await
+        else {
+            return;
+        };
+
+        let error = client
+            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("reports WETH9"), "was: {error}");
+        let requests = state.recorded_requests();
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_getTransactionCount")
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn approve_rejects_nonzero_to_nonzero_transition_before_signing() {
+        let state = ready_rpc_state();
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_approve_nonzero_test", state).await
+        else {
+            return;
+        };
+
+        let error = client
+            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .await
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains("approve zero before setting"),
+            "was: {error}"
+        );
+        let requests = state.recorded_requests();
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_getTransactionCount")
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn approve_zero_revokes_under_unlimited_policy() {
+        let state = broadcast_rpc_state()
+            .with_response("eth_call", CALL_BOOL_TRUE)
+            .with_call_response(FACTORY_SELECTOR, CALL_ZERO)
+            .with_call_response_sequence(ALLOWANCE_SELECTOR, &[CALL_ALLOWANCE, CALL_ZERO]);
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_approve_revoke_test", state).await
+        else {
+            return;
+        };
+        client.config.unlimited_approval = true;
+
+        let tx_hash = client
+            .approve(WETH_ADDRESS, U256::ZERO, ROUTER_ADDRESS)
+            .await
+            .unwrap();
+
+        assert_eq!(tx_hash, expected_approve_tx_hash(U256::ZERO).await);
+        let approve_data = state
+            .recorded_requests()
+            .into_iter()
+            .find_map(|request| {
+                (request["method"] == "eth_estimateGas")
+                    .then(|| request["params"][0]["data"].as_str().map(str::to_owned))
+                    .flatten()
+            })
+            .unwrap();
+        assert!(approve_data.starts_with("0x095ea7b3"));
+        assert!(approve_data.ends_with(&"0".repeat(64)));
+        assert!(state.recorded_requests().iter().all(|request| {
+            request["method"] != "eth_call"
+                || !request["params"][0]["data"]
+                    .as_str()
+                    .is_some_and(|data| data.starts_with(FACTORY_SELECTOR))
+        }));
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("approve".into(), "finalized".into(), true, false)]
+        );
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
     async fn approve_accepts_empty_return_with_sufficient_allowance() {
-        let state =
-            broadcast_rpc_state().with_response_sequence("eth_call", &[CALL_EMPTY, CALL_ALLOWANCE]);
+        let state = broadcast_rpc_state().with_response("eth_call", CALL_EMPTY);
         let Some((admin_pool, schema, mut client, _)) =
             execution_client_with_database("execution_approve_empty_test", state).await
         else {
@@ -7150,8 +8295,9 @@ mod tests {
 
     #[tokio::test]
     async fn approve_rejects_empty_return_with_insufficient_allowance() {
-        let state =
-            broadcast_rpc_state().with_response_sequence("eth_call", &[CALL_EMPTY, CALL_ZERO]);
+        let state = broadcast_rpc_state()
+            .with_response("eth_call", CALL_EMPTY)
+            .with_call_response_sequence(ALLOWANCE_SELECTOR, &[CALL_ZERO, CALL_ZERO]);
         let Some((admin_pool, schema, mut client, _)) =
             execution_client_with_database("execution_approve_insufficient_test", state).await
         else {
@@ -7164,7 +8310,9 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            error.to_string().contains("below the requested amount"),
+            error
+                .to_string()
+                .contains("does not equal the requested amount"),
             "was: {error}"
         );
         let in_flight = awaiting_in_flight(&client);
@@ -7186,7 +8334,9 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state).await;
         let error = later_reconnect(client, format!("http://{addr}")).await;
         assert!(
-            error.to_string().contains("below the requested amount"),
+            error
+                .to_string()
+                .contains("does not equal the requested amount"),
             "was: {error}"
         );
         assert_eq!(
@@ -7200,7 +8350,8 @@ mod tests {
     #[tokio::test]
     async fn approve_reports_inclusion_when_postcondition_read_fails() {
         let state = broadcast_rpc_state()
-            .with_response_sequence("eth_call", &[CALL_BOOL_TRUE, RPC_METHOD_NOT_FOUND]);
+            .with_response("eth_call", CALL_BOOL_TRUE)
+            .with_call_response_sequence(ALLOWANCE_SELECTOR, &[CALL_ZERO, RPC_METHOD_NOT_FOUND]);
         let Some((admin_pool, schema, mut client, _)) =
             execution_client_with_database("execution_approve_postcondition_rpc_test", state).await
         else {
@@ -7529,7 +8680,9 @@ mod tests {
     async fn disconnect_revokes_signer_and_blocks_execution() {
         let (mut client, state) = client_with_mock_rpc(ready_rpc_state()).await;
         client.core.set_connected();
-        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        client.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
 
         client.disconnect().await.unwrap();
         let error = client.wrap(U256::from(1_000u64)).await.unwrap_err();
@@ -7671,7 +8824,9 @@ mod tests {
             .ensure_execution_transaction_schema()
             .await
             .unwrap();
-        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        client.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
         client.core.set_connected();
 
         let advisory_lock = i64::from(std::process::id());
@@ -7749,6 +8904,43 @@ mod tests {
             "was: {second_error}"
         );
         assert_eq!(broadcasts, 0);
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn reservation_failure_releases_preparing_slot() {
+        let state = signing_rpc_state();
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_reservation_fail_test", state).await
+        else {
+            return;
+        };
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP TABLE {schema}.execution_intent CASCADE"
+        )))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+
+        let error = client
+            .wrap(U256::from(1_000_000_000_000_000u64))
+            .await
+            .unwrap_err();
+        let broadcasts = state
+            .recorded_requests()
+            .into_iter()
+            .filter(|request| request["method"] == "eth_sendRawTransaction")
+            .count();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Failed to reserve execution intent"),
+            "was: {error}"
+        );
+        assert_eq!(broadcasts, 0);
+        assert!(client.in_flight.lock().unwrap().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -8113,7 +9305,9 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
-        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
 
         restarted.reconcile_unresolved_execution().await.unwrap();
         restarted.reconcile_unresolved_execution().await.unwrap();
@@ -8161,25 +9355,7 @@ mod tests {
             return;
         };
         let database = client.cache.database.as_ref().unwrap();
-        let intent = database
-            .reserve_execution_intent(&ExecutionIntentInsert {
-                chain_id: 42161,
-                wallet_address: WALLET.to_string(),
-                purpose: "wrap".to_string(),
-                client_order_id: None,
-                trader_id: None,
-                strategy_id: None,
-                account_id: None,
-                instrument_id: None,
-                pool_address: None,
-                transaction_to: WETH_ADDRESS.to_string(),
-                transaction_input: "0xd0e30db0".to_string(),
-                transaction_value: "1".to_string(),
-                amount_in: None,
-                created_block: FIXTURE_BLOCK,
-            })
-            .await
-            .unwrap();
+        let intent = reserve_test_wrap_intent(database).await;
         *client.in_flight.lock().unwrap() = Some(InFlightSlot::Preparing(TransactionPurpose::Wrap));
 
         client.reconcile_unresolved_execution().await.unwrap();
@@ -8207,6 +9383,187 @@ mod tests {
                 .recorded_requests()
                 .iter()
                 .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn restart_keeps_unbroadcast_signed_intent_reserved() {
+        let Some((admin_pool, schema, client, state)) =
+            execution_client_with_database("execution_signed_restart_test", ready_rpc_state())
+                .await
+        else {
+            return;
+        };
+        let database = client.cache.database.as_ref().unwrap();
+        let intent = reserve_test_wrap_intent(database).await;
+        let tx_hash = B256::from([0x55; 32]);
+        database
+            .assign_execution_intent_nonce(intent.id, 7)
+            .await
+            .unwrap();
+        database
+            .add_execution_transaction_hash(
+                intent.id,
+                42161,
+                &tx_hash.to_string(),
+                &[0x01, 0x02, 0x03],
+            )
+            .await
+            .unwrap();
+
+        let error = client.reconcile_unresolved_execution().await.unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("was not authorized for broadcast"),
+            "was: {error}"
+        );
+        let in_flight = awaiting_in_flight(&client);
+        assert_eq!(in_flight.nonce, 7);
+        assert_eq!(in_flight.tx_hash, tx_hash);
+        assert_eq!(in_flight.purpose, TransactionPurpose::Wrap);
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("wrap".into(), "signed".into(), false, true)]
+        );
+        assert!(
+            state
+                .recorded_requests()
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn restart_quarantines_legacy_recoverable_signed_intent() {
+        let Some((admin_pool, schema, client, state)) = execution_client_with_database(
+            "execution_legacy_recoverable_restart_test",
+            ready_rpc_state(),
+        )
+        .await
+        else {
+            return;
+        };
+        let database = client.cache.database.as_ref().unwrap();
+        let intent = reserve_test_wrap_intent(database).await;
+        let tx_hash = B256::from([0x55; 32]);
+        database
+            .assign_execution_intent_nonce(intent.id, 7)
+            .await
+            .unwrap();
+        database
+            .add_execution_transaction_hash(
+                intent.id,
+                42161,
+                &tx_hash.to_string(),
+                &[0x01, 0x02, 0x03],
+            )
+            .await
+            .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {schema}.execution_intent SET status = 'recoverable', active = FALSE WHERE id = {}",
+            intent.id
+        )))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+
+        let error = client.reconcile_unresolved_execution().await.unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("retains signed transaction bytes"),
+            "was: {error}"
+        );
+        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(
+            state
+                .recorded_requests()
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn restart_rebroadcasts_only_durably_authorized_bytes() {
+        let Some((admin_pool, schema, first_client, _)) =
+            execution_client_with_database("execution_broadcast_restart_test", ready_rpc_state())
+                .await
+        else {
+            return;
+        };
+        let database = first_client.cache.database.as_ref().unwrap().clone();
+        let intent = reserve_test_wrap_intent(&database).await;
+        database
+            .assign_execution_intent_nonce(intent.id, 7)
+            .await
+            .unwrap();
+        let transaction = build_eip1559_transaction(
+            42161,
+            7,
+            78_000,
+            130_000_000,
+            10_000_000,
+            WETH_ADDRESS,
+            U256::from(1u64),
+            Bytes::from(nautilus_core::hex::decode("d0e30db0").unwrap()),
+        );
+        let (tx_hash, raw_tx) = sign_eip1559_transaction(
+            transaction,
+            &PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        )
+        .await
+        .unwrap();
+        database
+            .add_execution_transaction_hash(intent.id, 42161, &tx_hash.to_string(), &raw_tx)
+            .await
+            .unwrap();
+        database
+            .record_execution_status(
+                intent.id,
+                &tx_hash.to_string(),
+                TransactionStatus::Broadcast,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        drop(first_client);
+
+        let restart_state = execution_rpc_state()
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
+            .with_send_raw_transaction_echo();
+        let addr = start_mock_rpc_server(restart_state.clone()).await;
+        let mut restarted = test_client(format!("http://{addr}"));
+        restarted.cache.database = Some(database);
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
+
+        restarted.reconcile_unresolved_execution().await.unwrap();
+
+        let broadcasts = restart_state
+            .recorded_requests()
+            .into_iter()
+            .filter(|request| request["method"] == "eth_sendRawTransaction")
+            .collect::<Vec<_>>();
+        assert_eq!(broadcasts.len(), 1);
+        assert_eq!(broadcasts[0]["params"][0], hex::encode_prefixed(&raw_tx));
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("wrap".into(), "dropped".into(), false, true)]
         );
 
         drop_execution_schema(&admin_pool, &schema).await;
@@ -8261,7 +9618,9 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
-        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
 
         let error = restarted
             .reconcile_unresolved_execution()
@@ -8303,7 +9662,9 @@ mod tests {
         drop(restarted);
         let mut second = test_client(format!("http://{addr}"));
         second.cache.database = Some(database);
-        second.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        second.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
         let error = second.reconcile_unresolved_execution().await.unwrap_err();
         assert!(
             error
@@ -8360,7 +9721,9 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
-        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
 
         let error = restarted
             .reconcile_unresolved_execution()
@@ -8426,7 +9789,9 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
-        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
 
         restarted.reconcile_unresolved_execution().await.unwrap();
 
@@ -8490,7 +9855,9 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
-        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
         restarted.transaction_limits.receipt_timeout_secs = 2;
 
         restarted.reconcile_unresolved_execution().await.unwrap();
@@ -8568,11 +9935,13 @@ mod tests {
                 "0x1cf0d41",
                 &finalized_approve_block(expected_hash, U256::from(1_000u64)),
             )
-            .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE);
+            .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE_1000);
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
-        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
 
         restarted.reconcile_unresolved_execution().await.unwrap();
 
@@ -8631,7 +10000,7 @@ mod tests {
         let database = first_client.cache.database.as_ref().unwrap().clone();
         drop(first_client);
 
-        // Call identity matches, but the allowance does not cover the approved amount
+        // Call identity matches, but the allowance does not equal the approved amount
         let restart_state = execution_rpc_state()
             .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
             .with_parameter_response(
@@ -8643,7 +10012,9 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
-        restarted.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
 
         let error = restarted
             .reconcile_unresolved_execution()
@@ -8651,7 +10022,9 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            error.to_string().contains("below the requested amount"),
+            error
+                .to_string()
+                .contains("does not equal the requested amount"),
             "was: {error}"
         );
         let in_flight = awaiting_in_flight(&restarted);
@@ -8670,7 +10043,9 @@ mod tests {
 
         let error = later_reconnect(restarted, format!("http://{addr}")).await;
         assert!(
-            error.to_string().contains("below the requested amount"),
+            error
+                .to_string()
+                .contains("does not equal the requested amount"),
             "was: {error}"
         );
         assert_eq!(
@@ -8802,6 +10177,7 @@ mod tests {
     async fn same_nonce_replacement_preserves_intent_and_finalizes_new_hash() {
         let replacement_hash = B256::from([0x44; 32]);
         let replacement_block = replacement_head_block(replacement_hash);
+        let finalized_replacement_block = finalized_wrap_block(replacement_hash);
         let state = execution_rpc_state()
             .with_response_sequence(
                 "eth_call",
@@ -8817,6 +10193,11 @@ mod tests {
                 &[RECEIPT_NULL, RECEIPT_SUCCESS],
             )
             .with_parameter_response("eth_getBlockByNumber", "0x1cf0d40", &replacement_block)
+            .with_parameter_response(
+                "eth_getBlockByNumber",
+                "0x1cf0d41",
+                &finalized_replacement_block,
+            )
             .with_send_raw_transaction_echo();
         let Some((admin_pool, schema, mut client, state)) =
             execution_client_with_database("execution_replacement_test", state).await
@@ -8862,6 +10243,181 @@ mod tests {
             1
         );
         assert!(client.in_flight.lock().unwrap().is_none());
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn same_nonce_swap_replacement_with_different_call_stays_quarantined() {
+        let replacement_hash = B256::from([0x44; 32]);
+        let replacement_block = replacement_head_block(replacement_hash);
+        let mismatched_finalized_block = finalized_wrap_block(replacement_hash);
+        let state = execution_rpc_state()
+            .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE)
+            .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE)
+            .with_response_sequence(
+                "eth_getTransactionCount",
+                &[TRANSACTION_COUNT, TRANSACTION_COUNT_NEXT],
+            )
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_response_sequence(
+                "eth_getTransactionReceipt",
+                &[RECEIPT_NULL, RECEIPT_SUCCESS],
+            )
+            .with_parameter_response("eth_getBlockByNumber", "0x1cf0d40", &replacement_block)
+            .with_parameter_response(
+                "eth_getBlockByNumber",
+                "0x1cf0d41",
+                &mismatched_finalized_block,
+            )
+            .with_send_raw_transaction_echo();
+        let Some((admin_pool, schema, mut client, _state, _cache)) =
+            swap_client_with_database("execution_swap_replacement_call_mismatch_test", state).await
+        else {
+            return;
+        };
+        client.transaction_limits.receipt_timeout_secs = 2;
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+        let plan = client
+            .prepare_swap(&submit_order_cmd(&order), &order)
+            .unwrap();
+
+        let error = execute_swap(
+            plan,
+            client.transaction_executor().unwrap(),
+            client.emitter.clone(),
+            client.transaction_limits.max_quote_age_blocks,
+            client.transaction_limits.deadline_seconds,
+        )
+        .await
+        .unwrap_err();
+        let events = collect_order_events(&mut receiver);
+        let (status, active, terminal_emitted): (String, bool, bool) =
+            sqlx::query_as(sqlx::AssertSqlSafe(format!(
+                "SELECT status, active, terminal_emitted FROM {schema}.execution_intent"
+            )))
+            .fetch_one(&admin_pool)
+            .await
+            .unwrap();
+
+        assert!(
+            error
+                .to_string()
+                .contains("does not match the persisted swap intent"),
+            "was: {error}"
+        );
+        assert_eq!(events.len(), 2, "was: {events:?}");
+        assert!(matches!(&events[0], OrderEventAny::Submitted(_)));
+        let OrderEventAny::Rejected(rejected) = &events[1] else {
+            panic!("expected OrderRejected, was {:?}", events[1]);
+        };
+        assert!(
+            rejected
+                .reason
+                .as_str()
+                .contains("does not match the persisted swap intent"),
+            "was: {}",
+            rejected.reason
+        );
+        assert_eq!(status, "finalized");
+        assert!(active);
+        assert!(!terminal_emitted);
+        assert!(client.in_flight.lock().unwrap().is_some());
+
+        let database = client.cache.database.as_ref().unwrap().clone();
+        let restart_config = client.config.clone();
+        drop(client);
+        let (mut restarted, _) = swap_client_with_cache(restart_config);
+        restarted.cache.database = Some(database);
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
+        let mut restart_receiver = start_with_events(&mut restarted);
+
+        let restart_error = restarted
+            .reconcile_unresolved_execution()
+            .await
+            .unwrap_err();
+        let restart_events = collect_order_events(&mut restart_receiver);
+        let (active, terminal_emitted): (bool, bool) = sqlx::query_as(sqlx::AssertSqlSafe(
+            format!("SELECT active, terminal_emitted FROM {schema}.execution_intent"),
+        ))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+
+        assert!(
+            restart_error
+                .to_string()
+                .contains("does not match the persisted swap intent"),
+            "was: {restart_error}"
+        );
+        assert_eq!(restart_events.len(), 1, "was: {restart_events:?}");
+        assert!(matches!(&restart_events[0], OrderEventAny::Rejected(_)));
+        assert!(active);
+        assert!(!terminal_emitted);
+        assert!(restarted.in_flight.lock().unwrap().is_some());
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn same_nonce_replacement_with_different_call_stays_quarantined() {
+        let replacement_hash = B256::from([0x44; 32]);
+        let replacement_block = replacement_head_block(replacement_hash);
+        let mismatched_finalized_block = mismatched_finalized_wrap_block(replacement_hash);
+        let state = execution_rpc_state()
+            .with_response_sequence(
+                "eth_call",
+                &[CALL_BALANCE, CALL_BALANCE, CALL_BALANCE_AFTER_WRAP],
+            )
+            .with_response_sequence(
+                "eth_getTransactionCount",
+                &[TRANSACTION_COUNT, TRANSACTION_COUNT_NEXT],
+            )
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+            .with_response_sequence(
+                "eth_getTransactionReceipt",
+                &[RECEIPT_NULL, RECEIPT_SUCCESS],
+            )
+            .with_parameter_response("eth_getBlockByNumber", "0x1cf0d40", &replacement_block)
+            .with_parameter_response(
+                "eth_getBlockByNumber",
+                "0x1cf0d41",
+                &mismatched_finalized_block,
+            )
+            .with_send_raw_transaction_echo();
+        let Some((admin_pool, schema, mut client, _)) =
+            execution_client_with_database("execution_replacement_call_mismatch_test", state).await
+        else {
+            return;
+        };
+        client.transaction_limits.receipt_timeout_secs = 2;
+
+        let error = client
+            .wrap(U256::from(1_000_000_000_000_000_u64))
+            .await
+            .unwrap_err();
+        let (status, active, terminal_emitted): (String, bool, bool) =
+            sqlx::query_as(sqlx::AssertSqlSafe(format!(
+                "SELECT status, active, terminal_emitted FROM {schema}.execution_intent"
+            )))
+            .fetch_one(&admin_pool)
+            .await
+            .unwrap();
+
+        assert!(
+            error
+                .to_string()
+                .contains("does not match the persisted wrap intent"),
+            "was: {error}"
+        );
+        assert_eq!(status, "finalized");
+        assert!(active);
+        assert!(!terminal_emitted);
+        assert!(client.in_flight.lock().unwrap().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -9204,9 +10760,9 @@ mod tests {
                     CALL_BALANCE,
                     CALL_BALANCE_AFTER_WRAP,
                     CALL_BOOL_TRUE,
-                    CALL_ALLOWANCE,
                 ],
             )
+            .with_call_response_sequence(ALLOWANCE_SELECTOR, &[CALL_ZERO, CALL_ALLOWANCE_MAX])
             .with_response_sequence(
                 "eth_getTransactionCount",
                 &[TRANSACTION_COUNT, TRANSACTION_COUNT_NEXT],
@@ -9281,16 +10837,18 @@ mod tests {
             .filter(|request| request["method"] == "eth_getTransactionReceipt")
             .count();
         assert_eq!(receipt_polls, 3);
-        let calls: Vec<_> = requests
+        let allowance_calls: Vec<_> = requests
             .iter()
-            .filter(|request| request["method"] == "eth_call")
+            .filter(|request| {
+                request["method"] == "eth_call"
+                    && request["params"][0]["data"]
+                        .as_str()
+                        .is_some_and(|data| data.starts_with(ALLOWANCE_SELECTOR))
+            })
             .collect();
-        assert_eq!(calls.len(), 5);
-        assert_eq!(calls[0]["params"][1], "latest");
-        assert_eq!(calls[1]["params"][1], "0x1cf0d40");
-        assert_eq!(calls[2]["params"][1], "0x1cf0d41");
-        assert_eq!(calls[3]["params"][1], "latest");
-        assert_eq!(calls[4]["params"][1], "0x1cf0d41");
+        assert_eq!(allowance_calls.len(), 2);
+        assert_eq!(allowance_calls[0]["params"][1], "latest");
+        assert_eq!(allowance_calls[1]["params"][1], "0x1cf0d41");
 
         // Unlimited approval policy encoded U256::MAX in the approve calldata
         let estimates: Vec<_> = requests
@@ -9796,7 +11354,9 @@ mod tests {
             .ensure_execution_transaction_schema()
             .await
             .unwrap();
-        client.signer = Some(PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap());
+        client.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
         client.core.set_connected();
 
         Some((admin_pool, schema, client, state))

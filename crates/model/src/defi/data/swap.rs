@@ -74,6 +74,8 @@ pub struct PoolSwap {
     pub pool_identifier: PoolIdentifier,
     /// The blockchain block number at which the swap was executed.
     pub block: u64,
+    /// The hash of the block observed when this swap was ingested.
+    pub block_hash: Option<String>,
     /// The unique hash identifier of the blockchain transaction containing the swap.
     pub transaction_hash: String,
     /// The index position of the transaction within the block.
@@ -132,6 +134,7 @@ impl PoolSwap {
             instrument_id,
             pool_identifier,
             block,
+            block_hash: None,
             transaction_hash,
             transaction_index,
             log_index,

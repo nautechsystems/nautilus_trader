@@ -378,12 +378,15 @@ impl PoolProfiler {
             self.state.price_sqrt_ratio_x96 = swap.sqrt_price_x96;
         }
 
-        self.last_processed_event = Some(BlockPosition::new(
-            swap.block,
-            swap.transaction_hash.clone(),
-            swap.transaction_index,
-            swap.log_index,
-        ));
+        self.last_processed_event = Some(
+            BlockPosition::new(
+                swap.block,
+                swap.transaction_hash.clone(),
+                swap.transaction_index,
+                swap.log_index,
+            )
+            .with_block_hash(swap.block_hash.clone()),
+        );
         self.last_processed_ts = Some(swap.ts_event);
         self.update_reporter_if_enabled(swap.block);
         self.update_liquidity_analytics();
@@ -923,12 +926,15 @@ impl PoolProfiler {
         .map_err(|e| Self::wrap_liquidity_error(e, location))?;
 
         self.analytics.total_mints += 1;
-        self.last_processed_event = Some(BlockPosition::new(
-            update.block,
-            update.transaction_hash.clone(),
-            update.transaction_index,
-            update.log_index,
-        ));
+        self.last_processed_event = Some(
+            BlockPosition::new(
+                update.block,
+                update.transaction_hash.clone(),
+                update.transaction_index,
+                update.log_index,
+            )
+            .with_block_hash(update.block_hash.clone()),
+        );
         self.last_processed_ts = Some(update.ts_event);
         self.update_reporter_if_enabled(update.block);
         self.update_liquidity_analytics();
@@ -1069,12 +1075,15 @@ impl PoolProfiler {
         .map_err(|e| Self::wrap_liquidity_error(e, location))?;
 
         self.analytics.total_burns += 1;
-        self.last_processed_event = Some(BlockPosition::new(
-            update.block,
-            update.transaction_hash.clone(),
-            update.transaction_index,
-            update.log_index,
-        ));
+        self.last_processed_event = Some(
+            BlockPosition::new(
+                update.block,
+                update.transaction_hash.clone(),
+                update.transaction_index,
+                update.log_index,
+            )
+            .with_block_hash(update.block_hash.clone()),
+        );
         self.last_processed_ts = Some(update.ts_event);
         self.update_reporter_if_enabled(update.block);
         self.update_liquidity_analytics();
@@ -1187,12 +1196,15 @@ impl PoolProfiler {
         self.analytics.total_amount1_collected += U256::from(collect.amount1);
 
         self.analytics.total_fee_collects += 1;
-        self.last_processed_event = Some(BlockPosition::new(
-            collect.block,
-            collect.transaction_hash.clone(),
-            collect.transaction_index,
-            collect.log_index,
-        ));
+        self.last_processed_event = Some(
+            BlockPosition::new(
+                collect.block,
+                collect.transaction_hash.clone(),
+                collect.transaction_index,
+                collect.log_index,
+            )
+            .with_block_hash(collect.block_hash.clone()),
+        );
         self.last_processed_ts = Some(collect.ts_event);
         self.update_reporter_if_enabled(collect.block);
         self.update_liquidity_analytics();
@@ -1229,12 +1241,15 @@ impl PoolProfiler {
             self.state.set_uniswap_v3_fee_protocol(fee_protocol);
         }
 
-        self.last_processed_event = Some(BlockPosition::new(
-            update.block,
-            update.transaction_hash.clone(),
-            update.transaction_index,
-            update.log_index,
-        ));
+        self.last_processed_event = Some(
+            BlockPosition::new(
+                update.block,
+                update.transaction_hash.clone(),
+                update.transaction_index,
+                update.log_index,
+            )
+            .with_block_hash(update.block_hash.clone()),
+        );
         self.last_processed_ts = Some(update.ts_event);
         self.update_reporter_if_enabled(update.block);
 
@@ -1273,12 +1288,15 @@ impl PoolProfiler {
             .protocol_fees_token1
             .saturating_sub(U256::from(collect.amount1));
 
-        self.last_processed_event = Some(BlockPosition::new(
-            collect.block,
-            collect.transaction_hash.clone(),
-            collect.transaction_index,
-            collect.log_index,
-        ));
+        self.last_processed_event = Some(
+            BlockPosition::new(
+                collect.block,
+                collect.transaction_hash.clone(),
+                collect.transaction_index,
+                collect.log_index,
+            )
+            .with_block_hash(collect.block_hash.clone()),
+        );
         self.last_processed_ts = Some(collect.ts_event);
         self.update_reporter_if_enabled(collect.block);
 
@@ -1302,12 +1320,15 @@ impl PoolProfiler {
         self.update_flash_state(flash.paid0, flash.paid1)?;
 
         self.analytics.total_flashes += 1;
-        self.last_processed_event = Some(BlockPosition::new(
-            flash.block,
-            flash.transaction_hash.clone(),
-            flash.transaction_index,
-            flash.log_index,
-        ));
+        self.last_processed_event = Some(
+            BlockPosition::new(
+                flash.block,
+                flash.transaction_hash.clone(),
+                flash.transaction_index,
+                flash.log_index,
+            )
+            .with_block_hash(flash.block_hash.clone()),
+        );
         self.last_processed_ts = Some(flash.ts_event);
         self.update_reporter_if_enabled(flash.block);
         self.update_liquidity_analytics();

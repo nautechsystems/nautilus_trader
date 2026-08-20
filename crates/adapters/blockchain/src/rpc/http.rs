@@ -170,15 +170,7 @@ impl BlockchainHttpRpcClient {
                 Err(e) => {
                     // Try to convert bytes to string for better error reporting
                     let raw_response = String::from_utf8_lossy(bytes.as_ref());
-                    let preview = if raw_response.len() > 500 {
-                        format!(
-                            "{}... (truncated, {} bytes total)",
-                            &raw_response[..500],
-                            raw_response.len()
-                        )
-                    } else {
-                        raw_response.to_string()
-                    };
+                    let preview = rpc_response_preview(&raw_response);
 
                     Err(anyhow::anyhow!(
                         "Failed to parse eth call response: {e}\nRaw response: {preview}"
@@ -507,8 +499,15 @@ impl BlockchainHttpRpcClient {
         number: u64,
         full_transactions: bool,
     ) -> anyhow::Result<RpcBlock> {
-        self.block_by_tag(&format!("0x{number:x}"), full_transactions)
-            .await
+        let block = self
+            .block_by_tag(&format!("0x{number:x}"), full_transactions)
+            .await?;
+        anyhow::ensure!(
+            block.number == number,
+            "eth_getBlockByNumber returned block {} for requested block {number}",
+            block.number
+        );
+        Ok(block)
     }
 
     async fn block_by_tag(&self, tag: &str, full_transactions: bool) -> anyhow::Result<RpcBlock> {
@@ -629,6 +628,22 @@ impl BlockchainHttpRpcClient {
     }
 }
 
+fn rpc_response_preview(raw_response: &str) -> String {
+    if raw_response.len() <= 500 {
+        return raw_response.to_string();
+    }
+
+    let mut end = 500;
+    while !raw_response.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!(
+        "{}... (truncated, {} bytes total)",
+        &raw_response[..end],
+        raw_response.len()
+    )
+}
+
 /// Classifies a broadcast transport failure: a timeout after sending reconciles through the
 /// persisted record. Any other transport failure is treated as ambiguous-after-send too, even
 /// though some (for example connection refused) may never have reached the node; the HTTP
@@ -656,6 +671,18 @@ pub(crate) mod tests {
 
     use super::*;
 
+    #[rstest]
+    fn rpc_response_preview_truncates_on_utf8_boundary() {
+        let raw = format!("{}é", "a".repeat(499));
+
+        let preview = rpc_response_preview(&raw);
+
+        assert_eq!(
+            preview,
+            format!("{}... (truncated, 501 bytes total)", "a".repeat(499))
+        );
+    }
+
     /// Mock JSON-RPC HTTP server for tests, serving canned responses from fixture files.
     pub(crate) mod mock {
         use std::{
@@ -678,6 +705,8 @@ pub(crate) mod tests {
             parameter_response_sequences: ResponseSequences<(String, String)>,
             response_sequences: ResponseSequences<String>,
             call_responses: HashMap<String, String>,
+            contract_call_responses: HashMap<(String, String), String>,
+            call_response_sequences: ResponseSequences<String>,
             sleep_methods: HashMap<String, Duration>,
             requests: Arc<Mutex<Vec<Value>>>,
             receipt_hash_from_request: bool,
@@ -766,6 +795,35 @@ pub(crate) mod tests {
                 self
             }
 
+            /// Serves a call response selected by both contract address and calldata selector.
+            #[must_use]
+            pub(crate) fn with_contract_call_response(
+                mut self,
+                contract: &str,
+                selector: &str,
+                response_json: &str,
+            ) -> Self {
+                self.contract_call_responses.insert(
+                    (contract.to_ascii_lowercase(), selector.to_string()),
+                    response_json.to_string(),
+                );
+                self
+            }
+
+            /// Serves responses in order for calls whose calldata starts with `selector`.
+            #[must_use]
+            pub(crate) fn with_call_response_sequence(
+                self,
+                selector: &str,
+                responses: &[&str],
+            ) -> Self {
+                self.call_response_sequences.lock().unwrap().insert(
+                    selector.to_string(),
+                    responses.iter().map(ToString::to_string).collect(),
+                );
+                self
+            }
+
             /// Delays responses to `method` by `duration`, simulating an unresponsive node.
             #[cfg(feature = "hypersync")]
             #[must_use]
@@ -794,10 +852,33 @@ pub(crate) mod tests {
             if method == "eth_call" {
                 let data = request["params"][0]["data"].as_str().unwrap_or_default();
                 let selector_len = "0x".len() + 8;
-                if data.len() >= selector_len
-                    && let Some(response) = state.call_responses.get(&data[..selector_len])
-                {
-                    return response.clone();
+                if data.len() >= selector_len {
+                    let selector = &data[..selector_len];
+                    let contract = request["params"][0]["to"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_ascii_lowercase();
+
+                    if let Some(response) = state
+                        .contract_call_responses
+                        .get(&(contract, selector.to_string()))
+                    {
+                        return response.clone();
+                    }
+
+                    if let Some(response) = state
+                        .call_response_sequences
+                        .lock()
+                        .unwrap()
+                        .get_mut(selector)
+                        .and_then(VecDeque::pop_front)
+                    {
+                        return response;
+                    }
+
+                    if let Some(response) = state.call_responses.get(selector) {
+                        return response.clone();
+                    }
                 }
             }
 
@@ -1108,6 +1189,27 @@ pub(crate) mod tests {
         assert_eq!(
             requests[0]["params"],
             serde_json::json!(["finalized", false])
+        );
+    }
+
+    #[tokio::test]
+    async fn numbered_block_rejects_response_for_another_height() {
+        let (client, state) = client_for(
+            MockRpcState::default().with_response("eth_getBlockByNumber", BLOCK_BY_NUMBER),
+        )
+        .await;
+
+        let error = client.block_by_number(30_346_561, false).await.unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "eth_getBlockByNumber returned block 30346560 for requested block 30346561"
+        );
+        let requests = state.recorded_requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            requests[0]["params"],
+            serde_json::json!(["0x1cf0d41", false])
         );
     }
 

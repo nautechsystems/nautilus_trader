@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{num::ParseIntError, str::FromStr};
+use std::{fmt::Debug, num::ParseIntError, str::FromStr};
 
 use alloy::primitives::{Address, I256, U160, U256};
 use nautilus_core::{
@@ -36,6 +36,26 @@ const MAX_UNIX_SECONDS_TIMESTAMP: u64 = 9_999_999_999;
 const MAX_UNIX_MILLISECONDS_TIMESTAMP: u64 = MAX_UNIX_SECONDS_TIMESTAMP * 1_000 + 999;
 const MAX_UNIX_MICROSECONDS_TIMESTAMP: u64 = MAX_UNIX_SECONDS_TIMESTAMP * 1_000_000 + 999_999;
 
+fn decode_address(value: &str, field: &str) -> Result<Address, sqlx::Error> {
+    validate_address(value)
+        .map_err(|e| sqlx::Error::Decode(format!("Invalid {field} address '{value}': {e}").into()))
+}
+
+fn decode_u64(value: i64, field: &str) -> Result<u64, sqlx::Error> {
+    u64::try_from(value)
+        .map_err(|e| sqlx::Error::Decode(format!("Invalid {field} '{value}': {e}").into()))
+}
+
+fn decode_u32(value: i32, field: &str) -> Result<u32, sqlx::Error> {
+    u32::try_from(value)
+        .map_err(|e| sqlx::Error::Decode(format!("Invalid {field} '{value}': {e}").into()))
+}
+
+fn decode_u8(value: i32, field: &str) -> Result<u8, sqlx::Error> {
+    u8::try_from(value)
+        .map_err(|e| sqlx::Error::Decode(format!("Invalid {field} '{value}': {e}").into()))
+}
+
 /// A data transfer object that maps database rows to token data.
 ///
 /// Implements `FromRow` trait to automatically convert PostgreSQL results into `TokenRow`
@@ -45,15 +65,16 @@ pub struct TokenRow {
     pub address: Address,
     pub name: String,
     pub symbol: String,
-    pub decimals: i32,
+    pub decimals: u8,
 }
 
 impl<'r> FromRow<'r, PgRow> for TokenRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let address = validate_address(row.try_get::<String, _>("address")?.as_str()).unwrap();
+        let address_value = row.try_get::<String, _>("address")?;
+        let address = decode_address(&address_value, "token")?;
         let name = row.try_get::<String, _>("name")?;
         let symbol = row.try_get::<String, _>("symbol")?;
-        let decimals = row.try_get::<i32, _>("decimals")?;
+        let decimals = decode_u8(row.try_get::<i32, _>("decimals")?, "token decimals")?;
 
         let token = Self {
             address,
@@ -70,14 +91,14 @@ pub struct PoolRow {
     pub address: Address,
     pub pool_identifier: String,
     pub dex_name: String,
-    pub creation_block: i64,
+    pub creation_block: u64,
     pub creation_block_timestamp: Option<UnixNanos>,
     pub token0_chain: i32,
     pub token0_address: Address,
     pub token1_chain: i32,
     pub token1_address: Address,
-    pub fee: Option<i32>,
-    pub tick_spacing: Option<i32>,
+    pub fee: Option<u32>,
+    pub tick_spacing: Option<u32>,
     pub initial_tick: Option<i32>,
     pub initial_sqrt_price_x96: Option<String>,
     pub hook_address: Option<String>,
@@ -85,10 +106,14 @@ pub struct PoolRow {
 
 impl<'r> FromRow<'r, PgRow> for PoolRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let address = validate_address(row.try_get::<String, _>("address")?.as_str()).unwrap();
+        let address_value = row.try_get::<String, _>("address")?;
+        let address = decode_address(&address_value, "pool")?;
         let pool_identifier = row.try_get::<String, _>("pool_identifier")?;
         let dex_name = row.try_get::<String, _>("dex_name")?;
-        let creation_block = row.try_get::<i64, _>("creation_block")?;
+        let creation_block = decode_u64(
+            row.try_get::<i64, _>("creation_block")?,
+            "pool creation block",
+        )?;
         let creation_block_timestamp =
             row.try_get::<Option<String>, _>("creation_block_timestamp")?;
         let creation_block_timestamp = creation_block_timestamp
@@ -102,13 +127,19 @@ impl<'r> FromRow<'r, PgRow> for PoolRow {
                 )
             })?;
         let token0_chain = row.try_get::<i32, _>("token0_chain")?;
-        let token0_address =
-            validate_address(row.try_get::<String, _>("token0_address")?.as_str()).unwrap();
+        let token0_address_value = row.try_get::<String, _>("token0_address")?;
+        let token0_address = decode_address(&token0_address_value, "token0")?;
         let token1_chain = row.try_get::<i32, _>("token1_chain")?;
-        let token1_address =
-            validate_address(row.try_get::<String, _>("token1_address")?.as_str()).unwrap();
-        let fee = row.try_get::<Option<i32>, _>("fee")?;
-        let tick_spacing = row.try_get::<Option<i32>, _>("tick_spacing")?;
+        let token1_address_value = row.try_get::<String, _>("token1_address")?;
+        let token1_address = decode_address(&token1_address_value, "token1")?;
+        let fee = row
+            .try_get::<Option<i32>, _>("fee")?
+            .map(|value| decode_u32(value, "pool fee"))
+            .transpose()?;
+        let tick_spacing = row
+            .try_get::<Option<i32>, _>("tick_spacing")?
+            .map(|value| decode_u32(value, "pool tick spacing"))
+            .transpose()?;
         let initial_tick = row.try_get::<Option<i32>, _>("initial_tick")?;
         let initial_sqrt_price_x96 = row.try_get::<Option<String>, _>("initial_sqrt_price_x96")?;
         let hook_address = row.try_get::<Option<String>, _>("hook_address")?;
@@ -143,7 +174,7 @@ pub struct BlockTimestampRow {
 
 impl FromRow<'_, PgRow> for BlockTimestampRow {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        let number = row.try_get::<i64, _>("number")? as u64;
+        let number = decode_u64(row.try_get::<i64, _>("number")?, "block number")?;
         let timestamp = row.try_get::<String, _>("timestamp")?;
         let timestamp = parse_cached_block_timestamp(&timestamp).map_err(|e| {
             sqlx::Error::Decode(format!("Invalid block timestamp '{timestamp}': {e}").into())
@@ -188,10 +219,14 @@ pub fn transform_row_to_dex_pool_data(
     let pool_identifier = pool_identifier_str
         .parse()
         .map_err(|e| sqlx::Error::Decode(format!("Invalid pool identifier: {e}").into()))?;
-    let block = row.try_get::<i64, _>("block")? as u64;
+    let block = decode_u64(row.try_get::<i64, _>("block")?, "event block")?;
+    let block_hash = row.try_get::<Option<String>, _>("block_hash")?;
     let transaction_hash = row.try_get::<String, _>("transaction_hash")?;
-    let transaction_index = row.try_get::<i32, _>("transaction_index")? as u32;
-    let log_index = row.try_get::<i32, _>("log_index")? as u32;
+    let transaction_index = decode_u32(
+        row.try_get::<i32, _>("transaction_index")?,
+        "transaction index",
+    )?;
+    let log_index = decode_u32(row.try_get::<i32, _>("log_index")?, "log index")?;
     let block_timestamp = row.try_get::<String, _>("block_timestamp")?;
     let timestamp = parse_cached_block_timestamp(&block_timestamp).map_err(|e| {
         sqlx::Error::Decode(format!("Invalid block timestamp '{block_timestamp}': {e}").into())
@@ -246,7 +281,7 @@ pub fn transform_row_to_dex_pool_data(
                 )
             })?;
 
-            let pool_swap = PoolSwap::new(
+            let mut pool_swap = PoolSwap::new(
                 chain,
                 dex,
                 instrument_id,
@@ -265,6 +300,7 @@ pub fn transform_row_to_dex_pool_data(
                 swap_liquidity,
                 swap_tick,
             );
+            pool_swap.block_hash = block_hash;
 
             Ok(DexPoolData::Swap(pool_swap))
         }
@@ -327,7 +363,7 @@ pub fn transform_row_to_dex_pool_data(
                     sqlx::Error::Decode("Missing tick_upper for liquidity event".into())
                 })?;
 
-            let pool_liquidity_update = PoolLiquidityUpdate::new(
+            let mut pool_liquidity_update = PoolLiquidityUpdate::new(
                 chain,
                 dex,
                 instrument_id,
@@ -347,6 +383,7 @@ pub fn transform_row_to_dex_pool_data(
                 timestamp, // ts_event
                 timestamp, // ts_init (same block timestamp)
             );
+            pool_liquidity_update.block_hash = block_hash;
 
             Ok(DexPoolData::LiquidityUpdate(pool_liquidity_update))
         }
@@ -380,7 +417,7 @@ pub fn transform_row_to_dex_pool_data(
                     sqlx::Error::Decode("Missing tick_upper for collect event".into())
                 })?;
 
-            let pool_fee_collect = PoolFeeCollect::new(
+            let mut pool_fee_collect = PoolFeeCollect::new(
                 chain,
                 dex,
                 instrument_id,
@@ -397,6 +434,7 @@ pub fn transform_row_to_dex_pool_data(
                 timestamp, // ts_event
                 timestamp, // ts_init (same block timestamp)
             );
+            pool_fee_collect.block_hash = block_hash;
 
             Ok(DexPoolData::FeeCollect(pool_fee_collect))
         }
@@ -414,7 +452,7 @@ pub fn transform_row_to_dex_pool_data(
                 )
             })?;
 
-            let pool_fee_protocol_update = PoolFeeProtocolUpdate::new(
+            let mut pool_fee_protocol_update = PoolFeeProtocolUpdate::new(
                 chain,
                 dex,
                 instrument_id,
@@ -428,6 +466,7 @@ pub fn transform_row_to_dex_pool_data(
                 timestamp, // ts_event
                 timestamp, // ts_init (same block timestamp)
             );
+            pool_fee_protocol_update.block_hash = block_hash;
 
             Ok(DexPoolData::FeeProtocolUpdate(pool_fee_protocol_update))
         }
@@ -459,7 +498,7 @@ pub fn transform_row_to_dex_pool_data(
                 sqlx::Error::Decode(format!("Invalid amount1 '{amount1_str}': {e}").into())
             })?;
 
-            let pool_fee_protocol_collect = PoolFeeProtocolCollect::new(
+            let mut pool_fee_protocol_collect = PoolFeeProtocolCollect::new(
                 chain,
                 dex,
                 instrument_id,
@@ -475,6 +514,7 @@ pub fn transform_row_to_dex_pool_data(
                 timestamp, // ts_event
                 timestamp, // ts_init (same block timestamp)
             );
+            pool_fee_protocol_collect.block_hash = block_hash;
 
             Ok(DexPoolData::FeeProtocolCollect(pool_fee_protocol_collect))
         }
@@ -516,7 +556,7 @@ pub fn transform_row_to_dex_pool_data(
                 sqlx::Error::Decode(format!("Invalid flash_paid1 '{flash_paid1_str}': {e}").into())
             })?;
 
-            let pool_flash = PoolFlash::new(
+            let mut pool_flash = PoolFlash::new(
                 chain,
                 dex,
                 instrument_id,
@@ -534,6 +574,7 @@ pub fn transform_row_to_dex_pool_data(
                 paid0,
                 paid1,
             );
+            pool_flash.block_hash = block_hash;
 
             Ok(DexPoolData::Flash(pool_flash))
         }
@@ -649,7 +690,7 @@ impl<'r> FromRow<'r, PgRow> for ExecutionIntentRow {
 }
 
 /// A signed transaction hash associated with an execution intent.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ExecutionTransactionHashRow {
     pub id: i64,
     pub intent_id: i64,
@@ -663,6 +704,28 @@ pub struct ExecutionTransactionHashRow {
     pub gas_used: Option<u64>,
     pub effective_gas_price: Option<String>,
     pub current: bool,
+}
+
+impl Debug for ExecutionTransactionHashRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ExecutionTransactionHashRow))
+            .field("id", &self.id)
+            .field("intent_id", &self.intent_id)
+            .field("chain_id", &self.chain_id)
+            .field("transaction_hash", &self.transaction_hash)
+            .field(
+                "raw_transaction",
+                &self.raw_transaction.as_ref().map(|_| "<redacted>"),
+            )
+            .field("status", &self.status)
+            .field("block_number", &self.block_number)
+            .field("block_hash", &self.block_hash)
+            .field("receipt_success", &self.receipt_success)
+            .field("gas_used", &self.gas_used)
+            .field("effective_gas_price", &self.effective_gas_price)
+            .field("current", &self.current)
+            .finish()
+    }
 }
 
 impl<'r> FromRow<'r, PgRow> for ExecutionTransactionHashRow {
@@ -756,5 +819,43 @@ mod tests {
         let result = parse_cached_block_timestamp("not-a-timestamp");
 
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn decode_address_rejects_malformed_database_value() {
+        let error = decode_address("not-an-address", "token").unwrap_err();
+
+        assert!(error.to_string().contains("Invalid token address"));
+    }
+
+    #[rstest]
+    fn decode_unsigned_fields_reject_negative_database_values() {
+        assert!(decode_u64(-1_i64, "block number").is_err());
+        assert!(decode_u32(-1, "log index").is_err());
+        assert!(decode_u8(-1, "token decimals").is_err());
+        assert!(decode_u8(256, "token decimals").is_err());
+    }
+
+    #[rstest]
+    fn execution_transaction_hash_debug_redacts_raw_transaction() {
+        let row = ExecutionTransactionHashRow {
+            id: 1,
+            intent_id: 2,
+            chain_id: 42161,
+            transaction_hash: "0xhash".to_string(),
+            raw_transaction: Some(vec![0xde, 0xad, 0xbe, 0xef]),
+            status: "signed".to_string(),
+            block_number: None,
+            block_hash: None,
+            receipt_success: None,
+            gas_used: None,
+            effective_gas_price: None,
+            current: true,
+        };
+
+        let debug = format!("{row:?}");
+
+        assert!(debug.contains("raw_transaction: Some(\"<redacted>\")"));
+        assert!(!debug.contains("[222, 173, 190, 239]"));
     }
 }

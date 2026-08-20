@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Debug;
+
 use derive_builder::Builder;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -38,7 +40,7 @@ fn escape_sql_string(value: &str) -> String {
     value.replace('\'', "''")
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
+#[derive(Clone, Serialize, Deserialize, Builder)]
 #[serde(deny_unknown_fields)]
 #[builder(default)]
 #[cfg_attr(
@@ -59,6 +61,18 @@ pub struct PostgresConnectOptions {
     pub username: String,
     pub password: String,
     pub database: String,
+}
+
+impl Debug for PostgresConnectOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(PostgresConnectOptions))
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &"***")
+            .field("database", &self.database)
+            .finish()
+    }
 }
 
 impl PostgresConnectOptions {
@@ -673,6 +687,22 @@ database = "nautilus"
         assert_eq!(config.port, 5432);
         assert_eq!(config.username, "nautilus");
         assert_eq!(config.database, "nautilus");
+    }
+
+    #[rstest]
+    fn test_postgres_connect_options_debug_redacts_password() {
+        let config = PostgresConnectOptions::new(
+            "localhost".to_string(),
+            5432,
+            "nautilus".to_string(),
+            "secret-password".to_string(),
+            "nautilus".to_string(),
+        );
+
+        let debug = format!("{config:?}");
+
+        assert!(debug.contains("password: \"***\""));
+        assert!(!debug.contains("secret-password"));
     }
 
     #[rstest]

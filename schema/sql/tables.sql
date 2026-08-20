@@ -378,9 +378,11 @@ CREATE TABLE IF NOT EXISTS "block_default" PARTITION OF "block" DEFAULT;
 CREATE TABLE IF NOT EXISTS "pool_event_block" (
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
     number BIGINT NOT NULL,
+    hash TEXT,
     timestamp TEXT NOT NULL,
     PRIMARY KEY (chain_id, number)
 );
+ALTER TABLE "pool_event_block" ADD COLUMN IF NOT EXISTS hash TEXT;
 
 CREATE TABLE IF NOT EXISTS "token"(
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,

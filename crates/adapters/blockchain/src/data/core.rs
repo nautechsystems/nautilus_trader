@@ -29,7 +29,8 @@ use nautilus_model::defi::{
     SharedChain, SharedDex, SharedPool,
     data::{
         DefiData, DexPoolData, PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate,
-        PoolFlash, block::BlockPosition,
+        PoolFlash,
+        block::{BLOCK_SCOPED_SNAPSHOT_INDEX, BlockPosition},
     },
     pool_analysis::{compare::compare_pool_profiler_detailed, snapshot::PoolSnapshot},
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
@@ -74,7 +75,6 @@ const POOL_EVENT_SYNC_VERSION_PROTOCOL_FEE: u32 = 1;
 // Give each added family a new introduction version, then advance this current version
 const POOL_EVENT_SYNC_VERSION: u32 = POOL_EVENT_SYNC_VERSION_PROTOCOL_FEE;
 // Block-scoped RPC snapshots include the whole block, so same-block replay must skip every log.
-const BLOCK_SCOPED_SNAPSHOT_INDEX: u32 = i32::MAX as u32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PoolEventFamily {
@@ -1106,8 +1106,7 @@ impl BlockchainDataClientCore {
         block: Block,
         block_batch: &mut Vec<Block>,
     ) -> anyhow::Result<()> {
-        self.cache
-            .cache_block_timestamp(block.number, block.timestamp);
+        self.cache.cache_block_metadata(&block);
         block_batch.push(block);
         if block_batch.len() >= POOL_EVENT_BLOCK_BATCH_SIZE {
             self.flush_pool_event_blocks(block_batch).await?;
@@ -1161,6 +1160,7 @@ impl BlockchainDataClientCore {
             pool.pool_identifier,
             timestamp,
         );
+        swap.block_hash = Some(self.observed_block_hash(swap_event.block_number, "swap")?);
         // Keep the swap and leave price metadata empty rather than aborting the pool sync
         if let Err(e) = swap.calculate_trade_info(&pool.token0, &pool.token1, None) {
             log::warn!(
@@ -1190,12 +1190,14 @@ impl BlockchainDataClientCore {
             .copied()
             .context("missing block timestamp for mint event")?;
 
-        let liquidity_update = mint_event.to_pool_liquidity_update(
+        let mut liquidity_update = mint_event.to_pool_liquidity_update(
             self.chain.clone(),
             dex_extended.dex.clone(),
             pool.instrument_id,
             timestamp,
         );
+        liquidity_update.block_hash =
+            Some(self.observed_block_hash(mint_event.block_number, "mint")?);
 
         // self.cache.add_liquidity_update(&liquidity_update).await?;
 
@@ -1220,13 +1222,15 @@ impl BlockchainDataClientCore {
             .copied()
             .context("missing block timestamp for burn event")?;
 
-        let liquidity_update = burn_event.to_pool_liquidity_update(
+        let mut liquidity_update = burn_event.to_pool_liquidity_update(
             self.chain.clone(),
             dex_extended.dex.clone(),
             pool.instrument_id,
             pool.pool_identifier,
             timestamp,
         );
+        liquidity_update.block_hash =
+            Some(self.observed_block_hash(burn_event.block_number, "burn")?);
 
         // self.cache.add_liquidity_update(&liquidity_update).await?;
 
@@ -1250,12 +1254,14 @@ impl BlockchainDataClientCore {
             .copied()
             .context("missing block timestamp for collect event")?;
 
-        let fee_collect = collect_event.to_pool_fee_collect(
+        let mut fee_collect = collect_event.to_pool_fee_collect(
             self.chain.clone(),
             dex_extended.dex.clone(),
             pool.instrument_id,
             timestamp,
         );
+        fee_collect.block_hash =
+            Some(self.observed_block_hash(collect_event.block_number, "collect")?);
 
         Ok(fee_collect)
     }
@@ -1276,7 +1282,9 @@ impl BlockchainDataClientCore {
             .copied()
             .context("missing block timestamp for flash event")?;
 
-        let flash = flash_event.to_pool_flash(self.chain.clone(), pool.instrument_id, timestamp);
+        let mut flash =
+            flash_event.to_pool_flash(self.chain.clone(), pool.instrument_id, timestamp);
+        flash.block_hash = Some(self.observed_block_hash(flash_event.block_number, "flash")?);
 
         Ok(flash)
     }
@@ -1297,10 +1305,13 @@ impl BlockchainDataClientCore {
             .copied()
             .context("missing block timestamp for SetFeeProtocol event")?;
 
-        let update = fee_protocol_update_event.to_pool_fee_protocol_update(
+        let mut update = fee_protocol_update_event.to_pool_fee_protocol_update(
             self.chain.clone(),
             pool.instrument_id,
             timestamp,
+        );
+        update.block_hash = Some(
+            self.observed_block_hash(fee_protocol_update_event.block_number, "SetFeeProtocol")?,
         );
 
         Ok(update)
@@ -1322,13 +1333,25 @@ impl BlockchainDataClientCore {
             .copied()
             .context("missing block timestamp for CollectProtocol event")?;
 
-        let collect = fee_protocol_collect_event.to_pool_fee_protocol_collect(
+        let mut collect = fee_protocol_collect_event.to_pool_fee_protocol_collect(
             self.chain.clone(),
             pool.instrument_id,
             timestamp,
         );
+        collect.block_hash = Some(
+            self.observed_block_hash(fee_protocol_collect_event.block_number, "CollectProtocol")?,
+        );
 
         Ok(collect)
+    }
+
+    fn observed_block_hash(&self, block_number: u64, event: &str) -> anyhow::Result<String> {
+        self.cache
+            .get_block_hash(block_number)
+            .map(str::to_owned)
+            .with_context(|| {
+                format!("missing block hash for {event} event at block {block_number}")
+            })
     }
 
     /// Synchronizes all pools and their tokens for a specific DEX within the given block range.
@@ -2286,14 +2309,15 @@ impl BlockchainDataClientCore {
             );
         }
 
-        cache.cache_block_timestamp(block.number, block.timestamp);
+        cache.cache_block_metadata(block);
 
         Ok(BlockPosition::new(
             block.number,
             block.hash.clone(),
             BLOCK_SCOPED_SNAPSHOT_INDEX,
             BLOCK_SCOPED_SNAPSHOT_INDEX,
-        ))
+        )
+        .with_block_hash(Some(block.hash.clone())))
     }
 
     /// Replays historical events for a pool to hydrate its profiler state.

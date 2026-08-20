@@ -320,6 +320,22 @@ impl Erc20Contract {
             .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
     }
 
+    /// Fetches the token decimal precision used to scale raw amounts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the contract call fails or its result cannot be decoded.
+    pub async fn decimals(&self, token_address: &Address) -> Result<u8, BlockchainRpcClientError> {
+        let call_data = ERC20::decimalsCall {}.abi_encode();
+        let result = self
+            .base
+            .execute_call(token_address, &call_data, None)
+            .await?;
+
+        ERC20::decimalsCall::abi_decode_returns(&result)
+            .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
+    }
+
     /// Fetches the exact allowance an owner has granted a spender for this ERC20 token.
     ///
     /// # Errors

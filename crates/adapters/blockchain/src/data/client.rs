@@ -290,7 +290,7 @@ impl BlockchainDataClient {
         core_client: &mut BlockchainDataClientCore,
         pending_pool_messages: &mut VecDeque<BlockchainMessage>,
     ) -> Vec<DataEvent> {
-        let ready_messages = Self::drain_pending_pool_messages_with_cached_timestamps(
+        let ready_messages = Self::drain_pending_pool_messages_with_cached_metadata(
             pending_pool_messages,
             &core_client.cache,
         );
@@ -305,7 +305,7 @@ impl BlockchainDataClient {
         data_events
     }
 
-    fn drain_pending_pool_messages_with_cached_timestamps(
+    fn drain_pending_pool_messages_with_cached_metadata(
         pending_pool_messages: &mut VecDeque<BlockchainMessage>,
         cache: &BlockchainCache,
     ) -> Vec<BlockchainMessage> {
@@ -317,7 +317,7 @@ impl BlockchainDataClient {
                 break;
             };
 
-            if Self::pool_event_missing_block_timestamp(&msg, cache).is_some() {
+            if Self::pool_event_missing_block_metadata(&msg, cache).is_some() {
                 pending_pool_messages.push_back(msg);
                 continue;
             }
@@ -349,8 +349,8 @@ impl BlockchainDataClient {
         cache: &BlockchainCache,
         pending_pool_messages: &mut VecDeque<BlockchainMessage>,
     ) -> Option<BlockchainMessage> {
-        if let Some(block_number) = Self::pool_event_missing_block_timestamp(&msg, cache) {
-            log::debug!("Deferring live pool event until block {block_number} timestamp is cached");
+        if let Some(block_number) = Self::pool_event_missing_block_metadata(&msg, cache) {
+            log::debug!("Deferring live pool event until block {block_number} metadata is cached");
             Self::queue_pending_pool_message(pending_pool_messages, msg);
             None
         } else {
@@ -358,15 +358,14 @@ impl BlockchainDataClient {
         }
     }
 
-    fn pool_event_missing_block_timestamp(
+    fn pool_event_missing_block_metadata(
         msg: &BlockchainMessage,
         cache: &BlockchainCache,
     ) -> Option<u64> {
         let block_number = Self::pool_event_block_number(msg)?;
-        cache
-            .get_block_timestamp(block_number)
-            .is_none()
-            .then_some(block_number)
+        (cache.get_block_timestamp(block_number).is_none()
+            || cache.get_block_hash(block_number).is_none())
+        .then_some(block_number)
     }
 
     fn pool_event_block_number(msg: &BlockchainMessage) -> Option<u64> {
@@ -1494,7 +1493,7 @@ mod tests {
     }
 
     #[rstest]
-    fn pool_event_missing_block_timestamp_clears_after_timestamp_cache_update() {
+    fn pool_event_missing_block_metadata_clears_after_block_cache_update() {
         let chain = Arc::new(
             Chain::from_chain_id(1)
                 .expect("Ethereum chain should exist")
@@ -1508,14 +1507,15 @@ mod tests {
             Some(42)
         );
         assert_eq!(
-            BlockchainDataClient::pool_event_missing_block_timestamp(&msg, &cache),
+            BlockchainDataClient::pool_event_missing_block_metadata(&msg, &cache),
             Some(42)
         );
 
-        cache.cache_block_timestamp(42, UnixNanos::from(1_700_000_000_000_000_000));
+        let block = test_block(42, "0x1", 1_700_000_000_000_000_000);
+        cache.cache_block_metadata(&block);
 
         assert_eq!(
-            BlockchainDataClient::pool_event_missing_block_timestamp(&msg, &cache),
+            BlockchainDataClient::pool_event_missing_block_metadata(&msg, &cache),
             None
         );
     }
@@ -1548,21 +1548,21 @@ mod tests {
     }
 
     #[rstest]
-    fn drain_pending_pool_messages_releases_events_after_timestamps_are_cached() {
+    fn drain_pending_pool_messages_releases_events_after_block_metadata_is_cached() {
         let chain = Arc::new(
             Chain::from_chain_id(1)
                 .expect("Ethereum chain should exist")
                 .clone(),
         );
         let mut cache = BlockchainCache::new(chain);
-        cache.cache_block_timestamp(42, UnixNanos::from(1_700_000_000_000_000_000));
+        let block_42 = test_block(42, "0x42", 1_700_000_000_000_000_000);
+        cache.cache_block_metadata(&block_42);
         let mut pending = VecDeque::from([flash_message(41), flash_message(42)]);
 
-        let ready_messages =
-            BlockchainDataClient::drain_pending_pool_messages_with_cached_timestamps(
-                &mut pending,
-                &cache,
-            );
+        let ready_messages = BlockchainDataClient::drain_pending_pool_messages_with_cached_metadata(
+            &mut pending,
+            &cache,
+        );
 
         assert_eq!(ready_messages.len(), 1);
         assert_eq!(
@@ -1575,13 +1575,13 @@ mod tests {
             Some(41)
         );
 
-        cache.cache_block_timestamp(41, UnixNanos::from(1_700_000_000_000_000_001));
+        let block_41 = test_block(41, "0x41", 1_700_000_000_000_000_001);
+        cache.cache_block_metadata(&block_41);
 
-        let ready_messages =
-            BlockchainDataClient::drain_pending_pool_messages_with_cached_timestamps(
-                &mut pending,
-                &cache,
-            );
+        let ready_messages = BlockchainDataClient::drain_pending_pool_messages_with_cached_metadata(
+            &mut pending,
+            &cache,
+        );
 
         assert_eq!(ready_messages.len(), 1);
         assert_eq!(
@@ -1592,7 +1592,7 @@ mod tests {
     }
 
     #[rstest]
-    fn ready_live_blockchain_message_queues_until_block_timestamp_is_cached() {
+    fn ready_live_blockchain_message_queues_until_block_metadata_is_cached() {
         let chain = Arc::new(
             Chain::from_chain_id(1)
                 .expect("Ethereum chain should exist")
@@ -1614,28 +1614,18 @@ mod tests {
             Some(42)
         );
 
-        cache.cache_block_timestamp(42, UnixNanos::from(1_700_000_000_000_000_000));
-        let block = Block::new(
-            "0x1".to_string(),
-            "0x0".to_string(),
-            42,
-            Ustr::from("0x0000000000000000000000000000000000000000"),
-            30_000_000,
-            21_000,
-            UnixNanos::from(1_700_000_000_000_000_000),
-            Some(Blockchain::Ethereum),
-        );
+        let block = test_block(42, "0x1", 1_700_000_000_000_000_000);
+        cache.cache_block_metadata(&block);
 
         let message = BlockchainDataClient::ready_live_blockchain_message(
             BlockchainMessage::Block(block),
             &cache,
             &mut pending,
         );
-        let ready_messages =
-            BlockchainDataClient::drain_pending_pool_messages_with_cached_timestamps(
-                &mut pending,
-                &cache,
-            );
+        let ready_messages = BlockchainDataClient::drain_pending_pool_messages_with_cached_metadata(
+            &mut pending,
+            &cache,
+        );
 
         assert!(matches!(message, Some(BlockchainMessage::Block(_))));
         assert_eq!(ready_messages.len(), 1);
@@ -1760,6 +1750,19 @@ mod tests {
             0,
             0,
         ))
+    }
+
+    fn test_block(number: u64, hash: &str, timestamp: u64) -> Block {
+        Block::new(
+            hash.to_string(),
+            "0x0".to_string(),
+            number,
+            Ustr::from("0x0000000000000000000000000000000000000000"),
+            30_000_000,
+            21_000,
+            UnixNanos::from(timestamp),
+            Some(Blockchain::Ethereum),
+        )
     }
 
     fn flash_message(block_number: u64) -> BlockchainMessage {

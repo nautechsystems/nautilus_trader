@@ -35,7 +35,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
     Pool, PoolIdentifier, PoolProfiler, Token,
     chain::chains,
-    data::block::BlockPosition,
+    data::block::{BLOCK_SCOPED_SNAPSHOT_INDEX, BlockPosition},
     pool_analysis::{
         position::PoolPosition,
         snapshot::{PoolAnalytics, PoolSnapshot},
@@ -355,6 +355,7 @@ pub(crate) async fn build_full_range_snapshot(
         .await
         .unwrap();
     let head = rpc_client.latest_block().await.unwrap();
+    let head_hash = head.hash.to_string();
     let liquidity = pool_state.liquidity;
     let snapshot = PoolSnapshot::new(
         pool.instrument_id,
@@ -388,10 +389,11 @@ pub(crate) async fn build_full_range_snapshot(
         PoolAnalytics::default(),
         BlockPosition::new(
             head.number,
-            "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
-            0,
-            0,
-        ),
+            head_hash.clone(),
+            BLOCK_SCOPED_SNAPSHOT_INDEX,
+            BLOCK_SCOPED_SNAPSHOT_INDEX,
+        )
+        .with_block_hash(Some(head_hash)),
         UnixNanos::default(),
         UnixNanos::default(),
     );

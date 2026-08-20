@@ -5681,6 +5681,7 @@ dependencies = [
  "toml 1.1.4+spec-1.1.0",
  "turmoil",
  "ustr",
+ "zeroize",
 ]
 
 [[package]]
