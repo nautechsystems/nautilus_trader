@@ -2929,6 +2929,46 @@ async fn test_reconciliation_respects_load_id_scope(
 
 #[rstest]
 #[tokio::test]
+async fn test_explicit_open_order_scope_classification() {
+    let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::Populated,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let provider = BinanceInstrumentProviderConfig {
+        load_all: false,
+        load_ids: Some(vec!["XAUUSDT-PERP.BINANCE".to_string()]),
+        ..Default::default()
+    };
+    let (mut client, _rx, cache) =
+        create_test_execution_client_with_provider(base_url_http, base_url_ws, provider);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_test_instrument_to_cache(&cache);
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    client.instruments_cache().clear();
+
+    let reports = client
+        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            true,
+            Some(test_instrument_id()),
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_reconciliation_filter_mismatch_remains_in_scope() {
     let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
         CommandResponses::default(),

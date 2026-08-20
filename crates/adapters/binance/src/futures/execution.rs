@@ -1890,8 +1890,19 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
             for order in orders {
                 if let Some(instrument_id) = cmd.instrument_id {
-                    let (price_precision, size_precision) =
-                        self.get_instrument_precision(instrument_id)?;
+                    let Some((_, price_precision, size_precision)) =
+                        self.resolve_cached_instrument(&format_binance_symbol(&instrument_id))?
+                    else {
+                        if self.is_out_of_scope(instrument_id) {
+                            log::debug!(
+                                "Dropping out-of-scope Binance Futures open order for instrument {instrument_id}"
+                            );
+                            continue;
+                        }
+                        anyhow::bail!(
+                            "Binance Futures open order has unresolved instrument {instrument_id}"
+                        );
+                    };
 
                     if let Ok(report) = order.to_order_status_report(
                         self.core.account_id,
@@ -1935,8 +1946,19 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
             for algo_order in algo_orders {
                 if let Some(instrument_id) = cmd.instrument_id {
-                    let (price_precision, size_precision) =
-                        self.get_instrument_precision(instrument_id)?;
+                    let Some((_, price_precision, size_precision)) =
+                        self.resolve_cached_instrument(&format_binance_symbol(&instrument_id))?
+                    else {
+                        if self.is_out_of_scope(instrument_id) {
+                            log::debug!(
+                                "Dropping out-of-scope Binance Futures open algo order for instrument {instrument_id}"
+                            );
+                            continue;
+                        }
+                        anyhow::bail!(
+                            "Binance Futures open algo order has unresolved instrument {instrument_id}"
+                        );
+                    };
 
                     if let Ok(report) = algo_order.to_order_status_report(
                         self.core.account_id,
@@ -2334,7 +2356,18 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let instruments_cache = self.http_client.instruments_cache();
         instrument_ids.retain(|instrument_id| {
             let symbol = format_binance_symbol(instrument_id);
-            instruments_cache.contains_key(&Ustr::from(symbol.as_str()))
+            if instruments_cache.contains_key(&Ustr::from(symbol.as_str())) {
+                return true;
+            }
+
+            if self.is_out_of_scope(*instrument_id) {
+                log::debug!(
+                    "Dropping out-of-scope Binance Futures retained instrument {instrument_id}"
+                );
+                return false;
+            }
+
+            true
         });
         instrument_ids.sort_unstable();
         instrument_ids.dedup();
