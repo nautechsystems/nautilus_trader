@@ -255,8 +255,14 @@ async fn websocket_client_routes_through_http_connect_proxy(#[case] backend: Tra
     assert_eq!(echoed_msgs, vec!["hello via proxy".to_string()]);
 }
 
+#[rstest]
+#[case::tungstenite(TransportBackend::Tungstenite)]
+#[cfg_attr(
+    feature = "transport-sockudo",
+    case::sockudo(TransportBackend::Sockudo)
+)]
 #[tokio::test]
-async fn websocket_client_without_proxy_connects_directly() {
+async fn websocket_client_without_proxy_connects_directly(#[case] backend: TransportBackend) {
     let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let echo_addr = spawn_echo_server(Arc::clone(&received)).await;
     let config = WebSocketConfig {
@@ -272,7 +278,7 @@ async fn websocket_client_without_proxy_connects_directly() {
         reconnect_max_attempts: Some(0),
         heartbeat_timeout_secs: None,
         idle_timeout_ms: None,
-        backend: TransportBackend::Tungstenite,
+        backend,
         proxy_url: None,
     };
 
@@ -297,8 +303,16 @@ async fn websocket_client_without_proxy_connects_directly() {
     assert_eq!(messages, vec!["direct fixture".to_string()]);
 }
 
+#[rstest]
+#[case::tungstenite(TransportBackend::Tungstenite)]
+#[cfg_attr(
+    feature = "transport-sockudo",
+    case::sockudo(TransportBackend::Sockudo)
+)]
 #[tokio::test]
-async fn websocket_client_invalid_proxy_error_redacts_credentials() {
+async fn websocket_client_invalid_proxy_error_redacts_credentials(
+    #[case] backend: TransportBackend,
+) {
     const SECRET: &str = "invalid-websocket-proxy-secret";
     let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let echo_addr = spawn_echo_server(Arc::clone(&received)).await;
@@ -315,7 +329,7 @@ async fn websocket_client_invalid_proxy_error_redacts_credentials() {
         reconnect_max_attempts: Some(0),
         heartbeat_timeout_secs: None,
         idle_timeout_ms: None,
-        backend: TransportBackend::Tungstenite,
+        backend,
         proxy_url: Some(format!("http://proxy-user:{SECRET}@[::1")),
     };
 
@@ -329,8 +343,16 @@ async fn websocket_client_invalid_proxy_error_redacts_credentials() {
     assert!(received.lock().await.is_empty());
 }
 
+#[rstest]
+#[case::tungstenite(TransportBackend::Tungstenite)]
+#[cfg_attr(
+    feature = "transport-sockudo",
+    case::sockudo(TransportBackend::Sockudo)
+)]
 #[tokio::test]
-async fn websocket_client_unreachable_proxy_error_redacts_credentials() {
+async fn websocket_client_unreachable_proxy_error_redacts_credentials(
+    #[case] backend: TransportBackend,
+) {
     const USERNAME: &str = "proxy-user";
     const SECRET: &str = "unreachable-websocket-proxy-secret";
     let proxy_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -351,7 +373,7 @@ async fn websocket_client_unreachable_proxy_error_redacts_credentials() {
         reconnect_max_attempts: Some(0),
         heartbeat_timeout_secs: None,
         idle_timeout_ms: None,
-        backend: TransportBackend::Tungstenite,
+        backend,
         proxy_url: Some(format!("http://{USERNAME}:{SECRET}@{proxy_addr}")),
     };
 
@@ -370,8 +392,14 @@ async fn websocket_client_unreachable_proxy_error_redacts_credentials() {
     assert!(received.lock().await.is_empty());
 }
 
+#[rstest]
+#[case::tungstenite(TransportBackend::Tungstenite)]
+#[cfg_attr(
+    feature = "transport-sockudo",
+    case::sockudo(TransportBackend::Sockudo)
+)]
 #[tokio::test]
-async fn websocket_client_falls_back_to_direct_for_socks_proxy() {
+async fn websocket_client_falls_back_to_direct_for_socks_proxy(#[case] backend: TransportBackend) {
     // SOCKS proxies are not yet supported on the WS path. To preserve REST
     // proxy configs that use SOCKS, the client should log a warning and fall
     // back to a direct connection rather than failing the handshake. We verify
@@ -393,7 +421,7 @@ async fn websocket_client_falls_back_to_direct_for_socks_proxy() {
         reconnect_max_attempts: Some(0),
         heartbeat_timeout_secs: None,
         idle_timeout_ms: None,
-        backend: TransportBackend::Tungstenite,
+        backend,
         proxy_url: Some("socks5://127.0.0.1:1080".to_string()),
     };
 
@@ -465,8 +493,14 @@ async fn spawn_one_drop_echo_server(received: Arc<Mutex<Vec<String>>>) -> Socket
 /// The client must send `Proxy-Authorization` when proxy_url embeds basic
 /// auth credentials. Without this assertion, a regression that drops the
 /// header would only surface against a real authenticated proxy.
+#[rstest]
+#[case::tungstenite(TransportBackend::Tungstenite)]
+#[cfg_attr(
+    feature = "transport-sockudo",
+    case::sockudo(TransportBackend::Sockudo)
+)]
 #[tokio::test]
-async fn websocket_client_emits_proxy_authorization_header() {
+async fn websocket_client_emits_proxy_authorization_header(#[case] backend: TransportBackend) {
     let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let echo_addr = spawn_echo_server(Arc::clone(&received)).await;
     let (proxy_addr, capture) = spawn_connect_proxy(echo_addr).await;
@@ -486,7 +520,7 @@ async fn websocket_client_emits_proxy_authorization_header() {
         reconnect_max_attempts: Some(0),
         heartbeat_timeout_secs: None,
         idle_timeout_ms: None,
-        backend: TransportBackend::Tungstenite,
+        backend,
         proxy_url: Some(proxy_url),
     };
 
@@ -510,8 +544,14 @@ async fn websocket_client_emits_proxy_authorization_header() {
 /// Reconnects must continue to use the configured proxy. The fixture's
 /// first WS connection is dropped after the handshake, forcing the client
 /// to reconnect; both connect attempts must be observed by the proxy.
+#[rstest]
+#[case::tungstenite(TransportBackend::Tungstenite)]
+#[cfg_attr(
+    feature = "transport-sockudo",
+    case::sockudo(TransportBackend::Sockudo)
+)]
 #[tokio::test]
-async fn websocket_client_reuses_proxy_url_on_reconnect() {
+async fn websocket_client_reuses_proxy_url_on_reconnect(#[case] backend: TransportBackend) {
     let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let echo_addr = spawn_one_drop_echo_server(Arc::clone(&received)).await;
     let (proxy_addr, capture) = spawn_connect_proxy(echo_addr).await;
@@ -529,7 +569,7 @@ async fn websocket_client_reuses_proxy_url_on_reconnect() {
         reconnect_max_attempts: Some(5),
         heartbeat_timeout_secs: None,
         idle_timeout_ms: None,
-        backend: TransportBackend::Tungstenite,
+        backend,
         proxy_url: Some(format!("http://{proxy_addr}")),
     };
 
