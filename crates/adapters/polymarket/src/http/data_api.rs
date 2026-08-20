@@ -270,6 +270,7 @@ impl PolymarketDataApiHttpClient {
     /// until a partial page is returned. Fails if the venue's maximum supported offset is
     /// exhausted before the response is complete.
     pub async fn get_positions(&self, user_address: &str) -> Result<Vec<DataApiPosition>> {
+        // Polymarket defines the `/positions` maximum offset as 10,000 inclusive
         const MAX_OFFSET: u32 = 10_000;
         const PAGE_SIZE: usize = 100;
 
