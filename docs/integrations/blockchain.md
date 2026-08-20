@@ -79,7 +79,7 @@ Uniswap V3 and compatible concentrated-liquidity pools also use:
 | `pool_filters`                    | `DexPoolFilters()`            | Pool universe filtering rules.                         |
 | `postgres_cache_database_config`  | `None`                        | Optional Postgres cache configuration.                 |
 | `proxy_url`                       | `None`                        | Optional HTTP and WebSocket proxy URL.                 |
-| `transport_backend`               | `Tungstenite`                 | WebSocket transport backend.                           |
+| `transport_backend`               | `Sockudo`                     | WebSocket transport backend.                           |
 
 :::note
 Pool snapshot requests currently require a Postgres cache database. The in-memory cache can hold
@@ -792,32 +792,32 @@ idempotently; this adapter does not provide an atomic exactly‑once delivery gu
 The `BlockchainExecutionClientConfig` fields, exposed to Python following the
 `BlockchainDataClientConfig` pattern:
 
-| Field                            | Default       | Description                                                          |
-| -------------------------------- | ------------- | -------------------------------------------------------------------- |
-| `trader_id`                      | Required      | Trader ID for the client.                                            |
-| `client_id`                      | Required      | Account ID for the client.                                           |
-| `chain`                          | Required      | Blockchain chain configuration.                                      |
-| `wallet_address`                 | Required      | Wallet address for the execution client.                             |
-| `http_rpc_url`                   | Required      | HTTP URL for the blockchain RPC endpoint.                            |
-| `signer_private_key_env`         | Required      | Environment variable that holds the signer key.                      |
-| `router_addresses`               | Required      | SwapRouter allowlist; at least one address is required.              |
-| `max_fee_per_gas_wei`            | Required      | Maximum derived fee per gas in wei.                                  |
-| `base_fee_buffer_bps`            | Required      | Buffer applied over the latest base fee.                             |
-| `gas_limit`                      | Required      | Gas ceiling; a higher buffered estimate is rejected.                 |
-| `gas_buffer_bps`                 | Required      | Buffer applied over `eth_estimateGas`.                               |
-| `unlimited_approval`             | `false`       | Request unlimited approval instead of the exact amount.              |
-| `weth_address`                   | Required      | Wrapped native token used by `wrap`.                                 |
-| `allowed_token_pairs`            | Required      | Allowed input and output token address pairs.                        |
-| `slippage_bps`                   | Required      | Default slippage used to derive the minimum output.                  |
-| `max_slippage_bps`               | Required      | Ceiling for a per‑order slippage override.                           |
-| `max_order_amount`               | Required      | `u64` ceiling in raw base‑token units.                               |
-| `deadline_seconds`               | Required      | Swap deadline offset from the latest block timestamp.                |
-| `max_quote_age_blocks`           | Required      | Maximum age of the local quote in blocks.                            |
-| `receipt_timeout_secs`           | Required      | Deadline for the receipt and finality polling loop.                  |
-| `tokens`                         | `None`        | ERC‑20 addresses included in balance publication.                    |
-| `rpc_requests_per_second`        | `None`        | HTTP RPC rate limit.                                                 |
-| `postgres_cache_database_config` | `None`        | Durable execution store; transaction submission requires it.         |
-| `transport_backend`              | `Tungstenite` | Compatibility field; the execution client currently does not use it. |
+| Field                            | Default   | Description                                                          |
+| -------------------------------- | --------- | -------------------------------------------------------------------- |
+| `trader_id`                      | Required  | Trader ID for the client.                                            |
+| `client_id`                      | Required  | Account ID for the client.                                           |
+| `chain`                          | Required  | Blockchain chain configuration.                                      |
+| `wallet_address`                 | Required  | Wallet address for the execution client.                             |
+| `http_rpc_url`                   | Required  | HTTP URL for the blockchain RPC endpoint.                            |
+| `signer_private_key_env`         | Required  | Environment variable that holds the signer key.                      |
+| `router_addresses`               | Required  | SwapRouter allowlist; at least one address is required.              |
+| `max_fee_per_gas_wei`            | Required  | Maximum derived fee per gas in wei.                                  |
+| `base_fee_buffer_bps`            | Required  | Buffer applied over the latest base fee.                             |
+| `gas_limit`                      | Required  | Gas ceiling; a higher buffered estimate is rejected.                 |
+| `gas_buffer_bps`                 | Required  | Buffer applied over `eth_estimateGas`.                               |
+| `unlimited_approval`             | `false`   | Request unlimited approval instead of the exact amount.              |
+| `weth_address`                   | Required  | Wrapped native token used by `wrap`.                                 |
+| `allowed_token_pairs`            | Required  | Allowed input and output token address pairs.                        |
+| `slippage_bps`                   | Required  | Default slippage used to derive the minimum output.                  |
+| `max_slippage_bps`               | Required  | Ceiling for a per‑order slippage override.                           |
+| `max_order_amount`               | Required  | `u64` ceiling in raw base‑token units.                               |
+| `deadline_seconds`               | Required  | Swap deadline offset from the latest block timestamp.                |
+| `max_quote_age_blocks`           | Required  | Maximum age of the local quote in blocks.                            |
+| `receipt_timeout_secs`           | Required  | Deadline for the receipt and finality polling loop.                  |
+| `tokens`                         | `None`    | ERC‑20 addresses included in balance publication.                    |
+| `rpc_requests_per_second`        | `None`    | HTTP RPC rate limit.                                                 |
+| `postgres_cache_database_config` | `None`    | Durable execution store; transaction submission requires it.         |
+| `transport_backend`              | `Sockudo` | Compatibility field; the execution client currently does not use it. |
 
 The first allowlisted router executes swaps, so preflight readiness requires allowance on that
 router. `receipt_timeout_secs` controls the polling deadline for swaps, wraps, and approvals. It is

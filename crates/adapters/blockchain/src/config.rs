@@ -90,7 +90,7 @@ pub struct BlockchainDataClientConfig {
     pub pool_filters: DexPoolFilters,
     /// Optional configuration for data client's Postgres cache database
     pub postgres_cache_database_config: Option<PostgresConnectOptions>,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
+    /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     #[serde(default)]
     pub transport_backend: TransportBackend,
@@ -198,7 +198,7 @@ pub struct BlockchainExecutionClientConfig {
     /// Durable store for execution transaction records; the client refuses to submit any
     /// transaction without it.
     pub postgres_cache_database_config: Option<PostgresConnectOptions>,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
+    /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     #[serde(default)]
     pub transport_backend: TransportBackend,
