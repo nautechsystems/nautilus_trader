@@ -135,6 +135,17 @@ impl<'de> Deserialize<'de> for SpotOpenPositionsResponse {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotTradeVolumeFee {
+    pub fee: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotTradeVolumeResponse {
+    pub fees: IndexMap<String, SpotTradeVolumeFee>,
+    #[serde(default)]
+    pub fees_maker: IndexMap<String, SpotTradeVolumeFee>,
+}
 // Asset Pairs (Instruments) Models
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

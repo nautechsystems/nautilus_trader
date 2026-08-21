@@ -581,6 +581,33 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
             mock_trades(query, state.clone()).await
         }
         "/0/private/GetWebSocketsToken" => mock_websockets_token(req.headers().clone()).await,
+        "/0/private/TradeVolume" => Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{
+            "error": [],
+            "result": {
+                "fees": {
+    "XBTUSDT": {
+        "fee": "0.8000"
+    },
+    "AAPLxUSD": {
+        "fee": "0.6000"
+    }
+},
+"fees_maker": {
+    "XBTUSDT": {
+        "fee": "0.4000"
+    },
+    "AAPLxUSD": {
+        "fee": "0.3000"
+    }
+}
+            }
+        }"#,
+            ))
+            .unwrap(),
         "/0/private/Balance" => mock_spot_balance().await,
         "/0/private/TradeBalance" => {
             let body_bytes = axum::body::to_bytes(req.into_body(), usize::MAX)
@@ -1087,6 +1114,66 @@ async fn test_spot_domain_request_instruments() {
 
 #[rstest]
 #[tokio::test]
+async fn test_spot_domain_request_instruments_with_account_fees() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(None)
+        .await
+        .expect("Failed to request instruments");
+
+    let instrument = instruments
+        .iter()
+        .find(|instrument| instrument.raw_symbol().as_str() == "XBTUSDT")
+        .expect("XBTUSDT instrument not found");
+
+    match instrument {
+        InstrumentAny::CurrencyPair(pair) => {
+            assert_eq!(pair.maker_fee, rust_decimal::Decimal::new(4, 3));
+            assert_eq!(pair.taker_fee, rust_decimal::Decimal::new(8, 3));
+        }
+        _ => panic!("Expected CurrencyPair"),
+    }
+
+    let tokenized = instruments
+        .iter()
+        .find(|instrument| instrument.raw_symbol().as_str() == "AAPLxUSD")
+        .expect("AAPLxUSD instrument not found");
+
+    match tokenized {
+        InstrumentAny::TokenizedAsset(asset) => {
+            assert_eq!(asset.maker_fee, rust_decimal::Decimal::new(3, 3));
+            assert_eq!(asset.taker_fee, rust_decimal::Decimal::new(6, 3));
+        }
+        _ => panic!("Expected TokenizedAsset"),
+    }
+}
+#[rstest]
+#[tokio::test]
 async fn test_spot_domain_request_instrument_statuses() {
     let state = Arc::new(TestServerState::default());
     let app = create_router(state);
@@ -1414,7 +1501,55 @@ async fn test_spot_raw_get_websockets_token_with_credentials() {
     assert_eq!(token.token, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     assert_eq!(token.expires, 900);
 }
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_trade_volume_with_credentials() {
+    use nautilus_kraken::http::{SpotTradeVolumePair, SpotTradeVolumeParams};
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
 
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let params = SpotTradeVolumeParams {
+        pair: SpotTradeVolumePair::PairNames("XBTUSDT".to_string()),
+    };
+
+    let result = client.get_trade_volume(&params).await;
+    assert!(result.is_ok(), "Failed to get TradeVolume: {result:?}");
+
+    let trade_volume = result.unwrap();
+
+    let taker = trade_volume.fees.get("XBTUSDT").expect("Missing taker fee");
+
+    let maker = trade_volume
+        .fees_maker
+        .get("XBTUSDT")
+        .expect("Missing maker fee");
+
+    assert_eq!(taker.fee, "0.8000");
+    assert_eq!(maker.fee, "0.4000");
+}
 #[rstest]
 #[tokio::test]
 async fn test_spot_domain_request_trades_missing_cached_instrument_returns_parse_error() {
