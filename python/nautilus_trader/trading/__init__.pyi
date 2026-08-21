@@ -226,6 +226,8 @@ class GridMarketMakerConfig:
         requote_threshold_bps: int = 5,
         expire_time_secs: int | None = None,
         on_cancel_resubmit: bool = False,
+        use_uuid_client_order_ids: bool = False,
+        use_hyphens_in_client_order_ids: bool = True,
     ) -> None: ...
     @property
     def instrument_id(self) -> model.InstrumentId: ...
@@ -245,6 +247,10 @@ class GridMarketMakerConfig:
     def expire_time_secs(self) -> int | None: ...
     @property
     def on_cancel_resubmit(self) -> bool: ...
+    @property
+    def use_uuid_client_order_ids(self) -> bool: ...
+    @property
+    def use_hyphens_in_client_order_ids(self) -> bool: ...
 
 @typing.final
 class HurstVpinDirectionalConfig:
