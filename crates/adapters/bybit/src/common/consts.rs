@@ -49,3 +49,9 @@ pub const BYBIT_WS_TESTNET_PRIVATE_URL: &str = "wss://stream-testnet.bybit.com/v
 pub const BYBIT_WS_TOPIC_DELIMITER: char = '.';
 
 pub const BYBIT_DEFAULT_ORDERBOOK_DEPTH: u32 = 50;
+
+/// Valid WebSocket order book depths for Bybit spot, linear and inverse.
+///
+/// See <https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook>
+/// for further details.
+pub const BYBIT_BOOK_DEPTHS: [u32; 4] = [1, 50, 200, 1000];

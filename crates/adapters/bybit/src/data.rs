@@ -64,7 +64,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_VENUE},
+        consts::{BYBIT_BOOK_DEPTHS, BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_VENUE},
         enums::BybitProductType,
         instruments::diff_and_emit_instruments,
         parse::{extract_raw_symbol, make_bybit_symbol},
@@ -325,6 +325,14 @@ fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data)
     if let Err(e) = sender.send(DataEvent::Data(data)) {
         log::error!("Failed to emit data event: {e}");
     }
+}
+
+fn validate_orderbook_depth(depth: u32) -> anyhow::Result<()> {
+    if !BYBIT_BOOK_DEPTHS.contains(&depth) {
+        anyhow::bail!("invalid depth {depth}; valid values are {BYBIT_BOOK_DEPTHS:?}");
+    }
+
+    Ok(())
 }
 
 /// Cached funding state per symbol: (funding_rate, next_funding_time, funding_interval_hour).
@@ -877,9 +885,7 @@ impl DataClient for BybitDataClient {
             .depth
             .map_or(BYBIT_DEFAULT_ORDERBOOK_DEPTH, |d| d.get() as u32);
 
-        if !matches!(depth, 1 | 50 | 200 | 500) {
-            anyhow::bail!("invalid depth {depth}; valid values are 1, 50, 200, or 500");
-        }
+        validate_orderbook_depth(depth)?;
 
         let instrument_id = cmd.instrument_id;
         let product_type = self
@@ -1965,7 +1971,7 @@ mod tests {
     use rstest::rstest;
     use ustr::Ustr;
 
-    use super::handle_ws_message;
+    use super::{handle_ws_message, validate_orderbook_depth};
     use crate::{
         common::{
             enums::BybitProductType,
@@ -2037,6 +2043,21 @@ mod tests {
             Arc::new(AtomicSet::new()),
             Arc::new(AtomicMap::new()),
         )
+    }
+
+    #[rstest]
+    fn test_validate_orderbook_depth_accepts_1000() {
+        assert!(validate_orderbook_depth(1000).is_ok());
+    }
+
+    #[rstest]
+    fn test_validate_orderbook_depth_rejects_500() {
+        let e = validate_orderbook_depth(500).unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            "invalid depth 500; valid values are [1, 50, 200, 1000]"
+        );
     }
 
     #[rstest]
