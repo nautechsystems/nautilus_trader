@@ -82,8 +82,9 @@ use crate::{
             BlockchainPreflightReport, ContractCodeCheck, PoolPreflightCheck, TokenPreflightCheck,
         },
         transaction::{
-            TransactionPurpose, TransactionStatus, build_eip1559_transaction, compute_max_fee,
-            derive_fees, derive_gas_limit, sign_eip1559_transaction,
+            SignedTransactionIntent, TransactionPurpose, TransactionStatus,
+            build_eip1559_transaction, compute_max_fee, derive_fees, derive_gas_limit,
+            sign_eip1559_transaction, validate_signed_transaction,
         },
     },
     rpc::{
@@ -120,6 +121,13 @@ struct InFlightTransaction {
     purpose: TransactionPurpose,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct RecoveryTransaction {
+    intent_id: i64,
+    nonce: u64,
+    purpose: TransactionPurpose,
+}
+
 /// The single in-flight transaction slot.
 ///
 /// The slot is claimed before any preparation RPC call so the `pending` nonce read stays
@@ -131,6 +139,8 @@ struct InFlightTransaction {
 enum InFlightSlot {
     /// Claimed before preparation; no signed transaction exists yet.
     Preparing(TransactionPurpose),
+    /// Restored durable ownership retained while persisted transaction data is authenticated.
+    Recovering(RecoveryTransaction),
     /// Signed, persisted, and awaiting finality.
     AwaitingFinality(InFlightTransaction),
 }
@@ -149,6 +159,12 @@ fn in_flight_limit_error(slot: &InFlightSlot) -> anyhow::Error {
         InFlightSlot::Preparing(purpose) => anyhow::anyhow!(
             "A {} transaction is being prepared; at most one transaction can be in flight",
             purpose.as_str()
+        ),
+        InFlightSlot::Recovering(recovery) => anyhow::anyhow!(
+            "Execution intent {} ({}, nonce {}) retains signer ownership pending recovery; at most one transaction can be in flight",
+            recovery.intent_id,
+            recovery.purpose.as_str(),
+            recovery.nonce
         ),
         InFlightSlot::AwaitingFinality(in_flight) => anyhow::anyhow!(
             "Transaction {} (intent {}, {}, nonce {}) is still awaiting finality; at most one transaction can be in flight",
@@ -1034,6 +1050,12 @@ impl BlockchainExecutionClient {
         let nonce = intent
             .nonce
             .ok_or_else(|| anyhow::anyhow!("Active execution intent {} has no nonce", intent.id))?;
+        *self.in_flight.lock().expect("in-flight mutex poisoned") =
+            Some(InFlightSlot::Recovering(RecoveryTransaction {
+                intent_id: intent.id,
+                nonce,
+                purpose,
+            }));
         let hashes = database.get_execution_transaction_hashes(intent.id).await?;
         let current = current_execution_hash(intent.id, &hashes)?;
         let tx_hash = B256::from_str(&current.transaction_hash).with_context(|| {
@@ -1042,13 +1064,72 @@ impl BlockchainExecutionClient {
                 intent.id, current.transaction_hash
             )
         })?;
-        *self.in_flight.lock().expect("in-flight mutex poisoned") =
-            Some(InFlightSlot::AwaitingFinality(InFlightTransaction {
-                intent_id: intent.id,
-                nonce,
-                tx_hash,
-                purpose,
-            }));
+        let durable_signer = Address::from_str(&intent.wallet_address)
+            .with_context(|| "persisted execution wallet is invalid")?;
+        let (to, input, value) = persisted_call_fields(&intent)?;
+        let mut authenticated = false;
+
+        for hash in &hashes {
+            anyhow::ensure!(
+                hash.intent_id == intent.id,
+                "Persisted transaction row references intent {}, expected {}",
+                hash.intent_id,
+                intent.id
+            );
+            anyhow::ensure!(
+                hash.chain_id == self.chain.chain_id,
+                "Persisted transaction row chain ID {} does not match configured chain ID {}",
+                hash.chain_id,
+                self.chain.chain_id
+            );
+            let Some(raw_transaction) = hash.raw_transaction.as_deref() else {
+                continue;
+            };
+            let persisted_hash = B256::from_str(&hash.transaction_hash).with_context(|| {
+                format!(
+                    "Execution intent {} has invalid transaction hash {}",
+                    intent.id, hash.transaction_hash
+                )
+            })?;
+            validate_signed_transaction(
+                raw_transaction,
+                &SignedTransactionIntent {
+                    hash: persisted_hash,
+                    signer: self.wallet_address,
+                    durable_signer,
+                    chain_id: self.chain.chain_id,
+                    intent_chain_id: intent.chain_id,
+                    row_chain_id: hash.chain_id,
+                    nonce,
+                    to,
+                    value,
+                    input: input.clone(),
+                    gas_limit: self.config.gas_limit,
+                    max_fee_per_gas: self.config.max_fee_per_gas_wei,
+                },
+            )
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Execution intent {} signed transaction {} failed authentication: {e}",
+                    intent.id,
+                    hash.transaction_hash
+                )
+            })?;
+            authenticated = true;
+        }
+        anyhow::ensure!(
+            authenticated,
+            "Execution intent {} has no persisted signed transaction bytes",
+            intent.id
+        );
+
+        if intent.status == "broadcast" {
+            anyhow::ensure!(
+                current.raw_transaction.is_some(),
+                "Broadcast execution intent {} has no persisted signed transaction bytes",
+                intent.id
+            );
+        }
 
         if intent.status == "signed" {
             anyhow::bail!(
@@ -1057,6 +1138,14 @@ impl BlockchainExecutionClient {
                 tx_hash
             );
         }
+
+        *self.in_flight.lock().expect("in-flight mutex poisoned") =
+            Some(InFlightSlot::AwaitingFinality(InFlightTransaction {
+                intent_id: intent.id,
+                nonce,
+                tx_hash,
+                purpose,
+            }));
 
         let plan = if purpose == TransactionPurpose::Swap {
             Some(self.restore_swap_plan(&intent)?)
@@ -1085,12 +1174,6 @@ impl BlockchainExecutionClient {
         };
 
         if intent.status == "broadcast" {
-            anyhow::ensure!(
-                !prepared.raw_tx.is_empty(),
-                "Broadcast execution intent {} has no persisted signed transaction bytes",
-                intent.id
-            );
-
             match executor.broadcast(&prepared).await? {
                 BroadcastOutcome::Accepted => {}
                 BroadcastOutcome::Ambiguous(message) => log::warn!("{message}"),
@@ -3996,6 +4079,14 @@ mod tests {
         in_flight
     }
 
+    fn recovering_in_flight(client: &BlockchainExecutionClient) -> RecoveryTransaction {
+        let slot = *client.in_flight.lock().unwrap();
+        let Some(InFlightSlot::Recovering(recovery)) = slot else {
+            panic!("expected a recovery transaction, was {slot:?}");
+        };
+        recovery
+    }
+
     async fn execution_intent_markers(
         admin_pool: &sqlx::PgPool,
         schema: &str,
@@ -4029,6 +4120,69 @@ mod tests {
             })
             .await
             .unwrap()
+    }
+
+    async fn reserve_test_swap_intent(database: &BlockchainCacheDatabase) -> ExecutionIntentRow {
+        let pool = test_pool();
+        let order = test_market_sell_order(pool.instrument_id);
+        let calldata = expected_swap_calldata(expected_min_amount_out(50));
+
+        database
+            .reserve_execution_intent(&ExecutionIntentInsert {
+                chain_id: 42161,
+                wallet_address: WALLET.to_string(),
+                purpose: "swap".to_string(),
+                client_order_id: Some(order.client_order_id().to_string()),
+                trader_id: Some(order.trader_id().to_string()),
+                strategy_id: Some(order.strategy_id().to_string()),
+                account_id: Some("BLOCKCHAIN-001".to_string()),
+                instrument_id: Some(pool.instrument_id.to_string()),
+                pool_address: Some(pool.address.to_string()),
+                transaction_to: ROUTER_ADDRESS.to_string(),
+                transaction_input: hex::encode_prefixed(&calldata),
+                transaction_value: U256::ZERO.to_string(),
+                amount_in: Some("1000000000000000".to_string()),
+                created_block: FIXTURE_BLOCK,
+            })
+            .await
+            .unwrap()
+    }
+
+    async fn persist_invalid_test_swap(
+        database: &BlockchainCacheDatabase,
+    ) -> (ExecutionIntentRow, B256) {
+        let intent = reserve_test_swap_intent(database).await;
+        database
+            .assign_execution_intent_nonce(intent.id, 7)
+            .await
+            .unwrap();
+        let (tx_hash, raw_transaction) = expected_swap_tx(expected_min_amount_out(50)).await;
+        let mut raw_transaction = hex::decode(raw_transaction.strip_prefix("0x").unwrap()).unwrap();
+        raw_transaction.push(0xff);
+        database
+            .add_execution_transaction_hash(
+                intent.id,
+                42161,
+                &tx_hash.to_string(),
+                &raw_transaction,
+            )
+            .await
+            .unwrap();
+        database
+            .record_execution_status(
+                intent.id,
+                &tx_hash.to_string(),
+                TransactionStatus::Broadcast,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        (intent, tx_hash)
     }
 
     async fn later_reconnect(
@@ -9398,7 +9552,22 @@ mod tests {
         };
         let database = client.cache.database.as_ref().unwrap();
         let intent = reserve_test_wrap_intent(database).await;
-        let tx_hash = B256::from([0x55; 32]);
+        let transaction = build_eip1559_transaction(
+            42161,
+            7,
+            78_000,
+            130_000_000,
+            10_000_000,
+            WETH_ADDRESS,
+            U256::from(1u64),
+            Bytes::from(nautilus_core::hex::decode("d0e30db0").unwrap()),
+        );
+        let (tx_hash, raw_transaction) = sign_eip1559_transaction(
+            transaction,
+            &PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        )
+        .await
+        .unwrap();
         database
             .assign_execution_intent_nonce(intent.id, 7)
             .await
@@ -9408,7 +9577,7 @@ mod tests {
                 intent.id,
                 42161,
                 &tx_hash.to_string(),
-                &[0x01, 0x02, 0x03],
+                &raw_transaction,
             )
             .await
             .unwrap();
@@ -9421,10 +9590,10 @@ mod tests {
                 .contains("was not authorized for broadcast"),
             "was: {error}"
         );
-        let in_flight = awaiting_in_flight(&client);
-        assert_eq!(in_flight.nonce, 7);
-        assert_eq!(in_flight.tx_hash, tx_hash);
-        assert_eq!(in_flight.purpose, TransactionPurpose::Wrap);
+        let recovery = recovering_in_flight(&client);
+        assert_eq!(recovery.intent_id, intent.id);
+        assert_eq!(recovery.nonce, 7);
+        assert_eq!(recovery.purpose, TransactionPurpose::Wrap);
         assert_eq!(
             execution_intent_markers(&admin_pool, &schema).await,
             vec![("wrap".into(), "signed".into(), false, true)]
@@ -9482,6 +9651,92 @@ mod tests {
             "was: {error}"
         );
         assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(
+            state
+                .recorded_requests()
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[rstest]
+    #[case::current("execution_invalid_signed_restart_test", false, "broadcast")]
+    #[case::historical("execution_invalid_historical_restart_test", true, "replaced")]
+    #[tokio::test]
+    async fn restart_rejects_invalid_signed_bytes_before_recovery_effects(
+        #[case] test_name: &str,
+        #[case] historical: bool,
+        #[case] expected_status: &str,
+    ) {
+        let Some((admin_pool, schema, first_client, state, _)) =
+            swap_client_with_database(test_name, ready_rpc_state()).await
+        else {
+            return;
+        };
+        let database = first_client.cache.database.as_ref().unwrap().clone();
+        let (intent, _) = persist_invalid_test_swap(&database).await;
+        if historical {
+            database
+                .add_execution_replacement_hash(
+                    intent.id,
+                    42161,
+                    &B256::from([0x44; 32]).to_string(),
+                )
+                .await
+                .unwrap();
+        }
+        let transitions_before: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_transaction_transition"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        let config = first_client.config.clone();
+        drop(first_client);
+
+        let (mut restarted, _) = swap_client_with_cache(config);
+        restarted.cache.database = Some(database);
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
+        let mut receiver = start_with_events(&mut restarted);
+
+        let error = restarted
+            .reconcile_unresolved_execution()
+            .await
+            .unwrap_err();
+
+        let recovery = recovering_in_flight(&restarted);
+        let (status, acknowledgement_emitted, active): (String, bool, bool) =
+            sqlx::query_as(sqlx::AssertSqlSafe(format!(
+                "SELECT status, acknowledgement_emitted, active FROM {schema}.execution_intent"
+            )))
+            .fetch_one(&admin_pool)
+            .await
+            .unwrap();
+        let transitions_after: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_transaction_transition"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+
+        assert!(
+            error
+                .to_string()
+                .contains("is not a complete EIP-2718 envelope"),
+            "was: {error}"
+        );
+        assert_eq!(recovery.intent_id, intent.id);
+        assert_eq!(recovery.nonce, 7);
+        assert_eq!(recovery.purpose, TransactionPurpose::Swap);
+        assert_eq!(status, expected_status);
+        assert!(!acknowledgement_emitted);
+        assert!(active);
+        assert_eq!(transitions_after, transitions_before);
+        assert!(collect_order_events(&mut receiver).is_empty());
         assert!(
             state
                 .recorded_requests()

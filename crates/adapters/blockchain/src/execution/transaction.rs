@@ -16,8 +16,8 @@
 //! EIP-1559 transaction building, signing, and fee and gas policy for execution operations.
 
 use alloy::{
-    consensus::{SignableTransaction, TxEip1559},
-    eips::eip2718::Encodable2718,
+    consensus::{SignableTransaction, TxEip1559, TxEnvelope},
+    eips::eip2718::{Decodable2718, Encodable2718},
     primitives::{Address, B256, Bytes, TxKind, U256},
     signers::{Signer, local::PrivateKeySigner},
 };
@@ -162,6 +162,129 @@ pub async fn sign_eip1559_transaction(
     Ok((tx_hash, signed.encoded_2718()))
 }
 
+/// Durable identity and configured policy required to authenticate a signed transaction.
+pub(super) struct SignedTransactionIntent {
+    pub hash: B256,
+    pub signer: Address,
+    pub durable_signer: Address,
+    pub chain_id: u32,
+    pub intent_chain_id: u32,
+    pub row_chain_id: u32,
+    pub nonce: u64,
+    pub to: Address,
+    pub value: U256,
+    pub input: Bytes,
+    pub gas_limit: u64,
+    pub max_fee_per_gas: u64,
+}
+
+/// Authenticates one complete signed EIP-1559 call against its durable intent and policy.
+pub(super) fn validate_signed_transaction(
+    raw_transaction: &[u8],
+    intent: &SignedTransactionIntent,
+) -> anyhow::Result<()> {
+    let envelope = TxEnvelope::decode_2718_exact(raw_transaction).map_err(|_| {
+        anyhow::anyhow!("Persisted signed transaction is not a complete EIP-2718 envelope")
+    })?;
+    let TxEnvelope::Eip1559(signed) = envelope else {
+        anyhow::bail!("Persisted signed transaction is not EIP-1559");
+    };
+
+    anyhow::ensure!(
+        *signed.hash() == intent.hash,
+        "Persisted transaction hash {} does not match signed transaction hash {}",
+        intent.hash,
+        signed.hash()
+    );
+    anyhow::ensure!(
+        intent.durable_signer == intent.signer,
+        "Persisted transaction signer {} does not match configured wallet {}",
+        intent.durable_signer,
+        intent.signer
+    );
+    anyhow::ensure!(
+        signed.signature().normalize_s().is_none(),
+        "Persisted transaction signature is not EIP-2 normalized"
+    );
+    let signer = signed
+        .signature()
+        .recover_address_from_prehash(&signed.signature_hash())
+        .context("failed to recover persisted transaction signer")?;
+    anyhow::ensure!(
+        signer == intent.signer,
+        "Signed transaction signer {signer} does not match configured wallet {}",
+        intent.signer
+    );
+    anyhow::ensure!(
+        intent.intent_chain_id == intent.chain_id,
+        "Persisted intent chain ID {} does not match configured chain ID {}",
+        intent.intent_chain_id,
+        intent.chain_id
+    );
+    anyhow::ensure!(
+        intent.row_chain_id == intent.chain_id,
+        "Persisted transaction row chain ID {} does not match configured chain ID {}",
+        intent.row_chain_id,
+        intent.chain_id
+    );
+
+    let tx = signed.tx();
+    anyhow::ensure!(
+        tx.chain_id == u64::from(intent.chain_id),
+        "Signed transaction chain ID {} does not match configured chain ID {}",
+        tx.chain_id,
+        intent.chain_id
+    );
+    anyhow::ensure!(
+        tx.nonce == intent.nonce,
+        "Signed transaction nonce {} does not match persisted nonce {}",
+        tx.nonce,
+        intent.nonce
+    );
+    let TxKind::Call(to) = tx.to else {
+        anyhow::bail!(
+            "Signed transaction creates a contract instead of calling the persisted destination"
+        );
+    };
+    anyhow::ensure!(
+        to == intent.to,
+        "Signed transaction destination {to} does not match persisted destination {}",
+        intent.to
+    );
+    anyhow::ensure!(
+        tx.value == intent.value,
+        "Signed transaction value does not match persisted value"
+    );
+    anyhow::ensure!(
+        tx.input == intent.input,
+        "Signed transaction calldata does not match persisted calldata"
+    );
+    anyhow::ensure!(
+        tx.access_list.is_empty(),
+        "Signed transaction access list is not empty"
+    );
+    anyhow::ensure!(
+        tx.gas_limit <= intent.gas_limit,
+        "Signed transaction gas limit {} exceeds configured ceiling {}",
+        tx.gas_limit,
+        intent.gas_limit
+    );
+    anyhow::ensure!(
+        tx.max_fee_per_gas <= u128::from(intent.max_fee_per_gas),
+        "Signed transaction max fee per gas {} wei exceeds configured ceiling {} wei",
+        tx.max_fee_per_gas,
+        intent.max_fee_per_gas
+    );
+    anyhow::ensure!(
+        tx.max_priority_fee_per_gas <= tx.max_fee_per_gas,
+        "Signed transaction priority fee per gas {} wei exceeds max fee per gas {} wei",
+        tx.max_priority_fee_per_gas,
+        tx.max_fee_per_gas
+    );
+
+    Ok(())
+}
+
 /// Applies `gas_buffer_bps` over the `eth_estimateGas` result.
 ///
 /// A buffered estimate above `gas_limit` rejects the transaction rather than clamping to the
@@ -255,7 +378,11 @@ fn apply_buffer_bps(value: u128, buffer_bps: u32) -> anyhow::Result<u128> {
 mod tests {
     use std::str::FromStr;
 
-    use alloy::primitives::{address, b256};
+    use alloy::{
+        consensus::TxEip2930,
+        eips::eip2930::{AccessList, AccessListItem},
+        primitives::{Signature, address, b256},
+    };
     use nautilus_core::hex;
     use rstest::rstest;
 
@@ -266,6 +393,55 @@ mod tests {
     const TEST_PRIVATE_KEY: &str =
         "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
     const EXPECTED_RAW_TX: &str = "02f87682a4b10783989680840bebc20082fde89482af49447d8a07e3bd95bd0d56f35241523fbab187038d7ea4c6800084d0e30db0c080a0ecbbf3b95a4509c94cf0fe219c93a404c09de776a7073f2765709fe04f32f024a07b6a1f8332b39ca80ad3e61d124147af984ffcba1dd5579dbcf11e921ea3cecb";
+
+    #[derive(Debug, Clone, Copy)]
+    enum InvalidSignedField {
+        Hash,
+        Signer,
+        DurableSigner,
+        IntentChain,
+        RowChain,
+        TransactionChain,
+        Nonce,
+        CallType,
+        Destination,
+        Value,
+        Input,
+        GasLimit,
+        MaxFee,
+        PriorityFee,
+        AccessList,
+    }
+
+    fn validation_transaction() -> TxEip1559 {
+        build_eip1559_transaction(
+            42161,
+            7,
+            65_000,
+            200_000_000,
+            10_000_000,
+            address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+            U256::from(1_000_000_000_000_000u64),
+            Bytes::from(hex::decode("d0e30db0").unwrap()),
+        )
+    }
+
+    fn validation_intent(hash: B256, signer: Address) -> SignedTransactionIntent {
+        SignedTransactionIntent {
+            hash,
+            signer,
+            durable_signer: signer,
+            chain_id: 42161,
+            intent_chain_id: 42161,
+            row_chain_id: 42161,
+            nonce: 7,
+            to: address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+            value: U256::from(1_000_000_000_000_000u64),
+            input: Bytes::from(hex::decode("d0e30db0").unwrap()),
+            gas_limit: 1_000_000,
+            max_fee_per_gas: 1_000_000_000,
+        }
+    }
 
     #[rstest]
     fn test_derive_gas_limit_applies_buffer_rounding_up() {
@@ -384,5 +560,177 @@ mod tests {
             b256!("9da4b71be3336357259f56bda5cfbd3803c211ce09b510c43e6fb2af84088c6a")
         );
         assert_eq!(hex::encode(&raw_tx), EXPECTED_RAW_TX);
+    }
+
+    #[tokio::test]
+    async fn test_validate_signed_transaction_accepts_builder_output_at_policy_ceilings() {
+        let signer = PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap();
+        let mut transaction = validation_transaction();
+        transaction.gas_limit = 1_000_000;
+        transaction.max_fee_per_gas = 1_000_000_000;
+        transaction.max_priority_fee_per_gas = 1_000_000_000;
+        let (hash, raw_transaction) = sign_eip1559_transaction(transaction, &signer)
+            .await
+            .unwrap();
+        let intent = validation_intent(hash, signer.address());
+
+        validate_signed_transaction(&raw_transaction, &intent).unwrap();
+    }
+
+    #[rstest]
+    fn test_validate_signed_transaction_rejects_malformed_bytes() {
+        let signer = PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap();
+        let intent = validation_intent(B256::ZERO, signer.address());
+
+        let error = validate_signed_transaction(&[0x02, 0xc0], &intent).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Persisted signed transaction is not a complete EIP-2718 envelope"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_signed_transaction_rejects_trailing_bytes_without_exposing_them() {
+        let signer = PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap();
+        let (hash, mut raw_transaction) =
+            sign_eip1559_transaction(validation_transaction(), &signer)
+                .await
+                .unwrap();
+        raw_transaction.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+        let intent = validation_intent(hash, signer.address());
+
+        let error = validate_signed_transaction(&raw_transaction, &intent).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Persisted signed transaction is not a complete EIP-2718 envelope"
+        );
+        assert!(!error.to_string().contains("deadbeef"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_signed_transaction_rejects_other_envelope_type() {
+        let signer = PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap();
+        let transaction = validation_transaction();
+        let transaction = TxEip2930 {
+            chain_id: transaction.chain_id,
+            nonce: transaction.nonce,
+            gas_price: transaction.max_fee_per_gas,
+            gas_limit: transaction.gas_limit,
+            to: transaction.to,
+            value: transaction.value,
+            access_list: transaction.access_list,
+            input: transaction.input,
+        };
+        let signature = signer
+            .sign_hash(&transaction.signature_hash())
+            .await
+            .unwrap();
+        let raw_transaction = transaction.into_signed(signature).encoded_2718();
+        let intent = validation_intent(B256::ZERO, signer.address());
+
+        let error = validate_signed_transaction(&raw_transaction, &intent).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Persisted signed transaction is not EIP-1559"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_signed_transaction_rejects_noncanonical_signature() {
+        let signer = PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap();
+        let transaction = validation_transaction();
+        let signature = signer
+            .sign_hash(&transaction.signature_hash())
+            .await
+            .unwrap();
+        let curve_order =
+            U256::from_str("0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141")
+                .unwrap();
+        let signature = Signature::new(signature.r(), curve_order - signature.s(), !signature.v());
+        let signed = transaction.into_signed(signature);
+        let hash = *signed.hash();
+        let raw_transaction = signed.encoded_2718();
+        let intent = validation_intent(hash, signer.address());
+
+        let error = validate_signed_transaction(&raw_transaction, &intent).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Persisted transaction signature is not EIP-2 normalized"
+        );
+    }
+
+    #[rstest]
+    #[case::hash(InvalidSignedField::Hash, "Persisted transaction hash")]
+    #[case::signer(InvalidSignedField::Signer, "does not match configured wallet")]
+    #[case::durable_signer(InvalidSignedField::DurableSigner, "Persisted transaction signer")]
+    #[case::intent_chain(InvalidSignedField::IntentChain, "Persisted intent chain ID")]
+    #[case::row_chain(InvalidSignedField::RowChain, "Persisted transaction row chain ID")]
+    #[case::transaction_chain(InvalidSignedField::TransactionChain, "Signed transaction chain ID")]
+    #[case::nonce(InvalidSignedField::Nonce, "Signed transaction nonce")]
+    #[case::call_type(InvalidSignedField::CallType, "creates a contract")]
+    #[case::destination(InvalidSignedField::Destination, "Signed transaction destination")]
+    #[case::value(InvalidSignedField::Value, "Signed transaction value")]
+    #[case::input(InvalidSignedField::Input, "Signed transaction calldata")]
+    #[case::gas_limit(InvalidSignedField::GasLimit, "Signed transaction gas limit")]
+    #[case::max_fee(InvalidSignedField::MaxFee, "Signed transaction max fee per gas")]
+    #[case::priority_fee(
+        InvalidSignedField::PriorityFee,
+        "Signed transaction priority fee per gas"
+    )]
+    #[case::access_list(InvalidSignedField::AccessList, "Signed transaction access list")]
+    #[tokio::test]
+    async fn test_validate_signed_transaction_rejects_field_mismatch(
+        #[case] field: InvalidSignedField,
+        #[case] expected_error: &str,
+    ) {
+        let signer = PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap();
+        let other = address!("0000000000000000000000000000000000000001");
+        let mut transaction = validation_transaction();
+        let mut intent = validation_intent(B256::ZERO, signer.address());
+
+        match field {
+            InvalidSignedField::Hash => {}
+            InvalidSignedField::Signer => {
+                intent.signer = other;
+                intent.durable_signer = other;
+            }
+            InvalidSignedField::DurableSigner => intent.durable_signer = other,
+            InvalidSignedField::IntentChain => intent.intent_chain_id = 1,
+            InvalidSignedField::RowChain => intent.row_chain_id = 1,
+            InvalidSignedField::TransactionChain => transaction.chain_id = 1,
+            InvalidSignedField::Nonce => transaction.nonce = 8,
+            InvalidSignedField::CallType => transaction.to = TxKind::Create,
+            InvalidSignedField::Destination => transaction.to = TxKind::Call(other),
+            InvalidSignedField::Value => transaction.value = U256::from(2u64),
+            InvalidSignedField::Input => transaction.input = Bytes::from(vec![0x01]),
+            InvalidSignedField::GasLimit => transaction.gas_limit = 1_000_001,
+            InvalidSignedField::MaxFee => transaction.max_fee_per_gas = 1_000_000_001,
+            InvalidSignedField::PriorityFee => {
+                transaction.max_fee_per_gas = 10_000_000;
+                transaction.max_priority_fee_per_gas = 10_000_001;
+            }
+            InvalidSignedField::AccessList => {
+                transaction.access_list = AccessList(vec![AccessListItem {
+                    address: other,
+                    storage_keys: Vec::new(),
+                }]);
+            }
+        }
+
+        let (hash, raw_transaction) = sign_eip1559_transaction(transaction, &signer)
+            .await
+            .unwrap();
+
+        if !matches!(field, InvalidSignedField::Hash) {
+            intent.hash = hash;
+        }
+
+        let error = validate_signed_transaction(&raw_transaction, &intent).unwrap_err();
+
+        assert!(error.to_string().contains(expected_error), "was: {error}");
     }
 }

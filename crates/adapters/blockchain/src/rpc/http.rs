@@ -796,6 +796,7 @@ pub(crate) mod tests {
             }
 
             /// Serves a call response selected by both contract address and calldata selector.
+            #[cfg(feature = "hypersync")]
             #[must_use]
             pub(crate) fn with_contract_call_response(
                 mut self,
@@ -811,6 +812,7 @@ pub(crate) mod tests {
             }
 
             /// Serves responses in order for calls whose calldata starts with `selector`.
+            #[cfg(feature = "hypersync")]
             #[must_use]
             pub(crate) fn with_call_response_sequence(
                 self,
