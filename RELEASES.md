@@ -1,3 +1,28 @@
+# NautilusTrader 2.0.0rc4
+
+Released on TBD (UTC).
+
+### Enhancements
+
+### Breaking Changes
+
+### Security
+
+### Fixes
+
+### Internal Improvements
+
+- Upgraded `blake3` crate to v1.8.7
+- Upgraded `ruff` package (dev) to v0.16.3
+- Upgraded `simplejson` package (visualization) to v4.1.1
+- Upgraded `uvicorn` package (dev) to v0.52.3
+
+### Documentation Updates
+
+### Deprecations
+
+---
+
 # NautilusTrader 2.0.0rc3
 
 Released on 20th August 2026 (UTC).

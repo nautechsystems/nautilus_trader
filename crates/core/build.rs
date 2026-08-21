@@ -27,7 +27,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../../python/pyproject.toml");
 
     // The Python manifest is unavailable when this crate builds from a published package
-    let nautilus_version = "2.0.0rc3";
+    let nautilus_version = "2.0.0rc4";
 
     if let Some(pyproject_version) = try_read_pyproject_version() {
         assert!(

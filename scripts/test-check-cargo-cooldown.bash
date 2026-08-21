@@ -46,6 +46,94 @@ printf '{"version":{"created_at":"%s"}}\n' "$(printf '%s' "$line" | awk '{print 
 FAKE_CURL
 chmod +x "${fake_bin}/curl"
 
+cat > "${fake_bin}/cargo" << 'FAKE_CARGO'
+#!/usr/bin/env bash
+set -u
+
+printf '%s\n' "$*" >> "${FAKE_CARGO_LOG:-/dev/null}"
+
+command_name=${1:-}
+shift || true
+case "$command_name" in
+  update)
+    manifest="Cargo.toml"
+    package=""
+    precise=""
+    offline=false
+    while (($# > 0)); do
+      case "$1" in
+        --offline)
+          offline=true
+          shift
+          ;;
+        --manifest-path)
+          manifest=$2
+          shift 2
+          ;;
+        -p)
+          package=$2
+          shift 2
+          ;;
+        --precise)
+          precise=$2
+          shift 2
+          ;;
+        *) shift ;;
+      esac
+    done
+    if [[ -z "$package" || -z "$precise" ]]; then
+      echo "fake cargo update requires -p and --precise" >&2
+      exit 2
+    fi
+    if [[ "${FAKE_CARGO_FAIL_PACKAGE:-}" == "$package" ]]; then
+      exit 1
+    fi
+    if [[ "$offline" == true &&
+      "${FAKE_CARGO_FAIL_OFFLINE_PACKAGE:-}" == "$package" ]]; then
+      exit 1
+    fi
+    crate=${package%@*}
+    current=${package##*@}
+    lock="$(dirname "$manifest")/Cargo.lock"
+    tmp="${lock}.tmp"
+    if ! awk -v crate="$crate" -v current="$current" -v precise="$precise" '
+      /^\[\[package\]\]/ { name="" }
+      /^name = "/ {
+        name=$0
+        sub(/^name = "/, "", name)
+        sub(/"$/, "", name)
+      }
+      /^version = "/ && name == crate {
+        version=$0
+        sub(/^version = "/, "", version)
+        sub(/"$/, "", version)
+        if (version == current) {
+          print "version = \"" precise "\""
+          changed=1
+          next
+        }
+      }
+      { print }
+      END { if (!changed) exit 3 }
+    ' "$lock" > "$tmp"; then
+      rm -f "$tmp"
+      exit 1
+    fi
+    mv "$tmp" "$lock"
+    ;;
+  metadata)
+    if [[ "${FAKE_CARGO_METADATA_FAIL:-0}" == "1" ]]; then
+      exit 1
+    fi
+    ;;
+  *)
+    echo "unexpected fake cargo command: $command_name" >&2
+    exit 2
+    ;;
+esac
+FAKE_CARGO
+chmod +x "${fake_bin}/cargo"
+
 # BSD style date: rejects GNU `-d`, serves `-r` and `-j -u -f` via the real date.
 cat > "${fake_bin}/date" << 'FAKE_DATE'
 #!/usr/bin/env bash
@@ -66,11 +154,17 @@ exec "$REAL_DATE" "$@"
 FAKE_DATE
 chmod +x "${fake_bin}/date"
 
-cp "${fake_bin}/curl" "${curl_only_bin}/curl"
+cp "${fake_bin}/curl" "${fake_bin}/cargo" "$curl_only_bin"
 
 fixture="${test_root}/crates.txt"
+cargo_log="${test_root}/cargo.log"
 export FAKE_CRATES_FIXTURE="$fixture"
+export FAKE_CARGO_LOG="$cargo_log"
 export REAL_DATE
+
+# Test controls must not inherit state from a developer's shell
+unset CHANGED_BASE_SHA
+unset FAKE_CARGO_FAIL_PACKAGE FAKE_CARGO_FAIL_OFFLINE_PACKAGE FAKE_CARGO_METADATA_FAIL
 
 fresh_date="$("$REAL_DATE" -u +%Y-%m-%dT%H:%M:%SZ)"
 old_date="2020-01-01T00:00:00Z"
@@ -143,10 +237,11 @@ run_check() {
 
 expect() {
   local label=$1 expected_status=$2 expected_text=$3
+  shift 3
   local actual_status=0
   local output=""
   # Keep the `||` outside the substitution so the status lands in this scope.
-  output="$(run_check)" || actual_status=$?
+  output="$(run_check "$@")" || actual_status=$?
   if [[ "$actual_status" != "$expected_status" ]]; then
     printf 'FAIL %s: expected exit %s, was %s\n%s\n' \
       "$label" "$expected_status" "$actual_status" "$output" >&2
@@ -178,6 +273,138 @@ setup_repo fresh-crate
 printf 'serde 1.1.0 %s\n' "$fresh_date" > "$fixture"
 write_lock "serde" "1.1.0" "0.1.0"
 expect "fresh crate without an allow entry fails" 1 "within the 3-day cooldown"
+if grep -Fq 'version = "1.1.0"' "${repo}/Cargo.lock"; then
+  printf 'ok   default cooldown gate leaves the lock unchanged\n'
+else
+  printf 'FAIL default cooldown gate changed the lock\n' >&2
+  failures=$((failures + 1))
+fi
+
+: > "$cargo_log"
+expect "fix restores the prior version through Cargo" 0 \
+  "serde 1.1.0 -> 1.0.0 (Cargo.lock)" --fix
+if grep -Fq 'version = "1.0.0"' "${repo}/Cargo.lock" &&
+  grep -Fq 'update --offline --manifest-path Cargo.toml -p serde@1.1.0 --precise 1.0.0' "$cargo_log"; then
+  printf 'ok   fix uses an offline package-qualified precise Cargo update\n'
+else
+  printf 'FAIL fix did not restore the lock through the expected Cargo command\n' >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo ci-base
+printf 'serde 1.1.0 %s\n' "$fresh_date" > "$fixture"
+write_lock "serde" "1.1.0" "0.1.0"
+git -C "$repo" add Cargo.lock
+git -C "$repo" commit --quiet -m "update dependency"
+status=0
+output="$(CHANGED_BASE_SHA=HEAD^ run_check)" || status=$?
+if [[ "$status" == 1 && "$output" == *"within the 3-day cooldown"* ]]; then
+  printf 'ok   CI base detects a committed fresh crate\n'
+else
+  printf 'FAIL CI base handling: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+status=0
+output="$(CHANGED_BASE_SHA=0000000000000000000000000000000000000000 run_check)" || status=$?
+if [[ "$status" == 1 && "$output" == *"within the 3-day cooldown"* ]]; then
+  printf 'ok   CI branch-creation sentinel falls back to the parent commit\n'
+else
+  printf 'FAIL CI sentinel handling: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+status=0
+output="$(CHANGED_BASE_SHA=1111111111111111111111111111111111111111 run_check)" || status=$?
+if [[ "$status" == 1 && "$output" == *"within the 3-day cooldown"* ]]; then
+  printf 'ok   unreachable CI base falls back to the parent commit\n'
+else
+  printf 'FAIL unreachable CI base handling: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+status=0
+output="$(CHANGED_BASE_SHA=0000000000000000000000000000000000000000 \
+  run_check --base HEAD)" || status=$?
+if [[ "$status" == 0 && "$output" == *"No new registry crate versions vs HEAD"* ]]; then
+  printf 'ok   explicit base overrides the CI comparison base\n'
+else
+  printf 'FAIL explicit base override: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo ci-remote-base
+git -C "$repo" update-ref refs/remotes/origin/develop HEAD
+printf 'serde 1.1.0 %s\n' "$fresh_date" > "$fixture"
+write_lock "serde" "1.1.0" "0.1.0"
+git -C "$repo" add Cargo.lock
+git -C "$repo" commit --quiet -m "update dependency"
+printf 'unrelated\n' > "${repo}/note.txt"
+git -C "$repo" add note.txt
+git -C "$repo" commit --quiet -m "add note"
+status=0
+output="$(CHANGED_BASE_SHA=0000000000000000000000000000000000000000 run_check)" || status=$?
+if [[ "$status" == 1 && "$output" == *"within the 3-day cooldown"* ]]; then
+  printf 'ok   CI sentinel uses the develop merge base across multiple commits\n'
+else
+  printf 'FAIL CI develop-base handling: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo offline-fallback
+printf 'serde 1.1.0 %s\n' "$fresh_date" > "$fixture"
+write_lock "serde" "1.1.0" "0.1.0"
+: > "$cargo_log"
+FAKE_CARGO_FAIL_OFFLINE_PACKAGE=serde@1.1.0 expect \
+  "fix retries online when the offline pass cannot progress" 0 \
+  "retrying 1 remaining rollback(s) with network access" --fix
+if grep -Fq 'update --offline --manifest-path Cargo.toml -p serde@1.1.0 --precise 1.0.0' \
+  "$cargo_log" &&
+  grep -Fq 'update --manifest-path Cargo.toml -p serde@1.1.0 --precise 1.0.0' \
+    "$cargo_log"; then
+  printf 'ok   fix falls back to a network-capable precise Cargo update\n'
+else
+  printf 'FAIL fix did not retry the offline rollback with network access\n' >&2
+  failures=$((failures + 1))
+fi
+
+# The update wrapper's snapshot is the rollback baseline for changes made by
+# the current update, preserving older staged lockfile work.
+setup_repo snapshot-prior
+printf 'serde 1.0.5 %s\nserde 1.1.0 %s\n' "$old_date" "$fresh_date" > "$fixture"
+write_lock "serde" "1.0.5" "0.1.0"
+mkdir -p "${repo}/snapshot"
+cp "${repo}/Cargo.lock" "${repo}/snapshot/Cargo.lock"
+write_lock "serde" "1.1.0" "0.1.0"
+: > "$cargo_log"
+expect "fix prefers the pre-update snapshot version" 0 \
+  "serde 1.1.0 -> 1.0.5 (Cargo.lock)" --fix --snapshot-dir snapshot
+
+# A fresh violation already present in the snapshot still falls back to the
+# committed prior version rather than accepting the violation unchanged.
+setup_repo snapshot-existing-fresh
+printf 'serde 1.0.5 %s\n' "$fresh_date" > "$fixture"
+write_lock "serde" "1.0.5" "0.1.0"
+mkdir -p "${repo}/snapshot"
+cp "${repo}/Cargo.lock" "${repo}/snapshot/Cargo.lock"
+: > "$cargo_log"
+expect "fix repairs a fresh version already present in the snapshot" 0 \
+  "serde 1.0.5 -> 1.0.0 (Cargo.lock)" --fix --snapshot-dir snapshot
+
+# Snapshot-relative candidates remain visible even when the update happens to
+# return the lockfile to the exact version already committed at HEAD.
+setup_repo snapshot-only-change
+printf 'serde 1.0.0 %s\nserde 1.1.0 %s\n' "$old_date" "$fresh_date" > "$fixture"
+write_lock "serde" "1.1.0" "0.1.0"
+git -C "$repo" add Cargo.lock
+git -C "$repo" commit --quiet --amend --no-edit
+write_lock "serde" "1.0.0" "0.1.0"
+mkdir -p "${repo}/snapshot"
+cp "${repo}/Cargo.lock" "${repo}/snapshot/Cargo.lock"
+write_lock "serde" "1.1.0" "0.1.0"
+: > "$cargo_log"
+expect "fix detects an update hidden by the HEAD comparison" 0 \
+  "serde 1.1.0 -> 1.0.0 (Cargo.lock)" --fix --snapshot-dir snapshot
 
 setup_repo fresh-allowed-no-audit
 printf 'serde 1.1.0 %s\n' "$fresh_date" > "$fixture"
@@ -194,6 +421,16 @@ criteria = "safe-to-deploy"
 delta = "1.0.0 -> 1.1.0"'
 write_lock "serde" "1.1.0" "0.1.0"
 expect "allowed crate with a delta audit passes" 0 "audited exception"
+
+: > "$cargo_log"
+expect "fix preserves an audited allow entry" 0 "No cooldown rollback required" --fix
+if grep -Fq 'version = "1.1.0"' "${repo}/Cargo.lock" &&
+  ! grep -q '^update ' "$cargo_log"; then
+  printf 'ok   audited allow entry bypasses rollback\n'
+else
+  printf 'FAIL audited allow entry was unexpectedly rolled back\n' >&2
+  failures=$((failures + 1))
+fi
 
 setup_repo fresh-allowed-full-audit
 printf 'serde 1.1.0 %s\n' "$fresh_date" > "$fixture"
@@ -215,6 +452,54 @@ criteria = "safe-to-deploy"
 delta = "1.0.0 -> 1.1.0"'
 write_lock "serde" "1.1.0" "0.1.0"
 expect "allow entry for another version does not apply" 1 "within the 3-day cooldown"
+
+# A newly introduced transitive crate has no safe prior version to select
+setup_repo new-transitive
+printf 'serde 1.0.0 %s\nanyhow 2.0.0 %s\n' "$old_date" "$fresh_date" > "$fixture"
+cat >> "${repo}/Cargo.lock" << 'LOCK'
+
+[[package]]
+name = "anyhow"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1111111111111111111111111111111111111111111111111111111111111111"
+LOCK
+: > "$cargo_log"
+expect "fix refuses a fresh crate without a prior version" 1 \
+  "no prior version is present in the diff" --fix
+if [[ ! -s "$cargo_log" ]]; then
+  printf 'ok   ambiguous repair does not invoke Cargo\n'
+else
+  printf 'FAIL ambiguous repair invoked Cargo\n' >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo multiple-fresh-versions
+printf 'serde 1.1.0 %s\nserde 1.2.0 %s\n' "$fresh_date" "$fresh_date" > "$fixture"
+write_lock "serde" "1.1.0" "0.1.0"
+cat >> "${repo}/Cargo.lock" << 'LOCK'
+
+[[package]]
+name = "serde"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2222222222222222222222222222222222222222222222222222222222222222"
+LOCK
+: > "$cargo_log"
+expect "fix refuses multiple fresh versions without unique pairing" 1 \
+  "2 fresh versions have no unique rollback pairing" --fix
+if [[ ! -s "$cargo_log" ]]; then
+  printf 'ok   multi-version ambiguity does not invoke Cargo\n'
+else
+  printf 'FAIL multi-version ambiguity invoked Cargo\n' >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo cargo-failure
+printf 'serde 1.1.0 %s\n' "$fresh_date" > "$fixture"
+write_lock "serde" "1.1.0" "0.1.0"
+FAKE_CARGO_FAIL_PACKAGE=serde@1.1.0 expect "Cargo rollback failure remains fatal" 1 \
+  "could not make progress on 1 cooldown rollback" --fix
 
 # An unreachable registry must never pass silently.
 setup_repo lookup-failure
@@ -247,6 +532,29 @@ else
   failures=$((failures + 1))
 fi
 
+# Fix mode maps each lock to the Cargo.toml beside it, including standalone
+# fuzz workspaces outside the root workspace.
+setup_repo multi-lock-fix
+mkdir -p "${repo}/nested"
+printf '[workspace]\nmembers = []\n' > "${repo}/nested/Cargo.toml"
+cp "${repo}/Cargo.lock" "${repo}/nested/Cargo.lock"
+git -C "$repo" add nested
+git -C "$repo" commit --quiet -m "add standalone workspace"
+printf 'serde 1.1.0 %s\n' "$fresh_date" > "$fixture"
+write_lock "serde" "1.1.0" "0.1.0"
+cp "${repo}/Cargo.lock" "${repo}/nested/Cargo.lock"
+: > "$cargo_log"
+status=0
+output="$(run_check --fix --lock Cargo.lock --lock nested/Cargo.lock)" || status=$?
+if [[ "$status" == 0 && "$output" == *"Rolled back 2 fresh lockfile update(s)"* ]] &&
+  grep -Fq -- '--manifest-path Cargo.toml' "$cargo_log" &&
+  grep -Fq -- '--manifest-path nested/Cargo.toml' "$cargo_log"; then
+  printf 'ok   fix updates root and standalone workspace locks\n'
+else
+  printf 'FAIL multi-lock fix: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
 setup_repo bad-argument
 status=0
 output="$(run_check --nonsense)" || status=$?
@@ -254,6 +562,18 @@ if [[ "$status" == 2 && "$output" == *"Unknown argument"* ]]; then
   printf 'ok   unknown argument exits 2\n'
 else
   printf 'FAIL unknown argument: exit %s\n%s\n' "$status" "$output" >&2
+  failures=$((failures + 1))
+fi
+
+setup_repo help
+status=0
+output="$(run_check --help)" || status=$?
+if [[ "$status" == 0 &&
+  "$output" == *"use \`SKIP=cargo-cooldown\` to commit"* &&
+  "$output" == *"without the gate."* ]]; then
+  printf 'ok   help includes the complete policy header\n'
+else
+  printf 'FAIL help output: exit %s\n%s\n' "$status" "$output" >&2
   failures=$((failures + 1))
 fi
 

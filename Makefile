@@ -675,7 +675,7 @@ cargo-build:  #-- Build Rust crates in release mode
 
 .PHONY: cargo-update
 cargo-update:  #-- Update Rust dependencies (versions from Cargo.toml)
-	cargo update
+	bash scripts/update-cargo-dependencies.bash
 
 .PHONY: cargo-check
 cargo-check:  #-- Check Rust code without building
@@ -858,6 +858,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/ci/test-rust-toolchain.bash
 	$Q bash scripts/ci/test-verify-published-registries-crates.bash
 	$Q bash scripts/test-check-cargo-cooldown.bash
+	$Q bash scripts/test-update-cargo-dependencies.bash
 	$Q python3 -B scripts/ci/test_check_commit_message.py
 	@printf "$(GREEN)Script tests passed$(RESET)\n"
 
