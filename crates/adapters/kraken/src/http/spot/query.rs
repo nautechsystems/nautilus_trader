@@ -358,6 +358,13 @@ pub struct SpotTradeBalanceParams {
     pub asset: Option<String>,
 }
 
+/// Parameters for `POST /0/private/TradeVolume`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SpotTradeVolumeParams {
+    /// Comma-delimited Kraken spot pair names for which to retrieve fee information.
+    pub pair: String,
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

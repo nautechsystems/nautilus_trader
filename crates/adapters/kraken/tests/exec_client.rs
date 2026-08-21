@@ -354,6 +354,10 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             }
         }
         "/0/public/AssetPairs" => json_response(load_test_data("http_asset_pairs.json")),
+        "/0/private/TradeVolume" => json_response(
+            r#"{"error":[],"result":{"fees":{"XBTUSDT":{"fee":"0.8000"}},"fees_maker":{"XBTUSDT":{"fee":"0.4000"}}}}"#
+                .to_string(),
+        ),
         "/0/private/GetWebSocketsToken" => json_response(
             r#"{"error":[],"result":{"token":"TEST-TOKEN","expires":900}}"#.to_string(),
         ),

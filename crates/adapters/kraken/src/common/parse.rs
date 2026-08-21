@@ -182,6 +182,7 @@ fn parse_futures_trigger_type(
 pub fn parse_spot_instrument(
     pair_name: &str,
     definition: &AssetPairInfo,
+    fee_override: Option<(Decimal, Decimal)>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
@@ -214,13 +215,21 @@ pub fn parse_spot_instrument(
         .map(|s| parse_quantity(s, "ordermin"))
         .transpose()?;
 
-    // Use base tier fees, convert from percentage
-    let taker_fee = definition.fees.first().map(|(_, fee)| *fee / dec!(100));
+    // Use account fee override when available; otherwise fall back to the AssetPairs base tier.
+    let (maker_fee, taker_fee) = match fee_override {
+        Some((maker_fee, taker_fee)) => (Some(maker_fee), Some(taker_fee)),
+        None => {
+            // Fall back to the public AssetPairs base tier.
+            let taker_fee = definition.fees.first().map(|(_, fee)| *fee / dec!(100));
 
-    let maker_fee = definition
-        .fees_maker
-        .first()
-        .map(|(_, fee)| *fee / dec!(100));
+            let maker_fee = definition
+                .fees_maker
+                .first()
+                .map(|(_, fee)| *fee / dec!(100));
+
+            (maker_fee, taker_fee)
+        }
+    };
 
     let instrument = CurrencyPair::new(
         instrument_id,
@@ -1273,8 +1282,7 @@ mod tests {
 
         let (pair_name, definition) = pairs.iter().next().unwrap();
 
-        let instrument = parse_spot_instrument(pair_name, definition, TS, TS).unwrap();
-
+        let instrument = parse_spot_instrument(pair_name, definition, None, TS, TS).unwrap();
         match instrument {
             InstrumentAny::CurrencyPair(pair) => {
                 assert_eq!(pair.id.venue.as_str(), "KRAKEN");
@@ -1287,6 +1295,32 @@ mod tests {
                 assert_eq!(pair.taker_fee, dec!(0.004));
                 assert_eq!(pair.margin_init, dec!(0));
                 assert_eq!(pair.margin_maint, dec!(0));
+            }
+            _ => panic!("Expected CurrencyPair"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_spot_instrument_with_fee_override() {
+        let json = load_test_json("http_asset_pairs.json");
+        let response: KrakenResponse<AssetPairsResponse> = serde_json::from_str(&json).unwrap();
+        let pairs = response.result.unwrap();
+
+        let (pair_name, definition) = pairs.iter().next().unwrap();
+
+        let instrument = parse_spot_instrument(
+            pair_name,
+            definition,
+            Some((dec!(0.004), dec!(0.008))),
+            TS,
+            TS,
+        )
+        .unwrap();
+
+        match instrument {
+            InstrumentAny::CurrencyPair(pair) => {
+                assert_eq!(pair.maker_fee, dec!(0.004));
+                assert_eq!(pair.taker_fee, dec!(0.008));
             }
             _ => panic!("Expected CurrencyPair"),
         }
