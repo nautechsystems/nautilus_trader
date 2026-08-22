@@ -1168,18 +1168,19 @@ mod tests {
         assert!(error_msg.contains("Retry budget exceeded"));
         assert!(error_msg.contains("/6)"));
 
-        if let Some(captures) = error_msg.strip_prefix("Timeout error: Retry budget exceeded (")
-            && let Some(nums) = captures.strip_suffix(")")
-        {
-            let parts: Vec<&str> = nums.split('/').collect();
-            assert_eq!(parts.len(), 2);
-            let current: u32 = parts[0].parse().unwrap();
-            let total: u32 = parts[1].parse().unwrap();
+        let prefix = "Timeout error: Retry budget exceeded (";
+        let nums = error_msg
+            .strip_circumfix(prefix, ")")
+            .or_else(|| error_msg.strip_circumfix(prefix, "): last error: Retryable error: test"))
+            .expect("error message should match retry budget format");
+        let parts: Vec<&str> = nums.split('/').collect();
+        assert_eq!(parts.len(), 2);
+        let current: u32 = parts[0].parse().unwrap();
+        let total: u32 = parts[1].parse().unwrap();
 
-            assert_eq!(total, 6, "Total should be max_retries + 1");
-            assert!(current <= total, "Current attempt should not exceed total");
-            assert!(current >= 1, "Current attempt should be at least 1");
-        }
+        assert_eq!(total, 6, "Total should be max_retries + 1");
+        assert!(current <= total, "Current attempt should not exceed total");
+        assert!(current >= 1, "Current attempt should be at least 1");
     }
 
     #[cfg_attr(

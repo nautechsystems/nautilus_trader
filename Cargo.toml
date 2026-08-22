@@ -175,7 +175,6 @@ http = "1.5.0"
 implied-vol = { version = "2.0.0" }
 indexmap = { version = "2.14.0", features = ["serde"] }
 itchy = "0.3"
-itoa = "1.0.18"
 jiff = { version = "0.2.35", default-features = false, features = [
   "perf-inline",
   "serde",

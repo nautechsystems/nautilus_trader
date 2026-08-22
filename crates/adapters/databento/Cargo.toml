@@ -70,7 +70,6 @@ async-trait = { workspace = true }
 databento = { workspace = true }
 fallible-streaming-iterator = { workspace = true }
 indexmap = { workspace = true }
-itoa = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
