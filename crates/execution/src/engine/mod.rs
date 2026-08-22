@@ -3404,6 +3404,9 @@ impl ExecutionEngine {
             OrderEventAny::Canceled(_) => {
                 switchboard::get_order_canceled_topic(event.instrument_id())
             }
+            OrderEventAny::FillVoided(_) => {
+                switchboard::get_order_fill_voided_topic(event.instrument_id())
+            }
             // Keep Filled out of this generic fanout: handle_order_fill publishes the instrument
             // topic, while leg fills stay on the strategy topic.
             _ => return,

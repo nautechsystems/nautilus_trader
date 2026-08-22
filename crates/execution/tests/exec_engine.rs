@@ -2998,6 +2998,7 @@ enum InstrumentOrderEventKind {
     PendingCancel,
     ModifyRejected,
     CancelRejected,
+    FillVoided,
 }
 
 #[rstest]
@@ -3007,6 +3008,7 @@ enum InstrumentOrderEventKind {
 #[case::pending_cancel(InstrumentOrderEventKind::PendingCancel)]
 #[case::modify_rejected(InstrumentOrderEventKind::ModifyRejected)]
 #[case::cancel_rejected(InstrumentOrderEventKind::CancelRejected)]
+#[case::fill_voided(InstrumentOrderEventKind::FillVoided)]
 fn test_process_order_event_publishes_instrument_order_event_topic(
     mut execution_engine: ExecutionEngine,
     #[case] event_kind: InstrumentOrderEventKind,
@@ -3024,7 +3026,8 @@ fn test_process_order_event_publishes_instrument_order_event_topic(
         InstrumentOrderEventKind::PendingUpdate
         | InstrumentOrderEventKind::PendingCancel
         | InstrumentOrderEventKind::ModifyRejected
-        | InstrumentOrderEventKind::CancelRejected => prepare_accepted_order_with_account(
+        | InstrumentOrderEventKind::CancelRejected
+        | InstrumentOrderEventKind::FillVoided => prepare_accepted_order_with_account(
             &mut execution_engine,
             CashAccount::default().into(),
         ),
@@ -3048,6 +3051,9 @@ fn test_process_order_event_publishes_instrument_order_event_topic(
         }
         InstrumentOrderEventKind::CancelRejected => {
             switchboard::get_order_cancel_rejected_topic(instrument.id())
+        }
+        InstrumentOrderEventKind::FillVoided => {
+            switchboard::get_order_fill_voided_topic(instrument.id())
         }
     };
     let received = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
@@ -3128,6 +3134,23 @@ fn test_process_order_event_publishes_instrument_order_event_topic(
                 Some(VenueOrderId::from("V-001")),
             ))
         }
+        InstrumentOrderEventKind::FillVoided => OrderEventAny::FillVoided(
+            OrderFillVoidedSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(instrument.id())
+                .client_order_id(order.client_order_id())
+                .venue_order_id(VenueOrderId::from("V-001"))
+                .account_id(account_id)
+                .trade_id(TradeId::new("T-VOID-001"))
+                .voided_qty(order.quantity())
+                .order_side(order.order_side())
+                .order_type(order.order_type())
+                .last_px(Price::from("1.00000"))
+                .currency(instrument.quote_currency())
+                .liquidity_side(LiquiditySide::NoLiquiditySide)
+                .build(),
+        ),
     };
 
     execution_engine.process(&event);
@@ -3156,6 +3179,9 @@ fn test_process_order_event_publishes_instrument_order_event_topic(
         }
         InstrumentOrderEventKind::CancelRejected => {
             assert!(matches!(received[0], OrderEventAny::CancelRejected(_)));
+        }
+        InstrumentOrderEventKind::FillVoided => {
+            assert!(matches!(received[0], OrderEventAny::FillVoided(_)));
         }
     }
 }
