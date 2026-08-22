@@ -21,9 +21,10 @@ use nautilus_core::{
     UnixNanos, collections::AtomicMap, datetime::NANOSECONDS_IN_SECOND, time::AtomicTime,
 };
 use nautilus_model::{
-    enums::{LiquiditySide, OrderStatus, PositionSideSpecified},
-    identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId},
+    enums::{LiquiditySide, OrderSide, OrderStatus, PositionSideSpecified, TimeInForce},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
+    orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Quantity},
 };
@@ -33,15 +34,16 @@ use ustr::Ustr;
 use super::{
     order_fill_tracker::OrderFillTrackerMap,
     parse::{
-        build_maker_fill_report, instrument_fee_exponent, instrument_taker_fee, parse_fill_report,
-        parse_order_status_report, parse_timestamp,
+        build_maker_fill_report, determine_order_side, instrument_fee_exponent,
+        instrument_taker_fee, parse_expiration_nanos, parse_fill_report, parse_order_status_report,
+        parse_timestamp,
     },
 };
 use crate::{
     common::{
         consts::{DUST_POSITION_THRESHOLD, DUST_SNAP_THRESHOLD_DEC, USDC_DECIMALS},
         enums::{PolymarketLiquiditySide, PolymarketOutcome, PolymarketTradeStatus},
-        models::is_owned_by_account,
+        models::{PolymarketMakerOrder, is_owned_by_account},
     },
     http::{
         clob::PolymarketClobHttpClient,
@@ -64,6 +66,7 @@ pub(crate) struct FillContext<'a> {
 pub(crate) struct FillReportScope {
     instrument_id: Option<InstrumentId>,
     venue_order_id: Option<VenueOrderId>,
+    expected_order_side: Option<OrderSide>,
 }
 
 impl FillReportScope {
@@ -74,18 +77,111 @@ impl FillReportScope {
         Self {
             instrument_id,
             venue_order_id,
+            expected_order_side: None,
         }
     }
 
-    fn excludes_instrument(self, instrument_id: InstrumentId) -> bool {
-        self.instrument_id
-            .is_some_and(|filter_id| instrument_id != filter_id)
+    pub(crate) const fn with_expected_order_side(
+        mut self,
+        expected_order_side: Option<OrderSide>,
+    ) -> Self {
+        self.expected_order_side = expected_order_side;
+        self
     }
 
     fn excludes_venue_order(self, venue_order_id: &str) -> bool {
         self.venue_order_id
             .is_some_and(|filter_id| venue_order_id != filter_id.as_str())
     }
+
+    fn admits_instrument(
+        self,
+        instrument_id: InstrumentId,
+        evidence: &str,
+    ) -> anyhow::Result<bool> {
+        let Some(requested_instrument_id) = self.instrument_id else {
+            return Ok(true);
+        };
+
+        if instrument_id == requested_instrument_id {
+            return Ok(true);
+        }
+        anyhow::ensure!(
+            self.venue_order_id.is_none(),
+            "{evidence} resolves to instrument {instrument_id}, not requested instrument {requested_instrument_id}",
+        );
+        Ok(false)
+    }
+
+    fn requires_target_resolution(self) -> bool {
+        self.venue_order_id.is_some()
+    }
+
+    fn validate_order_side(self, actual: OrderSide, evidence: &str) -> anyhow::Result<()> {
+        validate_expected_order_side(self.expected_order_side, actual, evidence)
+    }
+}
+
+fn validate_expected_order_side(
+    expected: Option<OrderSide>,
+    actual: OrderSide,
+    evidence: &str,
+) -> anyhow::Result<()> {
+    if let Some(expected) = expected {
+        anyhow::ensure!(
+            actual == expected,
+            "{evidence} side {actual} does not match known order side {expected}",
+        );
+    }
+    Ok(())
+}
+
+fn validate_target_trade_role(
+    trade: &PolymarketTradeReport,
+    venue_order_id: VenueOrderId,
+) -> anyhow::Result<bool> {
+    let target_is_taker = trade.taker_order_id == venue_order_id.as_str();
+    let target_is_maker = trade
+        .maker_orders
+        .iter()
+        .any(|order| order.order_id == venue_order_id.as_str());
+    if !target_is_taker && !target_is_maker {
+        return Ok(false);
+    }
+    anyhow::ensure!(
+        !(target_is_taker && target_is_maker),
+        "target order {venue_order_id} appears as both taker and maker in trade {}",
+        trade.id,
+    );
+    let declared_maker = trade.trader_side == PolymarketLiquiditySide::Maker;
+    anyhow::ensure!(
+        declared_maker == target_is_maker,
+        "trade {} trader_side {:?} contradicts target order {venue_order_id} participant role",
+        trade.id,
+        trade.trader_side,
+    );
+    Ok(true)
+}
+
+fn validate_maker_order_side(
+    trade: &PolymarketTradeReport,
+    maker_order: &PolymarketMakerOrder,
+) -> anyhow::Result<OrderSide> {
+    let derived_side = determine_order_side(
+        trade.trader_side,
+        trade.side,
+        trade.asset_id.as_str(),
+        maker_order.asset_id.as_str(),
+    );
+    let provider_side = maker_order
+        .side
+        .with_context(|| format!("REST maker order {} is missing side", maker_order.order_id))?;
+    anyhow::ensure!(
+        OrderSide::from(provider_side) == derived_side,
+        "provider maker order {} side {provider_side} contradicts derived side {derived_side}",
+        maker_order.order_id,
+    );
+    Ok(derived_side)
 }
 
 fn validate_instrument_binding(
@@ -115,6 +211,332 @@ fn validate_instrument_binding(
     );
 
     Ok(())
+}
+
+fn resolve_target_instrument(
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    token_id: Ustr,
+    requested_instrument_id: InstrumentId,
+    evidence: &str,
+) -> anyhow::Result<InstrumentAny> {
+    let instrument = instruments.get_cloned(&token_id).with_context(|| {
+        format!(
+            "{evidence} token {token_id} has no loaded Polymarket instrument for requested instrument {requested_instrument_id}"
+        )
+    })?;
+    anyhow::ensure!(
+        instrument.id() == requested_instrument_id,
+        "{evidence} resolves to instrument {}, not requested instrument {requested_instrument_id}",
+        instrument.id(),
+    );
+    Ok(instrument)
+}
+
+fn validate_client_bound_order_row(
+    provider_order: &PolymarketOpenOrder,
+    cached_order: &OrderAny,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        cached_order.order_side() == provider_order.side.into(),
+        "provider order side {} does not match cached order side {}",
+        provider_order.side,
+        cached_order.order_side(),
+    );
+    anyhow::ensure!(
+        cached_order.time_in_force() == provider_order.order_type.into(),
+        "provider order time in force {} does not match cached order time in force {}",
+        provider_order.order_type,
+        cached_order.time_in_force(),
+    );
+    anyhow::ensure!(
+        cached_order.quantity().as_decimal() == provider_order.original_size,
+        "provider order quantity {} does not match cached order quantity {}",
+        provider_order.original_size,
+        cached_order.quantity(),
+    );
+    let cached_price = cached_order
+        .price()
+        .context("cached Limit order is missing price")?;
+    anyhow::ensure!(
+        cached_price.as_decimal() == provider_order.price,
+        "provider order price {} does not match cached order price {cached_price}",
+        provider_order.price,
+    );
+
+    let provider_expire_time = match provider_order.expiration.as_deref() {
+        None | Some("0") => None,
+        Some(value) => Some(UnixNanos::from(
+            parse_expiration_nanos(value)
+                .with_context(|| format!("invalid provider order expiration {value}"))?,
+        )),
+    };
+    let provider_expire_seconds = provider_expire_time.map(|value| value.as_seconds());
+    let cached_expire_seconds = cached_order
+        .expire_time()
+        .filter(|value| !value.is_zero())
+        .map(|value| value.as_seconds());
+    if cached_order.time_in_force() == TimeInForce::Gtd {
+        anyhow::ensure!(
+            cached_expire_seconds == provider_expire_seconds,
+            "provider order expiration seconds {provider_expire_seconds:?} do not match cached order expiration seconds {cached_expire_seconds:?}",
+        );
+    }
+
+    Ok(())
+}
+
+struct OrderRowResult {
+    report: Option<OrderStatusReport>,
+    counted_filtered: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct TargetOrderReportScope<'a> {
+    instrument_id: InstrumentId,
+    venue_order_id: VenueOrderId,
+    client_order_id: Option<ClientOrderId>,
+    cached_order: Option<&'a OrderAny>,
+}
+
+impl<'a> TargetOrderReportScope<'a> {
+    pub(crate) const fn new(
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        client_order_id: Option<ClientOrderId>,
+        cached_order: Option<&'a OrderAny>,
+    ) -> Self {
+        Self {
+            instrument_id,
+            venue_order_id,
+            client_order_id,
+            cached_order,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum OrderEvidenceScope<'a> {
+    Collection {
+        instrument_filter: Option<InstrumentId>,
+    },
+    Target {
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        client_order_id: Option<ClientOrderId>,
+        cached_order: Option<&'a OrderAny>,
+    },
+}
+
+fn build_order_report_from_order(
+    order: &PolymarketOpenOrder,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    ctx: &FillContext<'_>,
+    scope: OrderEvidenceScope<'_>,
+    ts_init: UnixNanos,
+    load_ids: Option<&[InstrumentId]>,
+) -> anyhow::Result<OrderRowResult> {
+    if let OrderEvidenceScope::Target { venue_order_id, .. } = scope {
+        anyhow::ensure!(
+            order.id == venue_order_id.as_str(),
+            "provider venue order {} does not match requested venue order {venue_order_id}",
+            order.id,
+        );
+    }
+
+    if !is_owned_by_account(
+        &order.maker_address,
+        &order.owner,
+        ctx.user_address,
+        ctx.api_key,
+    ) {
+        return match scope {
+            OrderEvidenceScope::Collection { .. } => {
+                log::debug!("Dropping open order {} not owned by the account", order.id);
+                Ok(OrderRowResult {
+                    report: None,
+                    counted_filtered: true,
+                })
+            }
+            OrderEvidenceScope::Target { .. } => {
+                anyhow::bail!(
+                    "provider venue order {} is not owned by the account",
+                    order.id
+                )
+            }
+        };
+    }
+
+    let instrument = match scope {
+        OrderEvidenceScope::Target { instrument_id, .. } => resolve_target_instrument(
+            instruments,
+            order.asset_id,
+            instrument_id,
+            &format!("provider venue order {}", order.id),
+        )?,
+        OrderEvidenceScope::Collection { .. } => match instruments.get_cloned(&order.asset_id) {
+            Some(instrument) => instrument,
+            None => {
+                let instrument_id =
+                    instrument_id_from_market_token(order.market.as_str(), order.asset_id.as_str());
+
+                if instrument_in_load_ids_scope(instrument_id, load_ids) {
+                    anyhow::bail!(unmapped_in_scope_message(
+                        "open order",
+                        instrument_id,
+                        Some(&format!("token {}", order.asset_id)),
+                        load_ids,
+                    ));
+                }
+                log::debug!("Dropping out-of-scope unmapped open order instrument {instrument_id}");
+                return Ok(OrderRowResult {
+                    report: None,
+                    counted_filtered: true,
+                });
+            }
+        },
+    };
+    let instrument_id = instrument.id();
+
+    if let OrderEvidenceScope::Collection { instrument_filter } = scope
+        && instrument_filter.is_some_and(|filter_id| instrument_id != filter_id)
+    {
+        return Ok(OrderRowResult {
+            report: None,
+            counted_filtered: false,
+        });
+    }
+
+    validate_instrument_binding(&instrument, order.market.as_str(), order.outcome)?;
+    let (client_order_id, cached_order) = match scope {
+        OrderEvidenceScope::Collection { .. } => (None, None),
+        OrderEvidenceScope::Target {
+            client_order_id,
+            cached_order,
+            ..
+        } => (client_order_id, cached_order),
+    };
+
+    if let Some(cached_order) = cached_order {
+        validate_client_bound_order_row(order, cached_order)?;
+    }
+    let report = parse_order_status_report(
+        order,
+        instrument_id,
+        ctx.account_id,
+        client_order_id,
+        instrument.price_precision(),
+        instrument.size_precision(),
+        ts_init,
+    );
+    Ok(OrderRowResult {
+        report: Some(report),
+        counted_filtered: false,
+    })
+}
+
+pub(crate) fn build_target_order_report(
+    order: &PolymarketOpenOrder,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    ctx: &FillContext<'_>,
+    scope: TargetOrderReportScope<'_>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    build_order_report_from_order(
+        order,
+        instruments,
+        ctx,
+        OrderEvidenceScope::Target {
+            instrument_id: scope.instrument_id,
+            venue_order_id: scope.venue_order_id,
+            client_order_id: scope.client_order_id,
+            cached_order: scope.cached_order,
+        },
+        ts_init,
+        None,
+    )?
+    .report
+    .context("target order evidence was unexpectedly ignored")
+}
+
+pub(crate) fn has_pending_target_trade(
+    trades: &[PolymarketTradeReport],
+    ctx: &FillContext<'_>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    instrument_id: InstrumentId,
+    venue_order_id: VenueOrderId,
+    expected_order_side: Option<OrderSide>,
+) -> anyhow::Result<bool> {
+    let mut has_pending = false;
+
+    for trade in trades {
+        if !trade.status.is_pending_settlement() {
+            continue;
+        }
+
+        if !validate_target_trade_role(trade, venue_order_id)? {
+            continue;
+        }
+
+        if trade.trader_side == PolymarketLiquiditySide::Maker {
+            for maker_order in &trade.maker_orders {
+                if maker_order.order_id != venue_order_id.as_str() {
+                    continue;
+                }
+                anyhow::ensure!(
+                    maker_order.is_owned_by(ctx.user_address, ctx.api_key),
+                    "pending target maker order {} is not owned by the account",
+                    maker_order.order_id,
+                );
+                let instrument = resolve_target_instrument(
+                    instruments,
+                    maker_order.asset_id,
+                    instrument_id,
+                    &format!(
+                        "pending maker trade {} order {}",
+                        trade.id, maker_order.order_id
+                    ),
+                )?;
+                validate_instrument_binding(
+                    &instrument,
+                    trade.market.as_str(),
+                    maker_order.outcome,
+                )?;
+                let order_side = validate_maker_order_side(trade, maker_order)?;
+                validate_expected_order_side(
+                    expected_order_side,
+                    order_side,
+                    &format!("pending target maker order {}", maker_order.order_id),
+                )?;
+                has_pending = true;
+            }
+        } else if trade.taker_order_id == venue_order_id.as_str() {
+            anyhow::ensure!(
+                is_owned_by_account(
+                    &trade.maker_address,
+                    &trade.owner,
+                    ctx.user_address,
+                    ctx.api_key,
+                ),
+                "pending target taker order {} is not owned by the account",
+                trade.taker_order_id,
+            );
+            let instrument = resolve_target_instrument(
+                instruments,
+                trade.asset_id,
+                instrument_id,
+                &format!("pending taker trade {}", trade.id),
+            )?;
+            validate_instrument_binding(&instrument, trade.market.as_str(), trade.outcome)?;
+            validate_expected_order_side(
+                expected_order_side,
+                OrderSide::from(trade.side),
+                &format!("pending target taker order {}", trade.taker_order_id),
+            )?;
+            has_pending = true;
+        }
+    }
+
+    Ok(has_pending)
 }
 
 /// Counts of confirmed trade evidence dropped while building fill reports.
@@ -150,6 +572,12 @@ pub(crate) fn build_fill_reports_from_trades(
             continue;
         }
 
+        if let Some(target_order_id) = scope.venue_order_id
+            && !validate_target_trade_role(trade, target_order_id)?
+        {
+            continue;
+        }
+
         let is_maker = trade.trader_side == PolymarketLiquiditySide::Maker;
 
         if is_maker {
@@ -158,6 +586,11 @@ pub(crate) fn build_fill_reports_from_trades(
                 .iter()
                 .any(|mo| mo.is_owned_by(ctx.user_address, ctx.api_key))
             {
+                if let Some(target_order_id) = scope.venue_order_id {
+                    anyhow::bail!(
+                        "target maker order {target_order_id} is not owned by the account"
+                    );
+                }
                 let ts_event = parse_timestamp(&trade.match_time);
                 let instrument_id =
                     instrument_id_from_market_token(trade.market.as_str(), trade.asset_id.as_str());
@@ -183,13 +616,27 @@ pub(crate) fn build_fill_reports_from_trades(
             let mut selected_maker_orders = Vec::new();
 
             for mo in &trade.maker_orders {
+                if scope.excludes_venue_order(&mo.order_id) {
+                    continue;
+                }
+
                 if !mo.is_owned_by(ctx.user_address, ctx.api_key) {
+                    anyhow::ensure!(
+                        !scope.requires_target_resolution(),
+                        "target maker order {} is not owned by the account",
+                        mo.order_id,
+                    );
                     continue;
                 }
                 let token_id = mo.asset_id;
                 let instrument = match instruments.get_cloned(&token_id) {
                     Some(instrument) => instrument,
                     None => {
+                        anyhow::ensure!(
+                            !scope.requires_target_resolution(),
+                            "target maker order {} token {token_id} has no loaded Polymarket instrument",
+                            mo.order_id,
+                        );
                         classify_unmapped_historical(
                             &mut discards,
                             load_ids,
@@ -201,13 +648,19 @@ pub(crate) fn build_fill_reports_from_trades(
                 };
                 let instrument_id = instrument.id();
 
-                if scope.excludes_instrument(instrument_id)
-                    || scope.excludes_venue_order(&mo.order_id)
-                {
+                if !scope.admits_instrument(
+                    instrument_id,
+                    &format!("target maker order {}", mo.order_id),
+                )? {
                     continue;
                 }
 
                 validate_instrument_binding(&instrument, trade.market.as_str(), mo.outcome)?;
+                let order_side = validate_maker_order_side(trade, mo)?;
+                scope.validate_order_side(
+                    order_side,
+                    &format!("target maker order {}", mo.order_id),
+                )?;
                 selected_maker_orders.push((mo, instrument));
             }
 
@@ -260,12 +713,21 @@ pub(crate) fn build_fill_reports_from_trades(
                 reports.push(report);
             }
         } else {
+            if scope.excludes_venue_order(&trade.taker_order_id) {
+                continue;
+            }
+
             if !is_owned_by_account(
                 &trade.maker_address,
                 &trade.owner,
                 ctx.user_address,
                 ctx.api_key,
             ) {
+                anyhow::ensure!(
+                    !scope.requires_target_resolution(),
+                    "target taker order {} is not owned by the account",
+                    trade.taker_order_id,
+                );
                 log::debug!(
                     "Dropping confirmed taker trade {} not owned by the account",
                     trade.id
@@ -277,6 +739,11 @@ pub(crate) fn build_fill_reports_from_trades(
             let instrument = match instruments.get_cloned(&token_id) {
                 Some(instrument) => instrument,
                 None => {
+                    anyhow::ensure!(
+                        !scope.requires_target_resolution(),
+                        "target taker order {} token {token_id} has no loaded Polymarket instrument",
+                        trade.taker_order_id,
+                    );
                     classify_unmapped_historical(
                         &mut discards,
                         load_ids,
@@ -288,9 +755,10 @@ pub(crate) fn build_fill_reports_from_trades(
             };
             let instrument_id = instrument.id();
 
-            if scope.excludes_instrument(instrument_id)
-                || scope.excludes_venue_order(&trade.taker_order_id)
-            {
+            if !scope.admits_instrument(
+                instrument_id,
+                &format!("target taker order {}", trade.taker_order_id),
+            )? {
                 continue;
             }
 
@@ -325,6 +793,10 @@ pub(crate) fn build_fill_reports_from_trades(
                 ts_init,
             )
             .with_context(|| format!("failed to build taker fill report for trade {}", trade.id))?;
+            scope.validate_order_side(
+                report.order_side,
+                &format!("target taker order {}", trade.taker_order_id),
+            )?;
             reports.push(report);
         }
     }
@@ -345,59 +817,20 @@ pub(crate) fn build_order_reports_from_orders(
     let mut filtered = 0usize;
 
     for order in orders {
-        if !is_owned_by_account(
-            &order.maker_address,
-            &order.owner,
-            ctx.user_address,
-            ctx.api_key,
-        ) {
-            log::debug!("Dropping open order {} not owned by the account", order.id);
-            filtered += 1;
-            continue;
-        }
-
-        let token_id = order.asset_id;
-        let instrument = match instruments.get_cloned(&token_id) {
-            Some(instrument) => instrument,
-            None => {
-                let instrument_id =
-                    instrument_id_from_market_token(order.market.as_str(), token_id.as_str());
-
-                if instrument_in_load_ids_scope(instrument_id, load_ids) {
-                    anyhow::bail!(unmapped_in_scope_message(
-                        "open order",
-                        instrument_id,
-                        Some(&format!("token {token_id}")),
-                        load_ids,
-                    ));
-                }
-                log::debug!("Dropping out-of-scope unmapped open order instrument {instrument_id}");
-                filtered += 1;
-                continue;
-            }
-        };
-        let instrument_id = instrument.id();
-
-        if let Some(filter_id) = instrument_filter
-            && instrument_id != filter_id
-        {
-            continue;
-        }
-
-        validate_instrument_binding(&instrument, order.market.as_str(), order.outcome)?;
-        let price_prec = instrument.price_precision();
-        let size_prec = instrument.size_precision();
-
-        let report = parse_order_status_report(
+        let result = build_order_report_from_order(
             order,
-            instrument_id,
-            ctx.account_id,
-            None,
-            price_prec,
-            size_prec,
+            instruments,
+            ctx,
+            OrderEvidenceScope::Collection { instrument_filter },
             ts_init,
-        );
-        reports.push(report);
+            load_ids,
+        )?;
+
+        if let Some(report) = result.report {
+            reports.push(report);
+        } else {
+            filtered += usize::from(result.counted_filtered);
+        }
     }
 
     Ok((reports, filtered))
@@ -633,9 +1066,29 @@ fn instrument_in_load_ids_scope(
     load_ids: Option<&[InstrumentId]>,
 ) -> bool {
     match load_ids {
-        Some(ids) if !ids.is_empty() => ids.contains(&instrument_id),
+        Some(ids) if !ids.is_empty() => ids.iter().any(|configured_id| {
+            polymarket_instrument_ids_equivalent(*configured_id, instrument_id)
+        }),
         _ => true,
     }
+}
+
+fn polymarket_instrument_ids_equivalent(left: InstrumentId, right: InstrumentId) -> bool {
+    if left == right {
+        return true;
+    }
+
+    if left.venue != right.venue {
+        return false;
+    }
+    let Some((left_condition, left_token)) = left.symbol.as_str().rsplit_once('-') else {
+        return false;
+    };
+    let Some((right_condition, right_token)) = right.symbol.as_str().rsplit_once('-') else {
+        return false;
+    };
+
+    left_condition.eq_ignore_ascii_case(right_condition) && left_token == right_token
 }
 
 fn unmapped_in_scope_message(
@@ -645,7 +1098,11 @@ fn unmapped_in_scope_message(
     load_ids: Option<&[InstrumentId]>,
 ) -> String {
     let hint = match load_ids {
-        Some(ids) if ids.contains(&instrument_id) => {
+        Some(ids)
+            if ids.iter().any(|configured_id| {
+                polymarket_instrument_ids_equivalent(*configured_id, instrument_id)
+            }) =>
+        {
             "this instrument is in instrument_config.load_ids but was not loaded"
         }
         _ => "set instrument_config.load_ids to the instruments this node should reconcile",
