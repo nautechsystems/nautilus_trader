@@ -2111,25 +2111,28 @@ async fn test_generate_fill_reports_scopes_venue_order_before_binding(#[case] tr
     target["market"] = json!(TEST_CONDITION_ID);
     target["trader_side"] = json!(trader_side);
 
-    if trader_side == "MAKER" {
-        target["maker_orders"][0]["owner"] = json!("00000000-0000-0000-0000-000000000001");
-        target["maker_orders"][0]["order_id"] = json!(target_order_id);
+    let (trades, contradiction_field) = if trader_side == "MAKER" {
+        let mut target_leg = target["maker_orders"][0].clone();
+        target_leg["owner"] = json!("00000000-0000-0000-0000-000000000001");
+        target_leg["order_id"] = json!(target_order_id);
+
+        let mut contradictory_leg = target_leg.clone();
+        contradictory_leg["order_id"] = json!(unrelated_order_id);
+        contradictory_leg["outcome"] = json!("No");
+        target["maker_orders"] = json!([target_leg, contradictory_leg]);
+        (vec![target], "outcome")
     } else {
         target["taker_order_id"] = json!(target_order_id);
-    }
-
-    let mut contradictory = target.clone();
-    contradictory["id"] = json!("trade-unrelated-condition");
-    contradictory["market"] =
-        json!("0x3333333333333333333333333333333333333333333333333333333333333333");
-    if trader_side == "MAKER" {
-        contradictory["maker_orders"][0]["order_id"] = json!(unrelated_order_id);
-    } else {
+        let mut contradictory = target.clone();
+        contradictory["id"] = json!("trade-unrelated-condition");
+        contradictory["market"] =
+            json!("0x3333333333333333333333333333333333333333333333333333333333333333");
         contradictory["taker_order_id"] = json!(unrelated_order_id);
-    }
+        (vec![target, contradictory], "condition")
+    };
 
     *state.trades_response_override.lock().await = Some(json!({
-        "data": [target, contradictory],
+        "data": trades,
         "next_cursor": "LTE=",
     }));
     let addr = start_mock_server(state).await;
@@ -2157,7 +2160,7 @@ async fn test_generate_fill_reports_scopes_venue_order_before_binding(#[case] tr
         .generate_fill_reports(command(None))
         .await
         .expect_err("unscoped contradictory evidence must fail closed");
-    assert!(error.to_string().contains("condition"));
+    assert!(error.to_string().contains(contradiction_field));
 
     let reports = client
         .generate_fill_reports(command(Some(VenueOrderId::from(target_order_id))))
@@ -2169,6 +2172,8 @@ async fn test_generate_fill_reports_scopes_venue_order_before_binding(#[case] tr
         reports[0].venue_order_id,
         VenueOrderId::from(target_order_id)
     );
+    assert_eq!(reports[0].last_qty, Quantity::from("25.0000"));
+    assert_eq!(reports[0].last_px, Price::from("0.5000"));
 }
 
 #[rstest]
@@ -2476,7 +2481,7 @@ async fn test_generate_order_status_report_defers_while_trade_is_unconfirmed() {
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_active_order_report_recovers_confirmed_rest_fill() {
+async fn test_generate_active_order_report_scopes_confirmed_rest_fill_by_venue_order() {
     let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
     let state = TestServerState::default();
     let mut order = load_json("http_open_order.json");
@@ -2485,11 +2490,12 @@ async fn test_generate_active_order_report_recovers_confirmed_rest_fill() {
     order["original_size"] = Value::String("10.0000".to_string());
     order["size_matched"] = Value::String("10.0000".to_string());
     *state.single_order_response.lock().await = Some(order);
-    *state.trades_response_override.lock().await = Some(recovery_trades_response(
-        venue_order_id_str,
-        "10.0000",
-        "0.5000",
-    ));
+    *state.trades_response_override.lock().await =
+        Some(recovery_trades_response_with_unrelated_contradiction(
+            venue_order_id_str,
+            "10.0000",
+            "0.5000",
+        ));
     let addr = start_mock_server(state).await;
     let (mut client, _rx, cache) = create_test_execution_client(addr);
 
@@ -2745,6 +2751,25 @@ fn recovery_trades_response(venue_order_id: &str, size: &str, price: &str) -> Va
     })
 }
 
+fn recovery_trades_response_with_unrelated_contradiction(
+    venue_order_id: &str,
+    size: &str,
+    price: &str,
+) -> Value {
+    let mut trades = recovery_trades_response(venue_order_id, size, price);
+    let mut contradictory = trades["data"][0].clone();
+    contradictory["id"] = json!("trade-unrelated-condition");
+    contradictory["taker_order_id"] =
+        json!("0x2222222222222222222222222222222222222222222222222222222222222222");
+    contradictory["market"] =
+        json!("0x3333333333333333333333333333333333333333333333333333333333333333");
+    trades["data"]
+        .as_array_mut()
+        .expect("trade page data array")
+        .push(contradictory);
+    trades
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_generate_order_status_report_recovers_filled_with_dust_snap() {
@@ -2821,6 +2846,62 @@ async fn test_generate_order_status_report_recovers_filled_with_dust_snap() {
     assert_eq!(report.order_status, OrderStatus::Filled);
     assert_eq!(report.filled_qty, Quantity::from("9.9950"));
     assert_eq!(report.quantity, Quantity::from("9.9950"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_scopes_terminal_recovery_by_venue_order() {
+    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let state = TestServerState::default();
+    *state.single_order_response.lock().await = Some(Value::Null);
+    *state.trades_response_override.lock().await =
+        Some(recovery_trades_response_with_unrelated_contradiction(
+            venue_order_id_str,
+            "10.0000",
+            "0.5000",
+        ));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let venue_order_id = VenueOrderId::from(venue_order_id_str);
+    let client_order_id = ClientOrderId::from("O-RECOVERY-SCOPED");
+    let mut order = make_limit_order(
+        client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, venue_order_id_str);
+
+    let report = client
+        .generate_order_status_report(&GenerateOrderStatusReport {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            client_order_id: Some(client_order_id),
+            venue_order_id: Some(venue_order_id),
+            params: None,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect("unrelated order evidence is outside terminal recovery scope")
+        .expect("target order should recover from its confirmed trade");
+
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.filled_qty, Quantity::from("10.0000"));
 }
 
 #[rstest]
@@ -9142,6 +9223,60 @@ async fn test_query_order_excludes_unconfirmed_matched_quantity() {
         ExecutionEvent::Report(ExecutionReport::Order(report)) => {
             assert_eq!(report.order_status, OrderStatus::Filled);
             assert_eq!(report.filled_qty, Quantity::zero(4));
+        }
+        other => panic!("Expected Order report, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_query_order_scopes_confirmed_rest_fills_by_venue_order() {
+    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let state = TestServerState::default();
+    let mut order = load_json("http_open_order.json");
+    order["id"] = json!(venue_order_id_str);
+    order["status"] = json!("MATCHED");
+    order["original_size"] = json!("10.0000");
+    order["size_matched"] = json!("10.0000");
+    *state.single_order_response.lock().await = Some(order);
+    *state.trades_response_override.lock().await =
+        Some(recovery_trades_response_with_unrelated_contradiction(
+            venue_order_id_str,
+            "10.0000",
+            "0.5000",
+        ));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+    client.start().unwrap();
+
+    client
+        .query_order(QueryOrder::new(
+            TraderId::from("TESTER-001"),
+            Some(*POLYMARKET_CLIENT_ID),
+            StrategyId::from("S-001"),
+            instrument_id,
+            ClientOrderId::from("O-QUERY-SCOPED"),
+            Some(VenueOrderId::from(venue_order_id_str)),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    match event {
+        ExecutionEvent::Report(ExecutionReport::Order(report)) => {
+            assert_eq!(report.order_status, OrderStatus::Filled);
+            assert_eq!(report.filled_qty, Quantity::from("10.0000"));
         }
         other => panic!("Expected Order report, was {other:?}"),
     }

@@ -143,12 +143,11 @@ impl PolymarketExecutionClient {
             &trades,
             &ctx,
             &self.shared_token_instruments,
-            FillReportScope::new(Some(instrument_id), None),
+            FillReportScope::new(Some(instrument_id), Some(venue_order_id)),
             ts_init,
             self.config.reconciliation_load_ids(),
             None,
         )?;
-        order_fills.retain(|f| f.venue_order_id == venue_order_id);
         self.fill_tracker.snap_fill_reports(&mut order_fills);
 
         if order_fills.is_empty() {
@@ -318,7 +317,10 @@ impl PolymarketExecutionClient {
                             &ctx,
                             &token_instruments,
                             GetTradesParams::default(),
-                            Some(instrument_id),
+                            FillReportScope::new(
+                                Some(instrument_id),
+                                Some(venue_order_id),
+                            ),
                             clock.get_time_ns(),
                             load_ids.as_deref(),
                         )
@@ -412,7 +414,7 @@ impl PolymarketExecutionClient {
                     &self.fill_context(),
                     &self.shared_token_instruments,
                     GetTradesParams::default(),
-                    Some(instrument_id),
+                    FillReportScope::new(Some(instrument_id), Some(venue_order_id)),
                     self.clock.get_time_ns(),
                     self.config.reconciliation_load_ids(),
                 )
@@ -625,7 +627,7 @@ async fn fetch_confirmed_fill_reports(
     ctx: &FillContext<'_>,
     token_instruments: &AtomicMap<Ustr, InstrumentAny>,
     params: GetTradesParams,
-    instrument_id: Option<InstrumentId>,
+    scope: FillReportScope,
     ts_init: UnixNanos,
     load_ids: Option<&[InstrumentId]>,
 ) -> anyhow::Result<Vec<FillReport>> {
@@ -637,7 +639,7 @@ async fn fetch_confirmed_fill_reports(
         &trades,
         ctx,
         token_instruments,
-        FillReportScope::new(instrument_id, None),
+        scope,
         ts_init,
         load_ids,
         None,
