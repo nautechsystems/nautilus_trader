@@ -981,7 +981,9 @@ fn insert_index(pipe: &mut Pipeline, key: &str, value: &[Bytes]) -> anyhow::Resu
             }
 
             let entries = value
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|entry| (entry[0].as_ref(), entry[1].as_ref()))
                 .collect::<Vec<(&[u8], &[u8])>>();
             pipe.hset_multiple(key, &entries);

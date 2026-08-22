@@ -12,6 +12,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Upgraded Rust (MSRV) to 1.98.0
 - Upgraded `blake3` crate to v1.8.7
 - Upgraded `ruff` package (dev) to v0.16.3
 - Upgraded `simplejson` package (visualization) to v4.1.1

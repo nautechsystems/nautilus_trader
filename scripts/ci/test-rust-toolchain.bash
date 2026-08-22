@@ -34,9 +34,9 @@ expect_failure() {
   grep -Fq "[toolchain].channel must be an exact Rust version" "${test_root}/output"
 }
 
-expect_success $'[metadata]\nchannel = "stable"\n\n[toolchain]\nchannel = "1.97.1"' "1.97.1"
-expect_failure $'[toolchain]\nversion = "1.97.1"\nchannel = "stable"'
+expect_success $'[metadata]\nchannel = "stable"\n\n[toolchain]\nchannel = "1.98.0"' "1.98.0"
+expect_failure $'[toolchain]\nversion = "1.98.0"\nchannel = "stable"'
 expect_failure $'[toolchain]\nchannel = "stable"'
-expect_failure $'[metadata]\nchannel = "1.97.1"\n\n[toolchain]\nprofile = "minimal"'
+expect_failure $'[metadata]\nchannel = "1.98.0"\n\n[toolchain]\nprofile = "minimal"'
 
 echo "Rust toolchain parser tests passed"

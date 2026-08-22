@@ -28,18 +28,18 @@ create_case() {
     "$case_dir/scripts/"
 
   printf '%s\n' '[uv]' 'version = "0.12.3"' > "$case_dir/tools.toml"
-  printf '%s\n' '[toolchain]' 'channel = "1.97.1"' > "$case_dir/rust-toolchain.toml"
+  printf '%s\n' '[toolchain]' 'channel = "1.98.0"' > "$case_dir/rust-toolchain.toml"
   printf '%s\n' '[project]' 'requires-python = ">=3.12,<3.15"' > "$case_dir/python/pyproject.toml"
 
   printf '%s\n' \
     "FROM public.ecr.aws/docker/library/ubuntu@sha256:$digest" \
     "COPY --from=ghcr.io/astral-sh/uv:$uv_version@sha256:$digest /uv /bin/uv" \
-    "COPY --from=public.ecr.aws/docker/library/rust:1.97.1-slim-bookworm@sha256:$digest /usr/local/cargo /usr/local/cargo" \
+    "COPY --from=public.ecr.aws/docker/library/rust:1.98.0-slim-bookworm@sha256:$digest /usr/local/cargo /usr/local/cargo" \
     "RUN uv python install $install_version" > "$case_dir/.docker/DockerfileUbuntu"
   printf '%s\n' \
     "FROM public.ecr.aws/docker/library/python:$python_version-slim@sha256:$digest" \
     "COPY --from=ghcr.io/astral-sh/uv:$uv_version@sha256:$digest /uv /bin/uv" \
-    "COPY --from=public.ecr.aws/docker/library/rust:1.97.1-slim-bookworm@sha256:$digest /usr/local/cargo /usr/local/cargo" \
+    "COPY --from=public.ecr.aws/docker/library/rust:1.98.0-slim-bookworm@sha256:$digest /usr/local/cargo /usr/local/cargo" \
     "ENV PYTHONPATH=/opt/venv/lib/python$site_version/site-packages" > "$case_dir/.docker/nautilus_trader.dockerfile"
   printf '%s\n' \
     "COPY --from=ghcr.io/astral-sh/uv:$uv_version@sha256:$digest /uv /bin/uv" \

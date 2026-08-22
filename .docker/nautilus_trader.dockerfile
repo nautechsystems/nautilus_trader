@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/rust:1.97.1-slim-bookworm@sha256:99e09cb2284e2ddbb73a995deee3e91783fd04d177602ccf6eab326d778ee777 AS rust-toolchain
+FROM public.ecr.aws/docker/library/rust:1.98.0-slim-bookworm@sha256:94e9efa4033213dbb70d4f665527e7ece3944ddb7ba1dd2e43f6fd6e2490af58 AS rust-toolchain
 
 # Pin to specific digest for supply-chain security (python:3.13-slim as of 2026-04-30).
 # Keep the version tag: scripts/ci/check-docker-toolchain-pins.bash treats it as the
