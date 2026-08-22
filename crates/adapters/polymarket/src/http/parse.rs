@@ -28,7 +28,7 @@ use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::models::{FeeSchedule, GammaMarket};
+use super::models::{CryptoMarketConfig, FeeSchedule, GammaMarket};
 use crate::common::{
     consts::{POLYMARKET_VENUE, PUSD},
     enums::PolymarketOutcome,
@@ -80,6 +80,10 @@ pub struct PolymarketInstrumentDef {
     pub market_slug: Option<String>,
     /// Whether the market uses the neg-risk CTF exchange contract.
     pub neg_risk: Option<bool>,
+    /// Source used to resolve the market.
+    pub resolution_source: Option<String>,
+    /// Crypto market resolution configuration.
+    pub crypto_market_config: Option<CryptoMarketConfig>,
     /// Fee schedule for this market.
     pub fee_schedule: Option<FeeSchedule>,
     /// Game ID for sport markets, kept verbatim because Gamma emits both
@@ -164,6 +168,8 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
             closed: market.closed.unwrap_or(false),
             market_slug: market.market_slug.clone(),
             neg_risk,
+            resolution_source: market.resolution_source.clone(),
+            crypto_market_config: market.crypto_market_config.clone(),
             fee_schedule: market.fee_schedule.clone(),
             game_id: game_id.clone(),
         });
@@ -348,6 +354,19 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
 
     if let Some(neg_risk) = def.neg_risk {
         map.insert("neg_risk".to_string(), serde_json::Value::Bool(neg_risk));
+    }
+
+    if let Some(resolution_source) = &def.resolution_source {
+        map.insert(
+            "resolution_source".to_string(),
+            serde_json::Value::String(resolution_source.clone()),
+        );
+    }
+
+    if let Some(crypto_market_config) = &def.crypto_market_config
+        && let Ok(value) = serde_json::to_value(crypto_market_config)
+    {
+        map.insert("crypto_market_config".to_string(), value);
     }
 
     if let Some(min_size) = def.min_size {
@@ -641,6 +660,48 @@ mod tests {
         assert_eq!(info.get_str("min_order_size"), Some("5"));
         assert_eq!(info.get_bool("neg_risk"), Some(false));
         assert_eq!(info.get("fee_schedule"), None);
+    }
+
+    #[rstest]
+    fn test_create_instrument_info_includes_resolution_and_crypto_market_config() {
+        let mut value: serde_json::Value = {
+            let content = std::fs::read_to_string("test_data/gamma_market.json")
+                .expect("Failed to read test data");
+            serde_json::from_str(&content).expect("Failed to parse test data")
+        };
+        value["resolutionSource"] =
+            serde_json::json!("https://data.chain.link/streams/btc-usd-twap-60s-streams");
+        value["cryptoMarketConfig"] = serde_json::json!({
+            "id": "btc-5m-twap-60",
+            "asset": "btc",
+            "duration": "5m",
+            "twapEnabled": true,
+            "twapLookbackSeconds": 60,
+        });
+        let market: GammaMarket = serde_json::from_value(value).unwrap();
+
+        let defs = parse_gamma_market(&market).unwrap();
+        let instrument =
+            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
+        let InstrumentAny::BinaryOption(binary) = instrument else {
+            panic!("Expected BinaryOption");
+        };
+        let info = binary.info.as_ref().expect("info should be Some");
+
+        assert_eq!(
+            info.get_str("resolution_source"),
+            Some("https://data.chain.link/streams/btc-usd-twap-60s-streams")
+        );
+        assert_eq!(
+            info.get("crypto_market_config"),
+            Some(&serde_json::json!({
+                "id": "btc-5m-twap-60",
+                "asset": "btc",
+                "duration": "5m",
+                "twapEnabled": true,
+                "twapLookbackSeconds": 60,
+            }))
+        );
     }
 
     #[rstest]

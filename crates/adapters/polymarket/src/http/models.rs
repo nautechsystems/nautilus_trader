@@ -183,6 +183,8 @@ pub struct GammaMarket {
     pub uma_resolution_statuses: Option<String>,
     /// Source used to resolve the market.
     pub resolution_source: Option<String>,
+    /// Crypto market resolution configuration.
+    pub crypto_market_config: Option<CryptoMarketConfig>,
     /// Whether CLOB is accepting orders.
     pub accepting_orders: Option<bool>,
     /// Whether order book trading is enabled.
@@ -283,6 +285,17 @@ pub struct FeeSchedule {
         deserialize_with = "deserialize_decimal_from_json_number"
     )]
     pub rebate_rate: Decimal,
+}
+
+/// Crypto market resolution configuration returned by Gamma.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CryptoMarketConfig {
+    pub id: String,
+    pub asset: String,
+    pub duration: String,
+    pub twap_enabled: bool,
+    pub twap_lookback_seconds: Option<u64>,
 }
 
 /// An event response from the Gamma API `GET /events`.
@@ -812,6 +825,61 @@ mod tests {
     }
 
     #[rstest]
+    fn test_gamma_market_crypto_market_config_fields() {
+        let mut value: serde_json::Value = load("gamma_market.json");
+        value["resolutionSource"] =
+            serde_json::json!("https://data.chain.link/streams/btc-usd-twap-60s-streams");
+        value["cryptoMarketConfig"] = serde_json::json!({
+            "id": "btc-5m-twap-60",
+            "asset": "btc",
+            "duration": "5m",
+            "twapEnabled": true,
+            "twapLookbackSeconds": 60,
+            "futureField": "ignored",
+        });
+
+        let market: GammaMarket = serde_json::from_value(value).unwrap();
+        let config = market.crypto_market_config.unwrap();
+
+        assert_eq!(config.id, "btc-5m-twap-60");
+        assert_eq!(config.asset, "btc");
+        assert_eq!(config.duration, "5m");
+        assert!(config.twap_enabled);
+        assert_eq!(config.twap_lookback_seconds, Some(60));
+    }
+
+    #[rstest]
+    #[case(serde_json::Value::Null)]
+    #[case(serde_json::json!({
+        "id": "btc-5m",
+        "asset": "btc",
+        "duration": "5m",
+        "twapEnabled": false,
+    }))]
+    #[case(serde_json::json!({
+        "id": "btc-5m",
+        "asset": "btc",
+        "duration": "5m",
+        "twapEnabled": false,
+        "twapLookbackSeconds": null,
+    }))]
+    fn test_gamma_market_optional_crypto_twap_lookback(
+        #[case] crypto_market_config: serde_json::Value,
+    ) {
+        let mut value: serde_json::Value = load("gamma_market.json");
+        value["cryptoMarketConfig"] = crypto_market_config;
+
+        let market: GammaMarket = serde_json::from_value(value).unwrap();
+
+        assert!(
+            market
+                .crypto_market_config
+                .as_ref()
+                .is_none_or(|config| config.twap_lookback_seconds.is_none())
+        );
+    }
+
+    #[rstest]
     fn test_gamma_market_enriched_fields() {
         let market: GammaMarket = load("gamma_market.json");
 
@@ -858,6 +926,7 @@ mod tests {
         assert!(market.competitive.is_none());
         assert!(market.category.is_none());
         assert!(market.neg_risk_market_id.is_none());
+        assert!(market.crypto_market_config.is_none());
     }
 
     #[rstest]
