@@ -146,6 +146,7 @@ impl PolymarketExecutionClient {
             Some(instrument_id),
             ts_init,
             self.config.reconciliation_load_ids(),
+            None,
         )?;
         order_fills.retain(|f| f.venue_order_id == venue_order_id);
         self.fill_tracker.snap_fill_reports(&mut order_fills);
@@ -463,10 +464,11 @@ impl PolymarketExecutionClient {
             .await
             .context("failed to fetch orders")?;
 
+        let ctx = self.fill_context();
         let (mut reports, _) = super::reconciliation::build_order_reports_from_orders(
             &orders,
             &self.shared_token_instruments,
-            self.core.account_id,
+            &ctx,
             cmd.instrument_id,
             self.clock.get_time_ns(),
             self.config.reconciliation_load_ids(),
@@ -480,18 +482,23 @@ impl PolymarketExecutionClient {
             report.filled_qty > cached_filled
         });
         let confirmed_fills = if needs_confirmed_fills {
-            match fetch_confirmed_fill_reports(
-                &self.http_client,
-                &self.fill_context(),
-                &self.shared_token_instruments,
-                GetTradesParams::default(),
-                cmd.instrument_id,
-                self.clock.get_time_ns(),
-                self.config.reconciliation_load_ids(),
-            )
-            .await
+            match self
+                .http_client
+                .get_trades(GetTradesParams::default())
+                .await
             {
-                Ok(fills) => confirmed_filled_quantities(&fills),
+                Ok(trades) => {
+                    let (fills, _) = build_fill_reports_from_trades(
+                        &trades,
+                        &ctx,
+                        &self.shared_token_instruments,
+                        cmd.instrument_id,
+                        self.clock.get_time_ns(),
+                        self.config.reconciliation_load_ids(),
+                        None,
+                    )?;
+                    confirmed_filled_quantities(&fills)
+                }
                 Err(e) => {
                     log::warn!("Failed to fetch confirmed fills for open-order check: {e}");
                     Default::default()
@@ -556,6 +563,7 @@ impl PolymarketExecutionClient {
             cmd.instrument_id,
             self.clock.get_time_ns(),
             self.config.reconciliation_load_ids(),
+            None,
         )?;
 
         self.fill_tracker.snap_fill_reports(&mut reports);
@@ -632,6 +640,7 @@ async fn fetch_confirmed_fill_reports(
         instrument_id,
         ts_init,
         load_ids,
+        None,
     )?;
     Ok(reports)
 }

@@ -56,7 +56,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, cash::CashAccount},
@@ -91,6 +91,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 const TEST_PRIVATE_KEY: &str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
 const TEST_CHUNK_PRIVATE_KEY: &str =
@@ -103,6 +104,8 @@ const TEST_CHUNK_DOWNGRADE_PRIVATE_KEY: &str =
     "0x5234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
 const TEST_SIGNER_ADDRESS: &str = "0x1be31a94361a391bbafb2a4ccd704f57dc04d4bb";
 const TEST_API_SECRET_B64: &str = "dGVzdF9zZWNyZXRfa2V5XzMyYnl0ZXNfcGFkMTIzNDU=";
+const TEST_CONDITION_ID: &str =
+    "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917";
 const DEFAULT_ACCEPTED_ORDER_ID: &str =
     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
 const CANCEL_ALREADY_DONE_ORDER_ID: &str =
@@ -336,7 +339,7 @@ fn create_test_exec_config_with_retries(
 ) -> PolymarketExecClientConfig {
     PolymarketExecClientConfig {
         private_key: Some(TEST_PRIVATE_KEY.to_string()),
-        api_key: Some("test_api_key".to_string()),
+        api_key: Some("00000000-0000-0000-0000-000000000001".to_string()),
         api_secret: Some(TEST_API_SECRET_B64.to_string()),
         passphrase: Some("test_pass".to_string()),
         funder: None,
@@ -1541,6 +1544,81 @@ async fn test_generate_order_status_reports_errors_on_in_scope_unmapped_order() 
 
 #[rstest]
 #[tokio::test]
+async fn test_generate_order_status_reports_drops_foreign_open_order() {
+    let state = TestServerState::default();
+    let mut order = load_json("http_open_orders_page.json")["data"][0].clone();
+    order["maker_address"] = json!("0x1111111111111111111111111111111111111111");
+    order["owner"] = json!("foreign-api-key");
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [order],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let reports = client
+        .generate_order_status_reports(&GenerateOrderStatusReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            open_only: false,
+            instrument_id: Some(instrument_id),
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect("foreign open order is outside local report scope");
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_rejects_wrong_condition() {
+    let state = TestServerState::default();
+    let mut order = load_json("http_open_orders_page.json")["data"][0].clone();
+    order["market"] = json!("0x1111111111111111111111111111111111111111111111111111111111111111");
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [order],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_order_status_reports(&GenerateOrderStatusReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            open_only: false,
+            instrument_id: Some(instrument_id),
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("owned open order with contradictory condition must fail");
+
+    assert!(error.to_string().contains("condition"));
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_order_status_reports_recovers_confirmed_rest_fill() {
     let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
     let state = TestServerState::default();
@@ -1600,6 +1678,57 @@ async fn test_generate_order_status_reports_recovers_confirmed_rest_fill() {
     let query = state.last_query.lock().await;
     assert!(!query.contains_key("after"));
     assert!(!query.contains_key("before"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_rejects_contradictory_confirmed_rest_fill() {
+    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let state = TestServerState::default();
+    let mut order = load_json("http_open_orders_page.json")["data"][0].clone();
+    order["id"] = Value::String(venue_order_id_str.to_string());
+    order["status"] = Value::String("MATCHED".to_string());
+    order["original_size"] = Value::String("10.0000".to_string());
+    order["size_matched"] = Value::String("10.0000".to_string());
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [order],
+        "next_cursor": "LTE=",
+    }));
+    let mut trades = recovery_trades_response(venue_order_id_str, "10.0000", "0.5000");
+    let mut contradictory = trades["data"][0].clone();
+    contradictory["id"] = json!("trade-contradictory-condition");
+    contradictory["market"] =
+        json!("0x1111111111111111111111111111111111111111111111111111111111111111");
+    trades["data"]
+        .as_array_mut()
+        .expect("trade page data array")
+        .push(contradictory);
+    *state.trades_response_override.lock().await = Some(trades);
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_order_status_reports(&GenerateOrderStatusReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            open_only: false,
+            instrument_id: Some(instrument_id),
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("contradictory owned fill evidence must fail the plural report operation");
+
+    assert!(error.to_string().contains("condition"));
 }
 
 #[rstest]
@@ -1690,7 +1819,12 @@ async fn test_generate_mass_status_lookback_marks_unparsable_trade_time_incomple
         "next_cursor": "LTE=",
     }));
     let addr = start_mock_server(state).await;
-    let (client, _rx, _cache) = create_test_execution_client(addr);
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
 
     let mass_status = client
         .generate_mass_status(Some(60))
@@ -1700,6 +1834,197 @@ async fn test_generate_mass_status_lookback_marks_unparsable_trade_time_incomple
 
     assert!(mass_status.lookback_start().is_some());
     assert!(!mass_status.reports_complete());
+    assert!(mass_status.fill_reports().is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_validates_owned_binding_before_lookback_time() {
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    let mut trade = load_json("http_trades_page.json")["data"][0].clone();
+    trade["market"] = json!("0x1111111111111111111111111111111111111111111111111111111111111111");
+    trade["match_time"] = json!("not-a-timestamp");
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [trade],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut config = create_test_exec_config(addr);
+    config.instrument_config = Some(PolymarketInstrumentProviderConfig {
+        load_ids: Some(vec![instrument_id]),
+        ..Default::default()
+    });
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect_err("owned contradictory evidence must fail before lookback exclusion");
+
+    assert!(error.to_string().contains("condition"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_validates_owned_maker_binding_before_lookback_time() {
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    let mut trade = load_json("http_trade_report.json");
+    trade["trader_side"] = json!("MAKER");
+    trade["maker_orders"][0]["owner"] = json!("00000000-0000-0000-0000-000000000001");
+    trade["market"] = json!("0x1111111111111111111111111111111111111111111111111111111111111111");
+    trade["match_time"] = json!("not-a-timestamp");
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [trade],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut config = create_test_exec_config(addr);
+    config.instrument_config = Some(PolymarketInstrumentProviderConfig {
+        load_ids: Some(vec![instrument_id]),
+        ..Default::default()
+    });
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect_err("owned maker contradiction must fail before lookback exclusion");
+
+    assert!(error.to_string().contains("condition"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_ignores_foreign_unparsable_trade_time() {
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    let mut trade = load_json("http_trades_page.json")["data"][0].clone();
+    trade["maker_address"] = json!("0x1111111111111111111111111111111111111111");
+    trade["owner"] = json!("foreign-api-key");
+    trade["match_time"] = json!("not-a-timestamp");
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [trade],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("foreign trade is outside account scope")
+        .expect("mass status available");
+
+    assert!(mass_status.reports_complete());
+    assert!(mass_status.fill_reports().is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_ignores_out_of_scope_unparsable_maker_trade() {
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    let mut trade = load_json("http_trades_page.json")["data"][0].clone();
+    trade["trader_side"] = json!("MAKER");
+    trade["market"] = json!("0x1111111111111111111111111111111111111111111111111111111111111111");
+    trade["match_time"] = json!("not-a-timestamp");
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [trade],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut config = create_test_exec_config(addr);
+    config.instrument_config = Some(PolymarketInstrumentProviderConfig {
+        load_ids: Some(vec![instrument_id]),
+        ..Default::default()
+    });
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("out-of-scope trade is outside the bounded report")
+        .expect("mass status available");
+
+    assert!(mass_status.reports_complete());
+    assert!(mass_status.fill_reports().is_empty());
+}
+
+#[rstest]
+#[case("TAKER")]
+#[case("MAKER")]
+#[tokio::test]
+async fn test_generate_mass_status_ignores_loaded_out_of_scope_unparsable_trade(
+    #[case] trader_side: &str,
+) {
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    let mut trade = load_json("http_trade_report.json");
+    trade["trader_side"] = json!(trader_side);
+    trade["match_time"] = json!("not-a-timestamp");
+    if trader_side == "MAKER" {
+        trade["maker_orders"][0]["owner"] = json!("00000000-0000-0000-0000-000000000001");
+    }
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [trade],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let loaded_instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut config = create_test_exec_config(addr);
+    config.instrument_config = Some(PolymarketInstrumentProviderConfig {
+        load_ids: Some(vec![InstrumentId::from("OTHER-TOKEN.POLYMARKET")]),
+        ..Default::default()
+    });
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_instrument_to_cache_with_size_precision(&cache, loaded_instrument_id, 4);
+    let instrument = cache
+        .borrow()
+        .instrument(&loaded_instrument_id)
+        .unwrap()
+        .clone();
+    client.on_instrument(instrument);
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("loaded out-of-scope trade is outside the bounded report")
+        .expect("mass status available");
+
+    assert!(mass_status.reports_complete());
     assert!(mass_status.fill_reports().is_empty());
 }
 
@@ -1733,6 +2058,45 @@ async fn test_generate_mass_status_lookback_marks_in_scope_historical_incomplete
     assert!(mass_status.lookback_start().is_some());
     assert!(!mass_status.reports_complete());
     assert!(mass_status.fill_reports().is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_drops_foreign_taker_trade() {
+    let state = TestServerState::default();
+    let mut trade = load_json("http_trade_report.json");
+    trade["market"] = json!(TEST_CONDITION_ID);
+    trade["maker_address"] = json!("0x1111111111111111111111111111111111111111");
+    trade["owner"] = json!("foreign-api-key");
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [trade],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let reports = client
+        .generate_fill_reports(GenerateFillReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            venue_order_id: None,
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect("foreign taker trade is outside local report scope");
+
+    assert!(reports.is_empty());
 }
 
 #[rstest]
@@ -4169,6 +4533,11 @@ fn add_instrument_to_cache_with_tick_and_taker_fee(
         ))
     };
     let raw_symbol = Symbol::from(symbol);
+    let info: Params = serde_json::from_value(json!({
+        "condition_id": TEST_CONDITION_ID,
+        "token_id": symbol,
+    }))
+    .expect("valid test instrument metadata");
 
     let instrument = BinaryOption::new(
         instrument_id,
@@ -4181,7 +4550,7 @@ fn add_instrument_to_cache_with_tick_and_taker_fee(
         size_precision,
         price_increment,
         size_increment,
-        None, // outcome
+        Some(Ustr::from("Yes")),
         None, // description
         None, // max_quantity
         None, // min_quantity
@@ -4194,7 +4563,7 @@ fn add_instrument_to_cache_with_tick_and_taker_fee(
         None, // maker_fee
         Some(taker_fee),
         None, // tick_scheme
-        None, // info
+        Some(info),
         UnixNanos::default(),
         UnixNanos::default(),
     );

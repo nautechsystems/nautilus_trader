@@ -1011,7 +1011,7 @@ mod tests {
     use nautilus_core::{UnixNanos, collections::AtomicMap};
     use nautilus_model::{
         enums::{AccountType, LiquiditySide},
-        identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId},
+        identifiers::{ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId},
         instruments::{Instrument, InstrumentAny},
         orders::{LimitOrder, MarketOrder, Order, stubs::TestOrderEventStubs},
         types::{Currency, Money},
@@ -1046,6 +1046,26 @@ mod tests {
         let market: GammaMarket = load("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
         create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap()
+    }
+
+    fn bind_instrument_to_trade(
+        instrument: &mut InstrumentAny,
+        trade: &crate::http::models::PolymarketTradeReport,
+    ) {
+        let InstrumentAny::BinaryOption(binary) = instrument else {
+            panic!("expected binary option test instrument");
+        };
+        binary.id =
+            InstrumentId::from(format!("{}-{}.POLYMARKET", trade.market, trade.asset_id).as_str());
+        binary.raw_symbol = Symbol::from(trade.asset_id.as_str());
+        binary.outcome = Some(trade.outcome.inner());
+        binary.info = Some(
+            serde_json::from_value(serde_json::json!({
+                "condition_id": trade.market.as_str(),
+                "token_id": trade.asset_id.as_str(),
+            }))
+            .expect("valid instrument binding metadata"),
+        );
     }
 
     fn test_emitter() -> (
@@ -1503,6 +1523,7 @@ mod tests {
             None,
             UnixNanos::from(1_000_000_000u64),
             None,
+            None,
         )
         .expect("non-confirmed trades do not build fill reports");
 
@@ -1511,9 +1532,10 @@ mod tests {
 
     #[rstest]
     fn test_confirmed_maker_trade_owned_by_case_variant_address_generates_fill_report() {
-        let instrument = test_instrument();
+        let mut instrument = test_instrument();
         let mut trade: crate::http::models::PolymarketTradeReport = load("http_trade_report.json");
         trade.trader_side = PolymarketLiquiditySide::Maker;
+        bind_instrument_to_trade(&mut instrument, &trade);
 
         // Recorded venue payloads carry EIP-55 checksummed (mixed-case) maker
         // addresses while configured funder addresses are commonly lowercase.
@@ -1548,6 +1570,7 @@ mod tests {
             None,
             UnixNanos::from(1_000_000_000u64),
             None,
+            None,
         )
         .expect("owned confirmed maker trade builds a fill report");
 
@@ -1576,7 +1599,7 @@ mod tests {
         let ctx = crate::execution::reconciliation::FillContext {
             account_id: AccountId::from("POLY-001"),
             user_address: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
-            api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            api_key: "00000000-0000-0000-0000-000000000001",
             pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
         };
@@ -1588,6 +1611,7 @@ mod tests {
             None,
             UnixNanos::from(1_000_000_000u64),
             None,
+            None,
         )
         .expect("unmapped instruments are counted rather than parsed");
 
@@ -1598,6 +1622,7 @@ mod tests {
                 unmapped_instruments: 1,
                 in_scope_historical: 1,
                 unowned_maker_trades: 0,
+                untimestamped_trades: 0,
             },
         );
     }
@@ -1627,6 +1652,7 @@ mod tests {
             None,
             UnixNanos::from(1_000_000_000u64),
             None,
+            None,
         )
         .expect("unowned maker trades are counted rather than parsed");
 
@@ -1649,6 +1675,7 @@ mod tests {
 
         let mut taker: crate::http::models::PolymarketTradeReport = load("http_trade_report.json");
         taker.id = "trade-unrepresentable-taker".to_string();
+        bind_instrument_to_trade(&mut instrument, &taker);
         let mut maker = taker.clone();
         maker.id = "trade-valid-maker".to_string();
         maker.trader_side = PolymarketLiquiditySide::Maker;
@@ -1659,7 +1686,7 @@ mod tests {
         let ctx = crate::execution::reconciliation::FillContext {
             account_id: AccountId::from("POLY-001"),
             user_address: &configured_address,
-            api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            api_key: "00000000-0000-0000-0000-000000000001",
             pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
         };
@@ -1671,6 +1698,7 @@ mod tests {
             None,
             UnixNanos::from(1_000_000_000u64),
             None,
+            None,
         )
         .expect("maker commission is zero and representable");
         let result = crate::execution::reconciliation::build_fill_reports_from_trades(
@@ -1679,6 +1707,7 @@ mod tests {
             &instruments,
             None,
             UnixNanos::from(1_000_000_000u64),
+            None,
             None,
         );
 

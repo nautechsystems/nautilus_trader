@@ -40,7 +40,8 @@ use super::{
 use crate::{
     common::{
         consts::{DUST_POSITION_THRESHOLD, DUST_SNAP_THRESHOLD_DEC, USDC_DECIMALS},
-        enums::{PolymarketLiquiditySide, PolymarketTradeStatus},
+        enums::{PolymarketLiquiditySide, PolymarketOutcome, PolymarketTradeStatus},
+        models::is_owned_by_account,
     },
     http::{
         clob::PolymarketClobHttpClient,
@@ -59,6 +60,35 @@ pub(crate) struct FillContext<'a> {
     pub clock: &'static AtomicTime,
 }
 
+fn validate_instrument_binding(
+    instrument: &InstrumentAny,
+    condition_id: &str,
+    outcome: PolymarketOutcome,
+) -> anyhow::Result<()> {
+    let InstrumentAny::BinaryOption(binary) = instrument else {
+        anyhow::bail!("expected Polymarket BinaryOption instrument, found {instrument:?}");
+    };
+    let instrument_condition = binary
+        .info
+        .as_ref()
+        .and_then(|info| info.get_str("condition_id"))
+        .context("Polymarket instrument is missing condition_id metadata")?;
+
+    anyhow::ensure!(
+        instrument_condition.eq_ignore_ascii_case(condition_id),
+        "provider condition {condition_id} does not match instrument condition {instrument_condition}",
+    );
+    let instrument_outcome = binary
+        .outcome
+        .context("Polymarket instrument is missing outcome metadata")?;
+    anyhow::ensure!(
+        instrument_outcome.as_str() == outcome.as_str(),
+        "provider outcome {outcome} does not match instrument outcome {instrument_outcome}",
+    );
+
+    Ok(())
+}
+
 /// Counts of confirmed trade evidence dropped while building fill reports.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct FillBuildDiscards {
@@ -69,6 +99,8 @@ pub(crate) struct FillBuildDiscards {
     /// Confirmed maker trades dropped because no maker order in the match is
     /// owned by the account.
     pub unowned_maker_trades: usize,
+    /// Confirmed trades dropped from a bounded report because their event time is invalid.
+    pub untimestamped_trades: usize,
 }
 
 /// Converts trade reports into fill reports: single implementation of maker/taker
@@ -80,6 +112,7 @@ pub(crate) fn build_fill_reports_from_trades(
     instrument_filter: Option<InstrumentId>,
     ts_init: UnixNanos,
     load_ids: Option<&[InstrumentId]>,
+    lookback_start: Option<UnixNanos>,
 ) -> anyhow::Result<(Vec<FillReport>, FillBuildDiscards)> {
     let mut reports = Vec::new();
     let mut discards = FillBuildDiscards::default();
@@ -97,6 +130,20 @@ pub(crate) fn build_fill_reports_from_trades(
                 .iter()
                 .any(|mo| mo.is_owned_by(ctx.user_address, ctx.api_key))
             {
+                let ts_event = parse_timestamp(&trade.match_time);
+                let instrument_id =
+                    instrument_id_from_market_token(trade.market.as_str(), trade.asset_id.as_str());
+                let in_load_ids_scope = instrument_in_load_ids_scope(instrument_id, load_ids);
+
+                if !trade_in_lookback_window(
+                    ts_event,
+                    lookback_start,
+                    in_load_ids_scope,
+                    &trade.id,
+                    &mut discards,
+                ) {
+                    continue;
+                }
                 discards.unowned_maker_trades += 1;
                 log::debug!(
                     "Confirmed maker trade {} holds no maker order owned by the account",
@@ -105,14 +152,15 @@ pub(crate) fn build_fill_reports_from_trades(
                 continue;
             }
 
+            let mut selected_maker_orders = Vec::new();
+
             for mo in &trade.maker_orders {
                 if !mo.is_owned_by(ctx.user_address, ctx.api_key) {
                     continue;
                 }
                 let token_id = mo.asset_id;
-                let instrument = instruments.get_cloned(&token_id);
-                let (instrument_id, price_prec, size_prec) = match instrument {
-                    Some(i) => (i.id(), i.price_precision(), i.size_precision()),
+                let instrument = match instruments.get_cloned(&token_id) {
+                    Some(instrument) => instrument,
                     None => {
                         classify_unmapped_historical(
                             &mut discards,
@@ -123,6 +171,7 @@ pub(crate) fn build_fill_reports_from_trades(
                         continue;
                     }
                 };
+                let instrument_id = instrument.id();
 
                 if let Some(filter_id) = instrument_filter
                     && instrument_id != filter_id
@@ -130,8 +179,35 @@ pub(crate) fn build_fill_reports_from_trades(
                     continue;
                 }
 
-                let ts_event =
-                    parse_timestamp(&trade.match_time).unwrap_or(ctx.clock.get_time_ns());
+                validate_instrument_binding(&instrument, trade.market.as_str(), mo.outcome)?;
+                selected_maker_orders.push((mo, instrument));
+            }
+
+            if selected_maker_orders.is_empty() {
+                continue;
+            }
+
+            let ts_event = parse_timestamp(&trade.match_time);
+            let in_load_ids_scope = selected_maker_orders
+                .iter()
+                .any(|(_, instrument)| instrument_in_load_ids_scope(instrument.id(), load_ids));
+
+            if !trade_in_lookback_window(
+                ts_event,
+                lookback_start,
+                in_load_ids_scope,
+                &trade.id,
+                &mut discards,
+            ) {
+                continue;
+            }
+            let ts_event = ts_event.unwrap_or_else(|| ctx.clock.get_time_ns());
+
+            for (mo, instrument) in selected_maker_orders {
+                let instrument_id = instrument.id();
+                let price_prec = instrument.price_precision();
+                let size_prec = instrument.size_precision();
+
                 let report = build_maker_fill_report(
                     mo,
                     &trade.id,
@@ -156,33 +232,57 @@ pub(crate) fn build_fill_reports_from_trades(
                 reports.push(report);
             }
         } else {
+            if !is_owned_by_account(
+                &trade.maker_address,
+                &trade.owner,
+                ctx.user_address,
+                ctx.api_key,
+            ) {
+                log::debug!(
+                    "Dropping confirmed taker trade {} not owned by the account",
+                    trade.id
+                );
+                continue;
+            }
+
             let token_id = trade.asset_id;
-            let instrument = instruments.get_cloned(&token_id);
-            let (instrument_id, price_prec, size_prec, taker_fee_rate, fee_exponent) =
-                match instrument {
-                    Some(i) => (
-                        i.id(),
-                        i.price_precision(),
-                        i.size_precision(),
-                        instrument_taker_fee(&i),
-                        instrument_fee_exponent(&i),
-                    ),
-                    None => {
-                        classify_unmapped_historical(
-                            &mut discards,
-                            load_ids,
-                            &trade.market,
-                            token_id.as_str(),
-                        );
-                        continue;
-                    }
-                };
+            let instrument = match instruments.get_cloned(&token_id) {
+                Some(instrument) => instrument,
+                None => {
+                    classify_unmapped_historical(
+                        &mut discards,
+                        load_ids,
+                        &trade.market,
+                        token_id.as_str(),
+                    );
+                    continue;
+                }
+            };
+            let instrument_id = instrument.id();
 
             if let Some(filter_id) = instrument_filter
                 && instrument_id != filter_id
             {
                 continue;
             }
+
+            validate_instrument_binding(&instrument, trade.market.as_str(), trade.outcome)?;
+            let ts_event = parse_timestamp(&trade.match_time);
+            let in_load_ids_scope = instrument_in_load_ids_scope(instrument_id, load_ids);
+
+            if !trade_in_lookback_window(
+                ts_event,
+                lookback_start,
+                in_load_ids_scope,
+                &trade.id,
+                &mut discards,
+            ) {
+                continue;
+            }
+            let price_prec = instrument.price_precision();
+            let size_prec = instrument.size_precision();
+            let taker_fee_rate = instrument_taker_fee(&instrument);
+            let fee_exponent = instrument_fee_exponent(&instrument);
 
             let report = parse_fill_report(
                 trade,
@@ -208,7 +308,7 @@ pub(crate) fn build_fill_reports_from_trades(
 pub(crate) fn build_order_reports_from_orders(
     orders: &[PolymarketOpenOrder],
     instruments: &AtomicMap<Ustr, InstrumentAny>,
-    account_id: AccountId,
+    ctx: &FillContext<'_>,
     instrument_filter: Option<InstrumentId>,
     ts_init: UnixNanos,
     load_ids: Option<&[InstrumentId]>,
@@ -217,10 +317,20 @@ pub(crate) fn build_order_reports_from_orders(
     let mut filtered = 0usize;
 
     for order in orders {
+        if !is_owned_by_account(
+            &order.maker_address,
+            &order.owner,
+            ctx.user_address,
+            ctx.api_key,
+        ) {
+            log::debug!("Dropping open order {} not owned by the account", order.id);
+            filtered += 1;
+            continue;
+        }
+
         let token_id = order.asset_id;
-        let instrument = instruments.get_cloned(&token_id);
-        let (instrument_id, price_prec, size_prec) = match instrument {
-            Some(i) => (i.id(), i.price_precision(), i.size_precision()),
+        let instrument = match instruments.get_cloned(&token_id) {
+            Some(instrument) => instrument,
             None => {
                 let instrument_id =
                     instrument_id_from_market_token(order.market.as_str(), token_id.as_str());
@@ -238,6 +348,7 @@ pub(crate) fn build_order_reports_from_orders(
                 continue;
             }
         };
+        let instrument_id = instrument.id();
 
         if let Some(filter_id) = instrument_filter
             && instrument_id != filter_id
@@ -245,10 +356,14 @@ pub(crate) fn build_order_reports_from_orders(
             continue;
         }
 
+        validate_instrument_binding(&instrument, order.market.as_str(), order.outcome)?;
+        let price_prec = instrument.price_precision();
+        let size_prec = instrument.size_precision();
+
         let report = parse_order_status_report(
             order,
             instrument_id,
-            account_id,
+            ctx.account_id,
             None,
             price_prec,
             size_prec,
@@ -387,16 +502,10 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch orders for mass status")?;
 
-    let (mut order_reports, orders_filtered) = build_order_reports_from_orders(
-        &orders,
-        instruments,
-        ctx.account_id,
-        None,
-        ts_init,
-        load_ids,
-    )?;
+    let (mut order_reports, orders_filtered) =
+        build_order_reports_from_orders(&orders, instruments, ctx, None, ts_init, load_ids)?;
 
-    let mut trades = http_client
+    let trades = http_client
         .get_trades(trades_params_for_window(
             lookback_start,
             lookback_start.map(|_| ts_init),
@@ -404,33 +513,15 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch trades for mass status")?;
 
-    let mut untimestamped_trades = 0usize;
-
-    if let Some(cutoff) = lookback_start {
-        trades.retain(|trade| match parse_timestamp(&trade.match_time) {
-            Some(ts_event) => ts_event >= cutoff,
-            None => {
-                if trade.status != PolymarketTradeStatus::Confirmed {
-                    return false;
-                }
-                let instrument_id =
-                    instrument_id_from_market_token(trade.market.as_str(), trade.asset_id.as_str());
-
-                if instrument_in_load_ids_scope(instrument_id, load_ids) {
-                    untimestamped_trades += 1;
-                } else {
-                    log::debug!(
-                        "Dropping out-of-scope historical trade {} with unparsable match_time",
-                        trade.id
-                    );
-                }
-                false
-            }
-        });
-    }
-
-    let (mut fill_reports, fill_discards) =
-        build_fill_reports_from_trades(&trades, ctx, instruments, None, ts_init, load_ids)?;
+    let (mut fill_reports, fill_discards) = build_fill_reports_from_trades(
+        &trades,
+        ctx,
+        instruments,
+        None,
+        ts_init,
+        load_ids,
+        lookback_start,
+    )?;
 
     if fill_discards.unowned_maker_trades > 0 {
         log::error!(
@@ -455,13 +546,15 @@ pub(crate) async fn generate_mass_status(
 
     log::debug!(
         "Generated mass status: {} orders ({} filtered), {} fills ({} instrument-filtered, \
-         {} in-scope historical misses, {} unowned maker trades), {} positions",
+         {} in-scope historical misses, {} unowned maker trades, {} untimestamped trades), {} \
+         positions",
         order_reports.len(),
         orders_filtered,
         fill_reports.len(),
         fill_discards.unmapped_instruments,
         fill_discards.in_scope_historical,
         fill_discards.unowned_maker_trades,
+        fill_discards.untimestamped_trades,
         position_reports.len(),
     );
 
@@ -478,7 +571,7 @@ pub(crate) async fn generate_mass_status(
             .collect();
         let reports_complete = fill_discards.in_scope_historical == 0
             && fill_discards.unowned_maker_trades == 0
-            && untimestamped_trades == 0
+            && fill_discards.untimestamped_trades == 0
             && fill_reports
                 .iter()
                 .all(|report| reported_orders.contains(&report.venue_order_id));
@@ -551,6 +644,32 @@ fn position_instrument_loaded(
     symbol
         .rsplit_once('-')
         .is_some_and(|(_, token_id)| instruments.contains_key(&Ustr::from(token_id)))
+}
+
+fn trade_in_lookback_window(
+    ts_event: Option<UnixNanos>,
+    lookback_start: Option<UnixNanos>,
+    in_load_ids_scope: bool,
+    trade_id: &str,
+    discards: &mut FillBuildDiscards,
+) -> bool {
+    let Some(cutoff) = lookback_start else {
+        return true;
+    };
+
+    match ts_event {
+        Some(ts_event) => ts_event >= cutoff,
+        None => {
+            if in_load_ids_scope {
+                discards.untimestamped_trades += 1;
+            } else {
+                log::debug!(
+                    "Dropping out-of-scope historical trade {trade_id} with unparsable match_time"
+                );
+            }
+            false
+        }
+    }
 }
 
 fn classify_unmapped_historical(
@@ -640,6 +759,185 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    const TEST_CONDITION_ID: &str =
+        "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917";
+    const TEST_TOKEN_ID: &str =
+        "71321045679252212594626385532706912750332728571942532289631379312455583992563";
+    const TEST_USER_ADDRESS: &str = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266";
+    const TEST_API_KEY: &str = "00000000-0000-0000-0000-000000000001";
+
+    fn test_instrument() -> InstrumentAny {
+        let def = crate::http::parse::PolymarketInstrumentDef {
+            symbol: Ustr::from(format!("{TEST_CONDITION_ID}-{TEST_TOKEN_ID}").as_str()),
+            token_id: Ustr::from(TEST_TOKEN_ID),
+            condition_id: Ustr::from(TEST_CONDITION_ID),
+            market_id: "test-market".to_string(),
+            question_id: None,
+            outcome: crate::common::enums::PolymarketOutcome::yes(),
+            question: "Test market?".to_string(),
+            description: None,
+            price_precision: 3,
+            tick_size: Decimal::new(1, 3),
+            min_size: None,
+            maker_fee: None,
+            taker_fee: None,
+            start_date: None,
+            end_date: None,
+            active: true,
+            closed: false,
+            market_slug: None,
+            neg_risk: None,
+            fee_schedule: None,
+            game_id: None,
+        };
+
+        crate::http::parse::create_instrument_from_def(&def, UnixNanos::from(1))
+            .expect("valid test instrument")
+    }
+
+    fn test_instruments() -> AtomicMap<Ustr, InstrumentAny> {
+        let instruments = AtomicMap::new();
+        instruments.insert(Ustr::from(TEST_TOKEN_ID), test_instrument());
+        instruments
+    }
+
+    fn test_fill_context() -> FillContext<'static> {
+        FillContext {
+            account_id: AccountId::from("POLY-001"),
+            user_address: TEST_USER_ADDRESS,
+            api_key: TEST_API_KEY,
+            pusd: Currency::pUSD(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        }
+    }
+
+    fn confirmed_taker_trade() -> PolymarketTradeReport {
+        serde_json::from_str(include_str!("../../test_data/http_trade_report.json"))
+            .expect("valid trade fixture")
+    }
+
+    fn open_order() -> PolymarketOpenOrder {
+        serde_json::from_str(include_str!("../../test_data/http_open_order.json"))
+            .expect("valid open-order fixture")
+    }
+
+    #[rstest]
+    fn foreign_confirmed_taker_trade_is_ignored() {
+        let mut trade = confirmed_taker_trade();
+        trade.maker_address = "0x1111111111111111111111111111111111111111".to_string();
+        trade.owner = "foreign-api-key".to_string();
+
+        let (reports, _) = build_fill_reports_from_trades(
+            &[trade],
+            &test_fill_context(),
+            &test_instruments(),
+            None,
+            UnixNanos::from(1),
+            None,
+            None,
+        )
+        .expect("foreign taker trade is outside local report scope");
+
+        assert!(reports.is_empty());
+    }
+
+    #[rstest]
+    fn confirmed_taker_trade_with_wrong_condition_fails_binding() {
+        let mut trade = confirmed_taker_trade();
+        trade.market =
+            Ustr::from("0x1111111111111111111111111111111111111111111111111111111111111111");
+
+        let error = build_fill_reports_from_trades(
+            &[trade],
+            &test_fill_context(),
+            &test_instruments(),
+            None,
+            UnixNanos::from(1),
+            None,
+            None,
+        )
+        .expect_err("owned trade with contradictory condition must fail");
+
+        assert!(error.to_string().contains("condition"));
+    }
+
+    #[rstest]
+    fn confirmed_taker_trade_with_wrong_outcome_fails_binding() {
+        let mut trade = confirmed_taker_trade();
+        trade.outcome = crate::common::enums::PolymarketOutcome::no();
+
+        let error = build_fill_reports_from_trades(
+            &[trade],
+            &test_fill_context(),
+            &test_instruments(),
+            None,
+            UnixNanos::from(1),
+            None,
+            None,
+        )
+        .expect_err("owned trade with contradictory outcome must fail");
+
+        assert!(error.to_string().contains("outcome"));
+    }
+
+    #[rstest]
+    fn owned_maker_leg_with_wrong_outcome_fails_binding() {
+        let mut trade = confirmed_taker_trade();
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+        trade.maker_orders[0].owner = TEST_API_KEY.to_string();
+        trade.maker_orders[0].outcome = crate::common::enums::PolymarketOutcome::no();
+
+        let error = build_fill_reports_from_trades(
+            &[trade],
+            &test_fill_context(),
+            &test_instruments(),
+            None,
+            UnixNanos::from(1),
+            None,
+            None,
+        )
+        .expect_err("owned maker leg with contradictory outcome must fail");
+
+        assert!(error.to_string().contains("outcome"));
+    }
+
+    #[rstest]
+    fn owned_open_order_with_wrong_condition_fails_binding() {
+        let mut order = open_order();
+        order.market =
+            Ustr::from("0x1111111111111111111111111111111111111111111111111111111111111111");
+
+        let error = build_order_reports_from_orders(
+            &[order],
+            &test_instruments(),
+            &test_fill_context(),
+            None,
+            UnixNanos::from(1),
+            None,
+        )
+        .expect_err("owned open order with contradictory condition must fail");
+
+        assert!(error.to_string().contains("condition"));
+    }
+
+    #[rstest]
+    fn owned_open_order_with_wrong_outcome_fails_binding() {
+        let mut order = open_order();
+        order.outcome = crate::common::enums::PolymarketOutcome::no();
+
+        let error = build_order_reports_from_orders(
+            &[order],
+            &test_instruments(),
+            &test_fill_context(),
+            None,
+            UnixNanos::from(1),
+            None,
+        )
+        .expect_err("owned open order with contradictory outcome must fail");
+
+        assert!(error.to_string().contains("outcome"));
+    }
 
     #[rstest]
     fn caps_order_report_to_confirmed_companion_fills() {
@@ -752,8 +1050,8 @@ mod tests {
             market: Ustr::from("0xmarket"),
             original_size: rust_decimal_macros::dec!(10),
             outcome: crate::common::enums::PolymarketOutcome::yes(),
-            maker_address: "0xmaker".to_string(),
-            owner: "owner".to_string(),
+            maker_address: TEST_USER_ADDRESS.to_string(),
+            owner: TEST_API_KEY.to_string(),
             price: rust_decimal_macros::dec!(0.5),
             side: crate::common::enums::PolymarketOrderSide::Buy,
             size_matched: rust_decimal_macros::dec!(0),
@@ -769,7 +1067,7 @@ mod tests {
         let error = build_order_reports_from_orders(
             &[unmapped_open_order()],
             &AtomicMap::new(),
-            AccountId::from("POLY-001"),
+            &test_fill_context(),
             None,
             UnixNanos::from(1),
             None,
@@ -788,7 +1086,7 @@ mod tests {
         let error = build_order_reports_from_orders(
             &[unmapped_open_order()],
             &AtomicMap::new(),
-            AccountId::from("POLY-001"),
+            &test_fill_context(),
             None,
             UnixNanos::from(1),
             Some(std::slice::from_ref(&instrument_id)),
@@ -807,7 +1105,7 @@ mod tests {
         let (reports, filtered) = build_order_reports_from_orders(
             &[unmapped_open_order()],
             &AtomicMap::new(),
-            AccountId::from("POLY-001"),
+            &test_fill_context(),
             None,
             UnixNanos::from(1),
             Some(std::slice::from_ref(&scoped)),
