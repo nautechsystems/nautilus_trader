@@ -17,6 +17,10 @@ Released on TBD (UTC).
 - Upgraded `ruff` package (dev) to v0.16.3
 - Upgraded `simplejson` package (visualization) to v4.1.1
 - Upgraded `uvicorn` package (dev) to v0.52.3
+- Upgraded `arrow` and `arrow-row` crates to v59.2.0
+- Upgraded `databento` crate to v0.59.0
+- Upgraded `datafusion` crate to v55.0.0
+- Upgraded `parquet` crate to v59.2.0
 
 ### Documentation Updates
 

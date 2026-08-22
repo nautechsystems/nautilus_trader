@@ -422,15 +422,7 @@ version = "0.7.8"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow]]
-version = "57.3.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrow]]
 version = "58.4.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrow-arith]]
-version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-arith]]
@@ -438,15 +430,7 @@ version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-array]]
-version = "57.3.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrow-array]]
 version = "58.4.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrow-buffer]]
-version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-buffer]]
@@ -454,15 +438,7 @@ version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-cast]]
-version = "57.3.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrow-cast]]
 version = "58.4.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrow-csv]]
-version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-csv]]
@@ -470,15 +446,7 @@ version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-data]]
-version = "57.3.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrow-data]]
 version = "58.4.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrow-ipc]]
-version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-ipc]]
@@ -486,15 +454,7 @@ version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-json]]
-version = "57.3.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrow-json]]
 version = "58.4.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrow-ord]]
-version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-ord]]
@@ -502,15 +462,7 @@ version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-row]]
-version = "57.3.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrow-row]]
 version = "58.4.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrow-schema]]
-version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-schema]]
@@ -518,15 +470,7 @@ version = "58.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-select]]
-version = "57.3.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrow-select]]
 version = "58.4.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrow-string]]
-version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.arrow-string]]
@@ -1521,10 +1465,6 @@ criteria = "safe-to-deploy"
 version = "0.3.4"
 criteria = "safe-to-deploy"
 
-[[exemptions.integer-encoding]]
-version = "3.0.4"
-criteria = "safe-to-deploy"
-
 [[exemptions.inventory]]
 version = "0.3.24"
 criteria = "safe-to-deploy"
@@ -1702,10 +1642,6 @@ version = "0.1.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.lz4_flex]]
-version = "0.12.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.lz4_flex]]
 version = "0.13.1"
 criteria = "safe-to-deploy"
 
@@ -1813,10 +1749,6 @@ criteria = "safe-to-deploy"
 version = "0.2.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.ordered-float]]
-version = "2.10.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.panic-message]]
 version = "0.3.0"
 criteria = "safe-to-deploy"
@@ -1839,10 +1771,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.parking_lot_core]]
 version = "0.9.12"
-criteria = "safe-to-deploy"
-
-[[exemptions.parquet]]
-version = "57.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.parquet]]
@@ -2583,10 +2511,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.threadpool]]
 version = "1.8.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.thrift]]
-version = "0.17.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.time]]

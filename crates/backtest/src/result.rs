@@ -194,7 +194,7 @@ impl CanonicalBacktestResult {
             normalized == document,
             "canonical backtest result violates the version 1 encoding rules"
         );
-        let canonical = serde_json::to_vec(&document)?;
+        let canonical = serde_json::to_vec(&normalized)?;
         anyhow::ensure!(
             canonical == bytes,
             "canonical backtest result bytes do not use the canonical encoding"
@@ -773,12 +773,14 @@ fn canonical_value<T: Serialize>(source: &T) -> anyhow::Result<Value> {
 }
 
 fn canonicalize_value(value: &mut Value) -> anyhow::Result<()> {
+    value.sort_all_objects();
     sort_named_arrays(value, false);
     stringify_numbers(value)?;
     Ok(())
 }
 
 fn canonicalize_document(value: &mut Value) -> anyhow::Result<()> {
+    value.sort_all_objects();
     sort_named_arrays(value, false);
     normalize_identities(value);
     sort_named_arrays(value, true);

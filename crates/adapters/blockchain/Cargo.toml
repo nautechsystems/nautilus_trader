@@ -12,6 +12,7 @@ keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+publish = false # Requires local Arrow and Parquet patches for HyperSync
 
 [lints]
 workspace = true

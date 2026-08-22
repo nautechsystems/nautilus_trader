@@ -131,13 +131,13 @@ alloy-primitives = { version = "1.6.1", default-features = false, features = [
 anyhow = "1.0.104"
 arc-swap = "1.9.2"
 arraydeque = "0.5.1"
-arrow = { version = "58.4.0", default-features = false, features = [
+arrow = { version = "59.2.0", default-features = false, features = [
   "csv",
   "json",
   "ipc",
   "ffi",
 ] }
-arrow-row = "58.4.0"
+arrow-row = "59.2.0"
 async-stream = "0.3.6"
 async-trait = "0.1.92"
 aws-lc-rs = { version = "1.18.0", default-features = false, features = [
@@ -150,7 +150,7 @@ bytes = { version = "1.12.1", features = ["serde"] }
 capnp = "0.27.0"
 clap = { version = "4.6.6", features = ["derive", "env"] }
 dashmap = "6.2.1"
-datafusion = { version = "54.1.0", default-features = false, features = [
+datafusion = { version = "55.0.0", default-features = false, features = [
   "parquet",
   "regex_expressions",
   "unicode_expressions",
@@ -196,7 +196,7 @@ mimalloc = "0.1.52"
 object_store = { version = "0.13.2", default-features = false, features = [
   "fs",
 ] }
-parquet = { version = "58.4.0", default-features = false, features = [
+parquet = { version = "59.2.0", default-features = false, features = [
   "arrow",
   "async",
 ] }
@@ -336,7 +336,7 @@ bollard = { version = "0.21.1", default-features = false, features = [
 bzip2 = "0.6.1"
 cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
-databento = { version = "0.58.0", default-features = false, features = [
+databento = { version = "0.59.0", default-features = false, features = [
   "historical",
   "live",
 ] }
@@ -392,6 +392,9 @@ capnpc = "0.27.0"
 walkdir = "2.5.0"
 
 [patch.crates-io]
+# HyperSync 1.4 requires Arrow 57, whose Parquet release depends on the external thrift crate.
+arrow = { path = "patches/arrow-compat" }
+parquet = { path = "patches/parquet-compat" }
 # Keep the pinned pyo3-stub-gen buildable with PyO3 0.29 API and exception alias changes.
 pyo3-stub-gen = { path = "patches/pyo3-stub-gen" }
 

@@ -741,7 +741,8 @@ mod tests {
     use crate::common::{consts::DERIVE_VENUE, enums::DeriveInstrumentType};
 
     fn canonical_wire<T: Serialize>(params: &T) -> String {
-        let value = serde_json::to_value(params).unwrap();
+        let mut value = serde_json::to_value(params).unwrap();
+        value.sort_all_objects();
         serde_json::to_string(&value).unwrap()
     }
 

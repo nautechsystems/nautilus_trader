@@ -176,7 +176,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::arrow::get_raw_price;
+    use crate::arrow::{fixed_size_binary, get_raw_price};
 
     #[rstest]
     fn test_get_schema() {
@@ -289,7 +289,7 @@ mod tests {
         let raw_price1 = (150.50 * FIXED_SCALAR) as PriceRaw;
         let raw_price2 = (151.25 * FIXED_SCALAR) as PriceRaw;
         let close_price =
-            FixedSizeBinaryArray::from(vec![&raw_price1.to_le_bytes(), &raw_price2.to_le_bytes()]);
+            fixed_size_binary(vec![&raw_price1.to_le_bytes(), &raw_price2.to_le_bytes()]);
         let close_type = UInt8Array::from(vec![
             InstrumentCloseType::EndOfSession as u8,
             InstrumentCloseType::ContractExpired as u8,
@@ -339,7 +339,7 @@ mod tests {
         ]);
 
         let invalid_price: PriceRaw = PriceRaw::MAX - 1000;
-        let close_price = FixedSizeBinaryArray::from(vec![&invalid_price.to_le_bytes()]);
+        let close_price = fixed_size_binary(vec![&invalid_price.to_le_bytes()]);
         let close_type = UInt8Array::from(vec![InstrumentCloseType::EndOfSession as u8]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
@@ -373,7 +373,7 @@ mod tests {
         ]);
 
         let raw_price = (150.50 * FIXED_SCALAR) as PriceRaw;
-        let close_price = FixedSizeBinaryArray::from(vec![&raw_price.to_le_bytes()]);
+        let close_price = fixed_size_binary(vec![&raw_price.to_le_bytes()]);
         let close_type = UInt8Array::from(vec![99]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
@@ -407,7 +407,7 @@ mod tests {
         ]);
 
         let raw_price = (150.50 * FIXED_SCALAR) as PriceRaw;
-        let close_price = FixedSizeBinaryArray::from(vec![&raw_price.to_le_bytes()]);
+        let close_price = fixed_size_binary(vec![&raw_price.to_le_bytes()]);
         let close_type = UInt8Array::from(vec![InstrumentCloseType::EndOfSession as u8]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);

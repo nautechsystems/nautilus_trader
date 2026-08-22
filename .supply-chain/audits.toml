@@ -541,7 +541,25 @@ criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
 notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and lockfile changes only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
 
+[[audits.arrow]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
 [[audits.arrow-arith]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "58.3.0 -> 58.4.0"
+notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and lockfile changes only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
+
+[[audits.arrow-arith]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-array]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
@@ -550,10 +568,22 @@ notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and l
 [[audits.arrow-array]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-buffer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
 notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and lockfile changes only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
 
 [[audits.arrow-buffer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-cast]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
@@ -562,10 +592,22 @@ notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and l
 [[audits.arrow-cast]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-csv]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
 notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and lockfile changes only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
 
 [[audits.arrow-csv]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-data]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
@@ -574,10 +616,22 @@ notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and l
 [[audits.arrow-data]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-ipc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
 notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and lockfile changes only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
 
 [[audits.arrow-ipc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-json]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
@@ -586,10 +640,22 @@ notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and l
 [[audits.arrow-json]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-ord]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
 notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and lockfile changes only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
 
 [[audits.arrow-ord]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-row]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
@@ -598,10 +664,22 @@ notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and l
 [[audits.arrow-row]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-schema]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
 notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and lockfile changes only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
 
 [[audits.arrow-schema]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-select]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
@@ -610,14 +688,20 @@ notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and l
 [[audits.arrow-select]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
-delta = "58.3.0 -> 58.4.0"
-notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and lockfile changes only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
 
 [[audits.arrow-string]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
 notes = "Reviewed the packaged 58.3.0 to 58.4.0 delta. Dependency metadata and lockfile changes only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
+
+[[audits.arrow-string]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
 
 [[audits.async-compression]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -969,6 +1053,198 @@ criteria = "safe-to-deploy"
 delta = "0.57.0 -> 0.58.0"
 notes = "Updates DBN to 0.66.0 and broadens documented heartbeat record handling. No endpoint, authentication, unsafe, build-script, filesystem, process, or credential behavior was added."
 
+[[audits.databento]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.58.0 -> 0.59.0"
+notes = "Reviewed the 0.58.0 to 0.59.0 delta: reference-data stypes and the optional dataset argument extend existing Databento API requests. No new build script, filesystem, process, credential, or network-destination behavior."
+
+[[audits.datafusion]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-catalog]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-catalog-listing]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-common-runtime]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-datasource]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-datasource-arrow]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-datasource-csv]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-datasource-json]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-datasource-parquet]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-doc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-execution]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-expr]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-expr-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-functions]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-functions-aggregate]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-functions-aggregate-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-functions-nested]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-functions-table]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-functions-window]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-functions-window-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-optimizer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-physical-expr]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-physical-expr-adapter]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-physical-expr-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-physical-optimizer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-physical-plan]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-pruning]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-session]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
+[[audits.datafusion-sql]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "54.1.0 -> 55.0.0"
+notes = "Reviewed the 54.1.0 to 55.0.0 release delta across the DataFusion crate family: optimizer, execution, schema, Parquet, SQL, and Arrow 59 integration changes. Added unchecked hash, string, and row paths iterate validated arrays and preserve buffer-capacity and UTF-8 invariants; spill validation bypass reads self-produced data. No new build script, network destination, process, or credential behavior."
+
 [[audits.dbn]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1023,6 +1299,12 @@ criteria = "safe-to-deploy"
 delta = "0.65.0 -> 0.66.0"
 notes = "Avoids allocation in enum conversion errors, returns early for unknown record types, and broadens RecordRef conversion to Record while preserving the record-header pointer invariant. No new unsafe block or ambient capability was added."
 
+[[audits.dbn]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.66.0 -> 0.67.0"
+notes = "Reviewed the 0.66.0 to 0.67.0 delta: reference-data stypes and the decoder reset API update existing record and FFI behavior. No new unsafe, build-script, filesystem, network, process, or credential behavior."
+
 [[audits.dbn-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1076,6 +1358,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.65.0 -> 0.66.0"
 notes = "Version and dependency metadata only; generated macro behavior is unchanged."
+
+[[audits.dbn-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.66.0 -> 0.67.0"
+notes = "Reviewed the 0.66.0 to 0.67.0 delta: macro changes add the new reference-data stype variants and version metadata. No new unsafe, build-script, filesystem, network, process, or credential behavior."
 
 [[audits.displaydoc]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1352,6 +1640,12 @@ criteria = "safe-to-deploy"
 delta = "2.12.0 -> 2.12.1"
 notes = "Fixes full-range subnet decomposition near the IPv4 and IPv6 maximum values and updates diagnostics. No unsafe or ambient capabilities."
 
+[[audits.itertools]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.13.0 -> 0.15.0"
+notes = "Reviewed the 0.13.0 to 0.15.0 delta: iterator APIs, documentation, and compatibility updates. The new next_array implementation tracks initialized elements and drops only the initialized prefix on early exit. No new build-script, filesystem, network, process, or credential behavior."
+
 [[audits.itoa]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1400,11 +1694,23 @@ criteria = "safe-to-deploy"
 delta = "0.12.0 -> 0.12.1"
 notes = "Decompressor safety: adds offset-zero and offset-OOB checks, removes uninitialized data workaround. No new unsafe."
 
+[[audits.lz4_flex]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.13.1 -> 0.14.0"
+notes = "Reviewed the 0.13.1 to 0.14.0 delta: compression and decompression paths add table reuse, dictionary limits, and buffer-oriented APIs. Default safe encode and decode features remain enabled, and the reviewed source adds no unsafe blocks or ambient authority."
+
 [[audits.num-bigint]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.4.7 -> 0.4.8"
 notes = "Reviewed 0.4.7 to 0.4.8 diff: fixes Burnikel-Ziegler division regression with targeted tests; no new dependencies, build script, network behavior, binary assets, or external filesystem access."
+
+[[audits.num-bigint]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.8 -> 0.5.1"
+notes = "Reviewed the 0.4.8 to 0.5.1 delta: random generation is split by rand version and retains bounded allocation and byte-slice construction over initialized digit storage. No new build-script, filesystem, network, process, or credential behavior."
 
 [[audits.num-integer]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1435,6 +1741,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.3.0 -> 58.4.0"
 notes = "Reviewed AES-256-GCM parquet encryption support, key-length validation, and tests. The new cipher path uses the existing aes-gcm API; no new unsafe, build script, network, process, credential, or data-exfiltration behavior."
+
+[[audits.parquet]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "58.4.0 -> 59.2.0"
+notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Parquet 59 releases: the external thrift crate is replaced by an internal compact protocol, corrupt-input validation is strengthened, and read/write paths are optimized. Added bit-unpack transmutation and target-feature operations preserve documented size, alignment, and CPU-feature invariants. No new build script, network, process, credential, or network-destination behavior."
 
 [[audits.pem]]
 who = "Nautech Systems <info@nautechsystems.io>"
