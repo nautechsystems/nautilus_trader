@@ -2542,6 +2542,62 @@ async fn test_generate_active_order_report_scopes_confirmed_rest_fill_by_venue_o
 
 #[rstest]
 #[tokio::test]
+async fn test_generate_active_order_report_rejects_target_fill_binding_contradiction() {
+    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let state = TestServerState::default();
+    let mut order = load_json("http_open_order.json");
+    order["id"] = Value::String(venue_order_id_str.to_string());
+    order["status"] = Value::String("MATCHED".to_string());
+    order["original_size"] = Value::String("10.0000".to_string());
+    order["size_matched"] = Value::String("10.0000".to_string());
+    *state.single_order_response.lock().await = Some(order);
+    *state.trades_response_override.lock().await = Some(
+        recovery_trades_response_with_target_contradiction(venue_order_id_str, "10.0000", "0.5000"),
+    );
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+    let venue_order_id = VenueOrderId::from(venue_order_id_str);
+    let client_order_id = ClientOrderId::from("O-ACTIVE-CONTRADICTORY");
+    let mut cached_order = make_limit_order(
+        client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(cached_order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut cached_order, venue_order_id_str);
+    let cmd = GenerateOrderStatusReport {
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        instrument_id: Some(instrument_id),
+        client_order_id: Some(client_order_id),
+        venue_order_id: Some(venue_order_id),
+        params: None,
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    let error = client
+        .generate_order_status_report(&cmd)
+        .await
+        .expect_err("contradictory target fill evidence must fail the singular report operation");
+
+    assert!(error.to_string().contains("condition"));
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_order_status_report_recovers_filled_from_trades() {
     // A terminal order can be absent from an individual lookup after a fill,
     // so trade history must resolve the local `ACCEPTED` state to `Filled`.
@@ -2767,6 +2823,17 @@ fn recovery_trades_response_with_unrelated_contradiction(
         .as_array_mut()
         .expect("trade page data array")
         .push(contradictory);
+    trades
+}
+
+fn recovery_trades_response_with_target_contradiction(
+    venue_order_id: &str,
+    size: &str,
+    price: &str,
+) -> Value {
+    let mut trades = recovery_trades_response(venue_order_id, size, price);
+    trades["data"][0]["market"] =
+        json!("0x3333333333333333333333333333333333333333333333333333333333333333");
     trades
 }
 
@@ -9280,6 +9347,55 @@ async fn test_query_order_scopes_confirmed_rest_fills_by_venue_order() {
         }
         other => panic!("Expected Order report, was {other:?}"),
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_query_order_does_not_emit_report_for_target_fill_binding_contradiction() {
+    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let state = TestServerState::default();
+    let mut order = load_json("http_open_order.json");
+    order["id"] = json!(venue_order_id_str);
+    order["status"] = json!("MATCHED");
+    order["original_size"] = json!("10.0000");
+    order["size_matched"] = json!("10.0000");
+    *state.single_order_response.lock().await = Some(order);
+    *state.trades_response_override.lock().await = Some(
+        recovery_trades_response_with_target_contradiction(venue_order_id_str, "10.0000", "0.5000"),
+    );
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+    client.start().unwrap();
+
+    client
+        .query_order(QueryOrder::new(
+            TraderId::from("TESTER-001"),
+            Some(*POLYMARKET_CLIENT_ID),
+            StrategyId::from("S-001"),
+            instrument_id,
+            ClientOrderId::from("O-QUERY-CONTRADICTORY"),
+            Some(VenueOrderId::from(venue_order_id_str)),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.last_path.lock().await.as_str() == "/data/trades" }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_no_execution_event(&mut rx).await;
 }
 
 #[rstest]

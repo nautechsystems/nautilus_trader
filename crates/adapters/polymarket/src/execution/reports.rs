@@ -312,38 +312,26 @@ impl PolymarketExecutionClient {
                             clock,
                         };
 
-                        match fetch_confirmed_fill_reports(
+                        fetch_confirmed_fill_reports(
                             &http_client,
                             &ctx,
                             &token_instruments,
                             GetTradesParams::default(),
-                            FillReportScope::new(
-                                Some(instrument_id),
-                                Some(venue_order_id),
-                            ),
+                            FillReportScope::new(Some(instrument_id), Some(venue_order_id)),
                             clock.get_time_ns(),
                             load_ids.as_deref(),
                         )
-                        .await
-                        {
-                            Ok(fills) => confirmed_filled_quantities(&fills)
+                        .await?
+                        .as_deref()
+                        .and_then(|fills| {
+                            confirmed_filled_quantities(fills)
                                 .get(&venue_order_id)
-                                .copied(),
-                            Err(e) => {
-                                log::warn!(
-                                    "Failed to fetch confirmed fills for order {venue_order_id}: {e}"
-                                );
-                                None
-                            }
-                        }
+                                .copied()
+                        })
                     } else {
                         None
                     };
-                    cap_order_report_filled_qty(
-                        &mut report,
-                        local_filled,
-                        confirmed_filled,
-                    );
+                    cap_order_report_filled_qty(&mut report, local_filled, confirmed_filled);
                     emitter.send_order_status_report(report);
                 }
                 Ok(None) => {
@@ -409,7 +397,7 @@ impl PolymarketExecutionClient {
                 .unwrap_or_else(|| Quantity::zero(size_prec));
             let local_filled = cached_filled.max(tracked_filled);
             let confirmed_filled = if report.filled_qty > local_filled {
-                match fetch_confirmed_fill_reports(
+                fetch_confirmed_fill_reports(
                     &self.http_client,
                     &self.fill_context(),
                     &self.shared_token_instruments,
@@ -418,18 +406,13 @@ impl PolymarketExecutionClient {
                     self.clock.get_time_ns(),
                     self.config.reconciliation_load_ids(),
                 )
-                .await
-                {
-                    Ok(fills) => confirmed_filled_quantities(&fills)
+                .await?
+                .as_deref()
+                .and_then(|fills| {
+                    confirmed_filled_quantities(fills)
                         .get(&venue_order_id)
-                        .copied(),
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to fetch confirmed fills for order {venue_order_id}: {e}"
-                        );
-                        None
-                    }
-                }
+                        .copied()
+                })
             } else {
                 None
             };
@@ -622,6 +605,7 @@ impl PolymarketExecutionClient {
     }
 }
 
+/// Returns `Ok(None)` only when confirmed trades are unavailable; decoded semantic errors propagate.
 async fn fetch_confirmed_fill_reports(
     http_client: &PolymarketClobHttpClient,
     ctx: &FillContext<'_>,
@@ -630,11 +614,14 @@ async fn fetch_confirmed_fill_reports(
     scope: FillReportScope,
     ts_init: UnixNanos,
     load_ids: Option<&[InstrumentId]>,
-) -> anyhow::Result<Vec<FillReport>> {
-    let trades = http_client
-        .get_trades(params)
-        .await
-        .context("failed to fetch confirmed trades")?;
+) -> anyhow::Result<Option<Vec<FillReport>>> {
+    let trades = match http_client.get_trades(params).await {
+        Ok(trades) => trades,
+        Err(e) => {
+            log::warn!("Failed to fetch confirmed fills for {scope:?}: {e}");
+            return Ok(None);
+        }
+    };
     let (reports, _) = build_fill_reports_from_trades(
         &trades,
         ctx,
@@ -644,7 +631,7 @@ async fn fetch_confirmed_fill_reports(
         load_ids,
         None,
     )?;
-    Ok(reports)
+    Ok(Some(reports))
 }
 
 pub(crate) fn get_pusd_currency() -> Currency {
