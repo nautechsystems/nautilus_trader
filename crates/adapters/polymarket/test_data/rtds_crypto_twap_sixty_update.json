@@ -1,0 +1,13 @@
+{
+  "connection_id": "11111111-2222-3333-4444-555555555555",
+  "topic": "crypto_prices_twap_sixty",
+  "type": "update",
+  "timestamp": 1786179814147,
+  "payload": {
+    "symbol": "btc/usd",
+    "timestamp": 1786179814000,
+    "value": 64997.81,
+    "full_accuracy_value": "64997810000000000000000",
+    "window_s": 60
+  }
+}

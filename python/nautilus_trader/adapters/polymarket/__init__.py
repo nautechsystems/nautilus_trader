@@ -31,6 +31,7 @@ __all__ = [
     "PolymarketFeeModel",
     "PolymarketInstrumentProviderConfig",
     "PolymarketRtdsCryptoPrice",
+    "PolymarketRtdsCryptoTwap",
     "PolymarketRtdsEquityPrice",
     "PolymarketUpDownEventSlugConfig",
     "SignatureType",

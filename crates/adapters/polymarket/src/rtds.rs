@@ -41,13 +41,14 @@ use nautilus_network::{
         proxy::ProxyUrl,
     },
 };
-use serde::{Deserialize, Serialize};
+use rust_decimal::Decimal;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Number;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
     common::socket::SocketControl,
-    data_types::{PolymarketRtdsCryptoPrice, PolymarketRtdsEquityPrice},
+    data_types::{PolymarketRtdsCryptoPrice, PolymarketRtdsCryptoTwap, PolymarketRtdsEquityPrice},
 };
 
 const POLYMARKET_RTDS_HEARTBEAT_SECS: u64 = 5;
@@ -60,12 +61,15 @@ const POLYMARKET_RTDS_RECONNECT_DELAY_INITIAL_MS: u64 = 250;
 const POLYMARKET_RTDS_RECONNECT_DELAY_MAX_MS: u64 = 5_000;
 const POLYMARKET_RTDS_RECONNECT_JITTER_MS: u64 = 200;
 const POLYMARKET_RTDS_CRYPTO_PRICE_TYPE_NAME: &str = "PolymarketRtdsCryptoPrice";
+const POLYMARKET_RTDS_CRYPTO_TWAP_TYPE_NAME: &str = "PolymarketRtdsCryptoTwap";
 const POLYMARKET_RTDS_EQUITY_PRICE_TYPE_NAME: &str = "PolymarketRtdsEquityPrice";
 
 pub(crate) fn is_supported_rtds_data_type(data_type: &DataType) -> bool {
     matches!(
         data_type.type_name(),
-        POLYMARKET_RTDS_CRYPTO_PRICE_TYPE_NAME | POLYMARKET_RTDS_EQUITY_PRICE_TYPE_NAME
+        POLYMARKET_RTDS_CRYPTO_PRICE_TYPE_NAME
+            | POLYMARKET_RTDS_CRYPTO_TWAP_TYPE_NAME
+            | POLYMARKET_RTDS_EQUITY_PRICE_TYPE_NAME
     )
 }
 
@@ -130,6 +134,8 @@ pub(crate) struct RtdsWireSubscription {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RtdsTopic {
     CryptoPrices,
+    CryptoPricesTwapThirty,
+    CryptoPricesTwapSixty,
     EquityPrices,
 }
 
@@ -137,7 +143,45 @@ impl RtdsTopic {
     fn as_str(self) -> &'static str {
         match self {
             Self::CryptoPrices => "crypto_prices",
+            Self::CryptoPricesTwapThirty => "crypto_prices_twap_thirty",
+            Self::CryptoPricesTwapSixty => "crypto_prices_twap_sixty",
             Self::EquityPrices => "equity_prices",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RtdsCryptoTwapWindow {
+    ThirtySeconds,
+    SixtySeconds,
+}
+
+impl RtdsCryptoTwapWindow {
+    const fn seconds(self) -> u32 {
+        match self {
+            Self::ThirtySeconds => 30,
+            Self::SixtySeconds => 60,
+        }
+    }
+
+    const fn topic(self) -> RtdsTopic {
+        match self {
+            Self::ThirtySeconds => RtdsTopic::CryptoPricesTwapThirty,
+            Self::SixtySeconds => RtdsTopic::CryptoPricesTwapSixty,
+        }
+    }
+}
+
+impl TryFrom<u64> for RtdsCryptoTwapWindow {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match value {
+            30 => Ok(Self::ThirtySeconds),
+            60 => Ok(Self::SixtySeconds),
+            other => anyhow::bail!(
+                "PolymarketRtdsCryptoTwap metadata['window_seconds'] must be 30 or 60, received {other}"
+            ),
         }
     }
 }
@@ -179,6 +223,17 @@ struct CryptoPayloadRaw {
     symbol: String,
     timestamp: u64,
     value: Number,
+}
+
+#[derive(Debug, Deserialize)]
+struct CryptoTwapPayloadRaw {
+    symbol: String,
+    timestamp: u64,
+    #[serde(rename = "value", deserialize_with = "deserialize_decimalish")]
+    #[allow(dead_code, reason = "display-only field modeled for wire conformance")]
+    display_value: (),
+    full_accuracy_value: String,
+    window_s: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -529,7 +584,12 @@ impl PolymarketRtdsFeed {
 
     #[cfg(test)]
     fn handle_text_for_test(&self, text: &str) {
-        self.handle_text_message(text);
+        let _ = self.handle_text_message(text);
+    }
+
+    #[cfg(test)]
+    fn try_handle_text_for_test(&self, text: &str) -> anyhow::Result<()> {
+        self.handle_text_message(text)
     }
 
     fn current_ws(&self) -> Option<Arc<WebSocketClient>> {
@@ -830,7 +890,9 @@ impl PolymarketRtdsFeed {
                         continue;
                     }
 
-                    self.handle_text_message(text.as_str());
+                    if let Err(e) = self.handle_text_message(text.as_str()) {
+                        log::error!("Failed to handle subscribed Polymarket RTDS message: {e:#}");
+                    }
                 }
                 Some(Message::Binary(_)) => {
                     log::debug!("Ignoring binary RTDS message");
@@ -850,24 +912,50 @@ impl PolymarketRtdsFeed {
         }
     }
 
-    fn handle_text_message(&self, text: &str) {
+    fn handle_text_message(&self, text: &str) -> anyhow::Result<()> {
         if text.trim().is_empty() {
-            return;
+            return Ok(());
         }
 
         let envelope: RtdsEnvelope = match serde_json::from_str(text) {
             Ok(envelope) => envelope,
             Err(e) => {
+                if self.malformed_frame_requires_visible_twap_failure(text) {
+                    return Err(anyhow::Error::new(e).context("invalid RTDS JSON frame"));
+                }
                 log::debug!("Ignoring non-RTDS JSON frame: {e}");
-                return;
+                return Ok(());
             }
         };
 
+        self.handle_envelope(envelope)
+    }
+
+    fn handle_envelope(&self, envelope: RtdsEnvelope) -> anyhow::Result<()> {
         match (envelope.topic.as_str(), envelope.msg_type.as_str()) {
-            ("crypto_prices", "subscribe") => self.handle_crypto_price_subscribe(envelope),
-            ("crypto_prices", "update") => self.handle_crypto_price_update(envelope),
-            ("equity_prices", "subscribe") => self.handle_equity_price_subscribe(envelope),
-            ("equity_prices", "update") => self.handle_equity_price_update(envelope),
+            ("crypto_prices", "subscribe") => {
+                self.handle_crypto_price_subscribe(envelope);
+            }
+            ("crypto_prices", "update") => {
+                self.handle_crypto_price_update(envelope);
+            }
+            ("crypto_prices_twap_thirty", "update") => {
+                self.handle_crypto_twap_update(envelope, RtdsCryptoTwapWindow::ThirtySeconds)?;
+            }
+            ("crypto_prices_twap_sixty", "update") => {
+                self.handle_crypto_twap_update(envelope, RtdsCryptoTwapWindow::SixtySeconds)?;
+            }
+            ("equity_prices", "subscribe") => {
+                self.handle_equity_price_subscribe(envelope);
+            }
+            ("equity_prices", "update") => {
+                self.handle_equity_price_update(envelope);
+            }
+            (topic @ ("crypto_prices_twap_thirty" | "crypto_prices_twap_sixty"), msg_type)
+                if self.has_topic_subscription(topic) =>
+            {
+                anyhow::bail!("unsupported subscribed RTDS message topic={topic} type={msg_type}");
+            }
             _ => {
                 log::debug!(
                     "Ignoring unsupported RTDS message topic={} type={}",
@@ -876,6 +964,7 @@ impl PolymarketRtdsFeed {
                 );
             }
         }
+        Ok(())
     }
 
     fn handle_crypto_price_update(&self, envelope: RtdsEnvelope) {
@@ -970,6 +1059,59 @@ impl PolymarketRtdsFeed {
 
             self.emit_custom_payload(&custom_payload, data_types.clone());
         }
+    }
+
+    fn handle_crypto_twap_update(
+        &self,
+        envelope: RtdsEnvelope,
+        window: RtdsCryptoTwapWindow,
+    ) -> anyhow::Result<()> {
+        let topic = window.topic();
+        if !self.has_topic_subscription(topic.as_str()) {
+            return Ok(());
+        }
+
+        let payload: CryptoTwapPayloadRaw = serde_json::from_value(envelope.payload)
+            .map_err(|e| anyhow::anyhow!("invalid RTDS crypto TWAP payload: {e}"))?;
+        if payload.window_s != window.seconds() {
+            anyhow::bail!(
+                "RTDS TWAP topic {:?} requires window_s={}, received {}",
+                topic.as_str(),
+                window.seconds(),
+                payload.window_s,
+            );
+        }
+        let symbol_lower = payload.symbol.to_ascii_lowercase();
+        let value =
+            decimal_from_signed_e18("full_accuracy_value", payload.full_accuracy_value.as_str())?;
+        let ts_event = unix_nanos_from_millis("payload.timestamp", payload.timestamp)?;
+        let data_types = self.matching_data_types(topic, &symbol_lower);
+        if data_types.is_empty() {
+            return Ok(());
+        }
+
+        if !self.should_emit_timestamp_ms(
+            topic,
+            &symbol_lower,
+            payload.timestamp,
+            TimestampGuard::Live,
+        ) {
+            return Ok(());
+        }
+
+        let ts_init = self.inner.clock.get_time_ns();
+        let custom_payload = Arc::new(PolymarketRtdsCryptoTwap::new(
+            symbol_lower,
+            window.seconds(),
+            value,
+            payload.timestamp,
+            envelope.timestamp,
+            ts_event,
+            ts_init,
+        ));
+
+        self.emit_custom_payload(&custom_payload, data_types);
+        Ok(())
     }
 
     fn handle_equity_price_update(&self, envelope: RtdsEnvelope) {
@@ -1117,6 +1259,32 @@ impl PolymarketRtdsFeed {
             .unwrap_or_default()
     }
 
+    fn has_topic_subscription(&self, topic: &str) -> bool {
+        self.inner
+            .subscriptions
+            .iter()
+            .any(|entry| entry.wire.topic == topic)
+    }
+
+    fn has_twap_topic_subscription(&self) -> bool {
+        self.has_topic_subscription(RtdsTopic::CryptoPricesTwapThirty.as_str())
+            || self.has_topic_subscription(RtdsTopic::CryptoPricesTwapSixty.as_str())
+    }
+
+    fn malformed_frame_requires_visible_twap_failure(&self, text: &str) -> bool {
+        match serde_json::from_str::<serde_json::Value>(text) {
+            Ok(value) => match value.get("topic").and_then(serde_json::Value::as_str) {
+                Some(topic) => {
+                    (topic == RtdsTopic::CryptoPricesTwapThirty.as_str()
+                        || topic == RtdsTopic::CryptoPricesTwapSixty.as_str())
+                        && self.has_topic_subscription(topic)
+                }
+                None => self.has_twap_topic_subscription(),
+            },
+            Err(_) => self.has_twap_topic_subscription(),
+        }
+    }
+
     fn should_emit_timestamp_ms(
         &self,
         topic: RtdsTopic,
@@ -1177,6 +1345,24 @@ impl ParsedSubscription {
                     filters: None,
                 },
             }),
+            POLYMARKET_RTDS_CRYPTO_TWAP_TYPE_NAME => {
+                let window_seconds = metadata
+                    .get("window_seconds")
+                    .and_then(serde_json::Value::as_u64)
+                    .context(format!(
+                        "{type_name} subscriptions require integer metadata['window_seconds']"
+                    ))?;
+                let window = RtdsCryptoTwapWindow::try_from(window_seconds)?;
+                let topic = window.topic();
+                Ok(Self {
+                    key: tracked_key(topic.as_str(), &symbol_lower),
+                    wire: RtdsWireSubscription {
+                        topic: topic.as_str(),
+                        msg_type: "update",
+                        filters: None,
+                    },
+                })
+            }
             POLYMARKET_RTDS_EQUITY_PRICE_TYPE_NAME => Ok(Self {
                 key: tracked_key(RtdsTopic::EquityPrices.as_str(), &symbol_lower),
                 wire: RtdsWireSubscription {
@@ -1192,6 +1378,42 @@ impl ParsedSubscription {
 
 fn tracked_key(topic: &str, symbol_lower: &str) -> String {
     format!("{topic}:{symbol_lower}")
+}
+
+fn deserialize_decimalish<'de, D>(deserializer: D) -> Result<(), D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::Number(_) => Ok(()),
+        serde_json::Value::String(value) => Decimal::from_str(&value)
+            .or_else(|_| Decimal::from_scientific(&value))
+            .map(|_| ())
+            .map_err(serde::de::Error::custom),
+        other => Err(serde::de::Error::custom(format!(
+            "expected decimal string or JSON number, received {other}"
+        ))),
+    }
+}
+
+fn decimal_from_signed_e18(field: &str, value: &str) -> anyhow::Result<Decimal> {
+    let digits = value.strip_prefix('-').unwrap_or(value);
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        anyhow::bail!("invalid signed E18 integer for {field}: {value}");
+    }
+
+    let mantissa = value
+        .parse::<i128>()
+        .with_context(|| format!("signed E18 integer out of range for {field}: {value}"))?;
+    Decimal::try_from_i128_with_scale(mantissa, 18)
+        .with_context(|| format!("signed E18 value out of Decimal range for {field}: {value}"))
+}
+
+fn unix_nanos_from_millis(field: &str, value: u64) -> anyhow::Result<UnixNanos> {
+    let millis = i64::try_from(value)
+        .with_context(|| format!("millisecond timestamp out of range for {field}: {value}"))?;
+    UnixNanos::from_millis_checked(millis)
+        .with_context(|| format!("millisecond timestamp overflows UnixNanos for {field}: {value}"))
 }
 
 fn price_from_json_number(field: &str, number: &Number) -> anyhow::Result<Price> {
@@ -1247,6 +1469,7 @@ mod tests {
     };
     use nautilus_core::{Params, time::get_atomic_clock_realtime};
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use serde_json::json;
 
     use super::*;
@@ -1261,6 +1484,8 @@ mod tests {
         include_str!("../test_data/rtds_equity_prices_update.json");
     const RTDS_EQUITY_SUBSCRIBE_FIXTURE: &str =
         include_str!("../test_data/rtds_equity_prices_subscribe.json");
+    const RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE: &str =
+        include_str!("../test_data/rtds_crypto_twap_sixty_update.json");
 
     fn crypto_data_type(symbol: &str) -> DataType {
         let mut metadata = Params::new();
@@ -1272,6 +1497,19 @@ mod tests {
         let mut metadata = Params::new();
         metadata.insert("symbol".to_string(), json!(symbol));
         DataType::new(POLYMARKET_RTDS_EQUITY_PRICE_TYPE_NAME, Some(metadata), None)
+    }
+
+    fn crypto_twap_data_type(symbol: &str, window_seconds: u64) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert("symbol".to_string(), json!(symbol));
+        metadata.insert("window_seconds".to_string(), json!(window_seconds));
+        DataType::new(POLYMARKET_RTDS_CRYPTO_TWAP_TYPE_NAME, Some(metadata), None)
+    }
+
+    fn crypto_twap_data_type_without_window(symbol: &str) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert("symbol".to_string(), json!(symbol));
+        DataType::new(POLYMARKET_RTDS_CRYPTO_TWAP_TYPE_NAME, Some(metadata), None)
     }
 
     fn make_feed() -> (
@@ -1628,6 +1866,496 @@ mod tests {
             .expect("track second symbol");
 
         assert!(changed);
+    }
+
+    #[rstest]
+    fn test_track_subscribe_maps_twap_window_to_exact_topic() {
+        let (feed, _rx) = make_feed();
+        let thirty = crypto_twap_data_type("BTC/USD", 30);
+        let sixty = crypto_twap_data_type("BTC/USD", 60);
+
+        assert!(is_supported_rtds_data_type(&thirty));
+        assert!(is_supported_rtds_data_type(&sixty));
+        assert!(feed.track_subscribe(thirty).expect("track 30-second TWAP"));
+        assert!(feed.track_subscribe(sixty).expect("track 60-second TWAP"));
+
+        assert_eq!(
+            feed.tracked_data_type_count("crypto_prices_twap_thirty:btc/usd"),
+            1
+        );
+        assert_eq!(
+            feed.tracked_data_type_count("crypto_prices_twap_sixty:btc/usd"),
+            1
+        );
+        let wire = feed.snapshot_wire_subscriptions();
+        assert_eq!(wire.len(), 2);
+        assert!(wire.contains_key("crypto_prices_twap_thirty"));
+        assert!(wire.contains_key("crypto_prices_twap_sixty"));
+    }
+
+    #[rstest]
+    #[case(45)]
+    #[case(0)]
+    fn test_track_subscribe_rejects_unsupported_twap_window(#[case] window_seconds: u64) {
+        let (feed, _rx) = make_feed();
+
+        let error = feed
+            .track_subscribe(crypto_twap_data_type("BTC/USD", window_seconds))
+            .expect_err("unsupported TWAP window must fail");
+
+        assert!(error.to_string().contains("30 or 60"));
+        assert_eq!(feed.tracked_subscription_count(), 0);
+    }
+
+    #[rstest]
+    fn test_track_subscribe_rejects_missing_twap_window() {
+        let (feed, _rx) = make_feed();
+
+        let error = feed
+            .track_subscribe(crypto_twap_data_type_without_window("BTC/USD"))
+            .expect_err("missing TWAP window must fail");
+
+        assert!(error.to_string().contains("window_seconds"));
+        assert_eq!(feed.tracked_subscription_count(), 0);
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_emits_exact_provider_value_and_three_clocks() {
+        let (feed, mut rx) = make_feed();
+        let data_type = crypto_twap_data_type("BTC/USD", 60);
+        feed.track_subscribe(data_type.clone())
+            .expect("track 60-second TWAP");
+
+        feed.try_handle_text_for_test(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("valid TWAP update");
+
+        let event = rx.try_recv().expect("custom data event");
+        let DataEvent::Data(NautilusData::Custom(custom)) = event else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+
+        assert_eq!(custom.data_type, data_type);
+        assert_eq!(payload.symbol, "btc/usd");
+        assert_eq!(payload.window_seconds, 60);
+        assert_eq!(payload.value, dec!(64997.810000000000000000));
+        assert_eq!(payload.observation_timestamp_ms, 1786179814000);
+        assert_eq!(payload.message_timestamp_ms, 1786179814147);
+        assert_eq!(payload.ts_event, UnixNanos::from_millis(1786179814000));
+        assert!(payload.ts_init > UnixNanos::default());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_accepts_thirty_second_topic_only_for_thirty_window() {
+        let (feed, mut rx) = make_feed();
+        let data_type = crypto_twap_data_type("BTC/USD", 30);
+        feed.track_subscribe(data_type.clone())
+            .expect("track 30-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["topic"] = json!("crypto_prices_twap_thirty");
+        update["payload"]["window_s"] = json!(30);
+
+        feed.try_handle_text_for_test(&update.to_string())
+            .expect("valid 30-second TWAP update");
+
+        let DataEvent::Data(NautilusData::Custom(custom)) =
+            rx.try_recv().expect("custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+        assert_eq!(custom.data_type, data_type);
+        assert_eq!(payload.window_seconds, 30);
+        assert_eq!(payload.value, dec!(64997.810000000000000000));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_uses_exact_field_not_display_value() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["value"] = json!(1);
+
+        feed.try_handle_text_for_test(&update.to_string())
+            .expect("display value must not be authoritative");
+
+        let event = rx.try_recv().expect("custom data event");
+        let DataEvent::Data(NautilusData::Custom(custom)) = event else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+        assert_eq!(payload.value, dec!(64997.810000000000000000));
+    }
+
+    #[rstest]
+    #[case("64997.81")]
+    #[case("6.499781e4")]
+    fn test_handle_crypto_twap_update_accepts_decimal_string_display_value(
+        #[case] display_value: &str,
+    ) {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["value"] = json!(display_value);
+
+        feed.try_handle_text_for_test(&update.to_string())
+            .expect("decimal-string display value should satisfy the wire contract");
+
+        let DataEvent::Data(NautilusData::Custom(custom)) =
+            rx.try_recv().expect("custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+        assert_eq!(payload.value, dec!(64997.810000000000000000));
+    }
+
+    #[rstest]
+    #[case::missing(None)]
+    #[case::nonnumeric(Some(json!("not-a-number")))]
+    #[case::boolean(Some(json!(true)))]
+    fn test_handle_crypto_twap_update_requires_decimalish_display_value_for_wire_conformance(
+        #[case] display_value: Option<serde_json::Value>,
+    ) {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        let payload = update["payload"].as_object_mut().expect("payload object");
+        match display_value {
+            Some(value) => {
+                payload.insert("value".to_string(), value);
+            }
+            None => {
+                payload.remove("value");
+            }
+        }
+
+        feed.try_handle_text_for_test(&update.to_string())
+            .expect_err("display value must satisfy the venue wire contract");
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_preserves_adjacent_e18_values() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let first: serde_json::Value = serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("parse TWAP fixture");
+        let mut second = first.clone();
+        second["payload"]["full_accuracy_value"] = json!("64997810000000000000001");
+
+        feed.try_handle_text_for_test(&first.to_string())
+            .expect("first exact TWAP update");
+        feed.try_handle_text_for_test(&second.to_string())
+            .expect("adjacent exact TWAP update");
+
+        let mut values = Vec::new();
+        for _ in 0..2 {
+            let DataEvent::Data(NautilusData::Custom(custom)) =
+                rx.try_recv().expect("custom data event")
+            else {
+                panic!("expected custom data event");
+            };
+            let payload = custom
+                .data
+                .as_any()
+                .downcast_ref::<PolymarketRtdsCryptoTwap>()
+                .expect("PolymarketRtdsCryptoTwap");
+            values.push(payload.value);
+        }
+
+        assert_eq!(values[0], dec!(64997.810000000000000000));
+        assert_eq!(values[1], dec!(64997.810000000000000001));
+        assert_ne!(values[0], values[1]);
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_preserves_negative_signed_e18_value() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["full_accuracy_value"] = json!("-1234567890000000000");
+
+        feed.try_handle_text_for_test(&update.to_string())
+            .expect("valid negative signed E18 update");
+
+        let DataEvent::Data(NautilusData::Custom(custom)) =
+            rx.try_recv().expect("custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+        assert_eq!(payload.value, dec!(-1.234567890000000000));
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_rejects_topic_window_mismatch_without_advancing_guard() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut mismatch: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        mismatch["payload"]["window_s"] = json!(30);
+
+        let error = feed
+            .try_handle_text_for_test(&mismatch.to_string())
+            .expect_err("topic/window mismatch must be visible");
+        assert!(error.to_string().contains("requires window_s=60"));
+        assert!(rx.try_recv().is_err());
+
+        feed.try_handle_text_for_test(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("same-timestamp valid update must still emit");
+        assert!(rx.try_recv().is_ok());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_rejects_missing_exact_value_without_fallback() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]
+            .as_object_mut()
+            .expect("payload object")
+            .remove("full_accuracy_value");
+
+        let error = feed
+            .try_handle_text_for_test(&update.to_string())
+            .expect_err("display value must not be a fallback");
+        assert!(error.to_string().contains("full_accuracy_value"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_rejects_missing_window() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]
+            .as_object_mut()
+            .expect("payload object")
+            .remove("window_s");
+
+        let error = feed
+            .try_handle_text_for_test(&update.to_string())
+            .expect_err("missing window must fail visibly");
+        assert!(error.to_string().contains("window_s"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_rejects_out_of_decimal_range_value() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["full_accuracy_value"] = json!("79228162514264337593543950336");
+
+        let error = feed
+            .try_handle_text_for_test(&update.to_string())
+            .expect_err("out-of-range exact value must fail visibly");
+        assert!(error.to_string().contains("Decimal range"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_validates_untracked_symbol_on_active_topic() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["symbol"] = json!("eth/usd");
+        update["payload"]["full_accuracy_value"] = json!("not-an-integer");
+
+        let error = feed
+            .try_handle_text_for_test(&update.to_string())
+            .expect_err("malformed frame on active topic must fail visibly");
+        assert!(error.to_string().contains("signed E18 integer"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case("+64997810000000000000000")]
+    #[case("64997.81")]
+    #[case("")]
+    #[case("not-an-integer")]
+    fn test_handle_crypto_twap_update_rejects_non_integer_exact_value(#[case] value: &str) {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["full_accuracy_value"] = json!(value);
+
+        let error = feed
+            .try_handle_text_for_test(&update.to_string())
+            .expect_err("non-integer exact value must fail");
+        assert!(error.to_string().contains("signed E18 integer"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_rejects_timestamp_overflow_without_advancing_guard() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["timestamp"] = json!(u64::MAX);
+
+        let error = feed
+            .try_handle_text_for_test(&update.to_string())
+            .expect_err("overflowing observation timestamp must fail visibly");
+        assert!(error.to_string().contains("payload.timestamp"));
+        feed.try_handle_text_for_test(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("a later valid update must not be suppressed");
+
+        let DataEvent::Data(NautilusData::Custom(_)) =
+            rx.try_recv().expect("valid custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_rejects_wrong_type_on_active_topic() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["type"] = json!("subscribe");
+
+        let error = feed
+            .try_handle_text_for_test(&update.to_string())
+            .expect_err("unexpected type on subscribed topic must be visible");
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported subscribed RTDS message")
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_text_rejects_malformed_envelope_while_twap_topic_is_active() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let frame = json!({
+            "topic": "crypto_prices_twap_sixty",
+            "type": "update",
+            "timestamp": 1786179814147_u64
+        });
+
+        let error = feed
+            .handle_text_message(&frame.to_string())
+            .expect_err("malformed envelope on active TWAP topic must be visible");
+
+        assert!(error.to_string().contains("invalid RTDS JSON frame"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_text_rejects_unclassifiable_json_while_twap_topic_is_active() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let frame = json!({
+            "type": "update",
+            "timestamp": 1786179814147_u64,
+            "payload": {}
+        });
+
+        let error = feed
+            .handle_text_message(&frame.to_string())
+            .expect_err("unclassifiable JSON must be visible while TWAP is active");
+
+        assert!(error.to_string().contains("invalid RTDS JSON frame"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_text_ignores_malformed_unrelated_topic_while_twap_topic_is_active() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let frame = json!({
+            "topic": "unrelated_topic",
+            "type": "update",
+            "timestamp": 1786179814147_u64
+        });
+
+        feed.handle_text_message(&frame.to_string())
+            .expect("malformed unrelated topic remains ignorable");
+
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_text_ignores_unrelated_unsupported_topic() {
+        let (feed, mut rx) = make_feed();
+        let frame = json!({
+            "topic": "unrelated_topic",
+            "type": "update",
+            "timestamp": 1786179814147_u64,
+            "payload": {}
+        });
+
+        feed.try_handle_text_for_test(&frame.to_string())
+            .expect("unrelated unsupported topic remains ignorable");
+
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]
@@ -2292,6 +3020,10 @@ mod tests {
             .expect("track AAPL");
         feed.track_subscribe(equity_data_type("MSFT"))
             .expect("track MSFT");
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 30))
+            .expect("track 30-second TWAP");
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
 
         let ws = connect_test_ws(format!("ws://{addr}/rtds")).await;
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2336,6 +3068,14 @@ mod tests {
                                 subscription["topic"].as_str()
                                     == Some(RtdsTopic::EquityPrices.as_str())
                                     && subscription["filters"].is_null()
+                            }) && subscriptions.iter().any(|subscription| {
+                                subscription["topic"].as_str()
+                                    == Some(RtdsTopic::CryptoPricesTwapThirty.as_str())
+                                    && subscription["filters"].is_null()
+                            }) && subscriptions.iter().any(|subscription| {
+                                subscription["topic"].as_str()
+                                    == Some(RtdsTopic::CryptoPricesTwapSixty.as_str())
+                                    && subscription["filters"].is_null()
                             })
                         })
             })
@@ -2344,7 +3084,7 @@ mod tests {
         let subscriptions = replay["subscriptions"]
             .as_array()
             .expect("subscriptions array");
-        assert_eq!(subscriptions.len(), 2);
+        assert_eq!(subscriptions.len(), 4);
     }
 
     #[rstest]

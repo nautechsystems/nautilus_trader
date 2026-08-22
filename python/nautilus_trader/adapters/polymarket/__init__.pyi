@@ -20,6 +20,7 @@ __all__ = [
     "PolymarketFeeModel",
     "PolymarketInstrumentProviderConfig",
     "PolymarketRtdsCryptoPrice",
+    "PolymarketRtdsCryptoTwap",
     "PolymarketRtdsEquityPrice",
     "PolymarketUpDownEventSlugConfig",
     "SignatureType",
@@ -242,6 +243,36 @@ class PolymarketRtdsCryptoPrice:
         ts_event: int,
         ts_init: int,
     ) -> PolymarketRtdsCryptoPrice: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
+
+@typing.final
+class PolymarketRtdsCryptoTwap:
+    @property
+    def symbol(self) -> str: ...
+    @property
+    def window_seconds(self) -> int: ...
+    @property
+    def value(self) -> typing.Any: ...
+    @property
+    def observation_timestamp_ms(self) -> int: ...
+    @property
+    def message_timestamp_ms(self) -> int: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    def __new__(
+        cls,
+        symbol: str,
+        window_seconds: int,
+        value: typing.Any,
+        observation_timestamp_ms: int,
+        message_timestamp_ms: int,
+        ts_event: int,
+        ts_init: int,
+    ) -> PolymarketRtdsCryptoTwap: ...
     def to_json(self) -> str: ...
     @classmethod
     def from_json(cls, data: typing.Any) -> typing.Any: ...
