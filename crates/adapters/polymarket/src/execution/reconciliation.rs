@@ -60,6 +60,34 @@ pub(crate) struct FillContext<'a> {
     pub clock: &'static AtomicTime,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FillReportScope {
+    instrument_id: Option<InstrumentId>,
+    venue_order_id: Option<VenueOrderId>,
+}
+
+impl FillReportScope {
+    pub(crate) const fn new(
+        instrument_id: Option<InstrumentId>,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> Self {
+        Self {
+            instrument_id,
+            venue_order_id,
+        }
+    }
+
+    fn excludes_instrument(self, instrument_id: InstrumentId) -> bool {
+        self.instrument_id
+            .is_some_and(|filter_id| instrument_id != filter_id)
+    }
+
+    fn excludes_venue_order(self, venue_order_id: &str) -> bool {
+        self.venue_order_id
+            .is_some_and(|filter_id| venue_order_id != filter_id.as_str())
+    }
+}
+
 fn validate_instrument_binding(
     instrument: &InstrumentAny,
     condition_id: &str,
@@ -109,7 +137,7 @@ pub(crate) fn build_fill_reports_from_trades(
     trades: &[PolymarketTradeReport],
     ctx: &FillContext<'_>,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
-    instrument_filter: Option<InstrumentId>,
+    scope: FillReportScope,
     ts_init: UnixNanos,
     load_ids: Option<&[InstrumentId]>,
     lookback_start: Option<UnixNanos>,
@@ -173,8 +201,8 @@ pub(crate) fn build_fill_reports_from_trades(
                 };
                 let instrument_id = instrument.id();
 
-                if let Some(filter_id) = instrument_filter
-                    && instrument_id != filter_id
+                if scope.excludes_instrument(instrument_id)
+                    || scope.excludes_venue_order(&mo.order_id)
                 {
                     continue;
                 }
@@ -260,8 +288,8 @@ pub(crate) fn build_fill_reports_from_trades(
             };
             let instrument_id = instrument.id();
 
-            if let Some(filter_id) = instrument_filter
-                && instrument_id != filter_id
+            if scope.excludes_instrument(instrument_id)
+                || scope.excludes_venue_order(&trade.taker_order_id)
             {
                 continue;
             }
@@ -375,17 +403,12 @@ pub(crate) fn build_order_reports_from_orders(
     Ok((reports, filtered))
 }
 
-/// Applies venue_order_id and time-range filters to fill reports.
-pub(crate) fn apply_fill_filters(
+/// Applies time-range filters to fill reports.
+pub(crate) fn apply_fill_time_filters(
     mut reports: Vec<FillReport>,
-    venue_order_id: Option<VenueOrderId>,
     start: Option<UnixNanos>,
     end: Option<UnixNanos>,
 ) -> Vec<FillReport> {
-    if let Some(vid) = venue_order_id {
-        reports.retain(|r| r.venue_order_id == vid);
-    }
-
     match (start, end) {
         (Some(s), Some(e)) => reports.retain(|r| r.ts_event >= s && r.ts_event <= e),
         (Some(s), None) => reports.retain(|r| r.ts_event >= s),
@@ -517,7 +540,7 @@ pub(crate) async fn generate_mass_status(
         &trades,
         ctx,
         instruments,
-        None,
+        FillReportScope::new(None, None),
         ts_init,
         load_ids,
         lookback_start,
@@ -832,7 +855,7 @@ mod tests {
             &[trade],
             &test_fill_context(),
             &test_instruments(),
-            None,
+            FillReportScope::new(None, None),
             UnixNanos::from(1),
             None,
             None,
@@ -852,7 +875,7 @@ mod tests {
             &[trade],
             &test_fill_context(),
             &test_instruments(),
-            None,
+            FillReportScope::new(None, None),
             UnixNanos::from(1),
             None,
             None,
@@ -871,7 +894,7 @@ mod tests {
             &[trade],
             &test_fill_context(),
             &test_instruments(),
-            None,
+            FillReportScope::new(None, None),
             UnixNanos::from(1),
             None,
             None,
@@ -892,7 +915,7 @@ mod tests {
             &[trade],
             &test_fill_context(),
             &test_instruments(),
-            None,
+            FillReportScope::new(None, None),
             UnixNanos::from(1),
             None,
             None,

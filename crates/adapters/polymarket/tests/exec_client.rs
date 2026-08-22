@@ -2100,6 +2100,78 @@ async fn test_generate_fill_reports_drops_foreign_taker_trade() {
 }
 
 #[rstest]
+#[case("TAKER")]
+#[case("MAKER")]
+#[tokio::test]
+async fn test_generate_fill_reports_scopes_venue_order_before_binding(#[case] trader_side: &str) {
+    let target_order_id = "0x1111111111111111111111111111111111111111111111111111111111111111";
+    let unrelated_order_id = "0x2222222222222222222222222222222222222222222222222222222222222222";
+    let state = TestServerState::default();
+    let mut target = load_json("http_trade_report.json");
+    target["market"] = json!(TEST_CONDITION_ID);
+    target["trader_side"] = json!(trader_side);
+
+    if trader_side == "MAKER" {
+        target["maker_orders"][0]["owner"] = json!("00000000-0000-0000-0000-000000000001");
+        target["maker_orders"][0]["order_id"] = json!(target_order_id);
+    } else {
+        target["taker_order_id"] = json!(target_order_id);
+    }
+
+    let mut contradictory = target.clone();
+    contradictory["id"] = json!("trade-unrelated-condition");
+    contradictory["market"] =
+        json!("0x3333333333333333333333333333333333333333333333333333333333333333");
+    if trader_side == "MAKER" {
+        contradictory["maker_orders"][0]["order_id"] = json!(unrelated_order_id);
+    } else {
+        contradictory["taker_order_id"] = json!(unrelated_order_id);
+    }
+
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [target, contradictory],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let command = |venue_order_id| GenerateFillReports {
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        instrument_id: Some(instrument_id),
+        venue_order_id,
+        start: None,
+        end: None,
+        params: None,
+        log_receipt_level: LogLevel::Info,
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    let error = client
+        .generate_fill_reports(command(None))
+        .await
+        .expect_err("unscoped contradictory evidence must fail closed");
+    assert!(error.to_string().contains("condition"));
+
+    let reports = client
+        .generate_fill_reports(command(Some(VenueOrderId::from(target_order_id))))
+        .await
+        .expect("unrelated order evidence is outside the requested scope");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].venue_order_id,
+        VenueOrderId::from(target_order_id)
+    );
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_generate_fill_reports_drops_out_of_scope_unmapped_history() {
     let state = TestServerState::default();

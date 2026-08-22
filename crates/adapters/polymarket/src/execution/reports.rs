@@ -38,8 +38,8 @@ use super::{
         sum_filled_quantity, weighted_average_price,
     },
     reconciliation::{
-        FillContext, apply_fill_filters, build_fill_reports_from_trades, build_position_reports,
-        cap_order_report_filled_qty, confirmed_filled_quantities,
+        FillContext, FillReportScope, apply_fill_time_filters, build_fill_reports_from_trades,
+        build_position_reports, cap_order_report_filled_qty, confirmed_filled_quantities,
         normalize_terminal_order_report_quantity,
     },
 };
@@ -143,7 +143,7 @@ impl PolymarketExecutionClient {
             &trades,
             &ctx,
             &self.shared_token_instruments,
-            Some(instrument_id),
+            FillReportScope::new(Some(instrument_id), None),
             ts_init,
             self.config.reconciliation_load_ids(),
             None,
@@ -492,7 +492,7 @@ impl PolymarketExecutionClient {
                         &trades,
                         &ctx,
                         &self.shared_token_instruments,
-                        cmd.instrument_id,
+                        FillReportScope::new(cmd.instrument_id, None),
                         self.clock.get_time_ns(),
                         self.config.reconciliation_load_ids(),
                         None,
@@ -560,7 +560,7 @@ impl PolymarketExecutionClient {
             &trades,
             &ctx,
             &self.shared_token_instruments,
-            cmd.instrument_id,
+            FillReportScope::new(cmd.instrument_id, cmd.venue_order_id),
             self.clock.get_time_ns(),
             self.config.reconciliation_load_ids(),
             None,
@@ -568,7 +568,7 @@ impl PolymarketExecutionClient {
 
         self.fill_tracker.snap_fill_reports(&mut reports);
 
-        let reports = apply_fill_filters(reports, cmd.venue_order_id, cmd.start, cmd.end);
+        let reports = apply_fill_time_filters(reports, cmd.start, cmd.end);
 
         log::debug!("Generated {} fill reports", reports.len());
         Ok(reports)
@@ -637,7 +637,7 @@ async fn fetch_confirmed_fill_reports(
         &trades,
         ctx,
         token_instruments,
-        instrument_id,
+        FillReportScope::new(instrument_id, None),
         ts_init,
         load_ids,
         None,
