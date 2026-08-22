@@ -31,6 +31,7 @@ from nautilus_trader.data import DataEngineConfig
 from nautilus_trader.execution import BestPriceFillModel
 from nautilus_trader.execution import CappedOptionFeeModel
 from nautilus_trader.execution import ExecutionEngineConfig
+from nautilus_trader.execution import FeeModel
 from nautilus_trader.execution import StaticLatencyModel
 from nautilus_trader.execution import TieredNotionalOptionFeeModel
 from nautilus_trader.live import PortfolioConfig
@@ -41,6 +42,7 @@ from nautilus_trader.model import BookType
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import Currency
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import OtoTriggerMode
 from nautilus_trader.model import PriceType
@@ -265,6 +267,26 @@ def test_venue_config_accepts_option_fee_models(fee_model, expected_repr):
 
     assert expected_repr in repr(config)
     assert isinstance(config.fee_model, type(fee_model))
+
+
+def test_venue_config_accepts_custom_fee_model_through_run_config_clone():
+    class CustomFeeModel(FeeModel):
+        def get_commission(self, order, fill_quantity, fill_px, instrument):
+            return Money.from_str("1.23 USD")
+
+    fee_model = CustomFeeModel()
+    venue = BacktestVenueConfig(
+        name="SIM",
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        book_type=BookType.L1_MBP,
+        starting_balances=["1_000_000 USD"],
+        fee_model=fee_model,
+    )
+    run_config = BacktestRunConfig(venues=[venue], data=[])
+
+    assert venue.fee_model is fee_model
+    assert run_config.venues[0].fee_model is fee_model
 
 
 def test_venue_config_repr():

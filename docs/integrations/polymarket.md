@@ -687,8 +687,7 @@ fee_model = PolymarketFeeModel()
 
 Pass the Rust handle through
 `nautilus_backtest::config::SimulatedVenueConfig::builder().fee_model(...)`. In Python, pass the model
-to `BacktestEngine.add_venue` as `fee_model`. `BacktestVenueConfig.fee_model` accepts built‑in fee
-models only.
+to `BacktestEngine.add_venue` as `fee_model` or set it on `BacktestVenueConfig.fee_model`.
 
 :::note
 For maker fills, `fee_equivalent` is the platform fee formula above using the schedule's taker

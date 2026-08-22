@@ -33,6 +33,8 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
+#[cfg(feature = "python")]
+use nautilus_execution::python::fee::PythonFeeModel;
 use nautilus_execution::{
     client::core::ExecutionClientCore,
     engine::ExecutionEngine,
@@ -59,6 +61,8 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_sandbox::{SandboxExecutionClient, SandboxExecutionClientConfig};
+#[cfg(feature = "python")]
+use pyo3::{IntoPyObjectExt, Python, ffi::c_str, types::PyAnyMethods};
 use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -762,6 +766,63 @@ fn test_probability_price_fee_model_config_drives_sandbox_commission(
     trader_id: TraderId,
     account_id: AccountId,
 ) {
+    assert_fee_model_config_drives_sandbox_commission(
+        FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel),
+        taker_fee,
+        price,
+        expected,
+        trader_id,
+        account_id,
+    );
+}
+
+#[cfg(feature = "python")]
+#[rstest]
+fn test_python_fee_model_config_drives_sandbox_commission(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    Python::initialize();
+
+    let expected = "1.234567";
+    let fee_model = Python::attach(|py| {
+        let model = py
+            .eval(
+                c_str!(
+                    "type('CustomFeeModel', (), {\
+                        'get_commission': \
+                            lambda self, order, fill_quantity, fill_px, instrument: self.commission\
+                    })()"
+                ),
+                None,
+                None,
+            )
+            .unwrap();
+        model
+            .setattr(
+                "commission",
+                Money::from(format!("{expected} USDC").as_str())
+                    .into_py_any(py)
+                    .unwrap(),
+            )
+            .unwrap();
+
+        FeeModelAny::Python(PythonFeeModel::new(model.unbind()))
+    });
+
+    assert_fee_model_config_drives_sandbox_commission(
+        fee_model, "0.03", "0.500", expected, trader_id, account_id,
+    );
+}
+
+fn assert_fee_model_config_drives_sandbox_commission(
+    fee_model: FeeModelAny,
+    taker_fee: &str,
+    price: &str,
+    expected: &str,
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
     setup_order_event_handler();
 
     let mut binary = binary_option();
@@ -774,7 +835,7 @@ fn test_probability_price_fee_model_config_drives_sandbox_commission(
     let mut config = create_config(trader_id, account_id, venue);
     config.base_currency = Some(Currency::USDC());
     config.starting_balances = vec![Money::new(100_000.0, Currency::USDC())];
-    config.fee_model = Some(FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel));
+    config.fee_model = Some(fee_model);
 
     let core = ExecutionClientCore::new(
         config.trader_id,

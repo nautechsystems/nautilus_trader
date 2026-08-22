@@ -20,6 +20,7 @@ from unit.adapters.example_modules import load_example_module
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientFactory
 from nautilus_trader.common import Environment
+from nautilus_trader.execution import FeeModel
 from nautilus_trader.execution import ProbabilityPriceFeeModel
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveRiskEngineConfig
@@ -93,6 +94,21 @@ def test_sandbox_config_exposes_fee_model_property() -> None:
     )
 
     assert isinstance(config.fee_model, ProbabilityPriceFeeModel)
+
+
+def test_sandbox_config_accepts_custom_fee_model() -> None:
+    class CustomFeeModel(FeeModel):
+        def get_commission(self, order, fill_quantity, fill_px, instrument):
+            return Money.from_str("1.23 USD")
+
+    fee_model = CustomFeeModel()
+    config = SandboxExecutionClientConfig(
+        venue=Venue.from_str(SANDBOX),
+        starting_balances=[Money(100000.0, Currency.from_str("USD"))],
+        fee_model=fee_model,
+    )
+
+    assert config.fee_model is fee_model
 
 
 def test_sandbox_exec_tester_uses_simulated_exec_and_runs(

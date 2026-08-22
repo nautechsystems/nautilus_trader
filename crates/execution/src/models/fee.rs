@@ -26,7 +26,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 #[cfg(feature = "python")]
-use crate::python::fee::PyFeeModel;
+use crate::python::fee::{PyFeeModel, PythonFeeModel};
 
 pub trait FeeModel {
     /// Calculates commission for a fill.
@@ -133,6 +133,8 @@ pub enum FeeModelAny {
     ProbabilityPrice(ProbabilityPriceFeeModel),
     CappedOption(CappedOptionFeeModel),
     TieredNotionalOption(TieredNotionalOptionFeeModel),
+    #[cfg(feature = "python")]
+    Python(PythonFeeModel),
 }
 
 impl FeeModel for FeeModelAny {
@@ -160,6 +162,8 @@ impl FeeModel for FeeModelAny {
             Self::TieredNotionalOption(model) => {
                 model.get_commission(order, fill_quantity, fill_px, instrument)
             }
+            #[cfg(feature = "python")]
+            Self::Python(model) => model.get_commission(order, fill_quantity, fill_px, instrument),
         }
     }
 
@@ -208,6 +212,14 @@ impl FeeModel for FeeModelAny {
                 underlying_px,
             ),
             Self::TieredNotionalOption(model) => model.get_commission_with_context(
+                order,
+                fill_quantity,
+                fill_px,
+                instrument,
+                underlying_px,
+            ),
+            #[cfg(feature = "python")]
+            Self::Python(model) => model.get_commission_with_context(
                 order,
                 fill_quantity,
                 fill_px,
