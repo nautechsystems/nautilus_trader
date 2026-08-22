@@ -26,9 +26,9 @@ use nautilus_betfair::{
     provider::NavigationFilter,
 };
 use nautilus_common::{
-    clients::DataClient,
-    live::runner::set_data_event_sender,
-    messages::{DataEvent, data::SubscribeBookDeltas},
+    clients::{DataClient, SocketReconnectRequestOutcome},
+    live::runner::{replace_system_event_sender, set_data_event_sender},
+    messages::{DataEvent, data::SubscribeBookDeltas, system::SocketState},
     testing::wait_until_async,
 };
 use nautilus_core::UUID4;
@@ -39,6 +39,7 @@ use nautilus_model::{
 };
 use rstest::rstest;
 use serde_json::Value;
+use ustr::Ustr;
 
 use crate::common::*;
 
@@ -96,6 +97,126 @@ async fn test_data_client_connect_disconnect() {
 
     client.disconnect().await.unwrap();
     assert!(client.is_disconnected());
+
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_publishes_socket_state_and_registers_reconnect() {
+    const ENDPOINT: &str = "betfair-data-streams";
+
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+
+    let (addr, _state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, _rx) = create_test_data_client(addr, stream_port);
+    let registry = client
+        .socket_reconnect_registry()
+        .expect("data client must expose a socket reconnect registry")
+        .clone();
+    let endpoint = Ustr::from(ENDPOINT);
+    assert!(registry.get(endpoint).is_none());
+    let (initial_tx, initial_rx) = tokio::sync::oneshot::channel();
+    let (replacement_tx, replacement_rx) = tokio::sync::oneshot::channel();
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut initial_reader, _initial_write_half, auth) =
+            accept_and_capture_auth(&listener).await;
+        let mut subscription = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut initial_reader, &mut subscription)
+            .await
+            .unwrap();
+        let _ = initial_tx.send((auth, subscription));
+
+        let (mut replacement_reader, _replacement_write_half, auth) =
+            tokio::time::timeout(Duration::from_secs(5), accept_and_capture_auth(&listener))
+                .await
+                .expect("controller reconnect must open a replacement data socket");
+        let mut subscription = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut replacement_reader, &mut subscription)
+            .await
+            .unwrap();
+        let _ = replacement_tx.send((auth, subscription));
+
+        let _ = server_done_rx.await;
+    });
+
+    client.connect().await.unwrap();
+
+    let connected = next_socket_state(&mut system_rx).await;
+    assert_eq!(connected.client_id, *BETFAIR_CLIENT_ID);
+    assert_eq!(connected.venue, Some(*BETFAIR_VENUE));
+    assert_eq!(connected.endpoint, endpoint);
+    assert_eq!(connected.state, SocketState::Connected);
+
+    let instrument_id = nautilus_betfair::common::parse::make_instrument_id(
+        "1.180294978",
+        6146434,
+        rust_decimal::Decimal::ZERO,
+    );
+    client
+        .subscribe_book_deltas(SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L2_MBP,
+            None,
+            Some(*BETFAIR_VENUE),
+            UUID4::new(),
+            nautilus_core::UnixNanos::default(),
+            None,
+            false,
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let (initial_auth, initial_subscription) = initial_rx.await.unwrap();
+    let initial_auth: Value = serde_json::from_str(initial_auth.trim()).unwrap();
+    let initial_subscription: Value = serde_json::from_str(initial_subscription.trim()).unwrap();
+    assert_eq!(initial_auth["op"], "authentication");
+    assert_eq!(initial_auth["session"], "SESSION_TOKEN");
+    assert_eq!(initial_subscription["op"], "marketSubscription");
+
+    let reconnect = registry
+        .get(endpoint)
+        .expect("active data socket must register reconnect control");
+    assert_eq!(
+        reconnect.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted,
+    );
+    assert_eq!(
+        reconnect.request_reconnect(),
+        SocketReconnectRequestOutcome::AlreadyReconnecting,
+    );
+
+    let lost = next_socket_state(&mut system_rx).await;
+    assert_eq!(lost.client_id, *BETFAIR_CLIENT_ID);
+    assert_eq!(lost.venue, Some(*BETFAIR_VENUE));
+    assert_eq!(lost.endpoint, endpoint);
+    assert_eq!(lost.state, SocketState::Disconnected);
+
+    let recovered = next_socket_state(&mut system_rx).await;
+    assert_eq!(recovered.client_id, *BETFAIR_CLIENT_ID);
+    assert_eq!(recovered.venue, Some(*BETFAIR_VENUE));
+    assert_eq!(recovered.endpoint, endpoint);
+    assert_eq!(recovered.state, SocketState::Connected);
+
+    let (replacement_auth, replacement_subscription) = replacement_rx.await.unwrap();
+    let replacement_auth: Value = serde_json::from_str(replacement_auth.trim()).unwrap();
+    let replacement_subscription: Value =
+        serde_json::from_str(replacement_subscription.trim()).unwrap();
+    assert_eq!(replacement_auth, initial_auth);
+    assert_eq!(replacement_subscription, initial_subscription);
+
+    client.disconnect().await.unwrap();
+    assert!(registry.get(endpoint).is_none());
+    assert_eq!(
+        reconnect.request_reconnect(),
+        SocketReconnectRequestOutcome::Closed,
+    );
 
     let _ = server_done_tx.send(());
     server.await.unwrap();

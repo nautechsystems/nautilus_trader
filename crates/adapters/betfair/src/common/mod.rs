@@ -21,5 +21,7 @@ pub mod enums;
 pub mod parse;
 pub mod types;
 
+pub(crate) mod socket;
+
 #[cfg(test)]
 pub mod testing;

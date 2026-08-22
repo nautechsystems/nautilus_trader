@@ -54,7 +54,7 @@ use std::{
 use ahash::AHashSet;
 use async_trait::async_trait;
 use nautilus_common::{
-    clients::ExecutionClient,
+    clients::{ExecutionClient, SocketReconnectRegistration, SocketReconnectRegistry},
     live::{
         get_runtime,
         runner::{get_data_event_sender, get_exec_event_sender},
@@ -114,6 +114,7 @@ use crate::{
             parse_betfair_price, parse_betfair_quantity, parse_betfair_timestamp,
             parse_millis_timestamp,
         },
+        socket::{SocketControl, SocketStatePublisher, USER_STREAMS_ENDPOINT},
         types::{BetId, OrderSyncEntry},
     },
     config::BetfairExecConfig,
@@ -149,6 +150,9 @@ pub struct BetfairExecutionClient {
     emitter: ExecutionEventEmitter,
     http_client: Arc<BetfairHttpClient>,
     stream_client: Option<Arc<BetfairStreamClient>>,
+    socket_registry: SocketReconnectRegistry,
+    socket_control: Option<SocketControl>,
+    socket_registration: Option<SocketReconnectRegistration>,
     credential: BetfairCredential,
     stream_config: BetfairStreamConfig,
     config: BetfairExecConfig,
@@ -183,6 +187,9 @@ impl BetfairExecutionClient {
             AccountType::Betting,
             None,
         );
+        let socket_registry = SocketReconnectRegistry::default();
+        let socket_control = SocketStatePublisher::new(core.client_id, socket_registry.clone())
+            .map(|publisher| publisher.control(USER_STREAMS_ENDPOINT));
 
         Self {
             core,
@@ -190,6 +197,9 @@ impl BetfairExecutionClient {
             emitter,
             http_client: Arc::new(http_client),
             stream_client: None,
+            socket_registry,
+            socket_control,
+            socket_registration: None,
             credential,
             stream_config,
             config,
@@ -1079,6 +1089,10 @@ impl ExecutionClient for BetfairExecutionClient {
         *BETFAIR_VENUE
     }
 
+    fn socket_reconnect_registry(&self) -> Option<&SocketReconnectRegistry> {
+        Some(&self.socket_registry)
+    }
+
     fn oms_type(&self) -> OmsType {
         self.core.oms_type
     }
@@ -1126,6 +1140,7 @@ impl ExecutionClient for BetfairExecutionClient {
         self.core.set_disconnected();
         self.abort_background_tasks();
         self.abort_pending_tasks();
+        self.socket_registration = None;
         self.clear_resync_state();
         log::info!("Stopped: client_id={}", self.core.client_id);
         Ok(())
@@ -1195,18 +1210,22 @@ impl ExecutionClient for BetfairExecutionClient {
         );
 
         let transport_gate = Arc::clone(&self.reconciliation_gate);
-        let state_sink = SocketStateSink::new(move |state| {
+        let halt_on_disconnect = move |state| {
             if state == SocketState::Disconnected {
                 transport_gate.halt();
             }
-        });
+        };
+        let state_sink = match self.socket_control.as_ref() {
+            Some(control) => control.sink_with(halt_on_disconnect),
+            None => SocketStateSink::new(halt_on_disconnect),
+        };
 
         let stream_client = BetfairStreamClient::connect_with_state_sink(
             &self.credential,
             session_token,
             handler,
             self.stream_config.clone(),
-            state_sink,
+            Some(state_sink),
         )
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -1218,6 +1237,10 @@ impl ExecutionClient for BetfairExecutionClient {
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
+        self.socket_registration = self.socket_control.as_ref().map(|control| {
+            let reconnect_stream = Arc::clone(&stream_client);
+            control.register(move || reconnect_stream.request_reconnect_outcome())
+        });
         self.stream_client = Some(stream_client);
 
         // Spawn periodic keep-alive to prevent session expiry
@@ -1456,6 +1479,7 @@ impl ExecutionClient for BetfairExecutionClient {
 
         self.abort_background_tasks();
         self.abort_pending_tasks();
+        self.socket_registration = None;
 
         if let Some(client) = &self.stream_client {
             client.close().await;

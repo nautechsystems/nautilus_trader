@@ -45,7 +45,10 @@ use nautilus_betfair::{
     http::client::BetfairHttpClient,
     stream::config::BetfairStreamConfig,
 };
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{
+    messages::{SystemEvent, system::SocketStateChange},
+    testing::wait_until_async,
+};
 use nautilus_network::http::HttpClient;
 use serde_json::Value;
 use tokio::{
@@ -364,6 +367,17 @@ pub(crate) async fn accept_and_auth(
     BufReader<tokio::net::tcp::OwnedReadHalf>,
     tokio::net::tcp::OwnedWriteHalf,
 ) {
+    let (reader, write_half, _) = accept_and_capture_auth(listener).await;
+    (reader, write_half)
+}
+
+pub(crate) async fn accept_and_capture_auth(
+    listener: &TcpListener,
+) -> (
+    BufReader<tokio::net::tcp::OwnedReadHalf>,
+    tokio::net::tcp::OwnedWriteHalf,
+    String,
+) {
     let (socket, _) = listener.accept().await.unwrap();
     let (read_half, mut write_half) = socket.into_split();
     let mut reader = BufReader::new(read_half);
@@ -376,7 +390,20 @@ pub(crate) async fn accept_and_auth(
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
 
-    (reader, write_half)
+    (reader, write_half, line)
+}
+
+#[allow(dead_code)]
+pub(crate) async fn next_socket_state(
+    receiver: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
+) -> SocketStateChange {
+    let event = tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+        .await
+        .expect("timed out waiting for socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+
+    change
 }
 
 pub(crate) fn create_test_http_client(addr: SocketAddr) -> BetfairHttpClient {

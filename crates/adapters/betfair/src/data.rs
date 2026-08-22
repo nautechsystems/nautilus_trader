@@ -23,7 +23,7 @@ use std::sync::{
 use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use nautilus_common::{
-    clients::DataClient,
+    clients::{DataClient, SocketReconnectRegistration, SocketReconnectRegistry},
     live::{get_runtime, runner::get_data_event_sender},
     messages::{
         DataEvent,
@@ -59,6 +59,7 @@ use crate::{
             extract_market_id, make_instrument_id, parse_betfair_price, parse_betfair_quantity,
             parse_market_definition, parse_millis_timestamp,
         },
+        socket::{DATA_STREAMS_ENDPOINT, SocketControl, SocketStatePublisher},
     },
     config::BetfairDataConfig,
     data_types::{BetfairSequenceCompleted, register_betfair_custom_data},
@@ -106,6 +107,9 @@ pub struct BetfairDataClient {
     http_client: Arc<BetfairHttpClient>,
     provider: BetfairInstrumentProvider,
     stream_client: Option<Arc<BetfairStreamClient>>,
+    socket_registry: SocketReconnectRegistry,
+    socket_control: Option<SocketControl>,
+    socket_registration: Option<SocketReconnectRegistration>,
     race_stream_client: Option<Arc<BetfairRaceStreamClient>>,
     cricket_stream_client: Option<Arc<BetfairRaceStreamClient>>,
     credential: BetfairCredential,
@@ -139,6 +143,9 @@ impl BetfairDataClient {
     ) -> Self {
         let data_sender = get_data_event_sender();
         let http_client = Arc::new(http_client);
+        let socket_registry = SocketReconnectRegistry::default();
+        let socket_control = SocketStatePublisher::new(client_id, socket_registry.clone())
+            .map(|publisher| publisher.control(DATA_STREAMS_ENDPOINT));
         let provider = BetfairInstrumentProvider::new(
             Arc::clone(&http_client),
             nav_filter,
@@ -151,6 +158,9 @@ impl BetfairDataClient {
             http_client,
             provider,
             stream_client: None,
+            socket_registry,
+            socket_control,
+            socket_registration: None,
             race_stream_client: None,
             cricket_stream_client: None,
             credential,
@@ -551,6 +561,10 @@ impl DataClient for BetfairDataClient {
         Some(*BETFAIR_VENUE)
     }
 
+    fn socket_reconnect_registry(&self) -> Option<&SocketReconnectRegistry> {
+        Some(&self.socket_registry)
+    }
+
     fn start(&mut self) -> anyhow::Result<()> {
         log::info!("Starting Betfair data client: {}", self.client_id);
         Ok(())
@@ -574,7 +588,10 @@ impl DataClient for BetfairDataClient {
         if let Some(handle) = self.cricket_fatal_handle.take() {
             handle.abort();
         }
+
+        self.socket_registration = None;
         self.is_connected.store(false, Ordering::Relaxed);
+
         Ok(())
     }
 
@@ -596,6 +613,8 @@ impl DataClient for BetfairDataClient {
         if let Some(handle) = self.cricket_fatal_handle.take() {
             handle.abort();
         }
+
+        self.socket_registration = None;
         self.is_connected.store(false, Ordering::Relaxed);
         self.stream_client = None;
         self.race_stream_client = None;
@@ -673,16 +692,23 @@ impl DataClient for BetfairDataClient {
             self.clock,
         );
 
-        let stream_client = BetfairStreamClient::connect(
+        let state_sink = self.socket_control.as_ref().map(SocketControl::sink);
+        let stream_client = BetfairStreamClient::connect_with_state_sink(
             &self.credential,
             session_token,
             handler,
             self.stream_config.clone(),
+            state_sink,
         )
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        self.stream_client = Some(Arc::new(stream_client));
+        let stream_client = Arc::new(stream_client);
+        self.socket_registration = self.socket_control.as_ref().map(|control| {
+            let reconnect_stream = Arc::clone(&stream_client);
+            control.register(move || reconnect_stream.request_reconnect_outcome())
+        });
+        self.stream_client = Some(stream_client);
 
         if self.config.subscribe_race_data {
             let race_config = BetfairStreamConfig {
@@ -941,6 +967,7 @@ impl DataClient for BetfairDataClient {
         self.http_client.disconnect().await;
         self.is_connected.store(false, Ordering::Relaxed);
         self.subscribed_market_ids.clear();
+        self.socket_registration = None;
 
         log::info!("Betfair data client disconnected: {}", self.client_id);
         Ok(())

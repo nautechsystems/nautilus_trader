@@ -88,7 +88,7 @@ impl BetfairStreamClient {
         handler: TcpMessageHandler,
         config: BetfairStreamConfig,
     ) -> Result<Self, BetfairStreamError> {
-        Self::connect_with_options(credential, session_token, handler, config, None).await
+        Self::connect_with_state_sink(credential, session_token, handler, config, None).await
     }
 
     /// Connects to the Betfair stream API and reports transport availability changes.
@@ -97,17 +97,6 @@ impl BetfairStreamClient {
     ///
     /// Returns an error if the connection fails or authentication cannot be sent.
     pub(crate) async fn connect_with_state_sink(
-        credential: &BetfairCredential,
-        session_token: String,
-        handler: TcpMessageHandler,
-        config: BetfairStreamConfig,
-        state_sink: SocketStateSink,
-    ) -> Result<Self, BetfairStreamError> {
-        Self::connect_with_options(credential, session_token, handler, config, Some(state_sink))
-            .await
-    }
-
-    async fn connect_with_options(
         credential: &BetfairCredential,
         session_token: String,
         handler: TcpMessageHandler,
@@ -422,8 +411,12 @@ impl BetfairStreamClient {
     /// close return `false`.
     #[must_use]
     pub fn request_reconnect(&self) -> bool {
+        self.request_reconnect_outcome() == ReconnectRequestOutcome::Accepted
+    }
+
+    pub(crate) fn request_reconnect_outcome(&self) -> ReconnectRequestOutcome {
         if self.closed.load(Ordering::SeqCst) {
-            return false;
+            return ReconnectRequestOutcome::Closed;
         }
         self.reconnect_auth
             .request(self.auth_tx.borrow().generation)
@@ -664,6 +657,7 @@ impl BetfairRaceStreamClient {
         }
         self.reconnect_auth
             .request(self.auth_tx.borrow().generation)
+            == ReconnectRequestOutcome::Accepted
     }
 
     /// Closes the race stream connection.
@@ -712,24 +706,20 @@ impl ReconnectAuthState {
             });
     }
 
-    fn request(&self, auth_generation: u64) -> bool {
+    fn request(&self, auth_generation: u64) -> ReconnectRequestOutcome {
         let Some(handle) = self.reconnect_handle.get() else {
-            return false;
+            return ReconnectRequestOutcome::Unsupported;
         };
 
-        match handle.request_reconnect() {
-            ReconnectRequestOutcome::Accepted => true,
-            ReconnectRequestOutcome::AlreadyReconnecting => {
-                if auth_generation > self.replay_generation.load(Ordering::SeqCst) {
-                    self.pending_generation
-                        .fetch_max(auth_generation, Ordering::SeqCst);
-                }
-                false
-            }
-            ReconnectRequestOutcome::Disconnected
-            | ReconnectRequestOutcome::Closed
-            | ReconnectRequestOutcome::Unsupported => false,
+        let outcome = handle.request_reconnect();
+        if outcome == ReconnectRequestOutcome::AlreadyReconnecting
+            && auth_generation > self.replay_generation.load(Ordering::SeqCst)
+        {
+            self.pending_generation
+                .fetch_max(auth_generation, Ordering::SeqCst);
         }
+
+        outcome
     }
 
     fn request_pending(&self) {
