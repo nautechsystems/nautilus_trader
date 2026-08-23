@@ -169,6 +169,8 @@ pub struct GammaMarket {
     pub description: Option<String>,
     /// Market start date (ISO 8601).
     pub start_date: Option<String>,
+    /// Event window start time (ISO 8601).
+    pub event_start_time: Option<String>,
     /// Market end date (ISO 8601).
     pub end_date: Option<String>,
     /// Whether market is active.
@@ -826,30 +828,25 @@ mod tests {
 
     #[rstest]
     fn test_gamma_market_crypto_market_config_fields() {
-        let mut value: serde_json::Value = load("gamma_market.json");
-        value["resolutionSource"] =
-            serde_json::json!("https://data.chain.link/streams/btc-usd-twap-60s-streams");
-        value["cryptoMarketConfig"] = serde_json::json!({
-            "id": "btc-5m-twap-60",
-            "asset": "btc",
-            "duration": "5m",
-            "twapEnabled": true,
-            "twapLookbackSeconds": 60,
-            "futureField": "ignored",
-        });
-
-        let market: GammaMarket = serde_json::from_value(value).unwrap();
-        let config = market.crypto_market_config.unwrap();
+        let market: GammaMarket = load("gamma_market_crypto_twap.json");
+        let config = market.crypto_market_config.as_ref().unwrap();
 
         assert_eq!(config.id, "btc-5m-twap-60");
         assert_eq!(config.asset, "btc");
         assert_eq!(config.duration, "5m");
         assert!(config.twap_enabled);
         assert_eq!(config.twap_lookback_seconds, Some(60));
+        assert_eq!(
+            market.resolution_source.as_deref(),
+            Some("https://data.chain.link/streams/btc-usd-twap-60s-streams")
+        );
+        assert_eq!(
+            market.event_start_time.as_deref(),
+            Some("2026-08-22T16:00:00Z")
+        );
     }
 
     #[rstest]
-    #[case(serde_json::Value::Null)]
     #[case(serde_json::json!({
         "id": "btc-5m",
         "asset": "btc",
@@ -863,26 +860,22 @@ mod tests {
         "twapEnabled": false,
         "twapLookbackSeconds": null,
     }))]
-    fn test_gamma_market_optional_crypto_twap_lookback(
+    fn test_crypto_market_config_optional_twap_lookback(
         #[case] crypto_market_config: serde_json::Value,
     ) {
-        let mut value: serde_json::Value = load("gamma_market.json");
-        value["cryptoMarketConfig"] = crypto_market_config;
+        let config: CryptoMarketConfig = serde_json::from_value(crypto_market_config).unwrap();
 
-        let market: GammaMarket = serde_json::from_value(value).unwrap();
-
-        assert!(
-            market
-                .crypto_market_config
-                .as_ref()
-                .is_none_or(|config| config.twap_lookback_seconds.is_none())
-        );
+        assert!(config.twap_lookback_seconds.is_none());
     }
 
     #[rstest]
     fn test_gamma_market_enriched_fields() {
         let market: GammaMarket = load("gamma_market.json");
 
+        assert_eq!(
+            market.event_start_time.as_deref(),
+            Some("2026-03-12T09:20:00Z")
+        );
         assert_eq!(market.best_bid, Some(0.5));
         assert_eq!(market.best_ask, Some(0.51));
         assert_eq!(market.spread, Some(0.009));
@@ -927,6 +920,7 @@ mod tests {
         assert!(market.category.is_none());
         assert!(market.neg_risk_market_id.is_none());
         assert!(market.crypto_market_config.is_none());
+        assert!(market.event_start_time.is_none());
     }
 
     #[rstest]

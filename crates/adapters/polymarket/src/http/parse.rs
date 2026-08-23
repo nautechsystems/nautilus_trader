@@ -69,6 +69,8 @@ pub struct PolymarketInstrumentDef {
     pub taker_fee: Option<Decimal>,
     /// Market start timestamp (ISO 8601).
     pub start_date: Option<String>,
+    /// Event window start timestamp (ISO 8601).
+    pub event_start_time: Option<String>,
     /// Market end timestamp (ISO 8601).
     pub end_date: Option<String>,
     /// Whether the market is active and accepting orders.
@@ -163,6 +165,7 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
             maker_fee,
             taker_fee,
             start_date: market.start_date.clone(),
+            event_start_time: market.event_start_time.clone(),
             end_date: market.end_date.clone(),
             active,
             closed: market.closed.unwrap_or(false),
@@ -349,6 +352,13 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
         map.insert(
             "market_slug".to_string(),
             serde_json::Value::String(slug.clone()),
+        );
+    }
+
+    if let Some(event_start_time) = &def.event_start_time {
+        map.insert(
+            "event_start_time".to_string(),
+            serde_json::Value::String(event_start_time.clone()),
         );
     }
 
@@ -656,6 +666,10 @@ mod tests {
             info.get_str("market_slug"),
             Some("btc-updown-5m-1773307200")
         );
+        assert_eq!(
+            info.get_str("event_start_time"),
+            Some("2026-03-12T09:20:00Z")
+        );
         assert_eq!(info.get_str("game_id"), None);
         assert_eq!(info.get_str("min_order_size"), Some("5"));
         assert_eq!(info.get_bool("neg_risk"), Some(false));
@@ -664,21 +678,7 @@ mod tests {
 
     #[rstest]
     fn test_create_instrument_info_includes_resolution_and_crypto_market_config() {
-        let mut value: serde_json::Value = {
-            let content = std::fs::read_to_string("test_data/gamma_market.json")
-                .expect("Failed to read test data");
-            serde_json::from_str(&content).expect("Failed to parse test data")
-        };
-        value["resolutionSource"] =
-            serde_json::json!("https://data.chain.link/streams/btc-usd-twap-60s-streams");
-        value["cryptoMarketConfig"] = serde_json::json!({
-            "id": "btc-5m-twap-60",
-            "asset": "btc",
-            "duration": "5m",
-            "twapEnabled": true,
-            "twapLookbackSeconds": 60,
-        });
-        let market: GammaMarket = serde_json::from_value(value).unwrap();
+        let market = load_gamma_market("gamma_market_crypto_twap.json");
 
         let defs = parse_gamma_market(&market).unwrap();
         let instrument =
