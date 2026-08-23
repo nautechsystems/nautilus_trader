@@ -326,10 +326,27 @@ impl Erc20Contract {
     ///
     /// Returns an error if the contract call fails or its result cannot be decoded.
     pub async fn decimals(&self, token_address: &Address) -> Result<u8, BlockchainRpcClientError> {
+        self.decimals_with_block(token_address, None).await
+    }
+
+    #[cfg(feature = "hypersync")]
+    pub(crate) async fn decimals_at(
+        &self,
+        token_address: &Address,
+        block: u64,
+    ) -> Result<u8, BlockchainRpcClientError> {
+        self.decimals_with_block(token_address, Some(block)).await
+    }
+
+    async fn decimals_with_block(
+        &self,
+        token_address: &Address,
+        block: Option<u64>,
+    ) -> Result<u8, BlockchainRpcClientError> {
         let call_data = ERC20::decimalsCall {}.abi_encode();
         let result = self
             .base
-            .execute_call(token_address, &call_data, None)
+            .execute_call(token_address, &call_data, block)
             .await?;
 
         ERC20::decimalsCall::abi_decode_returns(&result)

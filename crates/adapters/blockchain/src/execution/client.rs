@@ -1630,7 +1630,7 @@ impl TransactionExecutor {
             }
         };
         let prepared = match self
-            .prepare_and_sign(intent.id, intent.created_block, to, value, input, None)
+            .prepare_and_sign(intent.id, intent.created_block, to, value, input)
             .await
         {
             Ok(prepared) => prepared,
@@ -1698,6 +1698,38 @@ impl TransactionExecutor {
         to: Address,
         value: U256,
         input: Bytes,
+    ) -> anyhow::Result<PreparedTransaction> {
+        self.prepare_and_sign_with_anchors(intent_id, created_block, to, value, input, None)
+            .await
+    }
+
+    async fn prepare_and_sign_swap(
+        &self,
+        intent_id: i64,
+        created_block: u64,
+        to: Address,
+        value: U256,
+        input: Bytes,
+        anchors: &SwapQuoteAnchors,
+    ) -> anyhow::Result<PreparedTransaction> {
+        self.prepare_and_sign_with_anchors(
+            intent_id,
+            created_block,
+            to,
+            value,
+            input,
+            Some(anchors),
+        )
+        .await
+    }
+
+    async fn prepare_and_sign_with_anchors(
+        &self,
+        intent_id: i64,
+        created_block: u64,
+        to: Address,
+        value: U256,
+        input: Bytes,
         swap_anchors: Option<&SwapQuoteAnchors>,
     ) -> anyhow::Result<PreparedTransaction> {
         let expected_chain_id = u64::from(self.chain_id);
@@ -1715,10 +1747,14 @@ impl TransactionExecutor {
         self.database
             .assign_execution_intent_nonce(intent_id, nonce)
             .await?;
-        let latest_block = self.http_rpc_client.latest_block().await?;
-        let base_fee_per_gas_wei = latest_block.base_fee_per_gas.ok_or_else(|| {
-            anyhow::anyhow!("Latest block {} has no base fee", latest_block.number)
-        })?;
+        let base_fee_per_gas_wei = if let Some(anchors) = swap_anchors {
+            anchors.state.base_fee_per_gas_wei
+        } else {
+            let latest_block = self.http_rpc_client.latest_block().await?;
+            latest_block.base_fee_per_gas.ok_or_else(|| {
+                anyhow::anyhow!("Latest block {} has no base fee", latest_block.number)
+            })?
+        };
         let priority_fee_per_gas_wei = self.http_rpc_client.max_priority_fee_per_gas().await?;
         let (max_fee_per_gas, max_priority_fee_per_gas) = derive_fees(
             base_fee_per_gas_wei,
@@ -1726,10 +1762,21 @@ impl TransactionExecutor {
             self.base_fee_buffer_bps,
             u128::from(self.max_fee_per_gas_wei),
         )?;
-        let gas_estimate = self
-            .http_rpc_client
-            .estimate_gas(&self.wallet_address, &to, value, &input)
-            .await?;
+        let gas_estimate = if let Some(anchors) = swap_anchors {
+            self.http_rpc_client
+                .estimate_gas_at(
+                    &self.wallet_address,
+                    &to,
+                    value,
+                    &input,
+                    anchors.state.number,
+                )
+                .await?
+        } else {
+            self.http_rpc_client
+                .estimate_gas(&self.wallet_address, &to, value, &input)
+                .await?
+        };
         let gas_limit = derive_gas_limit(gas_estimate, self.gas_buffer_bps, self.gas_limit)?;
         let max_gas_cost = U256::from(gas_limit)
             .checked_mul(U256::from(max_fee_per_gas))
@@ -1739,7 +1786,11 @@ impl TransactionExecutor {
             .ok_or_else(|| anyhow::anyhow!("Maximum transaction cost overflow"))?;
         let native_balance = self
             .http_rpc_client
-            .get_balance_with_timeout(&self.wallet_address, None, Some(EXECUTION_RPC_TIMEOUT_SECS))
+            .get_balance_with_timeout(
+                &self.wallet_address,
+                swap_anchors.map(|anchors| anchors.state.number),
+                Some(EXECUTION_RPC_TIMEOUT_SECS),
+            )
             .await?;
 
         if native_balance < max_transaction_cost {
@@ -2184,9 +2235,15 @@ struct SwapPlan {
 #[derive(Debug, Clone)]
 struct SwapQuoteAnchors {
     position: BlockPosition,
-    head_number: u64,
-    head_hash: B256,
-    max_age_blocks: u64,
+    state: SwapStateAnchor,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SwapStateAnchor {
+    number: u64,
+    hash: B256,
+    timestamp: u64,
+    base_fee_per_gas_wei: u128,
 }
 
 /// Executes a validated swap plan: read-only pre-trade checks, signing, persistence,
@@ -2245,22 +2302,22 @@ async fn execute_swap(
             return Ok(());
         }
     };
-    let deadline = match latest_block.timestamp.checked_add(deadline_seconds) {
+    let deadline = match swap_anchors.state.timestamp.checked_add(deadline_seconds) {
         Some(deadline) => deadline,
         None => {
             release_preparing_slot(&executor.in_flight);
             emitter.emit_order_denied(
                 order,
                 &format!(
-                    "Swap deadline overflow: latest block timestamp {} plus `deadline_seconds` {deadline_seconds} exceeds u64",
-                    latest_block.timestamp
+                    "Swap deadline overflow: anchor timestamp {} plus `deadline_seconds` {deadline_seconds} exceeds u64",
+                    swap_anchors.state.timestamp
                 ),
             );
             return Ok(());
         }
     };
 
-    if let Err(e) = check_swap_preconditions(&plan, &executor).await {
+    if let Err(e) = check_swap_preconditions(&plan, swap_anchors.state.number, &executor).await {
         release_preparing_slot(&executor.in_flight);
         emitter.emit_order_denied(order, &e.to_string());
         return Ok(());
@@ -2295,7 +2352,7 @@ async fn execute_swap(
         transaction_input: hex::encode_prefixed(&calldata),
         transaction_value: U256::ZERO.to_string(),
         amount_in: Some(plan.amount_in.to_string()),
-        created_block: latest_block.number,
+        created_block: swap_anchors.state.number,
     };
     let intent = match executor.database.reserve_execution_intent(&intent).await {
         Ok(intent) => intent,
@@ -2306,13 +2363,13 @@ async fn execute_swap(
         }
     };
     let prepared = match executor
-        .prepare_and_sign(
+        .prepare_and_sign_swap(
             intent.id,
             intent.created_block,
             plan.router,
             U256::ZERO,
             calldata,
-            Some(&swap_anchors),
+            &swap_anchors,
         )
         .await
     {
@@ -2409,6 +2466,9 @@ async fn validate_swap_quote(
     rpc: &BlockchainHttpRpcClient,
 ) -> anyhow::Result<SwapQuoteAnchors> {
     validate_quote_age(position.number, head.number, max_age_blocks)?;
+    let base_fee_per_gas_wei = head
+        .base_fee_per_gas
+        .ok_or_else(|| anyhow::anyhow!("Swap anchor block {} has no base fee", head.number))?;
     let block_hash = position.block_hash.as_deref().ok_or_else(|| {
         anyhow::anyhow!(
             "Pool state at block {} has no ingestion-time block hash; refresh the profiler before execution",
@@ -2447,9 +2507,12 @@ async fn validate_swap_quote(
 
     Ok(SwapQuoteAnchors {
         position: position.clone(),
-        head_number: head.number,
-        head_hash: head.hash,
-        max_age_blocks,
+        state: SwapStateAnchor {
+            number: head.number,
+            hash: head.hash,
+            timestamp: head.timestamp,
+            base_fee_per_gas_wei,
+        },
     })
 }
 
@@ -2553,12 +2616,6 @@ async fn validate_swap_anchors_before_sign(
     anchors: &SwapQuoteAnchors,
     rpc: &BlockchainHttpRpcClient,
 ) -> anyhow::Result<()> {
-    let current_head = rpc.latest_block().await?;
-    validate_quote_age(
-        anchors.position.number,
-        current_head.number,
-        anchors.max_age_blocks,
-    )?;
     let expected_block_hash = B256::from_str(
         anchors
             .position
@@ -2572,11 +2629,11 @@ async fn validate_swap_anchors_before_sign(
         "Pool state block {} changed before signing",
         anchors.position.number
     );
-    let head_anchor = rpc.block_by_number(anchors.head_number, false).await?;
+    let state_anchor = rpc.block_by_number(anchors.state.number, false).await?;
     anyhow::ensure!(
-        head_anchor.hash == anchors.head_hash,
-        "Canonical head anchor {} changed before signing",
-        anchors.head_number
+        state_anchor.hash == anchors.state.hash,
+        "Canonical swap anchor {} changed before signing",
+        anchors.state.number
     );
     Ok(())
 }
@@ -2918,6 +2975,7 @@ async fn refresh_wallet_after_fill(
 /// Never wraps or approves.
 async fn check_swap_preconditions(
     plan: &SwapPlan,
+    block: u64,
     executor: &TransactionExecutor,
 ) -> anyhow::Result<()> {
     for (address, description) in [
@@ -2928,7 +2986,11 @@ async fn check_swap_preconditions(
         (plan.token_in, "input token"),
         (plan.token_out, "output token"),
     ] {
-        let code = executor.http_rpc_client.get_code(&address).await?;
+        let code = executor
+            .http_rpc_client
+            .get_code_at(&address, block)
+            .await?;
+
         if code.is_empty() {
             anyhow::bail!("No deployed bytecode at {description} address {address}");
         }
@@ -2943,14 +3005,14 @@ async fn check_swap_preconditions(
         executor.http_rpc_client.clone(),
         Some(EXECUTION_RPC_TIMEOUT_SECS),
     );
-    let router_factory = deployment.router_factory(&plan.router).await?;
+    let router_factory = deployment.router_factory_at(&plan.router, block).await?;
     anyhow::ensure!(
         router_factory == plan.factory,
         "Router {} reports factory {router_factory}, expected registered factory {}",
         plan.router,
         plan.factory
     );
-    let router_weth = deployment.router_weth9(&plan.router).await?;
+    let router_weth = deployment.router_weth9_at(&plan.router, block).await?;
     anyhow::ensure!(
         router_weth == plan.weth,
         "Router {} reports WETH9 {router_weth}, expected configured WETH {}",
@@ -2958,7 +3020,13 @@ async fn check_swap_preconditions(
         plan.weth
     );
     let registered_pool = deployment
-        .pool(&plan.factory, plan.token_in, plan.token_out, plan.fee)
+        .pool_at(
+            &plan.factory,
+            plan.token_in,
+            plan.token_out,
+            plan.fee,
+            block,
+        )
         .await?;
     anyhow::ensure!(
         registered_pool == plan.pool_address,
@@ -2971,7 +3039,7 @@ async fn check_swap_preconditions(
     );
 
     for token in [&plan.pool.token0, &plan.pool.token1] {
-        let decimals = erc20_contract.decimals(&token.address).await?;
+        let decimals = erc20_contract.decimals_at(&token.address, block).await?;
         anyhow::ensure!(
             decimals == token.decimals,
             "Token {} reports {decimals} decimals on-chain, expected cached decimals {}",
@@ -2981,7 +3049,12 @@ async fn check_swap_preconditions(
     }
 
     let allowance = erc20_contract
-        .allowance(&plan.token_in, &executor.wallet_address, &plan.router)
+        .allowance_at(
+            &plan.token_in,
+            &executor.wallet_address,
+            &plan.router,
+            block,
+        )
         .await?;
 
     if allowance < plan.amount_in {
@@ -2993,7 +3066,7 @@ async fn check_swap_preconditions(
     }
 
     let balance = erc20_contract
-        .balance_of(&plan.token_in, &executor.wallet_address)
+        .balance_of_at(&plan.token_in, &executor.wallet_address, block)
         .await?;
 
     if balance < plan.amount_in {
@@ -3603,6 +3676,8 @@ mod tests {
     const ROUTER: &str = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
     const WETH: &str = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
     const USDC: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
+    const LIVE_READ_SMOKE_ENV: &str = "BLOCKCHAIN_LIVE_READ_SMOKE";
+    const LIVE_READ_SMOKE_RPC: &str = "https://arb1.arbitrum.io/rpc";
 
     const WETH_ADDRESS: Address = address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1");
     const USDC_ADDRESS: Address = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
@@ -3843,6 +3918,7 @@ mod tests {
     /// The block number served by the `eth_getBlockByNumber` fixture; swap quotes pin their
     /// profiler state to it so the freshness check passes.
     const FIXTURE_BLOCK: u64 = 30_346_560;
+    const FIXTURE_BLOCK_PARAM: &str = "0x1cf0d40";
     const FIXTURE_BLOCK_HASH: &str =
         "0x1111111111111111111111111111111111111111111111111111111111111111";
     /// The timestamp served by the `eth_getBlockByNumber` fixture.
@@ -3851,7 +3927,19 @@ mod tests {
     const TEST_LIQUIDITY: u128 = 1_000_000_000_000_000_000_000;
 
     fn test_profiler(pool: &Pool, block_number: u64) -> PoolProfiler {
-        test_profiler_with_state(pool, block_number, U160::from(1u128 << 96), TEST_LIQUIDITY)
+        test_profiler_at_block(pool, block_number, FIXTURE_BLOCK_HASH)
+    }
+
+    fn test_profiler_at_block(pool: &Pool, block_number: u64, block_hash: &str) -> PoolProfiler {
+        test_profiler_with_range(
+            pool,
+            block_number,
+            block_hash,
+            U160::from(1u128 << 96),
+            -887_220,
+            887_220,
+            TEST_LIQUIDITY,
+        )
     }
 
     fn test_profiler_with_state(
@@ -3863,6 +3951,7 @@ mod tests {
         test_profiler_with_range(
             pool,
             block_number,
+            FIXTURE_BLOCK_HASH,
             sqrt_price_x96,
             -887_220,
             887_220,
@@ -3876,6 +3965,7 @@ mod tests {
     fn test_profiler_with_range(
         pool: &Pool,
         block_number: u64,
+        block_hash: &str,
         sqrt_price_x96: U160,
         tick_lower: i32,
         tick_upper: i32,
@@ -3924,11 +4014,11 @@ mod tests {
             PoolAnalytics::default(),
             BlockPosition::new(
                 block_number,
-                FIXTURE_BLOCK_HASH.to_string(),
+                block_hash.to_string(),
                 BLOCK_SCOPED_SNAPSHOT_INDEX,
                 BLOCK_SCOPED_SNAPSHOT_INDEX,
             )
-            .with_block_hash(Some(FIXTURE_BLOCK_HASH.to_string())),
+            .with_block_hash(Some(block_hash.to_string())),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -4881,6 +4971,94 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn live_arbitrum_numbered_swap_reads_are_available() {
+        if std::env::var(LIVE_READ_SMOKE_ENV).as_deref() != Ok("1") {
+            eprintln!("{LIVE_READ_SMOKE_ENV} is not 1; skipping live read smoke");
+            return;
+        }
+
+        let rpc_url = std::env::var("ARBITRUM_RPC_HTTP_URL")
+            .unwrap_or_else(|_| LIVE_READ_SMOKE_RPC.to_string());
+        let rpc = Arc::new(BlockchainHttpRpcClient::new(rpc_url, None, None));
+        let anchor = rpc.latest_block().await.unwrap();
+        let deployment = UniswapV3Deployment::new(rpc.clone(), Some(EXECUTION_RPC_TIMEOUT_SECS));
+        let erc20 = Erc20Contract::new(rpc.clone(), true);
+        let pool = test_pool();
+        let factory = UNISWAP_V3.dex.factory;
+        let wallet = Address::from_str(WALLET).unwrap();
+        let mut balance_call =
+            nautilus_core::hex::decode(BALANCE_OF_SELECTOR.trim_start_matches("0x")).unwrap();
+        balance_call.extend_from_slice(&[0; 12]);
+        balance_call.extend_from_slice(wallet.as_slice());
+
+        let code = rpc
+            .get_code_at(&ROUTER_ADDRESS, anchor.number)
+            .await
+            .unwrap();
+        let router_factory = deployment
+            .router_factory_at(&ROUTER_ADDRESS, anchor.number)
+            .await
+            .unwrap();
+        let router_weth = deployment
+            .router_weth9_at(&ROUTER_ADDRESS, anchor.number)
+            .await
+            .unwrap();
+        let registered_pool = deployment
+            .pool_at(
+                &factory,
+                WETH_ADDRESS,
+                USDC_ADDRESS,
+                U24::try_from(500u32).unwrap(),
+                anchor.number,
+            )
+            .await
+            .unwrap();
+        let weth_decimals = erc20
+            .decimals_at(&WETH_ADDRESS, anchor.number)
+            .await
+            .unwrap();
+        let usdc_decimals = erc20
+            .decimals_at(&USDC_ADDRESS, anchor.number)
+            .await
+            .unwrap();
+        erc20
+            .allowance_at(&WETH_ADDRESS, &wallet, &ROUTER_ADDRESS, anchor.number)
+            .await
+            .unwrap();
+        erc20
+            .balance_of_at(&WETH_ADDRESS, &wallet, anchor.number)
+            .await
+            .unwrap();
+        let gas = rpc
+            .estimate_gas_at(
+                &wallet,
+                &WETH_ADDRESS,
+                U256::ZERO,
+                &balance_call,
+                anchor.number,
+            )
+            .await
+            .unwrap();
+        rpc.get_balance_with_timeout(
+            &wallet,
+            Some(anchor.number),
+            Some(EXECUTION_RPC_TIMEOUT_SECS),
+        )
+        .await
+        .unwrap();
+        let canonical = rpc.block_by_number(anchor.number, false).await.unwrap();
+
+        assert!(!code.is_empty());
+        assert_eq!(router_factory, factory);
+        assert_eq!(router_weth, WETH_ADDRESS);
+        assert_eq!(registered_pool, pool.address);
+        assert_eq!(weth_decimals, 18);
+        assert_eq!(usdc_decimals, 6);
+        assert!(gas > 0);
+        assert_eq!(canonical.hash, anchor.hash);
+    }
+
+    #[tokio::test]
     async fn swap_quote_rejects_missing_ingestion_block_hash() {
         let (client, state) = client_with_mock_rpc(execution_rpc_state()).await;
         let pool = test_pool();
@@ -4960,8 +5138,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(anchors.position, profiler_event_position());
-        assert_eq!(anchors.head_number, FIXTURE_BLOCK);
-        assert_eq!(anchors.head_hash, B256::from([0x11; 32]));
+        assert_eq!(anchors.state.number, FIXTURE_BLOCK);
+        assert_eq!(anchors.state.hash, B256::from([0x11; 32]));
+        assert_eq!(anchors.state.timestamp, FIXTURE_BLOCK_TIMESTAMP);
+        assert_eq!(anchors.state.base_fee_per_gas_wei, 100_000_000);
     }
 
     #[tokio::test]
@@ -5018,7 +5198,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn swap_quote_rechecks_head_anchor_before_signing() {
+    async fn swap_quote_rechecks_state_anchor_before_signing() {
         let canonical = fixture_block_response(FIXTURE_BLOCK, B256::from([0x11; 32]));
         let changed = fixture_block_response(FIXTURE_BLOCK, B256::from([0x44; 32]));
         let state = execution_rpc_state().with_parameter_response_sequence(
@@ -5050,7 +5230,7 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(error.to_string().contains("head anchor"), "was: {error}");
+        assert!(error.to_string().contains("swap anchor"), "was: {error}");
     }
 
     #[rstest]
@@ -5615,6 +5795,283 @@ mod tests {
             Some(order.client_order_id().as_str())
         );
         assert!(client.in_flight.lock().unwrap().is_none());
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn submit_order_pins_every_pre_sign_state_read_to_swap_anchor() {
+        let Some((admin_pool, schema, mut client, state, _)) =
+            swap_client_with_database("execution_submit_anchor_reads_test", swap_rpc_state().await)
+                .await
+        else {
+            return;
+        };
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert_swap_submitted_and_filled(&events);
+        let requests = state.recorded_requests();
+        let broadcast_index = requests
+            .iter()
+            .position(|request| request["method"] == "eth_sendRawTransaction")
+            .unwrap();
+        let pre_broadcast = &requests[..broadcast_index];
+        let latest_reads: Vec<_> = pre_broadcast
+            .iter()
+            .filter(|request| {
+                request["method"] == "eth_getBlockByNumber" && request["params"][0] == "latest"
+            })
+            .collect();
+        assert_eq!(latest_reads.len(), 1);
+        assert_eq!(
+            latest_reads[0]["params"],
+            serde_json::json!(["latest", false])
+        );
+
+        for (method, count) in [
+            ("eth_getCode", 6),
+            ("eth_call", 7),
+            ("eth_estimateGas", 1),
+            ("eth_getBalance", 1),
+        ] {
+            let pinned: Vec<_> = pre_broadcast
+                .iter()
+                .filter(|request| request["method"] == method)
+                .collect();
+            assert_eq!(pinned.len(), count, "method {method}");
+            assert!(
+                pinned
+                    .iter()
+                    .all(|request| request["params"][1] == FIXTURE_BLOCK_PARAM),
+                "method {method}: {pinned:?}"
+            );
+        }
+
+        let numbered_blocks: Vec<_> = pre_broadcast
+            .iter()
+            .filter(|request| {
+                request["method"] == "eth_getBlockByNumber"
+                    && request["params"][0] == FIXTURE_BLOCK_PARAM
+            })
+            .collect();
+        assert_eq!(numbered_blocks.len(), 3);
+        assert!(
+            numbered_blocks
+                .iter()
+                .all(|request| request["params"][1] == false)
+        );
+
+        let chain_ids: Vec<_> = pre_broadcast
+            .iter()
+            .filter(|request| request["method"] == "eth_chainId")
+            .collect();
+        assert_eq!(chain_ids.len(), 1);
+        assert_eq!(chain_ids[0]["params"], serde_json::json!([]));
+        let nonces: Vec<_> = pre_broadcast
+            .iter()
+            .filter(|request| request["method"] == "eth_getTransactionCount")
+            .collect();
+        assert_eq!(nonces.len(), 1);
+        assert_eq!(
+            nonces[0]["params"],
+            serde_json::json!([WALLET.to_ascii_lowercase(), "pending"])
+        );
+        let priority_fees: Vec<_> = pre_broadcast
+            .iter()
+            .filter(|request| request["method"] == "eth_maxPriorityFeePerGas")
+            .collect();
+        assert_eq!(priority_fees.len(), 1);
+        assert_eq!(priority_fees[0]["params"], serde_json::json!([]));
+
+        let (_, expected_raw) = expected_swap_tx(expected_min_amount_out(50)).await;
+        assert_eq!(
+            requests[broadcast_index]["params"][0].as_str().unwrap(),
+            expected_raw
+        );
+        let created_block: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT created_block FROM {schema}.execution_intent"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(created_block, i64::try_from(FIXTURE_BLOCK).unwrap());
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_changed_swap_anchor_before_signing() {
+        let canonical = fixture_block_response(FIXTURE_BLOCK, B256::from([0x11; 32]));
+        let changed = fixture_block_response(FIXTURE_BLOCK, B256::from([0x44; 32]));
+        let state = swap_rpc_state().await.with_parameter_response_sequence(
+            "eth_getBlockByNumber",
+            FIXTURE_BLOCK_PARAM,
+            &[&canonical, &canonical, &changed],
+        );
+        let Some((admin_pool, schema, mut client, state, _)) =
+            swap_client_with_database("execution_submit_anchor_change_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1, "was: {events:?}");
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied.reason.as_str().contains("swap anchor"),
+            "was: {}",
+            denied.reason
+        );
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("swap".into(), "recoverable".into(), false, false)]
+        );
+        let signed_count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_transaction_hash"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(signed_count, 0);
+        assert!(
+            state
+                .recorded_requests()
+                .iter()
+                .all(|request| { request["method"] != "eth_sendRawTransaction" })
+        );
+        assert!(client.in_flight.lock().unwrap().is_none());
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_changed_quote_watermark_before_signing() {
+        let watermark_number = FIXTURE_BLOCK - 1;
+        let watermark_hash = B256::from([0x55; 32]);
+        let canonical = fixture_block_response(watermark_number, watermark_hash);
+        let changed = fixture_block_response(watermark_number, B256::from([0x66; 32]));
+        let watermark_param = format!("0x{watermark_number:x}");
+        let state = swap_rpc_state().await.with_parameter_response_sequence(
+            "eth_getBlockByNumber",
+            &watermark_param,
+            &[&canonical, &changed],
+        );
+        let Some((admin_pool, schema, mut client, state, cache)) =
+            swap_client_with_database("execution_submit_watermark_change_test", state).await
+        else {
+            return;
+        };
+        let pool = test_pool();
+        cache
+            .borrow_mut()
+            .add_pool_profiler(test_profiler_at_block(
+                &pool,
+                watermark_number,
+                &watermark_hash.to_string(),
+            ))
+            .unwrap();
+        let order = test_market_sell_order(pool.instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1, "was: {events:?}");
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied.reason.as_str().contains("changed before signing"),
+            "was: {}",
+            denied.reason
+        );
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("swap".into(), "recoverable".into(), false, false)]
+        );
+        let signed_count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_transaction_hash"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(signed_count, 0);
+        assert!(
+            state
+                .recorded_requests()
+                .iter()
+                .all(|request| { request["method"] != "eth_sendRawTransaction" })
+        );
+        assert!(client.in_flight.lock().unwrap().is_none());
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn changed_swap_anchor_retains_ownership_when_recovery_commit_fails() {
+        let canonical = fixture_block_response(FIXTURE_BLOCK, B256::from([0x11; 32]));
+        let changed = fixture_block_response(FIXTURE_BLOCK, B256::from([0x44; 32]));
+        let state = swap_rpc_state().await.with_parameter_response_sequence(
+            "eth_getBlockByNumber",
+            FIXTURE_BLOCK_PARAM,
+            &[&canonical, &canonical, &changed],
+        );
+        let Some((admin_pool, schema, mut client, state, _)) =
+            swap_client_with_database("execution_submit_anchor_recovery_fail_test", state).await
+        else {
+            return;
+        };
+        install_recoverable_commit_rejection(&admin_pool, &schema).await;
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1, "was: {events:?}");
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied.reason.as_str().contains("swap anchor"),
+            "was: {}",
+            denied.reason
+        );
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("swap".into(), "prepared".into(), false, true)]
+        );
+        let signed_count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_transaction_hash"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(signed_count, 0);
+        assert!(
+            state
+                .recorded_requests()
+                .iter()
+                .all(|request| { request["method"] != "eth_sendRawTransaction" })
+        );
+        assert!(matches!(
+            *client.in_flight.lock().unwrap(),
+            Some(InFlightSlot::Preparing(TransactionPurpose::Swap))
+        ));
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -7400,6 +7857,7 @@ mod tests {
             .add_pool_profiler(test_profiler_with_range(
                 &pool,
                 FIXTURE_BLOCK,
+                FIXTURE_BLOCK_HASH,
                 U160::from(1u128 << 96),
                 -10,
                 10,
@@ -7828,7 +8286,7 @@ mod tests {
 
     #[tokio::test]
     async fn preflight_ready_when_all_checks_pass() {
-        let (client, _) = client_with_mock_rpc(ready_rpc_state()).await;
+        let (client, state) = client_with_mock_rpc(ready_rpc_state()).await;
         let pool = test_pool();
 
         let report = client.preflight(&pool.instrument_id).await.unwrap();
@@ -7874,6 +8332,21 @@ mod tests {
         assert_eq!(report.max_priority_fee_per_gas_wei, 10_000_000);
         assert_eq!(report.derived_max_fee_per_gas_wei, 130_000_000);
         assert!(report.fee_within_ceiling);
+
+        let requests = state.recorded_requests();
+        for method in ["eth_getCode", "eth_call", "eth_getBalance"] {
+            let matching: Vec<_> = requests
+                .iter()
+                .filter(|request| request["method"] == method)
+                .collect();
+            assert!(!matching.is_empty(), "method {method}");
+            assert!(
+                matching
+                    .iter()
+                    .all(|request| request["params"][1] == "latest"),
+                "method {method}: {matching:?}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -11350,6 +11823,12 @@ mod tests {
             .iter()
             .filter(|request| request["method"] == "eth_estimateGas")
             .collect();
+        assert_eq!(estimates.len(), 2);
+        assert!(
+            estimates
+                .iter()
+                .all(|request| request["params"].as_array().unwrap().len() == 1)
+        );
         let approve_data = estimates[1]["params"][0]["data"].as_str().unwrap();
         assert!(
             approve_data.starts_with("0x095ea7b3"),
@@ -11359,6 +11838,31 @@ mod tests {
             approve_data.ends_with(&"f".repeat(64)),
             "was: {approve_data}"
         );
+
+        for selector in [FACTORY_SELECTOR, WETH9_SELECTOR] {
+            let calls: Vec<_> = requests
+                .iter()
+                .filter(|request| {
+                    request["method"] == "eth_call"
+                        && request["params"][0]["data"]
+                            .as_str()
+                            .is_some_and(|data| data.starts_with(selector))
+                })
+                .collect();
+            assert_eq!(calls.len(), 1, "selector {selector}");
+            assert!(
+                calls.iter().all(|request| request["params"][1] == "latest"),
+                "selector {selector}: {calls:?}"
+            );
+        }
+        let latest_blocks = requests
+            .iter()
+            .filter(|request| {
+                request["method"] == "eth_getBlockByNumber"
+                    && request["params"] == serde_json::json!(["latest", false])
+            })
+            .count();
+        assert_eq!(latest_blocks, 4);
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -11868,6 +12372,27 @@ mod tests {
                 "CREATE CONSTRAINT TRIGGER reject_execution_reservation_commit AFTER INSERT ON \
                  {schema}.execution_transaction_transition DEFERRABLE INITIALLY DEFERRED \
                  FOR EACH ROW EXECUTE FUNCTION {schema}.reject_execution_reservation_commit()"
+            ),
+        ] {
+            sqlx::query(sqlx::AssertSqlSafe(statement))
+                .execute(admin_pool)
+                .await
+                .unwrap();
+        }
+    }
+
+    async fn install_recoverable_commit_rejection(admin_pool: &sqlx::PgPool, schema: &str) {
+        for statement in [
+            format!(
+                "CREATE FUNCTION {schema}.reject_recoverable_commit() RETURNS trigger \
+                 LANGUAGE plpgsql AS 'BEGIN IF NEW.transition_key = ''recoverable'' THEN \
+                 RAISE EXCEPTION ''test recoverable commit rejection''; END IF; \
+                 RETURN NEW; END'"
+            ),
+            format!(
+                "CREATE CONSTRAINT TRIGGER reject_recoverable_commit AFTER INSERT ON \
+                 {schema}.execution_transaction_transition DEFERRABLE INITIALLY DEFERRED \
+                 FOR EACH ROW EXECUTE FUNCTION {schema}.reject_recoverable_commit()"
             ),
         ] {
             sqlx::query(sqlx::AssertSqlSafe(statement))

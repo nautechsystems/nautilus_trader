@@ -85,12 +85,29 @@ impl UniswapV3Deployment {
         &self,
         router: &Address,
     ) -> Result<Address, BlockchainRpcClientError> {
+        self.router_factory_with_block(router, None).await
+    }
+
+    #[cfg(feature = "hypersync")]
+    pub(crate) async fn router_factory_at(
+        &self,
+        router: &Address,
+        block: u64,
+    ) -> Result<Address, BlockchainRpcClientError> {
+        self.router_factory_with_block(router, Some(block)).await
+    }
+
+    async fn router_factory_with_block(
+        &self,
+        router: &Address,
+        block: Option<u64>,
+    ) -> Result<Address, BlockchainRpcClientError> {
         let result = self
             .base
             .execute_call(
                 router,
                 &UniswapV3RouterState::factoryCall {}.abi_encode(),
-                None,
+                block,
             )
             .await?;
         UniswapV3RouterState::factoryCall::abi_decode_returns(&result)
@@ -106,12 +123,29 @@ impl UniswapV3Deployment {
         &self,
         router: &Address,
     ) -> Result<Address, BlockchainRpcClientError> {
+        self.router_weth9_with_block(router, None).await
+    }
+
+    #[cfg(feature = "hypersync")]
+    pub(crate) async fn router_weth9_at(
+        &self,
+        router: &Address,
+        block: u64,
+    ) -> Result<Address, BlockchainRpcClientError> {
+        self.router_weth9_with_block(router, Some(block)).await
+    }
+
+    async fn router_weth9_with_block(
+        &self,
+        router: &Address,
+        block: Option<u64>,
+    ) -> Result<Address, BlockchainRpcClientError> {
         let result = self
             .base
             .execute_call(
                 router,
                 &UniswapV3RouterState::WETH9Call {}.abi_encode(),
-                None,
+                block,
             )
             .await?;
         UniswapV3RouterState::WETH9Call::abi_decode_returns(&result)
@@ -130,6 +164,31 @@ impl UniswapV3Deployment {
         token_b: Address,
         fee: U24,
     ) -> Result<Address, BlockchainRpcClientError> {
+        self.pool_with_block(factory, token_a, token_b, fee, None)
+            .await
+    }
+
+    #[cfg(feature = "hypersync")]
+    pub(crate) async fn pool_at(
+        &self,
+        factory: &Address,
+        token_a: Address,
+        token_b: Address,
+        fee: U24,
+        block: u64,
+    ) -> Result<Address, BlockchainRpcClientError> {
+        self.pool_with_block(factory, token_a, token_b, fee, Some(block))
+            .await
+    }
+
+    async fn pool_with_block(
+        &self,
+        factory: &Address,
+        token_a: Address,
+        token_b: Address,
+        fee: U24,
+        block: Option<u64>,
+    ) -> Result<Address, BlockchainRpcClientError> {
         let call = UniswapV3Factory::getPoolCall {
             tokenA: token_a,
             tokenB: token_b,
@@ -137,7 +196,7 @@ impl UniswapV3Deployment {
         };
         let result = self
             .base
-            .execute_call(factory, &call.abi_encode(), None)
+            .execute_call(factory, &call.abi_encode(), block)
             .await?;
         UniswapV3Factory::getPoolCall::abi_decode_returns(&result)
             .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))

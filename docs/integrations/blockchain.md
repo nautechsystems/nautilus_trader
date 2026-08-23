@@ -481,9 +481,9 @@ The client accepts one market-order shape:
 | ----------- | ----------------------------------------------------------------------- | ---------------------------------------------------------- |
 | Chain       | The chain configured on the execution client.                           | An instrument venue for another chain.                     |
 | DEX         | Uniswap V3.                                                             | Every other DEX, including PancakeSwap V3.                 |
-| Pool        | An address-based pool in `Cache::pool` with a fee tier.                  | Unknown pools, V4 pool IDs, and pools without a fee tier.  |
-| Order       | A single `MarketOrder` with side `BUY` or `SELL`.                        | Non-market orders submitted through `SubmitOrder`.         |
-| Quantity    | Base-denominated size that fits the configured raw-unit amount ceiling.  | Quote-denominated input and amounts above the ceiling.     |
+| Pool        | An address-based pool in `Cache::pool` with a fee tier.                 | Unknown pools, V4 pool IDs, and pools without a fee tier.  |
+| Order       | A single `MarketOrder` with side `BUY` or `SELL`.                       | Non-market orders submitted through `SubmitOrder`.         |
+| Quantity    | Base-denominated size that fits the configured raw-unit amount ceiling. | Quote-denominated input and amounts above the ceiling.     |
 | Orientation | Tokens with distinct model priorities.                                  | A pair whose tokens have equal priority and are ambiguous. |
 
 The `InstrumentId` selects the pool, for example
@@ -527,7 +527,7 @@ quote-to-base pair. Listing only one direction does not admit the other.
 | `tokenOut`          | SELL: pool quote token. BUY: pool base token.                                              |
 | `fee`               | Pool fee tier.                                                                             |
 | `recipient`         | Execution wallet address.                                                                  |
-| `deadline`          | Latest block timestamp plus configured `deadline_seconds`.                                 |
+| `deadline`          | Initial swap-anchor timestamp plus configured `deadline_seconds`.                          |
 | `amountIn`          | SELL: `Quantity` as raw base units. BUY: quote input derived from a local exact-out quote. |
 | `amountOutMinimum`  | Derived from a current quote (see below).                                                  |
 | `sqrtPriceLimitX96` | `0` (slippage is bounded by `amountOutMinimum`).                                           |
@@ -544,15 +544,16 @@ quote-to-base pair. Listing only one direction does not admit the other.
    quantity to derive the quote input, then submits that input as `exactInputSingle`. A BUY quote
    that returns a zero input is rejected; an on-chain BUY may still deliver less base than the
    order quantity, down to `amountOutMinimum`.
-1. Require the pool state to remain within `max_quote_age_blocks` of the latest block.
+1. Read the latest block once as the swap anchor. Require the pool state to remain within
+   `max_quote_age_blocks` of that anchor.
 1. Require the profiler watermark to include the block hash observed during ingestion. The same
-   numbered block must still have that hash on the execution RPC endpoint. A block‑scoped snapshot
+   numbered block must still have that hash on the execution RPC endpoint. A block-scoped snapshot
    must also carry that hash as its snapshot identifier.
 1. For an event watermark, require a successful canonical receipt whose transaction, block, and
    index metadata match the profiler position. The selected log must come from the expected pool
-   and use a supported pool‑event signature.
-1. Immediately before signing, reread the watermark block, the original head anchor, and the latest
-   height. A changed hash or stale quote rejects the order.
+   and use a supported pool-event signature.
+1. Immediately before signing, reread the watermark block and swap anchor by number. An unavailable
+   historical read or changed hash rejects the order.
 1. Compute `amountOutMinimum = quoted_amount_out * (10_000 - slippage_bps) / 10_000` in integer
    arithmetic and reject the order when the result is zero. For a BUY, `quoted_amount_out` is the
    submitted base quantity, so slippage protects the base output.
@@ -570,11 +571,11 @@ data subscription, or resync its events and rebuild its snapshot, before submitt
 Preflight, WETH wrapping, and router approval are explicit operations on the client, separate from
 `submit_order`:
 
-| Operation | State change                       | Pre-broadcast checks                                                                                                                                               | Completion check                                    |
+| Operation | State change                       | Pre-broadcast checks                                                                                                                                              | Completion check                                    |
 | --------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | Preflight | None.                              | Chain ID, deployed contracts, balances, allowance, and current fee policy.                                                                                        | Returns a structured, sanitized report.             |
-| Wrap      | Calls WETH `deposit()` with value. | WETH bytecode and a readable ERC-20 balance.                                                                                                                       | WETH balance increased by the exact wrapped amount. |
-| Approve   | Calls `approve(router, amount)`.   | Router allowlist; for nonzero targets, router deployment, factory and WETH identity, input-token membership, a zero current allowance, and successful simulation.  | Allowance at the inclusion block equals the target. |
+| Wrap      | Calls WETH `deposit()` with value. | WETH bytecode and a readable ERC-20 balance.                                                                                                                      | WETH balance increased by the exact wrapped amount. |
+| Approve   | Calls `approve(router, amount)`.   | Router allowlist; for nonzero targets, router deployment, factory and WETH identity, input-token membership, a zero current allowance, and successful simulation. | Allowance at the inclusion block equals the target. |
 
 Preflight resolves the pool from `Cache::pool`. Its report contains no RPC URL, private key, or raw
 signed transaction.
@@ -599,6 +600,19 @@ Before signing a swap, order submission checks:
 - Both tokens report the decimals stored in the pool definition.
 - Router allowance and input-token balance sufficient for the raw input amount.
 - Native balance sufficient for transaction value plus the maximum gas cost.
+
+The first latest block returned for the submission is the canonical swap state anchor. Its number,
+hash, timestamp, and base fee stay fixed through preparation. The anchor supplies the deadline,
+quote-age boundary, durable `created_block`, and EIP-1559 base fee. Contract code, router factory and
+WETH identity, factory pool resolution, token decimals, router allowance, input-token balance, gas
+estimation, and native balance all use the anchor number as an exact hexadecimal block parameter.
+
+The chain ID, `pending` nonce, and `eth_maxPriorityFeePerGas` reads have no equivalent historical
+value in this flow and remain unpinned. Immediately before local signing, the client rereads the
+quote watermark block and swap anchor by number and requires both exact hashes to match. Failure
+produces `OrderDenied` without persisting signed bytes, acknowledging the order, or calling
+`eth_sendRawTransaction`. The client releases its pre-sign slot only after the durable recoverable
+transition succeeds; a failed transition keeps ownership for reconciliation.
 
 The input token is the base token for a SELL and the quote token for a BUY. Preflight readiness
 still reports the base-token allowance used by SELL setup. A BUY needs a separate quote-token
@@ -641,10 +655,12 @@ At most one transaction can be in flight across wraps, approvals, and swaps:
 
 Fee and gas policy also runs before signing:
 
-- Fees use `eth_maxPriorityFeePerGas` plus the latest base fee and `base_fee_buffer_bps`. The client
-  rejects a derived fee above `max_fee_per_gas_wei`.
-- Gas uses `eth_estimateGas` plus `gas_buffer_bps`. The client rejects a buffered estimate above
-  `gas_limit`; it does not clamp the estimate.
+- Swap fees use the state-anchor base fee; wrap, approve, and preflight use their latest block read.
+  All paths use `eth_maxPriorityFeePerGas` plus `base_fee_buffer_bps`. The client rejects a derived
+  fee above `max_fee_per_gas_wei`.
+- Swap gas estimation uses the state-anchor block number; wrap and approve keep the default latest
+  estimate. The client applies `gas_buffer_bps` and rejects a buffered estimate above `gas_limit`;
+  it does not clamp the estimate.
 
 #### Persist before broadcast
 
@@ -846,7 +862,7 @@ The `BlockchainExecutionClientConfig` fields, exposed to Python following the
 | `signer_private_key_env`         | Required  | Environment variable that holds the signer key.                      |
 | `router_addresses`               | Required  | SwapRouter allowlist; at least one address is required.              |
 | `max_fee_per_gas_wei`            | Required  | Maximum derived fee per gas in wei.                                  |
-| `base_fee_buffer_bps`            | Required  | Buffer applied over the latest base fee.                             |
+| `base_fee_buffer_bps`            | Required  | Buffer over the swap-anchor or operator-path latest base fee.        |
 | `gas_limit`                      | Required  | Gas ceiling; a higher buffered estimate is rejected.                 |
 | `gas_buffer_bps`                 | Required  | Buffer applied over `eth_estimateGas`.                               |
 | `unlimited_approval`             | `false`   | Request unlimited approval instead of the exact amount.              |
@@ -855,7 +871,7 @@ The `BlockchainExecutionClientConfig` fields, exposed to Python following the
 | `slippage_bps`                   | Required  | Default slippage used to derive the minimum output.                  |
 | `max_slippage_bps`               | Required  | Ceiling for a per-order slippage override.                           |
 | `max_order_amount`               | Required  | `u64` ceiling on submitted base quantity, in raw base-token units.   |
-| `deadline_seconds`               | Required  | Swap deadline offset from the latest block timestamp.                |
+| `deadline_seconds`               | Required  | Swap deadline offset from the initial anchor timestamp.              |
 | `max_quote_age_blocks`           | Required  | Maximum age of the local quote in blocks.                            |
 | `receipt_timeout_secs`           | Required  | Deadline for the receipt and finality polling loop.                  |
 | `tokens`                         | `None`    | ERC-20 addresses included in balance publication.                    |
@@ -1036,6 +1052,19 @@ Expected result: HTTP `200` with a non-zero response size.
 ```bash
 cargo check -p nautilus-blockchain --features hypersync
 ```
+
+### Read-only numbered swap reads
+
+This check uses Arbitrum One without signing or broadcasting. Set `ARBITRUM_RPC_HTTP_URL` to
+override the public default endpoint.
+
+```bash
+BLOCKCHAIN_LIVE_READ_SMOKE=1 cargo nextest run -p nautilus-blockchain --features hypersync \
+    -E 'test(live_arbitrum_numbered_swap_reads_are_available)'
+```
+
+Expected result: the test reads one anchor and completes numbered code, contract, gas-estimate,
+balance, and exact-hash checks against that block.
 
 ### Live fail-closed regression
 

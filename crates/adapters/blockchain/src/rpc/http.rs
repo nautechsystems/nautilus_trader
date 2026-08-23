@@ -223,11 +223,7 @@ impl BlockchainHttpRpcClient {
             call["from"] = serde_json::Value::String(from.to_string());
         }
 
-        let block_param = if let Some(block_number) = block {
-            serde_json::json!(format!("0x{:x}", block_number))
-        } else {
-            serde_json::json!("latest")
-        };
+        let block_param = block_parameter(block);
 
         serde_json::json!({
             "jsonrpc": "2.0",
@@ -258,11 +254,7 @@ impl BlockchainHttpRpcClient {
         block: Option<u64>,
         timeout_secs: Option<u64>,
     ) -> anyhow::Result<U256> {
-        let block_param = if let Some(block_number) = block {
-            serde_json::json!(format!("0x{:x}", block_number))
-        } else {
-            serde_json::json!("latest")
-        };
+        let block_param = block_parameter(block);
 
         let request = serde_json::json!({
             "jsonrpc": "2.0",
@@ -384,8 +376,24 @@ impl BlockchainHttpRpcClient {
     ///
     /// Returns an error if the RPC call fails or the result is missing or malformed.
     pub async fn get_code(&self, address: &Address) -> anyhow::Result<Bytes> {
+        self.get_code_with_block(address, None).await
+    }
+
+    #[cfg(feature = "hypersync")]
+    pub(crate) async fn get_code_at(&self, address: &Address, block: u64) -> anyhow::Result<Bytes> {
+        self.get_code_with_block(address, Some(block)).await
+    }
+
+    async fn get_code_with_block(
+        &self,
+        address: &Address,
+        block: Option<u64>,
+    ) -> anyhow::Result<Bytes> {
         let result: Option<String> = self
-            .execute_execution_rpc_call("eth_getCode", serde_json::json!([address, "latest"]))
+            .execute_execution_rpc_call(
+                "eth_getCode",
+                serde_json::json!([address, block_parameter(block)]),
+            )
             .await?;
         let hex_string = result.ok_or_else(|| anyhow::anyhow!("eth_getCode returned no result"))?;
         let stripped = hex_string.strip_prefix("0x").unwrap_or(&hex_string);
@@ -440,14 +448,43 @@ impl BlockchainHttpRpcClient {
         value: U256,
         data: &[u8],
     ) -> anyhow::Result<u64> {
+        self.estimate_gas_with_block(from, to, value, data, None)
+            .await
+    }
+
+    #[cfg(feature = "hypersync")]
+    pub(crate) async fn estimate_gas_at(
+        &self,
+        from: &Address,
+        to: &Address,
+        value: U256,
+        data: &[u8],
+        block: u64,
+    ) -> anyhow::Result<u64> {
+        self.estimate_gas_with_block(from, to, value, data, Some(block))
+            .await
+    }
+
+    async fn estimate_gas_with_block(
+        &self,
+        from: &Address,
+        to: &Address,
+        value: U256,
+        data: &[u8],
+        block: Option<u64>,
+    ) -> anyhow::Result<u64> {
         let call = serde_json::json!({
             "from": from,
             "to": to,
             "value": format!("0x{value:x}"),
             "data": hex::encode_prefixed(data),
         });
+        let params = match block {
+            Some(block) => serde_json::json!([call, block_parameter(Some(block))]),
+            None => serde_json::json!([call]),
+        };
         let result: Option<String> = self
-            .execute_execution_rpc_call("eth_estimateGas", serde_json::json!([call]))
+            .execute_execution_rpc_call("eth_estimateGas", params)
             .await?;
         parse_hex_quantity_result("eth_estimateGas", result)
             .and_then(|v| u64::try_from(v).map_err(Into::into))
@@ -626,6 +663,13 @@ impl BlockchainHttpRpcClient {
         B256::from_str(&hex_string)
             .map_err(|e| BroadcastError::Failed(format!("Failed to parse broadcast result: {e}")))
     }
+}
+
+fn block_parameter(block: Option<u64>) -> serde_json::Value {
+    block.map_or_else(
+        || serde_json::json!("latest"),
+        |number| serde_json::json!(format!("0x{number:x}")),
+    )
 }
 
 fn rpc_response_preview(raw_response: &str) -> String {
@@ -1073,7 +1117,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn get_code_returns_deployed_bytecode() {
-        let (client, _) =
+        let (client, state) =
             client_for(MockRpcState::default().with_response("eth_getCode", GET_CODE_DEPLOYED))
                 .await;
 
@@ -1084,6 +1128,10 @@ pub(crate) mod tests {
 
         assert!(!code.is_empty());
         assert!(code.starts_with(&[0x60, 0x80]));
+        assert_eq!(
+            state.recorded_requests()[0]["params"],
+            serde_json::json!(["0x82af49447d8a07e3bd95bd0d56f35241523fbab1", "latest"])
+        );
     }
 
     #[tokio::test]
@@ -1137,6 +1185,8 @@ pub(crate) mod tests {
         assert_eq!(gas, 65_000);
         let requests = state.recorded_requests();
         assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0]["method"], "eth_estimateGas");
+        assert_eq!(requests[0]["params"].as_array().unwrap().len(), 1);
         let call = &requests[0]["params"][0];
         assert_eq!(call["from"], "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266");
         assert_eq!(call["to"], "0x82af49447d8a07e3bd95bd0d56f35241523fbab1");
