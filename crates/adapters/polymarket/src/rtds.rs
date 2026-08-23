@@ -42,7 +42,7 @@ use nautilus_network::{
     },
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -229,9 +229,9 @@ struct CryptoPayloadRaw {
 struct CryptoTwapPayloadRaw {
     symbol: String,
     timestamp: u64,
-    #[serde(rename = "value", deserialize_with = "deserialize_decimalish")]
+    #[serde(rename = "value", default)]
     #[allow(dead_code, reason = "display-only field modeled for wire conformance")]
-    display_value: (),
+    display_value: Option<serde::de::IgnoredAny>,
     full_accuracy_value: String,
     window_s: u32,
 }
@@ -1094,7 +1094,9 @@ impl PolymarketRtdsFeed {
             topic,
             &symbol_lower,
             payload.timestamp,
-            TimestampGuard::Live,
+            // A TWAP observation timestamp identifies one provider observation. Keep the
+            // high-water mark across reconnects and suppress equal-timestamp redelivery.
+            TimestampGuard::Snapshot,
         ) {
             return Ok(());
         }
@@ -1378,22 +1380,6 @@ impl ParsedSubscription {
 
 fn tracked_key(topic: &str, symbol_lower: &str) -> String {
     format!("{topic}:{symbol_lower}")
-}
-
-fn deserialize_decimalish<'de, D>(deserializer: D) -> Result<(), D::Error>
-where
-    D: Deserializer<'de>,
-{
-    match serde_json::Value::deserialize(deserializer)? {
-        serde_json::Value::Number(_) => Ok(()),
-        serde_json::Value::String(value) => Decimal::from_str(&value)
-            .or_else(|_| Decimal::from_scientific(&value))
-            .map(|_| ())
-            .map_err(serde::de::Error::custom),
-        other => Err(serde::de::Error::custom(format!(
-            "expected decimal string or JSON number, received {other}"
-        ))),
-    }
 }
 
 fn decimal_from_signed_e18(field: &str, value: &str) -> anyhow::Result<Decimal> {
@@ -1808,10 +1794,10 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_server_disconnect_surfaces_rtds_gap_and_recovery() {
+    async fn test_server_disconnect_restores_twap_without_replaying_last_observation() {
         let state = TestServerState::default();
         let addr = start_rtds_server(state.clone()).await;
-        let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
         let states = Arc::new(std::sync::Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let state_sink = SocketStateSink::new(move |state| {
@@ -1829,11 +1815,39 @@ mod tests {
             Some(state_sink),
         );
         assert!(
-            feed.track_subscribe(crypto_data_type("BTC"))
-                .expect("track RTDS subscription")
+            feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+                .expect("track RTDS TWAP subscription")
         );
 
         feed.connect().await.expect("connect RTDS feed");
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move {
+                    state.received_payloads.lock().await.iter().any(|payload| {
+                        payload["subscriptions"]
+                            .as_array()
+                            .is_some_and(|subscriptions| {
+                                subscriptions.iter().any(|subscription| {
+                                    subscription["topic"].as_str()
+                                        == Some(RtdsTopic::CryptoPricesTwapSixty.as_str())
+                                })
+                            })
+                    })
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+        state
+            .send_text_to_all(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE.to_string())
+            .await;
+        tokio::time::timeout(Duration::from_secs(5), data_rx.recv())
+            .await
+            .expect("initial TWAP observation timeout")
+            .expect("initial TWAP data channel closed");
+
+        state.clear_received_payloads().await;
         state.close_all_connections().await;
 
         wait_until_async(
@@ -1854,6 +1868,51 @@ mod tests {
             Duration::from_secs(10),
         )
         .await;
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move {
+                    state.received_payloads.lock().await.iter().any(|payload| {
+                        payload["subscriptions"]
+                            .as_array()
+                            .is_some_and(|subscriptions| {
+                                subscriptions.iter().any(|subscription| {
+                                    subscription["topic"].as_str()
+                                        == Some(RtdsTopic::CryptoPricesTwapSixty.as_str())
+                                })
+                            })
+                    })
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        state
+            .send_text_to_all(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE.to_string())
+            .await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(250), data_rx.recv())
+                .await
+                .is_err(),
+            "reconnect must not re-emit the last equal-timestamp TWAP observation"
+        );
+
+        let mut next: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        next["payload"]["timestamp"] = json!(
+            next["payload"]["timestamp"]
+                .as_u64()
+                .expect("fixture observation timestamp")
+                + 1
+        );
+        state.send_text_to_all(next.to_string()).await;
+        tokio::time::timeout(Duration::from_secs(5), data_rx.recv())
+            .await
+            .expect("post-reconnect TWAP observation timeout")
+            .expect("post-reconnect TWAP data channel closed");
 
         assert_eq!(
             states
@@ -2104,7 +2163,8 @@ mod tests {
     #[case::missing(None)]
     #[case::nonnumeric(Some(json!("not-a-number")))]
     #[case::boolean(Some(json!(true)))]
-    fn test_handle_crypto_twap_update_requires_decimalish_display_value_for_wire_conformance(
+    #[case::object(Some(json!({"future": "format"})))]
+    fn test_handle_crypto_twap_update_ignores_non_authoritative_display_value(
         #[case] display_value: Option<serde_json::Value>,
     ) {
         let (feed, mut rx) = make_feed();
@@ -2124,7 +2184,18 @@ mod tests {
         }
 
         feed.try_handle_text_for_test(&update.to_string())
-            .expect_err("display value must satisfy the venue wire contract");
+            .expect("display value must not veto the exact signed-E18 observation");
+        let DataEvent::Data(NautilusData::Custom(custom)) =
+            rx.try_recv().expect("custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+        assert_eq!(payload.value, dec!(65000.123456789012345678));
         assert!(rx.try_recv().is_err());
     }
 
@@ -2137,6 +2208,12 @@ mod tests {
             .expect("parse TWAP fixture");
         let mut second = first.clone();
         second["payload"]["full_accuracy_value"] = json!("65000123456789012345679");
+        second["payload"]["timestamp"] = json!(
+            first["payload"]["timestamp"]
+                .as_u64()
+                .expect("fixture observation timestamp")
+                + 1
+        );
 
         feed.try_handle_text_for_test(&first.to_string())
             .expect("first exact TWAP update");
@@ -2161,6 +2238,28 @@ mod tests {
         assert_eq!(values[0], dec!(65000.123456789012345678));
         assert_eq!(values[1], dec!(65000.123456789012345679));
         assert_ne!(values[0], values[1]);
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_drops_equal_timestamp_redelivery() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+
+        feed.try_handle_text_for_test(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("first exact TWAP update");
+        feed.try_handle_text_for_test(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("equal-timestamp redelivery should be ignored");
+
+        let DataEvent::Data(NautilusData::Custom(_)) =
+            rx.try_recv().expect("first custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        assert!(
+            rx.try_recv().is_err(),
+            "an equal-timestamp TWAP redelivery must not emit twice"
+        );
     }
 
     #[rstest]
