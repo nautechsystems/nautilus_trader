@@ -225,6 +225,27 @@ pub fn pyobject_to_fill_model_handle(obj: &Bound<'_, PyAny>) -> PyResult<FillMod
     )))
 }
 
+/// Converts a Rust [`FillModelAny`] into its Python binding object.
+///
+/// # Errors
+///
+/// Returns an error if conversion to a Python object fails.
+pub fn fill_model_any_to_pyobject(py: Python<'_>, model: &FillModelAny) -> PyResult<Py<PyAny>> {
+    match model {
+        FillModelAny::Default(model) => Ok(Py::new(py, model.clone())?.into_any()),
+        FillModelAny::BestPrice(model) => Ok(Py::new(py, model.clone())?.into_any()),
+        FillModelAny::OneTickSlippage(model) => Ok(Py::new(py, model.clone())?.into_any()),
+        FillModelAny::Probabilistic(model) => Ok(Py::new(py, model.clone())?.into_any()),
+        FillModelAny::TwoTier(model) => Ok(Py::new(py, model.clone())?.into_any()),
+        FillModelAny::ThreeTier(model) => Ok(Py::new(py, model.clone())?.into_any()),
+        FillModelAny::LimitOrderPartialFill(model) => Ok(Py::new(py, model.clone())?.into_any()),
+        FillModelAny::SizeAware(model) => Ok(Py::new(py, model.clone())?.into_any()),
+        FillModelAny::CompetitionAware(model) => Ok(Py::new(py, model.clone())?.into_any()),
+        FillModelAny::VolumeSensitive(model) => Ok(Py::new(py, model.clone())?.into_any()),
+        FillModelAny::MarketHours(model) => Ok(Py::new(py, model.clone())?.into_any()),
+    }
+}
+
 macro_rules! impl_fill_model_pymethods {
     ($type:ty) => {
         #[pymethods]

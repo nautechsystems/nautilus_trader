@@ -20,6 +20,7 @@ from unit.adapters.example_modules import load_example_module
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientFactory
 from nautilus_trader.common import Environment
+from nautilus_trader.execution import DefaultFillModel
 from nautilus_trader.execution import FeeModel
 from nautilus_trader.execution import ProbabilityPriceFeeModel
 from nautilus_trader.live import LiveNode
@@ -94,6 +95,54 @@ def test_sandbox_config_exposes_fee_model_property() -> None:
     )
 
     assert isinstance(config.fee_model, ProbabilityPriceFeeModel)
+
+
+def test_live_node_builder_accepts_sandbox_matching_knobs() -> None:
+    trader_id = TraderId.from_str("TESTER-001")
+
+    node = (
+        LiveNode.builder("SANDBOX-EXEC-PYTEST-003", trader_id, Environment.SANDBOX)
+        .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
+        .add_simulated_exec_client(
+            None,
+            SandboxExecutionClientFactory(),
+            SandboxExecutionClientConfig(
+                venue=Venue.from_str(SANDBOX),
+                starting_balances=[Money(100000.0, Currency.from_str("USD"))],
+                trader_id=trader_id,
+                account_id=AccountId.from_str("SANDBOX-001"),
+                fill_model=DefaultFillModel(prob_fill_on_limit=0.0),
+                queue_position=True,
+                liquidity_consumption=True,
+            ),
+        )
+        .build()
+    )
+
+    assert node.trader_id == trader_id
+    assert node.environment == Environment.SANDBOX
+
+
+def test_sandbox_config_exposes_matching_knobs() -> None:
+    config = SandboxExecutionClientConfig(
+        venue=Venue.from_str(SANDBOX),
+        starting_balances=[Money(100000.0, Currency.from_str("USD"))],
+        fill_model=DefaultFillModel(prob_fill_on_limit=0.0),
+        queue_position=True,
+        liquidity_consumption=True,
+        bar_adaptive_high_low_ordering=True,
+        use_market_order_acks=True,
+        oto_full_trigger=True,
+        price_protection_points=100,
+    )
+
+    assert isinstance(config.fill_model, DefaultFillModel)
+    assert config.queue_position is True
+    assert config.liquidity_consumption is True
+    assert config.bar_adaptive_high_low_ordering is True
+    assert config.use_market_order_acks is True
+    assert config.oto_full_trigger is True
+    assert config.price_protection_points == 100
 
 
 def test_sandbox_config_accepts_custom_fee_model() -> None:

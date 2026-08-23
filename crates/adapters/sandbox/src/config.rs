@@ -17,7 +17,8 @@
 
 use ahash::AHashMap;
 use nautilus_execution::{
-    matching_engine::config::OrderMatchingEngineConfig, models::fee::FeeModelAny,
+    matching_engine::config::OrderMatchingEngineConfig,
+    models::{fee::FeeModelAny, fill::FillModelAny},
 };
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
@@ -79,6 +80,14 @@ pub struct SandboxExecutionClientConfig {
         deserialize_with = "deserialize_fee_model"
     )]
     pub fee_model: Option<FeeModelAny>,
+    /// The fill model for sandbox matching engines.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_fill_model",
+        deserialize_with = "deserialize_fill_model"
+    )]
+    pub fill_model: Option<FillModelAny>,
     /// If True, account balances won't change (frozen).
     #[builder(default)]
     pub frozen_account: bool,
@@ -107,21 +116,53 @@ pub struct SandboxExecutionClientConfig {
     /// If the `reduce_only` execution instruction on orders will be honored.
     #[builder(default = true)]
     pub use_reduce_only: bool,
+    /// If limit order queue position tracking is enabled during trade execution.
+    #[builder(default)]
+    pub queue_position: bool,
+    /// If order book liquidity consumption should be tracked per level.
+    #[builder(default)]
+    pub liquidity_consumption: bool,
+    /// If bar high/low processing order adapts to the bar's shape.
+    #[builder(default)]
+    pub bar_adaptive_high_low_ordering: bool,
+    /// If `OrderAccepted` events should be generated for market orders.
+    #[builder(default)]
+    pub use_market_order_acks: bool,
+    /// If OTO child orders wait for a full parent fill before release.
+    #[builder(default)]
+    pub oto_full_trigger: bool,
+    /// Exchange-calculated price boundary for aggressive market fills.
+    ///
+    /// A value of `0` disables protection.
+    #[builder(default)]
+    pub price_protection_points: u32,
 }
 
 impl SandboxExecutionClientConfig {
     /// Creates an [`OrderMatchingEngineConfig`] from this sandbox config.
     #[must_use]
     pub fn to_matching_engine_config(&self) -> OrderMatchingEngineConfig {
+        let price_protection = if self.price_protection_points == 0 {
+            None
+        } else {
+            Some(self.price_protection_points)
+        };
+
         OrderMatchingEngineConfig::builder()
             .bar_execution(self.bar_execution)
+            .bar_adaptive_high_low_ordering(self.bar_adaptive_high_low_ordering)
             .trade_execution(self.trade_execution)
+            .liquidity_consumption(self.liquidity_consumption)
             .reject_stop_orders(self.reject_stop_orders)
             .support_gtd_orders(self.support_gtd_orders)
             .support_contingent_orders(self.support_contingent_orders)
             .use_position_ids(self.use_position_ids)
             .use_random_ids(self.use_random_ids)
             .use_reduce_only(self.use_reduce_only)
+            .use_market_order_acks(self.use_market_order_acks)
+            .queue_position(self.queue_position)
+            .oto_full_trigger(self.oto_full_trigger)
+            .maybe_price_protection_points(price_protection)
             .build()
     }
 }
@@ -158,9 +199,41 @@ where
     }
 }
 
+fn serialize_fill_model<S>(
+    fill_model: &Option<FillModelAny>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match fill_model {
+        None => serializer.serialize_none(),
+        Some(_) => Err(serde::ser::Error::custom(
+            "SandboxExecutionClientConfig.fill_model is runtime-only and cannot be serialized",
+        )),
+    }
+}
+
+fn deserialize_fill_model<'de, D>(deserializer: D) -> Result<Option<FillModelAny>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<IgnoredAny>::deserialize(deserializer)?;
+
+    match value {
+        None => Ok(None),
+        Some(_) => Err(de::Error::custom(
+            "SandboxExecutionClientConfig.fill_model must be configured at runtime, not deserialized",
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use nautilus_execution::models::fee::{FeeModelAny, ProbabilityPriceFeeModel};
+    use nautilus_execution::models::{
+        fee::{FeeModelAny, ProbabilityPriceFeeModel},
+        fill::FillModelAny,
+    };
     use rstest::rstest;
 
     use super::*;
@@ -178,9 +251,45 @@ mod tests {
         assert_eq!(config.default_leverage, expected.default_leverage);
         assert_eq!(config.book_type, expected.book_type);
         assert!(config.fee_model.is_none());
+        assert!(config.fill_model.is_none());
         assert_eq!(config.bar_execution, expected.bar_execution);
         assert_eq!(config.trade_execution, expected.trade_execution);
         assert_eq!(config.use_position_ids, expected.use_position_ids);
+        assert!(!config.queue_position);
+        assert!(!config.liquidity_consumption);
+        assert!(!config.bar_adaptive_high_low_ordering);
+        assert!(!config.use_market_order_acks);
+        assert!(!config.oto_full_trigger);
+        assert_eq!(config.price_protection_points, 0);
+    }
+
+    #[rstest]
+    fn test_to_matching_engine_config_forwards_matching_knobs() {
+        let config = SandboxExecutionClientConfig {
+            queue_position: true,
+            liquidity_consumption: true,
+            bar_adaptive_high_low_ordering: true,
+            use_market_order_acks: true,
+            oto_full_trigger: true,
+            price_protection_points: 100,
+            ..SandboxExecutionClientConfig::default()
+        };
+        let engine_config = config.to_matching_engine_config();
+
+        assert!(engine_config.queue_position);
+        assert!(engine_config.liquidity_consumption);
+        assert!(engine_config.bar_adaptive_high_low_ordering);
+        assert!(engine_config.use_market_order_acks);
+        assert!(engine_config.oto_full_trigger);
+        assert_eq!(engine_config.price_protection_points, Some(100));
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_rejects_fill_model_field() {
+        let result =
+            toml::from_str::<SandboxExecutionClientConfig>("fill_model = \"runtime-only\"");
+
+        assert!(result.is_err());
     }
 
     #[rstest]
@@ -194,6 +303,18 @@ mod tests {
     fn test_exec_config_toml_rejects_serializing_runtime_fee_model() {
         let config = SandboxExecutionClientConfig {
             fee_model: Some(FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel)),
+            ..SandboxExecutionClientConfig::default()
+        };
+
+        let result = toml::Value::try_from(&config);
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_rejects_serializing_runtime_fill_model() {
+        let config = SandboxExecutionClientConfig {
+            fill_model: Some(FillModelAny::Default(Default::default())),
             ..SandboxExecutionClientConfig::default()
         };
 
