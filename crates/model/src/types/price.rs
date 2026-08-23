@@ -922,7 +922,7 @@ mod tests {
 
     #[rstest]
     fn test_is_positive_ok() {
-        // A normal, non‑zero price should be positive.
+        // A normal, non-zero price should be positive.
         let price = Price::new(42.0, 2);
         assert!(price.is_positive());
 

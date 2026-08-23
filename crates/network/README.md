@@ -31,7 +31,7 @@ This crate provides feature flags to control source code inclusion during compil
 
 ## WebSocket performance
 
-The 512 B text round‑trip benchmark measures 50,000 messages after 1,000 warmup messages. Values
+The 512 B text round-trip benchmark measures 50,000 messages after 1,000 warmup messages. Values
 are the median of three `bench-lto` runs on an AMD Ryzen Threadripper 9980X with the CPU governor
 set to `performance` and ASLR disabled. Lower latency is better.
 

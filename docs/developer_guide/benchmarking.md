@@ -14,11 +14,11 @@ Select a tool based on the work and result:
 
 | Tool                                                      | What it measures                          | Use it for                                           |
 | --------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------- |
-| [Criterion](https://docs.rs/criterion/latest/criterion/)  | Wall‑clock time with confidence intervals | Operations above roughly 100 ns and elapsed time     |
+| [Criterion](https://docs.rs/criterion/latest/criterion/)  | Wall-clock time with confidence intervals | Operations above roughly 100 ns and elapsed time     |
 | [iai](https://docs.rs/iai/latest/iai/)                    | Retired CPU instructions under Cachegrind | Small, deterministic operations and change detection |
-| [flamegraph](https://github.com/flamegraph-rs/flamegraph) | Sampled call‑stack profile                | Locating work inside a representative slow path      |
+| [flamegraph](https://github.com/flamegraph-rs/flamegraph) | Sampled call-stack profile                | Locating work inside a representative slow path      |
 
-Criterion reports user‑visible elapsed time. iai produces stable counts for the same binary,
+Criterion reports user-visible elapsed time. iai produces stable counts for the same binary,
 toolchain, and inputs without requiring host noise controls. Compare iai results only under the
 same code generation assumptions, and use Criterion when elapsed time is the required result.
 
@@ -141,9 +141,9 @@ saved baseline.
 
 ### Canonical backtest workloads
 
-The canonical backtest cases use the first 10,000 rows of the checked‑in
-`test_data/btc-perp-20211231-20220201_1m.csv` file. A shared fixture drives replay‑only, scheduled
-market‑order, passive limit‑order, and bar‑EMA scenarios. The correctness test and both timed paths
+The canonical backtest cases use the first 10,000 rows of the checked-in
+`test_data/btc-perp-20211231-20220201_1m.csv` file. A shared fixture drives replay-only, scheduled
+market-order, passive limit-order, and bar-EMA scenarios. The correctness test and both timed paths
 use the same fixture loader and exact result fingerprints.
 
 Run the semantic check first:
@@ -203,7 +203,7 @@ iteration.
    Profile: bench-lto (release + lto = "fat" + codegen-units = 1, debug = full)
    ```
 
-For deeper analysis, control hyper‑threading and dynamic frequency scaling in firmware. Published
+For deeper analysis, control hyper-threading and dynamic frequency scaling in firmware. Published
 results must record those controls when they differ from the normal host state.
 
 iai runs under Cachegrind's virtual CPU model, so host quiescence, frequency scaling, and ASLR do

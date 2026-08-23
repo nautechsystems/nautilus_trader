@@ -21,7 +21,7 @@ Examples include prediction market outcomes and binary event contracts.
 | `price_increment` | `Price`            | `Price`            | Required         | Smallest valid price step.                |
 | `size_increment`  | `Quantity`         | `Quantity`         | Required         | Smallest valid size step.                 |
 | `outcome`         | `Option<Ustr>`     | `str \| None`      | `None`           | Outcome label when the venue provides it. |
-| `description`     | `Option<Ustr>`     | `str \| None`      | `None`           | Human‑readable market description.        |
+| `description`     | `Option<Ustr>`     | `str \| None`      | `None`           | Human-readable market description.        |
 | `max_quantity`    | `Option<Quantity>` | `Quantity \| None` | `None`           | Maximum order quantity.                   |
 | `min_quantity`    | `Option<Quantity>` | `Quantity \| None` | `None`           | Minimum order quantity.                   |
 | `max_notional`    | `Option<Money>`    | `Money \| None`    | `None`           | Maximum order notional value.             |

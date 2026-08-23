@@ -1,6 +1,6 @@
 # Cargo Patches
 
-This directory contains local Cargo patches for third‑party crates when the workspace must keep a
+This directory contains local Cargo patches for third-party crates when the workspace must keep a
 specific upstream version but needs a small compatibility fix.
 
 **These patches are temporary. Remove each patch when the upstream crate supports the required
@@ -10,7 +10,7 @@ dependency and API versions.**
 
 `hypersync-client` 1.4.0 requires `arrow` and `parquet` 57.x. The matching Parquet release depends
 on the external `thrift` crate. The local compatibility crates satisfy those version constraints
-and re‑export the Arrow and Parquet 59.2.0 APIs without copying upstream source.
+and re-export the Arrow and Parquet 59.2.0 APIs without copying upstream source.
 
 Remove both compatibility crates when `hypersync-client` supports Arrow and Parquet 59 or later.
 

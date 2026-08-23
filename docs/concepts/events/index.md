@@ -74,12 +74,12 @@ Every concrete Python order event exposes these fields:
 | `trader_id`       | Trader instance identifier.                                  |
 | `strategy_id`     | Strategy associated with the order.                          |
 | `instrument_id`   | Instrument for the order.                                    |
-| `client_order_id` | Client‑assigned order identifier.                            |
+| `client_order_id` | Client-assigned order identifier.                            |
 | `event_id`        | Unique event identifier.                                     |
 | `ts_event`        | UNIX timestamp (nanoseconds) when the event occurred.        |
 | `ts_init`         | UNIX timestamp (nanoseconds) when the event was initialized. |
 
-Each order event page lists its type‑specific fields. These include `venue_order_id`, `account_id`,
+Each order event page lists its type-specific fields. These include `venue_order_id`, `account_id`,
 and `reconciliation` only on the Python event classes that expose them. For example,
 [`OrderFilled`](order_filled.md) adds `last_qty`, `last_px`, `trade_id`, and `commission`.
 [`OrderFillVoided`](order_fill_voided.md) identifies the corrected trade and carries its cumulative
@@ -99,7 +99,7 @@ corresponding lifecycle event.
 When an `OrderFillVoided` corrects a locally applied fill, it rebuilds each affected cached position
 from its effective fill history. It does not emit an opposite fill. After publishing the correction,
 the engine emits `PositionChanged` for a corrected position that remains open or `PositionClosed`
-for one that is closed. An order‑only correction does not produce a position event.
+for one that is closed. An order-only correction does not produce a position event.
 
 | Event                                    | When it fires                                  | Handler               |
 | ---------------------------------------- | ---------------------------------------------- | --------------------- |
@@ -108,7 +108,7 @@ for one that is closed. An order‑only correction does not produce a position e
 | [`PositionClosed`](position_closed.md)   | A fill or correction leaves quantity at zero.  | `on_position_closed`  |
 
 [`PositionAdjusted`](../positions.md#position-adjustments) records quantity or realized PnL changes
-outside normal fills, such as base‑currency commissions and funding. Strategies do not receive it
+outside normal fills, such as base-currency commissions and funding. Strategies do not receive it
 through the position event handlers; inspect `position.adjustments()` for the recorded history.
 
 ### From fill to position: the causal chain
@@ -189,7 +189,7 @@ is absent from that class.
 | `avg_px_open`      | ✓      | ✓       | ✓      | Average entry price.                         |
 | `avg_px_close`     | -      | ✓       | ✓      | Average exit price, if available.            |
 | `realized_return`  | -      | ✓       | ✓      | Realized return as a ratio.                  |
-| `realized_pnl`     | ✓      | ✓       | ✓      | Current‑cycle realized PnL in cost currency. |
+| `realized_pnl`     | ✓      | ✓       | ✓      | Current-cycle realized PnL in cost currency. |
 | `unrealized_pnl`   | -      | ✓       | ✓      | Set to zero by the engine.                   |
 | `duration`         | -      | -       | ✓      | Time held in nanoseconds.                    |
 | `ts_opened`        | -      | ✓       | ✓      | Timestamp when position opened.              |

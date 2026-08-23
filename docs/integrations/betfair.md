@@ -11,9 +11,9 @@ data and execution have the same behavior from either language.
 
 The adapter includes several components, which can be used separately or together:
 
-- `BetfairHttpClient`: Low‑level Betting and Accounts API connectivity.
-- `BetfairStreamClient`: Low‑level Exchange Streaming API connectivity for the market and order streams.
-- `BetfairRaceStreamClient`: Low‑level connectivity for the race and cricket data streams.
+- `BetfairHttpClient`: Low-level Betting and Accounts API connectivity.
+- `BetfairStreamClient`: Low-level Exchange Streaming API connectivity for the market and order streams.
+- `BetfairRaceStreamClient`: Low-level connectivity for the race and cricket data streams.
 - `BetfairInstrumentProvider`: Loads Betfair markets and converts them into Nautilus instruments.
 - `BetfairDataClient`: Market data feed manager.
 - `BetfairExecutionClient`: Account management and bet execution gateway.
@@ -29,7 +29,7 @@ configuration for data and execution clients.
 ## Installation
 
 Install NautilusTrader using the [installation guide](../getting_started/installation.md). The
-Betfair adapter is included in the Python package; no adapter‑specific extra is required.
+Betfair adapter is included in the Python package; no adapter-specific extra is required.
 
 ## Examples
 
@@ -49,7 +49,7 @@ Betfair adapter is included in the Python package; no adapter‑specific extra i
 Betfair requires an application key to authenticate API requests. After registering and funding your
 account, obtain your key with the
 [API-NG Developer AppKeys Tool](https://apps.betfair.com/visualisers/api-ng-account-operations/).
-Betfair assigns two keys per account: a **Live** key, which requires a one‑time activation fee, and
+Betfair assigns two keys per account: a **Live** key, which requires a one-time activation fee, and
 a **Delayed** key for development and testing.
 
 Supply the account credentials through configuration or environment variables:
@@ -69,7 +69,7 @@ The adapter keeps venue event time separate from local initialization time:
 - `ts_event` records when Betfair says the event occurred.
 - `ts_init` records when the live adapter received the containing stream message.
 
-Each live stream callback reads the real‑time atomic clock once, before decoding the message. Every
+Each live stream callback reads the real-time atomic clock once, before decoding the message. Every
 output decoded from that message shares the same `ts_init`.
 
 | Input                  | `ts_event` source                                                                                                                                                                                                     | `ts_init` source                                                              |
@@ -77,10 +77,10 @@ output decoded from that message shares the same `ts_init`.
 | Market change (`mcm`)  | Message publish time (`pt`).                                                                                                                                                                                          | Local receipt time.                                                           |
 | Race change (`rcm`)    | Runner or race feed time (`ft`), falling back to the message publish time (`pt`) when `ft` is absent.                                                                                                                 | Local receipt time.                                                           |
 | Cricket change (`ccm`) | Message publish time (`pt`).                                                                                                                                                                                          | Local receipt time.                                                           |
-| Order change (`ocm`)   | The relevant order lifecycle time. Acceptance uses `pd`; fills use `md`, falling back to `pt`; status and cancel events use the latest of `md`, `cd`, or `ld`, falling back to `pt`. OCM‑level custom data uses `pt`. | Local receipt time.                                                           |
-| Historical data loader | The same feed‑time rules as live data.                                                                                                                                                                                | Message publish time (`pt`), because recorded data has no local receipt time. |
+| Order change (`ocm`)   | The relevant order lifecycle time. Acceptance uses `pd`; fills use `md`, falling back to `pt`; status and cancel events use the latest of `md`, `cd`, or `ld`, falling back to `pt`. OCM-level custom data uses `pt`. | Local receipt time.                                                           |
+| Historical data loader | The same feed-time rules as live data.                                                                                                                                                                                | Message publish time (`pt`), because recorded data has no local receipt time. |
 
-When an OCM arrives during post‑reconnect reconciliation, the adapter buffers the message together
+When an OCM arrives during post-reconnect reconciliation, the adapter buffers the message together
 with its captured `ts_init`. Draining the buffer preserves the original receipt time instead of using
 the later replay time.
 
@@ -93,7 +93,7 @@ Betfair is a betting exchange, so several concepts from traditional financial ve
 | Order Type             | Supported | Notes                                                             |
 | ---------------------- | --------- | ----------------------------------------------------------------- |
 | `MARKET`               | ✓*        | Supports `AT_THE_CLOSE`, which maps to Betfair `MARKET_ON_CLOSE`. |
-| `LIMIT`                | ✓         | Supports regular limit orders and BSP on‑close limit orders.      |
+| `LIMIT`                | ✓         | Supports regular limit orders and BSP on-close limit orders.      |
 | `STOP_MARKET`          | -         | Not supported.                                                    |
 | `STOP_LIMIT`           | -         | Not supported.                                                    |
 | `MARKET_IF_TOUCHED`    | -         | Not supported.                                                    |
@@ -104,7 +104,7 @@ Submitting a `MARKET` order with any time in force other than `AT_THE_CLOSE` is 
 Betfair has no immediate market order.
 
 :::warning
-BSP on‑close instructions carry a **liability**, not a stake. For `MARKET_ON_CLOSE` and
+BSP on-close instructions carry a **liability**, not a stake. For `MARKET_ON_CLOSE` and
 `LIMIT_ON_CLOSE` orders, the adapter sends the order quantity as the Betfair liability. Size a BSP
 order by the amount you are prepared to lose, not by the stake you want matched.
 :::
@@ -121,7 +121,7 @@ order by the amount you are prepared to lose, not by the stake you want matched.
 | `GTD`          | -         | Not supported; the expiry is ignored and maps to `LAPSE`.    |
 
 A `LIMIT` order in `AT_THE_OPEN` mode also routes to `LIMIT_ON_CLOSE`, because Betfair has no
-at‑the‑open instruction.
+at-the-open instruction.
 
 ### Execution instructions
 
@@ -163,7 +163,7 @@ venue-side positions to check against.
 | Feature               | Supported | Notes                                              |
 | --------------------- | --------- | -------------------------------------------------- |
 | Query open orders     | ✓         | Built from `listCurrentOrders`.                    |
-| Order status updates  | ✓         | Real‑time bet state changes from the order stream. |
+| Order status updates  | ✓         | Real-time bet state changes from the order stream. |
 | Fill reports          | ✓         | Matched sizes and prices from `listCurrentOrders`. |
 | Cleared order history | -         | The adapter does not request settlement history.   |
 
@@ -177,12 +177,12 @@ Startup:
 4. Generate startup mass status from `listCurrentOrders`.
 5. Reconcile order and fill reports into the execution engine.
 
-On every stream reconnect, the adapter repeats the order‑and‑fill mass‑status fetch over a recent
-window. It halts new‑order submissions after transport loss or a server `connectionClosed` status
+On every stream reconnect, the adapter repeats the order-and-fill mass-status fetch over a recent
+window. It halts new-order submissions after transport loss or a server `connectionClosed` status
 until the latest recovery generation dispatches its mass status.
 
 For the full transition sequence, see
-[post‑reconnect reconciliation](#post-reconnect-reconciliation).
+[post-reconnect reconciliation](#post-reconnect-reconciliation).
 
 Reconciliation behavior:
 
@@ -200,44 +200,44 @@ handles renewal and recovery through four mechanisms:
 
 | Mechanism            | Trigger                                     | Action                                                                                               |
 | -------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Periodic keep‑alive  | Every 10 hours (36,000 seconds).            | Renew the session token and update retained stream authentication without reconnecting.              |
-| Keep‑alive fallback  | Keep‑alive returns `LoginFailed`.           | Re‑login, update all active stream authentication, then request replacement stream transports.       |
-| Stream reconnect     | `Connection` message after initial connect. | Try keep‑alive. `LoginFailed` triggers full re‑login; other failures retain the existing session.    |
-| HTTP report recovery | A report query returns a session error.     | Try keep‑alive and retry once; any keep‑alive failure falls back to full re‑login before that retry. |
+| Periodic keep-alive  | Every 10 hours (36,000 seconds).            | Renew the session token and update retained stream authentication without reconnecting.              |
+| Keep-alive fallback  | Keep-alive returns `LoginFailed`.           | Re-login, update all active stream authentication, then request replacement stream transports.       |
+| Stream reconnect     | `Connection` message after initial connect. | Try keep-alive. `LoginFailed` triggers full re-login; other failures retain the existing session.    |
+| HTTP report recovery | A report query returns a session error.     | Try keep-alive and retry once; any keep-alive failure falls back to full re-login before that retry. |
 
-The periodic keep‑alive tasks and data stream reconnect handler log and skip transient keep‑alive
+The periodic keep-alive tasks and data stream reconnect handler log and skip transient keep-alive
 errors such as network timeouts and 5xx responses. The execution reconnect handler also preserves
-the existing session token, but continues report reconciliation. At the periodic or handler‑level
-keep‑alive step, only `LoginFailed` triggers full re‑login. HTTP report recovery differs: after a
-session error, any keep‑alive failure falls back to full re‑login before the report‑level retry.
+the existing session token, but continues report reconciliation. At the periodic or handler-level
+keep-alive step, only `LoginFailed` triggers full re-login. HTTP report recovery differs: after a
+session error, any keep-alive failure falls back to full re-login before the report-level retry.
 
-Both the data and execution clients use the same session‑renewal policy. Each spawns:
+Both the data and execution clients use the same session-renewal policy. Each spawns:
 
-- A **keep‑alive task** that periodically attempts renewal. An ordinary successful keep‑alive
+- A **keep-alive task** that periodically attempts renewal. An ordinary successful keep-alive
   updates retained authentication without replacing the transport.
 - A **reconnect handler** that listens for `Connection` messages after a stream reconnect and
   attempts to refresh the session.
 
-After a full re‑login, the adapter updates authentication for every affected active stream before it
+After a full re-login, the adapter updates authentication for every affected active stream before it
 requests any reconnect. Each replacement connection sends the latest authentication before retained
 subscriptions or traffic buffered during the reconnect. Market and order streams also
 retain their subscription IDs and `clk`/`initialClk` resume values.
 
 The data client applies the same update to active market, race, and cricket streams. A periodic
-keep‑alive fallback requests replacement transports immediately after updating authentication. An
+keep-alive fallback requests replacement transports immediately after updating authentication. An
 HTTP report recovery requests an execution stream replacement after the query finishes. When full
-re‑login occurs inside the execution stream reconnect handler, that handler first fetches and
+re-login occurs inside the execution stream reconnect handler, that handler first fetches and
 dispatches mass status, then requests a replacement execution stream. The replacement stream's
-`Connection` message starts another handler iteration; a successful keep‑alive updates retained
+`Connection` message starts another handler iteration; a successful keep-alive updates retained
 authentication without requesting another replacement. This ordering prevents a reconnect loop.
 
 ## Post-reconnect reconciliation
 
-After the initial handshake, a Betfair execution transport loss immediately halts new‑order
+After the initial handshake, a Betfair execution transport loss immediately halts new-order
 submissions. This applies to automatic network reconnects and replacements requested after a full
-re‑login. The adapter assumes the cache may have diverged while the previous transport was
+re-login. The adapter assumes the cache may have diverged while the previous transport was
 unavailable. In particular, fills can complete and roll off the unmatched book before the
-post‑reconnect stream image arrives. The adapter therefore fetches and dispatches a mass status over
+post-reconnect stream image arrives. The adapter therefore fetches and dispatches a mass status over
 a recent window before allowing new submissions.
 
 | Step | Trigger                                               | Action                                                                                                                                                  |
@@ -246,16 +246,16 @@ a recent window before allowing new submissions.
 | 2    | Replacement `Connection` message.                     | Advances the generation again, raises `pending_resync`, and queues that generation.                                                                     |
 | 3    | Reconnect task receives the generation.               | Attempts a session refresh, publishes authentication after a successful refresh, requests `getAccountFunds`, then queries orders and fills in sequence. |
 | 4    | Both `listCurrentOrders` queries succeed.             | Builds and dispatches `ExecutionReport::MassStatus` through the execution event channel.                                                                |
-| 5    | Recovery task finishes.                               | Requests a replacement after full re‑login. Clears the halt if mass status was dispatched and the generation is current.                                |
+| 5    | Recovery task finishes.                               | Requests a replacement after full re-login. Clears the halt if mass status was dispatched and the generation is current.                                |
 
-The account‑state refresh is best effort: a request or parse failure is logged but does not prevent
-mass‑status dispatch or reopening the gate. A keep‑alive failure other than `LoginFailed` continues
-with the retained session because the report queries retain their own retry and session‑recovery
-logic. A failed full re‑login or either report query leaves the gate halted until a later reconnect
-succeeds or the client disconnects. This fail‑closed behavior also covers the interval where the
+The account-state refresh is best effort: a request or parse failure is logged but does not prevent
+mass-status dispatch or reopening the gate. A keep-alive failure other than `LoginFailed` continues
+with the retained session because the report queries retain their own retry and session-recovery
+logic. A failed full re-login or either report query leaves the gate halted until a later reconnect
+succeeds or the client disconnects. This fail-closed behavior also covers the interval where the
 replacement socket is active but Betfair has not sent its `Connection` message.
 
-Mass‑status dispatch is the completion boundary for the handled generation. The gate does not wait
+Mass-status dispatch is the completion boundary for the handled generation. The gate does not wait
 for a separate acknowledgement that the execution engine has applied the report to its cache.
 
 While the execution stream is unavailable or reconciliation is in progress:
@@ -325,8 +325,8 @@ Betfair provides separate values for logical order correlation and request dedup
 
 ### Retry and ambiguity
 
-State‑changing order calls use up to three retries by default within a 45‑second total budget. The
-elapsed-time limit keeps every retry within Betfair's 60‑second `customerRef` deduplication window.
+State-changing order calls use up to three retries by default within a 45-second total budget. The
+elapsed-time limit keeps every retry within Betfair's 60-second `customerRef` deduplication window.
 The adapter handles failures as follows:
 
 | Failure or response                                                           | Order command handling                                                                     |
@@ -336,7 +336,7 @@ The adapter handles failures as follows:
 | `UNEXPECTED_ERROR`                                                            | Mark the attempt ambiguous and retry with the same `customerRef`.                          |
 | `TIMEOUT_ERROR` or an adapter cancellation                                    | Leave the command ambiguous without retrying it.                                           |
 | `TIMEOUT` report or `BET_IN_PROGRESS`                                         | Leave the command ambiguous for OCM or reconciliation.                                     |
-| Incomplete or contradictory report                                            | Leave the command ambiguous unless a definitive top‑level error proves rejection.          |
+| Incomplete or contradictory report                                            | Leave the command ambiguous unless a definitive top-level error proves rejection.          |
 | Known validation, authentication, permission, or other definitive venue error | Reject the affected command without retrying it.                                           |
 | Missing, malformed, or unknown nested API error under a server error          | Leave the command ambiguous without retrying it until its meaning is explicitly supported. |
 
@@ -352,13 +352,13 @@ longer executable. `BET_TAKEN_OR_LAPSED` completes a cancellation for the same t
 
 ### JSON-RPC errors
 
-Betfair JSON‑RPC errors contain an outer numeric `code` and `message` and can also contain a nested
-API `errorCode` and `errorDetails`. The outer values describe the JSON‑RPC envelope; Betfair commonly
+Betfair JSON-RPC errors contain an outer numeric `code` and `message` and can also contain a nested
+API `errorCode` and `errorDetails`. The outer values describe the JSON-RPC envelope; Betfair commonly
 uses `-32099` with an actionable API error stored in the object named by `data.exceptionname`, such
 as `APINGException` or `AccountAPINGException`. The adapter preserves the outer and nested fields and
 uses the nested API error when available. Unknown, missing, or malformed nested data remains visible
 through the outer code and message and receives the conservative order handling shown above.
-Read‑only calls retain their broader retry policy and can retry `TIMEOUT_ERROR` or a generic
+Read-only calls retain their broader retry policy and can retry `TIMEOUT_ERROR` or a generic
 retryable outer error.
 
 ## Order stream fill handling
@@ -378,8 +378,8 @@ flowchart TD
     D -->|No| F[Process applicable order status,<br/>fill, or void changes]
 ```
 
-After both filters pass, the adapter emits only the outputs that apply to the update. Market‑level
-filtering exits before any per‑runner work, and neither filter logs a warning.
+After both filters pass, the adapter emits only the outputs that apply to the update. Market-level
+filtering exits before any per-runner work, and neither filter logs a warning.
 
 :::warning
 If you set `stream_market_ids_filter`, ensure it includes every market you trade. Orders placed on
@@ -430,17 +430,17 @@ reconciliation do not throttle order placement:
 
 | Bucket  | Default | Endpoints                                       | Configurable                     |
 | ------- | ------- | ----------------------------------------------- | -------------------------------- |
-| General | 5/s     | Account state, reconciliation, keep‑alive.      | `request_rate_per_second`.       |
+| General | 5/s     | Account state, reconciliation, keep-alive.      | `request_rate_per_second`.       |
 | Orders  | 20/s    | `placeOrders`, `replaceOrders`, `cancelOrders`. | `order_request_rate_per_second`. |
 
-Read‑only Betting API calls use the general HTTP retry budget, with up to three retries by default.
-State‑changing calls use the policy in [Order command failures and retries](#order-command-failures-and-retries).
+Read-only Betting API calls use the general HTTP retry budget, with up to three retries by default.
+State-changing calls use the policy in [Order command failures and retries](#order-command-failures-and-retries).
 
-After a report query returns a session or rate‑limit error, the order status and fill report paths
-make one additional report‑level attempt. A session error first tries keep‑alive and falls back to
-full re‑login after any keep‑alive failure. Full re‑login updates execution stream authentication
+After a report query returns a session or rate-limit error, the order status and fill report paths
+make one additional report-level attempt. A session error first tries keep-alive and falls back to
+full re-login after any keep-alive failure. Full re-login updates execution stream authentication
 and requests a replacement after the query finishes. A `TOO_MANY_REQUESTS` error waits 5 seconds
-before the report‑level retry.
+before the report-level retry.
 
 Betfair's own API limits are more nuanced than a single request rate:
 
@@ -558,7 +558,7 @@ reports the whole account.
 | `stream_host`                       | `None`   | Optional stream host override.              |
 | `stream_port`                       | `None`   | Optional stream port override.              |
 | `stream_heartbeat_secs`             | `5`      | Interval between stream heartbeats.         |
-| `stream_heartbeat_timeout_secs`     | `60`     | Dead‑peer timeout before reconnect.         |
+| `stream_heartbeat_timeout_secs`     | `60`     | Dead-peer timeout before reconnect.         |
 | `stream_reconnect_delay_initial_ms` | `2,000`  | Initial reconnect delay.                    |
 | `stream_reconnect_delay_max_ms`     | `30,000` | Maximum reconnect delay.                    |
 | `stream_use_tls`                    | `True`   | Use TLS for the stream connection.          |
@@ -589,7 +589,7 @@ receive every price update.
 | `stream_host`                       | `None`        | Optional stream host override.                                     |
 | `stream_port`                       | `None`        | Optional stream port override.                                     |
 | `stream_heartbeat_secs`             | `5`           | Interval between stream heartbeats.                                |
-| `stream_heartbeat_timeout_secs`     | `60`          | Dead‑peer timeout before reconnect.                                |
+| `stream_heartbeat_timeout_secs`     | `60`          | Dead-peer timeout before reconnect.                                |
 | `stream_reconnect_delay_initial_ms` | `2,000`       | Initial reconnect delay.                                           |
 | `stream_reconnect_delay_max_ms`     | `30,000`      | Maximum reconnect delay.                                           |
 | `stream_use_tls`                    | `True`        | Use TLS for the stream connection.                                 |
@@ -600,7 +600,7 @@ receive every price update.
 | `reconcile_market_ids_only`         | `False`       | When `True`, use `reconcile_market_ids`.                           |
 | `reconcile_market_ids`              | `None`        | Explicit startup reconciliation market IDs.                        |
 | `use_market_version`                | `False`       | Attach market version to orders; currently has no effect.          |
-| `stream_gap_recovery_lookback_mins` | `10`          | Lookback window for the post‑reconnect mass‑status reconciliation. |
+| `stream_gap_recovery_lookback_mins` | `10`          | Lookback window for the post-reconnect mass-status reconciliation. |
 
 ## Contributing
 

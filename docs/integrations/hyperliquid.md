@@ -182,9 +182,9 @@ spot markets, and HIP-4 binary outcome markets.
 | Product Type      | Data Feed | Trading | Notes                                            |
 | ----------------- | --------- | ------- | ------------------------------------------------ |
 | Spot              | ✓         | ✓       | Native spot markets.                             |
-| Perpetual Futures | ✓         | ✓       | USDC‑settled linear perps (validator‑operated).  |
-| HIP‑3 Perpetuals  | ✓         | ✓       | Builder‑deployed perps with per‑dex collateral.  |
-| HIP‑4 Outcomes    | ✓         | ✓       | Fully‑collateralized binary outcome side tokens. |
+| Perpetual Futures | ✓         | ✓       | USDC-settled linear perps (validator-operated).  |
+| HIP-3 Perpetuals  | ✓         | ✓       | Builder-deployed perps with per-dex collateral.  |
+| HIP-4 Outcomes    | ✓         | ✓       | Fully-collateralized binary outcome side tokens. |
 
 All four product types load automatically at connect; no per-product opt-in is required.
 
@@ -308,7 +308,7 @@ allows qualified deployers to launch permissionless perp dexes on Hyperliquid. T
 include equities (TSLA, NVDA, AAPL), commodities (gold, crude oil), indices (S&P 500), and
 pre-IPO tokens (SpaceX, OpenAI).
 
-In a `LiveNode`, HIP‑3 perpetuals load automatically alongside standard perpetuals at
+In a `LiveNode`, HIP-3 perpetuals load automatically alongside standard perpetuals at
 connect: the adapter fetches every perp dex (standard and builder-deployed) from `allPerpMetas`,
 so no additional client configuration is required. The data client exposes no per-dex filter;
 strategies select the markets they trade by `instrument_id`.
@@ -331,7 +331,7 @@ instruments = await client.load_instrument_definitions(
 
 ### Open-order and position reconciliation
 
-Open‑order and position reconciliation covers standard perpetuals and every HIP‑3 dex represented by
+Open-order and position reconciliation covers standard perpetuals and every HIP-3 dex represented by
 the execution client's cached perpetual instruments, without separate reconciliation configuration.
 A `LiveNode` initializes this cache from the instrument universe when the execution client connects.
 Direct `HyperliquidHttpClient` callers get the same coverage for the instruments they add with
@@ -339,9 +339,9 @@ Direct `HyperliquidHttpClient` callers get the same coverage for the instruments
 
 An unfiltered request queries the default perp dex and each cached builder dex, then combines their
 reports; position reconciliation also includes spot holdings. For perpetual filters, a request
-filtered to a HIP‑3 instrument derives the builder dex from the symbol's dex prefix and queries only
+filtered to a HIP-3 instrument derives the builder dex from the symbol's dex prefix and queries only
 that dex. A standard perpetual filter queries only the default dex. Spot and outcome position filters
-keep their existing spot‑only routing. If any required request fails, reconciliation returns an error
+keep their existing spot-only routing. If any required request fails, reconciliation returns an error
 rather than a partial snapshot.
 
 ### Differences from standard perpetuals
@@ -412,7 +412,7 @@ the endpoint degrades to perps and spot rather than failing instrument loading.
 
 ### Loading outcome instruments
 
-In a `LiveNode`, outcome instruments load automatically (best‑effort) when the venue exposes
+In a `LiveNode`, outcome instruments load automatically (best-effort) when the venue exposes
 `outcomeMeta`. No client configuration is required.
 
 For direct `HyperliquidHttpClient` usage, opt in through `load_instrument_definitions`:
@@ -454,9 +454,9 @@ fields appear when the venue includes them.
 | `expiry`           | description                    | `YYYYMMDD-HHMM` UTC                               |
 | `target_price`     | description                    | binary settlement threshold                       |
 | `period`           | description                    | recurrence period (e.g. `1d`, `3m`)               |
-| `price_thresholds` | description                    | comma‑separated thresholds (bucket markets)       |
-| `named_index`      | named‑outcome description      | position in parent `named_outcomes` array         |
-| `is_fallback`      | fallback‑outcome description   | `true` for the `other` outcome of a question      |
+| `price_thresholds` | description                    | comma-separated thresholds (bucket markets)       |
+| `named_index`      | named-outcome description      | position in parent `named_outcomes` array         |
+| `is_fallback`      | fallback-outcome description   | `true` for the `other` outcome of a question      |
 | `question`         | parent question                | question id                                       |
 | `question_name`    | parent question                | question label                                    |
 | `question_*`       | parent question description    | every parsed question field, `question_` prefixed |
@@ -522,9 +522,9 @@ await client.submit_negate_outcome(9, 52, Decimal("1.0"))
 
 | Action                  | Use case                                                                             |
 | ----------------------- | ------------------------------------------------------------------------------------ |
-| `submit_split_outcome`  | Mint paired Yes + No tokens from quote (initial market making, dual‑side hedges)     |
+| `submit_split_outcome`  | Mint paired Yes + No tokens from quote (initial market making, dual-side hedges)     |
 | `submit_merge_outcome`  | Burn a matched Yes + No pair back to quote without crossing the spread               |
-| `submit_merge_question` | Close a full multi‑outcome basket back to quote atomically                           |
+| `submit_merge_question` | Close a full multi-outcome basket back to quote atomically                           |
 | `submit_negate_outcome` | Convert No shares of one outcome into Yes shares of every other in the same question |
 
 For directional bets the ordinary `SubmitOrder` path is sufficient; the
@@ -624,7 +624,7 @@ The adapter supports the following data subscriptions. All perpetual data types
 | Data type         | Sub. | Snapshot | Hist. | Nautilus type                 | Notes                                            |
 | ----------------- | ---- | -------- | ----- | ----------------------------- | ------------------------------------------------ |
 | Trade ticks       | ✓    | -        | ✓     | `TradeTick`                   | WebSocket trades; `recentTrades`.                |
-| Public trades     | ✓    | -        | ✓     | `HyperliquidPublicTrade`      | Opt‑in custom data with counterparties and hash. |
+| Public trades     | ✓    | -        | ✓     | `HyperliquidPublicTrade`      | Opt-in custom data with counterparties and hash. |
 | Quote ticks       | ✓    | -        | -     | `QuoteTick`                   | Best bid/offer.                                  |
 | Order book deltas | ✓    | ✓        | -     | `OrderBookDelta`              | L2 snapshots.                                    |
 | Order book depth  | ✓    | -        | -     | `OrderBookDepth10`            | Top-10 L2 snapshots.                             |
@@ -635,8 +635,8 @@ The adapter supports the following data subscriptions. All perpetual data types
 | Open interest     | ✓    | -        | -     | `HyperliquidOpenInterest`     | Custom data from `activeAssetCtx`.               |
 | All mids          | ✓    | -        | -     | `HyperliquidAllMids`          | Custom data from `allMids`.                      |
 | All dex contexts  | ✓    | -        | -     | `HyperliquidAllDexsAssetCtxs` | Custom data from `allDexsAssetCtxs`.             |
-| TWAP history      | ✓    | -        | -     | `HyperliquidTwapHistory`      | Opt‑in custom data from `userTwapHistory`.       |
-| TWAP slice fills  | ✓    | -        | -     | `HyperliquidTwapSliceFill`    | Opt‑in custom data from `userTwapSliceFills`.    |
+| TWAP history      | ✓    | -        | -     | `HyperliquidTwapHistory`      | Opt-in custom data from `userTwapHistory`.       |
+| TWAP slice fills  | ✓    | -        | -     | `HyperliquidTwapSliceFill`    | Opt-in custom data from `userTwapSliceFills`.    |
 
 :::note
 Historical quote requests are not supported. Historical trade requests use the
@@ -796,7 +796,7 @@ custom data. They are **not** included in the execution account
 | `executed_size`      | `Decimal`               | Executed size so far.                                         |
 | `executed_notional`  | `Decimal`               | Executed notional so far.                                     |
 | `minutes`            | `int`                   | TWAP duration in minutes.                                     |
-| `reduce_only`        | `bool`                  | Whether the TWAP is reduce‑only.                              |
+| `reduce_only`        | `bool`                  | Whether the TWAP is reduce-only.                              |
 | `randomize`          | `bool`                  | Whether slice timing is randomized.                           |
 | `status`             | `HyperliquidTwapStatus` | Venue status (`activated`/`terminated`/`finished`/`error`/…). |
 | `status_description` | `str`                   | Venue status description (often set when status is `error`).  |
@@ -1048,7 +1048,7 @@ cancels only the unfilled remainder.
 | Instruction   | Perpetuals | Spot | Notes                            |
 | ------------- | ---------- | ---- | -------------------------------- |
 | `post_only`   | ✓          | ✓    | Equivalent to ALO time in force. |
-| `reduce_only` | ✓          | ✓    | Close‑only orders.               |
+| `reduce_only` | ✓          | ✓    | Close-only orders.               |
 
 :::info
 Post-only orders that would immediately match are rejected by Hyperliquid. The adapter detects
@@ -1199,8 +1199,8 @@ Standard perps default to cross margin; HIP-3 perps default to isolated. On
 connect, the execution client reconciles orders, fills, and positions against
 Hyperliquid's clearinghouse state. Spot positions are reconstructed from held
 balances (long-only); HIP-4 side tokens reconcile against their matching
-`BinaryOption` instruments. See [HIP‑3 reconciliation](#open-order-and-position-reconciliation) for
-per‑dex open‑order and position fan‑out.
+`BinaryOption` instruments. See [HIP-3 reconciliation](#open-order-and-position-reconciliation) for
+per-dex open-order and position fan-out.
 
 :::note
 Leverage is managed directly through the Hyperliquid web UI or API, not through the adapter.
@@ -1417,9 +1417,9 @@ effect yet. See [Instrument loading](#instrument-loading) for how to refresh the
 | `http_timeout_secs`            | `60`      | Timeout (seconds) applied to REST calls.                                                                                                         |
 | `ws_post_timeout_secs`         | `10`      | Timeout (seconds) applied to WebSocket post trading requests.                                                                                    |
 | `normalize_prices`             | `True`    | Normalize order prices to 5 significant figures before submission.                                                                               |
-| `include_builder_attribution`  | `True`    | Include zero‑fee Nautilus builder attribution on eligible mainnet orders.                                                                        |
-| `market_order_slippage_bps`    | `50`      | Slippage buffer (bps) applied to MARKET and stop trigger derivations. Overridable per‑order via `SubmitOrder.params`.                            |
-| `outcome_settlement_poll_secs` | `0`       | HIP‑4 `outcomeMeta` settlement poll interval (seconds). Rust‑only; venue `Settlement` fills cover settlement, so polling is disabled by default. |
+| `include_builder_attribution`  | `True`    | Include zero-fee Nautilus builder attribution on eligible mainnet orders.                                                                        |
+| `market_order_slippage_bps`    | `50`      | Slippage buffer (bps) applied to MARKET and stop trigger derivations. Overridable per-order via `SubmitOrder.params`.                            |
+| `outcome_settlement_poll_secs` | `0`       | HIP-4 `outcomeMeta` settlement poll interval (seconds). Rust-only; venue `Settlement` fills cover settlement, so polling is disabled by default. |
 | `proxy_url`                    | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                                                            |
 | `transport_backend`            | `Sockudo` | WebSocket transport backend.                                                                                                                     |
 

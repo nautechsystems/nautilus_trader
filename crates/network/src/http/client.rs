@@ -41,12 +41,12 @@ const DEFAULT_HTTP2_KEEP_ALIVE_SECS: u64 = 30;
 ///
 /// Bounds peak memory per response so a hostile or malfunctioning endpoint
 /// cannot exhaust memory by streaming an arbitrarily large body. Mirrors the
-/// caps already enforced on the WebSocket and raw‑socket paths.
+/// caps already enforced on the WebSocket and raw-socket paths.
 const DEFAULT_MAX_RESPONSE_BYTES: usize = 100 * 1024 * 1024;
 
 /// An asynchronous HTTP client with rate limiting, timeouts, and custom headers.
 ///
-/// The client uses `reqwest` for I/O and supports default and per‑key quotas. Multiple clients
+/// The client uses `reqwest` for I/O and supports default and per-key quotas. Multiple clients
 /// can share the same rate limiter when their requests consume one quota budget.
 #[derive(Clone, Debug)]
 pub struct HttpClient {
@@ -79,7 +79,7 @@ impl HttpClient {
         Self::new_with_rate_limiter(headers, header_keys, timeout_secs, proxy_url, rate_limiter)
     }
 
-    /// Creates a new [`HttpClient`] instance sharing an externally‑owned rate limiter.
+    /// Creates a new [`HttpClient`] instance sharing an externally-owned rate limiter.
     ///
     /// Use this constructor to share a single [`RateLimiter`] across multiple
     /// [`HttpClient`] instances (for example, the HTTP clients owned by an
@@ -107,7 +107,7 @@ impl HttpClient {
         )
     }
 
-    /// Creates a new [`HttpClient`] instance sharing multiple externally‑owned rate limiters.
+    /// Creates a new [`HttpClient`] instance sharing multiple externally-owned rate limiters.
     ///
     /// Each request awaits every limiter with the same keys. A limiter with no default quota
     /// ignores keys it does not own, allowing independent quota scopes such as per-IP and

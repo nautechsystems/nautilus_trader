@@ -16,8 +16,8 @@
 //! Exponential backoff with optional jitter for socket reconnection delays.
 //!
 //! Successive delays grow by a configurable factor up to a maximum. Random jitter reduces
-//! synchronized reconnect storms. Immediate‑first mode allows the first reconnect attempt to run
-//! without delay. A rolling‑window throttle enforces a minimum attempt spacing once reconnects flap,
+//! synchronized reconnect storms. Immediate-first mode allows the first reconnect attempt to run
+//! without delay. A rolling-window throttle enforces a minimum attempt spacing once reconnects flap,
 //! bounding the attempt rate when the stability reset would otherwise restore an immediate reconnect.
 
 use std::{collections::VecDeque, pin::pin, sync::atomic::AtomicU8, time::Duration};
@@ -100,12 +100,12 @@ pub struct ExponentialBackoff {
     immediate_reconnect_original: bool,
 }
 
-/// An exponential backoff mechanism with optional jitter and immediate‑first behavior.
+/// An exponential backoff mechanism with optional jitter and immediate-first behavior.
 ///
 /// The backoff starts at an initial delay, multiplies that delay by a factor after each call, and
 /// caps it at the configured maximum. Each result includes bounded random jitter. When
 /// `immediate_first` is `true`, the first call to [`Self::next_duration`] returns zero. Calling
-/// [`Self::reset`] restores both the initial delay and the original immediate‑first setting.
+/// [`Self::reset`] restores both the initial delay and the original immediate-first setting.
 impl ExponentialBackoff {
     /// Creates a new [`ExponentialBackoff]` instance.
     ///

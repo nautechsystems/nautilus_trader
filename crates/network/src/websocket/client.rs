@@ -43,7 +43,7 @@
 //! connection. Registered authentication state can hold or discard that replay before it reaches
 //! the replacement sink.
 //!
-//! Ownership‑bound sends wait for the writer result, require the expected connection epoch, and
+//! Ownership-bound sends wait for the writer result, require the expected connection epoch, and
 //! never enter the reconnect buffer. The writer advances the epoch only when it installs a
 //! replacement sink, so inbound attribution and bound sends share one transport ownership boundary.
 

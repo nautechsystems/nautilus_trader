@@ -36,7 +36,7 @@
 //!
 //! The writer buffers messages while reconnecting. A successful reconnect installs the replacement
 //! writer, drains that buffer, restarts the reader, and then invokes the configured
-//! post‑reconnection callback.
+//! post-reconnection callback.
 
 use std::{
     collections::VecDeque,
@@ -916,7 +916,7 @@ impl Drop for SocketClientInner {
     }
 }
 
-/// A suffix‑framed TCP client with optional TLS and automatic reconnection.
+/// A suffix-framed TCP client with optional TLS and automatic reconnection.
 ///
 /// The internal writer task serializes concurrent calls to [`Self::send_bytes`]. The configured
 /// suffix frames all sent and received messages, and an optional heartbeat task sends its payload

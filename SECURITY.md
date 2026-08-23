@@ -91,7 +91,7 @@ The sections below detail the controls at each layer of that lifecycle.
   hashes. Wildcard version requirements are prohibited.
 - **Dependency cooldowns**: Python dependency resolution excludes packages published within the
   last 7 days through `exclude-newer` in `python/pyproject.toml`. Rust crate updates remain subject
-  to a 3‑day cooldown and cargo-vet review. A security fix or critical bug fix may bypass either
+  to a 3-day cooldown and cargo-vet review. A security fix or critical bug fix may bypass either
   cooldown after explicit review. These windows give the community time to detect and quarantine
   compromised releases. Development tools are pinned to explicit versions across `tools.toml`,
   `Cargo.toml`, and related manifests, and version bumps are reviewed during security audits.
@@ -104,7 +104,7 @@ The sections below detail the controls at each layer of that lifecycle.
   verifies the list stays in lock-step with `python/uv.lock` on every commit that touches the lock
   or the manifest.
 - **Toolchain pinning**: `python/pyproject.toml` limits local uv use to the supported minor series.
-  `tools.toml` pins the exact uv version used by CI, Docker, pre‑commit, and project install commands.
+  `tools.toml` pins the exact uv version used by CI, Docker, pre-commit, and project install commands.
   Release and audit tool Python CLIs are also pinned in `tools.toml`.
 - **License compliance**: Automated checks verify Rust dependencies against an allow list of
   licenses compatible with NautilusTrader's `LGPL-3.0-only` license.
@@ -188,7 +188,7 @@ the canonical repository.
 
 ## Advisories addressed
 
-Third‑party security advisories we have addressed via dependency upgrades. Security scanning is
+Third-party security advisories we have addressed via dependency upgrades. Security scanning is
 not delayed by the dependency cooldowns described above. When an advisory requires a newer
 package, a reviewed fix can bypass the applicable cooldown.
 

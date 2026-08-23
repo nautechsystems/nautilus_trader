@@ -119,9 +119,9 @@ impl Display for RetryError {
 
 impl std::error::Error for RetryError {}
 
-/// A stateless, thread‑safe retry manager for network operations.
+/// A stateless, thread-safe retry manager for network operations.
 ///
-/// Each execution maintains independent backoff and elapsed‑time state.
+/// Each execution maintains independent backoff and elapsed-time state.
 #[derive(Clone, Debug)]
 pub struct RetryManager<E> {
     config: RetryConfig,
@@ -160,7 +160,7 @@ where
     /// - During retry delays.
     ///
     /// Cancellation mid-execution takes effect immediately by dropping the in-flight
-    /// operation future. For non‑idempotent operations (e.g. an order already on the
+    /// operation future. For non-idempotent operations (e.g. an order already on the
     /// wire) the outcome of the abandoned attempt is unknown to the caller.
     ///
     /// # Errors

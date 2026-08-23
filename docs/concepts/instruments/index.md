@@ -226,7 +226,7 @@ Venue and adapter definitions can include optional limits:
 
 Margin models use `margin_init` and `margin_maint` to calculate initial and maintenance
 margin. Maker and taker fee rates apply to commission calculations. Nautilus uses one
-fee‑rate convention across adapters and backtesting:
+fee-rate convention across adapters and backtesting:
 
 - Positive fee rates represent commissions.
 - Negative fee rates represent rebates.

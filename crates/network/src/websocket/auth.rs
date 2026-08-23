@@ -24,7 +24,7 @@
 //! # Client integration
 //!
 //! Registering a tracker with the client invalidates it on reconnectable connection loss and fails
-//! it on terminal shutdown. When authentication‑gated replay is enabled, ordinary buffered sends
+//! it on terminal shutdown. When authentication-gated replay is enabled, ordinary buffered sends
 //! wait for `Authenticated` and are discarded on `Failed`. The adapter remains responsible for
 //! sending authentication, interpreting the response, and ordering resubscription.
 
@@ -99,7 +99,7 @@ impl AuthState {
 ///
 /// # Thread safety
 ///
-/// Clones share the pending attempt and session state. All operations are thread‑safe and can run
+/// Clones share the pending attempt and session state. All operations are thread-safe and can run
 /// concurrently from multiple tasks.
 #[derive(Clone, Debug)]
 pub struct AuthTracker {

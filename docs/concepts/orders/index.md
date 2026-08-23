@@ -6,7 +6,7 @@ relationships across trading venues.
 ## Overview
 
 All order types derive from two fundamentals: *Market* and *Limit* orders. *Market* orders seek
-immediate execution at the best available price. Non‑marketable *Limit* orders rest in the order
+immediate execution at the best available price. Non-marketable *Limit* orders rest in the order
 book at a specified price until matched, while marketable *Limit* orders can take liquidity.
 
 NautilusTrader supports nine order types (the `OrderType` enum values), summarized under
@@ -24,7 +24,7 @@ target integration's capabilities before relying on an option.
   liquidity.
 - An order is **passive** if it rests without taking liquidity.
 - An order is **active local** if it remains within the local system boundary in one of these
-  non‑terminal statuses:
+  non-terminal statuses:
   - `INITIALIZED`
   - `EMULATED`
   - `RELEASED`
@@ -123,7 +123,7 @@ flowchart TB
 | `REJECTED`         | Order was rejected by the trading venue.                                                  |
 | `CANCELED`         | Order was canceled (terminal).                                                            |
 | `EXPIRED`          | Order reached its GTD expiration (terminal).                                              |
-| `TRIGGERED`        | A stop‑limit, trailing‑stop‑limit, or limit‑if‑touched order triggered on the venue.      |
+| `TRIGGERED`        | A stop-limit, trailing-stop-limit, or limit-if-touched order triggered on the venue.      |
 | `PENDING_UPDATE`   | Order is pending a modification request on the venue.                                     |
 | `PENDING_CANCEL`   | Order is pending a cancellation request on the venue.                                     |
 | `PARTIALLY_FILLED` | Order has been partially filled on the venue.                                             |
@@ -187,7 +187,7 @@ specifies the market price used to trigger a conditional order.
 - `BID_ASK`: Uses the ask for BUY orders and the bid for SELL orders.
 - `DOUBLE_LAST`: Requires two consecutive matching last prices.
 - `DOUBLE_BID_ASK`: Requires two consecutive matching bid or ask prices, based on the order side.
-- `LAST_OR_BID_ASK`: Uses either the last price or the side‑appropriate bid or ask.
+- `LAST_OR_BID_ASK`: Uses either the last price or the side-appropriate bid or ask.
 - `MID_POINT`: Uses the midpoint between the bid and ask.
 - `MARK_PRICE`: Uses the venue's mark price for the instrument.
 - `INDEX_PRICE`: Uses the venue's index price for the instrument.
@@ -201,7 +201,7 @@ applicable market price.
 - `PRICE`: Uses a price difference.
 - `BASIS_POINTS`: Uses a percentage difference in basis points, where 100 basis points equals 1%.
 - `TICKS`: Uses a number of ticks.
-- `PRICE_TIER`: Uses a venue‑specific price tier.
+- `PRICE_TIER`: Uses a venue-specific price tier.
 
 ### Contingent orders
 
@@ -211,7 +211,7 @@ their constraints.
 
 ## Order factory
 
-Use the built‑in `OrderFactory` to create orders. Each Python `Strategy` exposes one as
+Use the built-in `OrderFactory` to create orders. Each Python `Strategy` exposes one as
 `self.order_factory`; the Rust strategy API exposes it through `self.order()`. The factory assigns
 the trader and strategy IDs, generates client order and initialization IDs when needed, records the
 initial timestamp, and applies defaults for the selected order type.
@@ -249,13 +249,13 @@ defines one:
 | -------------------- | ------------------------------------ |
 | Market               | `1` (Market)                         |
 | Limit                | `2` (Limit)                          |
-| Stop‑Market          | `3` (Stop)                           |
-| Stop‑Limit           | `4` (Stop Limit)                     |
-| Market‑To‑Limit      | `K` (Market With Left Over as Limit) |
-| Market‑If‑Touched    | `J` (Market If Touched)              |
-| Limit‑If‑Touched     | no dedicated value †                 |
-| Trailing‑Stop‑Market | `3` (Stop) + trailing peg            |
-| Trailing‑Stop‑Limit  | `4` (Stop Limit) + trailing peg      |
+| Stop-Market          | `3` (Stop)                           |
+| Stop-Limit           | `4` (Stop Limit)                     |
+| Market-To-Limit      | `K` (Market With Left Over as Limit) |
+| Market-If-Touched    | `J` (Market If Touched)              |
+| Limit-If-Touched     | no dedicated value †                 |
+| Trailing-Stop-Market | `3` (Stop) + trailing peg            |
+| Trailing-Stop-Limit  | `4` (Stop Limit) + trailing peg      |
 
 † FIX defines no dedicated `OrdType` for *Limit-If-Touched*; it is commonly sent as `4` (Stop Limit)
 with a favorable trigger. Trailing stops likewise have no dedicated value and are modeled as `3`/`4`

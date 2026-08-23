@@ -421,7 +421,7 @@ impl OrderDeniedCode {
             Self::MissingTriggerType => "The order is missing a required trigger type.",
             Self::MissingTrailingOffset => "The order is missing a required trailing offset.",
             Self::InstrumentNotFound => "The instrument was not found in the cache.",
-            Self::PositionNotFound => "The position for a reduce‑only order was not found.",
+            Self::PositionNotFound => "The position for a reduce-only order was not found.",
             Self::MarketPriceUnavailable => {
                 "No market price is available for the order risk check."
             }
@@ -456,7 +456,7 @@ impl OrderDeniedCode {
                 "The cumulative initial margin exceeds the account free balance."
             }
             Self::ReduceOnlyWouldIncreasePosition => {
-                "A reduce‑only order would increase the position."
+                "A reduce-only order would increase the position."
             }
             Self::OrderListIncomplete => "The order list is missing orders in the cache.",
             Self::OrderListDenied => {
@@ -479,7 +479,7 @@ impl OrderDeniedCode {
             Self::UnsupportedOrderType => "The order type is not supported.",
             Self::UnsupportedTimeInForce => "The order's time in force is not supported.",
             Self::UnsupportedTpSl => {
-                "The venue does not support the requested take‑profit/stop‑loss parameters."
+                "The venue does not support the requested take-profit/stop-loss parameters."
             }
             Self::ValidationFailed => "The order failed validation before submission.",
         }
@@ -992,8 +992,7 @@ mod tests {
             .map(|code| (format!("`{code}`"), code.description()))
             .collect();
         // Width counts characters, matching the padding applied by `format!` and the
-        // column width the Markdown table hook normalizes to. Descriptions carry
-        // non-breaking hyphens, so byte length would over-pad the column.
+        // column width the Markdown table hook normalizes to.
         let code_w = rows
             .iter()
             .map(|(code, _)| code.chars().count())

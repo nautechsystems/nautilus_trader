@@ -130,7 +130,7 @@ repos:
 
       - id: check-unicode-typography
         name: check Unicode typography
-        description: Reject typographic dashes, curly quotes, and emoji-style check/cross marks
+        description: Reject non-breaking hyphens, typographic dashes, curly quotes, and emoji-style check/cross marks
         entry: bash .pre-commit-hooks/check_unicode_typography.sh
         language: system
         types: [text]

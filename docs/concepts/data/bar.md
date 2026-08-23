@@ -12,7 +12,7 @@ can supply bars, or NautilusTrader can aggregate them from quote ticks, trade ti
 | `high`     | `Price`     | `Price`     | Required         | Highest price in the bar interval.               |
 | `low`      | `Price`     | `Price`     | Required         | Lowest price in the bar interval.                |
 | `close`    | `Price`     | `Price`     | Required         | Last price in the bar interval.                  |
-| `volume`   | `Quantity`  | `Quantity`  | Required         | Traded volume or tick‑volume proxy.              |
+| `volume`   | `Quantity`  | `Quantity`  | Required         | Traded volume or tick-volume proxy.              |
 | `ts_event` | `UnixNanos` | `int`       | Required         | Bar event timestamp in nanoseconds.              |
 | `ts_init`  | `UnixNanos` | `int`       | Required         | Initialization timestamp in nanoseconds.         |
 

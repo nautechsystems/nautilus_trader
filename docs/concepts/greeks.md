@@ -3,12 +3,12 @@
 Nautilus provides two paths for working with option Greeks, which measure how option prices respond
 to changes in market variables:
 
-1. **Venue‑provided Greeks**: real‑time Greeks streamed from supported venues through the
+1. **Venue-provided Greeks**: real-time Greeks streamed from supported venues through the
    `OptionGreeks` data type and the option chain aggregation system.
-1. **Local Greeks calculator**: `GreeksCalculator` computes Black‑Scholes Greeks from cached market
+1. **Local Greeks calculator**: `GreeksCalculator` computes Black-Scholes Greeks from cached market
    data, with support for portfolio aggregation, shock scenarios, and beta weighting.
 
-Use either path independently or combine them. Venue‑provided Greeks arrive through the data
+Use either path independently or combine them. Venue-provided Greeks arrive through the data
 subscription system and require no local computation. The local calculator covers venues that do
 not stream Greeks, backtesting, and custom adjustments such as shocks, beta weighting, and percent
 Greeks.
@@ -17,8 +17,8 @@ Greeks.
 
 ### OptionGreeks
 
-The `OptionGreeks` type represents venue‑provided sensitivities for a single option contract. It is
-a Rust‑native type exposed to Python through PyO3.
+The `OptionGreeks` type represents venue-provided sensitivities for a single option contract. It is
+a Rust-native type exposed to Python through PyO3.
 
 | Field              | Type               | Description                                         |
 | ------------------ | ------------------ | --------------------------------------------------- |
@@ -26,9 +26,9 @@ a Rust‑native type exposed to Python through PyO3.
 | `convention`       | `GreeksConvention` | Numeraire convention for the Greeks.                |
 | `delta`            | `float`            | Rate of change of option price per unit underlying. |
 | `gamma`            | `float`            | Rate of change of delta per unit underlying.        |
-| `vega`             | `float`            | Venue‑reported vega.                                |
-| `theta`            | `float`            | Venue‑reported theta.                               |
-| `rho`              | `float`            | Venue‑reported rho; defaults to zero.               |
+| `vega`             | `float`            | Venue-reported vega.                                |
+| `theta`            | `float`            | Venue-reported theta.                               |
+| `rho`              | `float`            | Venue-reported rho; defaults to zero.               |
 | `mark_iv`          | `float` or None    | Mark implied volatility.                            |
 | `bid_iv`           | `float` or None    | Bid implied volatility.                             |
 | `ask_iv`           | `float` or None    | Ask implied volatility.                             |
@@ -56,7 +56,7 @@ aggregation, strike range filtering, and snapshot modes.
 ### Persistence and replay
 
 `OptionGreeks` is a native member of the `Data` enum, so it persists to the data catalog and replays
-in backtests as built‑in market data rather than custom data. Use the type‑specific catalog methods
+in backtests as built-in market data rather than custom data. Use the type-specific catalog methods
 to write and query it:
 
 ```python
@@ -65,10 +65,10 @@ greeks = catalog.query_option_greeks()
 ```
 
 During replay, persisted Greeks reach a subscribed actor or strategy through the same
-`on_option_greeks` handler used for live data. They also feed option‑chain aggregation. When a
+`on_option_greeks` handler used for live data. They also feed option-chain aggregation. When a
 strategy subscribes to an `OptionChainSlice`, the backtest data engine joins replayed
 `OptionGreeks` with replayed `QuoteTick` BBO updates for each option instrument. The
-`underlying_price` field seeds ATM selection, and `delta` supports delta‑based strike selection
+`underlying_price` field seeds ATM selection, and `delta` supports delta-based strike selection
 through `StrikeRange.delta(target, tolerance)`.
 
 ### Core schema versus custom data
@@ -77,10 +77,10 @@ The native `OptionGreeks` fields form the core schema: the five standard Greeks 
 `vega`, `theta`, and `rho`) plus implied volatility, underlying price, open interest, and
 convention. These field names are stable.
 
-No single schema covers every Greeks use case. Put venue‑specific or model‑specific values such as
+No single schema covers every Greeks use case. Put venue-specific or model-specific values such as
 `vanna`, `volga`, `charm`, calibration inputs, or surface metadata in
 [custom data](custom_data.md), not the native type. Optional venue fields are nullable.
-`convention` is non‑nullable and defaults to `GreeksConvention.BLACK_SCHOLES` in Python.
+`convention` is non-nullable and defaults to `GreeksConvention.BLACK_SCHOLES` in Python.
 
 ### Underlying Rust types
 
@@ -98,7 +98,7 @@ The core Rust implementation spans `crates/model/src/data/greeks.rs` and
 
 ### Black-Scholes functions
 
-Low‑level pricing functions from `crates/model/src/data/greeks.rs` are also exposed to Python:
+Low-level pricing functions from `crates/model/src/data/greeks.rs` are also exposed to Python:
 
 ```python
 from nautilus_trader.model import (
@@ -122,7 +122,7 @@ result = refine_vol_and_greeks(
 ```
 
 `refine_vol_and_greeks()` performs one refinement step, not a full convergence loop. Use it with a
-good starting estimate; use `imply_vol_and_greeks()` when a full implied‑volatility solve is needed.
+good starting estimate; use `imply_vol_and_greeks()` when a full implied-volatility solve is needed.
 
 The `BlackScholesGreeksResult` returned by these functions contains: `price`, `vol`,
 `delta`, `gamma`, `vega`, `theta`, and `itm_prob`.
@@ -131,13 +131,13 @@ Conventions:
 
 - Vega is scaled by 0.01 (sensitivity to a 1 percentage point vol change).
 - Theta is scaled by 1/365.25 (daily decay).
-- American‑style options are priced as European for Greeks computation.
+- American-style options are priced as European for Greeks computation.
 
 ## Local Greeks calculator
 
 ### GreeksCalculator
 
-`GreeksCalculator` computes Black‑Scholes Greeks from cached market data. It is exposed from
+`GreeksCalculator` computes Black-Scholes Greeks from cached market data. It is exposed from
 `nautilus_trader.common`, uses the cache and clock, and is accessible from actors and strategies.
 
 ```python
@@ -168,11 +168,11 @@ For option instruments, the calculator performs these steps:
 1. Imply volatility from the market price with `imply_vol_and_greeks`.
 1. Return a `GreeksData` object with the computed values.
 
-Missing prices return `None`, which lets strategies treat warm‑up as a normal no‑op path.
+Missing prices return `None`, which lets strategies treat warm-up as a normal no-op path.
 Setup errors such as a missing instrument definition raise a Python exception instead.
 
-For non‑option instruments such as futures and equities, the calculator returns `GreeksData` with
-`delta=1` or beta‑weighted delta and zero gamma, vega, theta, and rho. Option‑specific fields retain
+For non-option instruments such as futures and equities, the calculator returns `GreeksData` with
+`delta=1` or beta-weighted delta and zero gamma, vega, theta, and rho. Option-specific fields retain
 their default values.
 
 #### Shock scenarios
@@ -200,8 +200,8 @@ greeks = calculator.instrument_greeks(
 )
 ```
 
-With cached Greeks, `update_vol=True` uses the single‑iteration refiner described above. If the cache
-has no prior Greeks for the instrument, the calculator performs a full implied‑volatility solve.
+With cached Greeks, `update_vol=True` uses the single-iteration refiner described above. If the cache
+has no prior Greeks for the instrument, the calculator performs a full implied-volatility solve.
 
 #### Beta-weighted Greeks
 
@@ -252,7 +252,7 @@ Filters:
 - `instrument_id`: restrict to a single instrument.
 - `strategy_id`: restrict to a single strategy.
 - `side`: filter by position side, such as `LONG` or `SHORT`.
-- `greeks_filter`: callable that receives per‑position `GreeksData` after `pnl`, `price`, and the
+- `greeks_filter`: callable that receives per-position `GreeksData` after `pnl`, `price`, and the
   Greek values are scaled by signed position quantity; return `True` to include it.
 
 ### GreeksData
@@ -267,7 +267,7 @@ Python surface does not expose that flag.
 | `ts_init`          | `int`          | Initialization timestamp in nanoseconds.                            |
 | `ts_event`         | `int`          | Event timestamp in nanoseconds.                                     |
 | `instrument_id`    | `InstrumentId` | Instrument for the calculation.                                     |
-| `is_call`          | `bool`         | `True` for a call or non‑option result; `False` for a put.          |
+| `is_call`          | `bool`         | `True` for a call or non-option result; `False` for a put.          |
 | `strike`           | `float`        | Strike price.                                                       |
 | `expiry`           | `int`          | Expiry date as a `YYYYMMDD` integer.                                |
 | `expiry_in_days`   | `int`          | Days to expiry.                                                     |
@@ -279,13 +279,13 @@ Python surface does not expose that flag.
 | `cost_of_carry`    | `float`        | Cost of carry (`r - dividend yield` when supplied; otherwise zero). |
 | `vol`              | `float`        | Implied volatility.                                                 |
 | `pnl`              | `float`        | PnL relative to the position entry, when a position is provided.    |
-| `price`            | `float`        | Option model price; non‑option position PnL when supplied.          |
+| `price`            | `float`        | Option model price; non-option position PnL when supplied.          |
 | `delta`            | `float`        | Delta.                                                              |
 | `gamma`            | `float`        | Gamma.                                                              |
 | `vega`             | `float`        | Vega per one percentage point of volatility.                        |
 | `theta`            | `float`        | Daily theta.                                                        |
 | `rho`              | `float`        | Rho, set to zero by the local calculator.                           |
-| `itm_prob`         | `float`        | In‑the‑money probability.                                           |
+| `itm_prob`         | `float`        | In-the-money probability.                                           |
 
 Internally, `portfolio_greeks()` multiplies `pnl`, `price`, and the Greek values by each position's
 signed quantity before adding them to the portfolio result. The intermediate `quantity` field
@@ -305,8 +305,8 @@ operator.
 | ---------- | ------- | ---------------------------------------------------- |
 | `ts_init`  | `int`   | Initialization timestamp in nanoseconds.             |
 | `ts_event` | `int`   | Event timestamp in nanoseconds.                      |
-| `pnl`      | `float` | Aggregate PnL after signed‑quantity scaling.         |
-| `price`    | `float` | Aggregate model value after signed‑quantity scaling. |
+| `pnl`      | `float` | Aggregate PnL after signed-quantity scaling.         |
+| `price`    | `float` | Aggregate model value after signed-quantity scaling. |
 | `delta`    | `float` | Portfolio delta.                                     |
 | `gamma`    | `float` | Portfolio gamma.                                     |
 | `vega`     | `float` | Portfolio vega.                                      |
@@ -322,21 +322,21 @@ yield curves.
 
 ## Choosing between the two paths
 
-| Criterion             | Venue‑provided (`OptionGreeks`)                       | Local calculator (`GreeksCalculator`)                     |
+| Criterion             | Venue-provided (`OptionGreeks`)                       | Local calculator (`GreeksCalculator`)                     |
 | --------------------- | ----------------------------------------------------- | --------------------------------------------------------- |
-| Computation           | Done by the venue or broker                           | Local Black‑Scholes                                       |
+| Computation           | Done by the venue or broker                           | Local Black-Scholes                                       |
 | Latency               | Arrives with market data                              | Computed on demand                                        |
 | Venues                | Bybit, Deribit, Derive, Interactive Brokers, and OKX  | Any cached option with required prices                    |
 | Shock scenarios       | Not supported                                         | Spot, vol, and time shocks                                |
-| Portfolio aggregation | Manual, such as iterating an `OptionChainSlice`       | Built‑in via `portfolio_greeks()`                         |
-| Beta weighting        | Not supported                                         | Built‑in                                                  |
+| Portfolio aggregation | Manual, such as iterating an `OptionChainSlice`       | Built-in via `portfolio_greeks()`                         |
+| Beta weighting        | Not supported                                         | Built-in                                                  |
 | Backtest support      | Via recorded `OptionGreeks` data                      | From cached prices at any point in time                   |
 | Values                | delta, gamma, vega, theta, rho, IV, and open interest | delta, gamma, vega, theta, itm_prob, and vol; rho is zero |
 | Data type             | `OptionGreeks`                                        | `GreeksData` and `PortfolioGreeks`                        |
 
 ## Greek definitions
 
-These terms appear across both paths. The local Black‑Scholes functions scale vega and theta as
+These terms appear across both paths. The local Black-Scholes functions scale vega and theta as
 described above. `OptionGreeks` retains the values reported by each venue or broker and records their
 `convention`.
 
@@ -346,20 +346,20 @@ described above. `OptionGreeks` retains the values reported by each venue or bro
 | Gamma    | `gamma`    | Second derivative of option price with respect to underlying price (`d²V/dS²`).                                   |
 | Vega     | `vega`     | Sensitivity to a change in implied volatility (`dV/dVol`).                                                        |
 | Theta    | `theta`    | Sensitivity to the passage of time (`dV/dt`).                                                                     |
-| Rho      | `rho`      | Sensitivity to a change in the risk‑free interest rate (`dV/dr`).                                                 |
+| Rho      | `rho`      | Sensitivity to a change in the risk-free interest rate (`dV/dr`).                                                 |
 | ITM prob | `itm_prob` | Probability that the option finishes in the money: `P(ϕS_T > ϕK)`, where `ϕ = 1` for calls and `ϕ = -1` for puts. |
 
 ## Examples
 
 Complete working examples are available in the repository:
 
-- `examples/live/bybit/bybit_option_greeks.py`: subscribe to Bybit venue‑provided Greeks.
-- `examples/live/deribit/deribit_option_greeks.py`: subscribe to Deribit venue‑provided Greeks.
-- `examples/live/okx/okx_option_greeks.py`: subscribe to OKX venue‑provided Greeks.
+- `examples/live/bybit/bybit_option_greeks.py`: subscribe to Bybit venue-provided Greeks.
+- `examples/live/deribit/deribit_option_greeks.py`: subscribe to Deribit venue-provided Greeks.
+- `examples/live/okx/okx_option_greeks.py`: subscribe to OKX venue-provided Greeks.
 
 ## Related guides
 
 - [Options](options.md): option instruments, chain subscriptions, and strike filtering.
-- [Data](data/): built‑in data types, custom data, and the subscription model.
+- [Data](data/): built-in data types, custom data, and the subscription model.
 - [Actors](actors.md): subscription and handler reference.
 - [Strategies](strategies.md): strategy implementation and handler methods.

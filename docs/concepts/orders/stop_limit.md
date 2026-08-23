@@ -2,18 +2,18 @@
 
 `FIX OrdType <40>=4` (Stop Limit)
 
-A *Stop‑Limit* order releases a *Limit* order at the specified price when its trigger price is
+A *Stop-Limit* order releases a *Limit* order at the specified price when its trigger price is
 reached.
 
 ## Use cases
 
-Use a *Stop‑Limit* order when a stop trigger must also enforce a worst acceptable fill price, such as
-for a price‑protected exit or breakout entry. If the market gaps through both the trigger and limit,
+Use a *Stop-Limit* order when a stop trigger must also enforce a worst acceptable fill price, such as
+for a price-protected exit or breakout entry. If the market gaps through both the trigger and limit,
 the order may not fill and can leave a position unprotected.
 
 ## Example
 
-The following example creates a *Stop‑Limit* order on the Currenex FX ECN to BUY 50,000 GBP at a
+The following example creates a *Stop-Limit* order on the Currenex FX ECN to BUY 50,000 GBP at a
 limit price of 1.3000 USD once the market reaches 1.30010 USD. The order expires one hour after
 creation:
 
