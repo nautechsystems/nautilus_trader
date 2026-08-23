@@ -2673,8 +2673,11 @@ impl ExecutionEngine {
                     return;
                 };
                 let configured_oms_type = self.determine_oms_type(fill);
-                let position_id =
-                    self.determine_position_id(fill, configured_oms_type, Some(&order_before_fill));
+                let Some(position_id) =
+                    self.determine_position_id(fill, configured_oms_type, Some(&order_before_fill))
+                else {
+                    return;
+                };
                 let oms_type = self
                     .cache
                     .borrow()
@@ -2683,10 +2686,6 @@ impl ExecutionEngine {
 
                 let mut fill = fill.clone();
                 fill.position_id = Some(position_id);
-
-                if !self.validate_fill_for_position(position_id, &fill) {
-                    return;
-                }
 
                 let validation = if apply_position {
                     self.validate_fill_for_order(&order_before_fill, &fill)
@@ -3026,7 +3025,7 @@ impl ExecutionEngine {
         fill: &OrderFilled,
         oms_type: OmsType,
         order: Option<&OrderAny>,
-    ) -> PositionId {
+    ) -> Option<PositionId> {
         let cache = self.cache.borrow();
         let cached_position_id = cache.position_id(&fill.client_order_id()).copied();
         drop(cache);
@@ -3054,7 +3053,11 @@ impl ExecutionEngine {
                 log::debug!("Assigned {position_id} to {}", fill.client_order_id());
             }
 
-            return position_id;
+            if !self.validate_fill_for_position(position_id, fill) {
+                return None;
+            }
+
+            return Some(position_id);
         }
 
         let position_id = match oms_type {
@@ -3062,6 +3065,10 @@ impl ExecutionEngine {
             OmsType::Netting => self.determine_netting_position_id(fill),
             _ => self.determine_netting_position_id(fill),
         };
+
+        if !self.validate_fill_for_position(position_id, fill) {
+            return None;
+        }
 
         let order = if let Some(o) = order {
             o.clone()
@@ -3089,7 +3096,7 @@ impl ExecutionEngine {
                     "Primary exec spawn order {exec_spawn_id} not found, \
                      skipping position ID propagation"
                 );
-                return position_id;
+                return Some(position_id);
             };
             let primary_already_indexed = cache.position_id(&primary.client_order_id()).is_some();
             drop(cache);
@@ -3108,7 +3115,7 @@ impl ExecutionEngine {
             }
         }
 
-        position_id
+        Some(position_id)
     }
 
     /// Returns whether `fill` may be applied to the position assigned to `position_id`.
@@ -3123,7 +3130,8 @@ impl ExecutionEngine {
     /// External order claims can be handed to a successor strategy while the predecessor's
     /// positions stay cached, so a later venue fill can carry the new strategy against them.
     fn validate_fill_for_position(&self, position_id: PositionId, fill: &OrderFilled) -> bool {
-        let Some(position) = self.cache.borrow().position_owned(&position_id) else {
+        let cache = self.cache.borrow();
+        let Some(position) = cache.position_ref(&position_id) else {
             return true;
         };
 
