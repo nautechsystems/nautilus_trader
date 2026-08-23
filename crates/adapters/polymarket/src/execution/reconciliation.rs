@@ -35,10 +35,10 @@ use ustr::Ustr;
 use super::{
     order_fill_tracker::OrderFillTrackerMap,
     parse::{
-        OrderReportParseContext, TakerFillParseContext, build_maker_fill_report,
-        determine_order_side, instrument_fee_exponent, instrument_taker_fee,
-        parse_expiration_nanos, parse_timestamp, parse_validated_fill_report,
-        parse_validated_order_status_report,
+        MakerFillParseContext, OrderReportParseContext, TakerFillParseContext,
+        composite_trade_id_value, determine_order_side, instrument_fee_exponent,
+        instrument_taker_fee, parse_timestamp, parse_validated_fill_report,
+        parse_validated_maker_fill_report, parse_validated_order_status_report,
     },
 };
 use crate::{
@@ -198,17 +198,31 @@ fn checked_trade_id(value: &str, evidence: &str) -> anyhow::Result<TradeId> {
         .with_context(|| format!("{evidence} has invalid trade ID {value:?}"))
 }
 
+#[derive(Clone, Copy)]
+struct ValidatedMakerReportIdentifiers {
+    venue_order_id: VenueOrderId,
+    trade_id: TradeId,
+}
+
 fn validate_maker_report_identifiers(
     trade: &PolymarketTradeReport,
     maker_order: &PolymarketMakerOrder,
-) -> anyhow::Result<()> {
-    checked_venue_order_id(
+) -> anyhow::Result<ValidatedMakerReportIdentifiers> {
+    let venue_order_id = checked_venue_order_id(
         &maker_order.order_id,
         &format!("maker order in trade {}", trade.id),
     )?;
     check_valid_string_ascii(&trade.id, "trade.id")
         .with_context(|| format!("maker trade {} has invalid trade ID source", trade.id))?;
-    Ok(())
+    let composite_trade_id = composite_trade_id_value(&trade.id, &maker_order.order_id);
+    let trade_id = checked_trade_id(
+        &composite_trade_id,
+        &format!("maker trade {} composite", trade.id),
+    )?;
+    Ok(ValidatedMakerReportIdentifiers {
+        venue_order_id,
+        trade_id,
+    })
 }
 
 fn validate_instrument_binding(
@@ -290,11 +304,23 @@ fn parse_provider_order_expiration(
     order: &PolymarketOpenOrder,
 ) -> anyhow::Result<Option<UnixNanos>> {
     match order.expiration.as_deref() {
-        None | Some("0") => Ok(None),
-        Some(value) => parse_expiration_nanos(value)
-            .map(UnixNanos::from)
-            .map(Some)
-            .with_context(|| format!("provider order {} has invalid expiration {value}", order.id)),
+        None => Ok(None),
+        Some(value) => {
+            let seconds: u64 = value.parse().with_context(|| {
+                format!("provider order {} has invalid expiration {value}", order.id)
+            })?;
+
+            if seconds == 0 {
+                return Ok(None);
+            }
+            seconds
+                .checked_mul(NANOSECONDS_IN_SECOND)
+                .map(UnixNanos::from)
+                .map(Some)
+                .with_context(|| {
+                    format!("provider order {} has invalid expiration {value}", order.id)
+                })
+        }
     }
 }
 
@@ -646,7 +672,10 @@ enum TargetFillParticipant<'a> {
         venue_order_id: VenueOrderId,
         trade_id: TradeId,
     },
-    Maker(&'a PolymarketMakerOrder),
+    Maker {
+        maker_order: &'a PolymarketMakerOrder,
+        identifiers: ValidatedMakerReportIdentifiers,
+    },
 }
 
 struct AdmittedTargetFill<'a> {
@@ -695,7 +724,7 @@ fn classify_target_trade<'a>(
                 "target maker order {} is not owned by the account",
                 maker_order.order_id,
             );
-            validate_maker_report_identifiers(trade, maker_order)?;
+            let identifiers = validate_maker_report_identifiers(trade, maker_order)?;
             let instrument = resolve_target_instrument(
                 instruments,
                 maker_order.asset_id,
@@ -713,7 +742,10 @@ fn classify_target_trade<'a>(
                 &format!("target maker order {}", maker_order.order_id),
             )?;
             (
-                TargetFillParticipant::Maker(maker_order),
+                TargetFillParticipant::Maker {
+                    maker_order,
+                    identifiers,
+                },
                 instrument,
                 maker_order.matched_amount,
                 maker_order.price,
@@ -812,20 +844,26 @@ fn build_admitted_target_fill(
     let size_prec = admitted.instrument.size_precision();
 
     match admitted.participant {
-        TargetFillParticipant::Maker(maker_order) => build_maker_fill_report(
+        TargetFillParticipant::Maker {
             maker_order,
-            &trade.id,
+            identifiers,
+        } => parse_validated_maker_fill_report(
+            maker_order,
             trade.trader_side,
             trade.side,
             trade.asset_id.as_str(),
-            ctx.account_id,
-            instrument_id,
-            price_prec,
-            size_prec,
-            ctx.pusd,
-            LiquiditySide::Maker,
-            admitted.ts_event,
-            ts_init,
+            MakerFillParseContext {
+                account_id: ctx.account_id,
+                instrument_id,
+                venue_order_id: identifiers.venue_order_id,
+                trade_id: identifiers.trade_id,
+                price_precision: price_prec,
+                size_precision: size_prec,
+                currency: ctx.pusd,
+                liquidity_side: LiquiditySide::Maker,
+                ts_event: admitted.ts_event,
+                ts_init,
+            },
         )
         .with_context(|| {
             format!(
@@ -958,7 +996,11 @@ pub(crate) fn build_fill_reports_from_trades(
                 continue;
             }
 
-            let mut selected_maker_orders: Vec<(&PolymarketMakerOrder, InstrumentAny)> = Vec::new();
+            let mut selected_maker_orders: Vec<(
+                &PolymarketMakerOrder,
+                InstrumentAny,
+                ValidatedMakerReportIdentifiers,
+            )> = Vec::new();
 
             for mo in &trade.maker_orders {
                 if scope.excludes_venue_order(&mo.order_id) {
@@ -1003,13 +1045,13 @@ pub(crate) fn build_fill_reports_from_trades(
                 anyhow::ensure!(
                     !selected_maker_orders
                         .iter()
-                        .any(|(selected, _)| selected.order_id == mo.order_id),
+                        .any(|(selected, _, _)| selected.order_id == mo.order_id),
                     "maker order {} appears more than once in trade {}",
                     mo.order_id,
                     trade.id,
                 );
 
-                validate_maker_report_identifiers(trade, mo)?;
+                let identifiers = validate_maker_report_identifiers(trade, mo)?;
 
                 validate_instrument_binding(&instrument, trade.market.as_str(), mo.outcome)?;
                 let order_side = validate_maker_order_side(trade, mo)?;
@@ -1025,7 +1067,7 @@ pub(crate) fn build_fill_reports_from_trades(
                     &format!("maker order {} matched amount", mo.order_id),
                     &format!("maker order {} price", mo.order_id),
                 )?;
-                selected_maker_orders.push((mo, instrument));
+                selected_maker_orders.push((mo, instrument, identifiers));
             }
 
             if selected_maker_orders.is_empty() {
@@ -1035,7 +1077,7 @@ pub(crate) fn build_fill_reports_from_trades(
             let ts_event = parse_timestamp(&trade.match_time);
             let in_load_ids_scope = selected_maker_orders
                 .iter()
-                .any(|(_, instrument)| instrument_in_load_ids_scope(instrument.id(), load_ids));
+                .any(|(_, instrument, _)| instrument_in_load_ids_scope(instrument.id(), load_ids));
 
             if !trade_in_lookback_window(
                 ts_event,
@@ -1048,25 +1090,28 @@ pub(crate) fn build_fill_reports_from_trades(
             }
             let ts_event = require_trade_timestamp(ts_event, trade)?;
 
-            for (mo, instrument) in selected_maker_orders {
+            for (mo, instrument, identifiers) in selected_maker_orders {
                 let instrument_id = instrument.id();
                 let price_prec = instrument.price_precision();
                 let size_prec = instrument.size_precision();
 
-                let report = build_maker_fill_report(
+                let report = parse_validated_maker_fill_report(
                     mo,
-                    &trade.id,
                     trade.trader_side,
                     trade.side,
                     trade.asset_id.as_str(),
-                    ctx.account_id,
-                    instrument_id,
-                    price_prec,
-                    size_prec,
-                    ctx.pusd,
-                    LiquiditySide::Maker,
-                    ts_event,
-                    ts_init,
+                    MakerFillParseContext {
+                        account_id: ctx.account_id,
+                        instrument_id,
+                        venue_order_id: identifiers.venue_order_id,
+                        trade_id: identifiers.trade_id,
+                        price_precision: price_prec,
+                        size_precision: size_prec,
+                        currency: ctx.pusd,
+                        liquidity_side: LiquiditySide::Maker,
+                        ts_event,
+                        ts_init,
+                    },
                 )
                 .with_context(|| {
                     format!(

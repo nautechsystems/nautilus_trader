@@ -104,16 +104,17 @@ pub fn determine_order_side(
 ///
 /// Format: `{trade_id[..27]}-{venue_order_id[last 8]}` = 36 chars.
 pub fn make_composite_trade_id(trade_id: &str, venue_order_id: &str) -> TradeId {
+    TradeId::from(composite_trade_id_value(trade_id, venue_order_id).as_str())
+}
+
+pub(super) fn composite_trade_id_value(trade_id: &str, venue_order_id: &str) -> String {
     let prefix_len = trade_id.len().min(27);
     let suffix_len = venue_order_id.len().min(8);
     let suffix_start = venue_order_id.len().saturating_sub(suffix_len);
-    TradeId::from(
-        format!(
-            "{}-{}",
-            &trade_id[..prefix_len],
-            &venue_order_id[suffix_start..]
-        )
-        .as_str(),
+    format!(
+        "{}-{}",
+        &trade_id[..prefix_len],
+        &venue_order_id[suffix_start..]
     )
 }
 
@@ -350,43 +351,85 @@ pub fn build_maker_fill_report(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
-    let venue_order_id = VenueOrderId::from(mo.order_id.as_str());
-    let fill_trade_id = make_composite_trade_id(trade_id, &mo.order_id);
+    parse_validated_maker_fill_report(
+        mo,
+        trader_side,
+        trade_side,
+        taker_asset_id,
+        MakerFillParseContext {
+            account_id,
+            instrument_id,
+            venue_order_id: VenueOrderId::from(mo.order_id.as_str()),
+            trade_id: make_composite_trade_id(trade_id, &mo.order_id),
+            price_precision,
+            size_precision,
+            currency,
+            liquidity_side,
+            ts_event,
+            ts_init,
+        },
+    )
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct MakerFillParseContext {
+    pub account_id: AccountId,
+    pub instrument_id: InstrumentId,
+    pub venue_order_id: VenueOrderId,
+    pub trade_id: TradeId,
+    pub price_precision: u8,
+    pub size_precision: u8,
+    pub currency: Currency,
+    pub liquidity_side: LiquiditySide,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}
+
+pub(super) fn parse_validated_maker_fill_report(
+    mo: &PolymarketMakerOrder,
+    trader_side: PolymarketLiquiditySide,
+    trade_side: PolymarketOrderSide,
+    taker_asset_id: &str,
+    ctx: MakerFillParseContext,
+) -> anyhow::Result<FillReport> {
     let order_side = determine_order_side(
         trader_side,
         trade_side,
         taker_asset_id,
         mo.asset_id.as_str(),
     );
-    let last_qty = Quantity::from_decimal_dp(mo.matched_amount, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
-    let last_px = Price::from_decimal_dp(mo.price, price_precision)
-        .unwrap_or_else(|_| Price::zero(price_precision));
+    let last_qty = Quantity::from_decimal_dp(mo.matched_amount, ctx.size_precision)
+        .unwrap_or_else(|_| Quantity::zero(ctx.size_precision));
+    let last_px = Price::from_decimal_dp(mo.price, ctx.price_precision)
+        .unwrap_or_else(|_| Price::zero(ctx.price_precision));
     let commission_value = compute_commission(
         Decimal::ZERO,
         1.0,
         mo.matched_amount,
         mo.price,
-        liquidity_side,
+        ctx.liquidity_side,
     );
-    let commission = Money::from_decimal(commission_value, currency).with_context(|| {
-        format!("failed to represent commission {commission_value} for {instrument_id} as Money")
+    let commission = Money::from_decimal(commission_value, ctx.currency).with_context(|| {
+        format!(
+            "failed to represent commission {commission_value} for {} as Money",
+            ctx.instrument_id
+        )
     })?;
 
     Ok(FillReport {
-        account_id,
-        instrument_id,
-        venue_order_id,
-        trade_id: fill_trade_id,
+        account_id: ctx.account_id,
+        instrument_id: ctx.instrument_id,
+        venue_order_id: ctx.venue_order_id,
+        trade_id: ctx.trade_id,
         order_side,
         last_qty,
         last_px,
         commission,
-        liquidity_side,
+        liquidity_side: ctx.liquidity_side,
         avg_px: None,
         report_id: UUID4::new(),
-        ts_event,
-        ts_init,
+        ts_event: ctx.ts_event,
+        ts_init: ctx.ts_init,
         client_order_id: None,
         venue_position_id: None,
     })

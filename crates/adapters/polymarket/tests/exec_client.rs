@@ -2377,6 +2377,7 @@ async fn test_generate_fill_reports_rejects_duplicate_owned_maker_order() {
 #[rstest]
 #[case::taker_trade_id(false, "ttttttttttttttttttttttttttttttttttttt", None, "trade ID")]
 #[case::maker_order_id(true, "maker-trade", Some("invalid-🦀-order"), "venue order ID")]
+#[case::maker_order_id_nul(true, "maker-trade", Some("maker\0id"), "trade ID")]
 #[case::maker_trade_id(true, "invalid-🦀-trade", None, "trade ID source")]
 #[tokio::test]
 async fn test_generate_fill_reports_rejects_invalid_selected_identifiers(
@@ -2440,6 +2441,157 @@ async fn test_generate_fill_reports_rejects_invalid_selected_identifiers(
 
     assert!(
         error.to_string().contains(expected_error),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[rstest]
+#[case::taker_order_id(true, "venue order ID")]
+#[case::taker_trade_id(false, "trade ID")]
+#[tokio::test]
+async fn test_generate_fill_reports_rejects_invalid_unscoped_taker_identifiers(
+    #[case] invalid_order_id: bool,
+    #[case] expected_error: &str,
+) {
+    let state = TestServerState::default();
+    let mut trade = load_json("http_trade_report.json");
+    trade["market"] = json!(TEST_CONDITION_ID);
+    trade["trader_side"] = json!("TAKER");
+    if invalid_order_id {
+        trade["taker_order_id"] = json!("invalid-🦀-order");
+    } else {
+        trade["id"] = json!("ttttttttttttttttttttttttttttttttttttt");
+    }
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [trade],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_fill_reports(GenerateFillReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            venue_order_id: None,
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("invalid selected unscoped taker evidence must fail admission");
+
+    assert!(
+        error.to_string().contains(expected_error),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[rstest]
+#[case::pending("MINED")]
+#[case::confirmed("CONFIRMED")]
+#[case::failed("FAILED")]
+#[tokio::test]
+async fn test_generate_fill_reports_rejects_nul_maker_composite_source(#[case] status: &str) {
+    let target_order_id = "0x1111111111111111111111111111111111111111111111111111111111111111";
+    let state = TestServerState::default();
+    let mut trade = load_json("http_trade_report.json");
+    trade["id"] = json!("maker\0trade");
+    trade["market"] = json!(TEST_CONDITION_ID);
+    trade["status"] = json!(status);
+    trade["trader_side"] = json!("MAKER");
+    let mut target_leg = trade["maker_orders"][0].clone();
+    target_leg["owner"] = json!("00000000-0000-0000-0000-000000000001");
+    target_leg["order_id"] = json!(target_order_id);
+    trade["maker_orders"] = json!([target_leg]);
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [trade],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_fill_reports(GenerateFillReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            venue_order_id: Some(VenueOrderId::from(target_order_id)),
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("a NUL-bearing maker composite source must fail admission");
+
+    assert!(
+        error.to_string().contains("trade ID"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_rejects_unscoped_nul_maker_suffix_atomically() {
+    let target_order_id = "0x1111111111111111111111111111111111111111111111111111111111111111";
+    let state = TestServerState::default();
+    let mut invalid = load_json("http_trade_report.json");
+    invalid["id"] = json!("maker\0trade");
+    invalid["market"] = json!(TEST_CONDITION_ID);
+    invalid["trader_side"] = json!("MAKER");
+    let mut target_leg = invalid["maker_orders"][0].clone();
+    target_leg["owner"] = json!("00000000-0000-0000-0000-000000000001");
+    target_leg["order_id"] = json!(target_order_id);
+    invalid["maker_orders"] = json!([target_leg]);
+    let mut valid_prefix = invalid.clone();
+    valid_prefix["id"] = json!("valid-prefix-trade");
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [valid_prefix, invalid],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_fill_reports(GenerateFillReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            venue_order_id: None,
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("an invalid suffix must fail the complete unscoped batch");
+
+    assert!(
+        error.to_string().contains("trade ID"),
         "unexpected error: {error:#}"
     );
 }
@@ -3325,6 +3477,7 @@ async fn test_generate_order_status_report_single_returns_report() {
 #[rstest]
 #[case::missing(None)]
 #[case::zero(Some("0"))]
+#[case::zero_padded(Some("00"))]
 #[case::malformed(Some("not-a-timestamp"))]
 #[case::overflow(Some("99999999999999999999"))]
 #[tokio::test]
@@ -3403,6 +3556,121 @@ async fn test_rest_order_reports_reject_invalid_generic_gtd_expiration(
             "unexpected error: {error:#}"
         );
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_venue_only_gtc_order_report_accepts_numeric_zero_expiration() {
+    let venue_order_id =
+        VenueOrderId::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12");
+    let state = TestServerState::default();
+    let mut response = load_json("http_open_order.json");
+    response["size_matched"] = json!("0.0000");
+    response["order_type"] = json!("GTC");
+    response["expiration"] = json!("00");
+    *state.single_order_response.lock().await = Some(response);
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let report = client
+        .generate_order_status_report(&GenerateOrderStatusReport {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            client_order_id: None,
+            venue_order_id: Some(venue_order_id),
+            params: None,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect("numeric-zero GTC expiration is valid metadata")
+        .expect("provider returned an active order");
+
+    assert_eq!(report.expire_time, None);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_venue_only_gtc_order_report_rejects_malformed_expiration() {
+    let venue_order_id =
+        VenueOrderId::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12");
+    let state = TestServerState::default();
+    let mut response = load_json("http_open_order.json");
+    response["size_matched"] = json!("0.0000");
+    response["order_type"] = json!("GTC");
+    response["expiration"] = json!("not-a-timestamp");
+    *state.single_order_response.lock().await = Some(response);
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_order_status_report(&GenerateOrderStatusReport {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            client_order_id: None,
+            venue_order_id: Some(venue_order_id),
+            params: None,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("malformed non-GTD expiration must fail admission");
+
+    assert!(
+        error.to_string().contains("expiration"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_venue_only_order_report_accepts_provider_overfill() {
+    let venue_order_id =
+        VenueOrderId::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12");
+    let state = TestServerState::default();
+    let mut response = load_json("http_open_order.json");
+    response["status"] = json!("MATCHED");
+    response["original_size"] = json!("10.0000");
+    response["size_matched"] = json!("12.0000");
+    *state.single_order_response.lock().await = Some(response);
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let report = client
+        .generate_order_status_report(&GenerateOrderStatusReport {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            client_order_id: None,
+            venue_order_id: Some(venue_order_id),
+            params: None,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect("provider overfill is legitimate evidence")
+        .expect("provider returned an active order");
+
+    assert_eq!(report.quantity, Quantity::from("10.0000"));
+    assert_eq!(report.filled_qty, Quantity::from("10.0000"));
+    assert_eq!(report.order_status, OrderStatus::Filled);
 }
 
 #[rstest]
