@@ -149,9 +149,12 @@ pub const OKX_ADVANCE_ALGO_ORDER_TYPES: &[OrderType] = &[OrderType::TrailingStop
 
 /// OKX error codes that should trigger retries.
 ///
-/// Only retry on temporary network/system issues. `50004` ("request
-/// timeout, outcome unknown") is safe because every order/cancel/amend
-/// path sends `clOrdId` and OKX rejects duplicates with `51000`.
+/// Only retry on temporary network/system issues. Retries never apply to
+/// order submission POSTs: OKX rejects a duplicate `clOrdId` only while the
+/// first order rests open, so a submit whose response was lost can already
+/// have filled, and retrying could place a second live order. Submits are
+/// sent once, and an ambiguous outcome resolves through stream updates and
+/// reconciliation.
 ///
 /// # References
 ///

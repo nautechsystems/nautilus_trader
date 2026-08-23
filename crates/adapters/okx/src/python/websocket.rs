@@ -685,13 +685,13 @@ impl OKXWebSocketClient {
                         }
                         OKXWsMessage::SendFailed {
                             request_id,
-                            client_order_id,
+                            client_order_ids,
                             op,
                             error,
                         } => {
                             handle_send_failed(
                                 &request_id,
-                                client_order_id,
+                                &client_order_ids,
                                 op.as_ref(),
                                 &error,
                                 &client,
@@ -703,6 +703,25 @@ impl OKXWebSocketClient {
                         }
                         OKXWsMessage::Error(msg) => {
                             call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
+                        }
+                        OKXWsMessage::SubscriptionFailed {
+                            channel,
+                            inst_id,
+                            code,
+                            msg,
+                        } => {
+                            log::error!(
+                                "OKX rejected {channel:?} subscription for {inst_id:?} \
+                                 (code={code}, msg={msg}); no data will flow for this subscription"
+                            );
+
+                            if let Some(inst_id) = inst_id
+                                && channel.is_book()
+                                && let Some(instrument) = instruments_by_symbol.get(&inst_id)
+                                && let Some(tracker) = book_sync_by_channel.get_mut(&channel)
+                            {
+                                tracker.remove(instrument.id());
+                            }
                         }
                         OKXWsMessage::LiquidationWarnings(warnings) => {
                             for warning in warnings {
@@ -2887,7 +2906,7 @@ fn handle_order_response(
 #[expect(clippy::too_many_arguments)]
 fn handle_send_failed(
     request_id: &str,
-    client_order_id: Option<ClientOrderId>,
+    client_order_ids: &[ClientOrderId],
     op: Option<&OKXWsOperation>,
     error: &crate::websocket::error::OKXWsError,
     client: &OKXWebSocketClient,
@@ -2899,9 +2918,31 @@ fn handle_send_failed(
     let failure = classify_okx_ws_failure(error);
     log::error!("WebSocket send failed: request_id={request_id} error={error} {failure:?}");
 
-    let Some(client_order_id) = client_order_id else {
-        return;
-    };
+    for client_order_id in client_order_ids {
+        handle_send_failed_for_order(
+            *client_order_id,
+            &failure,
+            op,
+            client,
+            account_id,
+            clock,
+            call_soon,
+            callback,
+        );
+    }
+}
+
+#[expect(clippy::too_many_arguments)]
+fn handle_send_failed_for_order(
+    client_order_id: ClientOrderId,
+    failure: &CommandFailure,
+    op: Option<&OKXWsOperation>,
+    client: &OKXWebSocketClient,
+    account_id: AccountId,
+    clock: &AtomicTime,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
     let cl_ord_str = client_order_id.to_string();
     let ts_init = clock.get_time_ns();
     let emit_terminal = !matches!(failure, CommandFailure::Ambiguous(_));

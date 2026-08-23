@@ -5004,6 +5004,77 @@ async fn test_http_okx_error_response() {
     }
 }
 
+#[tokio::test]
+async fn test_place_order_http_failure_is_sent_once_without_retry() {
+    let attempt_count = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&attempt_count);
+    let router = Router::new().route(
+        "/api/v5/trade/order",
+        post(move || async move {
+            counter.fetch_add(1, Ordering::SeqCst);
+            StatusCode::INTERNAL_SERVER_ERROR
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    wait_for_server(addr, "/api/v5/trade/order").await;
+
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        2,
+        3,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let request = OKXPlaceOrderRequest {
+        inst_id: "BTC-USDT-SWAP".to_string(),
+        td_mode: OKXTradeMode::Cross,
+        ccy: None,
+        cl_ord_id: Some("Oplaceorderretrycounte".to_string()),
+        tag: None,
+        side: OKXSide::Sell,
+        pos_side: None,
+        ord_type: OKXOrderType::Limit,
+        sz: "1".to_string(),
+        px: Some("65000.1".to_string()),
+        px_usd: None,
+        px_vol: None,
+        reduce_only: None,
+        tgt_ccy: None,
+        attach_algo_ords: None,
+        speed_bump: None,
+        outcome: None,
+        slippage_pct: None,
+        rpi_taker_access: None,
+        rpi_px_round: None,
+    };
+
+    let result = client.place_order(request).await;
+
+    assert!(result.is_err());
+    assert_eq!(
+        attempt_count.load(Ordering::SeqCst),
+        1,
+        "order placement must be sent once; a retry could double-place the order"
+    );
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_http_okx_error_falls_back_to_s_msg_on_http_200() {

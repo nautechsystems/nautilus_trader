@@ -396,11 +396,13 @@ impl OKXExecutionClient {
         }
 
         if let Some(start) = cmd.start {
-            reports.retain(|r| r.ts_last >= start);
+            // Open orders are authoritative regardless of age; only closed
+            // history respects the report window.
+            reports.retain(|r| r.ts_last >= start || r.order_status.is_open());
         }
 
         if let Some(end) = cmd.end {
-            reports.retain(|r| r.ts_last <= end);
+            reports.retain(|r| r.ts_last <= end || r.order_status.is_open());
         }
 
         Ok((reports, complete))
@@ -1188,69 +1190,13 @@ impl OKXExecutionClient {
             }
         }
     }
-}
 
-fn derive_trade_mode_for_instrument(
-    instrument_id: InstrumentId,
-    margin_mode: Option<OKXMarginMode>,
-    use_spot_margin: bool,
-) -> OKXTradeMode {
-    let inst_type = okx_instrument_type_from_symbol(instrument_id.symbol.as_str());
-    let is_cross_margin = margin_mode == Some(OKXMarginMode::Cross);
-
-    match inst_type {
-        OKXInstrumentType::Spot => {
-            if use_spot_margin {
-                if is_cross_margin {
-                    OKXTradeMode::Cross
-                } else {
-                    OKXTradeMode::Isolated
-                }
-            } else {
-                OKXTradeMode::Cash
-            }
-        }
-        _ => {
-            if is_cross_margin {
-                OKXTradeMode::Cross
-            } else {
-                OKXTradeMode::Isolated
-            }
-        }
-    }
-}
-
-#[async_trait(?Send)]
-impl ExecutionClient for OKXExecutionClient {
-    fn is_connected(&self) -> bool {
-        self.core.is_connected()
-    }
-
-    fn client_id(&self) -> ClientId {
-        self.core.client_id
-    }
-
-    fn account_id(&self) -> AccountId {
-        self.core.account_id
-    }
-
-    fn venue(&self) -> Venue {
-        *OKX_VENUE
-    }
-
-    fn oms_type(&self) -> OmsType {
-        self.core.oms_type
-    }
-
-    fn get_account(&self) -> Option<AccountAny> {
-        self.core.cache().account_owned(&self.core.account_id)
-    }
-
-    async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() {
-            return Ok(());
-        }
-
+    /// Establishes instrument context, both WebSocket transports, private
+    /// subscriptions, and initial account state.
+    ///
+    /// Any failure leaves partially started transports for
+    /// [`Self::teardown_session`].
+    async fn establish_session(&mut self) -> anyhow::Result<()> {
         let instrument_types = self.instrument_types();
 
         if !self.core.instruments_initialized() {
@@ -1462,18 +1408,13 @@ impl ExecutionClient for OKXExecutionClient {
         // Wait for account to be registered in cache before completing connect
         self.await_account_registered(30.0).await?;
 
-        self.core.set_connected();
-        log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
     }
 
-    async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_disconnected() {
-            return Ok(());
-        }
-
+    /// Closes both WebSocket transports and aborts their stream tasks without
+    /// cancelling HTTP requests, so a retried connect can still use them.
+    async fn teardown_session(&mut self) -> anyhow::Result<()> {
         self.abort_pending_tasks();
-        self.http_client.cancel_all_requests();
 
         if let Err(e) = self.ws_private.close().await {
             log::warn!("Error closing private websocket: {e:?}");
@@ -1492,6 +1433,90 @@ impl ExecutionClient for OKXExecutionClient {
         }
 
         self.core.set_disconnected();
+        Ok(())
+    }
+}
+
+fn derive_trade_mode_for_instrument(
+    instrument_id: InstrumentId,
+    margin_mode: Option<OKXMarginMode>,
+    use_spot_margin: bool,
+) -> OKXTradeMode {
+    let inst_type = okx_instrument_type_from_symbol(instrument_id.symbol.as_str());
+    let is_cross_margin = margin_mode == Some(OKXMarginMode::Cross);
+
+    match inst_type {
+        OKXInstrumentType::Spot => {
+            if use_spot_margin {
+                if is_cross_margin {
+                    OKXTradeMode::Cross
+                } else {
+                    OKXTradeMode::Isolated
+                }
+            } else {
+                OKXTradeMode::Cash
+            }
+        }
+        _ => {
+            if is_cross_margin {
+                OKXTradeMode::Cross
+            } else {
+                OKXTradeMode::Isolated
+            }
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl ExecutionClient for OKXExecutionClient {
+    fn is_connected(&self) -> bool {
+        self.core.is_connected()
+    }
+
+    fn client_id(&self) -> ClientId {
+        self.core.client_id
+    }
+
+    fn account_id(&self) -> AccountId {
+        self.core.account_id
+    }
+
+    fn venue(&self) -> Venue {
+        *OKX_VENUE
+    }
+
+    fn oms_type(&self) -> OmsType {
+        self.core.oms_type
+    }
+
+    fn get_account(&self) -> Option<AccountAny> {
+        self.core.cache().account_owned(&self.core.account_id)
+    }
+
+    async fn connect(&mut self) -> anyhow::Result<()> {
+        if self.core.is_connected() {
+            return Ok(());
+        }
+
+        if let Err(e) = self.establish_session().await {
+            if let Err(teardown_error) = self.teardown_session().await {
+                log::warn!("Error tearing down partial session: {teardown_error:?}");
+            }
+            return Err(e);
+        }
+
+        self.core.set_connected();
+        log::info!("Connected: client_id={}", self.core.client_id);
+        Ok(())
+    }
+
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
+        if self.core.is_disconnected() {
+            return Ok(());
+        }
+
+        self.http_client.cancel_all_requests();
+        self.teardown_session().await?;
         log::info!("Disconnected: client_id={}", self.core.client_id);
         Ok(())
     }

@@ -958,7 +958,21 @@ impl OKXRawHttpClient {
         //
         // Note: OKX returns many permanent errors which should NOT be retried
         // (e.g., "Invalid instrument", "Insufficient balance", "Invalid API Key")
-        let should_retry = |error: &OKXHttpError| -> bool { error.is_retryable() };
+        //
+        // Submit POSTs are exempt: OKX rejects a duplicate `clOrdId` only while
+        // the first order rests open, so an attempt whose response was lost can
+        // already have filled and freed the client order ID. Retrying could then
+        // place a second live order, so submits are sent once and an ambiguous
+        // outcome is left for stream updates and reconciliation to resolve.
+        let is_order_submit = method == Method::POST
+            && matches!(
+                path,
+                "/api/v5/trade/order"
+                    | "/api/v5/trade/batch-orders"
+                    | "/api/v5/trade/order-algo"
+                    | "/api/v5/sprd/order"
+            );
+        let should_retry = |error: &OKXHttpError| !is_order_submit && error.is_retryable();
 
         let create_error = |error: RetryError| -> OKXHttpError {
             match error {
@@ -4194,7 +4208,11 @@ impl OKXHttpClient {
                 continue; // Reserved pending already reported
             }
 
-            if report_ts_outside_window(order.u_time, start_ns, end_ns) {
+            // Open orders are authoritative regardless of age; only closed
+            // history respects the report window.
+            if report_ts_outside_window(order.u_time, start_ns, end_ns)
+                && !is_open_okx_order(order.state)
+            {
                 continue;
             }
 
@@ -4231,12 +4249,14 @@ impl OKXHttpClient {
 
             if let Some(start_ns) = start_ns
                 && report.ts_last < start_ns
+                && !report.order_status.is_open()
             {
                 continue;
             }
 
             if let Some(end_ns) = end_ns
                 && report.ts_last > end_ns
+                && !report.order_status.is_open()
             {
                 continue;
             }
@@ -4425,8 +4445,11 @@ impl OKXHttpClient {
                 continue;
             }
 
+            // Open spread orders are authoritative regardless of age; only
+            // closed history respects the report window.
             if let Some(ts) = order.u_time.or(order.c_time)
                 && report_ts_outside_window(ts, start_ns, end_ns)
+                && !is_open_okx_order(order.state)
             {
                 continue;
             }
@@ -4464,12 +4487,14 @@ impl OKXHttpClient {
 
             if let Some(start_ns) = start_ns
                 && report.ts_last < start_ns
+                && !report.order_status.is_open()
             {
                 continue;
             }
 
             if let Some(end_ns) = end_ns
                 && report.ts_last > end_ns
+                && !report.order_status.is_open()
             {
                 continue;
             }
@@ -6762,7 +6787,11 @@ impl OKXHttpClient {
         for order in orders {
             let key = (order.algo_id.clone(), order.algo_cl_ord_id.clone());
 
-            if report_ts_outside_window(order.u_time, start_ns, end_ns) {
+            // Live algo orders are authoritative regardless of age; only
+            // terminal history respects the report window.
+            if report_ts_outside_window(order.u_time, start_ns, end_ns)
+                && !is_open_okx_algo(order.state)
+            {
                 continue;
             }
 

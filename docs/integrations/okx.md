@@ -395,9 +395,10 @@ status, and trade reports. It subscribes to the OKX business WebSocket
 [`sprd-orders` channel](https://www.okx.com/docs-v5/en/#spread-trading-websocket-private-channel-order-channel)
 for live spread order updates.
 
-OKX `sprd-orders` WebSocket updates do not include fee fields. Live spread fill
-reports emitted from that channel use zero commission; historical and reconciliation
-fill reports from the REST
+OKX `sprd-orders` WebSocket updates do not include fee fields. The adapter fails closed and discards
+the whole update, so it emits neither a fill event nor an order-state update. Startup reconciliation
+recovers the order from REST; set `open_check_interval_secs` to poll open orders continuously.
+Historical and reconciliation fill reports from the REST
 [`sprd/trades` endpoint](https://www.okx.com/docs-v5/en/#spread-trading-rest-api-get-trades)
 include OKX fee data.
 
@@ -418,10 +419,10 @@ Relevant OKX docs:
 
 ### Execution instructions
 
-| Instruction   | Linear perpetual swap | Notes                  |
-| ------------- | --------------------- | ---------------------- |
-| `post_only`   | ✓                     | Only for limit orders. |
-| `reduce_only` | ✓                     | Only for derivatives.  |
+| Instruction   | Linear perpetual swap | Notes                                                                             |
+| ------------- | --------------------- | --------------------------------------------------------------------------------- |
+| `post_only`   | ✓                     | Only for limit orders.                                                            |
+| `reduce_only` | ✓                     | Futures and swaps need `net` mode; margin needs `isolated` or `cross` trade mode. |
 
 ### Time in force
 
@@ -1063,7 +1064,7 @@ The OKX data client provides the following Python configuration options.
 | `max_retries`                      | `3`                        | Retry attempts for recoverable REST errors.                                    |
 | `retry_delay_initial_ms`           | `1,000`                    | Initial delay before retrying.                                                 |
 | `retry_delay_max_ms`               | `10,000`                   | Maximum exponential backoff delay.                                             |
-| `update_instruments_interval_mins` | `60`                       | Background instrument refresh interval.                                        |
+| `update_instruments_interval_mins` | `60`                       | Ignored; live updates arrive through the instruments WebSocket channel.        |
 | `book_stale_check_interval_secs`   | `5`                        | Stale book check interval.                                                     |
 | `book_stale_threshold_secs`        | `30`                       | Idle time before a stale book warning.                                         |
 | `book_snapshot_timeout_secs`       | `3`                        | Post-reconnect snapshot wait.                                                  |
@@ -1086,28 +1087,28 @@ Spread instruments use `load_spreads` instead of `instrument_types` because OKX 
 
 The OKX execution client provides the following Python configuration options.
 
-| Option                   | Default                    | Description                                 |
-| ------------------------ | -------------------------- | ------------------------------------------- |
-| `instrument_types`       | `[OKXInstrumentType.SPOT]` | Tradable OKX instrument types.              |
-| `load_spreads`           | `False`                    | Loads live spread instruments.              |
-| `trader_id`              | Required                   | Nautilus trader ID for the client.          |
-| `account_id`             | Required                   | Nautilus account ID for the client.         |
-| `base_url_http`          | `None`                     | Override for the OKX trading REST endpoint. |
-| `base_url_ws_private`    | `None`                     | Override for the private WebSocket URL.     |
-| `base_url_ws_business`   | `None`                     | Override for the business WebSocket URL.    |
-| `api_key`                | `None`                     | Falls back to `OKX_API_KEY` when unset.     |
-| `api_secret`             | `None`                     | Falls back to `OKX_API_SECRET` when unset.  |
-| `api_passphrase`         | `None`                     | Falls back to `OKX_API_PASSPHRASE`.         |
-| `environment`            | `LIVE`                     | Environment enum (`LIVE` or `DEMO`).        |
-| `region`                 | `GLOBAL`                   | Region enum (`GLOBAL`, `EEA`, or `US`).     |
-| `margin_mode`            | `None`                     | Margin mode (`ISOLATED` or `CROSS`).        |
-| `http_timeout_secs`      | `60`                       | REST trading request timeout.               |
-| `max_retries`            | `3`                        | Retry attempts for recoverable REST errors. |
-| `retry_delay_initial_ms` | `1,000`                    | Initial delay before retrying.              |
-| `retry_delay_max_ms`     | `10,000`                   | Maximum exponential backoff delay.          |
-| `auth_timeout_secs`      | `None`                     | Override WebSocket authentication timeout.  |
-| `proxy_url`              | `None`                     | Optional HTTP and WebSocket proxy URL.      |
-| `transport_backend`      | `Sockudo`                  | WebSocket transport backend.                |
+| Option                   | Default                    | Description                                                                                             |
+| ------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `instrument_types`       | `[OKXInstrumentType.SPOT]` | Tradable OKX instrument types.                                                                          |
+| `load_spreads`           | `False`                    | Loads live spread instruments.                                                                          |
+| `trader_id`              | Required                   | Nautilus trader ID for the client.                                                                      |
+| `account_id`             | Required                   | Nautilus account ID for the client.                                                                     |
+| `base_url_http`          | `None`                     | Override for the OKX trading REST endpoint.                                                             |
+| `base_url_ws_private`    | `None`                     | Override for the private WebSocket URL.                                                                 |
+| `base_url_ws_business`   | `None`                     | Override for the business WebSocket URL.                                                                |
+| `api_key`                | `None`                     | Falls back to `OKX_API_KEY` when unset.                                                                 |
+| `api_secret`             | `None`                     | Falls back to `OKX_API_SECRET` when unset.                                                              |
+| `api_passphrase`         | `None`                     | Falls back to `OKX_API_PASSPHRASE`.                                                                     |
+| `environment`            | `LIVE`                     | Environment enum (`LIVE` or `DEMO`).                                                                    |
+| `region`                 | `GLOBAL`                   | Region enum (`GLOBAL`, `EEA`, or `US`).                                                                 |
+| `margin_mode`            | `None`                     | Margin mode (`ISOLATED` or `CROSS`).                                                                    |
+| `http_timeout_secs`      | `60`                       | REST trading request timeout.                                                                           |
+| `max_retries`            | `3`                        | Retry attempts for recoverable REST errors. Order submission endpoints are exempt and always send once. |
+| `retry_delay_initial_ms` | `1,000`                    | Initial delay before retrying.                                                                          |
+| `retry_delay_max_ms`     | `10,000`                   | Maximum exponential backoff delay.                                                                      |
+| `auth_timeout_secs`      | `None`                     | Override WebSocket authentication timeout.                                                              |
+| `proxy_url`              | `None`                     | Optional HTTP and WebSocket proxy URL.                                                                  |
+| `transport_backend`      | `Sockudo`                  | WebSocket transport backend.                                                                            |
 
 Supported execution client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
 `FUTURES`, `OPTION`, and `EVENTS`. See [Options trading](#options-trading) before selecting

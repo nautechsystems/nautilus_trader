@@ -30,11 +30,15 @@ use std::{
 use ahash::AHashMap;
 use axum::{
     Json, Router,
-    extract::Query,
-    http::HeaderMap,
-    response::IntoResponse,
+    extract::{
+        Query, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+    },
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
+use futures_util::StreamExt;
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
@@ -372,6 +376,91 @@ fn test_unsent_submit_send_failure_emits_order_rejected() {
 }
 
 #[rstest]
+fn test_unsent_batch_submit_send_failure_resolves_every_order() {
+    let cid_1 = ClientOrderId::new("O-batch-send-failure-1");
+    let cid_2 = ClientOrderId::new("O-batch-send-failure-2");
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    for cid in [cid_1, cid_2] {
+        state.order_identities.insert(
+            cid,
+            OrderIdentity {
+                client_order_id: cid,
+                instrument_id: InstrumentId::from("ETH-USDT-SWAP.OKX"),
+                strategy_id: StrategyId::from("STRATEGY-001"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+            },
+        );
+    }
+
+    dispatch_command_response(
+        OKXWsMessage::SendFailed {
+            request_id: "req-batch-send-failure".to_string(),
+            client_order_ids: vec![cid_1, cid_2],
+            op: Some(OKXWsOperation::BatchOrders),
+            error: OKXWsError::NoActiveClient,
+        },
+        &emitter,
+        &state,
+    );
+
+    let events = drain_events(&mut rx);
+
+    for cid in [cid_1, cid_2] {
+        assert!(
+            contains_order_event(&events, |event| matches!(
+                event,
+                OrderEventAny::Rejected(rejected) if rejected.client_order_id == cid
+            )),
+            "unsent batch submit should reject {cid}: {events:?}"
+        );
+        assert!(!state.order_identities.contains_key(&cid));
+    }
+}
+
+#[rstest]
+fn test_ambiguous_batch_submit_send_failure_emits_no_rejections() {
+    let cid_1 = ClientOrderId::new("O-batch-ambiguous-1");
+    let cid_2 = ClientOrderId::new("O-batch-ambiguous-2");
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+    for cid in [cid_1, cid_2] {
+        state.order_identities.insert(
+            cid,
+            OrderIdentity {
+                client_order_id: cid,
+                instrument_id: InstrumentId::from("ETH-USDT-SWAP.OKX"),
+                strategy_id: StrategyId::from("STRATEGY-001"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+            },
+        );
+    }
+
+    dispatch_command_response(
+        OKXWsMessage::SendFailed {
+            request_id: "req-batch-ambiguous".to_string(),
+            client_order_ids: vec![cid_1, cid_2],
+            op: Some(OKXWsOperation::BatchOrders),
+            error: OKXWsError::SendFailed("connection reset".to_string()),
+        },
+        &emitter,
+        &state,
+    );
+
+    let events = drain_events(&mut rx);
+    assert!(
+        !contains_order_event(&events, |event| matches!(event, OrderEventAny::Rejected(_))),
+        "ambiguous batch submit failure should not emit rejections: {events:?}"
+    );
+
+    for cid in [cid_1, cid_2] {
+        assert!(state.order_identities.contains_key(&cid));
+    }
+}
+
+#[rstest]
 fn test_unsent_modify_send_failure_emits_order_modify_rejected() {
     let cid = ClientOrderId::new("O-modify-handler-unavailable");
     let (events, state) = dispatch_send_failed_response(
@@ -698,7 +787,7 @@ fn dispatch_send_failed_response(
     dispatch_command_response(
         OKXWsMessage::SendFailed {
             request_id: "req-send-failure".to_string(),
-            client_order_id: Some(client_order_id),
+            client_order_ids: vec![client_order_id],
             op: Some(op),
             error,
         },
@@ -2662,6 +2751,20 @@ fn query_order_instrument() -> InstrumentAny {
         .expect("expected parsed ETH-USDT-SWAP instrument")
 }
 
+fn btc_usdt_swap_instrument() -> InstrumentAny {
+    let response: OKXResponse<OKXInstrument> =
+        serde_json::from_value(load_test_data("http_get_instruments_swap.json")).unwrap();
+    let raw = response
+        .data
+        .iter()
+        .find(|instrument| instrument.inst_id == Ustr::from("BTC-USDT-SWAP"))
+        .expect("expected BTC-USDT-SWAP fixture");
+
+    parse_instrument_any(raw, None, None, None, None, UnixNanos::default())
+        .unwrap()
+        .expect("expected parsed BTC-USDT-SWAP instrument")
+}
+
 fn regular_order_detail_response(params: &HashMap<String, String>) -> serde_json::Value {
     let mut response = load_test_data("http_get_orders_history.json");
     let order = &mut response["data"][0];
@@ -2918,6 +3021,73 @@ fn create_exec_test_router() -> Router {
             axum::Json(load_test_data("http_get_account_balance.json")).into_response()
         }),
     )
+}
+
+#[derive(Clone, Default)]
+struct WsTeardownState {
+    opened: Arc<AtomicUsize>,
+    closed: Arc<AtomicUsize>,
+}
+
+async fn handle_exec_ws_upgrade(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<WsTeardownState>>,
+) -> Response {
+    ws.on_upgrade(move |socket| handle_exec_ws_socket(socket, state))
+}
+
+async fn handle_exec_ws_socket(mut socket: WebSocket, state: Arc<WsTeardownState>) {
+    state.opened.fetch_add(1, Ordering::Relaxed);
+
+    while let Some(message) = socket.next().await {
+        let Ok(message) = message else { break };
+        if let Message::Text(text) = message
+            && text.contains("\"op\":\"login\"")
+            && socket
+                .send(Message::Text(
+                    "{\"event\":\"login\",\"code\":\"0\",\"msg\":\"\",\"connId\":\"test\"}"
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .is_err()
+        {
+            break;
+        }
+    }
+    state.closed.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Serves instrument fixtures, a failing account balance endpoint, and
+/// WebSocket endpoints that stay open until the client closes them.
+async fn start_exec_session_failure_server() -> (SocketAddr, Arc<WsTeardownState>) {
+    let ws_state = Arc::new(WsTeardownState::default());
+    let router = Router::new()
+        .route(
+            "/ws/v5/private",
+            get(handle_exec_ws_upgrade).with_state(Arc::clone(&ws_state)),
+        )
+        .route(
+            "/ws/v5/business",
+            get(handle_exec_ws_upgrade).with_state(Arc::clone(&ws_state)),
+        )
+        .route(
+            "/api/v5/public/instruments",
+            get(|| async { Json(load_test_data("http_get_instruments_swap.json")) }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { StatusCode::INTERNAL_SERVER_ERROR }),
+        );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    (addr, ws_state)
 }
 
 #[derive(Default)]
@@ -4568,6 +4738,151 @@ async fn test_margin_only_open_spot_cache_miss_fails_report_request() {
         .unwrap_err();
 
     assert!(error.to_string().contains("missing from cache"));
+}
+
+async fn start_stale_pending_order_report_server() -> SocketAddr {
+    let router = Router::new()
+        .route("/health", get(|| async { Json(json!({"ok": true})) }))
+        .route(
+            "/api/v5/trade/orders-pending",
+            get(|| async move {
+                let mut response = load_test_data("http_get_orders_pending.json");
+                response["data"][0]["uTime"] = json!("1600000000000");
+                Json(response).into_response()
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-history",
+            get(|| async move {
+                // Closed history outside the report window must stay excluded.
+                let mut response = load_test_data("http_get_orders_pending.json");
+                response["data"][0]["uTime"] = json!("1600000000000");
+                response["data"][0]["cTime"] = json!("1600000000000");
+                response["data"][0]["state"] = json!("canceled");
+                response["data"][0]["ordId"] = json!("9999999999999999999");
+                response["data"][0]["clOrdId"] = json!("Ostaleclosedhistory0");
+                Json(response).into_response()
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|| async {
+                Json(load_test_data("http_get_orders_algo_pending.json")).into_response()
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-history",
+            get(|| async {
+                Json(load_test_data("http_get_orders_algo_history.json")).into_response()
+            }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    addr
+}
+
+#[tokio::test]
+async fn test_failed_connect_tears_down_websockets_before_retry() {
+    let (addr, ws_state) = start_exec_session_failure_server().await;
+    let ws_base = format!("ws://{addr}");
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+            config.base_url_ws_private = Some(format!("{ws_base}/ws/v5/private"));
+            config.base_url_ws_business = Some(format!("{ws_base}/ws/v5/business"));
+        });
+
+    for attempt in 1..=2 {
+        let error = client.connect().await.unwrap_err();
+        assert!(
+            error.to_string().contains("account state"),
+            "expected account state failure after transports started: {error}"
+        );
+
+        let expected_connections = attempt * 2;
+        wait_until_async(
+            || {
+                let ws_state = Arc::clone(&ws_state);
+                async move { ws_state.closed.load(Ordering::Relaxed) >= expected_connections }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        assert_eq!(
+            ws_state.opened.load(Ordering::Relaxed),
+            expected_connections,
+            "each connect attempt must open fresh private and business websockets"
+        );
+        assert_eq!(
+            ws_state.closed.load(Ordering::Relaxed),
+            expected_connections,
+            "failed connect must close both started websockets before retry"
+        );
+    }
+}
+
+#[rstest]
+#[case::older_than_start(Some(1_700_000_000_000_000_000), None)]
+#[case::newer_than_end(None, Some(1_500_000_000_000_000_000))]
+#[tokio::test]
+async fn test_open_order_outside_report_window_is_reported(
+    #[case] start_ns: Option<u64>,
+    #[case] end_ns: Option<u64>,
+) {
+    let addr = start_stale_pending_order_report_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    client.on_instrument(btc_usdt_swap_instrument());
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        start_ns.map(UnixNanos::from),
+        end_ns.map(UnixNanos::from),
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert!(
+        reports
+            .iter()
+            .any(|r| r.venue_order_id == VenueOrderId::from("1234567890123456789")),
+        "a live order outside the report window must still be reported"
+    );
+    assert!(
+        reports
+            .iter()
+            .any(|r| r.venue_order_id == VenueOrderId::from("123456789")),
+        "a live algo order outside the report window must still be reported"
+    );
+    assert!(
+        !reports
+            .iter()
+            .any(|r| r.venue_order_id == VenueOrderId::from("9999999999999999999")),
+        "a closed order outside the report window must stay excluded"
+    );
+    assert!(
+        !reports
+            .iter()
+            .any(|r| r.venue_order_id == VenueOrderId::from("987654321")),
+        "a triggered algo parent outside the report window must stay excluded"
+    );
 }
 
 #[rstest]

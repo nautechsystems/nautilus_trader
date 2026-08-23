@@ -2270,7 +2270,11 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-batch-orders>
-    async fn ws_batch_place_orders(&self, args: Vec<Value>) -> Result<(), OKXWsError> {
+    async fn ws_batch_place_orders(
+        &self,
+        args: Vec<Value>,
+        client_order_ids: Vec<ClientOrderId>,
+    ) -> Result<(), OKXWsError> {
         let request_id = self.generate_unique_request_id();
         let request = OKXWsRequest::<Value> {
             id: Some(request_id.clone()),
@@ -2286,7 +2290,7 @@ impl OKXWebSocketClient {
             payload,
             rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_BATCH_ORDER.to_vec()),
             request_id: Some(request_id),
-            client_order_id: None,
+            client_order_ids,
             op: Some(super::enums::OKXWsOperation::BatchOrders),
         };
 
@@ -2298,7 +2302,11 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-batch-cancel-orders>
-    async fn ws_batch_cancel_orders(&self, args: Vec<Value>) -> Result<(), OKXWsError> {
+    async fn ws_batch_cancel_orders(
+        &self,
+        args: Vec<Value>,
+        client_order_ids: Vec<ClientOrderId>,
+    ) -> Result<(), OKXWsError> {
         let request_id = self.generate_unique_request_id();
         let request = OKXWsRequest::<Value> {
             id: Some(request_id.clone()),
@@ -2314,7 +2322,7 @@ impl OKXWebSocketClient {
             payload,
             rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_BATCH_CANCEL.to_vec()),
             request_id: Some(request_id),
-            client_order_id: None,
+            client_order_ids,
             op: Some(super::enums::OKXWsOperation::BatchCancelOrders),
         };
 
@@ -2326,7 +2334,11 @@ impl OKXWebSocketClient {
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-batch-amend-orders>
-    async fn ws_batch_amend_orders(&self, args: Vec<Value>) -> Result<(), OKXWsError> {
+    async fn ws_batch_amend_orders(
+        &self,
+        args: Vec<Value>,
+        client_order_ids: Vec<ClientOrderId>,
+    ) -> Result<(), OKXWsError> {
         let request_id = self.generate_unique_request_id();
         let request = OKXWsRequest::<Value> {
             id: Some(request_id.clone()),
@@ -2342,7 +2354,7 @@ impl OKXWebSocketClient {
             payload,
             rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_BATCH_AMEND.to_vec()),
             request_id: Some(request_id),
-            client_order_id: None,
+            client_order_ids,
             op: Some(super::enums::OKXWsOperation::BatchAmendOrders),
         };
 
@@ -2440,18 +2452,9 @@ impl OKXWebSocketClient {
         }
 
         match instrument_type {
-            OKXInstrumentType::Spot => {
+            OKXInstrumentType::Spot | OKXInstrumentType::Margin => {
                 // SPOT: ccy parameter is required by OKX for spot trading
                 builder.ccy(quote_currency.to_string());
-            }
-            OKXInstrumentType::Margin => {
-                builder.ccy(quote_currency.to_string());
-
-                if let Some(ro) = reduce_only
-                    && ro
-                {
-                    builder.reduce_only(ro);
-                }
             }
             OKXInstrumentType::Swap | OKXInstrumentType::Futures => {
                 // SWAP/FUTURES: use quote currency for margin (required by OKX)
@@ -2478,13 +2481,11 @@ impl OKXWebSocketClient {
                 if position_side.is_none() {
                     builder.pos_side(OKXPositionSide::Net);
                 }
-
-                if let Some(ro) = reduce_only
-                    && ro
-                {
-                    builder.reduce_only(ro);
-                }
             }
+        }
+
+        if should_send_reduce_only(instrument_type, td_mode, position_side, reduce_only) {
+            builder.reduce_only(true);
         }
 
         if let Some(attach_algo_ords) = attach_algo_ords {
@@ -2651,7 +2652,7 @@ impl OKXWebSocketClient {
             payload,
             rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_ORDER.to_vec()),
             request_id: Some(request_id),
-            client_order_id: Some(client_order_id),
+            client_order_ids: vec![client_order_id],
             op: Some(super::enums::OKXWsOperation::Order),
         };
 
@@ -2768,7 +2769,7 @@ impl OKXWebSocketClient {
             payload,
             rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_AMEND.to_vec()),
             request_id: Some(request_id),
-            client_order_id,
+            client_order_ids: client_order_id.into_iter().collect(),
             op: Some(super::enums::OKXWsOperation::AmendOrder),
         };
 
@@ -2847,7 +2848,7 @@ impl OKXWebSocketClient {
             payload,
             rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_CANCEL.to_vec()),
             request_id: Some(request_id),
-            client_order_id,
+            client_order_ids: client_order_id.into_iter().collect(),
             op: Some(super::enums::OKXWsOperation::CancelOrder),
         };
 
@@ -2929,7 +2930,7 @@ impl OKXWebSocketClient {
             payload,
             rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_MASS_CANCEL.to_vec()),
             request_id: Some(request_id),
-            client_order_id: None,
+            client_order_ids: Vec::new(),
             op: Some(super::enums::OKXWsOperation::MassCancel),
         };
 
@@ -2965,6 +2966,7 @@ impl OKXWebSocketClient {
             Option<bool>,
         )>,
     ) -> Result<(), OKXWsError> {
+        let client_order_ids: Vec<ClientOrderId> = orders.iter().map(|o| o.3).collect();
         let args: Vec<Value> = {
             let mut args = Vec::with_capacity(orders.len());
             let inst_id_codes = self.inst_id_code_cache.load();
@@ -3053,8 +3055,8 @@ impl OKXWebSocketClient {
                     builder.px(p.to_string());
                 }
 
-                if let Some(ro) = reduce_only {
-                    builder.reduce_only(ro);
+                if should_send_reduce_only(inst_type, td_mode, pos_side, reduce_only) {
+                    builder.reduce_only(true);
                 }
 
                 let speed_bump = if inst_type == OKXInstrumentType::Events {
@@ -3101,7 +3103,7 @@ impl OKXWebSocketClient {
             args
         };
 
-        self.ws_batch_place_orders(args).await
+        self.ws_batch_place_orders(args, client_order_ids).await
     }
 
     /// Modifies multiple orders.
@@ -3125,6 +3127,7 @@ impl OKXWebSocketClient {
             Option<bool>,
         )>,
     ) -> Result<(), OKXWsError> {
+        let client_order_ids: Vec<ClientOrderId> = orders.iter().map(|o| o.2).collect();
         let args: Vec<Value> = {
             let mut args = Vec::with_capacity(orders.len());
             let inst_id_codes = self.inst_id_code_cache.load();
@@ -3183,7 +3186,7 @@ impl OKXWebSocketClient {
             args
         };
 
-        self.ws_batch_amend_orders(args).await
+        self.ws_batch_amend_orders(args, client_order_ids).await
     }
 
     /// Cancels multiple orders.
@@ -3202,6 +3205,10 @@ impl OKXWebSocketClient {
         &self,
         orders: Vec<(InstrumentId, Option<ClientOrderId>, Option<VenueOrderId>)>,
     ) -> Result<(), OKXWsError> {
+        let client_order_ids: Vec<ClientOrderId> = orders
+            .iter()
+            .filter_map(|(_, cl_ord_id, _)| *cl_ord_id)
+            .collect();
         let args: Vec<Value> = {
             let mut args = Vec::with_capacity(orders.len());
             let inst_id_codes = self.inst_id_code_cache.load();
@@ -3234,7 +3241,7 @@ impl OKXWebSocketClient {
             args
         };
 
-        self.ws_batch_cancel_orders(args).await
+        self.ws_batch_cancel_orders(args, client_order_ids).await
     }
 
     /// Submits an algo order (conditional/stop order).
@@ -3350,7 +3357,7 @@ impl OKXWebSocketClient {
             payload,
             rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_ALGO_ORDER.to_vec()),
             request_id: Some(request_id),
-            client_order_id: Some(client_order_id),
+            client_order_ids: vec![client_order_id],
             op: Some(super::enums::OKXWsOperation::OrderAlgo),
         };
 
@@ -3413,7 +3420,7 @@ impl OKXWebSocketClient {
             payload,
             rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_ALGO_CANCEL.to_vec()),
             request_id: Some(request_id),
-            client_order_id,
+            client_order_ids: client_order_id.into_iter().collect(),
             op: Some(super::enums::OKXWsOperation::CancelAlgos),
         };
 
@@ -3427,6 +3434,24 @@ impl OKXWebSocketClient {
             .await
             .send(cmd)
             .map_err(|e| OKXWsError::HandlerUnavailable(e.to_string()))
+    }
+}
+
+fn should_send_reduce_only(
+    instrument_type: OKXInstrumentType,
+    td_mode: OKXTradeMode,
+    position_side: Option<PositionSide>,
+    reduce_only: Option<bool>,
+) -> bool {
+    if reduce_only != Some(true) {
+        return false;
+    }
+
+    match instrument_type {
+        OKXInstrumentType::Spot | OKXInstrumentType::Margin => td_mode != OKXTradeMode::Cash,
+        OKXInstrumentType::Swap | OKXInstrumentType::Futures => position_side.is_none(),
+        OKXInstrumentType::Any => true,
+        OKXInstrumentType::Option | OKXInstrumentType::Events => false,
     }
 }
 
