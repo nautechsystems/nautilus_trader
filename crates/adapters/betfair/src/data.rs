@@ -46,7 +46,6 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Currency, Money},
 };
-use nautilus_network::socket::TcpMessageHandler;
 use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 
@@ -54,7 +53,7 @@ use crate::{
     common::{
         consts::{BETFAIR_RACE_STREAM_HOST, BETFAIR_VENUE},
         credential::BetfairCredential,
-        enums::{MarketDataFilterField, MarketStatus},
+        enums::{MarketDataFilterField, MarketStatus, SegmentType},
         parse::{
             extract_market_id, make_instrument_id, parse_betfair_price, parse_betfair_quantity,
             parse_market_definition, parse_millis_timestamp,
@@ -66,9 +65,12 @@ use crate::{
     http::client::BetfairHttpClient,
     provider::{BetfairInstrumentProvider, NavigationFilter},
     stream::{
-        client::{BetfairRaceStreamClient, BetfairStreamClient},
+        client::{
+            BetfairRaceStreamClient, BetfairStreamClient, HeartbeatTimeoutSource,
+            StreamMessageHandler,
+        },
         config::BetfairStreamConfig,
-        messages::{MarketDataFilter, StreamMarketFilter, StreamMessage, stream_decode},
+        messages::{MarketDataFilter, StreamMarketFilter, StreamMessage},
         parse::{
             make_trade_tick, parse_betfair_starting_prices, parse_betfair_ticker,
             parse_bsp_book_deltas, parse_cricket_match, parse_instrument_closes,
@@ -186,29 +188,25 @@ impl BetfairDataClient {
         min_notional: Option<Money>,
         reconnect_tx: tokio::sync::mpsc::UnboundedSender<()>,
         clock: &'static AtomicTime,
-    ) -> TcpMessageHandler {
+    ) -> StreamMessageHandler {
         // Track cumulative traded volumes per (instrument_id, price) to compute
         // incremental trade sizes. Betfair `trd` fields report totals, not deltas.
         let traded_volumes: Arc<Mutex<AHashMap<(InstrumentId, Decimal), Decimal>>> =
             Arc::new(Mutex::new(AHashMap::new()));
         let has_initial_connection = Arc::new(AtomicBool::new(false));
 
-        Arc::new(move |data: &[u8]| {
+        Arc::new(move |msg: StreamMessage| {
             let ts_init = clock.get_time_ns();
-
-            let msg = match stream_decode(data) {
-                Ok(msg) => msg,
-                Err(e) => {
-                    log::warn!("Failed to decode stream message: {e}");
-                    return;
-                }
-            };
 
             match msg {
                 StreamMessage::MarketChange(mcm) => {
                     if mcm.is_heartbeat() {
                         return;
                     }
+
+                    let sequence_complete = mcm
+                        .segment_type
+                        .is_none_or(|segment| segment == SegmentType::SegEnd);
 
                     let Some(market_changes) = &mcm.mc else {
                         return;
@@ -434,10 +432,12 @@ impl BetfairDataClient {
                         }
                     }
 
-                    let completed = BetfairSequenceCompleted::new(ts_event, ts_init);
-                    let custom = CustomData::from_arc(Arc::new(completed));
-                    if let Err(e) = data_sender.send(DataEvent::Data(Data::Custom(custom))) {
-                        log::warn!("Failed to send sequence completed: {e}");
+                    if sequence_complete {
+                        let completed = BetfairSequenceCompleted::new(ts_event, ts_init);
+                        let custom = CustomData::from_arc(Arc::new(completed));
+                        if let Err(e) = data_sender.send(DataEvent::Data(Data::Custom(custom))) {
+                            log::warn!("Failed to send sequence completed: {e}");
+                        }
                     }
                 }
                 StreamMessage::Connection(_) => {
@@ -698,6 +698,7 @@ impl DataClient for BetfairDataClient {
             session_token,
             handler,
             self.stream_config.clone(),
+            HeartbeatTimeoutSource::Outbound,
             state_sink,
         )
         .await
@@ -733,7 +734,7 @@ impl DataClient for BetfairDataClient {
 
             let (race_fatal_tx, mut race_fatal_rx) = tokio::sync::mpsc::unbounded_channel();
 
-            match BetfairRaceStreamClient::connect(
+            match BetfairRaceStreamClient::connect_decoded(
                 &self.credential,
                 race_session,
                 race_handler,
@@ -791,7 +792,7 @@ impl DataClient for BetfairDataClient {
 
             let (cricket_fatal_tx, mut cricket_fatal_rx) = tokio::sync::mpsc::unbounded_channel();
 
-            match BetfairRaceStreamClient::connect_cricket(
+            match BetfairRaceStreamClient::connect_cricket_decoded(
                 &self.credential,
                 cricket_session,
                 cricket_handler,
@@ -1165,12 +1166,13 @@ mod tests {
     use crate::{
         common::testing::load_test_json,
         data_types::{BetfairCricketMatch, BetfairRaceRunnerData, BetfairSequenceCompleted},
+        stream::messages::stream_decode,
     };
 
     fn stream_handler_at(
         ts_init: UnixNanos,
     ) -> (
-        TcpMessageHandler,
+        StreamMessageHandler,
         tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     ) {
         let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1209,7 +1211,7 @@ mod tests {
         let (handler, mut data_rx) = stream_handler_at(ts_init);
         let data = load_test_json("stream/mcm_UPDATE.json");
 
-        handler(data.as_bytes());
+        handler(stream_decode(data.as_bytes()).unwrap());
 
         let custom = receive_custom::<BetfairSequenceCompleted>(&mut data_rx);
         let completed = custom
@@ -1225,13 +1227,41 @@ mod tests {
     }
 
     #[rstest]
+    fn test_stream_handler_completes_segmented_mcm_on_final_segment() {
+        let ts_init = UnixNanos::from(1_800_000_000_000_000_005);
+        let (handler, mut data_rx) = stream_handler_at(ts_init);
+        let data = load_test_json("stream/mcm_SEGMENTS.jsonl");
+        let mut segments = data.lines();
+
+        handler(stream_decode(segments.next().unwrap().as_bytes()).unwrap());
+        handler(stream_decode(segments.next().unwrap().as_bytes()).unwrap());
+
+        assert!(data_rx.try_recv().is_err());
+
+        handler(stream_decode(segments.next().unwrap().as_bytes()).unwrap());
+
+        let custom = receive_custom::<BetfairSequenceCompleted>(&mut data_rx);
+        let completed = custom
+            .as_any()
+            .downcast_ref::<BetfairSequenceCompleted>()
+            .unwrap();
+        assert_eq!(
+            completed.ts_event,
+            UnixNanos::from(1_700_000_000_000_000_000)
+        );
+        assert_eq!(completed.ts_init, ts_init);
+        assert!(segments.next().is_none());
+        assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
     fn test_stream_handler_sets_rcm_init_from_clock() {
         let ts_init = UnixNanos::from(1_800_000_000_000_000_002);
 
         let (handler, mut data_rx) = stream_handler_at(ts_init);
         let data = load_test_json("stream/rcm_single.json");
 
-        handler(data.as_bytes());
+        handler(stream_decode(data.as_bytes()).unwrap());
 
         let custom = receive_custom::<BetfairRaceRunnerData>(&mut data_rx);
         let runner = custom
@@ -1258,7 +1288,7 @@ mod tests {
             .remove("ft");
         let data = message.to_string();
 
-        handler(data.as_bytes());
+        handler(stream_decode(data.as_bytes()).unwrap());
 
         let custom = receive_custom::<BetfairRaceRunnerData>(&mut data_rx);
         let runner = custom
@@ -1277,7 +1307,7 @@ mod tests {
         let (handler, mut data_rx) = stream_handler_at(ts_init);
         let data = load_test_json("stream/ccm_single.json");
 
-        handler(data.as_bytes());
+        handler(stream_decode(data.as_bytes()).unwrap());
 
         let event = data_rx.try_recv().expect("expected cricket custom data");
         let DataEvent::Data(Data::Custom(custom)) = event else {

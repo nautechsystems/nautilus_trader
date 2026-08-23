@@ -83,7 +83,7 @@ fn plain_config(port: u16) -> BetfairStreamConfig {
     BetfairStreamConfig {
         host: "127.0.0.1".to_string(),
         port,
-        heartbeat_secs: 5,
+        heartbeat_secs: None,
         heartbeat_timeout_secs: 60,
         reconnect_delay_initial_ms: 200,
         reconnect_delay_max_ms: 1_000,
@@ -124,6 +124,137 @@ async fn test_connect_sends_auth() {
     assert_eq!(json["op"], "authentication");
     assert_eq!(json["appKey"], "test-app-key");
     assert_eq!(json["session"], "sess-token");
+
+    client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_sends_configured_outbound_heartbeat() {
+    let (port, listener) = bind().await;
+
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"heartbeat-on"}"#,
+        )
+        .await;
+        read_line(&mut reader).await;
+        read_line(&mut reader).await
+    });
+
+    let config = BetfairStreamConfig {
+        heartbeat_secs: Some(1),
+        ..plain_config(port)
+    };
+    let client = BetfairStreamClient::connect(
+        &test_credential(),
+        "tok".to_string(),
+        Arc::new(|_| {}),
+        config,
+    )
+    .await
+    .unwrap();
+
+    let heartbeat = tokio::time::timeout(Duration::from_secs(2), server)
+        .await
+        .expect("configured outbound heartbeat was not sent")
+        .unwrap();
+    let heartbeat: serde_json::Value = serde_json::from_str(&heartbeat).unwrap();
+    assert_eq!(heartbeat, serde_json::json!({"op": "heartbeat"}));
+
+    client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_without_heartbeat_keeps_idle_connection_active() {
+    let (port, listener) = bind().await;
+
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"heartbeat-off"}"#,
+        )
+        .await;
+        read_line(&mut reader).await;
+
+        let mut line = String::new();
+        tokio::time::timeout(Duration::from_secs(6), reader.read_line(&mut line)).await
+    });
+
+    let config = BetfairStreamConfig {
+        heartbeat_timeout_secs: 1,
+        ..plain_config(port)
+    };
+    let client = BetfairStreamClient::connect(
+        &test_credential(),
+        "tok".to_string(),
+        Arc::new(|_| {}),
+        config,
+    )
+    .await
+    .unwrap();
+
+    let heartbeat = server.await.unwrap();
+    assert!(
+        heartbeat.is_err(),
+        "idle stream must not send a heartbeat or reconnect"
+    );
+    assert!(client.is_active());
+
+    client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_aux_stream_without_heartbeat_keeps_idle_connection_active() {
+    use nautilus_betfair::stream::client::BetfairRaceStreamClient;
+
+    let (port, listener) = bind().await;
+
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, _write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        read_line(&mut reader).await;
+        read_line(&mut reader).await;
+
+        tokio::time::timeout(Duration::from_secs(2), listener.accept()).await
+    });
+
+    let config = BetfairStreamConfig {
+        heartbeat_timeout_secs: 1,
+        reconnect_delay_initial_ms: 100,
+        reconnect_delay_max_ms: 500,
+        ..plain_config(port)
+    };
+    let (fatal_tx, _fatal_rx) = tokio::sync::mpsc::unbounded_channel();
+    let client = BetfairRaceStreamClient::connect(
+        &test_credential(),
+        "tok".to_string(),
+        Arc::new(|_| {}),
+        config,
+        fatal_tx,
+    )
+    .await
+    .unwrap();
+
+    let reconnect = server.await.unwrap();
+    assert!(
+        reconnect.is_err(),
+        "idle auxiliary stream must not reconnect"
+    );
+    assert!(client.is_active());
 
     client.close().await;
 }
@@ -170,13 +301,15 @@ async fn test_subscribe_markets_includes_market_filter_and_fields() {
     };
 
     client
-        .subscribe_markets(market_filter, data_filter, None, None)
+        .subscribe_markets(market_filter, data_filter, Some(2_345), None)
         .await
         .unwrap();
 
     let msg = server.await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
     assert_eq!(json["op"], "marketSubscription");
+    assert_eq!(json["heartbeatMs"], 2_345);
+    assert_eq!(json["segmentationEnabled"], true);
 
     let market_ids = json["marketFilter"]["marketIds"]
         .as_array()
@@ -235,6 +368,8 @@ async fn test_subscribe_markets_sends_subscription() {
     let msg = server.await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
     assert_eq!(json["op"], "marketSubscription");
+    assert_eq!(json["heartbeatMs"], 5_000);
+    assert_eq!(json["segmentationEnabled"], true);
 
     client.close().await;
 }
@@ -276,13 +411,15 @@ async fn test_subscribe_orders_includes_order_filter_payload() {
     };
 
     client
-        .subscribe_orders(Some(order_filter), None)
+        .subscribe_orders(Some(order_filter), Some(3_456))
         .await
         .unwrap();
 
     let msg = server.await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
     assert_eq!(json["op"], "orderSubscription");
+    assert_eq!(json["heartbeatMs"], 3_456);
+    assert_eq!(json["segmentationEnabled"], true);
     assert_eq!(json["orderFilter"]["includeOverallPosition"], false);
     assert_eq!(json["orderFilter"]["partitionMatchedByStrategyRef"], true);
 
@@ -603,6 +740,8 @@ async fn test_subscribe_orders_sends_subscription() {
     let msg = server.await.unwrap();
     let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
     assert_eq!(json["op"], "orderSubscription");
+    assert_eq!(json["heartbeatMs"], 5_000);
+    assert_eq!(json["segmentationEnabled"], true);
 
     client.close().await;
 }

@@ -5078,7 +5078,7 @@ async fn test_active_replacement_stream_denies_submit_before_connection_message(
     );
     let (stream_port, listener) = start_mock_stream().await;
     let mut stream_config = plain_stream_config(stream_port);
-    stream_config.heartbeat_secs = 1;
+    stream_config.heartbeat_secs = Some(1);
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client_with_configs(
         addr,
         stream_config,

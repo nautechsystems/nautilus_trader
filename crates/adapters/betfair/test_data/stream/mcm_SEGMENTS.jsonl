@@ -1,0 +1,3 @@
+{"op":"mcm","id":1,"clk":"mcm-segment-clk","pt":1700000000000,"segmentType":"SEG_START","mc":[{"id":"1.100001"}]}
+{"op":"mcm","id":1,"clk":"mcm-segment-clk","pt":1700000000000,"segmentType":"SEG","mc":[{"id":"1.100002"}]}
+{"op":"mcm","id":1,"clk":"mcm-segment-clk","pt":1700000000000,"segmentType":"SEG_END","mc":[{"id":"1.100003"}]}

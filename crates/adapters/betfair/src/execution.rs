@@ -92,7 +92,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, MarginBalance},
 };
-use nautilus_network::{SocketState, SocketStateSink, socket::TcpMessageHandler};
+use nautilus_network::{SocketState, SocketStateSink};
 use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 use ustr::Ustr;
@@ -135,11 +135,9 @@ use crate::{
         parse::{parse_current_order_fill_report, parse_current_order_report},
     },
     stream::{
-        client::BetfairStreamClient,
+        client::{BetfairStreamClient, HeartbeatTimeoutSource, StreamMessageHandler},
         config::BetfairStreamConfig,
-        messages::{
-            OCM, OrderMarketChange, OrderRunnerChange, StreamMessage, UnmatchedOrder, stream_decode,
-        },
+        messages::{OCM, OrderMarketChange, OrderRunnerChange, StreamMessage, UnmatchedOrder},
         ocm::OcmState,
         parse::{FillVoidAllocation, has_cancel_quantity, parse_order_status_report},
     },
@@ -490,19 +488,11 @@ impl BetfairExecutionClient {
         replay_buffer: Arc<Mutex<Vec<ReceivedOcm>>>,
         account_refresh_tx: tokio::sync::mpsc::UnboundedSender<()>,
         clock: &'static AtomicTime,
-    ) -> TcpMessageHandler {
+    ) -> StreamMessageHandler {
         let has_initial_connection = Arc::new(AtomicBool::new(false));
 
-        Arc::new(move |data: &[u8]| {
+        Arc::new(move |msg: StreamMessage| {
             let ts_init = clock.get_time_ns();
-
-            let msg = match stream_decode(data) {
-                Ok(msg) => msg,
-                Err(e) => {
-                    log::warn!("Failed to decode stream message: {e}");
-                    return;
-                }
-            };
 
             match msg {
                 StreamMessage::OrderChange(ocm) => {
@@ -1329,6 +1319,7 @@ impl ExecutionClient for BetfairExecutionClient {
             session_token,
             handler,
             self.stream_config.clone(),
+            HeartbeatTimeoutSource::Server,
             Some(state_sink),
         )
         .await
@@ -3899,9 +3890,11 @@ mod tests {
     use crate::{
         common::{
             consts::METHOD_GET_ACCOUNT_DETAILS,
+            enums::SegmentType,
             testing::{load_test_json, parse_jsonrpc},
         },
         http::models::{AccountDetailsResponse, CancelInstructionReport},
+        stream::messages::stream_decode,
     };
 
     #[rstest]
@@ -4398,7 +4391,7 @@ mod tests {
         ts_init: UnixNanos,
         pending_resync: bool,
     ) -> (
-        TcpMessageHandler,
+        StreamMessageHandler,
         tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
         tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
         Arc<Mutex<Vec<ReceivedOcm>>>,
@@ -4437,7 +4430,7 @@ mod tests {
         let (handler, mut data_rx, _execution_rx, replay_buffer) = ocm_handler_at(ts_init, false);
         let data = load_test_json("stream/ocm_VOIDED.json");
 
-        handler(data.as_bytes());
+        handler(stream_decode(data.as_bytes()).unwrap());
 
         let custom = std::iter::from_fn(|| data_rx.try_recv().ok())
             .find_map(|event| match event {
@@ -4466,7 +4459,7 @@ mod tests {
         let (handler, mut data_rx, mut execution_rx, replay_buffer) = ocm_handler_at(ts_init, true);
         let data = load_test_json("stream/ocm_VOIDED.json");
 
-        handler(data.as_bytes());
+        handler(stream_decode(data.as_bytes()).unwrap());
 
         let received = replay_buffer.lock().unwrap().pop().unwrap();
 
@@ -4506,6 +4499,36 @@ mod tests {
         assert_eq!(voided.ts_event, UnixNanos::from(1_617_863_371_576_000_000));
         assert_eq!(voided.ts_init, ts_init);
         assert!(replay_buffer.lock().unwrap().is_empty());
+    }
+
+    #[rstest]
+    fn test_ocm_handler_buffers_each_segment_once() {
+        let ts_init = UnixNanos::from(1_800_000_000_000_000_006);
+        let (handler, mut data_rx, mut execution_rx, replay_buffer) = ocm_handler_at(ts_init, true);
+        let data = load_test_json("stream/ocm_SEGMENTS.jsonl");
+
+        for line in data.lines() {
+            handler(stream_decode(line.as_bytes()).unwrap());
+        }
+
+        let received = replay_buffer.lock().unwrap();
+        assert_eq!(received.len(), 3);
+        assert_eq!(
+            received[0].message.segment_type,
+            Some(SegmentType::SegStart)
+        );
+        assert_eq!(received[1].message.segment_type, Some(SegmentType::Seg));
+        assert_eq!(received[2].message.segment_type, Some(SegmentType::SegEnd));
+        assert!(received.iter().all(|message| message.ts_init == ts_init));
+        assert_eq!(
+            received
+                .iter()
+                .map(|message| message.message.oc.as_ref().unwrap()[0].id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["1.100001", "1.100002", "1.100003"],
+        );
+        assert!(data_rx.try_recv().is_err());
+        assert!(execution_rx.try_recv().is_err());
     }
 
     #[rstest]
@@ -5425,12 +5448,12 @@ mod tests {
             Arc::clone(&reconciliation_gate),
         );
 
-        handler(br#"{"op":"connection","connectionId":"first"}"#);
+        handler(stream_decode(br#"{"op":"connection","connectionId":"first"}"#).unwrap());
         assert!(reconnect_rx.try_recv().is_err());
         assert!(!pending_resync.load(Ordering::Acquire));
         assert!(!reconciliation_gate.is_halted());
 
-        handler(br#"{"op":"connection","connectionId":"second"}"#);
+        handler(stream_decode(br#"{"op":"connection","connectionId":"second"}"#).unwrap());
         assert_eq!(reconnect_rx.try_recv().unwrap(), 1);
         assert!(pending_resync.load(Ordering::Acquire));
         assert!(reconciliation_gate.is_halted());
@@ -5448,7 +5471,7 @@ mod tests {
         );
 
         assert_eq!(reconciliation_gate.halt(), 1);
-        handler(br#"{"op":"connection","connectionId":"replacement"}"#);
+        handler(stream_decode(br#"{"op":"connection","connectionId":"replacement"}"#).unwrap());
 
         assert_eq!(reconnect_rx.try_recv().unwrap(), 3);
         assert!(pending_resync.load(Ordering::Acquire));
@@ -5459,7 +5482,7 @@ mod tests {
         reconnect_tx: tokio::sync::mpsc::UnboundedSender<u64>,
         pending_resync: Arc<AtomicBool>,
         reconciliation_gate: Arc<ReconciliationGate>,
-    ) -> TcpMessageHandler {
+    ) -> StreamMessageHandler {
         let account_id = AccountId::from("BETFAIR-001");
         let (emitter, _execution_rx) = emitter_with_receiver(account_id);
         let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel();

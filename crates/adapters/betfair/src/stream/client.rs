@@ -45,10 +45,21 @@ use super::{
     },
 };
 use crate::common::{
-    consts::{STREAM_OP_MARKET_SUBSCRIPTION, STREAM_OP_ORDER_SUBSCRIPTION},
+    consts::{
+        BETFAIR_STREAM_SERVER_HEARTBEAT_MS, STREAM_OP_MARKET_SUBSCRIPTION,
+        STREAM_OP_ORDER_SUBSCRIPTION,
+    },
     credential::BetfairCredential,
     enums::StatusErrorCode,
 };
+
+pub(crate) type StreamMessageHandler = Arc<dyn Fn(StreamMessage) + Send + Sync>;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum HeartbeatTimeoutSource {
+    Outbound,
+    Server,
+}
 
 /// Betfair Exchange Stream API client using raw TLS (CRLF-delimited JSON).
 ///
@@ -88,7 +99,15 @@ impl BetfairStreamClient {
         handler: TcpMessageHandler,
         config: BetfairStreamConfig,
     ) -> Result<Self, BetfairStreamError> {
-        Self::connect_with_state_sink(credential, session_token, handler, config, None).await
+        Self::connect_inner(
+            credential,
+            session_token,
+            StreamHandler::Raw(handler),
+            config,
+            HeartbeatTimeoutSource::Outbound,
+            None,
+        )
+        .await
     }
 
     /// Connects to the Betfair stream API and reports transport availability changes.
@@ -99,8 +118,28 @@ impl BetfairStreamClient {
     pub(crate) async fn connect_with_state_sink(
         credential: &BetfairCredential,
         session_token: String,
-        handler: TcpMessageHandler,
+        handler: StreamMessageHandler,
         config: BetfairStreamConfig,
+        heartbeat_timeout_source: HeartbeatTimeoutSource,
+        state_sink: Option<SocketStateSink>,
+    ) -> Result<Self, BetfairStreamError> {
+        Self::connect_inner(
+            credential,
+            session_token,
+            StreamHandler::Decoded(handler),
+            config,
+            heartbeat_timeout_source,
+            state_sink,
+        )
+        .await
+    }
+
+    async fn connect_inner(
+        credential: &BetfairCredential,
+        session_token: String,
+        handler: StreamHandler,
+        config: BetfairStreamConfig,
+        heartbeat_timeout_source: HeartbeatTimeoutSource,
         state_sink: Option<SocketStateSink>,
     ) -> Result<Self, BetfairStreamError> {
         let auth = Authentication::new(credential.app_key().to_string(), session_token);
@@ -137,72 +176,69 @@ impl BetfairStreamClient {
         let reconnect_auth_h = Arc::clone(&reconnect_auth);
 
         let message_handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
-            if let Ok(msg) = stream_decode(data) {
-                match &msg {
-                    StreamMessage::MarketChange(mcm) => {
-                        let active = market_active_sub_id_h.load(Ordering::SeqCst);
-                        // Accept only when a subscription is active (active > 0) and
-                        // the message carries no id (can't discriminate, e.g. heartbeat)
-                        // or its id matches the active subscription. Reject messages that
-                        // explicitly carry a different (stale) subscription id.
-                        if active > 0 && mcm.id.is_none_or(|id| id == active) {
-                            if mcm.clk.is_some() {
-                                let _ = market_clk_tx_h.send(mcm.clk.clone());
-                            }
+            let Some(msg) = handler.decode(data) else {
+                return;
+            };
 
-                            if mcm.initial_clk.is_some() {
-                                let _ = market_initial_clk_tx_h.send(mcm.initial_clk.clone());
-                            }
+            match &msg {
+                StreamMessage::MarketChange(mcm) => {
+                    let active = market_active_sub_id_h.load(Ordering::SeqCst);
+                    // Messages without IDs may be current; reject only explicit stale IDs
+                    if active > 0 && mcm.id.is_none_or(|id| id == active) {
+                        if mcm.clk.is_some() {
+                            let _ = market_clk_tx_h.send(mcm.clk.clone());
                         }
-                    }
-                    StreamMessage::OrderChange(ocm) => {
-                        let active = order_active_sub_id_h.load(Ordering::SeqCst);
-                        if active > 0 && ocm.id.is_none_or(|id| id == active) {
-                            if ocm.clk.is_some() {
-                                let _ = order_clk_tx_h.send(ocm.clk.clone());
-                            }
 
-                            if ocm.initial_clk.is_some() {
-                                let _ = order_initial_clk_tx_h.send(ocm.initial_clk.clone());
-                            }
+                        if mcm.initial_clk.is_some() {
+                            let _ = market_initial_clk_tx_h.send(mcm.initial_clk.clone());
                         }
                     }
-                    StreamMessage::Status(status) => {
-                        // Betfair rejects stale replay tokens with INVALID_CLOCK and then
-                        // closes the connection, so a loop of reconnect → same stale clk →
-                        // reject would follow unless we clear the clocks here and fall back
-                        // to a full-image resubscription on the next reconnect.
-                        if status.error_code == Some(StatusErrorCode::InvalidClock) {
-                            let _ = market_clk_tx_h.send(None);
-                            let _ = market_initial_clk_tx_h.send(None);
-                            let _ = order_clk_tx_h.send(None);
-                            let _ = order_initial_clk_tx_h.send(None);
-                            log::warn!(
-                                "Betfair stream INVALID_CLOCK: clocks cleared, \
-                                 next reconnect will request a full image",
-                            );
-                        } else if status.connection_closed {
-                            log::warn!(
-                                "Betfair stream connection closed by server: {:?} - {:?}",
-                                status.error_code,
-                                status.error_message,
-                            );
-                        } else if status.error_code.is_some() {
-                            log::warn!(
-                                "Betfair stream status error: {:?} - {:?}",
-                                status.error_code,
-                                status.error_message,
-                            );
-                        }
-                    }
-                    _ => {}
                 }
+                StreamMessage::OrderChange(ocm) => {
+                    let active = order_active_sub_id_h.load(Ordering::SeqCst);
+                    if active > 0 && ocm.id.is_none_or(|id| id == active) {
+                        if ocm.clk.is_some() {
+                            let _ = order_clk_tx_h.send(ocm.clk.clone());
+                        }
 
-                if matches!(msg, StreamMessage::Connection(_)) {
-                    reconnect_auth_h.request_pending();
+                        if ocm.initial_clk.is_some() {
+                            let _ = order_initial_clk_tx_h.send(ocm.initial_clk.clone());
+                        }
+                    }
                 }
+                StreamMessage::Status(status) => {
+                    // Clear rejected clocks so the next reconnect requests a full image
+                    if status.error_code == Some(StatusErrorCode::InvalidClock) {
+                        let _ = market_clk_tx_h.send(None);
+                        let _ = market_initial_clk_tx_h.send(None);
+                        let _ = order_clk_tx_h.send(None);
+                        let _ = order_initial_clk_tx_h.send(None);
+                        log::warn!(
+                            "Betfair stream INVALID_CLOCK: clocks cleared, \
+                             next reconnect will request a full image",
+                        );
+                    } else if status.connection_closed {
+                        log::warn!(
+                            "Betfair stream connection closed by server: {:?} - {:?}",
+                            status.error_code,
+                            status.error_message,
+                        );
+                    } else if status.error_code.is_some() {
+                        log::warn!(
+                            "Betfair stream status error: {:?} - {:?}",
+                            status.error_code,
+                            status.error_message,
+                        );
+                    }
+                }
+                _ => {}
             }
-            handler(data);
+
+            if matches!(msg, StreamMessage::Connection(_)) {
+                reconnect_auth_h.request_pending();
+            }
+
+            handler.handle(data, msg);
         });
 
         let auth_reconnect = auth_rx;
@@ -241,10 +277,7 @@ impl BetfairStreamClient {
             mode,
             suffix: b"\r\n".to_vec(),
             message_handler: Some(message_handler),
-            heartbeat: Some(SocketHeartbeat {
-                interval_secs: config.heartbeat_secs,
-                payload: b"{\"op\":\"heartbeat\"}".to_vec(),
-            }),
+            heartbeat: outbound_heartbeat(config.heartbeat_secs),
             connect_timeout_ms: None,
             reconnect_delay_initial_ms: Some(config.reconnect_delay_initial_ms),
             reconnect_delay_max_ms: Some(config.reconnect_delay_max_ms),
@@ -252,7 +285,11 @@ impl BetfairStreamClient {
             reconnect_jitter_ms: None,
             connection_max_retries: None,
             reconnect_max_attempts: None,
-            heartbeat_timeout_secs: Some(config.heartbeat_timeout_secs),
+            heartbeat_timeout_secs: heartbeat_timeout(
+                heartbeat_timeout_source,
+                config.heartbeat_secs,
+                config.heartbeat_timeout_secs,
+            ),
             certs_dir: None,
         };
 
@@ -317,9 +354,9 @@ impl BetfairStreamClient {
             market_data_filter: data_filter,
             clk: None,
             conflate_ms,
-            heartbeat_ms,
+            heartbeat_ms: Some(heartbeat_ms.unwrap_or(BETFAIR_STREAM_SERVER_HEARTBEAT_MS)),
             initial_clk: None,
-            segmentation_enabled: None,
+            segmentation_enabled: Some(true),
         };
 
         // Reset clocks so a disconnect before the first MCM response doesn't replay
@@ -361,9 +398,9 @@ impl BetfairStreamClient {
             order_filter,
             clk: None,
             conflate_ms: None,
-            heartbeat_ms,
+            heartbeat_ms: Some(heartbeat_ms.unwrap_or(BETFAIR_STREAM_SERVER_HEARTBEAT_MS)),
             initial_clk: None,
-            segmentation_enabled: None,
+            segmentation_enabled: Some(true),
         };
 
         // Reset clocks so a disconnect before the first OCM response doesn't replay
@@ -459,16 +496,33 @@ impl BetfairRaceStreamClient {
         config: BetfairStreamConfig,
         race_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Result<Self, BetfairStreamError> {
-        let race_sub = RaceSubscription::new(1);
-        let race_sub_bytes = Bytes::from(serde_json::to_vec(&race_sub)?);
-        let subscription = AuxiliaryStreamSubscription {
-            bytes: race_sub_bytes,
-            label: "race",
-            fatal_hint: "check TPD entitlement on your Betfair app key",
-            fatal_tx: race_fatal_tx,
-        };
-        Self::connect_with_subscription(credential, session_token, handler, config, subscription)
-            .await
+        let subscription = AuxiliaryStreamSubscription::race(race_fatal_tx)?;
+        Self::connect_with_subscription(
+            credential,
+            session_token,
+            StreamHandler::Raw(handler),
+            config,
+            subscription,
+        )
+        .await
+    }
+
+    pub(crate) async fn connect_decoded(
+        credential: &BetfairCredential,
+        session_token: String,
+        handler: StreamMessageHandler,
+        config: BetfairStreamConfig,
+        race_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
+    ) -> Result<Self, BetfairStreamError> {
+        let subscription = AuxiliaryStreamSubscription::race(race_fatal_tx)?;
+        Self::connect_with_subscription(
+            credential,
+            session_token,
+            StreamHandler::Decoded(handler),
+            config,
+            subscription,
+        )
+        .await
     }
 
     /// Connects to the Betfair sports data stream and subscribes to cricket.
@@ -486,22 +540,39 @@ impl BetfairRaceStreamClient {
         config: BetfairStreamConfig,
         cricket_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Result<Self, BetfairStreamError> {
-        let cricket_sub = CricketSubscription::new(1);
-        let cricket_sub_bytes = Bytes::from(serde_json::to_vec(&cricket_sub)?);
-        let subscription = AuxiliaryStreamSubscription {
-            bytes: cricket_sub_bytes,
-            label: "cricket",
-            fatal_hint: "check cricket data entitlement on your Betfair app key",
-            fatal_tx: cricket_fatal_tx,
-        };
-        Self::connect_with_subscription(credential, session_token, handler, config, subscription)
-            .await
+        let subscription = AuxiliaryStreamSubscription::cricket(cricket_fatal_tx)?;
+        Self::connect_with_subscription(
+            credential,
+            session_token,
+            StreamHandler::Raw(handler),
+            config,
+            subscription,
+        )
+        .await
+    }
+
+    pub(crate) async fn connect_cricket_decoded(
+        credential: &BetfairCredential,
+        session_token: String,
+        handler: StreamMessageHandler,
+        config: BetfairStreamConfig,
+        cricket_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
+    ) -> Result<Self, BetfairStreamError> {
+        let subscription = AuxiliaryStreamSubscription::cricket(cricket_fatal_tx)?;
+        Self::connect_with_subscription(
+            credential,
+            session_token,
+            StreamHandler::Decoded(handler),
+            config,
+            subscription,
+        )
+        .await
     }
 
     async fn connect_with_subscription(
         credential: &BetfairCredential,
         session_token: String,
-        handler: TcpMessageHandler,
+        handler: StreamHandler,
         config: BetfairStreamConfig,
         subscription: AuxiliaryStreamSubscription,
     ) -> Result<Self, BetfairStreamError> {
@@ -529,40 +600,43 @@ impl BetfairRaceStreamClient {
 
         let reconnect_auth_h = Arc::clone(&reconnect_auth);
         let message_handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
-            if let Ok(msg) = stream_decode(data) {
-                if let StreamMessage::Status(status) = &msg {
-                    if let Some(ref code) = status.error_code
-                        && code.is_race_stream_fatal()
-                    {
-                        log::error!(
-                            "Betfair {label} stream fatal error: {:?} - {:?} ({fatal_hint})",
-                            status.error_code,
-                            status.error_message,
-                        );
-                        let _ = fatal_tx.send(());
-                        return;
-                    }
+            let Some(msg) = handler.decode(data) else {
+                return;
+            };
 
-                    if status.connection_closed {
-                        log::warn!(
-                            "Betfair {label} stream closed: {:?} - {:?}",
-                            status.error_code,
-                            status.error_message,
-                        );
-                    } else if status.error_code.is_some() {
-                        log::warn!(
-                            "Betfair {label} stream status: {:?} - {:?}",
-                            status.error_code,
-                            status.error_message,
-                        );
-                    }
+            if let StreamMessage::Status(status) = &msg {
+                if let Some(ref code) = status.error_code
+                    && code.is_race_stream_fatal()
+                {
+                    log::error!(
+                        "Betfair {label} stream fatal error: {:?} - {:?} ({fatal_hint})",
+                        status.error_code,
+                        status.error_message,
+                    );
+                    let _ = fatal_tx.send(());
+                    return;
                 }
 
-                if matches!(msg, StreamMessage::Connection(_)) {
-                    reconnect_auth_h.request_pending();
+                if status.connection_closed {
+                    log::warn!(
+                        "Betfair {label} stream closed: {:?} - {:?}",
+                        status.error_code,
+                        status.error_message,
+                    );
+                } else if status.error_code.is_some() {
+                    log::warn!(
+                        "Betfair {label} stream status: {:?} - {:?}",
+                        status.error_code,
+                        status.error_message,
+                    );
                 }
             }
-            handler(data);
+
+            if matches!(msg, StreamMessage::Connection(_)) {
+                reconnect_auth_h.request_pending();
+            }
+
+            handler.handle(data, msg);
         });
 
         let auth_reconnect = auth_rx;
@@ -584,10 +658,7 @@ impl BetfairRaceStreamClient {
             mode,
             suffix: b"\r\n".to_vec(),
             message_handler: Some(message_handler),
-            heartbeat: Some(SocketHeartbeat {
-                interval_secs: config.heartbeat_secs,
-                payload: b"{\"op\":\"heartbeat\"}".to_vec(),
-            }),
+            heartbeat: outbound_heartbeat(config.heartbeat_secs),
             connect_timeout_ms: None,
             reconnect_delay_initial_ms: Some(config.reconnect_delay_initial_ms),
             reconnect_delay_max_ms: Some(config.reconnect_delay_max_ms),
@@ -595,7 +666,11 @@ impl BetfairRaceStreamClient {
             reconnect_jitter_ms: None,
             connection_max_retries: None,
             reconnect_max_attempts: None,
-            heartbeat_timeout_secs: Some(config.heartbeat_timeout_secs),
+            heartbeat_timeout_secs: heartbeat_timeout(
+                HeartbeatTimeoutSource::Outbound,
+                config.heartbeat_secs,
+                config.heartbeat_timeout_secs,
+            ),
             certs_dir: None,
         };
 
@@ -667,11 +742,78 @@ impl BetfairRaceStreamClient {
     }
 }
 
+enum StreamHandler {
+    Raw(TcpMessageHandler),
+    Decoded(StreamMessageHandler),
+}
+
+impl StreamHandler {
+    fn decode(&self, data: &[u8]) -> Option<StreamMessage> {
+        match stream_decode(data) {
+            Ok(message) => Some(message),
+            Err(e) => {
+                match self {
+                    Self::Raw(handler) => handler(data),
+                    Self::Decoded(_) => log::warn!("Failed to decode stream message: {e}"),
+                }
+                None
+            }
+        }
+    }
+
+    fn handle(&self, data: &[u8], message: StreamMessage) {
+        match self {
+            Self::Raw(handler) => handler(data),
+            Self::Decoded(handler) => handler(message),
+        }
+    }
+}
+
+fn outbound_heartbeat(interval_secs: Option<u64>) -> Option<SocketHeartbeat> {
+    interval_secs.map(|interval_secs| SocketHeartbeat {
+        interval_secs,
+        payload: b"{\"op\":\"heartbeat\"}".to_vec(),
+    })
+}
+
+fn heartbeat_timeout(
+    source: HeartbeatTimeoutSource,
+    interval_secs: Option<u64>,
+    timeout_secs: u64,
+) -> Option<u64> {
+    match source {
+        HeartbeatTimeoutSource::Outbound => interval_secs.map(|_| timeout_secs),
+        HeartbeatTimeoutSource::Server => Some(timeout_secs),
+    }
+}
+
 struct AuxiliaryStreamSubscription {
     bytes: Bytes,
     label: &'static str,
     fatal_hint: &'static str,
     fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
+}
+
+impl AuxiliaryStreamSubscription {
+    fn race(fatal_tx: tokio::sync::mpsc::UnboundedSender<()>) -> Result<Self, serde_json::Error> {
+        Ok(Self {
+            bytes: Bytes::from(serde_json::to_vec(&RaceSubscription::new(1))?),
+            label: "race",
+            fatal_hint: "check TPD entitlement on your Betfair app key",
+            fatal_tx,
+        })
+    }
+
+    fn cricket(
+        fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
+    ) -> Result<Self, serde_json::Error> {
+        Ok(Self {
+            bytes: Bytes::from(serde_json::to_vec(&CricketSubscription::new(1))?),
+            label: "cricket",
+            fatal_hint: "check cricket data entitlement on your Betfair app key",
+            fatal_tx,
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -761,6 +903,18 @@ mod tests {
     use crate::stream::messages::{
         Authentication, CricketSubscription, MarketDataFilter, RaceSubscription, StreamMarketFilter,
     };
+
+    #[rstest]
+    #[case::no_source(HeartbeatTimeoutSource::Outbound, None, None)]
+    #[case::outbound(HeartbeatTimeoutSource::Outbound, Some(5), Some(60))]
+    #[case::server(HeartbeatTimeoutSource::Server, None, Some(60))]
+    fn test_heartbeat_timeout(
+        #[case] source: HeartbeatTimeoutSource,
+        #[case] interval_secs: Option<u64>,
+        #[case] expected: Option<u64>,
+    ) {
+        assert_eq!(heartbeat_timeout(source, interval_secs, 60), expected);
+    }
 
     #[rstest]
     fn test_invalid_clock_status_resets_clocks() {
@@ -891,9 +1045,9 @@ mod tests {
             market_data_filter: MarketDataFilter::default(),
             clk: None,
             conflate_ms: None,
-            heartbeat_ms: None,
+            heartbeat_ms: Some(BETFAIR_STREAM_SERVER_HEARTBEAT_MS),
             initial_clk: None,
-            segmentation_enabled: None,
+            segmentation_enabled: Some(true),
         }));
         let _ = order_sub_tx.send(Some(OrderSubscription {
             op: STREAM_OP_ORDER_SUBSCRIPTION.to_string(),
@@ -901,9 +1055,9 @@ mod tests {
             order_filter: None,
             clk: None,
             conflate_ms: None,
-            heartbeat_ms: None,
+            heartbeat_ms: Some(BETFAIR_STREAM_SERVER_HEARTBEAT_MS),
             initial_clk: None,
-            segmentation_enabled: None,
+            segmentation_enabled: Some(true),
         }));
 
         let auth_bytes_reconnect = auth_bytes;
@@ -1009,7 +1163,7 @@ mod tests {
         let config = BetfairStreamConfig {
             host: "127.0.0.1".to_string(),
             port,
-            heartbeat_secs: 5,
+            heartbeat_secs: None,
             heartbeat_timeout_secs: 60,
             reconnect_delay_initial_ms: 200,
             reconnect_delay_max_ms: 1_000,

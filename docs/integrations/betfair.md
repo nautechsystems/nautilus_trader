@@ -486,7 +486,8 @@ data flows automatically when subscribed to markets.
 Subscribe by type name from an actor or strategy. Every type in the table above carries its metadata
 key on the published topic, so the subscription must supply that key and the value it is scoped to.
 `BetfairSequenceCompleted` is the exception: it publishes without metadata, so it is subscribed by
-type name alone.
+type name alone. For segmented updates, the adapter emits this marker on `SEG_END`, after that
+segment's updates have been published. It does not emit the marker on `SEG_START` or `SEG`.
 
 ```python
 from nautilus_trader.model import DataType
@@ -536,36 +537,52 @@ reports the whole account.
 
 ## Configuration
 
+The adapter configures stream liveness and message size as follows:
+
+- Market and order subscriptions set `heartbeatMs` to `5,000`, so Betfair sends at least one message
+  every 5 seconds. When no update is available, Betfair sends an empty heartbeat change message.
+  These subscriptions also enable segmentation. Race and cricket subscriptions do not support
+  these fields.
+- `stream_heartbeat_secs` controls separate client-initiated heartbeat requests on all stream
+  connections. It defaults to `None`, which sends none. Betfair recommends leaving these requests
+  off unless a firewall or proxy needs traffic to keep the connection open because the heartbeat
+  response blocks the connection while it is served. See Betfair's
+  [Exchange Stream API heartbeat guidance](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/pages/2687396/Exchange+Stream+API#ExchangeStreamAPI-Heartbeat/HeartbeatMessage).
+  The dead peer timeout applies when this interval is set. The order stream also applies it because
+  the execution client subscribes immediately and requests server heartbeats. This avoids reconnect
+  loops before the first market subscription and on race or cricket streams, whose subscriptions
+  cannot request server heartbeats.
+
 ### Data client configuration
 
-| Option                              | Default  | Notes                                       |
-| ----------------------------------- | -------- | ------------------------------------------- |
-| `account_currency`                  | `GBP`    | Betfair account currency.                   |
-| `username`                          | `None`   | Falls back to `BETFAIR_USERNAME`.           |
-| `password`                          | `None`   | Falls back to `BETFAIR_PASSWORD`.           |
-| `app_key`                           | `None`   | Falls back to `BETFAIR_APP_KEY`.            |
-| `proxy_url`                         | `None`   | Optional proxy URL for HTTP requests.       |
-| `request_rate_per_second`           | `5`      | General HTTP rate limit.                    |
-| `default_min_notional`              | `None`   | Optional minimum notional override.         |
-| `event_type_ids`                    | `None`   | Optional navigation filter.                 |
-| `event_type_names`                  | `None`   | Optional navigation filter.                 |
-| `event_ids`                         | `None`   | Optional navigation filter.                 |
-| `country_codes`                     | `None`   | Optional navigation filter.                 |
-| `market_types`                      | `None`   | Optional navigation filter.                 |
-| `market_ids`                        | `None`   | Optional navigation filter.                 |
-| `min_market_start_time`             | `None`   | Optional navigation filter.                 |
-| `max_market_start_time`             | `None`   | Optional navigation filter.                 |
-| `stream_host`                       | `None`   | Optional stream host override.              |
-| `stream_port`                       | `None`   | Optional stream port override.              |
-| `stream_heartbeat_secs`             | `5`      | Interval between stream heartbeats.         |
-| `stream_heartbeat_timeout_secs`     | `60`     | Dead-peer timeout before reconnect.         |
-| `stream_reconnect_delay_initial_ms` | `2,000`  | Initial reconnect delay.                    |
-| `stream_reconnect_delay_max_ms`     | `30,000` | Maximum reconnect delay.                    |
-| `stream_use_tls`                    | `True`   | Use TLS for the stream connection.          |
-| `stream_conflate_ms`                | `None`   | Explicit conflation setting.                |
-| `subscription_delay_secs`           | `3`      | Delay before the first market subscription. |
-| `subscribe_race_data`               | `False`  | Subscribe to RCM updates.                   |
-| `subscribe_cricket_data`            | `False`  | Subscribe to cricket CCM updates.           |
+| Option                              | Default  | Notes                                                      |
+| ----------------------------------- | -------- | ---------------------------------------------------------- |
+| `account_currency`                  | `GBP`    | Betfair account currency.                                  |
+| `username`                          | `None`   | Falls back to `BETFAIR_USERNAME`.                          |
+| `password`                          | `None`   | Falls back to `BETFAIR_PASSWORD`.                          |
+| `app_key`                           | `None`   | Falls back to `BETFAIR_APP_KEY`.                           |
+| `proxy_url`                         | `None`   | Optional proxy URL for HTTP requests.                      |
+| `request_rate_per_second`           | `5`      | General HTTP rate limit.                                   |
+| `default_min_notional`              | `None`   | Optional minimum notional override.                        |
+| `event_type_ids`                    | `None`   | Optional navigation filter.                                |
+| `event_type_names`                  | `None`   | Optional navigation filter.                                |
+| `event_ids`                         | `None`   | Optional navigation filter.                                |
+| `country_codes`                     | `None`   | Optional navigation filter.                                |
+| `market_types`                      | `None`   | Optional navigation filter.                                |
+| `market_ids`                        | `None`   | Optional navigation filter.                                |
+| `min_market_start_time`             | `None`   | Optional navigation filter.                                |
+| `max_market_start_time`             | `None`   | Optional navigation filter.                                |
+| `stream_host`                       | `None`   | Optional stream host override.                             |
+| `stream_port`                       | `None`   | Optional stream port override.                             |
+| `stream_heartbeat_secs`             | `None`   | Outbound heartbeat interval in seconds; `None` sends none. |
+| `stream_heartbeat_timeout_secs`     | `60`     | Dead-peer timeout before reconnect.                        |
+| `stream_reconnect_delay_initial_ms` | `2,000`  | Initial reconnect delay.                                   |
+| `stream_reconnect_delay_max_ms`     | `30,000` | Maximum reconnect delay.                                   |
+| `stream_use_tls`                    | `True`   | Use TLS for the stream connection.                         |
+| `stream_conflate_ms`                | `None`   | Explicit conflation setting.                               |
+| `subscription_delay_secs`           | `3`      | Delay before the first market subscription.                |
+| `subscribe_race_data`               | `False`  | Subscribe to RCM updates.                                  |
+| `subscribe_cricket_data`            | `False`  | Subscribe to cricket CCM updates.                          |
 
 :::warning
 When `stream_conflate_ms` is `None`, the adapter omits `conflateMs` from the subscription and leaves
@@ -588,7 +605,7 @@ receive every price update.
 | `order_request_rate_per_second`     | `20`          | Order endpoint rate limit.                                         |
 | `stream_host`                       | `None`        | Optional stream host override.                                     |
 | `stream_port`                       | `None`        | Optional stream port override.                                     |
-| `stream_heartbeat_secs`             | `5`           | Interval between stream heartbeats.                                |
+| `stream_heartbeat_secs`             | `None`        | Outbound heartbeat interval in seconds; `None` sends none.         |
 | `stream_heartbeat_timeout_secs`     | `60`          | Dead-peer timeout before reconnect.                                |
 | `stream_reconnect_delay_initial_ms` | `2,000`       | Initial reconnect delay.                                           |
 | `stream_reconnect_delay_max_ms`     | `30,000`      | Maximum reconnect delay.                                           |
