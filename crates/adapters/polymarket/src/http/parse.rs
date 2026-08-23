@@ -681,6 +681,7 @@ mod tests {
         let market = load_gamma_market("gamma_market_crypto_twap.json");
 
         let defs = parse_gamma_market(&market).unwrap();
+        assert_eq!(defs[0].end_date.as_deref(), Some("2026-08-22T16:05:00Z"));
         let instrument =
             create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
         let InstrumentAny::BinaryOption(binary) = instrument else {

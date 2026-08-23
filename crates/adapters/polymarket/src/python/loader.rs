@@ -341,7 +341,10 @@ impl PyPolymarketDataLoader {
         &self.condition_id
     }
 
-    /// Returns resolution-bearing metadata excluded from `instrument.info`.
+    /// Returns resolution lifecycle metadata retained separately from `instrument.info`.
+    ///
+    /// Shared market identity such as `resolutionSource` is also available from
+    /// `instrument.info["resolution_source"]`.
     #[getter]
     fn resolution_metadata(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         value_to_pyobject(py, &self.resolution_metadata)
@@ -669,7 +672,7 @@ mod tests {
     }
 
     #[rstest]
-    fn build_loader_selects_token_and_separates_resolution_metadata() {
+    fn build_loader_selects_token_and_retains_resolution_lifecycle_metadata() {
         let loader = build_loader_from_details(gamma_market(), &clob_market(), 1, data_api())
             .expect("loader should build");
         let info = loader.instrument.info.as_ref().expect("instrument info");
@@ -683,6 +686,10 @@ mod tests {
         assert_eq!(loader.instrument.taker_fee.to_string(), "0.02");
         assert_eq!(loader.resolution_metadata["closed"], true);
         assert_eq!(loader.resolution_metadata["tokens"][0]["winner"], true);
+        assert_eq!(
+            info.get_str("resolution_source"),
+            Some("https://example.com/result")
+        );
         assert!(!info.contains_key("closed"));
         assert!(!info.contains_key("closedTime"));
         assert!(!info.contains_key("umaResolutionStatus"));
