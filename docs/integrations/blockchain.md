@@ -477,14 +477,14 @@ a disconnected client before any execution RPC call.
 
 The client accepts one market-order shape:
 
-| Axis        | Accepted                                                                | Rejected                                                   |
-| ----------- | ----------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Chain       | The chain configured on the execution client.                           | An instrument venue for another chain.                     |
-| DEX         | Uniswap V3.                                                             | Every other DEX, including PancakeSwap V3.                 |
-| Pool        | An address-based pool in `Cache::pool` with a fee tier.                 | Unknown pools, V4 pool IDs, and pools without a fee tier.  |
-| Order       | A single `MarketOrder` with side `BUY` or `SELL`.                       | Non-market orders submitted through `SubmitOrder`.         |
-| Quantity    | Base-denominated size that fits the configured raw-unit amount ceiling. | Quote-denominated input and amounts above the ceiling.     |
-| Orientation | Tokens with distinct model priorities.                                  | A pair whose tokens have equal priority and are ambiguous. |
+| Axis        | Accepted                                                                                        | Rejected                                                              |
+| ----------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Chain       | The chain configured on the execution client.                                                   | An instrument venue for another chain.                                |
+| DEX         | Uniswap V3.                                                                                     | Every other DEX, including PancakeSwap V3.                            |
+| Pool        | An address-based pool in `Cache::pool` with a fee tier.                                         | Unknown pools, V4 pool IDs, and pools without a fee tier.             |
+| Order       | A single `MarketOrder` with side `BUY` or `SELL`.                                               | Non-market orders submitted through `SubmitOrder`.                    |
+| Quantity    | Base-denominated size within `max_order_amount`; a BUY also needs a matching quote-spend limit. | Quote-denominated input or an amount above either applicable ceiling. |
+| Orientation | Tokens with distinct model priorities.                                                          | A pair whose tokens have equal priority and are ambiguous.            |
 
 The `InstrumentId` selects the pool, for example
 `0xC6962004f452bE9203591991D15f6b388e09E8D0.Arbitrum:UniswapV3`. Its venue must parse as
@@ -531,6 +531,21 @@ quote-to-base pair. Listing only one direction does not admit the other.
 | `amountIn`          | SELL: `Quantity` as raw base units. BUY: quote input derived from a local exact-out quote. |
 | `amountOutMinimum`  | Derived from a current quote (see below).                                                  |
 | `sqrtPriceLimitX96` | `0` (slippage is bounded by `amountOutMinimum`).                                           |
+
+### BUY quote-spend limits
+
+Every BUY needs one `quote_spend_limits` entry for its directed quote-to-base pair. The entry repeats
+the quote-token address and decimals beside `max_amount`, a base-10 string in the token's raw units.
+Client construction rejects a second entry for the same directed pair, a `spend_token` that differs
+from `token_in`, a `max_amount` that is not a base-10 unsigned integer within the `U256` range, and
+pairs outside `allowed_token_pairs`. Order preparation also checks the configured token and decimals
+against the selected pool (see [Execution configuration](#execution-configuration) for an example
+entry).
+
+The client compares the local exact-out quote's `amountIn` with this limit before transaction
+readiness, durable intent creation, or signing. Equality is accepted; a quote one raw unit above the
+limit is denied. `max_order_amount` remains a separate ceiling on the submitted base quantity, and
+SELL orders do not use `quote_spend_limits`.
 
 ### Slippage protection
 
@@ -699,7 +714,7 @@ configuration-driven limiter:
 | Chain ID              | Adapter        | Preflight at connect and before every signature                                                        |
 | Router identity       | Adapter + risk | Allowlist and bytecode, reported factory and WETH addresses, and factory pool resolution for swaps     |
 | Token-pair allowlist  | Risk (adapter) | Directional pairs for swaps; input-token membership for nonzero approvals                              |
-| Order amount          | Risk (adapter) | `max_order_amount` on submitted base quantity; BUY quote spend is not separately ceilinged             |
+| Order amount          | Risk (adapter) | `max_order_amount` on submitted base quantity; pair-specific `quote_spend_limits` on BUY quote input   |
 | Quote provenance      | Adapter        | Ingestion block hash, canonical receipt and log position, quote age, and a final pre-signature recheck |
 | Gas and fee           | Risk (adapter) | `gas_limit` and `max_fee_per_gas_wei` ceilings                                                         |
 | Balance sufficiency   | Adapter + risk | Account state plus checks for sufficient input-token and native gas balances                           |
@@ -853,35 +868,53 @@ idempotently; this adapter does not provide an atomic exactly-once delivery guar
 The `BlockchainExecutionClientConfig` fields, exposed to Python following the
 `BlockchainDataClientConfig` pattern:
 
-| Field                            | Default   | Description                                                          |
-| -------------------------------- | --------- | -------------------------------------------------------------------- |
-| `client_id`                      | Required  | Account ID for the client.                                           |
-| `chain`                          | Required  | Blockchain chain configuration.                                      |
-| `wallet_address`                 | Required  | Wallet address for the execution client.                             |
-| `http_rpc_url`                   | Required  | HTTP URL for the blockchain RPC endpoint.                            |
-| `signer_private_key_env`         | Required  | Environment variable that holds the signer key.                      |
-| `router_addresses`               | Required  | SwapRouter allowlist; at least one address is required.              |
-| `max_fee_per_gas_wei`            | Required  | Maximum derived fee per gas in wei.                                  |
-| `base_fee_buffer_bps`            | Required  | Buffer over the swap-anchor or operator-path latest base fee.        |
-| `gas_limit`                      | Required  | Gas ceiling; a higher buffered estimate is rejected.                 |
-| `gas_buffer_bps`                 | Required  | Buffer applied over `eth_estimateGas`.                               |
-| `unlimited_approval`             | `false`   | Request unlimited approval instead of the exact amount.              |
-| `weth_address`                   | Required  | Wrapped native token used by `wrap`.                                 |
-| `allowed_token_pairs`            | Required  | Directional input/output pairs; BUY needs the reverse pair.          |
-| `slippage_bps`                   | Required  | Default slippage used to derive the minimum output.                  |
-| `max_slippage_bps`               | Required  | Ceiling for a per-order slippage override.                           |
-| `max_order_amount`               | Required  | `u64` ceiling on submitted base quantity, in raw base-token units.   |
-| `deadline_seconds`               | Required  | Swap deadline offset from the initial anchor timestamp.              |
-| `max_quote_age_blocks`           | Required  | Maximum age of the local quote in blocks.                            |
-| `receipt_timeout_secs`           | Required  | Deadline for the receipt and finality polling loop.                  |
-| `tokens`                         | `None`    | ERC-20 addresses included in balance publication.                    |
-| `rpc_requests_per_second`        | `None`    | HTTP RPC rate limit.                                                 |
-| `postgres_cache_database_config` | `None`    | Durable execution store; transaction submission requires it.         |
-| `transport_backend`              | `Sockudo` | Compatibility field; the execution client currently does not use it. |
+| Field                            | Default   | Description                                                              |
+| -------------------------------- | --------- | ------------------------------------------------------------------------ |
+| `client_id`                      | Required  | Account ID for the client.                                               |
+| `chain`                          | Required  | Blockchain chain configuration.                                          |
+| `wallet_address`                 | Required  | Wallet address for the execution client.                                 |
+| `http_rpc_url`                   | Required  | HTTP URL for the blockchain RPC endpoint.                                |
+| `signer_private_key_env`         | Required  | Environment variable that holds the signer key.                          |
+| `router_addresses`               | Required  | SwapRouter allowlist; at least one address is required.                  |
+| `max_fee_per_gas_wei`            | Required  | Maximum derived fee per gas in wei.                                      |
+| `base_fee_buffer_bps`            | Required  | Buffer over the swap-anchor or operator-path latest base fee.            |
+| `gas_limit`                      | Required  | Gas ceiling; a higher buffered estimate is rejected.                     |
+| `gas_buffer_bps`                 | Required  | Buffer applied over `eth_estimateGas`.                                   |
+| `unlimited_approval`             | `false`   | Request unlimited approval instead of the exact amount.                  |
+| `weth_address`                   | Required  | Wrapped native token used by `wrap`.                                     |
+| `allowed_token_pairs`            | Required  | Directional input/output pairs; BUY needs the reverse pair.              |
+| `quote_spend_limits`             | `None`    | Directed quote-token ceilings; a BUY without a matching entry is denied. |
+| `slippage_bps`                   | Required  | Default slippage used to derive the minimum output.                      |
+| `max_slippage_bps`               | Required  | Ceiling for a per-order slippage override.                               |
+| `max_order_amount`               | Required  | `u64` ceiling on submitted base quantity, in raw base-token units.       |
+| `deadline_seconds`               | Required  | Swap deadline offset from the initial anchor timestamp.                  |
+| `max_quote_age_blocks`           | Required  | Maximum age of the local quote in blocks.                                |
+| `receipt_timeout_secs`           | Required  | Deadline for the receipt and finality polling loop.                      |
+| `tokens`                         | `None`    | ERC-20 addresses included in balance publication.                        |
+| `rpc_requests_per_second`        | `None`    | HTTP RPC rate limit.                                                     |
+| `postgres_cache_database_config` | `None`    | Durable execution store; transaction submission requires it.             |
+| `transport_backend`              | `Sockudo` | Compatibility field; the execution client currently does not use it.     |
 
 The first allowlisted router executes swaps, so preflight readiness requires allowance on that
 router. `receipt_timeout_secs` controls the polling deadline for swaps, wraps, and approvals. It is
 not a strict upper bound on the full call because final RPC and persistence operations can add time.
+
+The following entry admits a USDC-to-WETH BUY only when the derived USDC input is at most 1,000 USDC.
+Pass the list as `quote_spend_limits` when constructing `BlockchainExecutionClientConfig`:
+
+```python
+from nautilus_trader.adapters.blockchain import QuoteSpendLimit
+
+quote_spend_limits = [
+    QuoteSpendLimit(
+        token_in="0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        token_out="0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+        spend_token="0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        spend_token_decimals=6,
+        max_amount="1000000000",
+    ),
+]
+```
 
 ### Execution testing
 
@@ -907,7 +940,8 @@ Default tests do not connect to a live chain. They cover:
   router/factory/WETH/pool identity, approval transitions and return values, preflight readiness,
   wrap and approval postconditions, exact wallet snapshots, atomic refresh, connect and repeated
   account queries, order validation, limiter denials, hash-bound quote provenance, slippage, token
-  orientation, final fill fields, and commission.
+  orientation, distinct quote-token decimals, exact quote-spend boundaries, final fill fields,
+  and commission.
 - Durability: submission ordering, one in-flight transaction, pre-broadcast signature quarantine,
   authorized exact-byte rebroadcast, tested duplicate suppression paths, wallet refresh ownership,
   schema migration, and initial and terminal status writes. Database tests skip when Postgres is

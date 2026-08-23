@@ -43,7 +43,7 @@ use harness::{
     quote_buy_amount_in, start_anvil, weth_usdc_pool,
 };
 use nautilus_blockchain::{
-    config::BlockchainExecutionClientConfig,
+    config::{BlockchainExecutionClientConfig, QuoteSpendLimit},
     constants::BLOCKCHAIN_VENUE,
     contracts::{erc20::Erc20Contract, uniswap_v3_pool::UniswapV3PoolContract},
     execution::client::BlockchainExecutionClient,
@@ -391,6 +391,15 @@ fn execution_config(
         .allowed_token_pairs(vec![
             (WETH.to_string(), USDC.to_string()),
             (USDC.to_string(), WETH.to_string()),
+        ])
+        .quote_spend_limits(vec![
+            QuoteSpendLimit::builder()
+                .token_in(USDC.to_string())
+                .token_out(WETH.to_string())
+                .spend_token(USDC.to_string())
+                .spend_token_decimals(6)
+                .max_amount("1000000000".to_string())
+                .build(),
         ])
         .slippage_bps(SLIPPAGE_BPS)
         .max_slippage_bps(200)

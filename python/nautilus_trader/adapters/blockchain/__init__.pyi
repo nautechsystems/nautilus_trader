@@ -14,6 +14,7 @@ __all__ = [
     "BlockchainDataClientFactory",
     "BlockchainExecutionClientConfig",
     "DexPoolFilters",
+    "QuoteSpendLimit",
     "load_pool_snapshot",
 ]
 
@@ -86,6 +87,8 @@ class BlockchainExecutionClientConfig:
     @property
     def max_slippage_bps(self) -> int | None: ...
     @property
+    def quote_spend_limits(self) -> list[QuoteSpendLimit] | None: ...
+    @property
     def receipt_timeout_secs(self) -> int | None: ...
     @property
     def router_addresses(self) -> list[str]: ...
@@ -122,6 +125,7 @@ class BlockchainExecutionClientConfig:
         postgres_cache_database_config: infrastructure.PostgresConnectOptions | None = None,
         transport_backend: network.TransportBackend | None = None,
         allowed_token_pairs: typing.Sequence[tuple[str, str]] | None = None,
+        quote_spend_limits: typing.Sequence[QuoteSpendLimit] | None = None,
         slippage_bps: int | None = None,
         max_slippage_bps: int | None = None,
         max_order_amount: int | None = None,
@@ -143,6 +147,27 @@ class BlockchainExecutionClientConfig:
 @typing.final
 class DexPoolFilters:
     def __init__(self, remove_pools_with_empty_erc20_fields: bool | None = ...) -> None: ...
+
+@typing.final
+class QuoteSpendLimit:
+    @property
+    def max_amount(self) -> str: ...
+    @property
+    def spend_token(self) -> str: ...
+    @property
+    def spend_token_decimals(self) -> int: ...
+    @property
+    def token_in(self) -> str: ...
+    @property
+    def token_out(self) -> str: ...
+    def __init__(
+        self,
+        token_in: str,
+        token_out: str,
+        spend_token: str,
+        spend_token_decimals: int,
+        max_amount: str,
+    ) -> None: ...
 
 def load_pool_snapshot(
     pg_config: infrastructure.PostgresConnectOptions,

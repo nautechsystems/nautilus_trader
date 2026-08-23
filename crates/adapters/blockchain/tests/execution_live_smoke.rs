@@ -24,7 +24,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
 use alloy::primitives::{Address, U256, address};
 use nautilus_blockchain::{
-    config::BlockchainExecutionClientConfig,
+    config::{BlockchainExecutionClientConfig, QuoteSpendLimit},
     constants::BLOCKCHAIN_VENUE,
     contracts::{
         erc20::Erc20Contract,
@@ -127,6 +127,15 @@ async fn live_arbitrum_uniswap_v3_sell_then_buy() {
         .allowed_token_pairs(vec![
             (WETH.to_string(), USDC.to_string()),
             (USDC.to_string(), WETH.to_string()),
+        ])
+        .quote_spend_limits(vec![
+            QuoteSpendLimit::builder()
+                .token_in(USDC.to_string())
+                .token_out(WETH.to_string())
+                .spend_token(USDC.to_string())
+                .spend_token_decimals(6)
+                .max_amount("1000000000".to_string())
+                .build(),
         ])
         .slippage_bps(SLIPPAGE_BPS)
         .max_slippage_bps(200)

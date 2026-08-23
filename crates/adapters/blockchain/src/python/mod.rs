@@ -73,6 +73,7 @@ pub fn blockchain(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::factories::BlockchainDataClientFactory>()?;
     m.add_class::<crate::config::BlockchainExecutionClientConfig>()?;
     m.add_class::<crate::config::DexPoolFilters>()?;
+    m.add_class::<crate::config::QuoteSpendLimit>()?;
     #[cfg(feature = "hypersync")]
     m.add_function(wrap_pyfunction!(
         crate::python::cache::py_load_pool_snapshot,

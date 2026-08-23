@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     ops::RangeInclusive,
     str::FromStr,
@@ -199,12 +199,20 @@ fn release_preparing_if_reservation_not_committed(
 #[derive(Debug)]
 struct TransactionLimits {
     allowed_token_pairs: HashSet<(Address, Address)>,
+    quote_spend_limits: HashMap<(Address, Address), QuoteSpendCeiling>,
     slippage_bps: u32,
     max_slippage_bps: u32,
     max_order_amount: u64,
     deadline_seconds: u64,
     max_quote_age_blocks: u64,
     receipt_timeout_secs: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct QuoteSpendCeiling {
+    spend_token: Address,
+    spend_token_decimals: u8,
+    max_amount: U256,
 }
 
 /// Execution client for blockchain interactions including balance tracking and order execution.
@@ -351,6 +359,55 @@ impl BlockchainExecutionClient {
             ));
         }
 
+        let quote_spend_limits = config.quote_spend_limits.as_deref().unwrap_or_default();
+        let mut parsed_quote_spend_limits = HashMap::with_capacity(quote_spend_limits.len());
+        for limit in quote_spend_limits {
+            let token_in = validate_address(limit.token_in.as_str())?;
+            let token_out = validate_address(limit.token_out.as_str())?;
+            let spend_token = validate_address(limit.spend_token.as_str())?;
+
+            if !parsed_pairs.contains(&(token_in, token_out)) {
+                anyhow::bail!(
+                    "Quote spend limit pair {token_in} -> {token_out} is not in the `allowed_token_pairs` allowlist"
+                );
+            }
+
+            if spend_token != token_in {
+                anyhow::bail!(
+                    "Quote spend limit for {token_in} -> {token_out} is denominated in {spend_token}; `spend_token` must match `token_in`"
+                );
+            }
+
+            if limit.max_amount.is_empty()
+                || !limit.max_amount.bytes().all(|byte| byte.is_ascii_digit())
+            {
+                anyhow::bail!(
+                    "Quote spend limit `max_amount` '{}' must be a base-10 unsigned integer string",
+                    limit.max_amount
+                );
+            }
+            let max_amount = U256::from_str(&limit.max_amount).map_err(|_| {
+                anyhow::anyhow!(
+                    "Quote spend limit `max_amount` '{}' exceeds the U256 range",
+                    limit.max_amount
+                )
+            })?;
+            let ceiling = QuoteSpendCeiling {
+                spend_token,
+                spend_token_decimals: limit.spend_token_decimals,
+                max_amount,
+            };
+
+            if parsed_quote_spend_limits
+                .insert((token_in, token_out), ceiling)
+                .is_some()
+            {
+                anyhow::bail!(
+                    "Duplicate quote spend limit for token pair {token_in} -> {token_out}"
+                );
+            }
+        }
+
         if slippage_bps > max_slippage_bps {
             anyhow::bail!(
                 "`slippage_bps` {slippage_bps} exceeds `max_slippage_bps` {max_slippage_bps}"
@@ -363,6 +420,7 @@ impl BlockchainExecutionClient {
 
         Ok(TransactionLimits {
             allowed_token_pairs: parsed_pairs,
+            quote_spend_limits: parsed_quote_spend_limits,
             slippage_bps,
             max_slippage_bps,
             max_order_amount,
@@ -1434,6 +1492,34 @@ impl BlockchainExecutionClient {
             );
         }
 
+        let quote_spend_ceiling = if order.order_side() == OrderSide::Buy {
+            let ceiling = self
+                .transaction_limits
+                .quote_spend_limits
+                .get(&(token_in, token_out))
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No `quote_spend_limits` entry for BUY token pair {token_in} -> {token_out}"
+                    )
+                })?;
+            anyhow::ensure!(
+                ceiling.spend_token == quote_token.address,
+                "Quote spend limit for {token_in} -> {token_out} is denominated in {}, expected quote token {}",
+                ceiling.spend_token,
+                quote_token.address
+            );
+            anyhow::ensure!(
+                ceiling.spend_token_decimals == quote_token.decimals,
+                "Quote spend limit for token {} uses {} decimals, expected pool quote-token decimals {}",
+                ceiling.spend_token,
+                ceiling.spend_token_decimals,
+                quote_token.decimals
+            );
+            Some(ceiling)
+        } else {
+            None
+        };
+
         let profiler = self
             .core
             .cache()
@@ -1478,6 +1564,18 @@ impl BlockchainExecutionClient {
                 let amount_in = quote.get_input_amount();
                 if amount_in.is_zero() {
                     anyhow::bail!("Local quote for {instrument_id} produced a zero quote input");
+                }
+                let ceiling = quote_spend_ceiling.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No `quote_spend_limits` entry for BUY token pair {token_in} -> {token_out}"
+                    )
+                })?;
+
+                if amount_in > ceiling.max_amount {
+                    anyhow::bail!(
+                        "BUY quote amount {amount_in} exceeds the configured `quote_spend_limits` maximum {} for {token_in} -> {token_out}",
+                        ceiling.max_amount
+                    );
                 }
                 (amount_in, base_amount)
             }
@@ -3599,6 +3697,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        config::QuoteSpendLimit,
         constants::BLOCKCHAIN_VENUE,
         exchanges::arbitrum::UNISWAP_V3,
         rpc::http::{
@@ -3757,12 +3856,29 @@ mod tests {
     }
 
     fn buy_test_config(http_rpc_url: String) -> BlockchainExecutionClientConfig {
+        let max_amount = expected_buy_amount_in().to_string();
         let mut config = test_config(http_rpc_url);
         config.allowed_token_pairs = Some(vec![
             (WETH.to_string(), USDC.to_string()),
             (USDC.to_string(), WETH.to_string()),
         ]);
+        config.quote_spend_limits = Some(vec![quote_spend_limit(USDC, WETH, 6, &max_amount)]);
         config
+    }
+
+    fn quote_spend_limit(
+        token_in: &str,
+        token_out: &str,
+        spend_token_decimals: u8,
+        max_amount: &str,
+    ) -> QuoteSpendLimit {
+        QuoteSpendLimit::builder()
+            .token_in(token_in.to_string())
+            .token_out(token_out.to_string())
+            .spend_token(token_in.to_string())
+            .spend_token_decimals(spend_token_decimals)
+            .max_amount(max_amount.to_string())
+            .build()
     }
 
     fn test_client_from_config(
@@ -4115,17 +4231,20 @@ mod tests {
         swap_client_with_database_config(test_name, state, buy_test_config).await
     }
 
-    async fn swap_client_with_database_config(
+    async fn swap_client_with_database_config<F>(
         test_name: &str,
         state: MockRpcState,
-        config: fn(String) -> BlockchainExecutionClientConfig,
+        config: F,
     ) -> Option<(
         sqlx::PgPool,
         String,
         BlockchainExecutionClient,
         MockRpcState,
         Rc<RefCell<Cache>>,
-    )> {
+    )>
+    where
+        F: FnOnce(String) -> BlockchainExecutionClientConfig,
+    {
         let (admin_pool, pg_config) = connect_test_postgres(test_name).await?;
         let schema = format!("{test_name}_{}", std::process::id());
         setup_execution_schema(&admin_pool, &schema).await;
@@ -5363,6 +5482,163 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn submit_order_denies_buy_without_quote_spend_limit() {
+        let mut config = buy_test_config("http://127.0.0.1:1".to_string());
+        config.quote_spend_limits = None;
+        let (mut client, cache) = swap_client_with_cache(config);
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied
+                .reason
+                .as_str()
+                .contains("No `quote_spend_limits` entry for BUY token pair"),
+            "was: {}",
+            denied.reason
+        );
+    }
+
+    #[tokio::test]
+    async fn submit_order_uses_pair_specific_quote_spend_limit() {
+        let other_token = "0x1111111111111111111111111111111111111111";
+        let mut config = buy_test_config("http://127.0.0.1:1".to_string());
+        config
+            .allowed_token_pairs
+            .as_mut()
+            .unwrap()
+            .push((USDC.to_string(), other_token.to_string()));
+        config.quote_spend_limits =
+            Some(vec![quote_spend_limit(USDC, other_token, 6, "1000000000")]);
+        let (mut client, cache) = swap_client_with_cache(config);
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied
+                .reason
+                .as_str()
+                .contains("No `quote_spend_limits` entry for BUY token pair"),
+            "was: {}",
+            denied.reason
+        );
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_buy_with_quote_spend_precision_mismatch() {
+        let mut config = buy_test_config("http://127.0.0.1:1".to_string());
+        config.quote_spend_limits.as_mut().unwrap()[0].spend_token_decimals = 18;
+        let (mut client, cache) = swap_client_with_cache(config);
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied
+                .reason
+                .as_str()
+                .contains("uses 18 decimals, expected pool quote-token decimals 6"),
+            "was: {}",
+            denied.reason
+        );
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_buy_with_zero_quote_spend_limit() {
+        let mut config = buy_test_config("http://127.0.0.1:1".to_string());
+        config.quote_spend_limits.as_mut().unwrap()[0].max_amount = "0".to_string();
+        let (mut client, cache) = swap_client_with_cache(config);
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied
+                .reason
+                .as_str()
+                .contains("exceeds the configured `quote_spend_limits` maximum 0"),
+            "was: {}",
+            denied.reason
+        );
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_buy_one_raw_unit_above_quote_spend_limit_before_readiness() {
+        let amount_in = expected_buy_amount_in();
+        let mut config = buy_test_config("http://127.0.0.1:1".to_string());
+        config.quote_spend_limits.as_mut().unwrap()[0].max_amount =
+            (amount_in - U256::from(1u8)).to_string();
+        let (mut client, cache) = swap_client_with_cache(config);
+        let order = test_market_buy_order(test_pool().instrument_id);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied.reason.as_str().contains(&format!(
+                "BUY quote amount {amount_in} exceeds the configured `quote_spend_limits`"
+            )),
+            "was: {}",
+            denied.reason
+        );
+        assert!(!client.core.is_connected());
+        assert!(!client.cache.has_database());
+        assert!(client.signer.is_none());
+        assert!(client.pending_tasks.is_empty());
+    }
+
+    #[tokio::test]
     async fn submit_order_denies_non_market_order_type() {
         let (mut client, cache) =
             swap_client_with_cache(test_config("http://127.0.0.1:1".to_string()));
@@ -5490,6 +5766,31 @@ mod tests {
         );
         assert!(
             denied.reason.as_str().contains(&WETH_ADDRESS.to_string()),
+            "was: {}",
+            denied.reason
+        );
+    }
+
+    #[tokio::test]
+    async fn submit_order_sell_ignores_quote_spend_limits() {
+        let mut config = test_config("http://127.0.0.1:1".to_string());
+        config.quote_spend_limits = Some(vec![quote_spend_limit(WETH, USDC, 6, "0")]);
+        let (mut client, _) = swap_client_with_cache(config);
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert!(
+            denied
+                .reason
+                .as_str()
+                .contains("Blockchain execution client is not connected"),
             "was: {}",
             denied.reason
         );
@@ -6263,13 +6564,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prepare_swap_buy_uses_quote_input_and_base_min_out() {
+    async fn prepare_swap_buy_accepts_quote_spend_exact_boundary() {
         let amount_in = expected_buy_amount_in();
         let min_amount_out = expected_buy_min_amount_out(50);
         let (expected_hash, _) = expected_buy_swap_tx(min_amount_out, amount_in).await;
         let state = finalized_buy_swap_rpc_state(expected_hash, min_amount_out, amount_in);
-        let Some((admin_pool, schema, client, _, cache)) =
-            swap_client_with_buy_database("execution_prepare_buy_test", state).await
+        let max_amount = amount_in.to_string();
+        let Some((admin_pool, schema, client, _, cache)) = swap_client_with_database_config(
+            "execution_prepare_buy_test",
+            state,
+            move |http_rpc_url| {
+                let mut config = buy_test_config(http_rpc_url);
+                config.quote_spend_limits.as_mut().unwrap()[0].max_amount = max_amount;
+                config
+            },
+        )
+        .await
         else {
             return;
         };
@@ -8553,6 +8863,107 @@ mod tests {
         let error = client.resolve_pool(&pool.instrument_id).unwrap_err();
 
         assert!(error.to_string().contains("ambiguous"), "was: {error}");
+    }
+
+    #[rstest]
+    fn new_parses_pair_specific_quote_spend_limits_with_distinct_precisions() {
+        let mut config = buy_test_config("http://127.0.0.1:1".to_string());
+        config.quote_spend_limits = Some(vec![
+            quote_spend_limit(WETH, USDC, 18, &U256::MAX.to_string()),
+            quote_spend_limit(USDC, WETH, 6, "1000000000"),
+        ]);
+
+        let client = test_client_from_config(config, test_pool());
+        let sell_ceiling = client
+            .transaction_limits
+            .quote_spend_limits
+            .get(&(WETH_ADDRESS, USDC_ADDRESS))
+            .unwrap();
+        let buy_ceiling = client
+            .transaction_limits
+            .quote_spend_limits
+            .get(&(USDC_ADDRESS, WETH_ADDRESS))
+            .unwrap();
+
+        assert_eq!(sell_ceiling.spend_token, WETH_ADDRESS);
+        assert_eq!(sell_ceiling.spend_token_decimals, 18);
+        assert_eq!(sell_ceiling.max_amount, U256::MAX);
+        assert_eq!(buy_ceiling.spend_token, USDC_ADDRESS);
+        assert_eq!(buy_ceiling.spend_token_decimals, 6);
+        assert_eq!(buy_ceiling.max_amount, U256::from(1_000_000_000u64));
+    }
+
+    #[rstest]
+    fn new_rejects_quote_spend_limit_token_pair_mismatch() {
+        let mut config = buy_test_config("http://127.0.0.1:1".to_string());
+        config.quote_spend_limits.as_mut().unwrap()[0].spend_token = WETH.to_string();
+
+        let error = test_client_result(config, test_pool()).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("`spend_token` must match `token_in`"),
+            "was: {error}"
+        );
+    }
+
+    #[rstest]
+    fn new_rejects_quote_spend_limit_pair_outside_allowlist() {
+        let mut config = buy_test_config("http://127.0.0.1:1".to_string());
+        config.quote_spend_limits = Some(vec![quote_spend_limit(
+            USDC,
+            "0x1111111111111111111111111111111111111111",
+            6,
+            "1000000000",
+        )]);
+
+        let error = test_client_result(config, test_pool()).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("is not in the `allowed_token_pairs` allowlist"),
+            "was: {error}"
+        );
+    }
+
+    #[rstest]
+    fn new_rejects_duplicate_quote_spend_pairs() {
+        let mut config = buy_test_config("http://127.0.0.1:1".to_string());
+        config.quote_spend_limits = Some(vec![
+            quote_spend_limit(USDC, WETH, 6, "1000000000"),
+            quote_spend_limit(USDC, WETH, 6, "2000000000"),
+        ]);
+
+        let error = test_client_result(config, test_pool()).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Duplicate quote spend limit for token pair"),
+            "was: {error}"
+        );
+    }
+
+    #[rstest]
+    #[case::empty("")]
+    #[case::signed("-1")]
+    #[case::fractional("1.5")]
+    #[case::hexadecimal("0x10")]
+    #[case::overflow(
+        "115792089237316195423570985008687907853269984665640564039457584007913129639936"
+    )]
+    fn new_rejects_invalid_quote_spend_max_amount(#[case] max_amount: &str) {
+        let mut config = buy_test_config("http://127.0.0.1:1".to_string());
+        config.quote_spend_limits.as_mut().unwrap()[0].max_amount = max_amount.to_string();
+
+        let error = test_client_result(config, test_pool()).unwrap_err();
+
+        assert!(
+            error.to_string().contains("Quote spend limit `max_amount`"),
+            "was: {error}"
+        );
     }
 
     #[rstest]

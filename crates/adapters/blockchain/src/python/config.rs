@@ -26,7 +26,9 @@ use nautilus_model::{
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
-use crate::config::{BlockchainDataClientConfig, BlockchainExecutionClientConfig, DexPoolFilters};
+use crate::config::{
+    BlockchainDataClientConfig, BlockchainExecutionClientConfig, DexPoolFilters, QuoteSpendLimit,
+};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
@@ -37,6 +39,29 @@ impl DexPoolFilters {
     pub fn py_new(remove_pools_with_empty_erc20_fields: Option<bool>) -> Self {
         Self::builder()
             .maybe_remove_pools_with_empty_erc20fields(remove_pools_with_empty_erc20_fields)
+            .build()
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
+impl QuoteSpendLimit {
+    /// Defines the maximum quote-token spend for a directed BUY swap pair.
+    #[new]
+    #[must_use]
+    fn py_new(
+        token_in: String,
+        token_out: String,
+        spend_token: String,
+        spend_token_decimals: u8,
+        max_amount: String,
+    ) -> Self {
+        Self::builder()
+            .token_in(token_in)
+            .token_out(token_out)
+            .spend_token(spend_token)
+            .spend_token_decimals(spend_token_decimals)
+            .max_amount(max_amount)
             .build()
     }
 }
@@ -168,7 +193,7 @@ impl BlockchainExecutionClientConfig {
     /// Configuration for blockchain execution clients.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (client_id, chain, wallet_address, http_rpc_url, signer_private_key_env, router_addresses, weth_address, max_fee_per_gas_wei, base_fee_buffer_bps, gas_limit, gas_buffer_bps, tokens=None, rpc_requests_per_second=None, unlimited_approval=false, postgres_cache_database_config=None, transport_backend=None, *, allowed_token_pairs=None, slippage_bps=None, max_slippage_bps=None, max_order_amount=None, deadline_seconds=None, max_quote_age_blocks=None, receipt_timeout_secs=None))]
+    #[pyo3(signature = (client_id, chain, wallet_address, http_rpc_url, signer_private_key_env, router_addresses, weth_address, max_fee_per_gas_wei, base_fee_buffer_bps, gas_limit, gas_buffer_bps, tokens=None, rpc_requests_per_second=None, unlimited_approval=false, postgres_cache_database_config=None, transport_backend=None, *, allowed_token_pairs=None, quote_spend_limits=None, slippage_bps=None, max_slippage_bps=None, max_order_amount=None, deadline_seconds=None, max_quote_age_blocks=None, receipt_timeout_secs=None))]
     fn py_new(
         client_id: AccountId,
         #[gen_stub(
@@ -199,6 +224,7 @@ impl BlockchainExecutionClientConfig {
         postgres_cache_database_config: Option<PostgresConnectOptions>,
         transport_backend: Option<TransportBackend>,
         allowed_token_pairs: Option<Vec<(String, String)>>,
+        quote_spend_limits: Option<Vec<QuoteSpendLimit>>,
         slippage_bps: Option<u32>,
         max_slippage_bps: Option<u32>,
         max_order_amount: Option<u64>,
@@ -219,6 +245,7 @@ impl BlockchainExecutionClientConfig {
             .gas_limit(gas_limit)
             .gas_buffer_bps(gas_buffer_bps)
             .maybe_allowed_token_pairs(allowed_token_pairs)
+            .maybe_quote_spend_limits(quote_spend_limits)
             .maybe_slippage_bps(slippage_bps)
             .maybe_max_slippage_bps(max_slippage_bps)
             .maybe_max_order_amount(max_order_amount)

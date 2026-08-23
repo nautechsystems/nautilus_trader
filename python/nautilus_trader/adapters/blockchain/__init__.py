@@ -27,6 +27,7 @@ __all__ = [
     "BlockchainDataClientFactory",
     "BlockchainExecutionClientConfig",
     "DexPoolFilters",
+    "QuoteSpendLimit",
     "load_pool_snapshot",
 ]
 

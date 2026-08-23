@@ -136,6 +136,39 @@ const fn default_multicall_calls_per_rpc_request() -> u32 {
     200
 }
 
+/// Defines the maximum quote-token spend for a directed BUY swap pair.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.adapters.blockchain", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+)]
+pub struct QuoteSpendLimit {
+    /// The swap input-token address used as the directed pair key.
+    pub token_in: String,
+    /// The swap output-token address used as the directed pair key.
+    pub token_out: String,
+    /// The token address that denominates `max_amount`.
+    pub spend_token: String,
+    /// The decimals of `spend_token` used to interpret its raw units.
+    pub spend_token_decimals: u8,
+    /// The maximum raw input amount as a base-10 unsigned integer string.
+    pub max_amount: String,
+}
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(QuoteSpendLimit {
+    max_amount: String,
+    spend_token: String,
+    spend_token_decimals: u8,
+    token_in: String,
+    token_out: String,
+});
+
 #[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
@@ -181,6 +214,8 @@ pub struct BlockchainExecutionClientConfig {
     pub gas_buffer_bps: u32,
     /// Allowed (input token, output token) address pairs for swaps.
     pub allowed_token_pairs: Option<Vec<(String, String)>>,
+    /// Pair-specific maximum quote-token spends for BUY swaps.
+    pub quote_spend_limits: Option<Vec<QuoteSpendLimit>>,
     /// Default slippage in basis points applied to derive the swap minimum output.
     pub slippage_bps: Option<u32>,
     /// Maximum slippage in basis points accepted from a per-order parameter override.
@@ -220,6 +255,7 @@ impl Debug for BlockchainExecutionClientConfig {
             .field("gas_limit", &self.gas_limit)
             .field("gas_buffer_bps", &self.gas_buffer_bps)
             .field("allowed_token_pairs", &self.allowed_token_pairs)
+            .field("quote_spend_limits", &self.quote_spend_limits)
             .field("slippage_bps", &self.slippage_bps)
             .field("max_slippage_bps", &self.max_slippage_bps)
             .field("max_order_amount", &self.max_order_amount)
@@ -252,6 +288,7 @@ nautilus_core::impl_pyo3_config_getters!(BlockchainExecutionClientConfig {
     max_order_amount: Option<u64>,
     max_quote_age_blocks: Option<u64>,
     max_slippage_bps: Option<u32>,
+    quote_spend_limits: Option<Vec<QuoteSpendLimit>>,
     receipt_timeout_secs: Option<u64>,
     router_addresses: Vec<String>,
     signer_private_key_env: String,
@@ -310,13 +347,23 @@ max_fee_per_gas_wei = 1000000000
 base_fee_buffer_bps = 2000
 gas_limit = 1000000
 gas_buffer_bps = 2000
-allowed_token_pairs = [["0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"]]
+allowed_token_pairs = [
+    ["0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"],
+    ["0xaf88d065e77c8cC2239327C5EDb3A432268e5831", "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"],
+]
 slippage_bps = 50
 max_slippage_bps = 200
 max_order_amount = 1000000000000000000
 deadline_seconds = 300
 max_quote_age_blocks = 100
 receipt_timeout_secs = 60
+
+[[quote_spend_limits]]
+token_in = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+token_out = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+spend_token = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+spend_token_decimals = 6
+max_amount = "1000000000"
 
 [chain]
 name = "Ethereum"
@@ -351,10 +398,26 @@ native_currency_decimals = 18
         assert_eq!(config.gas_buffer_bps, 2_000);
         assert_eq!(
             config.allowed_token_pairs,
-            Some(vec![(
-                "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
-                "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
-            )]),
+            Some(vec![
+                (
+                    "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
+                    "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
+                ),
+                (
+                    "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
+                    "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
+                )
+            ]),
+        );
+        assert_eq!(
+            config.quote_spend_limits,
+            Some(vec![QuoteSpendLimit {
+                token_in: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
+                token_out: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
+                spend_token: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
+                spend_token_decimals: 6,
+                max_amount: "1000000000".to_string(),
+            }]),
         );
         assert_eq!(config.slippage_bps, Some(50));
         assert_eq!(config.max_slippage_bps, Some(200));
@@ -391,6 +454,7 @@ native_currency_decimals = 18
         .unwrap();
 
         assert!(config.allowed_token_pairs.is_none());
+        assert!(config.quote_spend_limits.is_none());
         assert!(config.slippage_bps.is_none());
         assert!(config.max_slippage_bps.is_none());
         assert!(config.max_order_amount.is_none());

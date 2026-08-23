@@ -18,7 +18,7 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use nautilus_blockchain::{
-    config::{BlockchainDataClientConfig, BlockchainExecutionClientConfig},
+    config::{BlockchainDataClientConfig, BlockchainExecutionClientConfig, QuoteSpendLimit},
     constants::BLOCKCHAIN,
     factories::BlockchainDataClientFactory,
     python,
@@ -138,15 +138,33 @@ fn assert_execution_config_constructs_from_python(
     let config_type = blockchain_module
         .getattr("BlockchainExecutionClientConfig")
         .expect("BlockchainExecutionClientConfig should be available");
+    let quote_spend_limit_type = blockchain_module
+        .getattr("QuoteSpendLimit")
+        .expect("QuoteSpendLimit should be available");
+    let quote_spend_limit = quote_spend_limit_type
+        .call1((
+            "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+            "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+            "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+            6_u8,
+            "1000000000",
+        ))
+        .expect("QuoteSpendLimit should construct from Python");
 
     let kwargs = PyDict::new(py);
     kwargs
         .set_item(
             "allowed_token_pairs",
-            vec![(
-                "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-                "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
-            )],
+            vec![
+                (
+                    "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+                    "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+                ),
+                (
+                    "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+                    "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+                ),
+            ],
         )
         .expect("allowed_token_pairs kwarg should be set");
     kwargs
@@ -158,6 +176,9 @@ fn assert_execution_config_constructs_from_python(
     kwargs
         .set_item("max_order_amount", 1_000_000_000_000_000_000_u64)
         .expect("max_order_amount kwarg should be set");
+    kwargs
+        .set_item("quote_spend_limits", vec![quote_spend_limit])
+        .expect("quote_spend_limits kwarg should be set");
     kwargs
         .set_item("deadline_seconds", 300_u64)
         .expect("deadline_seconds kwarg should be set");
@@ -205,6 +226,22 @@ fn assert_execution_config_constructs_from_python(
         .expect("signer_private_key_env getter should return a string");
     assert_eq!(getter_value, "BLOCKCHAIN_PRIVATE_KEY");
 
+    let getter_quote_spend_limits: Option<Vec<QuoteSpendLimit>> = config
+        .getattr("quote_spend_limits")
+        .expect("quote_spend_limits getter should exist")
+        .extract()
+        .expect("quote_spend_limits getter should return optional limits");
+    assert_eq!(
+        getter_quote_spend_limits,
+        Some(vec![QuoteSpendLimit {
+            token_in: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
+            token_out: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
+            spend_token: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
+            spend_token_decimals: 6,
+            max_amount: "1000000000".to_string(),
+        }]),
+    );
+
     let getter_pairs: Option<Vec<(String, String)>> = config
         .getattr("allowed_token_pairs")
         .expect("allowed_token_pairs getter should exist")
@@ -212,10 +249,16 @@ fn assert_execution_config_constructs_from_python(
         .expect("allowed_token_pairs getter should return optional pairs");
     assert_eq!(
         getter_pairs,
-        Some(vec![(
-            "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
-            "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
-        )])
+        Some(vec![
+            (
+                "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
+                "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
+            ),
+            (
+                "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
+                "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
+            )
+        ])
     );
 
     let extracted = config
@@ -245,14 +288,21 @@ fn assert_execution_config_constructs_from_python(
     assert_eq!(extracted.gas_buffer_bps, 2_000);
     assert_eq!(
         extracted.allowed_token_pairs,
-        Some(vec![(
-            "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
-            "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
-        )])
+        Some(vec![
+            (
+                "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
+                "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
+            ),
+            (
+                "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string(),
+                "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string(),
+            )
+        ])
     );
     assert_eq!(extracted.slippage_bps, Some(50));
     assert_eq!(extracted.max_slippage_bps, Some(200));
     assert_eq!(extracted.max_order_amount, Some(1_000_000_000_000_000_000));
+    assert_eq!(extracted.quote_spend_limits, getter_quote_spend_limits);
     assert_eq!(extracted.deadline_seconds, Some(300));
     assert_eq!(extracted.max_quote_age_blocks, Some(100));
     assert_eq!(extracted.receipt_timeout_secs, Some(60));
@@ -305,6 +355,7 @@ fn assert_execution_legacy_config_constructs_from_python(
     assert!(extracted.postgres_cache_database_config.is_none());
     assert_eq!(extracted.transport_backend, TransportBackend::default());
     assert!(extracted.allowed_token_pairs.is_none());
+    assert!(extracted.quote_spend_limits.is_none());
     assert!(extracted.slippage_bps.is_none());
     assert!(extracted.max_slippage_bps.is_none());
     assert!(extracted.max_order_amount.is_none());
