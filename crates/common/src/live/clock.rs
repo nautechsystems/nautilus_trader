@@ -522,15 +522,18 @@ mod tests {
         clock.register_default_handler(TimeEventCallback::from(|_| {}));
 
         let name = Ustr::from("expiring");
-        let now = clock.timestamp_ns();
-        let interval_ns = Duration::from_millis(5).as_nanos() as u64;
-        let stop_time = UnixNanos::from(*now + Duration::from_millis(12).as_nanos() as u64);
+        let interval_ns = Duration::from_millis(10).as_nanos() as u64;
+        // Start and stop share one timestamp so a scheduling delay cannot make
+        // stop <= start, and the stop offset stays large enough that the task
+        // cannot finish before the exists check below
+        let start_time = clock.timestamp_ns();
+        let stop_time = start_time + Duration::from_millis(200).as_nanos() as u64;
 
         clock
             .set_timer_ns(
                 name.as_str(),
                 interval_ns,
-                None,
+                Some(start_time),
                 Some(stop_time),
                 None,
                 None,

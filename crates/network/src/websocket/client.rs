@@ -7716,23 +7716,37 @@ mod rust_tests {
         // connection establishment.
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
+        let (release_first_tx, release_first_rx) = tokio::sync::oneshot::channel();
 
         let server = task::spawn(async move {
-            // First connection: accept and immediately drop
+            // Keep the first socket until connect() returns; an immediate drop
+            // can fail the initial handshake
             if let Ok((stream, _)) = listener.accept().await
                 && let Ok(ws) = accept_async(stream).await
             {
+                let _ = release_first_rx.await;
                 drop(ws);
             }
 
-            // Second connection: announce and keep alive
-            if let Ok((stream, _)) = listener.accept().await
-                && let Ok(mut ws) = accept_async(stream).await
-            {
-                let _ = ws
-                    .send(WsMessage::Text("reconnected-msg".to_string().into()))
-                    .await;
-                sleep(Duration::from_secs(5)).await;
+            // A timed-out reconnect can consume an accept without completing the
+            // handshake, so keep accepting and announce on every replacement
+            loop {
+                let Ok((stream, _)) = listener.accept().await else {
+                    break;
+                };
+
+                if let Ok(mut ws) = accept_async(stream).await {
+                    loop {
+                        if ws
+                            .send(WsMessage::Text("reconnected-msg".to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                        sleep(Duration::from_millis(50)).await;
+                    }
+                }
             }
         });
 
@@ -7758,21 +7772,26 @@ mod rust_tests {
         let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
             .await
             .unwrap();
+        wait_until_async(|| async { client.is_active() }, Duration::from_secs(2)).await;
+        release_first_tx
+            .send(())
+            .expect("server should still be holding the first connection");
 
         let received = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
-                if let Ok(WsMessage::Text(text)) = rx.try_recv()
-                    && text.as_str() == "reconnected-msg"
-                {
-                    return true;
+                match rx.recv().await {
+                    Some(WsMessage::Text(text)) if text.as_str() == "reconnected-msg" => {
+                        return true;
+                    }
+                    Some(_) => {}
+                    None => return false,
                 }
-                tokio::time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await;
 
         assert!(
-            received.is_ok(),
+            matches!(received, Ok(true)),
             "Reconnect should complete despite a timeout shorter than the swap ceremony"
         );
 
