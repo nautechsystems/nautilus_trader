@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::pin::Pin;
+use std::{fmt::Display, pin::Pin};
 
 use alloy::primitives::{Address, U256};
 use anyhow::Context;
@@ -36,7 +36,10 @@ use nautilus_model::{
     identifiers::InstrumentId,
 };
 use rust_decimal::Decimal;
-use sqlx::{AssertSqlSafe, PgPool, Row, postgres::PgConnectOptions};
+use sqlx::{
+    AssertSqlSafe, PgPool, Row,
+    postgres::{PgAdvisoryLock, PgAdvisoryLockKey, PgConnectOptions},
+};
 
 use crate::{
     cache::{
@@ -59,6 +62,43 @@ use crate::{
 pub struct BlockchainCacheDatabase {
     /// PostgreSQL connection pool used for database operations.
     pool: PgPool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExecutionIntentReservationStage {
+    BeforeCommit,
+    Commit,
+}
+
+#[derive(Debug)]
+struct ExecutionIntentReservationError {
+    stage: ExecutionIntentReservationStage,
+    source: anyhow::Error,
+}
+
+impl Display for ExecutionIntentReservationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.stage {
+            ExecutionIntentReservationStage::BeforeCommit => {
+                f.write_str("Execution intent reservation failed before commit")
+            }
+            ExecutionIntentReservationStage::Commit => f.write_str(
+                "Execution intent reservation commit outcome is unknown; reconciliation is required",
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ExecutionIntentReservationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.source.as_ref())
+    }
+}
+
+pub(crate) fn reservation_failure_proven_not_committed(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<ExecutionIntentReservationError>()
+        .is_some_and(|e| e.stage == ExecutionIntentReservationStage::BeforeCommit)
 }
 
 // Shared SELECT column list for `pool` row queries (load_pools, load_pool).
@@ -3381,82 +3421,94 @@ impl BlockchainCacheDatabase {
     ///
     /// # Errors
     ///
-    /// Returns an error if the signer or client order is already owned, or persistence fails.
+    /// Returns a stage-classified error if the signer or client order is already owned, or
+    /// persistence fails. A commit-stage error does not prove the transaction rolled back.
     pub async fn reserve_execution_intent(
         &self,
         intent: &ExecutionIntentInsert,
     ) -> anyhow::Result<ExecutionIntentRow> {
-        let chain_id = i32::try_from(intent.chain_id)
-            .with_context(|| format!("Chain ID {} exceeds PostgreSQL INTEGER", intent.chain_id))?;
-        let created_block = i64::try_from(intent.created_block).with_context(|| {
-            format!(
-                "Execution creation block {} exceeds PostgreSQL BIGINT",
-                intent.created_block
-            )
-        })?;
-        let mut transaction =
-            self.pool.begin().await.map_err(|e| {
-                anyhow::anyhow!("Failed to start execution intent reservation: {e}")
+        let (transaction, row) = async {
+            let chain_id = i32::try_from(intent.chain_id).with_context(|| {
+                format!("Chain ID {} exceeds PostgreSQL INTEGER", intent.chain_id)
             })?;
-        let row = sqlx::query_as::<_, ExecutionIntentRow>(
-            "
-            INSERT INTO execution_intent (
-                schema_version, chain_id, wallet_address, purpose, status,
-                client_order_id, trader_id, strategy_id, account_id, instrument_id,
-                pool_address, transaction_to, transaction_input, transaction_value,
-                amount_in, created_block
+            let created_block = i64::try_from(intent.created_block).with_context(|| {
+                format!(
+                    "Execution creation block {} exceeds PostgreSQL BIGINT",
+                    intent.created_block
+                )
+            })?;
+            let mut transaction = self
+                .pool
+                .begin()
+                .await
+                .context("failed to start execution intent reservation")?;
+            Self::lock_execution_signer(&mut transaction, intent.chain_id, &intent.wallet_address)
+                .await?;
+            let row = sqlx::query_as::<_, ExecutionIntentRow>(
+                "
+                INSERT INTO execution_intent (
+                    schema_version, chain_id, wallet_address, purpose, status,
+                    client_order_id, trader_id, strategy_id, account_id, instrument_id,
+                    pool_address, transaction_to, transaction_input, transaction_value,
+                    amount_in, created_block
+                )
+                VALUES ($1, $2, $3, $4, 'prepared', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                RETURNING
+                    id, schema_version, chain_id, wallet_address, nonce, purpose, status,
+                    client_order_id, trader_id, strategy_id, account_id, instrument_id,
+                    pool_address, transaction_to, transaction_input, transaction_value,
+                    amount_in, created_block, acknowledgement_emitted, fill_emitted,
+                    terminal_emitted, active
+                ",
             )
-            VALUES ($1, $2, $3, $4, 'prepared', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-            RETURNING
-                id, schema_version, chain_id, wallet_address, nonce, purpose, status,
-                client_order_id, trader_id, strategy_id, account_id, instrument_id,
-                pool_address, transaction_to, transaction_input, transaction_value,
-                amount_in, created_block, acknowledgement_emitted, fill_emitted,
-                terminal_emitted, active
-            ",
-        )
-        .bind(EXECUTION_SCHEMA_VERSION)
-        .bind(chain_id)
-        .bind(&intent.wallet_address)
-        .bind(&intent.purpose)
-        .bind(&intent.client_order_id)
-        .bind(&intent.trader_id)
-        .bind(&intent.strategy_id)
-        .bind(&intent.account_id)
-        .bind(&intent.instrument_id)
-        .bind(&intent.pool_address)
-        .bind(&intent.transaction_to)
-        .bind(&intent.transaction_input)
-        .bind(&intent.transaction_value)
-        .bind(&intent.amount_in)
-        .bind(created_block)
-        .fetch_one(&mut *transaction)
-        .await
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to reserve execution intent for signer {} on chain {}: {e}",
-                intent.wallet_address,
-                intent.chain_id
-            )
-        })?;
-
-        sqlx::query(
-            "
-            INSERT INTO execution_transaction_transition (
-                intent_id, transition_key, to_status, block_number
-            ) VALUES ($1, 'prepared', 'prepared', $2)
-            ",
-        )
-        .bind(row.id)
-        .bind(created_block)
-        .execute(&mut *transaction)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to record prepared execution intent: {e}"))?;
-
-        transaction
-            .commit()
+            .bind(EXECUTION_SCHEMA_VERSION)
+            .bind(chain_id)
+            .bind(&intent.wallet_address)
+            .bind(&intent.purpose)
+            .bind(&intent.client_order_id)
+            .bind(&intent.trader_id)
+            .bind(&intent.strategy_id)
+            .bind(&intent.account_id)
+            .bind(&intent.instrument_id)
+            .bind(&intent.pool_address)
+            .bind(&intent.transaction_to)
+            .bind(&intent.transaction_input)
+            .bind(&intent.transaction_value)
+            .bind(&intent.amount_in)
+            .bind(created_block)
+            .fetch_one(&mut *transaction)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to commit execution intent reservation: {e}"))?;
+            .context("failed to insert execution intent reservation")?;
+
+            sqlx::query(
+                "
+                INSERT INTO execution_transaction_transition (
+                    intent_id, transition_key, to_status, block_number
+                ) VALUES ($1, 'prepared', 'prepared', $2)
+                ",
+            )
+            .bind(row.id)
+            .bind(created_block)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to record prepared execution intent")?;
+
+            Ok::<_, anyhow::Error>((transaction, row))
+        }
+        .await
+        .map_err(|source| {
+            anyhow::Error::new(ExecutionIntentReservationError {
+                stage: ExecutionIntentReservationStage::BeforeCommit,
+                source,
+            })
+        })?;
+        transaction.commit().await.map_err(|e| {
+            anyhow::Error::new(ExecutionIntentReservationError {
+                stage: ExecutionIntentReservationStage::Commit,
+                source: anyhow::Error::new(e)
+                    .context("failed to commit execution intent reservation"),
+            })
+        })?;
         Ok(row)
     }
 
@@ -3789,7 +3841,7 @@ impl BlockchainCacheDatabase {
         Ok(())
     }
 
-    /// Loads the active intent owned by a signer, if one exists.
+    /// Loads the active intent owned by a signer after any concurrent reservation completes.
     ///
     /// # Errors
     ///
@@ -3801,7 +3853,13 @@ impl BlockchainCacheDatabase {
     ) -> anyhow::Result<Option<ExecutionIntentRow>> {
         let chain_id_db = i32::try_from(chain_id)
             .with_context(|| format!("Chain ID {chain_id} exceeds PostgreSQL INTEGER"))?;
-        sqlx::query_as::<_, ExecutionIntentRow>(
+        let mut transaction = self
+            .pool
+            .begin_with("BEGIN ISOLATION LEVEL READ COMMITTED")
+            .await
+            .context("failed to start active execution intent reconciliation")?;
+        Self::lock_execution_signer(&mut transaction, chain_id, wallet_address).await?;
+        let intent = sqlx::query_as::<_, ExecutionIntentRow>(
             "
             SELECT
                 id, schema_version, chain_id, wallet_address, nonce, purpose, status,
@@ -3815,9 +3873,37 @@ impl BlockchainCacheDatabase {
         )
         .bind(chain_id_db)
         .bind(wallet_address)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to load active execution intent: {e}"))
+        .context("failed to load active execution intent")?;
+        transaction
+            .commit()
+            .await
+            .context("failed to complete active execution intent reconciliation")?;
+        Ok(intent)
+    }
+
+    async fn lock_execution_signer(
+        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        chain_id: u32,
+        wallet_address: &str,
+    ) -> anyhow::Result<()> {
+        let lock = PgAdvisoryLock::new(format!(
+            "nautilus:blockchain:execution:{chain_id}:{}",
+            wallet_address.to_ascii_lowercase()
+        ));
+        let PgAdvisoryLockKey::BigInt(lock_key) = lock.key() else {
+            unreachable!("string advisory locks use the 64-bit key space");
+        };
+
+        // Transaction-scoped release makes row presence or absence authoritative to the next
+        // holder after an ambiguous reservation commit.
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(*lock_key)
+            .execute(&mut **transaction)
+            .await
+            .context("failed to acquire execution signer reservation fence")?;
+        Ok(())
     }
 
     /// Reports whether a released legacy intent still retains a broadcastable signature.

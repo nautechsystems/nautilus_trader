@@ -68,7 +68,7 @@ use zeroize::Zeroizing;
 use crate::{
     cache::{
         BlockchainCache,
-        database::BlockchainCacheDatabase,
+        database::{BlockchainCacheDatabase, reservation_failure_proven_not_committed},
         rows::{ExecutionIntentInsert, ExecutionIntentRow, ExecutionTransactionHashRow},
     },
     config::BlockchainExecutionClientConfig,
@@ -184,6 +184,15 @@ fn release_preparing_slot(in_flight: &Mutex<Option<InFlightSlot>>) {
     let mut slot = in_flight.lock().expect("in-flight mutex poisoned");
     if matches!(*slot, Some(InFlightSlot::Preparing(_))) {
         *slot = None;
+    }
+}
+
+fn release_preparing_if_reservation_not_committed(
+    in_flight: &Mutex<Option<InFlightSlot>>,
+    error: &anyhow::Error,
+) {
+    if reservation_failure_proven_not_committed(error) {
+        release_preparing_slot(in_flight);
     }
 }
 
@@ -1616,7 +1625,7 @@ impl TransactionExecutor {
         let intent = match self.database.reserve_execution_intent(&intent).await {
             Ok(intent) => intent,
             Err(e) => {
-                release_preparing_slot(&self.in_flight);
+                release_preparing_if_reservation_not_committed(&self.in_flight, &e);
                 return Err(e);
             }
         };
@@ -2291,7 +2300,7 @@ async fn execute_swap(
     let intent = match executor.database.reserve_execution_intent(&intent).await {
         Ok(intent) => intent,
         Err(e) => {
-            release_preparing_slot(&executor.in_flight);
+            release_preparing_if_reservation_not_committed(&executor.in_flight, &e);
             emitter.emit_order_denied(order, &e.to_string());
             return Ok(());
         }
@@ -3513,7 +3522,7 @@ mod tests {
         types::Price,
     };
     use rstest::rstest;
-    use sqlx::postgres::PgPoolOptions;
+    use sqlx::postgres::{PgAdvisoryLock, PgAdvisoryLockKey, PgPoolOptions};
 
     use super::*;
     use crate::{
@@ -6901,7 +6910,7 @@ mod tests {
 
     #[tokio::test]
     async fn submit_order_reservation_failure_denies_without_broadcast_and_releases_slot() {
-        let Some((admin_pool, schema, mut client, state, _)) =
+        let Some((admin_pool, schema, mut client, state, cache)) =
             swap_client_with_database("execution_submit_persist_fail_test", swap_rpc_state().await)
                 .await
         else {
@@ -6913,10 +6922,16 @@ mod tests {
         .execute(&admin_pool)
         .await
         .unwrap();
-        let order = test_market_sell_order(test_pool().instrument_id);
+        let pool = test_pool();
+        let first = test_market_sell_order(pool.instrument_id);
+        let second = market_sell_order_with_id(pool.instrument_id, "O-SWAP-002");
+        cache
+            .borrow_mut()
+            .add_order(second.clone(), None, None, false)
+            .unwrap();
         let mut receiver = start_with_events(&mut client);
 
-        client.submit_order(submit_order_cmd(&order)).unwrap();
+        client.submit_order(submit_order_cmd(&first)).unwrap();
         await_pending_tasks(&client).await;
 
         let events = collect_order_events(&mut receiver);
@@ -6928,9 +6943,20 @@ mod tests {
             denied
                 .reason
                 .as_str()
-                .contains("Failed to reserve execution intent"),
+                .contains("Execution intent reservation failed before commit"),
             "was: {}",
             denied.reason
+        );
+        client.submit_order(submit_order_cmd(&second)).unwrap();
+        await_pending_tasks(&client).await;
+        let retry_events = collect_order_events(&mut receiver);
+        assert_eq!(retry_events.len(), 1);
+        let OrderEventAny::Denied(retry_denied) = &retry_events[0] else {
+            panic!("expected OrderDenied, was {:?}", retry_events[0]);
+        };
+        assert_eq!(
+            retry_denied.reason.as_str(),
+            "Execution intent reservation failed before commit"
         );
         let broadcasts = state
             .recorded_requests()
@@ -6939,6 +6965,85 @@ mod tests {
             .count();
         assert_eq!(broadcasts, 0);
         assert!(client.in_flight.lock().unwrap().is_none());
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn submit_order_reservation_commit_failure_keeps_preparing_slot() {
+        let Some((admin_pool, schema, mut client, state, cache)) = swap_client_with_database(
+            "execution_submit_reservation_commit_fail_test",
+            swap_rpc_state().await,
+        )
+        .await
+        else {
+            return;
+        };
+        install_reservation_commit_rejection(&admin_pool, &schema).await;
+        let pool = test_pool();
+        let first = test_market_sell_order(pool.instrument_id);
+        let second = market_sell_order_with_id(pool.instrument_id, "O-SWAP-002");
+        cache
+            .borrow_mut()
+            .add_order(second.clone(), None, None, false)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&first)).unwrap();
+        await_pending_tasks(&client).await;
+        client.submit_order(submit_order_cmd(&second)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        let submitted = events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Submitted(_)))
+            .count();
+        let denied_commit = events
+            .iter()
+            .filter(|event| {
+                matches!(event, OrderEventAny::Denied(denied) if denied.reason.as_str() == "Execution intent reservation commit outcome is unknown; reconciliation is required")
+            })
+            .count();
+        let denied_in_flight = events
+            .iter()
+            .filter(|event| {
+                matches!(event, OrderEventAny::Denied(denied) if denied.reason.as_str().contains("at most one transaction can be in flight"))
+            })
+            .count();
+        let requests = state.recorded_requests();
+        let intent_count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_intent"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        let signed_count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_transaction_hash"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+
+        assert_eq!(submitted, 0, "was: {events:?}");
+        assert_eq!(denied_commit, 1, "was: {events:?}");
+        assert_eq!(denied_in_flight, 1, "was: {events:?}");
+        assert!(matches!(
+            *client.in_flight.lock().unwrap(),
+            Some(InFlightSlot::Preparing(TransactionPurpose::Swap))
+        ));
+        assert_eq!(intent_count, 0);
+        assert_eq!(signed_count, 0);
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_getTransactionCount")
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -9081,20 +9186,89 @@ mod tests {
             .wrap(U256::from(1_000_000_000_000_000u64))
             .await
             .unwrap_err();
+        let retry_error = client
+            .wrap(U256::from(2_000_000_000_000_000u64))
+            .await
+            .unwrap_err();
         let broadcasts = state
             .recorded_requests()
             .into_iter()
             .filter(|request| request["method"] == "eth_sendRawTransaction")
             .count();
 
-        assert!(
-            error
-                .to_string()
-                .contains("Failed to reserve execution intent"),
-            "was: {error}"
+        assert_eq!(
+            error.to_string(),
+            "Execution intent reservation failed before commit"
+        );
+        assert!(reservation_failure_proven_not_committed(&error));
+        assert_eq!(
+            retry_error.to_string(),
+            "Execution intent reservation failed before commit"
         );
         assert_eq!(broadcasts, 0);
         assert!(client.in_flight.lock().unwrap().is_none());
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn reservation_commit_failure_keeps_preparing_slot() {
+        let state = signing_rpc_state();
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("execution_reservation_commit_fail_test", state).await
+        else {
+            return;
+        };
+        install_reservation_commit_rejection(&admin_pool, &schema).await;
+
+        let error = client
+            .wrap(U256::from(1_000_000_000_000_000u64))
+            .await
+            .unwrap_err();
+        let slot = *client.in_flight.lock().unwrap();
+        let second_error = client
+            .wrap(U256::from(2_000_000_000_000_000u64))
+            .await
+            .unwrap_err();
+        let requests = state.recorded_requests();
+        let intent_count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_intent"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        let signed_count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_transaction_hash"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            error.to_string(),
+            "Execution intent reservation commit outcome is unknown; reconciliation is required"
+        );
+        assert!(!reservation_failure_proven_not_committed(&error));
+        assert!(matches!(
+            slot,
+            Some(InFlightSlot::Preparing(TransactionPurpose::Wrap))
+        ));
+        assert!(
+            second_error.to_string().contains("being prepared"),
+            "was: {second_error}"
+        );
+        assert_eq!(intent_count, 0);
+        assert_eq!(signed_count, 0);
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_getTransactionCount")
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -9538,6 +9712,68 @@ mod tests {
                 .iter()
                 .all(|request| request["method"] != "eth_sendRawTransaction")
         );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn active_intent_reconciliation_waits_for_reservation_fence() {
+        let Some((admin_pool, schema, client, _)) = execution_client_with_database(
+            "execution_active_intent_reservation_fence_test",
+            ready_rpc_state(),
+        )
+        .await
+        else {
+            return;
+        };
+        let database = client.cache.database.as_ref().unwrap().clone();
+        let lock = PgAdvisoryLock::new(format!(
+            "nautilus:blockchain:execution:42161:{}",
+            WALLET.to_ascii_lowercase()
+        ));
+        let PgAdvisoryLockKey::BigInt(lock_key) = lock.key() else {
+            unreachable!("string advisory locks use the 64-bit key space");
+        };
+        let mut reservation = admin_pool.begin().await.unwrap();
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(*lock_key)
+            .execute(&mut *reservation)
+            .await
+            .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "INSERT INTO {schema}.execution_intent (\
+                schema_version, chain_id, wallet_address, purpose, status, transaction_to, \
+                transaction_input, transaction_value, created_block\
+             ) VALUES (2, $1, $2, 'wrap', 'prepared', $3, '0xd0e30db0', '1', $4)"
+        )))
+        .bind(42161_i32)
+        .bind(WALLET)
+        .bind(WETH_ADDRESS.to_string())
+        .bind(i64::try_from(FIXTURE_BLOCK).unwrap())
+        .execute(&mut *reservation)
+        .await
+        .unwrap();
+
+        let mut reconciliation = Box::pin(database.get_active_execution_intent(42161, WALLET));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut reconciliation)
+                .await
+                .is_err(),
+            "reconciliation did not wait for the reservation fence"
+        );
+
+        reservation.commit().await.unwrap();
+        let intent = tokio::time::timeout(Duration::from_secs(2), reconciliation)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(intent.chain_id, 42161);
+        assert_eq!(intent.wallet_address, WALLET);
+        assert_eq!(intent.purpose, "wrap");
+        assert_eq!(intent.status, "prepared");
+        assert!(intent.active);
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -10791,11 +11027,15 @@ mod tests {
                 .contains("conflicts with its persisted identity"),
             "was: {hash_conflict}"
         );
+        assert_eq!(
+            signer_conflict.to_string(),
+            "Execution intent reservation failed before commit"
+        );
         assert!(
-            signer_conflict
+            signer_conflict.chain().any(|cause| cause
                 .to_string()
-                .contains("execution_intent_active_signer_key"),
-            "was: {signer_conflict}"
+                .contains("execution_intent_active_signer_key")),
+            "was: {signer_conflict:#}"
         );
         assert_eq!(count, 2);
 
@@ -11615,6 +11855,26 @@ mod tests {
         client.core.set_connected();
 
         Some((admin_pool, schema, client, state))
+    }
+
+    async fn install_reservation_commit_rejection(admin_pool: &sqlx::PgPool, schema: &str) {
+        for statement in [
+            format!(
+                "CREATE FUNCTION {schema}.reject_execution_reservation_commit() RETURNS trigger \
+                 LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''test reservation commit rejection''; \
+                 RETURN NEW; END'"
+            ),
+            format!(
+                "CREATE CONSTRAINT TRIGGER reject_execution_reservation_commit AFTER INSERT ON \
+                 {schema}.execution_transaction_transition DEFERRABLE INITIALLY DEFERRED \
+                 FOR EACH ROW EXECUTE FUNCTION {schema}.reject_execution_reservation_commit()"
+            ),
+        ] {
+            sqlx::query(sqlx::AssertSqlSafe(statement))
+                .execute(admin_pool)
+                .await
+                .unwrap();
+        }
     }
 
     async fn drop_execution_schema(admin_pool: &sqlx::PgPool, schema: &str) {
