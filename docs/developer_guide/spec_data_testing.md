@@ -69,6 +69,29 @@ node.add_actor(tester)?;
 node.run().await?;
 ```
 
+## Timestamp scale
+
+Nautilus stores `ts_event` and `ts_init` as Unix nanoseconds (`UnixNanos`). Every data
+message that carries those fields must use that scale, not leftover seconds, milliseconds,
+or microseconds.
+
+- A value below `10^16` is not a plausible Unix-nanosecond timestamp (`10^16` ns is about
+  116 days after 1970-01-01) and usually means the adapter left the venue scale unconverted.
+- Second-precision venue times that were converted correctly end in `000000000` and still
+  pass: that is coarse precision, not a scale error.
+- Live stream `ts_event` should be near wall-clock time for the session. Historical
+  request results may be older and still valid if the scale is nanoseconds.
+- `ts_init` is the local clock when Nautilus created the object. Small `ts_event` >
+  `ts_init` skew is possible when the venue clock is ahead.
+
+`DataTester` warns when `ts_event` or `ts_init` fails the scale check on instruments,
+quotes, trades, bars, book deltas, book depth, mark and index prices, funding rates,
+instrument status and close, option greeks, and historical batches of those types.
+It does not check reconstructed books in `on_book`. Treat a warning as a failure for the
+case that produced the message.
+
+---
+
 Each group below begins with a summary table, followed by detailed test cards.
 Test IDs use spaced numbering to allow insertion without renumbering.
 

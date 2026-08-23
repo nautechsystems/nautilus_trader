@@ -416,6 +416,7 @@ impl ExecTesterConfig {
         modify_stop_orders_to_maintain_offset = None,
         cancel_replace_orders_to_maintain_tob_offset = None,
         cancel_replace_stop_orders_to_maintain_offset = None,
+        trigger_limit_order_maintenance_once = None,
         use_post_only = None,
         limit_aggressive = None,
         use_quote_quantity = None,
@@ -481,6 +482,7 @@ impl ExecTesterConfig {
         modify_stop_orders_to_maintain_offset: Option<bool>,
         cancel_replace_orders_to_maintain_tob_offset: Option<bool>,
         cancel_replace_stop_orders_to_maintain_offset: Option<bool>,
+        trigger_limit_order_maintenance_once: Option<bool>,
         use_post_only: Option<bool>,
         limit_aggressive: Option<bool>,
         use_quote_quantity: Option<bool>,
@@ -567,6 +569,8 @@ impl ExecTesterConfig {
             cancel_replace_stop_orders_to_maintain_offset:
                 cancel_replace_stop_orders_to_maintain_offset
                     .unwrap_or(defaults.cancel_replace_stop_orders_to_maintain_offset),
+            trigger_limit_order_maintenance_once: trigger_limit_order_maintenance_once
+                .unwrap_or(defaults.trigger_limit_order_maintenance_once),
             use_post_only: use_post_only.unwrap_or(defaults.use_post_only),
             limit_aggressive: limit_aggressive.unwrap_or(defaults.limit_aggressive),
             use_quote_quantity: use_quote_quantity.unwrap_or(defaults.use_quote_quantity),
@@ -848,6 +852,12 @@ impl ExecTesterConfig {
     #[pyo3(name = "cancel_replace_stop_orders_to_maintain_offset")]
     const fn py_cancel_replace_stop_orders_to_maintain_offset(&self) -> bool {
         self.cancel_replace_stop_orders_to_maintain_offset
+    }
+
+    #[getter]
+    #[pyo3(name = "trigger_limit_order_maintenance_once")]
+    const fn py_trigger_limit_order_maintenance_once(&self) -> bool {
+        self.trigger_limit_order_maintenance_once
     }
 
     #[getter]

@@ -486,6 +486,10 @@ credentials are valid and have trading permissions.
   inconsistent classification.
 - **Unfilled IOC/FOK**: AX reports an unfilled immediate order as an expiry; the adapter maps
   it to `OrderCanceled` to match NautilusTrader semantics.
+- **One-tick quotes**: Example testers place post-only limits one tick from top of book.
+  Those quotes can still fill. Flatten leftovers with
+  `cargo run --bin ax-flatten -p nautilus-architect-ax` (`AX_IS_SANDBOX` defaults to true).
+  That binary cancels all open orders on the account, then closes every position.
 
 ## Contributing
 
