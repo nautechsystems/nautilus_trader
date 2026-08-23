@@ -18,12 +18,11 @@ runs:
         brew install capnp ripgrep || { sleep 5; brew install capnp ripgrep; }
         brew cleanup
 
-    - name: Set Cap'n Proto install prefix (Linux)
+    - name: Add Cap'n Proto to PATH (Linux)
       if: runner.os == 'Linux'
       shell: bash
-      run: | # zizmor: ignore[github-env] The workspace cache path is runner-defined
-        echo "CAPNP_PREFIX=$GITHUB_WORKSPACE/.cache/capnp" >> $GITHUB_ENV
-        echo "$GITHUB_WORKSPACE/.cache/capnp/bin" >> $GITHUB_PATH
+      run: | # zizmor: ignore[github-env] The fixed repository cache path must be added to PATH.
+        echo "$GITHUB_WORKSPACE/.cache/capnp/bin" >> "$GITHUB_PATH"
 
     - name: Get Linux version
       if: runner.os == 'Linux'
@@ -32,9 +31,11 @@ runs:
       run: echo "release=$(lsb_release -rs)" >> "$GITHUB_OUTPUT"
 
     - name: Get capnp version from tools.toml
+      if: runner.os == 'Linux'
+      id: capnp-version
       shell: bash
-      run: | # zizmor: ignore[github-env] Version comes from repository tool metadata
-        echo "CAPNP_VERSION=$(bash scripts/tool-version.sh capnp)" >> $GITHUB_ENV
+      run: |
+        printf 'version=%s\n' "$(bash scripts/tool-version.sh capnp)" >> "$GITHUB_OUTPUT"
 
     - name: Cache Cap'n Proto (Linux)
       if: runner.os == 'Linux' && inputs.cache-enabled == 'true'
@@ -43,11 +44,16 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ github.workspace }}/.cache/capnp
-        key: capnp-linux-${{ steps.linux-version.outputs.release }}-${{ env.CAPNP_VERSION }}-${{ runner.arch }}
+        # yamllint disable rule:line-length
+        key: capnp-linux-${{ steps.linux-version.outputs.release }}-${{ steps.capnp-version.outputs.version }}-${{ runner.arch
+          }}
+        # yamllint enable rule:line-length
 
     - name: Install capnp (Linux)
       if: runner.os == 'Linux'
       shell: bash
+      env:
+        CAPNP_PREFIX: ${{ github.workspace }}/.cache/capnp
       run: bash scripts/install-capnp.sh
 
     - name: Install capnp (Windows)
