@@ -1806,6 +1806,70 @@ mod tests {
         assert!(system_rx.try_recv().is_err());
     }
 
+    #[rstest]
+    #[tokio::test]
+    async fn test_server_disconnect_surfaces_rtds_gap_and_recovery() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel();
+        let states = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let state_sink = SocketStateSink::new(move |state| {
+            states_callback
+                .lock()
+                .expect("socket state mutex poisoned")
+                .push(state);
+        });
+        let feed = PolymarketRtdsFeed::new_with_proxy_and_state_sink(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            data_tx,
+            None,
+            Some(state_sink),
+        );
+        assert!(
+            feed.track_subscribe(crypto_data_type("BTC"))
+                .expect("track RTDS subscription")
+        );
+
+        feed.connect().await.expect("connect RTDS feed");
+        state.close_all_connections().await;
+
+        wait_until_async(
+            || {
+                let states = Arc::clone(&states);
+                async move {
+                    states
+                        .lock()
+                        .expect("socket state mutex poisoned")
+                        .as_slice()
+                        == [
+                            nautilus_network::SocketState::Connected,
+                            nautilus_network::SocketState::Disconnected,
+                            nautilus_network::SocketState::Connected,
+                        ]
+                }
+            },
+            Duration::from_secs(10),
+        )
+        .await;
+
+        assert_eq!(
+            states
+                .lock()
+                .expect("socket state mutex poisoned")
+                .as_slice(),
+            [
+                nautilus_network::SocketState::Connected,
+                nautilus_network::SocketState::Disconnected,
+                nautilus_network::SocketState::Connected,
+            ]
+        );
+
+        feed.disconnect().await;
+    }
+
     async fn connect_test_ws(url: String) -> Arc<WebSocketClient> {
         let (handler, _raw_rx) = channel_message_handler();
         Arc::new(
