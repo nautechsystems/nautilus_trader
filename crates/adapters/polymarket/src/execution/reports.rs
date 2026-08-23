@@ -40,7 +40,7 @@ use super::{
     reconciliation::{
         FillContext, FillReportScope, TargetOrderReportScope, apply_fill_time_filters,
         build_fill_reports_from_trades, build_position_reports, build_target_order_report,
-        cap_order_report_filled_qty, confirmed_filled_quantities, has_pending_target_trade,
+        cap_order_report_filled_qty, confirmed_filled_quantities,
         normalize_terminal_order_report_quantity,
     },
 };
@@ -220,7 +220,7 @@ impl PolymarketExecutionClient {
         let cached_side = cached.as_ref().map(Order::order_side);
         let expected_order_side = authority.order_side;
 
-        let (mut order_fills, _) = build_fill_reports_from_trades(
+        let (mut order_fills, fill_discards) = build_fill_reports_from_trades(
             &trades,
             &ctx,
             &self.shared_token_instruments,
@@ -230,16 +230,8 @@ impl PolymarketExecutionClient {
             self.config.reconciliation_load_ids(),
             None,
         )?;
-        let has_pending_trade = has_pending_target_trade(
-            &trades,
-            &ctx,
-            &self.shared_token_instruments,
-            instrument_id,
-            venue_order_id,
-            expected_order_side,
-        )?;
 
-        if has_pending_trade {
+        if fill_discards.has_pending_target {
             let Some(cached) = cached.as_ref() else {
                 log::debug!(
                     "Order {venue_order_id} has unsettled trades but no cached order; deferring recovery"

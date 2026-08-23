@@ -127,13 +127,50 @@ pub fn parse_order_status_report(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> OrderStatusReport {
-    let venue_order_id = VenueOrderId::from(order.id.as_str());
+    let expire_time = order
+        .expiration
+        .as_deref()
+        .and_then(parse_expiration_nanos)
+        .map(UnixNanos::from);
+    parse_validated_order_status_report(
+        order,
+        OrderReportParseContext {
+            instrument_id,
+            account_id,
+            client_order_id,
+            venue_order_id: VenueOrderId::from(order.id.as_str()),
+            price_precision,
+            size_precision,
+            ts_accepted: UnixNanos::from(order.created_at * NANOSECONDS_IN_SECOND),
+            expire_time,
+            ts_init,
+        },
+    )
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct OrderReportParseContext {
+    pub instrument_id: InstrumentId,
+    pub account_id: AccountId,
+    pub client_order_id: Option<ClientOrderId>,
+    pub venue_order_id: VenueOrderId,
+    pub price_precision: u8,
+    pub size_precision: u8,
+    pub ts_accepted: UnixNanos,
+    pub expire_time: Option<UnixNanos>,
+    pub ts_init: UnixNanos,
+}
+
+pub(super) fn parse_validated_order_status_report(
+    order: &PolymarketOpenOrder,
+    ctx: OrderReportParseContext,
+) -> OrderStatusReport {
     let order_side = OrderSide::from(order.side);
     let time_in_force = TimeInForce::from(order.order_type);
-    let quantity = Quantity::from_decimal_dp(order.original_size, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
-    let raw_filled_qty = Quantity::from_decimal_dp(order.size_matched, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
+    let quantity = Quantity::from_decimal_dp(order.original_size, ctx.size_precision)
+        .unwrap_or_else(|_| Quantity::zero(ctx.size_precision));
+    let raw_filled_qty = Quantity::from_decimal_dp(order.size_matched, ctx.size_precision)
+        .unwrap_or_else(|_| Quantity::zero(ctx.size_precision));
     // `Matched` does not mean fully filled, so resolve the status from the filled quantity.
     let order_status = if order.status == PolymarketOrderStatus::Matched {
         recovered_terminal_order_status(time_in_force, quantity, raw_filled_qty)
@@ -141,32 +178,27 @@ pub fn parse_order_status_report(
         OrderStatus::from(order.status)
     };
     let filled_qty = snap_filled_qty_to_quantity(quantity, raw_filled_qty, order_status);
-    let price = Price::from_decimal_dp(order.price, price_precision)
-        .unwrap_or_else(|_| Price::zero(price_precision));
-
-    let ts_accepted = UnixNanos::from(order.created_at * NANOSECONDS_IN_SECOND);
+    let price = Price::from_decimal_dp(order.price, ctx.price_precision)
+        .unwrap_or_else(|_| Price::zero(ctx.price_precision));
 
     let mut report = OrderStatusReport::new(
-        account_id,
-        instrument_id,
-        client_order_id,
-        venue_order_id,
+        ctx.account_id,
+        ctx.instrument_id,
+        ctx.client_order_id,
+        ctx.venue_order_id,
         order_side,
         OrderType::Limit,
         time_in_force,
         order_status,
         quantity,
         filled_qty,
-        ts_accepted,
-        ts_accepted, // ts_last
-        ts_init,
+        ctx.ts_accepted,
+        ctx.ts_accepted, // ts_last
+        ctx.ts_init,
         None, // report_id
     );
     report.price = Some(price);
-    // CLOB V2 emits `expiration` as Unix seconds; "0" means no expiration.
-    if let Some(nanos) = order.expiration.as_deref().and_then(parse_expiration_nanos) {
-        report.expire_time = Some(UnixNanos::from(nanos));
-    }
+    report.expire_time = ctx.expire_time;
     report
 }
 
@@ -209,33 +241,71 @@ pub fn parse_fill_report(
     fee_exponent: f64,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
-    let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
-    let trade_id = TradeId::from(trade.id.as_str());
+    parse_validated_fill_report(
+        trade,
+        TakerFillParseContext {
+            instrument_id,
+            account_id,
+            client_order_id,
+            venue_order_id: VenueOrderId::from(trade.taker_order_id.as_str()),
+            trade_id: TradeId::from(trade.id.as_str()),
+            price_precision,
+            size_precision,
+            currency,
+            taker_fee_rate,
+            fee_exponent,
+            ts_event: parse_timestamp(&trade.match_time).unwrap_or(ts_init),
+            ts_init,
+        },
+    )
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct TakerFillParseContext {
+    pub instrument_id: InstrumentId,
+    pub account_id: AccountId,
+    pub client_order_id: Option<ClientOrderId>,
+    pub venue_order_id: VenueOrderId,
+    pub trade_id: TradeId,
+    pub price_precision: u8,
+    pub size_precision: u8,
+    pub currency: Currency,
+    pub taker_fee_rate: Decimal,
+    pub fee_exponent: f64,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}
+
+pub(super) fn parse_validated_fill_report(
+    trade: &PolymarketTradeReport,
+    ctx: TakerFillParseContext,
+) -> anyhow::Result<FillReport> {
     let order_side = OrderSide::from(trade.side);
-    let last_qty = Quantity::from_decimal_dp(trade.size, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
-    let last_px = Price::from_decimal_dp(trade.price, price_precision)
-        .unwrap_or_else(|_| Price::zero(price_precision));
+    let last_qty = Quantity::from_decimal_dp(trade.size, ctx.size_precision)
+        .unwrap_or_else(|_| Quantity::zero(ctx.size_precision));
+    let last_px = Price::from_decimal_dp(trade.price, ctx.price_precision)
+        .unwrap_or_else(|_| Price::zero(ctx.price_precision));
     let liquidity_side = parse_liquidity_side(trade.trader_side);
 
     let commission_value = compute_commission(
-        taker_fee_rate,
-        fee_exponent,
+        ctx.taker_fee_rate,
+        ctx.fee_exponent,
         trade.size,
         trade.price,
         liquidity_side,
     );
-    let commission = Money::from_decimal(commission_value, currency).with_context(|| {
-        format!("failed to represent commission {commission_value} for {instrument_id} as Money")
+    let commission = Money::from_decimal(commission_value, ctx.currency).with_context(|| {
+        format!(
+            "failed to represent commission {commission_value} for {} as Money",
+            ctx.instrument_id
+        )
     })?;
 
-    let ts_event = parse_timestamp(&trade.match_time).unwrap_or(ts_init);
-
     Ok(FillReport {
-        account_id,
-        instrument_id,
-        venue_order_id,
-        trade_id,
+        account_id: ctx.account_id,
+        instrument_id: ctx.instrument_id,
+        venue_order_id: ctx.venue_order_id,
+        trade_id: ctx.trade_id,
         order_side,
         last_qty,
         last_px,
@@ -243,9 +313,9 @@ pub fn parse_fill_report(
         liquidity_side,
         avg_px: None,
         report_id: UUID4::new(),
-        ts_event,
-        ts_init,
-        client_order_id,
+        ts_event: ctx.ts_event,
+        ts_init: ctx.ts_init,
+        client_order_id: ctx.client_order_id,
         venue_position_id: None,
     })
 }

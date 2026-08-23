@@ -1620,6 +1620,7 @@ mod tests {
         assert_eq!(
             discards,
             crate::execution::reconciliation::FillBuildDiscards {
+                has_pending_target: false,
                 unmapped_instruments: 1,
                 in_scope_historical: 1,
                 unowned_maker_trades: 0,
