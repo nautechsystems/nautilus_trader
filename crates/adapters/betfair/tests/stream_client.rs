@@ -24,19 +24,24 @@
 
 use std::{
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
 
 use nautilus_betfair::{
-    common::{credential::BetfairCredential, enums::MarketDataFilterField},
+    common::{
+        credential::BetfairCredential,
+        enums::{MarketDataFilterField, SegmentType},
+    },
     stream::{
         client::BetfairStreamClient,
         config::BetfairStreamConfig,
         error::BetfairStreamError,
-        messages::{MarketDataFilter, OrderFilter, StreamMarketFilter},
+        messages::{
+            MarketDataFilter, OrderFilter, StreamMarketFilter, StreamMessage, stream_decode,
+        },
     },
 };
 use nautilus_common::testing::wait_until_async;
@@ -796,6 +801,85 @@ async fn test_mcm_data_reaches_handler() {
 
     assert!(received.load(Ordering::Relaxed) > 0);
     client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_segmented_mcm_survives_fragmented_and_coalesced_transport() {
+    const SEQUENCE_COUNT: usize = 256;
+
+    let (port, listener) = bind().await;
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let received_handler = Arc::clone(&received);
+
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"test-segments"}"#,
+        )
+        .await;
+        read_line(&mut reader).await;
+
+        let segments = include_str!("../test_data/stream/mcm_SEGMENTS.jsonl");
+        let payload = segments.repeat(SEQUENCE_COUNT).replace('\n', "\r\n");
+        let chunk_sizes = [1, 7, 31, 256, 3, 1_024];
+        let mut offset = 0;
+        let mut chunk = 0;
+
+        while offset < payload.len() {
+            let end = (offset + chunk_sizes[chunk % chunk_sizes.len()]).min(payload.len());
+            write_half
+                .write_all(&payload.as_bytes()[offset..end])
+                .await
+                .unwrap();
+            offset = end;
+            chunk += 1;
+        }
+
+        let mut closed = String::new();
+        reader.read_line(&mut closed).await.unwrap();
+    });
+
+    let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
+        if let Ok(StreamMessage::MarketChange(message)) = stream_decode(data) {
+            received_handler
+                .lock()
+                .unwrap()
+                .push(message.segment_type.unwrap());
+        }
+    });
+    let client = BetfairStreamClient::connect(
+        &test_credential(),
+        "tok".to_string(),
+        handler,
+        plain_config(port),
+    )
+    .await
+    .unwrap();
+
+    wait_until_async(
+        || {
+            let received = Arc::clone(&received);
+            async move { received.lock().unwrap().len() == SEQUENCE_COUNT * 3 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client.close().await;
+    server.await.unwrap();
+
+    let received = received.lock().unwrap();
+    assert_eq!(received.len(), SEQUENCE_COUNT * 3);
+    let (sequences, remainder) = received.as_chunks::<3>();
+    assert!(remainder.is_empty());
+    assert!(sequences.iter().all(|segments| {
+        *segments == [SegmentType::SegStart, SegmentType::Seg, SegmentType::SegEnd]
+    }));
 }
 
 /// On reconnection, the client resends auth and the market subscription with the

@@ -4532,6 +4532,44 @@ mod tests {
     }
 
     #[rstest]
+    fn test_ocm_handler_stress_buffers_segments_once_in_order() {
+        const SEQUENCE_COUNT: usize = 1_024;
+        const MAX_MIDDLE_SEGMENTS: usize = 15;
+
+        let ts_init = UnixNanos::from(1_800_000_000_000_000_007);
+        let (handler, mut data_rx, mut execution_rx, replay_buffer) = ocm_handler_at(ts_init, true);
+        let data = load_test_json("stream/ocm_SEGMENTS.jsonl");
+        let segments = data.lines().collect::<Vec<_>>();
+        let mut expected = Vec::new();
+
+        for sequence in 0..SEQUENCE_COUNT {
+            handler(stream_decode(segments[0].as_bytes()).unwrap());
+            expected.push((SegmentType::SegStart, "1.100001"));
+
+            for _ in 0..sequence % (MAX_MIDDLE_SEGMENTS + 1) {
+                handler(stream_decode(segments[1].as_bytes()).unwrap());
+                expected.push((SegmentType::Seg, "1.100002"));
+            }
+
+            handler(stream_decode(segments[2].as_bytes()).unwrap());
+            expected.push((SegmentType::SegEnd, "1.100003"));
+        }
+
+        let received = replay_buffer.lock().unwrap();
+        assert_eq!(received.len(), expected.len());
+        for (message, (segment_type, market_id)) in received.iter().zip(expected) {
+            assert_eq!(message.message.segment_type, Some(segment_type));
+            assert_eq!(message.ts_init, ts_init);
+            assert_eq!(
+                message.message.oc.as_ref().unwrap()[0].id.as_str(),
+                market_id,
+            );
+        }
+        assert!(data_rx.try_recv().is_err());
+        assert!(execution_rx.try_recv().is_err());
+    }
+
+    #[rstest]
     fn test_tracked_cancel_emits_direct_order_canceled() {
         // A tracked cancel must emit a direct OrderCanceled, not a deferrable report.
         let account_id = AccountId::from("BETFAIR-001");

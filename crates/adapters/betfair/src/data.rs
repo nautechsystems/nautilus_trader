@@ -1255,6 +1255,40 @@ mod tests {
     }
 
     #[rstest]
+    fn test_stream_handler_stress_completes_each_segmented_mcm_once() {
+        const SEQUENCE_COUNT: usize = 1_024;
+        const MAX_MIDDLE_SEGMENTS: usize = 15;
+
+        let ts_init = UnixNanos::from(1_800_000_000_000_000_006);
+        let (handler, mut data_rx) = stream_handler_at(ts_init);
+        let data = load_test_json("stream/mcm_SEGMENTS.jsonl");
+        let segments = data.lines().collect::<Vec<_>>();
+
+        for sequence in 0..SEQUENCE_COUNT {
+            handler(stream_decode(segments[0].as_bytes()).unwrap());
+            for _ in 0..sequence % (MAX_MIDDLE_SEGMENTS + 1) {
+                handler(stream_decode(segments[1].as_bytes()).unwrap());
+            }
+
+            assert!(data_rx.try_recv().is_err());
+
+            handler(stream_decode(segments[2].as_bytes()).unwrap());
+
+            let custom = receive_custom::<BetfairSequenceCompleted>(&mut data_rx);
+            let completed = custom
+                .as_any()
+                .downcast_ref::<BetfairSequenceCompleted>()
+                .unwrap();
+            assert_eq!(
+                completed.ts_event,
+                UnixNanos::from(1_700_000_000_000_000_000)
+            );
+            assert_eq!(completed.ts_init, ts_init);
+            assert!(data_rx.try_recv().is_err());
+        }
+    }
+
+    #[rstest]
     fn test_stream_handler_sets_rcm_init_from_clock() {
         let ts_init = UnixNanos::from(1_800_000_000_000_000_002);
 
