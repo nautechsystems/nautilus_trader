@@ -81,6 +81,33 @@ use crate::{
 /// Keep-alive interval in seconds (10 hours, matching Python default).
 const KEEP_ALIVE_INTERVAL_SECS: u64 = 36_000;
 
+/// Betfair live data client.
+#[derive(Debug)]
+pub struct BetfairDataClient {
+    clock: &'static AtomicTime,
+    client_id: ClientId,
+    http_client: Arc<BetfairHttpClient>,
+    provider: BetfairInstrumentProvider,
+    stream_client: Option<Arc<BetfairStreamClient>>,
+    socket_registry: SocketReconnectRegistry,
+    socket_control: Option<SocketControl>,
+    socket_registration: Option<SocketReconnectRegistration>,
+    race_stream_client: Option<Arc<BetfairRaceStreamClient>>,
+    cricket_stream_client: Option<Arc<BetfairRaceStreamClient>>,
+    credential: BetfairCredential,
+    stream_config: BetfairStreamConfig,
+    config: BetfairDataConfig,
+    currency: Currency,
+    is_connected: AtomicBool,
+    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    subscribed_market_ids: AHashSet<String>,
+    keep_alive_handle: Option<JoinHandle<()>>,
+    reconnect_handle: Option<JoinHandle<()>>,
+    race_fatal_handle: Option<JoinHandle<()>>,
+    cricket_fatal_handle: Option<JoinHandle<()>>,
+}
+
 /// Wraps a custom data value with its instrument_id in both metadata (for
 /// topic routing) and identifier (for catalog partitioning).
 pub(crate) fn custom_data_with_instrument(
@@ -98,33 +125,6 @@ pub(crate) fn custom_data_with_instrument(
         Some(instrument_id.to_string()),
     );
     CustomData::new(value, data_type)
-}
-
-/// Betfair live data client.
-#[derive(Debug)]
-pub struct BetfairDataClient {
-    client_id: ClientId,
-    http_client: Arc<BetfairHttpClient>,
-    provider: BetfairInstrumentProvider,
-    stream_client: Option<Arc<BetfairStreamClient>>,
-    socket_registry: SocketReconnectRegistry,
-    socket_control: Option<SocketControl>,
-    socket_registration: Option<SocketReconnectRegistration>,
-    race_stream_client: Option<Arc<BetfairRaceStreamClient>>,
-    cricket_stream_client: Option<Arc<BetfairRaceStreamClient>>,
-    credential: BetfairCredential,
-    stream_config: BetfairStreamConfig,
-    config: BetfairDataConfig,
-    currency: Currency,
-    is_connected: AtomicBool,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    clock: &'static AtomicTime,
-    subscribed_market_ids: AHashSet<String>,
-    keep_alive_handle: Option<JoinHandle<()>>,
-    reconnect_handle: Option<JoinHandle<()>>,
-    race_fatal_handle: Option<JoinHandle<()>>,
-    cricket_fatal_handle: Option<JoinHandle<()>>,
 }
 
 impl BetfairDataClient {
@@ -154,6 +154,7 @@ impl BetfairDataClient {
         );
 
         Self {
+            clock: get_atomic_clock_realtime(),
             client_id,
             http_client,
             provider,
@@ -170,7 +171,6 @@ impl BetfairDataClient {
             is_connected: AtomicBool::new(false),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
-            clock: get_atomic_clock_realtime(),
             subscribed_market_ids: AHashSet::new(),
             keep_alive_handle: None,
             reconnect_handle: None,

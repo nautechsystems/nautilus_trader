@@ -66,6 +66,31 @@ pub(crate) fn load_fixture(path: &str) -> String {
         .unwrap_or_else(|_| panic!("failed to read {path}"))
 }
 
+#[allow(dead_code)]
+pub(crate) fn load_json_fixture(path: &str) -> Value {
+    serde_json::from_str(&load_fixture(path))
+        .unwrap_or_else(|_| panic!("failed to deserialize {path}"))
+}
+
+#[allow(dead_code)]
+pub(crate) fn betting_api_error(error_code: &str) -> Value {
+    let mut response = load_json_fixture("rest/betting_jsonrpc_error_invalid_session_live.json");
+    let value = response
+        .pointer_mut("/error/data/APINGException/errorCode")
+        .expect("live API error fixture must contain APINGException.errorCode");
+    assert!(value.is_string());
+    *value = Value::String(error_code.to_string());
+    response
+}
+
+#[allow(dead_code)]
+pub(crate) fn jsonrpc_error(code: i64, message: &str) -> Value {
+    let mut response = load_json_fixture("rest/betting_jsonrpc_error_invalid_params_live.json");
+    response["error"]["code"] = Value::from(code);
+    response["error"]["message"] = Value::String(message.to_string());
+    response
+}
+
 pub(crate) fn test_credential() -> BetfairCredential {
     BetfairCredential::new(
         "testuser".to_string(),
@@ -99,16 +124,22 @@ pub(crate) struct MockState {
     pub keep_alive_count: Arc<AtomicUsize>,
     pub betting_request_count: Arc<AtomicUsize>,
     pub betting_overrides: Arc<Mutex<HashMap<String, Value>>>,
-    /// Forces the betting endpoint to return a JSON-RPC error envelope for a method.
-    /// Maps `method -> (code, message)`.
-    pub betting_error_overrides: Arc<Mutex<HashMap<String, (i64, String)>>>,
+    /// Forces the betting endpoint to return a complete JSON-RPC error response for a method.
+    pub betting_error_overrides: Arc<Mutex<HashMap<String, Value>>>,
     /// Like `betting_error_overrides` but consumed on first hit; subsequent
     /// requests for the same method fall through to the default success path.
     /// Used to exercise session-recovery flows where the venue returns
     /// `NO_SESSION` once and accepts the retry.
-    pub betting_error_one_shot_overrides: Arc<Mutex<HashMap<String, (i64, String)>>>,
+    pub betting_error_one_shot_overrides: Arc<Mutex<HashMap<String, Value>>>,
     /// Forces the betting endpoint to return a non-2xx HTTP status for a method.
     pub betting_status_overrides: Arc<Mutex<HashMap<String, u16>>>,
+    /// Like `betting_status_overrides` but consumed on first hit.
+    pub betting_status_one_shot_overrides: Arc<Mutex<HashMap<String, u16>>>,
+    /// Records the request as applied, then returns the configured HTTP status once.
+    /// Retries with the same `customerRef` fall through without applying again.
+    pub betting_apply_then_status_one_shot_overrides: Arc<Mutex<HashMap<String, u16>>>,
+    /// Mutating request params applied by `betting_apply_then_status_one_shot_overrides`.
+    pub betting_applied_request_params: Arc<Mutex<Vec<(String, Value)>>>,
     pub betting_methods: Arc<Mutex<Vec<String>>>,
     /// Records the `params` payload of each betting request, indexed by call order.
     pub betting_request_params: Arc<Mutex<Vec<(String, Value)>>>,
@@ -116,6 +147,7 @@ pub(crate) struct MockState {
     pub betting_response_delays: Arc<Mutex<HashMap<String, Duration>>>,
     pub betting_response_gate: Arc<Mutex<Option<BettingResponseGate>>>,
     pub accounts_overrides: Arc<Mutex<HashMap<String, Value>>>,
+    pub accounts_error_overrides: Arc<Mutex<HashMap<String, Value>>>,
     pub login_response_override: Arc<Mutex<Option<String>>>,
     pub keep_alive_response_override: Arc<Mutex<Option<String>>>,
     pub keep_alive_status_override: Arc<Mutex<Option<u16>>>,
@@ -182,7 +214,7 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
             .betting_request_params
             .lock()
             .unwrap()
-            .push((method.to_string(), params));
+            .push((method.to_string(), params.clone()));
     }
 
     let response_gate = state.betting_response_gate.lock().unwrap().clone();
@@ -209,6 +241,31 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
     }
 
     if let Some(status) = state
+        .betting_apply_then_status_one_shot_overrides
+        .lock()
+        .unwrap()
+        .remove(method)
+    {
+        state
+            .betting_applied_request_params
+            .lock()
+            .unwrap()
+            .push((method.to_string(), params));
+        let code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        return (code, "").into_response();
+    }
+
+    if let Some(status) = state
+        .betting_status_one_shot_overrides
+        .lock()
+        .unwrap()
+        .remove(method)
+    {
+        let code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        return (code, "").into_response();
+    }
+
+    if let Some(status) = state
         .betting_status_overrides
         .lock()
         .unwrap()
@@ -219,32 +276,22 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
         return (code, "").into_response();
     }
 
-    if let Some((code, message)) = state
+    let error_response = state
         .betting_error_one_shot_overrides
         .lock()
         .unwrap()
         .remove(method)
-    {
-        let response = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {"code": code, "message": message},
+        .or_else(|| {
+            state
+                .betting_error_overrides
+                .lock()
+                .unwrap()
+                .get(method)
+                .cloned()
         });
-        return axum::Json(response).into_response();
-    }
 
-    if let Some((code, message)) = state
-        .betting_error_overrides
-        .lock()
-        .unwrap()
-        .get(method)
-        .cloned()
-    {
-        let response = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {"code": code, "message": message},
-        });
+    if let Some(mut response) = error_response {
+        response["id"] = Value::from(id);
         return axum::Json(response).into_response();
     }
 
@@ -289,6 +336,17 @@ async fn handle_accounts(State(state): State<MockState>, body: Bytes) -> impl In
     let request: Value = serde_json::from_slice(&body).unwrap_or_default();
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
     let id = request.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
+
+    if let Some(mut response) = state
+        .accounts_error_overrides
+        .lock()
+        .unwrap()
+        .get(method)
+        .cloned()
+    {
+        response["id"] = Value::from(id);
+        return axum::Json(response);
+    }
 
     let override_result = state
         .accounts_overrides

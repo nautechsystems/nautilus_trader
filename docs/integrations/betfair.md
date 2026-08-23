@@ -300,9 +300,66 @@ Minimum price is 1.01, maximum is 1000.00.
 - Size reduction uses `CancelOrders` with a `size_reduction` parameter.
 - Size increase is not supported; submit a new order instead.
 
-A replace operation generates both a cancel event for the original order and an accepted
-event for the replacement. The adapter tracks pending replacements to suppress synthetic
-cancel events.
+A successful price replacement remains the same logical Nautilus order. The adapter maps the old
+and new Bet IDs to the same `client_order_id`, suppresses the cancel for the old bet, and emits
+exactly one `OrderUpdated` carrying the new Bet ID. This holds whether the REST response or order
+change message (OCM) arrives first. If the replacement OCM already contains a fill, `OrderUpdated`
+precedes `OrderFilled`.
+
+Betfair can return `CANCELLED_NOT_PLACED` when the replace operation cancels the old bet but fails to
+place its replacement. The adapter then emits `OrderCanceled` for the logical order instead of
+`OrderModifyRejected`. A late fill for the canceled Bet ID is still applied once, after which the
+order remains `CANCELED`. The same terminal outcome applies when the old-bet cancel OCM arrives
+while a replacement is pending and the REST call later returns any definitive replace failure.
+
+## Order command failures and retries
+
+### Request correlation
+
+Betfair provides separate values for logical order correlation and request deduplication:
+
+| Field              | Scope             | Adapter behavior                                                                                                             |
+| ------------------ | ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `customerOrderRef` | One logical order | Derived from `client_order_id`, returned as OCM `rfo`, and retained across replacement Bet IDs.                              |
+| `customerRef`      | One REST command  | Generated for each place, replace, or cancel request and reused unchanged for every retry, including batches and reductions. |
+
+### Retry and ambiguity
+
+State‑changing order calls use up to three retries by default within a 45‑second total budget. The
+elapsed-time limit keeps every retry within Betfair's 60‑second `customerRef` deduplication window.
+The adapter handles failures as follows:
+
+| Failure or response                                                           | Order command handling                                                                     |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Transport failure, client timeout, malformed success response, or HTTP 5xx    | Mark the attempt ambiguous and retry with the same `customerRef`.                          |
+| HTTP 429, `TOO_MANY_REQUESTS`, or `SERVICE_BUSY`                              | Retry with the same `customerRef`.                                                         |
+| `UNEXPECTED_ERROR`                                                            | Mark the attempt ambiguous and retry with the same `customerRef`.                          |
+| `TIMEOUT_ERROR` or an adapter cancellation                                    | Leave the command ambiguous without retrying it.                                           |
+| `TIMEOUT` report or `BET_IN_PROGRESS`                                         | Leave the command ambiguous for OCM or reconciliation.                                     |
+| Incomplete or contradictory report                                            | Leave the command ambiguous unless a definitive top‑level error proves rejection.          |
+| Known validation, authentication, permission, or other definitive venue error | Reject the affected command without retrying it.                                           |
+| Missing, malformed, or unknown nested API error under a server error          | Leave the command ambiguous without retrying it until its meaning is explicitly supported. |
+
+An ambiguous placement remains `SUBMITTED`, an ambiguous replacement remains `PENDING_UPDATE`, and
+an ambiguous cancellation remains `PENDING_CANCEL` until OCM or reconciliation resolves it. The
+adapter does not emit a rejection because Betfair may have applied the request. Once a dispatched
+attempt has an unknown outcome, a later failed attempt cannot make the overall result definitive.
+
+Definitive placement, cancellation, and modification failures normally emit `OrderRejected`,
+`OrderCancelRejected`, and `OrderModifyRejected`, respectively. A definitive price replacement
+failure instead emits `OrderCanceled` once the old-bet cancel has arrived because that bet is no
+longer executable. `BET_TAKEN_OR_LAPSED` completes a cancellation for the same terminal reason.
+
+### JSON-RPC errors
+
+Betfair JSON‑RPC errors contain an outer numeric `code` and `message` and can also contain a nested
+API `errorCode` and `errorDetails`. The outer values describe the JSON‑RPC envelope; Betfair commonly
+uses `-32099` with an actionable API error stored in the object named by `data.exceptionname`, such
+as `APINGException` or `AccountAPINGException`. The adapter preserves the outer and nested fields and
+uses the nested API error when available. Unknown, missing, or malformed nested data remains visible
+through the outer code and message and receives the conservative order handling shown above.
+Read‑only calls retain their broader retry policy and can retry `TIMEOUT_ERROR` or a generic
+retryable outer error.
 
 ## Order stream fill handling
 
@@ -333,16 +390,15 @@ markets excluded from the filter miss live fill and cancel updates from the stre
 
 The adapter handles several edge cases when processing fills from the stream:
 
-- **Incremental fills**: Betfair reports cumulative matched sizes. The adapter calculates
-  incremental fills by tracking the last known filled quantity per order.
+- **Incremental fills**: Betfair reports cumulative matched sizes per Bet ID. The adapter tracks a
+  separate fill cursor for every current or historical Bet ID and restores those cursors from
+  cached events during reconciliation.
 - **Overfill protection**: fills that would exceed the order quantity are rejected.
 - **Race conditions**: when stream fills arrive before the HTTP order response, the adapter
   caches the venue order ID immediately to ensure correct order matching.
-- **Ambiguous submission recovery**: a network failure, timeout, HTTP 5xx response, or Betfair
-  `TIMEOUT` report can leave the placement outcome unknown. The adapter leaves the order in
-  `SUBMITTED` status and retains the customer order reference because the venue may have accepted
-  it. A matching OCM can confirm the order on the active stream or after a reconnect. Other
-  non‑ambiguous errors and explicit Betfair failure reports reject immediately.
+- **Replacement fills**: a fill reported against an old Bet ID updates the same logical order once
+  without replacing its current Bet ID. A partial fill received while an order is `PENDING_UPDATE`
+  or `PENDING_CANCEL` updates its filled quantity while preserving the pending command state.
 - **Gap-window fills**: a fill that completes and rolls off the unmatched book during a
   stream disconnect is recovered by the post-reconnect mass-status reconciliation; see
   [Post-reconnect reconciliation](#post-reconnect-reconciliation).
@@ -377,12 +433,14 @@ reconciliation do not throttle order placement:
 | General | 5/s     | Account state, reconciliation, keep‑alive.      | `request_rate_per_second`.       |
 | Orders  | 20/s    | `placeOrders`, `replaceOrders`, `cancelOrders`. | `order_request_rate_per_second`. |
 
-Each Betting API call uses the general HTTP retry budget, with up to three retries by default. After
-that call returns a session or rate‑limit error, the order status and fill report paths make one
-additional report‑level attempt. A session error first tries keep‑alive and falls back to full
-re‑login after any keep‑alive failure. Full re‑login updates execution stream authentication and
-requests a replacement after the query finishes. A `TOO_MANY_REQUESTS` error waits 5 seconds before
-the report‑level retry.
+Read‑only Betting API calls use the general HTTP retry budget, with up to three retries by default.
+State‑changing calls use the policy in [Order command failures and retries](#order-command-failures-and-retries).
+
+After a report query returns a session or rate‑limit error, the order status and fill report paths
+make one additional report‑level attempt. A session error first tries keep‑alive and falls back to
+full re‑login after any keep‑alive failure. Full re‑login updates execution stream authentication
+and requests a replacement after the query finishes. A `TOO_MANY_REQUESTS` error waits 5 seconds
+before the report‑level retry.
 
 Betfair's own API limits are more nuanced than a single request rate:
 

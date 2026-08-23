@@ -18,14 +18,121 @@
 #[allow(dead_code)]
 mod common;
 
+use std::collections::HashMap;
+
 use nautilus_betfair::{
-    common::consts::{METHOD_GET_ACCOUNT_FUNDS, METHOD_LIST_MARKET_CATALOGUE},
-    http::error::BetfairHttpError,
+    common::{
+        consts::{
+            HEADER_X_APPLICATION, HEADER_X_AUTHENTICATION, METHOD_GET_ACCOUNT_FUNDS,
+            METHOD_LIST_MARKET_CATALOGUE, METHOD_PLACE_ORDERS,
+        },
+        credential::BetfairCredential,
+    },
+    http::{client::BetfairHttpClient, error::BetfairHttpError},
 };
+use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
 use serde_json::Value;
 
 use crate::common::*;
+
+#[rstest]
+#[tokio::test]
+#[ignore = "requires live credentials and makes a read-only Betfair API request"]
+async fn live_send_betting_parses_api_exception() {
+    let credential = BetfairCredential::from_env()
+        .expect("BETFAIR_USERNAME, BETFAIR_PASSWORD, and BETFAIR_APP_KEY must be set");
+    let client = BetfairHttpClient::new(credential, None, None, None, None, Some(5), Some(20))
+        .expect("live HTTP client");
+    client.connect().await.expect("Betfair login");
+    let session_token = client.session_token().await.expect("Betfair session token");
+
+    let result = client
+        .send_betting::<Value, _>(
+            METHOD_LIST_MARKET_CATALOGUE,
+            serde_json::json!({"filter": {}, "maxResults": 1001}),
+        )
+        .await;
+    logout_live_session(client.app_key(), &session_token).await;
+    client.disconnect().await;
+    let err = result.expect_err("maxResults above 1000 must return TOO_MUCH_DATA");
+
+    assert!(matches!(
+        err,
+        BetfairHttpError::BetfairError {
+            code: -32099,
+            message,
+            api_error_code: Some(api_error_code),
+            api_error_details: Some(api_error_details),
+        } if message.starts_with("ANGX-")
+            && api_error_code == "TOO_MUCH_DATA"
+            && api_error_details == "MaxResults must be less than or equal to 1000"
+    ));
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "requires live credentials and makes a read-only Betfair Accounts API request"]
+async fn live_send_accounts_parses_api_exception() {
+    let credential = BetfairCredential::from_env()
+        .expect("BETFAIR_USERNAME, BETFAIR_PASSWORD, and BETFAIR_APP_KEY must be set");
+    let client = BetfairHttpClient::new(credential, None, None, None, None, Some(5), Some(20))
+        .expect("live HTTP client");
+    client.connect().await.expect("Betfair login");
+    let session_token = client.session_token().await.expect("Betfair session token");
+
+    let result = client
+        .send_accounts::<Value, _>(
+            "AccountAPING/v1.0/getAccountStatement",
+            serde_json::json!({"fromRecord": -1, "recordCount": 1}),
+        )
+        .await;
+    logout_live_session(client.app_key(), &session_token).await;
+    client.disconnect().await;
+    let err = result.expect_err("negative fromRecord must return INVALID_INPUT_DATA");
+
+    assert!(matches!(
+        err,
+        BetfairHttpError::BetfairError {
+            code: -32099,
+            message,
+            api_error_code: Some(api_error_code),
+            api_error_details: Some(api_error_details),
+        } if message.starts_with("AANGX-")
+            && api_error_code == "INVALID_INPUT_DATA"
+            && api_error_details == "The request was not valid."
+    ));
+}
+
+async fn logout_live_session(app_key: &str, session_token: &str) {
+    let http = HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, Some(5), None)
+        .expect("logout HTTP client");
+    let headers = HashMap::from([
+        (HEADER_X_APPLICATION.to_string(), app_key.to_string()),
+        (
+            HEADER_X_AUTHENTICATION.to_string(),
+            session_token.to_string(),
+        ),
+        ("Accept".to_string(), "application/json".to_string()),
+    ]);
+    let response = http
+        .request(
+            Method::POST,
+            "https://identitysso.betfair.com/api/logout".to_string(),
+            None,
+            Some(headers),
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("Betfair logout request");
+    let body: Value = serde_json::from_slice(&response.body).expect("Betfair logout response");
+
+    assert_eq!(response.status.as_u16(), 200);
+    assert_eq!(body["status"], "SUCCESS");
+    assert_eq!(body["error"], "");
+}
 
 #[rstest]
 #[tokio::test]
@@ -251,7 +358,7 @@ async fn test_send_betting_jsonrpc_error_returns_betfair_error() {
     let (addr, state) = start_mock_http().await;
     state.betting_error_overrides.lock().unwrap().insert(
         METHOD_LIST_MARKET_CATALOGUE.to_string(),
-        (-32602, "DSC-018".to_string()),
+        load_json_fixture("rest/betting_jsonrpc_error_invalid_params_live.json"),
     );
 
     let client = create_test_http_client(addr);
@@ -262,23 +369,58 @@ async fn test_send_betting_jsonrpc_error_returns_betfair_error() {
         .await;
 
     match result {
-        Err(BetfairHttpError::BetfairError { code, message }) => {
+        Err(BetfairHttpError::BetfairError {
+            code,
+            message,
+            api_error_code,
+            api_error_details,
+        }) => {
             assert_eq!(code, -32602);
-            assert_eq!(message, "DSC-018");
+            assert_eq!(message, "DSC-0018");
+            assert_eq!(api_error_code, None);
+            assert_eq!(api_error_details, None);
         }
         other => panic!("Expected BetfairError, was {other:?}"),
     }
 }
 
-/// JSON-RPC errors mentioning `NO_SESSION` (or `INVALID_SESSION_INFORMATION`)
-/// must be classifiable as session errors so callers can trigger a re-login.
+#[rstest]
+#[tokio::test]
+async fn test_send_betting_order_definitive_error_remains_betfair_error() {
+    let (addr, state) = start_mock_http().await;
+    state.betting_error_overrides.lock().unwrap().insert(
+        METHOD_PLACE_ORDERS.to_string(),
+        load_json_fixture("rest/betting_jsonrpc_error_invalid_params_live.json"),
+    );
+
+    let client = create_test_http_client(addr);
+    client.connect().await.unwrap();
+
+    let result = client
+        .send_betting_order::<Value, _>(METHOD_PLACE_ORDERS, &serde_json::json!({}))
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(BetfairHttpError::BetfairError {
+            code: -32602,
+            ref message,
+            api_error_code: None,
+            api_error_details: None,
+        }) if message == "DSC-0018"
+    ));
+}
+
+/// JSON-RPC API exceptions carrying `NO_SESSION` (or
+/// `INVALID_SESSION_INFORMATION`) must be classifiable as session errors so
+/// callers can trigger a re-login.
 #[rstest]
 #[tokio::test]
 async fn test_send_betting_session_error_classified_as_session() {
     let (addr, state) = start_mock_http().await;
     state.betting_error_overrides.lock().unwrap().insert(
         METHOD_LIST_MARKET_CATALOGUE.to_string(),
-        (-1, "NO_SESSION".to_string()),
+        betting_api_error("NO_SESSION"),
     );
 
     let client = create_test_http_client(addr);
@@ -294,6 +436,17 @@ async fn test_send_betting_session_error_classified_as_session() {
         !err.is_login_failed(),
         "session error must not be login-failed"
     );
+    assert!(matches!(
+        &err,
+        BetfairHttpError::BetfairError {
+            code: -32099,
+            message,
+            api_error_code: Some(api_error_code),
+            api_error_details: Some(api_error_details),
+        } if message == "ANGX-0003"
+            && api_error_code == "NO_SESSION"
+            && api_error_details.is_empty()
+    ));
 }
 
 /// `TOO_MANY_REQUESTS` JSON-RPC errors must classify as rate-limit so the
@@ -304,7 +457,7 @@ async fn test_send_betting_too_many_requests_classified_as_rate_limit() {
     let (addr, state) = start_mock_http().await;
     state.betting_error_overrides.lock().unwrap().insert(
         METHOD_LIST_MARKET_CATALOGUE.to_string(),
-        (-1, "TOO_MANY_REQUESTS".to_string()),
+        betting_api_error("TOO_MANY_REQUESTS"),
     );
 
     let client = create_test_http_client(addr);
@@ -323,6 +476,220 @@ async fn test_send_betting_too_many_requests_classified_as_rate_limit() {
         !err.is_session_error(),
         "rate-limit must not be a session error"
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_send_betting_api_error_preserves_live_wire_fields() {
+    let (addr, state) = start_mock_http().await;
+    state.betting_error_overrides.lock().unwrap().insert(
+        METHOD_LIST_MARKET_CATALOGUE.to_string(),
+        load_json_fixture("rest/betting_jsonrpc_error_too_much_data_live.json"),
+    );
+
+    let client = create_test_http_client(addr);
+    client.connect().await.unwrap();
+
+    let err = client
+        .send_betting::<Value, _>(METHOD_LIST_MARKET_CATALOGUE, serde_json::json!({}))
+        .await
+        .expect_err("expected TOO_MUCH_DATA to surface as an error");
+
+    assert!(matches!(
+        &err,
+        BetfairHttpError::BetfairError {
+            code: -32099,
+            message,
+            api_error_code: Some(api_error_code),
+            api_error_details: Some(api_error_details),
+        } if message == "ANGX-0001"
+            && api_error_code == "TOO_MUCH_DATA"
+            && api_error_details == "MaxResults must be less than or equal to 1000"
+    ));
+    assert!(!err.is_retryable());
+    assert!(!err.is_session_error());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_send_accounts_selects_exception_named_by_wire_data() {
+    let (addr, state) = start_mock_http().await;
+    state.accounts_error_overrides.lock().unwrap().insert(
+        METHOD_GET_ACCOUNT_FUNDS.to_string(),
+        load_json_fixture("rest/account_jsonrpc_error_invalid_input_live.json"),
+    );
+
+    let client = create_test_http_client(addr);
+    client.connect().await.unwrap();
+
+    let err = client
+        .send_accounts::<Value, _>(METHOD_GET_ACCOUNT_FUNDS, serde_json::json!({}))
+        .await
+        .expect_err("expected INVALID_INPUT_DATA to surface as an error");
+
+    assert!(matches!(
+        &err,
+        BetfairHttpError::BetfairError {
+            code: -32099,
+            message,
+            api_error_code: Some(api_error_code),
+            api_error_details: Some(api_error_details),
+        } if message == "AANGX-0001"
+            && api_error_code == "INVALID_INPUT_DATA"
+            && api_error_details == "The request was not valid."
+    ));
+    assert!(!err.is_retryable());
+    assert!(!err.is_session_error());
+}
+
+#[rstest]
+#[case(None)]
+#[case(Some(serde_json::Value::String("not an exception object".to_string())))]
+#[case(Some(serde_json::json!({"exceptionname": "MissingException"})))]
+#[tokio::test]
+async fn test_send_betting_malformed_api_error_data_preserves_outer_error(
+    #[case] data: Option<serde_json::Value>,
+) {
+    let (addr, state) = start_mock_http().await;
+    let mut response = load_json_fixture("rest/betting_jsonrpc_error_invalid_session_live.json");
+    if let Some(data) = data {
+        response["error"]["data"] = data;
+    } else {
+        response["error"].as_object_mut().unwrap().remove("data");
+    }
+    state
+        .betting_error_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_PLACE_ORDERS.to_string(), response);
+
+    let client = create_test_http_client(addr);
+    client.connect().await.unwrap();
+
+    let err = client
+        .send_betting_order::<Value, _>(METHOD_PLACE_ORDERS, serde_json::json!({}))
+        .await
+        .expect_err("expected malformed API error data to preserve the outer error");
+
+    assert!(matches!(
+        &err,
+        BetfairHttpError::BetfairError {
+            code: -32099,
+            message,
+            api_error_code: None,
+            api_error_details: None,
+        } if message == "ANGX-0003"
+    ));
+    assert!(err.is_order_ambiguous());
+    assert!(!err.is_order_retryable());
+}
+
+#[rstest]
+#[case("TOO_MANY_REQUESTS")]
+#[case("SERVICE_BUSY")]
+#[case("UNEXPECTED_ERROR")]
+#[tokio::test]
+async fn test_send_betting_order_retries_documented_transient_api_error(
+    #[case] api_error_code: &str,
+) {
+    let (addr, state) = start_mock_http().await;
+    state
+        .betting_error_one_shot_overrides
+        .lock()
+        .unwrap()
+        .insert(
+            METHOD_PLACE_ORDERS.to_string(),
+            betting_api_error(api_error_code),
+        );
+
+    let client = create_test_http_client(addr);
+    client.connect().await.unwrap();
+    let initial_count = state
+        .betting_request_count
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    let result: Value = client
+        .send_betting_order(
+            METHOD_PLACE_ORDERS,
+            serde_json::json!({ "customerRef": "retry-safe-ref" }),
+        )
+        .await
+        .unwrap();
+    let final_count = state
+        .betting_request_count
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let expected = load_json_fixture("rest/betting_place_order_success.json");
+
+    assert_eq!(result, expected["result"]);
+    assert_eq!(final_count - initial_count, 2);
+}
+
+#[rstest]
+#[case("TIMEOUT_ERROR", false)]
+#[case("FUTURE_ERROR", false)]
+#[case("UNEXPECTED_ERROR", true)]
+#[tokio::test]
+async fn test_send_betting_order_does_not_retry_ambiguous_api_error(
+    #[case] api_error_code: &str,
+    #[case] retryable: bool,
+) {
+    let (addr, state) = start_mock_http().await;
+    state.betting_error_overrides.lock().unwrap().insert(
+        METHOD_PLACE_ORDERS.to_string(),
+        betting_api_error(api_error_code),
+    );
+
+    let client = create_test_http_client(addr);
+    client.connect().await.unwrap();
+    let initial_count = state
+        .betting_request_count
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    let err = client
+        .send_betting_order::<Value, _>(METHOD_PLACE_ORDERS, serde_json::json!({}))
+        .await
+        .expect_err("ambiguous API errors must not be retried for an order write");
+    let final_count = state
+        .betting_request_count
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    assert!(err.is_order_ambiguous());
+    assert_eq!(err.is_order_retryable(), retryable);
+    assert_eq!(final_count - initial_count, 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_send_betting_order_does_not_retry_ambiguous_error_without_customer_ref() {
+    let (addr, state) = start_mock_http().await;
+    state
+        .betting_status_one_shot_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_PLACE_ORDERS.to_string(), 502);
+
+    let client = create_test_http_client(addr);
+    client.connect().await.unwrap();
+    let initial_count = state
+        .betting_request_count
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    let error = client
+        .send_betting_order::<Value, _>(METHOD_PLACE_ORDERS, serde_json::json!({}))
+        .await
+        .expect_err("an ambiguous write without customerRef must not be retried");
+    let final_count = state
+        .betting_request_count
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    assert!(matches!(
+        error,
+        BetfairHttpError::UnexpectedStatus {
+            status: 502,
+            ref body,
+        } if body.is_empty()
+    ));
+    assert_eq!(final_count - initial_count, 1);
 }
 
 /// 5xx errors are retryable. With `max_retries=1` (the test fixture default)

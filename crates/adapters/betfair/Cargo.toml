@@ -100,8 +100,9 @@ nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
 dotenvy = { workspace = true }
+proptest = { workspace = true }
 rstest = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["full", "test-util"] }
 toml = { workspace = true }
 
 # Run with `cargo run -p nautilus-betfair --example betfair-data-tester --features examples`
