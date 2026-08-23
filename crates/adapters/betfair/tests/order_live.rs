@@ -16,11 +16,8 @@
 //! Live state-changing smoke against Betfair. Ignored: places, replaces, and cancels a real order.
 
 use std::{
-    collections::HashSet,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-    },
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -48,7 +45,7 @@ use nautilus_betfair::{
         client::BetfairHttpClient,
         models::{
             AccountDetailsResponse, CancelExecutionReport, CancelInstruction, CancelOrdersParams,
-            CurrentOrderSummaryReport, LimitOrder, ListCurrentOrdersParams,
+            CurrentOrderSummary, CurrentOrderSummaryReport, LimitOrder, ListCurrentOrdersParams,
             ListMarketCatalogueParams, MarketCatalogue, MarketFilter, PlaceExecutionReport,
             PlaceInstruction, PlaceInstructionReport, PlaceOrdersParams, PriceSize,
             ReplaceExecutionReport, ReplaceInstruction, ReplaceOrdersParams,
@@ -56,21 +53,26 @@ use nautilus_betfair::{
     },
     provider::{BetfairInstrumentProvider, NavigationFilter},
 };
-use nautilus_common::{actor::DataActor, enums::Environment, providers::InstrumentProvider};
+use nautilus_common::{
+    actor::DataActor, enums::Environment, providers::InstrumentProvider, timer::TimeEvent,
+};
 use nautilus_core::UUID4;
 use nautilus_live::{
     config::{LiveExecEngineConfig, LiveRiskEngineConfig},
     node::LiveNode,
 };
 use nautilus_model::{
-    enums::{OrderSide, OrderType, TimeInForce},
+    enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderFilled,
-        OrderModifyRejected, OrderRejected, OrderUpdated,
+        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderSubmitted,
+        OrderUpdated,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
-    instruments::Instrument,
-    orders::OrderTestBuilder,
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
+    },
+    instruments::{Instrument, InstrumentAny},
+    orders::{Order, OrderTestBuilder},
     types::{Currency, Price, Quantity},
 };
 use nautilus_trading::{
@@ -81,6 +83,8 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use ustr::Ustr;
+
+const RECONNECT_REPLACE_TIMER: &str = "betfair-live-reconnect-replace";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -103,7 +107,7 @@ struct LiveRunnerBook {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LiveExchangePrices {
-    available_to_lay: Vec<PriceSize>,
+    available_to_back: Vec<PriceSize>,
 }
 
 #[derive(Debug)]
@@ -111,6 +115,16 @@ struct LiveTarget {
     market_id: MarketId,
     selection_id: SelectionId,
     handicap: Handicap,
+}
+
+#[derive(Debug)]
+struct LiveExecutionFixture {
+    credential: BetfairCredential,
+    currency_code: String,
+    stake: Decimal,
+    market_id: MarketId,
+    instrument_id: InstrumentId,
+    instrument: InstrumentAny,
 }
 
 #[derive(Debug)]
@@ -124,29 +138,191 @@ struct InvalidReplaceObservation {
 }
 
 #[derive(Debug, Clone, Default)]
+struct LiveExecutionState {
+    accepted: usize,
+    updated: usize,
+    canceled: usize,
+    filled: usize,
+    accepted_bet_id: Option<BetId>,
+    updated_bet_id: Option<BetId>,
+    bet_ids: HashSet<BetId>,
+    failure: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
 struct LiveExecutionProbe {
-    accepted: Arc<AtomicUsize>,
-    updated: Arc<AtomicUsize>,
-    canceled: Arc<AtomicUsize>,
-    failed: Arc<AtomicBool>,
-    bet_ids: Arc<Mutex<HashSet<BetId>>>,
-    failure: Arc<Mutex<Option<String>>>,
+    state: Arc<Mutex<LiveExecutionState>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LiveExecutionScenario {
+    ReplaceCancel,
+    InvalidReplace,
+    ReconnectReplaceCancel,
+    ReplaceFill,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LiveStressEvent {
+    Submitted,
+    Accepted,
+    PendingUpdate,
+    Updated,
+    PendingCancel,
+    Canceled,
+}
+
+#[derive(Debug, Default)]
+struct LiveStressOrder {
+    events: Vec<LiveStressEvent>,
+    accepted_bet_id: Option<BetId>,
+    updated_bet_id: Option<BetId>,
+    canceled_bet_id: Option<BetId>,
+}
+
+#[derive(Debug, Default)]
+struct LiveStressState {
+    orders: HashMap<ClientOrderId, LiveStressOrder>,
+    completed: HashSet<ClientOrderId>,
+    failure: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct LiveStressProbe {
+    state: Arc<Mutex<LiveStressState>>,
+}
+
+impl LiveStressProbe {
+    fn register(&self, client_order_id: ClientOrderId) {
+        let previous = self
+            .state
+            .lock()
+            .unwrap()
+            .orders
+            .insert(client_order_id, LiveStressOrder::default());
+        assert!(previous.is_none(), "duplicate live stress client order ID");
+    }
+
+    fn record(
+        &self,
+        client_order_id: ClientOrderId,
+        event: LiveStressEvent,
+        bet_id: Option<BetId>,
+    ) -> bool {
+        let mut state = self.state.lock().unwrap();
+        let Some(order) = state.orders.get_mut(&client_order_id) else {
+            state.failure = Some(format!(
+                "event for unknown order {client_order_id}: {event:?}"
+            ));
+            return false;
+        };
+        let first = !order.events.contains(&event);
+        order.events.push(event);
+
+        if first {
+            match event {
+                LiveStressEvent::Accepted => order.accepted_bet_id = bet_id,
+                LiveStressEvent::Updated => order.updated_bet_id = bet_id,
+                LiveStressEvent::Canceled => order.canceled_bet_id = bet_id,
+                LiveStressEvent::Submitted
+                | LiveStressEvent::PendingUpdate
+                | LiveStressEvent::PendingCancel => {}
+            }
+        } else if state.failure.is_none() {
+            state.failure = Some(format!(
+                "duplicate {event:?} event for order {client_order_id}"
+            ));
+        }
+
+        first
+    }
+
+    fn mark_completed(&self, client_order_id: ClientOrderId) -> bool {
+        self.state.lock().unwrap().completed.insert(client_order_id)
+    }
+
+    fn fail(&self, reason: impl Into<String>) {
+        let mut state = self.state.lock().unwrap();
+        if state.failure.is_none() {
+            state.failure = Some(reason.into());
+        }
+    }
+
+    fn finished(&self, expected: usize) -> bool {
+        let state = self.state.lock().unwrap();
+        state.failure.is_some() || state.completed.len() == expected
+    }
+
+    fn failed(&self) -> bool {
+        self.state.lock().unwrap().failure.is_some()
+    }
 }
 
 impl LiveExecutionProbe {
-    fn record_bet_id(&self, bet_id: Option<BetId>) {
-        if let Some(bet_id) = bet_id {
-            self.bet_ids.lock().unwrap().insert(bet_id);
+    fn record_accepted(&self, bet_id: BetId) -> bool {
+        let mut state = self.state.lock().unwrap();
+        state.record_bet_id(Some(bet_id.clone()));
+        state.accepted_bet_id = Some(bet_id);
+        state.accepted += 1;
+        state.accepted == 1
+    }
+
+    fn record_updated(&self, bet_id: Option<BetId>) -> bool {
+        let mut state = self.state.lock().unwrap();
+        state.record_bet_id(bet_id.clone());
+        state.updated_bet_id = bet_id;
+        state.updated += 1;
+        state.updated == 1
+    }
+
+    fn record_canceled(&self, bet_id: Option<BetId>) {
+        let mut state = self.state.lock().unwrap();
+        state.record_bet_id(bet_id);
+        state.canceled += 1;
+    }
+
+    fn record_filled(&self, bet_id: BetId) {
+        let mut state = self.state.lock().unwrap();
+        state.record_bet_id(Some(bet_id));
+        state.filled += 1;
+        let failure = if state.updated != 1 {
+            Some(format!(
+                "replacement fill arrived after {} order updates",
+                state.updated,
+            ))
+        } else if state.filled != 1 {
+            Some("duplicate replacement fill event".to_string())
+        } else {
+            None
+        };
+
+        if state.failure.is_none() {
+            state.failure = failure;
         }
     }
 
     fn fail(&self, reason: impl Into<String>) {
-        *self.failure.lock().unwrap() = Some(reason.into());
-        self.failed.store(true, Ordering::Release);
+        let mut state = self.state.lock().unwrap();
+        if state.failure.is_none() {
+            state.failure = Some(reason.into());
+        }
     }
 
     fn finished(&self) -> bool {
-        self.canceled.load(Ordering::Acquire) == 1 || self.failed.load(Ordering::Acquire)
+        let state = self.state.lock().unwrap();
+        state.canceled == 1 || state.filled == 1 || state.failure.is_some()
+    }
+
+    fn snapshot(&self) -> LiveExecutionState {
+        self.state.lock().unwrap().clone()
+    }
+}
+
+impl LiveExecutionState {
+    fn record_bet_id(&mut self, bet_id: Option<BetId>) {
+        if let Some(bet_id) = bet_id {
+            self.bet_ids.insert(bet_id);
+        }
     }
 }
 
@@ -157,7 +333,7 @@ struct LiveExecutionLifecycle {
     client_order_id: ClientOrderId,
     quantity: Quantity,
     replace_price: Price,
-    expect_cancelled_without_replacement: bool,
+    scenario: LiveExecutionScenario,
     probe: LiveExecutionProbe,
 }
 
@@ -166,10 +342,15 @@ impl LiveExecutionLifecycle {
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         quantity: Quantity,
-        replace_price: Price,
-        expect_cancelled_without_replacement: bool,
+        scenario: LiveExecutionScenario,
         probe: LiveExecutionProbe,
     ) -> Self {
+        let replace_price = match scenario {
+            LiveExecutionScenario::InvalidReplace => Price::from("2.57"),
+            LiveExecutionScenario::ReplaceFill => Price::from("1.01"),
+            LiveExecutionScenario::ReplaceCancel
+            | LiveExecutionScenario::ReconnectReplaceCancel => Price::from("980"),
+        };
         Self {
             core: StrategyCore::new(StrategyConfig {
                 strategy_id: Some(StrategyId::from("BETFAIR-LIVE-SMOKE")),
@@ -179,9 +360,20 @@ impl LiveExecutionLifecycle {
             client_order_id,
             quantity,
             replace_price,
-            expect_cancelled_without_replacement,
+            scenario,
             probe,
         }
+    }
+
+    fn request_replace(&mut self) -> anyhow::Result<()> {
+        self.modify_order(
+            self.client_order_id,
+            None,
+            Some(self.replace_price),
+            None,
+            Some(*BETFAIR_CLIENT_ID),
+            None,
+        )
     }
 }
 
@@ -199,36 +391,50 @@ impl DataActor for LiveExecutionLifecycle {
             .build();
         self.submit_order(order, None, Some(*BETFAIR_CLIENT_ID), None)
     }
+
+    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+        if event.name == RECONNECT_REPLACE_TIMER {
+            self.request_replace()?;
+        }
+        Ok(())
+    }
 }
 
 nautilus_strategy!(LiveExecutionLifecycle, {
     fn on_order_accepted(&mut self, event: OrderAccepted) {
-        self.probe
-            .record_bet_id(Some(event.venue_order_id.to_string()));
+        let bet_id = event.venue_order_id.to_string();
 
-        if self.probe.accepted.fetch_add(1, Ordering::AcqRel) == 0
-            && let Err(e) = self.modify_order(
-                event.client_order_id,
-                None,
-                Some(self.replace_price),
-                None,
-                Some(*BETFAIR_CLIENT_ID),
-                None,
-            )
-        {
-            self.probe.fail(format!("modify_order failed: {e}"));
+        if self.probe.record_accepted(bet_id) {
+            let result = if self.scenario == LiveExecutionScenario::ReconnectReplaceCancel {
+                self.reconnect_socket(ClientId::from("BETFAIR"), "betfair-user-streams")
+                    .and_then(|()| {
+                        let replace_at = self.clock().timestamp_ns() + 5_000_000_000;
+                        self.clock().set_time_alert_ns(
+                            RECONNECT_REPLACE_TIMER,
+                            replace_at,
+                            None,
+                            None,
+                        )
+                    })
+            } else {
+                self.request_replace()
+            };
+
+            if let Err(e) = result {
+                self.probe.fail(format!("modify setup failed: {e}"));
+            }
         }
     }
 
     fn on_order_updated(&mut self, event: OrderUpdated) {
-        self.probe
-            .record_bet_id(event.venue_order_id.map(|id| id.to_string()));
-        if self.expect_cancelled_without_replacement {
+        let bet_id = event.venue_order_id.map(|id| id.to_string());
+        if self.scenario == LiveExecutionScenario::InvalidReplace {
             self.probe.fail(format!(
                 "unexpected order update: {}",
                 event.client_order_id
             ));
-        } else if self.probe.updated.fetch_add(1, Ordering::AcqRel) == 0
+        } else if self.probe.record_updated(bet_id)
+            && self.scenario != LiveExecutionScenario::ReplaceFill
             && let Err(e) = self.cancel_order(event.client_order_id, Some(*BETFAIR_CLIENT_ID), None)
         {
             self.probe.fail(format!("cancel_order failed: {e}"));
@@ -237,8 +443,7 @@ nautilus_strategy!(LiveExecutionLifecycle, {
 
     fn on_order_canceled(&mut self, event: &OrderCanceled) {
         self.probe
-            .record_bet_id(event.venue_order_id.map(|id| id.to_string()));
-        self.probe.canceled.fetch_add(1, Ordering::AcqRel);
+            .record_canceled(event.venue_order_id.map(|id| id.to_string()));
     }
 
     fn on_order_rejected(&mut self, event: OrderRejected) {
@@ -260,9 +465,195 @@ nautilus_strategy!(LiveExecutionLifecycle, {
     }
 
     fn on_order_filled(&mut self, event: &OrderFilled) {
+        if self.scenario == LiveExecutionScenario::ReplaceFill {
+            self.probe.record_filled(event.venue_order_id.to_string());
+        } else {
+            self.probe.fail(format!(
+                "live validation order matched unexpectedly: {} @ {}",
+                event.last_qty, event.last_px,
+            ));
+        }
+    }
+});
+
+#[derive(Debug)]
+struct LiveExecutionStress {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    quantity: Quantity,
+    replace_price: Price,
+    run_token: String,
+    total_orders: usize,
+    max_active: usize,
+    submitted: usize,
+    active: usize,
+    probe: LiveStressProbe,
+}
+
+impl LiveExecutionStress {
+    fn new(
+        instrument_id: InstrumentId,
+        quantity: Quantity,
+        replace_price: Price,
+        total_orders: usize,
+        max_active: usize,
+        probe: LiveStressProbe,
+    ) -> Self {
+        Self {
+            core: StrategyCore::new(StrategyConfig {
+                strategy_id: Some(StrategyId::from("BETFAIR-LIVE-STRESS")),
+                ..Default::default()
+            }),
+            instrument_id,
+            quantity,
+            replace_price,
+            run_token: live_ref(),
+            total_orders,
+            max_active,
+            submitted: 0,
+            active: 0,
+            probe,
+        }
+    }
+
+    fn submit_until_full(&mut self) -> anyhow::Result<()> {
+        while !self.probe.failed()
+            && self.active < self.max_active
+            && self.submitted < self.total_orders
+        {
+            let client_order_id =
+                ClientOrderId::from(format!("S{}{:05}", &self.run_token[..24], self.submitted,));
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .trader_id(TraderId::from("BETFAIR-LIVE-TESTER"))
+                .strategy_id(StrategyId::from("BETFAIR-LIVE-STRESS"))
+                .instrument_id(self.instrument_id)
+                .client_order_id(client_order_id)
+                .side(OrderSide::Sell)
+                .price(Price::from("990"))
+                .quantity(self.quantity)
+                .time_in_force(TimeInForce::Day)
+                .build();
+            self.probe.register(client_order_id);
+            self.submitted += 1;
+            self.active += 1;
+            self.submit_order(order, None, Some(*BETFAIR_CLIENT_ID), None)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl DataActor for LiveExecutionStress {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.submit_until_full()
+    }
+}
+
+nautilus_strategy!(LiveExecutionStress, {
+    fn on_order_submitted(&mut self, event: OrderSubmitted) {
+        self.probe
+            .record(event.client_order_id, LiveStressEvent::Submitted, None);
+    }
+
+    fn on_order_accepted(&mut self, event: OrderAccepted) {
+        if self.probe.record(
+            event.client_order_id,
+            LiveStressEvent::Accepted,
+            Some(event.venue_order_id.to_string()),
+        ) && let Err(e) = self.modify_order(
+            event.client_order_id,
+            None,
+            Some(self.replace_price),
+            None,
+            Some(*BETFAIR_CLIENT_ID),
+            None,
+        ) {
+            self.probe.fail(format!(
+                "modify_order failed for {}: {e}",
+                event.client_order_id,
+            ));
+        }
+    }
+
+    fn on_order_pending_update(&mut self, event: OrderPendingUpdate) {
+        self.probe.record(
+            event.client_order_id,
+            LiveStressEvent::PendingUpdate,
+            event.venue_order_id.map(|id| id.to_string()),
+        );
+    }
+
+    fn on_order_updated(&mut self, event: OrderUpdated) {
+        if self.probe.record(
+            event.client_order_id,
+            LiveStressEvent::Updated,
+            event.venue_order_id.map(|id| id.to_string()),
+        ) && let Err(e) =
+            self.cancel_order(event.client_order_id, Some(*BETFAIR_CLIENT_ID), None)
+        {
+            self.probe.fail(format!(
+                "cancel_order failed for {}: {e}",
+                event.client_order_id,
+            ));
+        }
+    }
+
+    fn on_order_pending_cancel(&mut self, event: OrderPendingCancel) {
+        self.probe.record(
+            event.client_order_id,
+            LiveStressEvent::PendingCancel,
+            event.venue_order_id.map(|id| id.to_string()),
+        );
+    }
+
+    fn on_order_canceled(&mut self, event: &OrderCanceled) {
+        self.probe.record(
+            event.client_order_id,
+            LiveStressEvent::Canceled,
+            event.venue_order_id.map(|id| id.to_string()),
+        );
+
+        if self.probe.mark_completed(event.client_order_id) {
+            self.active = self.active.saturating_sub(1);
+
+            if let Err(e) = self.submit_until_full() {
+                self.probe.fail(format!("submit_order failed: {e}"));
+            }
+        }
+    }
+
+    fn on_order_rejected(&mut self, event: OrderRejected) {
         self.probe.fail(format!(
-            "live smoke order matched unexpectedly: {} @ {}",
-            event.last_qty, event.last_px,
+            "order rejected for {}: {}",
+            event.client_order_id, event.reason,
+        ));
+    }
+
+    fn on_order_denied(&mut self, event: OrderDenied) {
+        self.probe.fail(format!(
+            "order denied for {}: {}",
+            event.client_order_id, event.reason,
+        ));
+    }
+
+    fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {
+        self.probe.fail(format!(
+            "modify rejected for {}: {}",
+            event.client_order_id, event.reason,
+        ));
+    }
+
+    fn on_order_cancel_rejected(&mut self, event: OrderCancelRejected) {
+        self.probe.fail(format!(
+            "cancel rejected for {}: {}",
+            event.client_order_id, event.reason,
+        ));
+    }
+
+    fn on_order_filled(&mut self, event: &OrderFilled) {
+        self.probe.fail(format!(
+            "passive stress order {} matched unexpectedly: {} @ {}",
+            event.client_order_id, event.last_qty, event.last_px,
         ));
     }
 });
@@ -286,6 +677,7 @@ async fn live_limit_order_place_replace_cancel() {
         &customer_order_ref,
         &known_bet_ids,
         smoke_result.is_err(),
+        Decimal::ZERO,
     )
     .await;
     client.disconnect().await;
@@ -313,6 +705,7 @@ async fn live_replace_cancelled_not_placed() {
         &customer_order_ref,
         &known_bet_ids,
         probe_result.is_err(),
+        Decimal::ZERO,
     )
     .await;
     client.disconnect().await;
@@ -395,75 +788,30 @@ async fn live_replace_cancelled_not_placed() {
 }
 
 #[rstest]
-#[case("980", false)]
-#[case("2.57", true)]
+#[case(LiveExecutionScenario::ReplaceCancel)]
+#[case(LiveExecutionScenario::InvalidReplace)]
+#[case(LiveExecutionScenario::ReconnectReplaceCancel)]
+#[case(LiveExecutionScenario::ReplaceFill)]
 #[tokio::test]
 #[ignore = "runs a production LiveNode and mutates orders on the configured live Betfair account"]
-async fn live_execution_client_replace_via_stream(
-    #[case] replace_price: &str,
-    #[case] expect_cancelled_without_replacement: bool,
-) {
-    let credential = BetfairCredential::from_env()
-        .expect("BETFAIR_USERNAME, BETFAIR_PASSWORD, and BETFAIR_APP_KEY must be set");
-    let discovery = Arc::new(
-        BetfairHttpClient::new(
-            credential.clone(),
-            None,
-            None,
-            None,
-            None,
-            Some(5),
-            Some(20),
-        )
-        .expect("live discovery client"),
-    );
-    discovery.connect().await.expect("Betfair discovery login");
-
-    let account: AccountDetailsResponse = discovery
-        .send_accounts(METHOD_GET_ACCOUNT_DETAILS, serde_json::json!({}))
+async fn live_execution_client_replace_via_stream(#[case] scenario: LiveExecutionScenario) {
+    let LiveExecutionFixture {
+        credential,
+        currency_code,
+        stake,
+        market_id,
+        instrument_id,
+        instrument,
+    } = prepare_live_execution()
         .await
-        .expect("getAccountDetails");
-    let currency_code = account
-        .currency_code
-        .expect("account details omitted currencyCode");
-    let currency = currency_code
-        .parse::<Currency>()
-        .expect("account currency must be supported");
-    let stake = minimum_stake(currency_code.as_str()).expect("minimum account stake");
-    let target = find_unmatched_target(discovery.as_ref())
-        .await
-        .expect("passive live target");
-    let market_id = target.market_id.clone();
-    let instrument_id =
-        make_instrument_id(market_id.as_str(), target.selection_id, target.handicap);
-    let mut provider = BetfairInstrumentProvider::new(
-        Arc::clone(&discovery),
-        NavigationFilter {
-            market_ids: Some(vec![market_id.clone()]),
-            ..Default::default()
-        },
-        currency,
-        None,
-    );
-    provider
-        .load_all(None)
-        .await
-        .expect("load live Betfair instruments");
-    let instrument = provider
-        .store()
-        .list_all()
-        .into_iter()
-        .find(|instrument| instrument.id() == instrument_id)
-        .cloned()
-        .expect("selected live instrument must be loaded");
-    discovery.disconnect().await;
+        .expect("prepare live execution fixture");
 
     let trader_id = TraderId::from("BETFAIR-LIVE-TESTER");
     let account_id = AccountId::from("BETFAIR-001");
     let exec_config = BetfairExecConfig {
         trader_id,
         account_id,
-        account_currency: currency_code.to_string(),
+        account_currency: currency_code.clone(),
         stream_market_ids_filter: Some(vec![market_id.clone()]),
         ignore_external_orders: true,
         calculate_account_state: false,
@@ -471,34 +819,13 @@ async fn live_execution_client_replace_via_stream(
         reconcile_market_ids: Some(vec![market_id]),
         ..Default::default()
     };
-    let exec_engine_config = LiveExecEngineConfig {
-        open_check_interval_secs: Some(5.0),
-        position_check_interval_secs: Some(10.0),
-        ..Default::default()
-    };
-    let mut node = LiveNode::builder(trader_id, Environment::Live)
-        .expect("live node builder")
-        .with_name("BetfairLiveExecutionSmoke".to_string())
-        .with_exec_engine_config(exec_engine_config)
-        .with_risk_engine_config(LiveRiskEngineConfig {
-            bypass: true,
-            ..Default::default()
-        })
-        .add_exec_client(
-            None,
-            Box::new(BetfairExecutionClientFactory::new()),
-            Box::new(exec_config),
-        )
-        .expect("add Betfair execution client")
-        .with_reconciliation(false)
-        .with_delay_post_stop_secs(2)
-        .build()
-        .expect("build live node");
-    node.kernel()
-        .cache
-        .borrow_mut()
-        .add_instrument(instrument)
-        .expect("cache live instrument");
+    let mut node = build_live_execution_node(
+        "BetfairLiveExecutionSmoke",
+        trader_id,
+        exec_config,
+        instrument,
+    )
+    .expect("build live node");
 
     let unique = live_ref();
     let client_order_id = ClientOrderId::from(format!("L{}", &unique[..31]));
@@ -508,8 +835,7 @@ async fn live_execution_client_replace_via_stream(
         instrument_id,
         client_order_id,
         Quantity::from(stake.to_string()),
-        Price::from(replace_price),
-        expect_cancelled_without_replacement,
+        scenario,
         probe.clone(),
     ))
     .expect("add live execution strategy");
@@ -533,7 +859,8 @@ async fn live_execution_client_replace_via_stream(
     let run_result = tokio::time::timeout(Duration::from_secs(75), node.run()).await;
     let _ = monitor.await;
 
-    let known_bet_ids = probe.bet_ids.lock().unwrap().clone();
+    let state = probe.snapshot();
+    let known_bet_ids = state.bet_ids.clone();
     let cleanup_client =
         BetfairHttpClient::new(credential, None, None, None, None, Some(5), Some(20))
             .expect("live cleanup client");
@@ -547,7 +874,12 @@ async fn live_execution_client_replace_via_stream(
         &known_bet_ids,
         run_result.is_err()
             || run_result.as_ref().is_ok_and(|result| result.is_err())
-            || probe.failed.load(Ordering::Acquire),
+            || state.failure.is_some(),
+        if scenario == LiveExecutionScenario::ReplaceFill {
+            stake
+        } else {
+            Decimal::ZERO
+        },
     )
     .await;
     cleanup_client.disconnect().await;
@@ -555,23 +887,321 @@ async fn live_execution_client_replace_via_stream(
     cleanup_result.expect("live execution smoke cleanup and exposure verification failed");
     let node_result = run_result.expect("live node did not stop within 75 seconds");
     node_result.expect("live node run failed");
-    if let Some(failure) = probe.failure.lock().unwrap().clone() {
+    if let Some(failure) = state.failure.clone() {
         panic!("live execution lifecycle failed: {failure}");
     }
-    assert_eq!(probe.accepted.load(Ordering::Acquire), 1);
-    if expect_cancelled_without_replacement {
-        assert_eq!(probe.updated.load(Ordering::Acquire), 0);
-        assert_eq!(probe.canceled.load(Ordering::Acquire), 1);
-        assert_eq!(known_bet_ids.len(), 1);
-    } else {
-        assert_eq!(probe.updated.load(Ordering::Acquire), 1);
-        assert_eq!(probe.canceled.load(Ordering::Acquire), 1);
-        assert_eq!(
-            known_bet_ids.len(),
-            2,
-            "place and replace bet IDs must differ"
+    assert_eq!(state.accepted, 1);
+
+    match scenario {
+        LiveExecutionScenario::InvalidReplace => {
+            assert_eq!(state.updated, 0);
+            assert_eq!(state.canceled, 1);
+            assert_eq!(state.filled, 0);
+            assert_eq!(known_bet_ids.len(), 1);
+        }
+        LiveExecutionScenario::ReplaceCancel
+        | LiveExecutionScenario::ReconnectReplaceCancel
+        | LiveExecutionScenario::ReplaceFill => {
+            assert_eq!(state.updated, 1);
+            assert_eq!(
+                state.canceled,
+                usize::from(scenario != LiveExecutionScenario::ReplaceFill),
+            );
+            assert_eq!(
+                state.filled,
+                usize::from(scenario == LiveExecutionScenario::ReplaceFill),
+            );
+            assert_eq!(
+                known_bet_ids.len(),
+                2,
+                "place and replace Bet IDs must differ"
+            );
+
+            let old_bet_id = state
+                .accepted_bet_id
+                .clone()
+                .expect("accepted event must carry the original Bet ID");
+            let new_bet_id = state
+                .updated_bet_id
+                .clone()
+                .expect("updated event must carry the replacement Bet ID");
+            assert_ne!(old_bet_id, new_bet_id);
+
+            let cache = node.kernel().cache.borrow();
+            let order = cache
+                .order(&client_order_id)
+                .expect("live execution order must remain cached");
+            let old_venue_order_id = VenueOrderId::from(old_bet_id.as_str());
+            let new_venue_order_id = VenueOrderId::from(new_bet_id.as_str());
+            assert_eq!(order.venue_order_id(), Some(new_venue_order_id));
+            assert_eq!(
+                cache.client_order_id(&old_venue_order_id),
+                Some(&client_order_id),
+            );
+            assert_eq!(
+                cache.client_order_id(&new_venue_order_id),
+                Some(&client_order_id),
+            );
+
+            if scenario == LiveExecutionScenario::ReplaceFill {
+                assert_eq!(order.status(), OrderStatus::Filled);
+                assert_eq!(order.filled_qty(), Quantity::from(stake.to_string()));
+            } else {
+                assert_eq!(order.status(), OrderStatus::Canceled);
+                assert_eq!(
+                    order.filled_qty(),
+                    Quantity::zero(order.quantity().precision),
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "runs concurrent production LiveNode order lifecycles on the configured live Betfair account"]
+async fn live_execution_concurrent_replace_stress() {
+    let total_orders = live_stress_setting("BETFAIR_LIVE_STRESS_ORDERS", 20, 1, 200);
+    let max_active = live_stress_setting("BETFAIR_LIVE_STRESS_MAX_ACTIVE", 1, 1, 20);
+    let order_rate = live_stress_setting("BETFAIR_LIVE_STRESS_ORDER_RATE", 5, 1, 20) as u32;
+
+    run_live_execution_stress(total_orders, max_active, order_rate)
+        .await
+        .expect("live concurrent replacement stress failed");
+}
+
+async fn run_live_execution_stress(
+    total_orders: usize,
+    max_active: usize,
+    order_rate: u32,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        max_active <= total_orders,
+        "max active orders {max_active} exceeds total orders {total_orders}",
+    );
+    let LiveExecutionFixture {
+        credential,
+        currency_code,
+        stake,
+        market_id,
+        instrument_id,
+        instrument,
+    } = prepare_live_execution().await?;
+
+    let trader_id = TraderId::from("BETFAIR-LIVE-TESTER");
+    let account_id = AccountId::from("BETFAIR-001");
+    let exec_config = BetfairExecConfig {
+        trader_id,
+        account_id,
+        account_currency: currency_code,
+        order_request_rate_per_second: order_rate,
+        stream_market_ids_filter: Some(vec![market_id.clone()]),
+        ignore_external_orders: true,
+        calculate_account_state: false,
+        reconcile_market_ids_only: true,
+        reconcile_market_ids: Some(vec![market_id]),
+        ..Default::default()
+    };
+    let mut node = build_live_execution_node(
+        "BetfairLiveExecutionStress",
+        trader_id,
+        exec_config,
+        instrument,
+    )?;
+
+    let probe = LiveStressProbe::default();
+    node.add_strategy(LiveExecutionStress::new(
+        instrument_id,
+        Quantity::from(stake.to_string()),
+        Price::from("980"),
+        total_orders,
+        max_active,
+        probe.clone(),
+    ))?;
+
+    let handle = node.handle();
+    let stop_handle = handle.clone();
+    let monitor_probe = probe.clone();
+    let expected_request_secs = (total_orders as u64 * 3).div_ceil(u64::from(order_rate));
+    let deadline = Duration::from_secs(expected_request_secs + 90);
+    let monitor = tokio::spawn(async move {
+        let deadline_at = Instant::now() + deadline;
+        while !monitor_probe.finished(total_orders) && Instant::now() < deadline_at {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        if !monitor_probe.finished(total_orders) {
+            monitor_probe.fail(format!(
+                "live stress timed out after {} seconds",
+                deadline.as_secs(),
+            ));
+        }
+        stop_handle.stop();
+    });
+
+    let node_timeout = deadline + Duration::from_secs(15);
+    let run_result = tokio::time::timeout(node_timeout, node.run()).await;
+    let _ = monitor.await;
+
+    let (customer_order_refs, known_bet_ids, failure) = {
+        let state = probe.state.lock().unwrap();
+        let customer_order_refs = state
+            .orders
+            .keys()
+            .map(|client_order_id| make_customer_order_ref(client_order_id.as_str()))
+            .collect::<Vec<_>>();
+        let known_bet_ids = state
+            .orders
+            .values()
+            .flat_map(|order| {
+                [
+                    order.accepted_bet_id.clone(),
+                    order.updated_bet_id.clone(),
+                    order.canceled_bet_id.clone(),
+                ]
+                .into_iter()
+                .flatten()
+            })
+            .collect::<HashSet<_>>();
+        (customer_order_refs, known_bet_ids, state.failure.clone())
+    };
+
+    let cleanup_client =
+        BetfairHttpClient::new(credential, None, None, None, None, Some(5), Some(20))?;
+    cleanup_client.connect().await?;
+    let cleanup_result = cleanup_order_refs(
+        &cleanup_client,
+        &customer_order_refs,
+        &known_bet_ids,
+        run_result.is_err()
+            || run_result.as_ref().is_ok_and(|result| result.is_err())
+            || failure.is_some(),
+        Decimal::ZERO,
+    )
+    .await;
+    cleanup_client.disconnect().await;
+    cleanup_result?;
+
+    let node_result = run_result.context("live stress node timed out")?;
+    node_result?;
+    anyhow::ensure!(failure.is_none(), "{}", failure.unwrap_or_default());
+
+    let expected_events = [
+        LiveStressEvent::Submitted,
+        LiveStressEvent::Accepted,
+        LiveStressEvent::PendingUpdate,
+        LiveStressEvent::Updated,
+        LiveStressEvent::PendingCancel,
+        LiveStressEvent::Canceled,
+    ];
+    let state = probe.state.lock().unwrap();
+    anyhow::ensure!(
+        state.orders.len() == total_orders,
+        "live stress registered {} orders, expected {total_orders}",
+        state.orders.len(),
+    );
+    anyhow::ensure!(
+        state.completed.len() == total_orders,
+        "live stress completed {} orders, expected {total_orders}",
+        state.completed.len(),
+    );
+    let cache = node.kernel().cache.borrow();
+
+    for (client_order_id, record) in &state.orders {
+        anyhow::ensure!(
+            record.events == expected_events,
+            "order {client_order_id} event sequence was {:?}",
+            record.events,
+        );
+        let old_bet_id = record
+            .accepted_bet_id
+            .as_deref()
+            .context("accepted event omitted Bet ID")?;
+        let new_bet_id = record
+            .updated_bet_id
+            .as_deref()
+            .context("updated event omitted Bet ID")?;
+        let canceled_bet_id = record
+            .canceled_bet_id
+            .as_deref()
+            .context("canceled event omitted Bet ID")?;
+        anyhow::ensure!(
+            old_bet_id != new_bet_id,
+            "order {client_order_id} retained old Bet ID after replacement",
+        );
+        anyhow::ensure!(
+            new_bet_id == canceled_bet_id,
+            "order {client_order_id} canceled Bet ID {canceled_bet_id}, expected {new_bet_id}",
+        );
+
+        let order = cache
+            .order(client_order_id)
+            .context("completed live stress order missing from cache")?;
+        anyhow::ensure!(
+            order.status() == OrderStatus::Canceled,
+            "order {client_order_id} cache status was {}",
+            order.status(),
+        );
+        anyhow::ensure!(
+            order.quantity() == Quantity::from(stake.to_string()),
+            "order {client_order_id} cache quantity was {}",
+            order.quantity(),
+        );
+        anyhow::ensure!(
+            order.filled_qty() == Quantity::zero(order.quantity().precision),
+            "order {client_order_id} cache filled quantity was {}",
+            order.filled_qty(),
+        );
+        let old_venue_order_id = VenueOrderId::from(old_bet_id);
+        let new_venue_order_id = VenueOrderId::from(new_bet_id);
+        anyhow::ensure!(
+            order.venue_order_id() == Some(new_venue_order_id),
+            "order {client_order_id} current Bet ID was {:?}",
+            order.venue_order_id(),
+        );
+        anyhow::ensure!(
+            cache.client_order_id(&old_venue_order_id) == Some(client_order_id),
+            "old Bet ID {old_bet_id} did not route to {client_order_id}",
+        );
+        anyhow::ensure!(
+            cache.client_order_id(&new_venue_order_id) == Some(client_order_id),
+            "new Bet ID {new_bet_id} did not route to {client_order_id}",
         );
     }
+
+    Ok(())
+}
+
+fn build_live_execution_node(
+    name: &str,
+    trader_id: TraderId,
+    exec_config: BetfairExecConfig,
+    instrument: InstrumentAny,
+) -> anyhow::Result<LiveNode> {
+    let exec_engine_config = LiveExecEngineConfig {
+        open_check_interval_secs: Some(5.0),
+        position_check_interval_secs: Some(10.0),
+        ..Default::default()
+    };
+    let node = LiveNode::builder(trader_id, Environment::Live)?
+        .with_name(name.to_string())
+        .with_exec_engine_config(exec_engine_config)
+        .with_risk_engine_config(LiveRiskEngineConfig {
+            bypass: true,
+            ..Default::default()
+        })
+        .add_exec_client(
+            None,
+            Box::new(BetfairExecutionClientFactory::new()),
+            Box::new(exec_config),
+        )?
+        .with_reconciliation(false)
+        .with_delay_post_stop_secs(2)
+        .build()?;
+    node.kernel()
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument)?;
+    Ok(node)
 }
 
 async fn exercise_order_lifecycle(
@@ -587,7 +1217,7 @@ async fn exercise_order_lifecycle(
         .currency_code
         .context("account details omitted currencyCode")?;
     let stake = minimum_stake(currency.as_str())?;
-    let target = find_unmatched_target(client).await?;
+    let target = find_unmatched_target(client, stake).await?;
 
     let place_params = PlaceOrdersParams {
         market_id: target.market_id.clone(),
@@ -740,7 +1370,7 @@ async fn exercise_invalid_replace(
         .currency_code
         .context("account details omitted currencyCode")?;
     let stake = minimum_stake(currency.as_str())?;
-    let target = find_unmatched_target(client).await?;
+    let target = find_unmatched_target(client, stake).await?;
 
     let place_params = PlaceOrdersParams {
         market_id: target.market_id.clone(),
@@ -817,7 +1447,79 @@ fn one_place_instruction(report: &PlaceExecutionReport) -> anyhow::Result<&Place
     Ok(instruction)
 }
 
-async fn find_unmatched_target(client: &BetfairHttpClient) -> anyhow::Result<LiveTarget> {
+async fn prepare_live_execution() -> anyhow::Result<LiveExecutionFixture> {
+    let credential = BetfairCredential::from_env()
+        .context("BETFAIR_USERNAME, BETFAIR_PASSWORD, and BETFAIR_APP_KEY must be set")?;
+    let discovery = Arc::new(BetfairHttpClient::new(
+        credential.clone(),
+        None,
+        None,
+        None,
+        None,
+        Some(5),
+        Some(20),
+    )?);
+    discovery
+        .connect()
+        .await
+        .context("Betfair discovery login")?;
+
+    let result = async {
+        let account: AccountDetailsResponse = discovery
+            .send_accounts(METHOD_GET_ACCOUNT_DETAILS, serde_json::json!({}))
+            .await
+            .context("getAccountDetails")?;
+        let currency_code = account
+            .currency_code
+            .context("account details omitted currencyCode")?;
+        let currency = currency_code
+            .parse::<Currency>()
+            .context("account currency must be supported")?;
+        let stake = minimum_stake(currency_code.as_str())?;
+        let target = find_unmatched_target(discovery.as_ref(), stake).await?;
+        let market_id = target.market_id;
+        let instrument_id =
+            make_instrument_id(market_id.as_str(), target.selection_id, target.handicap);
+        let mut provider = BetfairInstrumentProvider::new(
+            Arc::clone(&discovery),
+            NavigationFilter {
+                market_ids: Some(vec![market_id.clone()]),
+                ..Default::default()
+            },
+            currency,
+            None,
+        );
+        provider
+            .load_all(None)
+            .await
+            .context("load live Betfair instruments")?;
+        let instrument = provider
+            .store()
+            .list_all()
+            .into_iter()
+            .find(|instrument| instrument.id() == instrument_id)
+            .cloned()
+            .context("selected live instrument must be loaded")?;
+
+        Ok(LiveExecutionFixture {
+            credential,
+            currency_code: currency_code.to_string(),
+            stake,
+            market_id,
+            instrument_id,
+            instrument,
+        })
+    }
+    .await;
+
+    discovery.disconnect().await;
+    result
+}
+
+async fn find_unmatched_target(
+    client: &BetfairHttpClient,
+    minimum_liquidity: Decimal,
+) -> anyhow::Result<LiveTarget> {
     let params = ListMarketCatalogueParams {
         filter: MarketFilter {
             in_play_only: Some(false),
@@ -862,11 +1564,9 @@ async fn find_unmatched_target(client: &BetfairHttpClient) -> anyhow::Result<Liv
                 .into_iter()
                 .filter(|runner| runner.status == RunnerStatus::Active)
                 .find(|runner| {
-                    runner
-                        .ex
-                        .available_to_lay
-                        .first()
-                        .is_some_and(|price| price.price < price_replace())
+                    runner.ex.available_to_back.first().is_some_and(|price| {
+                        price.price < price_replace() && price.size >= minimum_liquidity
+                    })
                 })
                 .map(|runner| LiveTarget {
                     market_id: book.market_id,
@@ -874,7 +1574,7 @@ async fn find_unmatched_target(client: &BetfairHttpClient) -> anyhow::Result<Liv
                     handicap: runner.handicap,
                 })
         })
-        .context("no open non-in-play runner has a safely separated lay price")
+        .context("no open non-in-play runner has a safely separated liquid back price")
 }
 
 async fn cleanup_orders(
@@ -882,11 +1582,29 @@ async fn cleanup_orders(
     customer_order_ref: &str,
     known_bet_ids: &HashSet<BetId>,
     await_unknown_order: bool,
+    expected_matched: Decimal,
+) -> anyhow::Result<()> {
+    cleanup_order_refs(
+        client,
+        &[customer_order_ref.to_string()],
+        known_bet_ids,
+        await_unknown_order,
+        expected_matched,
+    )
+    .await
+}
+
+async fn cleanup_order_refs(
+    client: &BetfairHttpClient,
+    customer_order_refs: &[String],
+    known_bet_ids: &HashSet<BetId>,
+    await_unknown_order: bool,
+    expected_matched: Decimal,
 ) -> anyhow::Result<()> {
     let mut last_error = None;
-    let mut matched_exposure = false;
-    let mut canceled_known = false;
-    let wait = if await_unknown_order {
+    let mut observed_matched = Decimal::ZERO;
+    let mut queried_known_bet_ids = false;
+    let wait = if await_unknown_order || expected_matched != Decimal::ZERO {
         Duration::from_secs(15)
     } else {
         Duration::from_secs(2)
@@ -894,49 +1612,48 @@ async fn cleanup_orders(
     let deadline = Instant::now() + wait;
 
     loop {
-        let report = current_orders(client, customer_order_ref, OrderProjection::All).await;
-        let executable = match report {
-            Ok(report) => {
-                matched_exposure |= report
-                    .current_orders
-                    .iter()
-                    .any(|order| order.size_matched.unwrap_or(Decimal::ZERO) != Decimal::ZERO);
-                report
-                    .current_orders
-                    .iter()
-                    .filter(|order| order.status == BetfairOrderStatus::Executable)
-                    .map(|order| order.bet_id.clone())
-                    .collect()
-            }
-            Err(e) => {
-                last_error = Some(e);
-
-                if canceled_known {
-                    HashSet::new()
-                } else {
-                    canceled_known = true;
-                    known_bet_ids.clone()
-                }
-            }
-        };
-
-        if !executable.is_empty() {
-            let params = CancelOrdersParams {
-                market_id: None,
-                instructions: Some(
-                    executable
+        let orders =
+            current_orders_for_refs(client, customer_order_refs, OrderProjection::All).await;
+        let executable =
+            match orders {
+                Ok(orders) => {
+                    observed_matched = observed_matched.max(
+                        orders
+                            .iter()
+                            .map(|order| order.size_matched.unwrap_or(Decimal::ZERO))
+                            .sum(),
+                    );
+                    orders
                         .into_iter()
-                        .map(|bet_id| CancelInstruction {
-                            bet_id,
-                            size_reduction: None,
-                        })
-                        .collect(),
-                ),
-                customer_ref: Some(live_ref()),
+                        .filter(|order| order.status == BetfairOrderStatus::Executable)
+                        .collect()
+                }
+                Err(e) => {
+                    last_error = Some(e);
+
+                    if queried_known_bet_ids {
+                        Vec::new()
+                    } else {
+                        queried_known_bet_ids = true;
+                        let mut orders = Vec::new();
+
+                        for bet_id in known_bet_ids {
+                            match current_orders_for_bet_id(client, bet_id).await {
+                                Ok(found) => orders.extend(found.into_iter().filter(|order| {
+                                    order.status == BetfairOrderStatus::Executable
+                                })),
+                                Err(e) => last_error = Some(e),
+                            }
+                        }
+                        orders
+                    }
+                }
             };
-            let _: Result<CancelExecutionReport, _> = client
-                .send_betting_order(METHOD_CANCEL_ORDERS, &params)
-                .await;
+
+        for order in executable {
+            if let Err(e) = cancel_live_order(client, &order).await {
+                last_error = Some(e);
+            }
         }
 
         if Instant::now() >= deadline {
@@ -946,28 +1663,101 @@ async fn cleanup_orders(
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
-    let report = current_orders(client, customer_order_ref, OrderProjection::All)
-        .await
-        .map_err(|e| last_error.unwrap_or(e))?;
-    matched_exposure |= report
-        .current_orders
-        .iter()
-        .any(|order| order.size_matched.unwrap_or(Decimal::ZERO) != Decimal::ZERO);
-    let executable: Vec<_> = report
-        .current_orders
+    let orders =
+        match current_orders_for_refs(client, customer_order_refs, OrderProjection::All).await {
+            Ok(orders) => orders,
+            Err(e) => return Err(last_error.unwrap_or(e)),
+        };
+    observed_matched = observed_matched.max(
+        orders
+            .iter()
+            .map(|order| order.size_matched.unwrap_or(Decimal::ZERO))
+            .sum(),
+    );
+    let executable: Vec<_> = orders
         .iter()
         .filter(|order| order.status == BetfairOrderStatus::Executable)
         .map(|order| &order.bet_id)
         .collect();
     anyhow::ensure!(
         executable.is_empty(),
-        "task-created executable orders remain after cleanup: {executable:?}",
+        "task-created executable orders remain after cleanup: {executable:?}; last cleanup error: {last_error:?}",
     );
     anyhow::ensure!(
-        !matched_exposure,
-        "a task-created live order has matched exposure",
+        observed_matched == expected_matched,
+        "task-created live orders matched {observed_matched}, expected {expected_matched}",
     );
     Ok(())
+}
+
+async fn cancel_live_order(
+    client: &BetfairHttpClient,
+    order: &CurrentOrderSummary,
+) -> anyhow::Result<()> {
+    let params = CancelOrdersParams {
+        market_id: Some(order.market_id.clone()),
+        instructions: Some(vec![CancelInstruction {
+            bet_id: order.bet_id.clone(),
+            size_reduction: None,
+        }]),
+        customer_ref: Some(live_ref()),
+    };
+    let report: CancelExecutionReport = client
+        .send_betting_order(METHOD_CANCEL_ORDERS, &params)
+        .await
+        .context("cancelOrders during cleanup")?;
+    let instruction = report
+        .instruction_reports
+        .as_deref()
+        .filter(|reports| reports.len() == 1)
+        .and_then(|reports| reports.first())
+        .context("cleanup cancelOrders did not return one instruction report")?;
+    anyhow::ensure!(
+        instruction.status == InstructionReportStatus::Success
+            || instruction.error_code == Some(InstructionReportErrorCode::BetTakenOrLapsed),
+        "cleanup cancel instruction returned {:?}: {:?}",
+        instruction.status,
+        instruction.error_code,
+    );
+    Ok(())
+}
+
+async fn current_orders_for_refs(
+    client: &BetfairHttpClient,
+    customer_order_refs: &[String],
+    projection: OrderProjection,
+) -> anyhow::Result<Vec<CurrentOrderSummary>> {
+    let mut orders = Vec::new();
+
+    for customer_order_ref in customer_order_refs {
+        let report = current_orders(client, customer_order_ref, projection).await?;
+        orders.extend(report.current_orders);
+    }
+
+    Ok(orders)
+}
+
+async fn current_orders_for_bet_id(
+    client: &BetfairHttpClient,
+    bet_id: &BetId,
+) -> anyhow::Result<Vec<CurrentOrderSummary>> {
+    let params = ListCurrentOrdersParams {
+        bet_ids: Some(vec![bet_id.clone()]),
+        market_ids: None,
+        order_projection: Some(OrderProjection::All),
+        customer_order_refs: None,
+        customer_strategy_refs: None,
+        date_range: None,
+        order_by: None,
+        sort_dir: None,
+        from_record: None,
+        record_count: Some(100),
+    };
+    let report: CurrentOrderSummaryReport = client
+        .send_betting(METHOD_LIST_CURRENT_ORDERS, &params)
+        .await
+        .context("listCurrentOrders by Bet ID")?;
+    Ok(report.current_orders)
 }
 
 async fn current_orders(
@@ -1010,6 +1800,19 @@ fn minimum_stake(currency: &str) -> anyhow::Result<Decimal> {
         other => anyhow::bail!("unsupported live-test account currency {other}"),
     };
     Ok(Decimal::from(units))
+}
+
+fn live_stress_setting(name: &str, default: usize, minimum: usize, maximum: usize) -> usize {
+    let value = std::env::var(name).map_or(default, |value| {
+        value
+            .parse::<usize>()
+            .unwrap_or_else(|e| panic!("invalid {name} value {value:?}: {e}"))
+    });
+    assert!(
+        (minimum..=maximum).contains(&value),
+        "{name} must be in {minimum}..={maximum}, was {value}",
+    );
+    value
 }
 
 fn live_ref() -> String {

@@ -231,6 +231,53 @@ fn apply_fill(
     order.apply(fill).unwrap();
 }
 
+fn build_order_with_pending_command(
+    instrument: &InstrumentAny,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    pending_status: OrderStatus,
+) -> OrderAny {
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    let pending = match pending_status {
+        OrderStatus::PendingUpdate => OrderEventAny::PendingUpdate(build_order_pending_update(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(venue_order_id),
+        )),
+        OrderStatus::PendingCancel => OrderEventAny::PendingCancel(build_order_pending_cancel(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(venue_order_id),
+        )),
+        _ => panic!("unsupported pending command status {pending_status}"),
+    };
+    order.apply(pending).unwrap();
+    order
+}
+
 // Builds an accepted order whose cache has been promoted from old_venue_order_id
 // to new_venue_order_id through a confirmed cancel-replace modify, so its
 // venue_order_ids history holds both legs and the current leg is the new one.
@@ -6294,6 +6341,108 @@ fn test_continuous_reconciliation_skips_update_when_local_pending_update(
     assert!(
         events.is_empty(),
         "matching pending statuses must not drive local mutations, found {events:?}",
+    );
+}
+
+#[rstest]
+#[case(OrderStatus::PendingUpdate)]
+#[case(OrderStatus::PendingCancel)]
+fn test_continuous_reconciliation_keeps_pending_command_on_stale_accepted_snapshot(
+    #[case] pending_status: OrderStatus,
+    instrument: InstrumentAny,
+) {
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::from("SIM-001");
+    let order = build_order_with_pending_command(
+        &instrument,
+        client_order_id,
+        venue_order_id,
+        account_id,
+        pending_status,
+    );
+
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Accepted,
+        Quantity::from(100),
+        Quantity::from(0),
+    );
+    report.price = Some(Price::from("1.00000"));
+
+    let events = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+
+    assert!(
+        events.is_empty(),
+        "stale accepted snapshot must not resolve {pending_status}, found {events:?}",
+    );
+    assert_eq!(order.status(), pending_status);
+}
+
+#[rstest]
+#[case::replacement_id(VenueOrderId::from("V-002"), Quantity::from(0), Price::from("1.00000"))]
+#[case::fill_progress(
+    VenueOrderId::from("V-001"),
+    Quantity::from(10),
+    Price::from("1.00000")
+)]
+#[case::amendment_progress(VenueOrderId::from("V-001"), Quantity::from(0), Price::from("1.10000"))]
+fn test_continuous_reconciliation_does_not_suppress_changed_accepted_snapshot(
+    #[case] report_venue_order_id: VenueOrderId,
+    #[case] filled_qty: Quantity,
+    #[case] price: Price,
+    instrument: InstrumentAny,
+) {
+    let client_order_id = ClientOrderId::from("O-001");
+    let current_venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::from("SIM-001");
+    let order = build_order_with_pending_command(
+        &instrument,
+        client_order_id,
+        current_venue_order_id,
+        account_id,
+        OrderStatus::PendingUpdate,
+    );
+
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        report_venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Accepted,
+        Quantity::from(100),
+        filled_qty,
+    );
+    report.price = Some(price);
+    let ts_now = UnixNanos::from(2);
+
+    let events = generate_reconciliation_order_events(&order, &report, Some(&instrument), ts_now);
+
+    let [OrderEventAny::Accepted(accepted)] = events.as_slice() else {
+        panic!("changed accepted snapshot must not be suppressed, found {events:?}");
+    };
+    assert_eq!(
+        *accepted,
+        OrderAccepted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            client_order_id,
+            current_venue_order_id,
+            account_id,
+            accepted.event_id,
+            report.ts_accepted,
+            ts_now,
+            true,
+        ),
     );
 }
 
