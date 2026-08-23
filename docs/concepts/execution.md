@@ -229,6 +229,9 @@ as a separate venue position.
 | `NETTING`    | `HEDGING` | One virtual position across the venue positions.                    |
 | `HEDGING`    | `NETTING` | Multiple virtual positions against the venue's single net position. |
 
+If a fill resolves to a cached position for a different instrument, the `ExecutionEngine` logs an
+error and drops the fill. The order remains non-terminal so a subsequent valid fill can be applied.
+
 ### OMS configuration
 
 When a strategy omits `oms_type` or uses `UNSPECIFIED`, the `ExecutionEngine` follows the venue's
