@@ -322,7 +322,7 @@ pub trait ExecutionAlgorithm: DataActor {
     where
         Self: ExecutionAlgorithmNative,
     {
-        let order = {
+        let (is_closed, is_active_local) = {
             let cache = ExecutionAlgorithmNative::exec_algorithm_core_mut(self).cache_ref();
 
             let Some(order) = cache.order(&command.client_order_id) else {
@@ -333,15 +333,15 @@ pub trait ExecutionAlgorithm: DataActor {
                 return Ok(());
             };
 
-            order.clone()
+            (order.is_closed(), order.is_active_local())
         };
 
-        if order.is_closed() {
+        if is_closed {
             log::warn!("Order already closed for {command:?}");
             return Ok(());
         }
 
-        if order.is_active_local() {
+        if is_active_local {
             log::warn!(
                 "Cannot modify {}: order is being executed by this algorithm",
                 command.client_order_id
