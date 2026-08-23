@@ -5,8 +5,7 @@ set -euo pipefail
 #
 # Builds a throwaway Git repository per case, then drives the script with a fake
 # crates.io on PATH so no case needs network access. One case swaps in a BSD
-# style `date` that rejects GNU `-d` to prove the timestamp fallback works on
-# macOS.
+# style `date` to prove the timestamp handling works on macOS.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHECK_SCRIPT="${SCRIPT_DIR}/check-cargo-cooldown.sh"
@@ -134,14 +133,20 @@ esac
 FAKE_CARGO
 chmod +x "${fake_bin}/cargo"
 
-# BSD style date: rejects GNU `-d`, serves `-r` and `-j -u -f` via the real date.
+# BSD style date: accepts `-d` as an unrelated option and serves `-r` and
+# `-j -u -f` via the real date.
 cat > "${fake_bin}/date" << 'FAKE_DATE'
 #!/usr/bin/env bash
 set -u
 case " $* " in
   *" -d "*)
-    echo "date: illegal option -- d" >&2
-    exit 1
+    output_format=""
+    for arg in "$@"; do
+      case "$arg" in
+        +*) output_format=$arg ;;
+      esac
+    done
+    exec "$REAL_DATE" -u "$output_format"
     ;;
 esac
 if [[ "${1:-}" == "-u" && "${2:-}" == "-r" ]]; then
@@ -509,9 +514,9 @@ expect "unreachable registry fails closed" 1 "could not be reached on crates.io"
 
 # The gate must work where GNU date is unavailable, as on macOS.
 setup_repo bsd-date
-printf 'serde 1.1.0 %s\n' "$fresh_date" > "$fixture"
+printf 'serde 1.1.0 %s\n' "$old_date" > "$fixture"
 write_lock "serde" "1.1.0" "0.1.0"
-USE_BSD_DATE=1 expect "BSD style date still evaluates the window" 1 "within the 3-day cooldown"
+USE_BSD_DATE=1 expect "BSD style date still evaluates the window" 0 "are at least 3 days old"
 
 # A crate version present in two locks is reported once, not per lock.
 setup_repo multi-lock
