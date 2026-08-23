@@ -47,20 +47,27 @@ use nautilus_common::{
         DataEvent, DataResponse, SystemEvent,
         data::{
             RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
-            SubscribeBookDepth10, SubscribeInstrument, SubscribeInstrumentClose,
-            SubscribeInstrumentStatus, SubscribeQuotes, UnsubscribeInstrument,
+            SubscribeBookDepth10, SubscribeCustomData, SubscribeInstrument,
+            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeQuotes,
+            UnsubscribeInstrument,
         },
         system::SocketState,
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
-use nautilus_model::{enums::BookType, identifiers::InstrumentId, instruments::InstrumentAny};
+use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_model::{
+    data::{Data as NautilusData, DataType},
+    enums::BookType,
+    identifiers::InstrumentId,
+    instruments::InstrumentAny,
+};
 use nautilus_network::{retry::RetryConfig, websocket::TransportBackend};
 use nautilus_polymarket::{
     common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE, WS_DEFAULT_SUBSCRIPTIONS},
     config::PolymarketDataClientConfig,
     data::PolymarketDataClient,
+    data_types::PolymarketRtdsCryptoTwap,
     http::{
         clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
         gamma::PolymarketGammaHttpClient,
@@ -69,6 +76,7 @@ use nautilus_polymarket::{
 };
 use nautilus_testkit::events::{collect_data_events_until_response, drain_data_events};
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use serde_json::Value;
 
 const TEST_CONDITION_ID: &str =
@@ -124,6 +132,7 @@ struct TestServerState {
     book_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     trades_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    rtds_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
 }
 
 async fn handle_gamma_markets(State(state): State<TestServerState>) -> Json<Value> {
@@ -191,6 +200,53 @@ async fn handle_market_socket(mut socket: WebSocket, state: TestServerState) {
     }
 }
 
+async fn handle_rtds_socket(mut socket: WebSocket, state: TestServerState) {
+    while let Some(result) = socket.next().await {
+        let Ok(message) = result else { break };
+
+        match message {
+            Message::Text(text) => {
+                let Ok(payload) = serde_json::from_str::<Value>(&text) else {
+                    continue;
+                };
+                let is_twap_subscribe = payload.get("action").and_then(Value::as_str)
+                    == Some("subscribe")
+                    && payload
+                        .get("subscriptions")
+                        .and_then(Value::as_array)
+                        .is_some_and(|subscriptions| {
+                            subscriptions.iter().any(|subscription| {
+                                subscription.get("topic").and_then(Value::as_str)
+                                    == Some("crypto_prices_twap_sixty")
+                            })
+                        });
+                state.rtds_payloads.lock().await.push(payload);
+
+                if is_twap_subscribe {
+                    let update = load_json("rtds_crypto_twap_sixty_update.json").to_string();
+                    if socket.send(Message::Text(update.into())).await.is_err() {
+                        break;
+                    }
+                }
+            }
+            Message::Ping(data) => {
+                if socket.send(Message::Pong(data)).await.is_err() {
+                    break;
+                }
+            }
+            Message::Close(_) => break,
+            _ => {}
+        }
+    }
+}
+
+async fn handle_rtds_upgrade(
+    ws: WebSocketUpgrade,
+    State(state): State<TestServerState>,
+) -> Response {
+    ws.on_upgrade(move |socket| handle_rtds_socket(socket, state))
+}
+
 fn create_router(state: TestServerState) -> Router {
     Router::new()
         .route("/markets", get(handle_gamma_markets))
@@ -198,7 +254,18 @@ fn create_router(state: TestServerState) -> Router {
         .route("/book", get(handle_book))
         .route("/trades", get(handle_trades))
         .route("/ws/market", get(handle_market_upgrade))
+        .route("/rtds", get(handle_rtds_upgrade))
         .with_state(state)
+}
+
+fn crypto_twap_data_type(symbol: &str, window_seconds: u64) -> DataType {
+    let mut metadata = Params::new();
+    metadata.insert("symbol".to_string(), Value::String(symbol.to_string()));
+    metadata.insert(
+        "window_seconds".to_string(),
+        Value::Number(window_seconds.into()),
+    );
+    DataType::new("PolymarketRtdsCryptoTwap", Some(metadata), None)
 }
 
 async fn start_mock_server(state: TestServerState) -> SocketAddr {
@@ -250,6 +317,64 @@ async fn test_connect_emits_market_socket_state_change() {
     assert!(system_rx.try_recv().is_err());
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_crypto_twap_sends_exact_topic_and_emits_exact_update() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut data_rx) = create_test_data_client(addr);
+    let data_type = crypto_twap_data_type("BTC/USD", 60);
+
+    client
+        .subscribe(SubscribeCustomData::new(
+            Some(*POLYMARKET_CLIENT_ID),
+            None,
+            data_type.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("subscribe 60-second TWAP");
+    client.connect().await.expect("connect data client");
+
+    let custom = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = data_rx.recv().await.expect("data event channel closed");
+            if let DataEvent::Data(NautilusData::Custom(custom)) = event {
+                break custom;
+            }
+        }
+    })
+    .await
+    .expect("wait for TWAP custom data");
+    let payload = custom
+        .data
+        .as_any()
+        .downcast_ref::<PolymarketRtdsCryptoTwap>()
+        .expect("PolymarketRtdsCryptoTwap");
+    let requests = state.rtds_payloads.lock().await.clone();
+
+    assert_eq!(custom.data_type, data_type);
+    assert_eq!(payload.symbol, "btc/usd");
+    assert_eq!(payload.window_seconds, 60);
+    assert_eq!(payload.value, dec!(65000.123456789012345678));
+    assert_eq!(payload.observation_timestamp_ms, 1772752581815);
+    assert_eq!(payload.message_timestamp_ms, 1772752582004);
+    assert_eq!(
+        requests,
+        vec![serde_json::json!({
+            "action": "subscribe",
+            "subscriptions": [{
+                "topic": "crypto_prices_twap_sixty",
+                "type": "update",
+            }],
+        })],
+    );
+
+    client.disconnect().await.expect("disconnect data client");
+}
+
 fn create_test_data_client_with_new_markets(
     addr: SocketAddr,
     subscribe_new_markets: bool,
@@ -277,6 +402,7 @@ fn create_test_data_client_with_new_markets(
     let config = PolymarketDataClientConfig {
         base_url_http: Some(base_url.clone()),
         base_url_ws: Some(format!("ws://{addr}/ws")),
+        base_url_rtds: Some(format!("ws://{addr}/rtds")),
         base_url_gamma: Some(base_url.clone()),
         base_url_data_api: Some(base_url),
         subscribe_new_markets,

@@ -1475,7 +1475,7 @@ mod tests {
     use super::*;
     use crate::common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE};
 
-    // Sanitized captured update; subscribe and equity fixtures are constructed protocol cases
+    // Existing RTDS spot update is a sanitized capture; other fixtures are protocol cases.
     const RTDS_CRYPTO_UPDATE_FIXTURE: &str =
         include_str!("../test_data/rtds_crypto_prices_update.json");
     const RTDS_CRYPTO_SUBSCRIBE_FIXTURE: &str =
@@ -1484,6 +1484,7 @@ mod tests {
         include_str!("../test_data/rtds_equity_prices_update.json");
     const RTDS_EQUITY_SUBSCRIBE_FIXTURE: &str =
         include_str!("../test_data/rtds_equity_prices_subscribe.json");
+    // Constructed from the official Polymarket SDK regression vector; see its source sidecar.
     const RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE: &str =
         include_str!("../test_data/rtds_crypto_twap_sixty_update.json");
 
@@ -1942,10 +1943,10 @@ mod tests {
         assert_eq!(custom.data_type, data_type);
         assert_eq!(payload.symbol, "btc/usd");
         assert_eq!(payload.window_seconds, 60);
-        assert_eq!(payload.value, dec!(64997.810000000000000000));
-        assert_eq!(payload.observation_timestamp_ms, 1786179814000);
-        assert_eq!(payload.message_timestamp_ms, 1786179814147);
-        assert_eq!(payload.ts_event, UnixNanos::from_millis(1786179814000));
+        assert_eq!(payload.value, dec!(65000.123456789012345678));
+        assert_eq!(payload.observation_timestamp_ms, 1772752581815);
+        assert_eq!(payload.message_timestamp_ms, 1772752582004);
+        assert_eq!(payload.ts_event, UnixNanos::from_millis(1772752581815));
         assert!(payload.ts_init > UnixNanos::default());
     }
 
@@ -1976,7 +1977,7 @@ mod tests {
             .expect("PolymarketRtdsCryptoTwap");
         assert_eq!(custom.data_type, data_type);
         assert_eq!(payload.window_seconds, 30);
-        assert_eq!(payload.value, dec!(64997.810000000000000000));
+        assert_eq!(payload.value, dec!(65000.123456789012345678));
         assert!(rx.try_recv().is_err());
     }
 
@@ -2002,7 +2003,7 @@ mod tests {
             .as_any()
             .downcast_ref::<PolymarketRtdsCryptoTwap>()
             .expect("PolymarketRtdsCryptoTwap");
-        assert_eq!(payload.value, dec!(64997.810000000000000000));
+        assert_eq!(payload.value, dec!(65000.123456789012345678));
     }
 
     #[rstest]
@@ -2032,7 +2033,7 @@ mod tests {
             .as_any()
             .downcast_ref::<PolymarketRtdsCryptoTwap>()
             .expect("PolymarketRtdsCryptoTwap");
-        assert_eq!(payload.value, dec!(64997.810000000000000000));
+        assert_eq!(payload.value, dec!(65000.123456789012345678));
     }
 
     #[rstest]
@@ -2071,7 +2072,7 @@ mod tests {
         let first: serde_json::Value = serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
             .expect("parse TWAP fixture");
         let mut second = first.clone();
-        second["payload"]["full_accuracy_value"] = json!("64997810000000000000001");
+        second["payload"]["full_accuracy_value"] = json!("65000123456789012345679");
 
         feed.try_handle_text_for_test(&first.to_string())
             .expect("first exact TWAP update");
@@ -2093,8 +2094,8 @@ mod tests {
             values.push(payload.value);
         }
 
-        assert_eq!(values[0], dec!(64997.810000000000000000));
-        assert_eq!(values[1], dec!(64997.810000000000000001));
+        assert_eq!(values[0], dec!(65000.123456789012345678));
+        assert_eq!(values[1], dec!(65000.123456789012345679));
         assert_ne!(values[0], values[1]);
     }
 
