@@ -699,6 +699,14 @@ config = StrategyConfig(manage_stop=True)
 With this option, calling `stop()` will first perform a market exit, then stop the strategy
 once flat.
 
+:::note
+In a backtest, a managed stop requested at the end of the run cannot complete. `market_exit()`
+schedules its first completion check `market_exit_interval_ms` after the current time, which falls
+beyond the requested end, and the engine has already performed its final timer flush by then. No
+callback runs to observe that the exit is done, so the strategy ends the run still `RUNNING` and is
+reported at `ERROR` even when it is already flat.
+:::
+
 Configuration options in `StrategyConfig`:
 
 - `manage_stop` (default: `False`): if `True`, `stop()` performs a market exit before stopping.
